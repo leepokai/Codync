@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -22,6 +22,7 @@
 		804863D604952293533147CF /* CodePulseLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		911C6ABDB9539A60844931F2 /* PIDChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D161FDC49BE96E3A73FEA33 /* PIDChecker.swift */; };
 		A30C11E610763F5064698D43 /* IOSSessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01A225437E7A00B3337883E /* IOSSessionListView.swift */; };
+		A98E0466D559EC6EBE0E39F4 /* ClaudeHookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */; };
 		B575261E2F89280C4805C654 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */; };
 		BB50434DF1BC51FED1AFED51 /* CodePulseLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9A7BAE27F6E4CEEDA1B48D /* CodePulseLiveActivityWidget.swift */; };
 		BF17F10AC69617C12975E0EB /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10CABFC27BF22D45064777A /* SessionDetailView.swift */; };
@@ -69,7 +70,7 @@
 		3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodePulseLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BCD1168005B123A7F9ACB37 /* CodePulseLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodePulseLiveActivityBundle.swift; sourceTree = "<group>"; };
-		3EB0548BFADFAFC3616A8C4B /* CodePulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodePulse.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3EB0548BFADFAFC3616A8C4B /* CodePulse-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "CodePulse-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		42BAF66F7C50D732B7E69333 /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
 		433D534BFD8D3D76B489B324 /* CodePulse-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "CodePulse-iOS.entitlements"; sourceTree = "<group>"; };
 		4A67A3CD19408484AB11BB73 /* CodePulseApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodePulseApp.swift; sourceTree = "<group>"; };
@@ -91,7 +92,8 @@
 		D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSOnboardingView.swift; sourceTree = "<group>"; };
 		DA699D0197B8A14FD7D1BDC4 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
 		DF291DF4A4EF932B774F227D /* IOSRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRootView.swift; sourceTree = "<group>"; };
-		F033CA1408917B1655BC66D2 /* CodePulseShared */ = {isa = PBXFileReference; lastKnownFileType = folder; path = CodePulseShared; sourceTree = SOURCE_ROOT; };
+		E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeHookServer.swift; sourceTree = "<group>"; };
+		F033CA1408917B1655BC66D2 /* CodePulseShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CodePulseShared; path = CodePulseShared; sourceTree = SOURCE_ROOT; };
 		F19A27E00B1B13A579A950F4 /* CloudKitReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitReceiver.swift; sourceTree = "<group>"; };
 		F71E03612F167D883C324D25 /* SessionStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -127,7 +129,7 @@
 		04721CC753DB3D170E2C8A15 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				3EB0548BFADFAFC3616A8C4B /* CodePulse.app */,
+				3EB0548BFADFAFC3616A8C4B /* CodePulse-iOS.app */,
 				8B5EA7075E9DC97237EF2227 /* CodePulse.app */,
 				3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */,
 			);
@@ -230,6 +232,7 @@
 		BF668ADCDAD9595E867B23D0 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */,
 				22479FA0953120F3B50A1AF3 /* CloudKitSync.swift */,
 				A19BA18A6829F0BE991D4C7D /* SessionFileParser.swift */,
 				42BAF66F7C50D732B7E69333 /* SessionScanner.swift */,
@@ -298,7 +301,7 @@
 				C1CA2B270135307CC4E2724D /* CodePulseShared */,
 			);
 			productName = "CodePulse-iOS";
-			productReference = 3EB0548BFADFAFC3616A8C4B /* CodePulse.app */;
+			productReference = 3EB0548BFADFAFC3616A8C4B /* CodePulse-iOS.app */;
 			productType = "com.apple.product-type.application";
 		};
 		AD1C1A5F9DF9E66175980B2F /* CodePulse */ = {
@@ -343,6 +346,7 @@
 			packageReferences = (
 				2546D0E01391BBF7D36B931E /* XCLocalSwiftPackageReference "CodePulseShared" */,
 			);
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -386,6 +390,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A98E0466D559EC6EBE0E39F4 /* ClaudeHookServer.swift in Sources */,
 				3DC7D9E7E79444359ED6D09F /* ClaudePaths.swift in Sources */,
 				106A1E305D6DBDFC35AF01BD /* CloudKitSync.swift in Sources */,
 				EB132AF39AB968D2DFA6151B /* CodePulseApp.swift in Sources */,
@@ -453,10 +458,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "CodePulse-macOS/App/CodePulse.entitlements";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = 7FUM8A8H72;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -468,7 +470,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse;
 				PRODUCT_NAME = CodePulse;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
 			};
@@ -479,10 +480,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "CodePulse-macOS/App/CodePulse.entitlements";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = 7FUM8A8H72;
 				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -494,7 +492,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse;
 				PRODUCT_NAME = CodePulse;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 6.0;
 			};
@@ -569,7 +566,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "CodePulse-iOS/App/CodePulse-iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 7FUM8A8H72;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -595,7 +591,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "CodePulse-iOS/App/CodePulse-iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 7FUM8A8H72;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

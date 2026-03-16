@@ -1,17 +1,18 @@
-//
-//  CodePulseIOSApp.swift
-//  CodePulse-iOS
-//
-//  Created by 李博凱 on 2026/3/16.
-//
-
 import SwiftUI
+import CodePulseShared
 
 @main
 struct CodePulseIOSApp: App {
+    @StateObject private var receiver = CloudKitReceiver()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            IOSRootView(receiver: receiver)
+                .task { await receiver.start() }
+                .task {
+                    let center = UNUserNotificationCenter.current()
+                    try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+                }
         }
     }
 }

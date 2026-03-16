@@ -28,21 +28,18 @@ struct JSONLEntry: Codable {
 
 struct JSONLSessionInfo {
     var model: String = "Unknown"
-    var totalInputTokens: Int = 0
-    var totalOutputTokens: Int = 0
-    var totalCacheReadTokens: Int = 0
-    var lastUpdateTime: Date?
+    var latestInputTokens: Int = 0  // Latest turn's input tokens (for context%)
+    var totalOutputTokens: Int = 0   // Sum of all output tokens (for cost)
 
     var contextPct: Int {
         let contextWindowSize = modelContextSize
-        guard contextWindowSize > 0 else { return 0 }
-        let used = totalInputTokens + totalCacheReadTokens
-        return min(100, (used * 100) / contextWindowSize)
+        guard contextWindowSize > 0, latestInputTokens > 0 else { return 0 }
+        return min(100, (latestInputTokens * 100) / contextWindowSize)
     }
 
     var costUSD: Double {
         let (inputRate, outputRate) = modelPricing
-        let inputCost = Double(totalInputTokens) * inputRate / 1_000_000
+        let inputCost = Double(latestInputTokens) * inputRate / 1_000_000
         let outputCost = Double(totalOutputTokens) * outputRate / 1_000_000
         return inputCost + outputCost
     }
@@ -81,8 +78,9 @@ enum JSONLTailReader {
     }
 
     static func extractInfo(url: URL) -> JSONLSessionInfo {
-        let lines = readTail(url: url)
+        let lines = readTail(url: url, lineCount: 100) // read more lines for better coverage
         var info = JSONLSessionInfo()
+        var totalOutputTokens = 0
 
         let decoder = JSONDecoder()
         for line in lines {
@@ -94,13 +92,19 @@ enum JSONLTailReader {
                     info.model = model
                 }
                 if let usage = message.usage {
-                    info.totalInputTokens += usage.inputTokens ?? 0
-                    info.totalOutputTokens += usage.outputTokens ?? 0
-                    info.totalCacheReadTokens += usage.cacheReadInputTokens ?? 0
+                    // Context%: use latest input tokens (each turn includes full context)
+                    let inputTokens = usage.inputTokens ?? 0
+                    let cacheReadTokens = usage.cacheReadInputTokens ?? 0
+                    if inputTokens > 0 {
+                        info.latestInputTokens = inputTokens + cacheReadTokens
+                    }
+                    // Cost: accumulate output tokens
+                    totalOutputTokens += usage.outputTokens ?? 0
                 }
             }
         }
 
+        info.totalOutputTokens = totalOutputTokens
         return info
     }
 

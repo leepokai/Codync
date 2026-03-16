@@ -5,11 +5,11 @@ struct ProgressBarView: View {
     let tasks: [TaskItem]
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 2) {
             ForEach(tasks) { task in
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(color(for: task.status))
-                    .frame(height: 6)
+                    .frame(height: 4)
             }
         }
     }
@@ -18,7 +18,7 @@ struct ProgressBarView: View {
         switch status {
         case .completed: return .green
         case .inProgress: return .cyan
-        case .pending: return Color(.separatorColor)
+        case .pending: return .primary.opacity(0.1)
         }
     }
 }

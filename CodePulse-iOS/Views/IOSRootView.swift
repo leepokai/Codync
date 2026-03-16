@@ -3,6 +3,7 @@ import CodePulseShared
 
 struct IOSRootView: View {
     @ObservedObject var receiver: CloudKitReceiver
+    @ObservedObject var liveActivityManager: LiveActivityManager
 
     var body: some View {
         NavigationStack {
@@ -11,6 +12,9 @@ struct IOSRootView: View {
             } else {
                 IOSSessionListView(sessions: receiver.sessions)
             }
+        }
+        .onChange(of: receiver.sessions) { _, sessions in
+            liveActivityManager.update(sessions: sessions)
         }
     }
 }

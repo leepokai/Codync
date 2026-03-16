@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SessionState: Codable, Identifiable, Sendable {
+public struct SessionState: Codable, Identifiable, Equatable, Sendable {
     public let sessionId: String
     public var projectName: String
     public var gitBranch: String

@@ -1,10 +1,3 @@
-//
-//  CodePulseLiveActivityBundle.swift
-//  CodePulseLiveActivity
-//
-//  Created by 李博凱 on 2026/3/16.
-//
-
 import WidgetKit
 import SwiftUI
 

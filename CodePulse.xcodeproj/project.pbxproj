@@ -6,277 +6,428 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0205D611148BDCAB840D0F47 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9580D32B5B29E049090D66C8 /* Assets.xcassets */; };
+		070688CBF55E74F38DC650E3 /* CodePulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 4BA154F0B1967DCBBB7600E5 /* CodePulseShared */; };
+		3037E7D95514810851C96989 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08923E0859DEAE69B93C7C4C /* ContentView.swift */; };
+		804863D604952293533147CF /* CodePulseLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B575261E2F89280C4805C654 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */; };
+		BB50434DF1BC51FED1AFED51 /* CodePulseLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9A7BAE27F6E4CEEDA1B48D /* CodePulseLiveActivityWidget.swift */; };
+		C7E108B87747D1CB7E7E1699 /* CodePulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = C1CA2B270135307CC4E2724D /* CodePulseShared */; };
+		D4BC114BC4A6C08EECD54925 /* CodePulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 7660B5D6DD8CC2065A9F4ED3 /* CodePulseShared */; };
+		DBA32139860ADE9ADED6B51E /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F8A433E43D68B1BB79F23B0 /* ContentView.swift */; };
+		E36D87A2D2D0F1177F263772 /* CodePulseLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BCD1168005B123A7F9ACB37 /* CodePulseLiveActivityBundle.swift */; };
+		EB132AF39AB968D2DFA6151B /* CodePulseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A67A3CD19408484AB11BB73 /* CodePulseApp.swift */; };
+		F4F54F91459EE6A15DD7B246 /* CodePulseIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8453D8BE6EE838E1B9EA4588 /* CodePulseIOSApp.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
-		AB98BCAD2F68543F003DF1BA /* PBXContainerItemProxy */ = {
+		B38F144A3A8B56B1FC2398CE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = AB98BC972F68543E003DF1BA /* Project object */;
+			containerPortal = 755EE78C119E5281024E6F90 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = AB98BC9E2F68543E003DF1BA;
-			remoteInfo = CodePulse;
-		};
-		AB98BCB72F68543F003DF1BA /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AB98BC972F68543E003DF1BA /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = AB98BC9E2F68543E003DF1BA;
-			remoteInfo = CodePulse;
+			remoteGlobalIDString = 6B3B927655EA5C595A71E513;
+			remoteInfo = CodePulseLiveActivity;
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		FC965E0F58168E06F093EAB5 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				804863D604952293533147CF /* CodePulseLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		AB98BC9F2F68543E003DF1BA /* CodePulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodePulse.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB98BCAC2F68543F003DF1BA /* CodePulseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CodePulseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		AB98BCB62F68543F003DF1BA /* CodePulseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CodePulseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		08923E0859DEAE69B93C7C4C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodePulseLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		3BCD1168005B123A7F9ACB37 /* CodePulseLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodePulseLiveActivityBundle.swift; sourceTree = "<group>"; };
+		3EB0548BFADFAFC3616A8C4B /* CodePulse-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "CodePulse-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		433D534BFD8D3D76B489B324 /* CodePulse-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "CodePulse-iOS.entitlements"; sourceTree = "<group>"; };
+		4A67A3CD19408484AB11BB73 /* CodePulseApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodePulseApp.swift; sourceTree = "<group>"; };
+		4F8A433E43D68B1BB79F23B0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		8453D8BE6EE838E1B9EA4588 /* CodePulseIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodePulseIOSApp.swift; sourceTree = "<group>"; };
+		8A9A7BAE27F6E4CEEDA1B48D /* CodePulseLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodePulseLiveActivityWidget.swift; sourceTree = "<group>"; };
+		8B5EA7075E9DC97237EF2227 /* CodePulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodePulse.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9580D32B5B29E049090D66C8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CD5A99B72DC7E1F01D755DF6 /* CodePulse.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodePulse.entitlements; sourceTree = "<group>"; };
+		F033CA1408917B1655BC66D2 /* CodePulseShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CodePulseShared; path = CodePulseShared; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		AB98BCA12F68543E003DF1BA /* CodePulse */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = CodePulse;
-			sourceTree = "<group>";
-		};
-		AB98BCAF2F68543F003DF1BA /* CodePulseTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = CodePulseTests;
-			sourceTree = "<group>";
-		};
-		AB98BCB92F68543F003DF1BA /* CodePulseUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = CodePulseUITests;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXFrameworksBuildPhase section */
-		AB98BC9C2F68543E003DF1BA /* Frameworks */ = {
+		33BB45F688B4E120B83A8B95 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4BC114BC4A6C08EECD54925 /* CodePulseShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AB98BCA92F68543F003DF1BA /* Frameworks */ = {
+		B751B672F1F83A923532F25D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				070688CBF55E74F38DC650E3 /* CodePulseShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AB98BCB32F68543F003DF1BA /* Frameworks */ = {
+		EBDCA5828CAAF005C11D4017 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C7E108B87747D1CB7E7E1699 /* CodePulseShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		AB98BC962F68543E003DF1BA = {
+		04721CC753DB3D170E2C8A15 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AB98BCA12F68543E003DF1BA /* CodePulse */,
-				AB98BCAF2F68543F003DF1BA /* CodePulseTests */,
-				AB98BCB92F68543F003DF1BA /* CodePulseUITests */,
-				AB98BCA02F68543E003DF1BA /* Products */,
-			);
-			sourceTree = "<group>";
-		};
-		AB98BCA02F68543E003DF1BA /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				AB98BC9F2F68543E003DF1BA /* CodePulse.app */,
-				AB98BCAC2F68543F003DF1BA /* CodePulseTests.xctest */,
-				AB98BCB62F68543F003DF1BA /* CodePulseUITests.xctest */,
+				3EB0548BFADFAFC3616A8C4B /* CodePulse-iOS.app */,
+				8B5EA7075E9DC97237EF2227 /* CodePulse.app */,
+				3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		0C96AC38D8727BFA29C5A3C2 /* CodePulse-iOS */ = {
+			isa = PBXGroup;
+			children = (
+				9580D32B5B29E049090D66C8 /* Assets.xcassets */,
+				1826180B05CCD48B46767A6C /* App */,
+				BF38CE6E12412C3D21C0B979 /* Services */,
+				32B90F722211C6377233886C /* Views */,
+			);
+			path = "CodePulse-iOS";
+			sourceTree = "<group>";
+		};
+		1826180B05CCD48B46767A6C /* App */ = {
+			isa = PBXGroup;
+			children = (
+				433D534BFD8D3D76B489B324 /* CodePulse-iOS.entitlements */,
+				8453D8BE6EE838E1B9EA4588 /* CodePulseIOSApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		32B90F722211C6377233886C /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				4F8A433E43D68B1BB79F23B0 /* ContentView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		38DD3C2C943D4DCC5208E8BB /* CodePulse-macOS */ = {
+			isa = PBXGroup;
+			children = (
+				3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */,
+				A938E4429F7EF26E67792A2E /* App */,
+				BF668ADCDAD9595E867B23D0 /* Services */,
+				3FCF1C54EE1B71553A70301E /* Utilities */,
+				81EF17B3D3346D74A837F710 /* Views */,
+			);
+			path = "CodePulse-macOS";
+			sourceTree = "<group>";
+		};
+		3FCF1C54EE1B71553A70301E /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		5B3C3F020EFA3298682EBB4D /* CodePulseLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				3BCD1168005B123A7F9ACB37 /* CodePulseLiveActivityBundle.swift */,
+				8A9A7BAE27F6E4CEEDA1B48D /* CodePulseLiveActivityWidget.swift */,
+			);
+			path = CodePulseLiveActivity;
+			sourceTree = "<group>";
+		};
+		81EF17B3D3346D74A837F710 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				08923E0859DEAE69B93C7C4C /* ContentView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A938E4429F7EF26E67792A2E /* App */ = {
+			isa = PBXGroup;
+			children = (
+				CD5A99B72DC7E1F01D755DF6 /* CodePulse.entitlements */,
+				4A67A3CD19408484AB11BB73 /* CodePulseApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		BF38CE6E12412C3D21C0B979 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		BF668ADCDAD9595E867B23D0 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		E69FE1F86317CB89D608ED70 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				F033CA1408917B1655BC66D2 /* CodePulseShared */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		F6E0D7AC712AA3B0F1759540 = {
+			isa = PBXGroup;
+			children = (
+				0C96AC38D8727BFA29C5A3C2 /* CodePulse-iOS */,
+				38DD3C2C943D4DCC5208E8BB /* CodePulse-macOS */,
+				5B3C3F020EFA3298682EBB4D /* CodePulseLiveActivity */,
+				E69FE1F86317CB89D608ED70 /* Packages */,
+				04721CC753DB3D170E2C8A15 /* Products */,
+			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AB98BC9E2F68543E003DF1BA /* CodePulse */ = {
+		6B3B927655EA5C595A71E513 /* CodePulseLiveActivity */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AB98BCC02F68543F003DF1BA /* Build configuration list for PBXNativeTarget "CodePulse" */;
+			buildConfigurationList = DF32303A18F63D7469748788 /* Build configuration list for PBXNativeTarget "CodePulseLiveActivity" */;
 			buildPhases = (
-				AB98BC9B2F68543E003DF1BA /* Sources */,
-				AB98BC9C2F68543E003DF1BA /* Frameworks */,
-				AB98BC9D2F68543E003DF1BA /* Resources */,
+				20089E1B60BEFCC7A55A8FB6 /* Sources */,
+				B751B672F1F83A923532F25D /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			fileSystemSynchronizedGroups = (
-				AB98BCA12F68543E003DF1BA /* CodePulse */,
+			name = CodePulseLiveActivity;
+			packageProductDependencies = (
+				4BA154F0B1967DCBBB7600E5 /* CodePulseShared */,
+			);
+			productName = CodePulseLiveActivity;
+			productReference = 3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		842C52E994476FBBD71C5E66 /* CodePulse-iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0E163C029ACFE1211477667 /* Build configuration list for PBXNativeTarget "CodePulse-iOS" */;
+			buildPhases = (
+				E9BB052BDAD97370F33645C0 /* Sources */,
+				D24261284760002490375CA2 /* Resources */,
+				EBDCA5828CAAF005C11D4017 /* Frameworks */,
+				FC965E0F58168E06F093EAB5 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2486A6FA3EF6F07F8C8C1869 /* PBXTargetDependency */,
+			);
+			name = "CodePulse-iOS";
+			packageProductDependencies = (
+				C1CA2B270135307CC4E2724D /* CodePulseShared */,
+			);
+			productName = "CodePulse-iOS";
+			productReference = 3EB0548BFADFAFC3616A8C4B /* CodePulse-iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AD1C1A5F9DF9E66175980B2F /* CodePulse */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 760757829424481109E47CF8 /* Build configuration list for PBXNativeTarget "CodePulse" */;
+			buildPhases = (
+				7F9A36AEDBA1D656A9BF8ADE /* Sources */,
+				B2D37B30DF1C57C6200F77CB /* Resources */,
+				33BB45F688B4E120B83A8B95 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
 			);
 			name = CodePulse;
 			packageProductDependencies = (
+				7660B5D6DD8CC2065A9F4ED3 /* CodePulseShared */,
 			);
 			productName = CodePulse;
-			productReference = AB98BC9F2F68543E003DF1BA /* CodePulse.app */;
+			productReference = 8B5EA7075E9DC97237EF2227 /* CodePulse.app */;
 			productType = "com.apple.product-type.application";
-		};
-		AB98BCAB2F68543F003DF1BA /* CodePulseTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AB98BCC32F68543F003DF1BA /* Build configuration list for PBXNativeTarget "CodePulseTests" */;
-			buildPhases = (
-				AB98BCA82F68543F003DF1BA /* Sources */,
-				AB98BCA92F68543F003DF1BA /* Frameworks */,
-				AB98BCAA2F68543F003DF1BA /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				AB98BCAE2F68543F003DF1BA /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				AB98BCAF2F68543F003DF1BA /* CodePulseTests */,
-			);
-			name = CodePulseTests;
-			packageProductDependencies = (
-			);
-			productName = CodePulseTests;
-			productReference = AB98BCAC2F68543F003DF1BA /* CodePulseTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		AB98BCB52F68543F003DF1BA /* CodePulseUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AB98BCC62F68543F003DF1BA /* Build configuration list for PBXNativeTarget "CodePulseUITests" */;
-			buildPhases = (
-				AB98BCB22F68543F003DF1BA /* Sources */,
-				AB98BCB32F68543F003DF1BA /* Frameworks */,
-				AB98BCB42F68543F003DF1BA /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				AB98BCB82F68543F003DF1BA /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				AB98BCB92F68543F003DF1BA /* CodePulseUITests */,
-			);
-			name = CodePulseUITests;
-			packageProductDependencies = (
-			);
-			productName = CodePulseUITests;
-			productReference = AB98BCB62F68543F003DF1BA /* CodePulseUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		AB98BC972F68543E003DF1BA /* Project object */ = {
+		755EE78C119E5281024E6F90 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2620;
-				TargetAttributes = {
-					AB98BC9E2F68543E003DF1BA = {
-						CreatedOnToolsVersion = 26.2;
-					};
-					AB98BCAB2F68543F003DF1BA = {
-						CreatedOnToolsVersion = 26.2;
-						TestTargetID = AB98BC9E2F68543E003DF1BA;
-					};
-					AB98BCB52F68543F003DF1BA = {
-						CreatedOnToolsVersion = 26.2;
-						TestTargetID = AB98BC9E2F68543E003DF1BA;
-					};
-				};
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
 			};
-			buildConfigurationList = AB98BC9A2F68543E003DF1BA /* Build configuration list for PBXProject "CodePulse" */;
+			buildConfigurationList = DA5B2EF5E622786143AC38D4 /* Build configuration list for PBXProject "CodePulse" */;
+			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				en,
 				Base,
+				en,
 			);
-			mainGroup = AB98BC962F68543E003DF1BA;
+			mainGroup = F6E0D7AC712AA3B0F1759540;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2546D0E01391BBF7D36B931E /* XCLocalSwiftPackageReference "CodePulseShared" */,
+			);
 			preferredProjectObjectVersion = 77;
-			productRefGroup = AB98BCA02F68543E003DF1BA /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AB98BC9E2F68543E003DF1BA /* CodePulse */,
-				AB98BCAB2F68543F003DF1BA /* CodePulseTests */,
-				AB98BCB52F68543F003DF1BA /* CodePulseUITests */,
+				AD1C1A5F9DF9E66175980B2F /* CodePulse */,
+				842C52E994476FBBD71C5E66 /* CodePulse-iOS */,
+				6B3B927655EA5C595A71E513 /* CodePulseLiveActivity */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		AB98BC9D2F68543E003DF1BA /* Resources */ = {
+		B2D37B30DF1C57C6200F77CB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B575261E2F89280C4805C654 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AB98BCAA2F68543F003DF1BA /* Resources */ = {
+		D24261284760002490375CA2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		AB98BCB42F68543F003DF1BA /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
+				0205D611148BDCAB840D0F47 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		AB98BC9B2F68543E003DF1BA /* Sources */ = {
+		20089E1B60BEFCC7A55A8FB6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E36D87A2D2D0F1177F263772 /* CodePulseLiveActivityBundle.swift in Sources */,
+				BB50434DF1BC51FED1AFED51 /* CodePulseLiveActivityWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AB98BCA82F68543F003DF1BA /* Sources */ = {
+		7F9A36AEDBA1D656A9BF8ADE /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EB132AF39AB968D2DFA6151B /* CodePulseApp.swift in Sources */,
+				3037E7D95514810851C96989 /* ContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AB98BCB22F68543F003DF1BA /* Sources */ = {
+		E9BB052BDAD97370F33645C0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F4F54F91459EE6A15DD7B246 /* CodePulseIOSApp.swift in Sources */,
+				DBA32139860ADE9ADED6B51E /* ContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		AB98BCAE2F68543F003DF1BA /* PBXTargetDependency */ = {
+		2486A6FA3EF6F07F8C8C1869 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = AB98BC9E2F68543E003DF1BA /* CodePulse */;
-			targetProxy = AB98BCAD2F68543F003DF1BA /* PBXContainerItemProxy */;
-		};
-		AB98BCB82F68543F003DF1BA /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = AB98BC9E2F68543E003DF1BA /* CodePulse */;
-			targetProxy = AB98BCB72F68543F003DF1BA /* PBXContainerItemProxy */;
+			target = 6B3B927655EA5C595A71E513 /* CodePulseLiveActivity */;
+			targetProxy = B38F144A3A8B56B1FC2398CE /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		AB98BCBE2F68543F003DF1BA /* Debug */ = {
+		05A665239A83C10C704662CC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_KEY_CFBundleDisplayName = CodePulseLiveActivity;
+				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse.ios.LiveActivity;
+				PRODUCT_NAME = CodePulseLiveActivity;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		0C75283ACAEDF302C26EABAE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "CodePulse-macOS/App/CodePulse.entitlements";
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse;
+				PRODUCT_NAME = CodePulse;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		0F19986BCBA4168115C96CAA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "CodePulse-macOS/App/CodePulse.entitlements";
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse;
+				PRODUCT_NAME = CodePulse;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		1BD4F14F5BA62C58590E3C84 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -304,17 +455,15 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
 					"$(inherited)",
+					"DEBUG=1",
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
@@ -322,25 +471,93 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = macosx;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
-		AB98BCBF2F68543F003DF1BA /* Release */ = {
+		74301E9EAFCD478E76A7FDEF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "CodePulse-iOS/App/CodePulse-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse.ios;
+				PRODUCT_NAME = CodePulse;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9A811AEDB402F850CF77C133 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "CodePulse-iOS/App/CodePulse-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse.ios;
+				PRODUCT_NAME = CodePulse;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BBB96964FECC01CD9E90CE59 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_KEY_CFBundleDisplayName = CodePulseLiveActivity;
+				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse.ios.LiveActivity;
+				PRODUCT_NAME = CodePulseLiveActivity;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EB49C7981C3E87EE7E670063 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -368,11 +585,9 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
@@ -380,199 +595,79 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				SDKROOT = macosx;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_COMPILATION_MODE = wholemodule;
-			};
-			name = Release;
-		};
-		AB98BCC12F68543F003DF1BA /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		AB98BCC22F68543F003DF1BA /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulse;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
-		AB98BCC42F68543F003DF1BA /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulseTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CodePulse.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CodePulse";
-			};
-			name = Debug;
-		};
-		AB98BCC52F68543F003DF1BA /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulseTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CodePulse.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CodePulse";
-			};
-			name = Release;
-		};
-		AB98BCC72F68543F003DF1BA /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulseUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = CodePulse;
-			};
-			name = Debug;
-		};
-		AB98BCC82F68543F003DF1BA /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.CodePulseUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = CodePulse;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AB98BC9A2F68543E003DF1BA /* Build configuration list for PBXProject "CodePulse" */ = {
+		760757829424481109E47CF8 /* Build configuration list for PBXNativeTarget "CodePulse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AB98BCBE2F68543F003DF1BA /* Debug */,
-				AB98BCBF2F68543F003DF1BA /* Release */,
+				0F19986BCBA4168115C96CAA /* Debug */,
+				0C75283ACAEDF302C26EABAE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
-		AB98BCC02F68543F003DF1BA /* Build configuration list for PBXNativeTarget "CodePulse" */ = {
+		C0E163C029ACFE1211477667 /* Build configuration list for PBXNativeTarget "CodePulse-iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AB98BCC12F68543F003DF1BA /* Debug */,
-				AB98BCC22F68543F003DF1BA /* Release */,
+				9A811AEDB402F850CF77C133 /* Debug */,
+				74301E9EAFCD478E76A7FDEF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
-		AB98BCC32F68543F003DF1BA /* Build configuration list for PBXNativeTarget "CodePulseTests" */ = {
+		DA5B2EF5E622786143AC38D4 /* Build configuration list for PBXProject "CodePulse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AB98BCC42F68543F003DF1BA /* Debug */,
-				AB98BCC52F68543F003DF1BA /* Release */,
+				1BD4F14F5BA62C58590E3C84 /* Debug */,
+				EB49C7981C3E87EE7E670063 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
-		AB98BCC62F68543F003DF1BA /* Build configuration list for PBXNativeTarget "CodePulseUITests" */ = {
+		DF32303A18F63D7469748788 /* Build configuration list for PBXNativeTarget "CodePulseLiveActivity" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				AB98BCC72F68543F003DF1BA /* Debug */,
-				AB98BCC82F68543F003DF1BA /* Release */,
+				BBB96964FECC01CD9E90CE59 /* Debug */,
+				05A665239A83C10C704662CC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		2546D0E01391BBF7D36B931E /* XCLocalSwiftPackageReference "CodePulseShared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = CodePulseShared;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4BA154F0B1967DCBBB7600E5 /* CodePulseShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodePulseShared;
+		};
+		7660B5D6DD8CC2065A9F4ED3 /* CodePulseShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodePulseShared;
+		};
+		C1CA2B270135307CC4E2724D /* CodePulseShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodePulseShared;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
-	rootObject = AB98BC972F68543E003DF1BA /* Project object */;
+	rootObject = 755EE78C119E5281024E6F90 /* Project object */;
 }

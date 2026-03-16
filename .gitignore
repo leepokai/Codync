@@ -1,1 +1,12 @@
 .superpowers/
+
+# Xcode
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+DerivedData/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved

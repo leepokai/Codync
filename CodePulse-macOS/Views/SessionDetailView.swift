@@ -7,35 +7,42 @@ struct SessionDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            // Navigation header
+            HStack(spacing: 6) {
                 Button(action: onBack) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 2) {
                         Image(systemName: "chevron.left")
-                        Text("Sessions")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: 12))
                     }
-                    .font(.system(size: 12))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+
                 Spacer()
+
                 StatusDotView(status: session.status)
                 Text(session.status.label)
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(session.status.color)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color.black.opacity(0.1))
 
-            Divider()
+            Divider().padding(.horizontal, 8)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
+
+                    // Title section
                     VStack(alignment: .leading, spacing: 4) {
                         Text(session.summary)
                             .font(.system(size: 14, weight: .semibold))
-                        HStack(spacing: 4) {
-                            Text(session.projectName)
+                            .lineLimit(2)
+
+                        HStack(spacing: 6) {
+                            Label(session.projectName, systemImage: "folder")
                             Text("·")
                             Text(session.gitBranch)
                             Text("·")
@@ -44,48 +51,51 @@ struct SessionDetailView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
 
+                    // Stats row
+                    HStack(spacing: 0) {
+                        statItem("\(session.contextPct)%", "Context")
+                        Divider().frame(height: 24)
+                        statItem(String(format: "$%.2f", session.costUSD), "Cost")
+                        Divider().frame(height: 24)
+                        statItem(formatDuration(session.durationSec), "Duration")
+                    }
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(.quaternary.opacity(0.3))
+                    )
+
+                    // Tasks section
                     if !session.tasks.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text("TASKS")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(.secondary)
+                                Text("Tasks")
+                                    .font(.system(size: 12, weight: .medium))
                                 Spacer()
-                                Text("\(session.completedTaskCount) of \(session.totalTaskCount)")
-                                    .font(.system(size: 10))
+                                Text("\(session.completedTaskCount)/\(session.totalTaskCount)")
+                                    .font(.system(size: 11, design: .rounded))
                                     .foregroundStyle(.secondary)
                             }
 
                             ProgressBarView(tasks: session.tasks)
 
-                            ForEach(session.tasks) { task in
-                                HStack(spacing: 6) {
-                                    taskIcon(task.status)
-                                    Text(task.content)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(taskColor(task.status))
-                                    if task.status == .inProgress, let form = task.activeForm {
-                                        Text("— \(form)")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.quaternary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(session.tasks) { task in
+                                    HStack(spacing: 6) {
+                                        taskIcon(task.status)
+                                        Text(task.content)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(task.status == .pending ? .tertiary : .primary)
+                                            .lineLimit(1)
                                     }
                                 }
                             }
                         }
-                        .padding(.horizontal, 12)
                     }
-
-                    HStack(spacing: 6) {
-                        statCard("CONTEXT", "\(session.contextPct)%", .orange)
-                        statCard("COST", String(format: "$%.2f", session.costUSD), .yellow)
-                        statCard("DURATION", formatDuration(session.durationSec), .pink)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
         }
     }
@@ -93,35 +103,36 @@ struct SessionDetailView: View {
     private func taskIcon(_ status: TaskStatus) -> some View {
         Group {
             switch status {
-            case .completed: Text("✓").foregroundStyle(.green)
-            case .inProgress: Text("◼").foregroundStyle(.cyan)
-            case .pending: Text("◻").foregroundStyle(.quaternary)
+            case .completed:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case .inProgress:
+                Image(systemName: "circlebadge.fill")
+                    .foregroundStyle(.cyan)
+            case .pending:
+                Image(systemName: "circle")
+                    .foregroundStyle(.tertiary)
             }
         }
         .font(.system(size: 11))
     }
 
-    private func taskColor(_ status: TaskStatus) -> Color {
-        switch status {
-        case .completed: return .green
-        case .inProgress: return .cyan
-        case .pending: return Color(.tertiaryLabelColor)
-        }
-    }
-
-    private func statCard(_ label: String, _ value: String, _ color: Color) -> some View {
+    private func statItem(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
-            Text(label).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 12, weight: .semibold)).foregroundStyle(color)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.15)))
     }
 
     private func formatDuration(_ seconds: Int) -> String {
         if seconds < 60 { return "\(seconds)s" }
         if seconds < 3600 { return "\(seconds / 60)m" }
-        return "\(seconds / 3600)h \((seconds % 3600) / 60)m"
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        return "\(h)h \(m)m"
     }
 }

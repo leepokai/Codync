@@ -193,7 +193,7 @@ On first launch, the macOS app scans all existing `~/.claude/sessions/*.json` fi
 - Memory: < 30MB
 - Binary size: < 2MB
 - JSONL reading: tail only (last ~50 lines), never full file
-- FSEvents debounce: 2 seconds
+- FSEvents debounce: 1 second
 - CloudKit write debounce: 2 seconds
 
 ## iPhone App Design

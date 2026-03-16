@@ -55,6 +55,7 @@ targets:
         PRODUCT_NAME: CodePulse
         SWIFT_VERSION: "6.0"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        GENERATE_INFOPLIST_FILE: true
         CODE_SIGN_ENTITLEMENTS: CodePulse-iOS/App/CodePulse-iOS.entitlements
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
@@ -87,6 +88,7 @@ targets:
         PRODUCT_NAME: CodePulseLiveActivity
         SWIFT_VERSION: "6.0"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        GENERATE_INFOPLIST_FILE: true
         INFOPLIST_KEY_CFBundleDisplayName: CodePulseLiveActivity
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
     dependencies:

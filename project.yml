@@ -27,9 +27,11 @@ targets:
         PRODUCT_NAME: CodePulse
         SWIFT_VERSION: "6.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
+        GENERATE_INFOPLIST_FILE: true
         CODE_SIGN_ENTITLEMENTS: CodePulse-macOS/App/CodePulse.entitlements
         ENABLE_APP_SANDBOX: false
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_LSUIElement: true
     entitlements:
       path: CodePulse-macOS/App/CodePulse.entitlements
       properties:

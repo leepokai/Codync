@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         stateManager = SessionStateManager(scanner: scanner)
+        stateManager.hookServer = hookServer // Connect hook state to state manager
         cloudKitSync = CloudKitSync(stateManager: stateManager)
         menuBarController = MenuBarController(stateManager: stateManager)
 

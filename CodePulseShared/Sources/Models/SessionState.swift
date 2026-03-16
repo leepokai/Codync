@@ -8,6 +8,7 @@ public struct SessionState: Codable, Identifiable, Equatable, Sendable {
     public var model: String
     public var summary: String
     public var currentTask: String?
+    public var lastEvent: String?
     public var tasks: [TaskItem]
     public var contextPct: Int
     public var costUSD: Double
@@ -33,7 +34,7 @@ public struct SessionState: Codable, Identifiable, Equatable, Sendable {
     public init(
         sessionId: String, projectName: String, gitBranch: String,
         status: SessionStatus, model: String, summary: String,
-        currentTask: String? = nil, tasks: [TaskItem] = [],
+        currentTask: String? = nil, lastEvent: String? = nil, tasks: [TaskItem] = [],
         contextPct: Int = 0, costUSD: Double = 0,
         startedAt: Date = Date(), durationSec: Int = 0,
         deviceId: String = "", updatedAt: Date = Date()
@@ -45,6 +46,7 @@ public struct SessionState: Codable, Identifiable, Equatable, Sendable {
         self.model = model
         self.summary = summary
         self.currentTask = currentTask
+        self.lastEvent = lastEvent
         self.tasks = tasks
         self.contextPct = contextPct
         self.costUSD = costUSD

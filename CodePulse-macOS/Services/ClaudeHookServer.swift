@@ -11,8 +11,15 @@ enum ClaudeState: String, Sendable {
     case needsPermission
 }
 
+/// Per-session hook state
+struct ClaudeSessionInfo: Sendable {
+    var state: ClaudeState
+    var lastEvent: String // e.g. "Using Bash", "Reading file", "Waiting for input"
+    var toolName: String? // e.g. "Bash", "Read", "Edit", "Write"
+}
+
 /// Lightweight HTTP server that receives Claude Code hook events for real-time updates.
-/// Tracks per-session Claude state from events (working/waiting/needsPermission).
+/// Tracks per-session Claude state + lastEvent from events (working/waiting/needsPermission).
 /// Auto-configures hooks in ~/.claude/settings.json on launch.
 final class ClaudeHookServer: @unchecked Sendable {
     private var listener: NWListener?
@@ -20,17 +27,21 @@ final class ClaudeHookServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.pokai.CodePulse.hooks", qos: .utility)
     private let lock = NSLock()
 
-    /// session_id -> ClaudeState, updated from hook events. Access via sessionStates computed property.
-    private var _sessionStates: [String: ClaudeState] = [:]
+    private var _sessions: [String: ClaudeSessionInfo] = [:]
 
-    /// Thread-safe read of session states
-    var sessionStates: [String: ClaudeState] {
+    /// Thread-safe read of session info
+    var sessions: [String: ClaudeSessionInfo] {
         lock.lock()
         defer { lock.unlock() }
-        return _sessionStates
+        return _sessions
     }
 
-    /// Called on main thread when any hook event arrives
+    /// Convenience: just the states
+    var sessionStates: [String: ClaudeState] {
+        let s = sessions
+        return s.mapValues { $0.state }
+    }
+
     var onEvent: (@Sendable () -> Void)?
 
     init(port: UInt16 = 19221) {
@@ -59,10 +70,22 @@ final class ClaudeHookServer: @unchecked Sendable {
         }
 
         var hooks = root["hooks"] as? [String: Any] ?? [:]
-        // Listen to more events for accurate state tracking
-        let events = ["PreToolUse", "PostToolUse", "Stop", "Notification", "SessionStart", "SessionEnd"]
+        let events = ["PreToolUse", "Stop", "Notification", "SessionStart", "SessionEnd"]
         let codePulseHook: [String: Any] = ["type": "http", "url": hookURL]
         var changed = false
+
+        // Clean up stale PostToolUse hooks if present (no longer needed)
+        if var postEntries = hooks["PostToolUse"] as? [[String: Any]] {
+            let before = postEntries.count
+            postEntries.removeAll { entry in
+                guard let entryHooks = entry["hooks"] as? [[String: Any]] else { return false }
+                return entryHooks.contains { ($0["url"] as? String) == hookURL }
+            }
+            if postEntries.count != before {
+                hooks["PostToolUse"] = postEntries.isEmpty ? nil : postEntries
+                changed = true
+            }
+        }
 
         for event in events {
             var entries = hooks[event] as? [[String: Any]] ?? []
@@ -168,6 +191,8 @@ final class ClaudeHookServer: @unchecked Sendable {
         receiveMore()
     }
 
+    // MARK: - Event Processing
+
     private func processRequest(_ data: Data) {
         guard let text = String(data: data, encoding: .utf8),
               let bodyStart = text.range(of: "\r\n\r\n") else { return }
@@ -179,52 +204,73 @@ final class ClaudeHookServer: @unchecked Sendable {
         let eventName = json["hook_event_name"] as? String ?? "unknown"
         let sessionId = json["session_id"] as? String
 
-        // Derive Claude state from event (same logic as Command app)
-        if let sessionId {
-            let newState: ClaudeState? = switch eventName {
-            case "SessionStart", "PreToolUse", "PostToolUse":
-                .working
-            case "Stop":
-                .waitingForUser
-            case "Notification":
-                parseNotificationState(json)
-            case "SessionEnd":
-                nil // remove session
-            default:
-                nil
-            }
-
-            lock.lock()
-            if let newState {
-                _sessionStates[sessionId] = newState
-            } else if eventName == "SessionEnd" {
-                _sessionStates.removeValue(forKey: sessionId)
-            }
-            lock.unlock()
-
-            logger.debug("Hook: \(eventName) → session \(sessionId.prefix(8))... → \(newState?.rawValue ?? "removed")")
-        } else {
+        guard let sessionId else {
             logger.debug("Hook: \(eventName) (no session_id)")
+            DispatchQueue.main.async { [weak self] in self?.onEvent?() }
+            return
         }
 
-        // Trigger immediate rescan on main thread
-        DispatchQueue.main.async { [weak self] in
-            self?.onEvent?()
+        let toolName = json["tool_name"] as? String
+
+        switch eventName {
+        case "SessionStart":
+            updateSession(sessionId, state: .working, lastEvent: "Session started")
+
+        case "PreToolUse":
+            let displayTool = formatToolName(toolName)
+            updateSession(sessionId, state: .working, lastEvent: "Using \(displayTool)", toolName: toolName)
+
+        case "Stop":
+            updateSession(sessionId, state: .waitingForUser, lastEvent: "Waiting for input")
+
+        case "Notification":
+            let notificationType = json["notification_type"] as? String
+                ?? (json["message"] as? [String: Any])?["notification_type"] as? String
+
+            switch notificationType {
+            case "permission_prompt":
+                updateSession(sessionId, state: .needsPermission, lastEvent: "Needs permission")
+            case "idle_prompt":
+                updateSession(sessionId, state: .waitingForUser, lastEvent: "Waiting for input")
+            default:
+                // Don't change state for unknown notifications
+                logger.debug("Hook: Notification type=\(notificationType ?? "nil") for \(sessionId.prefix(8))...")
+            }
+
+        case "SessionEnd":
+            lock.lock()
+            _sessions.removeValue(forKey: sessionId)
+            lock.unlock()
+            logger.debug("Hook: SessionEnd → session \(sessionId.prefix(8))... removed")
+
+        default:
+            logger.debug("Hook: unknown event \(eventName)")
         }
+
+        DispatchQueue.main.async { [weak self] in self?.onEvent?() }
     }
 
-    private func parseNotificationState(_ json: [String: Any]) -> ClaudeState {
-        // Check notification type for permission prompts
-        if let message = json["message"] as? String {
-            if message.contains("permission") {
-                return .needsPermission
-            }
+    private func updateSession(_ sessionId: String, state: ClaudeState, lastEvent: String, toolName: String? = nil) {
+        lock.lock()
+        _sessions[sessionId] = ClaudeSessionInfo(state: state, lastEvent: lastEvent, toolName: toolName)
+        lock.unlock()
+        logger.debug("Hook: \(lastEvent) → session \(sessionId.prefix(8))... → \(state.rawValue)")
+    }
+
+    private func formatToolName(_ name: String?) -> String {
+        guard let name else { return "tool" }
+        switch name {
+        case "Bash": return "Bash"
+        case "Read": return "Read"
+        case "Edit": return "Edit"
+        case "Write": return "Write"
+        case "Glob": return "Glob"
+        case "Grep": return "Grep"
+        case "Agent": return "Agent"
+        case "TodoWrite", "TaskCreate", "TaskUpdate": return "Tasks"
+        case "WebFetch": return "WebFetch"
+        case "WebSearch": return "WebSearch"
+        default: return name
         }
-        if let type = json["type"] as? String {
-            if type.contains("permission") {
-                return .needsPermission
-            }
-        }
-        return .waitingForUser
     }
 }

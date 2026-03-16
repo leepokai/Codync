@@ -27,7 +27,7 @@ final class SessionStateManager: ObservableObject {
     }
 
     private func updateSessions(from rawSessions: [String: RawSessionFile]) {
-        let hookStates = hookServer?.sessionStates ?? [:]
+        let hookSessions = hookServer?.sessions ?? [:]
         var updated: [SessionState] = []
 
         for (sessionId, raw) in rawSessions {
@@ -35,14 +35,16 @@ final class SessionStateManager: ObservableObject {
             let indexEntry = SessionFileParser.parseSessionIndex(cwd: raw.cwd, sessionId: sessionId)
             let jsonlUrl = ClaudePaths.jsonlPath(cwd: raw.cwd, sessionId: sessionId)
             let jsonlInfo = JSONLTailReader.extractInfo(url: jsonlUrl)
+            let hookInfo = hookSessions[sessionId]
 
             // Use hook state as primary source of truth (like Command app)
-            let status = detectStatus(sessionId: sessionId, raw: raw, tasks: tasks, hookState: hookStates[sessionId])
+            let status = detectStatus(sessionId: sessionId, raw: raw, tasks: tasks, hookState: hookInfo?.state)
 
             let projectName = URL(fileURLWithPath: raw.cwd).lastPathComponent
             let startDate = Date(timeIntervalSince1970: TimeInterval(raw.startedAt) / 1000)
             let duration = Int(Date().timeIntervalSince(startDate))
             let currentTask = tasks.first(where: { $0.status == .inProgress })?.activeForm
+            let lastEvent = hookInfo?.lastEvent
 
             let summary = indexEntry?.summary
                 ?? indexEntry?.firstPrompt.map { String($0.prefix(50)) }
@@ -54,6 +56,7 @@ final class SessionStateManager: ObservableObject {
                 || existingSession?.tasks != tasks
                 || existingSession?.contextPct != jsonlInfo.contextPct
                 || existingSession?.currentTask != currentTask
+                || existingSession?.lastEvent != lastEvent
 
             let updatedAt = contentChanged ? Date() : (existingSession?.updatedAt ?? Date())
 
@@ -65,6 +68,7 @@ final class SessionStateManager: ObservableObject {
                 model: formatModel(jsonlInfo.model),
                 summary: summary,
                 currentTask: currentTask,
+                lastEvent: lastEvent,
                 tasks: tasks,
                 contextPct: jsonlInfo.contextPct,
                 costUSD: jsonlInfo.costUSD,

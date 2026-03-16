@@ -4,12 +4,33 @@ import os
 
 private let logger = Logger(subsystem: "com.pokai.CodePulse", category: "HookServer")
 
+/// Claude Code session state derived from hook events (like Command app)
+enum ClaudeState: String, Sendable {
+    case working
+    case waitingForUser
+    case needsPermission
+}
+
 /// Lightweight HTTP server that receives Claude Code hook events for real-time updates.
+/// Tracks per-session Claude state from events (working/waiting/needsPermission).
 /// Auto-configures hooks in ~/.claude/settings.json on launch.
 final class ClaudeHookServer: @unchecked Sendable {
     private var listener: NWListener?
     private let port: UInt16
     private let queue = DispatchQueue(label: "com.pokai.CodePulse.hooks", qos: .utility)
+    private let lock = NSLock()
+
+    /// session_id -> ClaudeState, updated from hook events. Access via sessionStates computed property.
+    private var _sessionStates: [String: ClaudeState] = [:]
+
+    /// Thread-safe read of session states
+    var sessionStates: [String: ClaudeState] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _sessionStates
+    }
+
+    /// Called on main thread when any hook event arrives
     var onEvent: (@Sendable () -> Void)?
 
     init(port: UInt16 = 19221) {
@@ -38,7 +59,8 @@ final class ClaudeHookServer: @unchecked Sendable {
         }
 
         var hooks = root["hooks"] as? [String: Any] ?? [:]
-        let events = ["PostToolUse", "Stop", "SessionStart", "SessionEnd"]
+        // Listen to more events for accurate state tracking
+        let events = ["PreToolUse", "PostToolUse", "Stop", "Notification", "SessionStart", "SessionEnd"]
         let codePulseHook: [String: Any] = ["type": "http", "url": hookURL]
         var changed = false
 
@@ -111,7 +133,6 @@ final class ClaudeHookServer: @unchecked Sendable {
     private func handleConnection(_ connection: NWConnection) {
         connection.start(queue: queue)
 
-        // Use a class wrapper to avoid capturing mutable var in Sendable closure
         final class DataAccumulator: @unchecked Sendable {
             var data = Data()
         }
@@ -148,22 +169,62 @@ final class ClaudeHookServer: @unchecked Sendable {
     }
 
     private func processRequest(_ data: Data) {
-        guard let text = String(data: data, encoding: .utf8) else { return }
+        guard let text = String(data: data, encoding: .utf8),
+              let bodyStart = text.range(of: "\r\n\r\n") else { return }
 
-        var eventName = "unknown"
-        if let bodyStart = text.range(of: "\r\n\r\n") {
-            let body = String(text[bodyStart.upperBound...])
-            if let bodyData = body.data(using: .utf8),
-               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
-                eventName = json["hook_event_name"] as? String ?? "unknown"
+        let body = String(text[bodyStart.upperBound...])
+        guard let bodyData = body.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else { return }
+
+        let eventName = json["hook_event_name"] as? String ?? "unknown"
+        let sessionId = json["session_id"] as? String
+
+        // Derive Claude state from event (same logic as Command app)
+        if let sessionId {
+            let newState: ClaudeState? = switch eventName {
+            case "SessionStart", "PreToolUse", "PostToolUse":
+                .working
+            case "Stop":
+                .waitingForUser
+            case "Notification":
+                parseNotificationState(json)
+            case "SessionEnd":
+                nil // remove session
+            default:
+                nil
             }
-        }
 
-        logger.debug("Hook event: \(eventName)")
+            lock.lock()
+            if let newState {
+                _sessionStates[sessionId] = newState
+            } else if eventName == "SessionEnd" {
+                _sessionStates.removeValue(forKey: sessionId)
+            }
+            lock.unlock()
+
+            logger.debug("Hook: \(eventName) → session \(sessionId.prefix(8))... → \(newState?.rawValue ?? "removed")")
+        } else {
+            logger.debug("Hook: \(eventName) (no session_id)")
+        }
 
         // Trigger immediate rescan on main thread
         DispatchQueue.main.async { [weak self] in
             self?.onEvent?()
         }
+    }
+
+    private func parseNotificationState(_ json: [String: Any]) -> ClaudeState {
+        // Check notification type for permission prompts
+        if let message = json["message"] as? String {
+            if message.contains("permission") {
+                return .needsPermission
+            }
+        }
+        if let type = json["type"] as? String {
+            if type.contains("permission") {
+                return .needsPermission
+            }
+        }
+        return .waitingForUser
     }
 }

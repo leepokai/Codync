@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		0205D611148BDCAB840D0F47 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9580D32B5B29E049090D66C8 /* Assets.xcassets */; };
 		070688CBF55E74F38DC650E3 /* CodePulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 4BA154F0B1967DCBBB7600E5 /* CodePulseShared */; };
-		3037E7D95514810851C96989 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08923E0859DEAE69B93C7C4C /* ContentView.swift */; };
 		804863D604952293533147CF /* CodePulseLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B575261E2F89280C4805C654 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */; };
 		BB50434DF1BC51FED1AFED51 /* CodePulseLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9A7BAE27F6E4CEEDA1B48D /* CodePulseLiveActivityWidget.swift */; };
@@ -23,6 +22,14 @@
 		E3C8E587447D41AE9F8BF0CF /* ClaudePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA494301693D443F8FD797D7 /* ClaudePaths.swift */; };
 		CE2560F773384F74989BD043 /* SessionFileParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B15463A7EE485B8B6C304B /* SessionFileParser.swift */; };
 		311FECFF65054BA2B657AF93 /* JSONLTailReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7582EF7C72A74D8F90599D0D /* JSONLTailReader.swift */; };
+		AA11BB22CC33DD44EE550001 /* SessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE440001 /* SessionScanner.swift */; };
+		AA11BB22CC33DD44EE550002 /* SessionStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE440002 /* SessionStateManager.swift */; };
+		AA11BB22CC33DD44EE550003 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE440003 /* MenuBarController.swift */; };
+		AA11BB22CC33DD44EE550004 /* StatusDotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE440004 /* StatusDotView.swift */; };
+		AA11BB22CC33DD44EE550005 /* ProgressBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE440005 /* ProgressBarView.swift */; };
+		AA11BB22CC33DD44EE550006 /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE440006 /* SessionRowView.swift */; };
+		AA11BB22CC33DD44EE550007 /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE440007 /* SessionListView.swift */; };
+		AA11BB22CC33DD44EE550008 /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE440008 /* SessionDetailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -50,7 +57,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		08923E0859DEAE69B93C7C4C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3B652652FD106495A82565C8 /* CodePulseLiveActivity.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodePulseLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3BCD1168005B123A7F9ACB37 /* CodePulseLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodePulseLiveActivityBundle.swift; sourceTree = "<group>"; };
@@ -68,6 +74,14 @@
 		CA494301693D443F8FD797D7 /* ClaudePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePaths.swift; sourceTree = "<group>"; };
 		B6B15463A7EE485B8B6C304B /* SessionFileParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFileParser.swift; sourceTree = "<group>"; };
 		7582EF7C72A74D8F90599D0D /* JSONLTailReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONLTailReader.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE440001 /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE440002 /* SessionStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateManager.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE440003 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE440004 /* StatusDotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusDotView.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE440005 /* ProgressBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressBarView.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE440006 /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE440007 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE440008 /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -170,7 +184,11 @@
 		81EF17B3D3346D74A837F710 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				08923E0859DEAE69B93C7C4C /* ContentView.swift */,
+				AA11BB22CC33DD44EE440004 /* StatusDotView.swift */,
+				AA11BB22CC33DD44EE440005 /* ProgressBarView.swift */,
+				AA11BB22CC33DD44EE440006 /* SessionRowView.swift */,
+				AA11BB22CC33DD44EE440007 /* SessionListView.swift */,
+				AA11BB22CC33DD44EE440008 /* SessionDetailView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -180,6 +198,7 @@
 			children = (
 				CD5A99B72DC7E1F01D755DF6 /* CodePulse.entitlements */,
 				4A67A3CD19408484AB11BB73 /* CodePulseApp.swift */,
+				AA11BB22CC33DD44EE440003 /* MenuBarController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -195,6 +214,8 @@
 			isa = PBXGroup;
 			children = (
 				B6B15463A7EE485B8B6C304B /* SessionFileParser.swift */,
+				AA11BB22CC33DD44EE440001 /* SessionScanner.swift */,
+				AA11BB22CC33DD44EE440002 /* SessionStateManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -349,11 +370,18 @@
 			buildActionMask = 2147483647;
 			files = (
 				EB132AF39AB968D2DFA6151B /* CodePulseApp.swift in Sources */,
-				3037E7D95514810851C96989 /* ContentView.swift in Sources */,
+				AA11BB22CC33DD44EE550003 /* MenuBarController.swift in Sources */,
 				C1C1204B22A14AEC955654F0 /* PIDChecker.swift in Sources */,
 				E3C8E587447D41AE9F8BF0CF /* ClaudePaths.swift in Sources */,
 				CE2560F773384F74989BD043 /* SessionFileParser.swift in Sources */,
 				311FECFF65054BA2B657AF93 /* JSONLTailReader.swift in Sources */,
+				AA11BB22CC33DD44EE550001 /* SessionScanner.swift in Sources */,
+				AA11BB22CC33DD44EE550002 /* SessionStateManager.swift in Sources */,
+				AA11BB22CC33DD44EE550004 /* StatusDotView.swift in Sources */,
+				AA11BB22CC33DD44EE550005 /* ProgressBarView.swift in Sources */,
+				AA11BB22CC33DD44EE550006 /* SessionRowView.swift in Sources */,
+				AA11BB22CC33DD44EE550007 /* SessionListView.swift in Sources */,
+				AA11BB22CC33DD44EE550008 /* SessionDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,17 +1,24 @@
-//
-//  CodePulseApp.swift
-//  CodePulse
-//
-//  Created by 李博凱 on 2026/3/16.
-//
-
 import SwiftUI
 
 @main
 struct CodePulseApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+        Settings { EmptyView() }
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var menuBarController: MenuBarController?
+    let scanner = SessionScanner()
+    var stateManager: SessionStateManager!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        stateManager = SessionStateManager(scanner: scanner)
+        menuBarController = MenuBarController(stateManager: stateManager)
+        scanner.start()
     }
 }

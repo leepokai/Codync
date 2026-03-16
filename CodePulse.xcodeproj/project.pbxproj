@@ -19,6 +19,10 @@
 		E36D87A2D2D0F1177F263772 /* CodePulseLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BCD1168005B123A7F9ACB37 /* CodePulseLiveActivityBundle.swift */; };
 		EB132AF39AB968D2DFA6151B /* CodePulseApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A67A3CD19408484AB11BB73 /* CodePulseApp.swift */; };
 		F4F54F91459EE6A15DD7B246 /* CodePulseIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8453D8BE6EE838E1B9EA4588 /* CodePulseIOSApp.swift */; };
+		C1C1204B22A14AEC955654F0 /* PIDChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47E9EBDBE2D94F718632D454 /* PIDChecker.swift */; };
+		E3C8E587447D41AE9F8BF0CF /* ClaudePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA494301693D443F8FD797D7 /* ClaudePaths.swift */; };
+		CE2560F773384F74989BD043 /* SessionFileParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B15463A7EE485B8B6C304B /* SessionFileParser.swift */; };
+		311FECFF65054BA2B657AF93 /* JSONLTailReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7582EF7C72A74D8F90599D0D /* JSONLTailReader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +64,10 @@
 		9580D32B5B29E049090D66C8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CD5A99B72DC7E1F01D755DF6 /* CodePulse.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodePulse.entitlements; sourceTree = "<group>"; };
 		F033CA1408917B1655BC66D2 /* CodePulseShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CodePulseShared; path = CodePulseShared; sourceTree = SOURCE_ROOT; };
+		47E9EBDBE2D94F718632D454 /* PIDChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PIDChecker.swift; sourceTree = "<group>"; };
+		CA494301693D443F8FD797D7 /* ClaudePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePaths.swift; sourceTree = "<group>"; };
+		B6B15463A7EE485B8B6C304B /* SessionFileParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFileParser.swift; sourceTree = "<group>"; };
+		7582EF7C72A74D8F90599D0D /* JSONLTailReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONLTailReader.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -143,6 +151,9 @@
 		3FCF1C54EE1B71553A70301E /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				47E9EBDBE2D94F718632D454 /* PIDChecker.swift */,
+				CA494301693D443F8FD797D7 /* ClaudePaths.swift */,
+				7582EF7C72A74D8F90599D0D /* JSONLTailReader.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -183,6 +194,7 @@
 		BF668ADCDAD9595E867B23D0 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				B6B15463A7EE485B8B6C304B /* SessionFileParser.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -338,6 +350,10 @@
 			files = (
 				EB132AF39AB968D2DFA6151B /* CodePulseApp.swift in Sources */,
 				3037E7D95514810851C96989 /* ContentView.swift in Sources */,
+				C1C1204B22A14AEC955654F0 /* PIDChecker.swift in Sources */,
+				E3C8E587447D41AE9F8BF0CF /* ClaudePaths.swift in Sources */,
+				CE2560F773384F74989BD043 /* SessionFileParser.swift in Sources */,
+				311FECFF65054BA2B657AF93 /* JSONLTailReader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

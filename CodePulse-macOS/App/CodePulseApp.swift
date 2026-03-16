@@ -10,7 +10,6 @@ struct CodePulseApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
     var body: some Scene {
-        // Menu bar only app — no windows
         Settings { EmptyView() }
     }
 }
@@ -21,21 +20,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let scanner = SessionScanner()
     var stateManager: SessionStateManager!
     var cloudKitSync: CloudKitSync!
+    let hookServer = ClaudeHookServer()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Hide from Dock — must be called early
         NSApp.setActivationPolicy(.accessory)
 
         stateManager = SessionStateManager(scanner: scanner)
         cloudKitSync = CloudKitSync(stateManager: stateManager)
         menuBarController = MenuBarController(stateManager: stateManager)
-        scanner.start()
 
-        logger.info("CodePulse launched, menu bar active")
+        // Hook server for real-time updates
+        hookServer.ensureHooksConfigured()
+        hookServer.onEvent = { [weak self] in
+            self?.scanner.scan() // Immediate rescan on hook event
+        }
+        hookServer.start()
+
+        scanner.start()
+        logger.info("CodePulse launched — menu bar + hook server active")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        scanner.stop()
+        hookServer.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Don't quit when popover closes
         false
     }
 }

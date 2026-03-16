@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+import os
+
+private let logger = Logger(subsystem: "com.pokai.CodePulse", category: "SessionScanner")
 
 @MainActor
 final class SessionScanner: ObservableObject {
@@ -20,6 +23,7 @@ final class SessionScanner: ObservableObject {
                 self?.scan()
             }
         }
+        logger.info("SessionScanner started, watching \(ClaudePaths.sessionsDir.path)")
     }
 
     func stop() {
@@ -28,6 +32,7 @@ final class SessionScanner: ObservableObject {
         scanTimer?.invalidate()
         scanTimer = nil
         debounceTask?.cancel()
+        logger.info("SessionScanner stopped")
     }
 
     private func scheduleScan() {
@@ -46,12 +51,18 @@ final class SessionScanner: ObservableObject {
             guard PIDChecker.isAlive(pid: file.pid) else { continue }
             newSessions[file.sessionId] = file
         }
+        if newSessions.count != activeSessions.count {
+            logger.info("Active sessions: \(newSessions.count)")
+        }
         activeSessions = newSessions
     }
 
     private func watchDirectory(_ url: URL, handler: @escaping () -> Void) {
         let fd = open(url.path, O_EVTONLY)
-        guard fd >= 0 else { return }
+        guard fd >= 0 else {
+            logger.warning("Failed to watch directory: \(url.path)")
+            return
+        }
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .rename, .delete],

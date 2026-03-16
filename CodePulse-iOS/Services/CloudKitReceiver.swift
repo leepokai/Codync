@@ -2,6 +2,9 @@ import Foundation
 import CloudKit
 import Combine
 import CodePulseShared
+import os
+
+private let logger = Logger(subsystem: "com.pokai.CodePulse.ios", category: "CloudKitReceiver")
 
 @MainActor
 final class CloudKitReceiver: ObservableObject {
@@ -11,8 +14,9 @@ final class CloudKitReceiver: ObservableObject {
     func start() async {
         do {
             try await CloudKitManager.shared.subscribeToChanges()
+            logger.info("CloudKit subscription active")
         } catch {
-            print("Failed to subscribe to CloudKit changes: \(error)")
+            logger.error("Failed to subscribe to CloudKit: \(error.localizedDescription)")
         }
         await fetch()
     }
@@ -20,17 +24,20 @@ final class CloudKitReceiver: ObservableObject {
     func fetch() async {
         do {
             sessions = try await CloudKitManager.shared.fetchAll()
+            logger.debug("Fetched \(self.sessions.count) sessions")
         } catch {
-            print("Failed to fetch from CloudKit: \(error)")
+            logger.error("CloudKit fetch failed: \(error.localizedDescription)")
         }
     }
 
     func onRemoteNotification() async {
+        logger.debug("Remote notification received")
         await fetch()
     }
 
     func startPolling() {
         guard pollTimer == nil else { return }
+        logger.info("Starting CloudKit polling (30s interval)")
         pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.fetch()
@@ -41,5 +48,6 @@ final class CloudKitReceiver: ObservableObject {
     func stopPolling() {
         pollTimer?.invalidate()
         pollTimer = nil
+        logger.info("Stopped CloudKit polling")
     }
 }

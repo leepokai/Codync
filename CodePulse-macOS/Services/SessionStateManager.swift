@@ -41,6 +41,16 @@ final class SessionStateManager: ObservableObject {
                 ?? indexEntry?.firstPrompt.map { String($0.prefix(50)) }
                 ?? projectName
 
+            // Only update timestamp if content actually changed
+            let existingSession = sessions.first { $0.sessionId == sessionId }
+            let contentChanged = existingSession == nil
+                || existingSession?.status != status
+                || existingSession?.tasks != tasks
+                || existingSession?.contextPct != jsonlInfo.contextPct
+                || existingSession?.currentTask != currentTask
+
+            let updatedAt = contentChanged ? Date() : (existingSession?.updatedAt ?? Date())
+
             let session = SessionState(
                 sessionId: sessionId,
                 projectName: projectName,
@@ -55,7 +65,7 @@ final class SessionStateManager: ObservableObject {
                 startedAt: startDate,
                 durationSec: duration,
                 deviceId: deviceId,
-                updatedAt: Date()
+                updatedAt: updatedAt
             )
             updated.append(session)
         }

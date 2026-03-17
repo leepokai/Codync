@@ -36,14 +36,6 @@ public final class CloudKitManager: Sendable {
             }
         }
         logger.info("Fetch phase: \(existingRecords.count) existing, \(sessions.count - existingRecords.count) new")
-        // File-based debug log (os.Logger not visible from CLI)
-        let debugLine = "[\(Date())] CK fetch: \(existingRecords.count) existing, \(sessions.count - existingRecords.count) new\n"
-        let debugURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codepulse/cloudkit-debug.log")
-        if let handle = try? FileHandle(forWritingTo: debugURL) {
-            handle.seekToEndOfFile()
-            handle.write(debugLine.data(using: .utf8)!)
-            try? handle.close()
-        }
 
         // Build records: update existing or create new
         let records: [CKRecord] = sessions.map { session in

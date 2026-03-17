@@ -45,20 +45,7 @@ enum SessionFileParser {
     }
 
     static func parseTasks(sessionId: String) -> [TaskItem] {
-        let todoTasks = parseTodos(sessionId: sessionId)
-        if !todoTasks.isEmpty { return todoTasks }
-
-        // Fallback: check tasks directory for highwatermark
-        let dir = ClaudePaths.tasksPath(sessionId: sessionId)
-        let hwPath = dir.appendingPathComponent(".highwatermark")
-        guard let hwData = try? String(contentsOf: hwPath, encoding: .utf8),
-              let maxId = Int(hwData.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            return []
-        }
-
-        return (1...maxId).map {
-            TaskItem(id: "\($0)", content: "Task \($0)", status: .pending)
-        }
+        parseTodos(sessionId: sessionId)
     }
 
     static func parseTodos(sessionId: String) -> [TaskItem] {

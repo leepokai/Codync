@@ -3,67 +3,76 @@ import CodePulseShared
 
 struct SessionRowView: View {
     let session: SessionState
+    let onSelect: () -> Void
+    @Environment(\.theme) private var theme
     @State private var isHovered = false
+    @State private var isPressed = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            StatusDotView(status: session.status)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(session.summary)
-                    .font(.system(size: 13, weight: isHovered ? .medium : .regular))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                // Show lastEvent or status subtitle
-                if let subtitle = subtitleText {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(subtitleColor)
-                        .lineLimit(1)
-                }
+        Button(action: {
+            withAnimation(.spring(duration: 0.15)) { isPressed = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                withAnimation(.spring(duration: 0.15)) { isPressed = false }
             }
+            onSelect()
+        }) {
+            HStack(spacing: 8) {
+                SessionStatusView(
+                    status: session.status,
+                    completedTasks: session.completedTaskCount,
+                    totalTasks: session.totalTaskCount
+                )
 
-            Spacer(minLength: 4)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(session.summary)
+                            .font(.system(size: 13, weight: isHovered ? .medium : .regular))
+                            .foregroundStyle(theme.primaryText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if !session.model.isEmpty {
+                            SessionTagView(tag: session.model)
+                        }
+                    }
+                    if let subtitle = session.lastEvent ?? session.currentTask {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(session.status == .needsInput ? theme.warning : theme.secondaryText)
+                            .lineLimit(1)
+                    }
+                }
 
-            Text(relativeTime(session.startedAt))
-                .font(.system(size: 11, design: .rounded))
-                .foregroundStyle(.tertiary)
+                Spacer(minLength: 4)
+
+                Text(relativeTime(session.startedAt))
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(theme.secondaryText)
+            }
+            .padding(.leading, 6)
+            .padding(.trailing, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(isPressed ? theme.primaryText.opacity(0.1)
+                          : isHovered ? theme.primaryText.opacity(0.06)
+                          : Color.clear)
+            )
+            .scaleEffect(isPressed ? 0.98 : 1.0)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
-        )
-        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { isHovered = h } }
-        .contentShape(Rectangle())
-    }
-
-    private var subtitleText: String? {
-        if let lastEvent = session.lastEvent {
-            return lastEvent
-        }
-        if let currentTask = session.currentTask {
-            return currentTask
-        }
-        return nil
-    }
-
-    private var subtitleColor: Color {
-        switch session.status {
-        case .working: return .green
-        case .needsInput: return .orange
-        case .error: return .red
-        default: return .secondary
+        .buttonStyle(.plain)
+        .padding(.horizontal, 2)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
         }
     }
 
     private func relativeTime(_ date: Date) -> String {
         let seconds = -date.timeIntervalSinceNow
         if seconds < 60 { return "now" }
-        if seconds < 3600 { return "\(Int(seconds / 60))m" }
-        if seconds < 86400 { return "\(Int(seconds / 3600))h" }
-        return "\(Int(seconds / 86400))d"
+        if seconds < 3600 { return "\(Int(seconds / 60))m ago" }
+        if seconds < 86400 { return "\(Int(seconds / 3600))h ago" }
+        if seconds < 604800 { return "\(Int(seconds / 86400))d ago" }
+        return "\(Int(seconds / 604800))w ago"
     }
 }

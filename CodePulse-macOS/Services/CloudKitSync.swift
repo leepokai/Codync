@@ -25,11 +25,27 @@ final class CloudKitSync {
         logger.info("CloudKitSync initialized")
     }
 
+    private static let logURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".codepulse/cloudkit-debug.log")
+
+    private static func log(_ msg: String) {
+        let line = "[\(Date())] \(msg)\n"
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            handle.seekToEndOfFile()
+            handle.write(line.data(using: .utf8)!)
+            try? handle.close()
+        } else {
+            try? line.write(to: logURL, atomically: false, encoding: .utf8)
+        }
+    }
+
     private func syncToCloud(_ sessions: [SessionState]) {
         guard !isSyncing else { return }
 
         // Respect quota backoff
         if let backoff = quotaBackoffUntil, Date() < backoff {
+            let remaining = Int(backoff.timeIntervalSinceNow)
+            Self.log("Quota backoff: \(remaining)s remaining")
             return
         }
         quotaBackoffUntil = nil
@@ -42,30 +58,22 @@ final class CloudKitSync {
         guard !changed.isEmpty else { return }
 
         isSyncing = true
-        logger.info("Syncing \(changed.count) changed sessions to CloudKit...")
 
         Task {
             defer { isSyncing = false }
 
-            var syncedCount = 0
-            for session in changed {
-                do {
-                    try await CloudKitManager.shared.save(session)
+            do {
+                try await CloudKitManager.shared.saveBatch(changed)
+                Self.log("Batch saved \(changed.count) sessions OK")
+                for session in changed {
                     previousStates[session.sessionId] = session
-                    syncedCount += 1
-                    try? await Task.sleep(for: .seconds(3))
-                } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {
-                    let retryAfter = error.retryAfterSeconds ?? 300
-                    logger.warning("CloudKit quota hit, backing off \(retryAfter)s")
-                    quotaBackoffUntil = Date().addingTimeInterval(retryAfter)
-                    break
-                } catch {
-                    logger.error("Sync failed for \(session.sessionId): \(error.localizedDescription)")
-                    break
                 }
-            }
-            if syncedCount > 0 {
-                logger.info("Synced \(syncedCount)/\(changed.count) sessions to CloudKit")
+            } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {
+                let retryAfter = error.retryAfterSeconds ?? 300
+                Self.log("Quota hit, backing off \(Int(retryAfter))s")
+                quotaBackoffUntil = Date().addingTimeInterval(retryAfter)
+            } catch {
+                Self.log("ERROR: \(error)")
             }
         }
     }

@@ -6,6 +6,7 @@ enum ClaudePaths {
     }
 
     static var sessionsDir: URL { claudeDir.appendingPathComponent("sessions") }
+    static var tasksDir: URL { claudeDir.appendingPathComponent("tasks") }
     static var todosDir: URL { claudeDir.appendingPathComponent("todos") }
     static var projectsDir: URL { claudeDir.appendingPathComponent("projects") }
 

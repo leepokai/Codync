@@ -128,6 +128,8 @@ final class SessionStateManager: ObservableObject {
                 return .working
             case .waitingForUser:
                 return .needsInput
+            case .compacting:
+                return .compacting
             case .idle:
                 return .idle
             }

@@ -30,15 +30,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cloudKitSync = CloudKitSync(stateManager: stateManager)
         menuBarController = MenuBarController(stateManager: stateManager)
 
-        // Notification-only hook for instant permission detection
+        // Hook events: Notification, PermissionRequest, PreCompact, SessionStart, SessionEnd
         hookServer.ensureHooksConfigured()
         hookServer.onPermissionEvent = { [weak self] in
-            self?.scanner.scan() // Trigger immediate rescan → state manager picks up permission
+            self?.scanner.scan()
+        }
+        hookServer.onSessionEvent = { [weak self] in
+            self?.scanner.scan()
+        }
+        hookServer.onHookSignal = { [weak self] sessionId, signalType, toolName in
+            self?.stateManager.transcriptWatcher.handleHookSignal(
+                sessionId: sessionId, signalType: signalType, toolName: toolName
+            )
+            self?.scanner.scan()
         }
         hookServer.start()
 
         scanner.start()
-        logger.info("CodePulse launched — JSONL transcript watcher + notification hook active")
+        logger.info("CodePulse launched — JSONL watcher + Notification/SessionStart/SessionEnd hooks active")
+
+        // Clean up orphan CloudKit records from prior crashes or stale sessions
+        Task {
+            do {
+                let activeIds = Set(scanner.activeSessions.keys)
+                try await CloudKitManager.shared.deleteOrphans(activeSessionIds: activeIds)
+            } catch {
+                logger.warning("Orphan cleanup failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

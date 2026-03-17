@@ -39,6 +39,9 @@
 		EF0A0CEAD3C7B875064F8556 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */; };
 		F1E2D3C4B5A6F7E8D9C0B1A2 /* SessionTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* SessionTagView.swift */; };
 		F4F54F91459EE6A15DD7B246 /* CodePulseIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8453D8BE6EE838E1B9EA4588 /* CodePulseIOSApp.swift */; };
+		B1C2D3E4F5A6B7C8D9E0F1A1 /* IOSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A1 /* IOSTheme.swift */; };
+		B1C2D3E4F5A6B7C8D9E0F1A2 /* IOSStatusIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A2 /* IOSStatusIndicator.swift */; };
+		B1C2D3E4F5A6B7C8D9E0F1A3 /* IOSSessionTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A3 /* IOSSessionTagView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -100,6 +103,9 @@
 		F033CA1408917B1655BC66D2 /* CodePulseShared */ = {isa = PBXFileReference; lastKnownFileType = folder; path = CodePulseShared; sourceTree = SOURCE_ROOT; };
 		F19A27E00B1B13A579A950F4 /* CloudKitReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitReceiver.swift; sourceTree = "<group>"; };
 		F71E03612F167D883C324D25 /* SessionStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateManager.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1A1 /* IOSTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSTheme.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1A2 /* IOSStatusIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSStatusIndicator.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1A3 /* IOSSessionTagView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSessionTagView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -167,6 +173,9 @@
 				DF291DF4A4EF932B774F227D /* IOSRootView.swift */,
 				9C01C9748A39F3475869F956 /* IOSSessionDetailView.swift */,
 				A01A225437E7A00B3337883E /* IOSSessionListView.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1A1 /* IOSTheme.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1A2 /* IOSStatusIndicator.swift */,
+				A1B2C3D4E5F6A7B8C9D0E1A3 /* IOSSessionTagView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -426,6 +435,9 @@
 				0B6B1D4B20837A47EAF88322 /* IOSSessionDetailView.swift in Sources */,
 				A30C11E610763F5064698D43 /* IOSSessionListView.swift in Sources */,
 				EF0A0CEAD3C7B875064F8556 /* LiveActivityManager.swift in Sources */,
+				B1C2D3E4F5A6B7C8D9E0F1A1 /* IOSTheme.swift in Sources */,
+				B1C2D3E4F5A6B7C8D9E0F1A2 /* IOSStatusIndicator.swift in Sources */,
+				B1C2D3E4F5A6B7C8D9E0F1A3 /* IOSSessionTagView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -587,6 +599,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -613,6 +626,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

@@ -39,7 +39,6 @@
 		EEF78145300C2A3547AD832A /* IOSOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */; };
 		EF0A0CEAD3C7B875064F8556 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */; };
 		F4F54F91459EE6A15DD7B246 /* CodePulseIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8453D8BE6EE838E1B9EA4588 /* CodePulseIOSApp.swift */; };
-		FFB1627A6FF33A684C8CDA98 /* ProgressBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0BB716E74E8D313F6E7FF77 /* ProgressBarView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -88,7 +87,6 @@
 		A19BA18A6829F0BE991D4C7D /* SessionFileParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFileParser.swift; sourceTree = "<group>"; };
 		AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* SessionTagView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTagView.swift; sourceTree = "<group>"; };
-		B0BB716E74E8D313F6E7FF77 /* ProgressBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressBarView.swift; sourceTree = "<group>"; };
 		CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
 		CD5A99B72DC7E1F01D755DF6 /* CodePulse.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodePulse.entitlements; sourceTree = "<group>"; };
 		CEED6193555CB3FAC1BA7E2A /* StatusDotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusDotView.swift; sourceTree = "<group>"; };
@@ -207,7 +205,6 @@
 		81EF17B3D3346D74A837F710 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				B0BB716E74E8D313F6E7FF77 /* ProgressBarView.swift */,
 				D10CABFC27BF22D45064777A /* SessionDetailView.swift */,
 				DA699D0197B8A14FD7D1BDC4 /* SessionListView.swift */,
 				AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */,
@@ -405,7 +402,6 @@
 				7851B112737C5DD8B8C3380C /* JSONLTailReader.swift in Sources */,
 				4450C6683BA7614D2DBB5E55 /* MenuBarController.swift in Sources */,
 				911C6ABDB9539A60844931F2 /* PIDChecker.swift in Sources */,
-				FFB1627A6FF33A684C8CDA98 /* ProgressBarView.swift in Sources */,
 				BF17F10AC69617C12975E0EB /* SessionDetailView.swift in Sources */,
 				73382915E3200DDC5EF16C2F /* SessionFileParser.swift in Sources */,
 				0294408FF2BC2367453C118C /* SessionListView.swift in Sources */,

@@ -36,6 +36,9 @@ final class ClaudeHookServer: @unchecked Sendable {
     }
 
     var onPermissionEvent: (@Sendable () -> Void)?
+    var onSessionEvent: (@Sendable () -> Void)?
+    /// Hook signal for TranscriptWatcher: (sessionId, signalType, toolName?)
+    var onHookSignal: (@Sendable (_ sessionId: String, _ signalType: String, _ toolName: String?) -> Void)?
 
     init(port: UInt16 = 19221) {
         self.port = port
@@ -60,10 +63,12 @@ final class ClaudeHookServer: @unchecked Sendable {
         let script = """
         #!/bin/bash
         # CodePulse: non-blocking hook notification
-        # If CodePulse isn't running, curl fails silently — Claude Code is unaffected
+        # Backgrounds curl so synchronous hooks (SessionStart) return instantly.
+        # If CodePulse isn't running, curl fails silently — Claude Code is unaffected.
         curl -s --max-time 1 -X POST "http://127.0.0.1:\(port)/codepulse-event" \
           -H "Content-Type: application/json" \
-          -d "$HOOK_INPUT" 2>/dev/null || true
+          -d "$HOOK_INPUT" 2>/dev/null &
+        exit 0
         """
 
         try? script.write(to: scriptPath, atomically: true, encoding: .utf8)
@@ -109,17 +114,21 @@ final class ClaudeHookServer: @unchecked Sendable {
             }
         }
 
-        // 2. Register single Notification command hook
+        // 2. Register command hooks for Notification, SessionStart, SessionEnd
         let commandHook: [String: Any] = ["type": "command", "command": scriptPath]
-        var notifEntries = hooks["Notification"] as? [[String: Any]] ?? []
-        let alreadyPresent = notifEntries.contains { entry in
-            guard let entryHooks = entry["hooks"] as? [[String: Any]] else { return false }
-            return entryHooks.contains { ($0["command"] as? String) == scriptPath }
-        }
-        if !alreadyPresent {
-            notifEntries.append(["hooks": [commandHook]])
-            hooks["Notification"] = notifEntries
-            changed = true
+        let hookEntry: [String: Any] = ["hooks": [commandHook]]
+
+        for event in ["Notification", "SessionStart", "SessionEnd", "PermissionRequest", "PreCompact"] {
+            var entries = hooks[event] as? [[String: Any]] ?? []
+            let alreadyPresent = entries.contains { entry in
+                guard let entryHooks = entry["hooks"] as? [[String: Any]] else { return false }
+                return entryHooks.contains { ($0["command"] as? String) == scriptPath }
+            }
+            if !alreadyPresent {
+                entries.append(hookEntry)
+                hooks[event] = entries
+                changed = true
+            }
         }
 
         if changed {
@@ -209,20 +218,66 @@ final class ClaudeHookServer: @unchecked Sendable {
               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else { return }
 
         let eventName = json["hook_event_name"] as? String ?? ""
-        guard eventName == "Notification" else { return } // Only care about Notification
-
         let sessionId = json["session_id"] as? String
-        guard let sessionId else { return }
+        let toolName = json["tool_name"] as? String
 
-        let notificationType = json["notification_type"] as? String
-            ?? (json["message"] as? [String: Any])?["notification_type"] as? String
+        switch eventName {
+        case "Notification":
+            guard let sessionId else { return }
+            let notificationType = json["notification_type"] as? String
+                ?? (json["message"] as? [String: Any])?["notification_type"] as? String
 
-        if notificationType == "permission_prompt" {
+            switch notificationType {
+            case "permission_prompt":
+                lock.lock()
+                _permissionSessions.insert(sessionId)
+                lock.unlock()
+                logger.debug("Permission needed for session \(sessionId.prefix(8))...")
+                DispatchQueue.main.async { [weak self] in
+                    self?.onHookSignal?(sessionId, "permission_request", toolName)
+                    self?.onPermissionEvent?()
+                }
+            case "elicitation_dialog":
+                DispatchQueue.main.async { [weak self] in
+                    self?.onHookSignal?(sessionId, "elicitation_dialog", nil)
+                    self?.onPermissionEvent?()
+                }
+            case "idle_prompt":
+                DispatchQueue.main.async { [weak self] in
+                    self?.onHookSignal?(sessionId, "idle_prompt", nil)
+                }
+            default:
+                break
+            }
+
+        case "PermissionRequest":
+            guard let sessionId else { return }
             lock.lock()
             _permissionSessions.insert(sessionId)
             lock.unlock()
-            logger.debug("Permission needed for session \(sessionId.prefix(8))...")
-            DispatchQueue.main.async { [weak self] in self?.onPermissionEvent?() }
+            logger.debug("PermissionRequest for session \(sessionId.prefix(8))...")
+            DispatchQueue.main.async { [weak self] in
+                self?.onHookSignal?(sessionId, "permission_request", toolName)
+                self?.onPermissionEvent?()
+            }
+
+        case "PreCompact":
+            guard let sessionId else { return }
+            logger.debug("PreCompact for session \(sessionId.prefix(8))...")
+            DispatchQueue.main.async { [weak self] in
+                self?.onHookSignal?(sessionId, "pre_compact", nil)
+            }
+
+        case "SessionStart":
+            logger.info("SessionStart hook fired\(sessionId.map { " for \($0.prefix(8))..." } ?? "")")
+            DispatchQueue.main.async { [weak self] in self?.onSessionEvent?() }
+
+        case "SessionEnd":
+            logger.info("SessionEnd hook fired\(sessionId.map { " for \($0.prefix(8))..." } ?? "")")
+            DispatchQueue.main.async { [weak self] in self?.onSessionEvent?() }
+
+        default:
+            break
         }
     }
 }

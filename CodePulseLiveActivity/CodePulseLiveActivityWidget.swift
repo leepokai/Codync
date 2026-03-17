@@ -38,7 +38,7 @@ struct CodePulseLiveActivityWidget: Widget {
                     if let task = context.state.currentTask {
                         Text("\u{25FC} \(task)")
                             .font(.caption)
-                            .foregroundStyle(.cyan)
+                            .foregroundStyle(.blue)
                             .lineLimit(1)
                     }
                     Spacer()
@@ -78,7 +78,7 @@ struct CodePulseLiveActivityWidget: Widget {
                             if let task = context.state.currentTask {
                                 Text("\u{25FC} \(task)")
                                     .font(.caption2)
-                                    .foregroundStyle(.cyan)
+                                    .foregroundStyle(.blue)
                                     .lineLimit(1)
                             }
                             Spacer()
@@ -115,10 +115,11 @@ struct CodePulseLiveActivityWidget: Widget {
 
     private func statusColor(_ status: String) -> Color {
         switch status {
-        case "working": return .green
-        case "idle": return .cyan
+        case "working": return .blue
+        case "idle": return .secondary
         case "needsInput": return .orange
-        case "error": return .red
+        case "compacting": return .purple
+        case "error": return .orange
         default: return .gray
         }
     }
@@ -128,6 +129,7 @@ struct CodePulseLiveActivityWidget: Widget {
         case "working": return "Working"
         case "idle": return "Idle"
         case "needsInput": return "Needs Input"
+        case "compacting": return "Compacting"
         case "error": return "Error"
         default: return "Done"
         }
@@ -135,9 +137,9 @@ struct CodePulseLiveActivityWidget: Widget {
 
     private func taskColor(_ status: TaskStatus) -> Color {
         switch status {
-        case .completed: return .green
-        case .inProgress: return .cyan
-        case .pending: return Color(.systemGray3)
+        case .completed: return .blue
+        case .inProgress: return .blue.opacity(0.4)
+        case .pending: return Color(.systemGray4)
         }
     }
 }

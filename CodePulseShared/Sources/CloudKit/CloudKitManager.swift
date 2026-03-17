@@ -73,21 +73,33 @@ public final class CloudKitManager: Sendable {
         logger.info("Subscribed to CloudKit changes")
     }
 
-    // MARK: - Cleanup
+    // MARK: - Delete
 
-    public func deleteCompleted(olderThan hours: Int = 24) async throws {
-        let cutoff = Date().addingTimeInterval(TimeInterval(-hours * 3600))
-        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-            NSPredicate(format: "status == %@", "completed"),
-            NSPredicate(format: "updatedAt < %@", cutoff as NSDate),
-        ])
-        let query = CKQuery(recordType: CKRecordMapper.recordType, predicate: predicate)
-        let (results, _) = try await database.records(matching: query)
-        for (id, _) in results {
+    /// Delete specific session records by ID (called when sessions complete on macOS)
+    public func deleteByIds(_ sessionIds: [String]) async throws {
+        guard !sessionIds.isEmpty else { return }
+        let recordIDs = sessionIds.map { CKRecord.ID(recordName: $0) }
+        for id in recordIDs {
             try? await database.deleteRecord(withID: id)
         }
-        if !results.isEmpty {
-            logger.info("Deleted \(results.count) completed sessions from CloudKit")
+        logger.info("Deleted \(sessionIds.count) session records from CloudKit")
+    }
+
+    /// Delete all CloudKit records whose sessionId is NOT in the active set.
+    /// Called once on macOS app launch to clean up stale records from prior crashes.
+    public func deleteOrphans(activeSessionIds: Set<String>) async throws {
+        let query = CKQuery(recordType: CKRecordMapper.recordType, predicate: NSPredicate(value: true))
+        let (results, _) = try await database.records(matching: query, resultsLimit: 50)
+        var deletedCount = 0
+        for (id, result) in results {
+            guard case .success = result else { continue }
+            if !activeSessionIds.contains(id.recordName) {
+                try? await database.deleteRecord(withID: id)
+                deletedCount += 1
+            }
+        }
+        if deletedCount > 0 {
+            logger.info("Cleaned up \(deletedCount) orphan records from CloudKit")
         }
     }
 }

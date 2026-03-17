@@ -11,6 +11,7 @@ final class CloudKitSync {
     private let stateManager: SessionStateManager
     private var cancellables = Set<AnyCancellable>()
     private var previousStates: [String: SessionState] = [:]
+    private var previousSessionIds: Set<String> = []
     private var isSyncing = false
     private var quotaBackoffUntil: Date?
 
@@ -34,30 +35,53 @@ final class CloudKitSync {
     private func syncToCloud(_ sessions: [SessionState]) {
         guard !isSyncing else { return }
 
-        // Respect quota backoff — do NOT send any requests during backoff
+        // Respect quota backoff
         if let backoff = quotaBackoffUntil, Date() < backoff { return }
         quotaBackoffUntil = nil
 
-        let changed = sessions.filter { session in
+        let currentIds = Set(sessions.map(\.sessionId))
+
+        // Sessions that disappeared or completed since last sync → delete from CloudKit
+        let completedIds = sessions.filter { $0.status == .completed }.map(\.sessionId)
+        let disappearedIds = previousSessionIds.subtracting(currentIds)
+        let toDelete = Array(Set(completedIds).union(disappearedIds))
+
+        // Active sessions with changed content → save to CloudKit
+        let toSave = sessions.filter { session in
             session.status != .completed
             && previousStates[session.sessionId]?.updatedAt != session.updatedAt
         }
-        guard !changed.isEmpty else { return }
+
+        guard !toDelete.isEmpty || !toSave.isEmpty else {
+            previousSessionIds = currentIds
+            return
+        }
 
         isSyncing = true
 
         Task {
-            defer { isSyncing = false }
+            defer {
+                isSyncing = false
+                previousSessionIds = currentIds
+            }
 
             do {
-                Self.log("saveBatch \(changed.count) sessions")
-                try await CloudKitManager.shared.saveBatch(changed)
-                Self.log("SUCCESS: saved \(changed.count)")
-                // Verify fetch works
-                let fetched = try await CloudKitManager.shared.fetchAll()
-                Self.log("VERIFY: fetchAll returned \(fetched.count) records")
-                for session in changed {
-                    previousStates[session.sessionId] = session
+                if !toDelete.isEmpty {
+                    Self.log("deleteByIds \(toDelete.count) sessions")
+                    try await CloudKitManager.shared.deleteByIds(toDelete)
+                    Self.log("SUCCESS: deleted \(toDelete.count)")
+                    for id in toDelete {
+                        previousStates.removeValue(forKey: id)
+                    }
+                }
+
+                if !toSave.isEmpty {
+                    Self.log("saveBatch \(toSave.count) sessions")
+                    try await CloudKitManager.shared.saveBatch(toSave)
+                    Self.log("SUCCESS: saved \(toSave.count)")
+                    for session in toSave {
+                        previousStates[session.sessionId] = session
+                    }
                 }
             } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {
                 let retryAfter = error.retryAfterSeconds ?? 600

@@ -32,12 +32,15 @@ struct JSONLContentBlock: Codable {
     let type: String
     let id: String?
     let name: String?
+    let text: String?
     let input: JSONLToolInput?
     let toolUseId: String?
+    let isAsync: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case type, id, name, input
+        case type, id, name, text, input
         case toolUseId = "tool_use_id"
+        case isAsync
     }
 }
 
@@ -66,11 +69,19 @@ struct JSONLTranscriptMessage: Codable {
     }
 }
 
+struct JSONLProgressData: Codable {
+    let type: String?
+}
+
 struct JSONLTranscriptEntry: Codable {
     let type: String?
     let subtype: String?
     let message: JSONLTranscriptMessage?
     let timestamp: String?
+    let isMeta: Bool?
+    let agentId: String?
+    let promptId: String?
+    let data: JSONLProgressData?
 }
 
 struct JSONLSessionInfo {

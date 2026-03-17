@@ -53,6 +53,9 @@ final class CloudKitSync {
                 Self.log("saveBatch \(changed.count) sessions")
                 try await CloudKitManager.shared.saveBatch(changed)
                 Self.log("SUCCESS: saved \(changed.count)")
+                // Verify fetch works
+                let fetched = try await CloudKitManager.shared.fetchAll()
+                Self.log("VERIFY: fetchAll returned \(fetched.count) records")
                 for session in changed {
                     previousStates[session.sessionId] = session
                 }

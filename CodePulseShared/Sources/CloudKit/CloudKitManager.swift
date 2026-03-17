@@ -7,7 +7,7 @@ private let logger = Logger(subsystem: "com.pokai.CodePulse", category: "CloudKi
 public final class CloudKitManager: Sendable {
     public static let shared = CloudKitManager()
     private let container = CKContainer(identifier: "iCloud.com.pokai.CodePulse")
-    public var database: CKDatabase { container.publicCloudDatabase }
+    public var database: CKDatabase { container.privateCloudDatabase }
 
     private init() {}
 
@@ -46,11 +46,7 @@ public final class CloudKitManager: Sendable {
     // MARK: - Read (iOS)
 
     public func fetchAll() async throws -> [SessionState] {
-        // Fetch only current user's records
-        let userID = try await container.userRecordID()
-        let ownerRef = CKRecord.Reference(recordID: userID, action: .none)
-        let predicate = NSPredicate(format: "creatorUserRecordID == %@", ownerRef)
-        let query = CKQuery(recordType: CKRecordMapper.recordType, predicate: predicate)
+        let query = CKQuery(recordType: CKRecordMapper.recordType, predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "updatedAt", ascending: false)]
         let (results, _) = try await database.records(matching: query, resultsLimit: 20)
         let sessions = results.compactMap { _, result in
@@ -81,10 +77,7 @@ public final class CloudKitManager: Sendable {
 
     public func deleteCompleted(olderThan hours: Int = 24) async throws {
         let cutoff = Date().addingTimeInterval(TimeInterval(-hours * 3600))
-        let userID = try await container.userRecordID()
-        let ownerRef = CKRecord.Reference(recordID: userID, action: .none)
         let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-            NSPredicate(format: "creatorUserRecordID == %@", ownerRef),
             NSPredicate(format: "status == %@", "completed"),
             NSPredicate(format: "updatedAt < %@", cutoff as NSDate),
         ])

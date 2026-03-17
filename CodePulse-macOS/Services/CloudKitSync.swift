@@ -14,6 +14,13 @@ final class CloudKitSync {
     private var isSyncing = false
     private var quotaBackoffUntil: Date?
 
+    private static func log(_ msg: String) {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codepulse/sync.log")
+        let line = "[\(Date())] \(msg)\n"
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
+        else { try? line.write(to: url, atomically: false, encoding: .utf8) }
+    }
+
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
         stateManager.$sessions
@@ -43,16 +50,18 @@ final class CloudKitSync {
             defer { isSyncing = false }
 
             do {
+                Self.log("saveBatch \(changed.count) sessions")
                 try await CloudKitManager.shared.saveBatch(changed)
+                Self.log("SUCCESS: saved \(changed.count)")
                 for session in changed {
                     previousStates[session.sessionId] = session
                 }
             } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {
                 let retryAfter = error.retryAfterSeconds ?? 600
-                // Double the backoff to be safe
+                Self.log("QUOTA: backoff \(Int(retryAfter * 2))s")
                 quotaBackoffUntil = Date().addingTimeInterval(retryAfter * 2)
             } catch {
-                // Unknown error — backoff 5 minutes
+                Self.log("ERROR: \(error)")
                 quotaBackoffUntil = Date().addingTimeInterval(300)
             }
         }

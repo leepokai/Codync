@@ -26,19 +26,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         stateManager = SessionStateManager(scanner: scanner)
-        stateManager.hookServer = hookServer // Connect hook state to state manager
+        stateManager.hookServer = hookServer
         cloudKitSync = CloudKitSync(stateManager: stateManager)
         menuBarController = MenuBarController(stateManager: stateManager)
 
-        // Hook server for real-time updates
+        // Notification-only hook for instant permission detection
         hookServer.ensureHooksConfigured()
-        hookServer.onEvent = { [weak self] in
-            self?.scanner.scan() // Immediate rescan on hook event
+        hookServer.onPermissionEvent = { [weak self] in
+            self?.scanner.scan() // Trigger immediate rescan → state manager picks up permission
         }
         hookServer.start()
 
         scanner.start()
-        logger.info("CodePulse launched — menu bar + hook server active")
+        logger.info("CodePulse launched — JSONL transcript watcher + notification hook active")
     }
 
     func applicationWillTerminate(_ notification: Notification) {

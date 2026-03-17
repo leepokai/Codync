@@ -26,6 +26,53 @@ struct JSONLEntry: Codable {
     let timestamp: String?
 }
 
+// MARK: - Transcript Content Blocks
+
+struct JSONLContentBlock: Codable {
+    let type: String
+    let id: String?
+    let name: String?
+    let input: JSONLToolInput?
+    let toolUseId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type, id, name, input
+        case toolUseId = "tool_use_id"
+    }
+}
+
+struct JSONLToolInput: Codable {
+    let command: String?
+    let filePath: String?
+    let pattern: String?
+
+    enum CodingKeys: String, CodingKey {
+        case command
+        case filePath = "file_path"
+        case pattern
+    }
+}
+
+struct JSONLTranscriptMessage: Codable {
+    let role: String?
+    let model: String?
+    let usage: JSONLUsage?
+    let content: [JSONLContentBlock]?
+    let stopReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case role, model, usage, content
+        case stopReason = "stop_reason"
+    }
+}
+
+struct JSONLTranscriptEntry: Codable {
+    let type: String?
+    let subtype: String?
+    let message: JSONLTranscriptMessage?
+    let timestamp: String?
+}
+
 struct JSONLSessionInfo {
     var model: String = "Unknown"
     var latestInputTokens: Int = 0  // Latest turn's input tokens (for context%)

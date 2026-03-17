@@ -24,7 +24,7 @@ final class CloudKitSync {
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
         stateManager.$sessions
-            .throttle(for: .seconds(30), scheduler: RunLoop.main, latest: true)
+            .throttle(for: .seconds(5), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] sessions in
                 self?.syncToCloud(sessions)
             }

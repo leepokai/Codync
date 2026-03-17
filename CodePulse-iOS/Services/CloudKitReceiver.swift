@@ -19,6 +19,7 @@ final class CloudKitReceiver: ObservableObject {
             logger.error("Failed to subscribe to CloudKit: \(error.localizedDescription)")
         }
         await fetch()
+        startPolling()
     }
 
     func fetch() async {
@@ -37,8 +38,8 @@ final class CloudKitReceiver: ObservableObject {
 
     func startPolling() {
         guard pollTimer == nil else { return }
-        logger.info("Starting CloudKit polling (30s interval)")
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        logger.info("Starting CloudKit polling (5s interval)")
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.fetch()
             }

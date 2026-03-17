@@ -226,6 +226,7 @@ final class TranscriptWatcher {
 
     private func updateTimeouts(_ tracker: inout SessionTracker) {
         let now = Date()
+        let sinceLastActivity = now.timeIntervalSince(tracker.state.lastActivityTime)
 
         // Permission heuristic: tool started but no result after timeout
         if !tracker.activeToolIds.isEmpty,
@@ -237,9 +238,17 @@ final class TranscriptWatcher {
             }
         }
 
-        // Idle timeout: no new data for a while after waiting
+        // Working but no new data → turn_duration was missed or hasn't arrived yet
+        if tracker.state.status == .working,
+           tracker.activeToolIds.isEmpty,
+           sinceLastActivity > idleTimeoutSeconds {
+            tracker.state.status = .waitingForUser
+            tracker.state.lastEvent = "Waiting for input"
+        }
+
+        // Waiting but no new data for even longer → truly idle
         if tracker.state.status == .waitingForUser,
-           now.timeIntervalSince(tracker.state.lastActivityTime) > idleTimeoutSeconds {
+           sinceLastActivity > idleTimeoutSeconds * 3 {
             tracker.state.status = .idle
         }
     }

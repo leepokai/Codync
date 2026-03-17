@@ -26,6 +26,26 @@ public enum CKRecordMapper {
         return record
     }
 
+    /// Update an existing CKRecord's fields (preserves change tag for conflict-free saves)
+    public static func updateRecord(_ record: CKRecord, with session: SessionState) {
+        record["sessionId"] = session.sessionId as CKRecordValue
+        record["projectName"] = session.projectName as CKRecordValue
+        record["gitBranch"] = session.gitBranch as CKRecordValue
+        record["status"] = session.status.rawValue as CKRecordValue
+        record["model"] = session.model as CKRecordValue
+        record["summary"] = session.summary as CKRecordValue
+        record["currentTask"] = (session.currentTask ?? "") as CKRecordValue
+        record["contextPct"] = session.contextPct as CKRecordValue
+        record["costUSD"] = session.costUSD as CKRecordValue
+        record["startedAt"] = session.startedAt as CKRecordValue
+        record["durationSec"] = session.durationSec as CKRecordValue
+        record["deviceId"] = session.deviceId as CKRecordValue
+        record["updatedAt"] = session.updatedAt as CKRecordValue
+        if let tasksData = try? JSONEncoder().encode(session.truncatedTasks) {
+            record["tasks"] = tasksData as CKRecordValue
+        }
+    }
+
     public static func fromRecord(_ record: CKRecord) -> SessionState? {
         guard let sessionId = record["sessionId"] as? String,
               let statusRaw = record["status"] as? String,

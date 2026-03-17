@@ -13,25 +13,54 @@ public final class CloudKitManager: Sendable {
 
     // MARK: - Write (macOS)
 
-    public func save(_ session: SessionState) async throws {
-        let record = CKRecordMapper.toRecord(session)
-        _ = try await database.save(record)
-        logger.debug("Saved session \(session.sessionId) to CloudKit")
-    }
-
-    /// Batch save multiple sessions in a single CloudKit operation (1 request instead of N)
+    /// Batch save sessions using CKModifyRecordsOperation with .allKeys (force overwrite).
+    /// This uses 1 CloudKit request for all records instead of N individual saves.
     public func saveBatch(_ sessions: [SessionState]) async throws {
-        let records = sessions.map { CKRecordMapper.toRecord($0) }
+        guard !sessions.isEmpty else { return }
+
+        // First, try to fetch existing records to get their change tags
+        let recordIDs = sessions.map { CKRecord.ID(recordName: $0.sessionId) }
+        var existingRecords: [String: CKRecord] = [:]
+
+        // Fetch existing records (ignore errors for records that don't exist yet)
+        let fetchResults = try? await database.records(for: recordIDs)
+        if let fetchResults {
+            for (recordID, result) in fetchResults {
+                if case .success(let record) = result {
+                    existingRecords[recordID.recordName] = record
+                }
+            }
+        }
+
+        // Build records: update existing or create new
+        let records: [CKRecord] = sessions.map { session in
+            if let existing = existingRecords[session.sessionId] {
+                // Update existing record (preserves change tag)
+                CKRecordMapper.updateRecord(existing, with: session)
+                return existing
+            } else {
+                // Create new record
+                return CKRecordMapper.toRecord(session)
+            }
+        }
+
         let operation = CKModifyRecordsOperation(recordsToSave: records)
         operation.savePolicy = .allKeys
         operation.qualityOfService = .utility
-        try await database.modifyRecords(saving: records, deleting: [], savePolicy: .allKeys)
-        logger.info("Batch saved \(sessions.count) sessions to CloudKit")
-    }
 
-    public func saveIfChanged(_ session: SessionState, previous: SessionState?) async throws {
-        guard session.updatedAt != previous?.updatedAt else { return }
-        try await save(session)
+        return try await withCheckedThrowingContinuation { continuation in
+            operation.modifyRecordsResultBlock = { result in
+                switch result {
+                case .success:
+                    logger.info("Batch saved \(sessions.count) sessions to CloudKit")
+                    continuation.resume()
+                case .failure(let error):
+                    logger.error("Batch save failed: \(error.localizedDescription)")
+                    continuation.resume(throwing: error)
+                }
+            }
+            self.database.add(operation)
+        }
     }
 
     // MARK: - Read (iOS)
@@ -80,26 +109,5 @@ public final class CloudKitManager: Sendable {
         if !results.isEmpty {
             logger.info("Deleted \(results.count) completed sessions from CloudKit")
         }
-    }
-
-    // MARK: - Retry Logic
-
-    private func retryOnQuotaExceeded(maxRetries: Int = 3, operation: @Sendable () async throws -> Void) async throws {
-        for attempt in 0..<maxRetries {
-            do {
-                try await operation()
-                return
-            } catch let error as CKError where error.code == .requestRateLimited || error.code == .zoneBusy || error.code == .serviceUnavailable {
-                let retryAfter = error.retryAfterSeconds ?? Double(attempt + 1) * 5
-                logger.warning("CloudKit rate limited (attempt \(attempt + 1)/\(maxRetries)), retrying after \(retryAfter)s")
-                try await Task.sleep(for: .seconds(min(retryAfter, 30))) // cap at 30s
-            } catch let error as CKError where error.code == .quotaExceeded {
-                let retryAfter = error.retryAfterSeconds ?? 60
-                logger.warning("CloudKit quota exceeded (attempt \(attempt + 1)/\(maxRetries)), retrying after \(min(retryAfter, 60))s")
-                try await Task.sleep(for: .seconds(min(retryAfter, 60)))
-            }
-        }
-        // Final attempt, let error propagate
-        try await operation()
     }
 }

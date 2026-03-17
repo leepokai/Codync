@@ -27,12 +27,16 @@ final class MenuBarController: NSObject {
     }
 
     private func setupPopover() {
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 340, height: 400)
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
+        let hosting = NSHostingController(
             rootView: SessionListView(stateManager: stateManager)
         )
+        hosting.sizingOptions = .preferredContentSize
+
+        popover = NSPopover()
+        popover.contentSize = NSSize(width: 320, height: 100)
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = hosting
     }
 
     private func observeSessionCount() {

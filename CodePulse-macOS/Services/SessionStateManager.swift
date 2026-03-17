@@ -10,14 +10,11 @@ final class SessionStateManager: ObservableObject {
     @Published var sessions: [SessionState] = []
 
     private let scanner: SessionScanner
+    let transcriptWatcher = TranscriptWatcher()
     var hookServer: ClaudeHookServer?
 
     private var cancellables = Set<AnyCancellable>()
     private let deviceId = Host.current().localizedName ?? UUID().uuidString
-
-    /// Track JSONL file sizes to detect growth (= session is active)
-    private var jsonlSizes: [String: UInt64] = [:]
-    private var jsonlLastGrowth: [String: Date] = [:]
 
     init(scanner: SessionScanner) {
         self.scanner = scanner
@@ -30,26 +27,36 @@ final class SessionStateManager: ObservableObject {
     }
 
     private func updateSessions(from rawSessions: [String: RawSessionFile]) {
-        let hookSessions = hookServer?.sessions ?? [:]
         var updated: [SessionState] = []
 
         for (sessionId, raw) in rawSessions {
+            // Parse JSONL incrementally — this is now the primary state source
+            let jsonlUrl = ClaudePaths.jsonlPath(cwd: raw.cwd, sessionId: sessionId)
+            transcriptWatcher.update(sessionId: sessionId, jsonlURL: jsonlUrl)
+
+            let transcript = transcriptWatcher.state(for: sessionId)
             let tasks = SessionFileParser.parseTasks(sessionId: sessionId)
             let indexEntry = SessionFileParser.parseSessionIndex(cwd: raw.cwd, sessionId: sessionId)
-            let jsonlUrl = ClaudePaths.jsonlPath(cwd: raw.cwd, sessionId: sessionId)
-            let jsonlInfo = JSONLTailReader.extractInfo(url: jsonlUrl)
-            let hookInfo = hookSessions[sessionId]
 
-            // Track JSONL file growth
-            let jsonlGrowing = updateJsonlGrowth(sessionId: sessionId, url: jsonlUrl)
+            // Permission: instant detection from hook, clear when transcript shows activity
+            let needsPermission = hookServer?.needsPermission(sessionId) ?? false
+            if needsPermission, let t = transcript, t.status == .working {
+                // JSONL shows activity resumed — clear permission flag
+                hookServer?.clearPermission(sessionId)
+            }
 
-            let status = detectStatus(sessionId: sessionId, raw: raw, tasks: tasks, hookState: hookInfo?.state, jsonlGrowing: jsonlGrowing)
+            let status = detectStatus(
+                raw: raw,
+                transcript: transcript,
+                tasks: tasks,
+                needsPermission: needsPermission
+            )
 
             let projectName = URL(fileURLWithPath: raw.cwd).lastPathComponent
             let startDate = Date(timeIntervalSince1970: TimeInterval(raw.startedAt) / 1000)
             let duration = Int(Date().timeIntervalSince(startDate))
             let currentTask = tasks.first(where: { $0.status == .inProgress })?.activeForm
-            let lastEvent = hookInfo?.lastEvent
+            let lastEvent = transcript?.lastEvent
 
             let summary = indexEntry?.summary
                 ?? indexEntry?.firstPrompt.map { String($0.prefix(50)) }
@@ -59,7 +66,7 @@ final class SessionStateManager: ObservableObject {
             let contentChanged = existingSession == nil
                 || existingSession?.status != status
                 || existingSession?.tasks != tasks
-                || existingSession?.contextPct != jsonlInfo.contextPct
+                || existingSession?.contextPct != (transcript?.contextPct ?? 0)
                 || existingSession?.currentTask != currentTask
                 || existingSession?.lastEvent != lastEvent
 
@@ -70,13 +77,13 @@ final class SessionStateManager: ObservableObject {
                 projectName: projectName,
                 gitBranch: indexEntry?.gitBranch ?? "unknown",
                 status: status,
-                model: formatModel(jsonlInfo.model),
+                model: formatModel(transcript?.model ?? "Unknown"),
                 summary: summary,
                 currentTask: currentTask,
                 lastEvent: lastEvent,
                 tasks: tasks,
-                contextPct: jsonlInfo.contextPct,
-                costUSD: jsonlInfo.costUSD,
+                contextPct: transcript?.contextPct ?? 0,
+                costUSD: transcript?.costUSD ?? 0,
                 startedAt: startDate,
                 durationSec: duration,
                 deviceId: deviceId,
@@ -85,12 +92,14 @@ final class SessionStateManager: ObservableObject {
             updated.append(session)
         }
 
+        // Mark disappeared sessions as completed
         for existing in sessions where existing.status != .completed {
             if !rawSessions.keys.contains(existing.sessionId) {
                 var completed = existing
                 completed.status = .completed
                 completed.updatedAt = Date()
                 updated.append(completed)
+                transcriptWatcher.removeSession(existing.sessionId)
             }
         }
 
@@ -100,53 +109,34 @@ final class SessionStateManager: ObservableObject {
         }
     }
 
-    /// Returns true if JSONL file has grown recently (within last 10 seconds)
-    private func updateJsonlGrowth(sessionId: String, url: URL) -> Bool {
-        let currentSize = JSONLTailReader.fileSize(url: url) ?? 0
-        let previousSize = jsonlSizes[sessionId] ?? 0
-
-        if currentSize != previousSize {
-            jsonlSizes[sessionId] = currentSize
-            jsonlLastGrowth[sessionId] = Date()
-            return true
-        }
-
-        // Consider "growing" if file changed in last 10 seconds
-        if let lastGrowth = jsonlLastGrowth[sessionId] {
-            return Date().timeIntervalSince(lastGrowth) < 10
-        }
-
-        // First time seeing this session — record size, don't report as growing
-        jsonlSizes[sessionId] = currentSize
-        return false
-    }
-
-    private func detectStatus(sessionId: String, raw: RawSessionFile, tasks: [TaskItem], hookState: ClaudeState?, jsonlGrowing: Bool) -> SessionStatus {
+    private func detectStatus(
+        raw: RawSessionFile,
+        transcript: TranscriptState?,
+        tasks: [TaskItem],
+        needsPermission: Bool
+    ) -> SessionStatus {
         // 1. PID dead → completed
         guard PIDChecker.isAlive(pid: raw.pid) else { return .completed }
 
-        // 2. Hook state is the primary source of truth
-        if let hookState {
-            switch hookState {
+        // 2. Hook says needs permission (instant, from Notification hook)
+        if needsPermission { return .needsInput }
+
+        // 3. Transcript state (from JSONL parsing)
+        if let transcript {
+            switch transcript.status {
             case .working:
                 return .working
-            case .waitingForUser, .needsPermission:
-                // BUT if JSONL is growing, Claude is actually responding
-                // (user sent message or Claude is generating text without tools)
-                if jsonlGrowing {
-                    return .working
-                }
-                return hookState == .needsPermission ? .needsInput : .needsInput
+            case .waitingForUser:
+                return .needsInput
+            case .idle:
+                return .idle
             }
         }
-
-        // 3. JSONL growing = something is happening
-        if jsonlGrowing { return .working }
 
         // 4. Fallback: check tasks
         if tasks.contains(where: { $0.status == .inProgress }) { return .working }
 
-        // 5. No signal at all → idle
+        // 5. No signal → idle
         return .idle
     }
 

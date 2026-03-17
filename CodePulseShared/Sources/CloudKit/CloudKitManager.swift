@@ -22,14 +22,27 @@ public final class CloudKitManager: Sendable {
         let recordIDs = sessions.map { CKRecord.ID(recordName: $0.sessionId) }
         var existingRecords: [String: CKRecord] = [:]
 
-        // Fetch existing records (ignore errors for records that don't exist yet)
+        // Fetch existing records to get change tags (ignore errors for new records)
         let fetchResults = try? await database.records(for: recordIDs)
         if let fetchResults {
             for (recordID, result) in fetchResults {
-                if case .success(let record) = result {
+                switch result {
+                case .success(let record):
                     existingRecords[recordID.recordName] = record
+                    logger.debug("Fetched existing record: \(recordID.recordName.prefix(8))")
+                case .failure(let error):
+                    logger.debug("Record \(recordID.recordName.prefix(8)) not found: \(error.localizedDescription)")
                 }
             }
+        }
+        logger.info("Fetch phase: \(existingRecords.count) existing, \(sessions.count - existingRecords.count) new")
+        // File-based debug log (os.Logger not visible from CLI)
+        let debugLine = "[\(Date())] CK fetch: \(existingRecords.count) existing, \(sessions.count - existingRecords.count) new\n"
+        let debugURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codepulse/cloudkit-debug.log")
+        if let handle = try? FileHandle(forWritingTo: debugURL) {
+            handle.seekToEndOfFile()
+            handle.write(debugLine.data(using: .utf8)!)
+            try? handle.close()
         }
 
         // Build records: update existing or create new
@@ -49,13 +62,32 @@ public final class CloudKitManager: Sendable {
         operation.qualityOfService = .utility
 
         return try await withCheckedThrowingContinuation { continuation in
-            operation.modifyRecordsResultBlock = { result in
+            var perRecordErrors: [String] = []
+            var savedCount = 0
+
+            operation.perRecordSaveBlock = { recordID, result in
                 switch result {
                 case .success:
-                    logger.info("Batch saved \(sessions.count) sessions to CloudKit")
-                    continuation.resume()
+                    savedCount += 1
                 case .failure(let error):
-                    logger.error("Batch save failed: \(error.localizedDescription)")
+                    perRecordErrors.append("\(recordID.recordName.prefix(8)): \(error.localizedDescription)")
+                }
+            }
+
+            operation.modifyRecordsResultBlock = { result in
+                if !perRecordErrors.isEmpty {
+                    logger.error("Per-record errors: \(perRecordErrors.joined(separator: "; "))")
+                }
+                logger.info("Batch save: \(savedCount)/\(sessions.count) succeeded")
+
+                switch result {
+                case .success:
+                    if savedCount > 0 {
+                        continuation.resume()
+                    } else {
+                        continuation.resume(throwing: CKError(.partialFailure))
+                    }
+                case .failure(let error):
                     continuation.resume(throwing: error)
                 }
             }

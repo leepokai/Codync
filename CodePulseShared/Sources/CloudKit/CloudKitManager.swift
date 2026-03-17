@@ -19,6 +19,16 @@ public final class CloudKitManager: Sendable {
         logger.debug("Saved session \(session.sessionId) to CloudKit")
     }
 
+    /// Batch save multiple sessions in a single CloudKit operation (1 request instead of N)
+    public func saveBatch(_ sessions: [SessionState]) async throws {
+        let records = sessions.map { CKRecordMapper.toRecord($0) }
+        let operation = CKModifyRecordsOperation(recordsToSave: records)
+        operation.savePolicy = .allKeys
+        operation.qualityOfService = .utility
+        try await database.modifyRecords(saving: records, deleting: [], savePolicy: .allKeys)
+        logger.info("Batch saved \(sessions.count) sessions to CloudKit")
+    }
+
     public func saveIfChanged(_ session: SessionState, previous: SessionState?) async throws {
         guard session.updatedAt != previous?.updatedAt else { return }
         try await save(session)

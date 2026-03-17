@@ -154,10 +154,4 @@ enum JSONLTailReader {
         info.totalOutputTokens = totalOutputTokens
         return info
     }
-
-    static func fileSize(url: URL) -> UInt64? {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let size = attrs[.size] as? UInt64 else { return nil }
-        return size
-    }
 }

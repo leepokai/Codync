@@ -13,12 +13,30 @@ public final class CloudKitManager: Sendable {
 
     // MARK: - Write (macOS)
 
-    /// Save sessions to CloudKit. Uses individual saves (simple + reliable).
+    /// Save sessions to CloudKit. Fetches existing records first to avoid conflicts.
     public func saveBatch(_ sessions: [SessionState]) async throws {
         guard !sessions.isEmpty else { return }
+
+        // Fetch existing records to get change tags
+        let recordIDs = sessions.map { CKRecord.ID(recordName: $0.sessionId) }
+        var existing: [String: CKRecord] = [:]
+        if let results = try? await database.records(for: recordIDs) {
+            for (id, result) in results {
+                if case .success(let record) = result {
+                    existing[id.recordName] = record
+                }
+            }
+        }
+
         var savedCount = 0
         for session in sessions {
-            let record = CKRecordMapper.toRecord(session)
+            let record: CKRecord
+            if let server = existing[session.sessionId] {
+                CKRecordMapper.updateRecord(server, with: session)
+                record = server
+            } else {
+                record = CKRecordMapper.toRecord(session)
+            }
             _ = try await database.save(record)
             savedCount += 1
         }

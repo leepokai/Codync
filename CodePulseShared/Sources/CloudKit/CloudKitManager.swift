@@ -7,7 +7,7 @@ private let logger = Logger(subsystem: "com.pokai.CodePulse", category: "CloudKi
 public final class CloudKitManager: Sendable {
     public static let shared = CloudKitManager()
     private let container = CKContainer(identifier: "iCloud.com.pokai.CodePulse")
-    private var database: CKDatabase { container.privateCloudDatabase }
+    public var database: CKDatabase { container.privateCloudDatabase }
 
     private init() {}
 
@@ -15,9 +15,7 @@ public final class CloudKitManager: Sendable {
 
     public func save(_ session: SessionState) async throws {
         let record = CKRecordMapper.toRecord(session)
-        try await retryOnQuotaExceeded {
-            _ = try await self.database.save(record)
-        }
+        _ = try await database.save(record)
         logger.debug("Saved session \(session.sessionId) to CloudKit")
     }
 

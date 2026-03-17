@@ -45,7 +45,36 @@ enum SessionFileParser {
     }
 
     static func parseTasks(sessionId: String) -> [TaskItem] {
-        parseTodos(sessionId: sessionId)
+        // Try new format first: ~/.claude/tasks/{sessionId}/{id}.json
+        let tasksDirTasks = parseTasksDir(sessionId: sessionId)
+        if !tasksDirTasks.isEmpty { return tasksDirTasks }
+
+        // Fallback: old format ~/.claude/todos/{sessionId}-agent-*.json
+        return parseTodos(sessionId: sessionId)
+    }
+
+    /// Parse tasks from ~/.claude/tasks/{sessionId}/ — each task is a separate JSON file
+    private static func parseTasksDir(sessionId: String) -> [TaskItem] {
+        let dir = ClaudePaths.tasksDir.appendingPathComponent(sessionId)
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            .filter({ $0.pathExtension == "json" }) else { return [] }
+
+        let decoder = JSONDecoder()
+        return files.compactMap { url in
+            guard let data = try? Data(contentsOf: url),
+                  let raw = try? decoder.decode(RawTask.self, from: data) else { return nil }
+            let status: TaskStatus = switch raw.status {
+            case "completed": .completed
+            case "in_progress": .inProgress
+            default: .pending
+            }
+            return TaskItem(
+                id: raw.id ?? url.deletingPathExtension().lastPathComponent,
+                content: raw.subject ?? raw.content ?? raw.description ?? "Task",
+                status: status,
+                activeForm: raw.activeForm
+            )
+        }.sorted { ($0.id) < ($1.id) }
     }
 
     static func parseTodos(sessionId: String) -> [TaskItem] {

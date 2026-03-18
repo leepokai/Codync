@@ -1,4 +1,5 @@
 import Foundation
+import CodePulseShared
 import os
 
 private let logger = Logger(subsystem: "com.pokai.CodePulse", category: "TranscriptWatcher")
@@ -13,6 +14,8 @@ struct TranscriptState: Sendable {
     var latestInputTokens: Int = 0
     var totalOutputTokens: Int = 0
     var lastActivityTime: Date = Date()
+    var firstPrompt: String = ""
+    var lastPrompt: String = ""
 
     var contextPct: Int {
         guard latestInputTokens > 0 else { return 0 }
@@ -58,13 +61,15 @@ final class TranscriptWatcher {
 
         // Compaction state: when true, suppress replayed user/progress messages
         var isCompacting: Bool = false
+
+        // Whether this session has received at least one hook event.
+        // Sessions that started before hooks were registered need JSONL-based
+        // permission timeout as a fallback.
+        var hasReceivedHookEvent: Bool = false
     }
 
     private var trackers: [String: SessionTracker] = [:]
     private let decoder = JSONDecoder()
-
-    /// Permission timeout — tool started but no result
-    private let permissionTimeoutSeconds: TimeInterval = 8.0
 
     // MARK: - Public API
 
@@ -72,32 +77,53 @@ final class TranscriptWatcher {
         trackers[sessionId]?.state
     }
 
-    /// Receive a hook signal (permission, idle, compact) from ClaudeHookServer
-    func handleHookSignal(sessionId: String, signalType: String, toolName: String? = nil) {
-        guard var tracker = trackers[sessionId] else { return }
+    /// Receive a hook signal from ClaudeHookServer.
+    /// Hook signals are the primary status source — they override JSONL-derived state.
+    func handleHookSignal(sessionId: String, signal: HookSignalType, toolName: String? = nil) {
+        guard var tracker = trackers[sessionId] else {
+            var newTracker = SessionTracker()
+            newTracker.state.lastActivityTime = Date()
+            applyHookSignal(signal, toolName: toolName, tracker: &newTracker)
+            trackers[sessionId] = newTracker
+            return
+        }
         tracker.state.lastActivityTime = Date()
+        applyHookSignal(signal, toolName: toolName, tracker: &tracker)
+        trackers[sessionId] = tracker
+    }
 
-        switch signalType {
-        case "permission_request":
+    private func applyHookSignal(_ signal: HookSignalType, toolName: String?, tracker: inout SessionTracker) {
+        tracker.hasReceivedHookEvent = true
+        switch signal {
+        case .permissionRequest:
             tracker.state.status = .waitingForUser
             tracker.state.lastEvent = toolName.map { "Permission: \($0)" } ?? "Needs permission"
-        case "elicitation_dialog":
+        case .askUserQuestion:
             tracker.state.status = .waitingForUser
             tracker.state.lastEvent = "Waiting for input"
-        case "idle_prompt":
-            if tracker.activeAgents.isEmpty {
-                tracker.state.status = .idle
-                tracker.state.lastEvent = ""
+        case .elicitationDialog:
+            tracker.state.status = .waitingForUser
+            tracker.state.lastEvent = "Waiting for input"
+        case .stop:
+            tracker.state.status = .idle
+            tracker.state.lastEvent = ""
+            tracker.activeToolIds.removeAll()
+            tracker.activeAgents.removeAll()
+            tracker.lastToolStartTime = nil
+        case .userPromptSubmit:
+            tracker.state.status = .working
+            tracker.state.lastEvent = "Processing prompt..."
+            tracker.activeToolIds.removeAll()
+            tracker.activeAgents.removeAll()
+            tracker.lastToolStartTime = nil
+        case .preToolUse:
+            tracker.state.status = .working
+            if let toolName {
+                tracker.state.lastEvent = formatToolStatus(name: toolName, input: nil)
             }
-        case "pre_compact":
-            tracker.state.status = .compacting
-            tracker.state.lastEvent = "Compacting context..."
-            tracker.isCompacting = true
-        default:
+        case .postToolUse:
             break
         }
-
-        trackers[sessionId] = tracker
     }
 
     /// Process new data from a session's JSONL file. Call this on each scan cycle.
@@ -182,6 +208,10 @@ final class TranscriptWatcher {
             processSystem(entry, tracker: &tracker)
         case "progress":
             processProgress(entry, tracker: &tracker)
+        case "last-prompt":
+            if let prompt = entry.lastPrompt, !prompt.isEmpty {
+                tracker.state.lastPrompt = String(prompt.prefix(100))
+            }
         default:
             break
         }
@@ -304,6 +334,17 @@ final class TranscriptWatcher {
             tracker.activeToolIds.removeAll()
             tracker.activeAgents.removeAll()
             tracker.lastToolStartTime = nil
+
+            // Extract prompt text for summary
+            if let textBlock = content.first(where: { $0.type == "text" }),
+               let text = textBlock.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !text.isEmpty, !text.hasPrefix("<") {
+                let clean = String(text.prefix(100))
+                tracker.state.lastPrompt = clean
+                if tracker.state.firstPrompt.isEmpty {
+                    tracker.state.firstPrompt = clean
+                }
+            }
         } else {
             // User message without promptId and without tool_result — likely still working
             tracker.state.status = .working
@@ -364,22 +405,25 @@ final class TranscriptWatcher {
         let now = Date()
         let sinceLastActivity = now.timeIntervalSince(tracker.state.lastActivityTime)
 
-        // Permission heuristic: tool started but no result after timeout
-        if !tracker.activeToolIds.isEmpty,
-           tracker.activeAgents.isEmpty, // Don't timeout on subagents
+        // For sessions that started BEFORE hooks were registered (e.g., app just installed),
+        // use JSONL-based permission timeout as fallback. Once any hook fires, this is disabled.
+        if !tracker.hasReceivedHookEvent,
+           !tracker.activeToolIds.isEmpty,
+           tracker.activeAgents.isEmpty,
            let toolStart = tracker.lastToolStartTime,
-           now.timeIntervalSince(toolStart) > permissionTimeoutSeconds {
+           now.timeIntervalSince(toolStart) > 8.0 {
             if tracker.state.status == .working {
                 tracker.state.status = .waitingForUser
                 tracker.state.lastEvent = "Needs permission"
             }
         }
 
-        // Working with no tools and no new data → likely idle
+        // Safety net: if working with no activity for 30s and no active tools, assume idle.
+        // Normally Stop hook handles this instantly — this catches edge cases only.
         if tracker.state.status == .working,
            tracker.activeToolIds.isEmpty,
            tracker.activeAgents.isEmpty,
-           sinceLastActivity > 15.0 {
+           sinceLastActivity > 30.0 {
             tracker.state.status = .idle
             tracker.state.lastEvent = ""
         }

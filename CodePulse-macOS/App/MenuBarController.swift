@@ -2,41 +2,70 @@ import SwiftUI
 import Combine
 import CodePulseShared
 
+// MARK: - Panel State
+
+@MainActor
+final class CodePulsePanelState: ObservableObject {
+    @Published var isExpanded = false
+    @Published var headerSize: CGSize = .zero
+    var collapsedRect: CGRect = .zero
+    var panelRect: CGRect = .zero
+
+    private let expandedWidth: CGFloat = 380
+    private let expandedHeight: CGFloat = 500
+
+    func updateGeometry(for screen: NSScreen) {
+        headerSize = screen.notchSize
+        let centerX = screen.frame.origin.x + screen.frame.width / 2
+
+        collapsedRect = CGRect(
+            x: centerX - headerSize.width / 2,
+            y: screen.frame.maxY - headerSize.height,
+            width: headerSize.width,
+            height: headerSize.height
+        )
+        panelRect = CGRect(
+            x: centerX - expandedWidth / 2,
+            y: screen.frame.maxY - expandedHeight,
+            width: expandedWidth,
+            height: expandedHeight
+        )
+    }
+}
+
+// MARK: - Menu Bar Controller
+
 @MainActor
 final class MenuBarController: NSObject {
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
     private let stateManager: SessionStateManager
     private var cancellables = Set<AnyCancellable>()
+
+    private var panel: CodePulsePanel?
+    private var hitTestView: CodePulseHitTestView?
+    private let panelState = CodePulsePanelState()
+    private var mouseDownMonitor: EventMonitor?
 
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
         super.init()
         setupStatusItem()
-        setupPopover()
+        setupPanel()
+        setupClickOutsideMonitor()
         observeSessionCount()
+        observeScreenChanges()
+        observePanelState()
     }
+
+    // MARK: - Status Item
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "waveform.path", accessibilityDescription: "CodePulse")
-            button.action = #selector(togglePopover)
+            button.action = #selector(togglePanel)
             button.target = self
         }
-    }
-
-    private func setupPopover() {
-        let hosting = NSHostingController(
-            rootView: SessionListView(stateManager: stateManager)
-        )
-        hosting.sizingOptions = .preferredContentSize
-
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 100)
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentViewController = hosting
     }
 
     private func observeSessionCount() {
@@ -51,20 +80,203 @@ final class MenuBarController: NSObject {
 
     private func updateBadge(count: Int) {
         guard let button = statusItem.button else { return }
-        if count > 0 {
-            button.title = " \(count)"
-        } else {
-            button.title = ""
+        button.title = count > 0 ? " \(count)" : ""
+    }
+
+    // MARK: - Panel Setup
+
+    private func setupPanel() {
+        let screen = NSScreen.builtInOrMain
+        panelState.updateGeometry(for: screen)
+
+        let panel = CodePulsePanel(frame: fullScreenTopFrame(for: screen))
+
+        let contentView = CodePulsePanelContentView(
+            panelState: panelState,
+            stateManager: stateManager
+        )
+        let hostingView = NSHostingView(rootView: contentView)
+
+        let hitTestView = CodePulseHitTestView()
+        hitTestView.collapsedRect = panelState.collapsedRect
+        hitTestView.panelRect = panelState.panelRect
+        hitTestView.addSubview(hostingView)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            hostingView.topAnchor.constraint(equalTo: hitTestView.topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: hitTestView.bottomAnchor),
+            hostingView.leadingAnchor.constraint(equalTo: hitTestView.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: hitTestView.trailingAnchor),
+        ])
+
+        panel.contentView = hitTestView
+        panel.orderFrontRegardless()
+
+        self.panel = panel
+        self.hitTestView = hitTestView
+    }
+
+    private func fullScreenTopFrame(for screen: NSScreen) -> NSRect {
+        let height: CGFloat = 500
+        return NSRect(
+            x: screen.frame.origin.x,
+            y: screen.frame.maxY - height,
+            width: screen.frame.width,
+            height: height
+        )
+    }
+
+    @objc private func togglePanel() {
+        panelState.isExpanded.toggle()
+    }
+
+    // MARK: - State Sync
+
+    private func observePanelState() {
+        panelState.$isExpanded
+            .sink { [weak self] expanded in
+                self?.hitTestView?.isExpanded = expanded
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.addObserver(
+            forName: .codePulseShouldCollapse,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.panelState.isExpanded = false
+            }
         }
     }
 
-    @objc private func togglePopover() {
-        guard let button = statusItem.button else { return }
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+    // MARK: - Click Outside to Dismiss
+
+    private func setupClickOutsideMonitor() {
+        mouseDownMonitor = EventMonitor(mask: .leftMouseDown) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleGlobalClick()
+            }
         }
+        mouseDownMonitor?.start()
+    }
+
+    private func handleGlobalClick() {
+        guard panelState.isExpanded else { return }
+
+        let mouseLocation = NSEvent.mouseLocation
+
+        if panelState.panelRect.contains(mouseLocation) { return }
+
+        if let button = statusItem.button, let buttonWindow = button.window {
+            let buttonScreenFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+            if buttonScreenFrame.contains(mouseLocation) { return }
+        }
+
+        panelState.isExpanded = false
+    }
+
+    // MARK: - Screen Changes
+
+    private func observeScreenChanges() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenDidChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+
+    @objc private func screenDidChange() {
+        MainActor.assumeIsolated {
+            let screen = NSScreen.builtInOrMain
+            panelState.updateGeometry(for: screen)
+            hitTestView?.collapsedRect = panelState.collapsedRect
+            hitTestView?.panelRect = panelState.panelRect
+            panel?.setFrame(fullScreenTopFrame(for: screen), display: true)
+        }
+    }
+}
+
+// MARK: - Hit Test View
+
+/// Passes through clicks outside the active rect (collapsed header vs expanded panel).
+private final class CodePulseHitTestView: NSView {
+    var isExpanded = false
+    var collapsedRect: CGRect = .zero
+    var panelRect: CGRect = .zero
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let window else { return nil }
+        let screenPoint = window.convertPoint(toScreen: convert(point, to: nil))
+        let activeRect = isExpanded ? panelRect : collapsedRect
+        guard activeRect.contains(screenPoint) else { return nil }
+        return super.hitTest(point)
+    }
+}
+
+// MARK: - Panel Content View
+
+/// The SwiftUI root view for the CodePulse panel.
+/// Collapsed: invisible black shape matching the screen header area.
+/// Expanded: shape extends downward with spring animation, revealing SessionListView.
+private struct CodePulsePanelContentView: View {
+    @ObservedObject var panelState: CodePulsePanelState
+    @ObservedObject var stateManager: SessionStateManager
+
+    private var headerSize: CGSize { panelState.headerSize }
+    private var isExpanded: Bool { panelState.isExpanded }
+
+    private var panelAnimation: Animation {
+        isExpanded
+            ? .spring(response: 0.42, dampingFraction: 0.78)
+            : .spring(response: 0.35, dampingFraction: 1.0)
+    }
+
+    private var topCornerRadius: CGFloat {
+        isExpanded ? 19 : 6
+    }
+
+    private var bottomCornerRadius: CGFloat {
+        isExpanded ? 24 : 14
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header — matches screen notch height, tappable to expand
+            Color.clear
+                .frame(height: headerSize.height)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    panelState.isExpanded.toggle()
+                }
+
+            // Session list appears when expanded — pure black panel theme
+            if isExpanded {
+                SessionListView(stateManager: stateManager)
+                    .environment(\.theme, CodePulseTheme(isDark: true, isPanel: true))
+                    .preferredColorScheme(.dark)
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity
+                                .combined(with: .scale(scale: 0.88, anchor: .top))
+                                .animation(.smooth(duration: 0.3).delay(0.06)),
+                            removal: .opacity
+                                .animation(.easeOut(duration: 0.12))
+                        )
+                    )
+            }
+        }
+        .frame(width: isExpanded ? 320 : headerSize.width - 12)
+        .padding(.horizontal, isExpanded ? 19 : 6)
+        .padding(.bottom, isExpanded ? 12 : 0)
+        .background(Color.black)
+        .clipShape(CodePulsePanelShape(
+            topCornerRadius: topCornerRadius,
+            bottomCornerRadius: bottomCornerRadius
+        ))
+        .shadow(color: isExpanded ? .black.opacity(0.6) : .clear, radius: 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(panelAnimation, value: isExpanded)
     }
 }

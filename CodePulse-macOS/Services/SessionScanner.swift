@@ -8,7 +8,6 @@ private let logger = Logger(subsystem: "com.pokai.CodePulse", category: "Session
 final class SessionScanner: ObservableObject {
     @Published var activeSessions: [String: RawSessionFile] = [:]
 
-    /// Reference to the hook server for cwd→sessionId resolution
     var hookServer: ClaudeHookServer?
 
     private var sessionsWatcher: DispatchSourceFileSystemObject?
@@ -26,7 +25,7 @@ final class SessionScanner: ObservableObject {
                 self?.scan()
             }
         }
-        logger.info("SessionScanner started, watching \(ClaudePaths.sessionsDir.path)")
+        logger.info("SessionScanner started")
     }
 
     func stop() {
@@ -46,7 +45,6 @@ final class SessionScanner: ObservableObject {
         }
     }
 
-    /// Called from hook events — uses the same debounce to avoid redundant scans.
     func scheduleScanFromHook() {
         scheduleScan()
     }
@@ -55,16 +53,18 @@ final class SessionScanner: ObservableObject {
         let files = SessionFileParser.parseSessionFiles()
         var newSessions: [String: RawSessionFile] = [:]
 
+        var alivePids = Set<Int>()
         for file in files {
             guard PIDChecker.isAlive(pid: file.pid) else { continue }
-
-            // Resolution priority:
-            // 1. Hook server knows the real sessionId (from hook events with cwd)
-            // 2. Fall back to JSONL directory scan (single-session projects only)
-            // 3. Use the session file's original sessionId
+            alivePids.insert(file.pid)
             let resolved = resolveSessionId(file)
+            // Dict keyed by sessionId — if two PIDs resolve to the same JSONL,
+            // the later one wins (acceptable: they share the same transcript)
             newSessions[resolved.sessionId] = resolved
         }
+
+        // Clean up TTY cache for dead PIDs
+        ttyCache = ttyCache.filter { alivePids.contains($0.key) }
 
         if newSessions != activeSessions {
             if newSessions.count != activeSessions.count {
@@ -74,28 +74,45 @@ final class SessionScanner: ObservableObject {
         }
     }
 
-    /// Resolve the real sessionId for a session file.
-    /// Hook events provide the authoritative mapping (cwd → sessionId).
-    /// Falls back to JSONL directory scan when no hook data is available.
+    // MARK: - Session ID Resolution
+
     private func resolveSessionId(_ file: RawSessionFile) -> RawSessionFile {
-        // 1. Ask hook server — it has the real sessionId from live events
-        if let hookSessionId = hookServer?.activeSessionId(forCwd: file.cwd),
-           hookSessionId != file.sessionId {
+        // 1. TTY-based resolution (most precise — each terminal has a unique TTY)
+        if let tty = detectAndCacheTty(pid: file.pid),
+           let hookSessionId = hookServer?.sessionId(forTty: tty) {
             return RawSessionFile(pid: file.pid, sessionId: hookSessionId, cwd: file.cwd, startedAt: file.startedAt)
         }
 
-        // 2. Check if original JSONL exists — if so, no resolution needed
+        // 2. Original JSONL exists — use it
         let originalJsonl = ClaudePaths.jsonlPath(cwd: file.cwd, sessionId: file.sessionId)
         if FileManager.default.fileExists(atPath: originalJsonl.path) {
             return file
         }
 
-        // 3. Fall back to finding the most recently modified JSONL in the project directory
+        // 3. Hook server cwd-based (when only 1 session per cwd, unambiguous)
+        let hookIds = hookServer?.activeSessionIds(forCwd: file.cwd) ?? []
+        if hookIds.count == 1, let hookId = hookIds.first {
+            let hookJsonl = ClaudePaths.jsonlPath(cwd: file.cwd, sessionId: hookId)
+            if FileManager.default.fileExists(atPath: hookJsonl.path) {
+                return RawSessionFile(pid: file.pid, sessionId: hookId, cwd: file.cwd, startedAt: file.startedAt)
+            }
+        }
+
+        // 4. Last resort: most recently modified JSONL in the project directory
         return resolveFromJsonlDirectory(file)
     }
 
-    /// Last-resort: scan the project directory for the most recently modified JSONL.
-    /// Used when no hook data is available and the original JSONL doesn't exist.
+    // MARK: - TTY Cache (caches both hits and misses to avoid repeated subprocess spawns)
+
+    private var ttyCache: [Int: String?] = [:]
+
+    private func detectAndCacheTty(pid: Int) -> String? {
+        if let cached = ttyCache[pid] { return cached }
+        let tty = PIDChecker.tty(for: pid)
+        ttyCache[pid] = tty  // cache nil too — avoids retrying every 5s
+        return tty
+    }
+
     private func resolveFromJsonlDirectory(_ file: RawSessionFile) -> RawSessionFile {
         let projectDir = ClaudePaths.projectsDir
             .appendingPathComponent(ClaudePaths.mangledCwd(file.cwd))
@@ -125,29 +142,18 @@ final class SessionScanner: ObservableObject {
         guard let activeURL = bestURL else { return file }
         let activeSessionId = activeURL.deletingPathExtension().lastPathComponent
 
-        // Only resolve if the best JSONL was modified recently (within 2 minutes)
-        let age = Date().timeIntervalSince(bestDate)
-        guard age < 120 else { return file }
-
         if activeSessionId != file.sessionId {
-            logger.info("Session PID=\(file.pid): resolved \(file.sessionId.prefix(8))→\(activeSessionId.prefix(8)) (active JSONL)")
-            return RawSessionFile(
-                pid: file.pid,
-                sessionId: activeSessionId,
-                cwd: file.cwd,
-                startedAt: file.startedAt
-            )
+            return RawSessionFile(pid: file.pid, sessionId: activeSessionId, cwd: file.cwd, startedAt: file.startedAt)
         }
 
         return file
     }
 
+    // MARK: - Directory Watching
+
     private func watchDirectory(_ url: URL, handler: @escaping () -> Void) {
         let fd = open(url.path, O_EVTONLY)
-        guard fd >= 0 else {
-            logger.warning("Failed to watch directory: \(url.path)")
-            return
-        }
+        guard fd >= 0 else { return }
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .rename, .delete],

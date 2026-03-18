@@ -6,6 +6,9 @@ xcuserdata/
 *.xccheckout
 DerivedData/
 
+# Build artifacts
+build/
+
 # Swift Package Manager
 .build/
 .swiftpm/

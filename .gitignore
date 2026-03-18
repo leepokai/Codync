@@ -1,4 +1,6 @@
 .superpowers/
+docs/superpowers/
+project.yml
 
 # Xcode
 xcuserdata/

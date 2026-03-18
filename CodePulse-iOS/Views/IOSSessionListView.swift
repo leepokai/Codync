@@ -69,6 +69,15 @@ private struct SessionRowContent: View {
     let onTogglePin: () -> Void
     @Environment(\.theme) private var theme
 
+    /// Matches macOS SessionRowView.statusDescription
+    private var statusDescription: String? {
+        if session.status == .working, let event = session.lastEvent, !event.isEmpty {
+            return event
+        }
+        let desc = session.summary
+        return desc != session.projectName ? desc : nil
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             SessionStatusView(
@@ -80,31 +89,25 @@ private struct SessionRowContent: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 5) {
-                    Text(session.summary)
+                    Text(session.projectName)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(theme.primaryText)
                         .lineLimit(1)
-                        .truncationMode(.middle)
                     if !session.model.isEmpty {
                         SessionTagView(tag: session.model)
                     }
                 }
-                HStack(spacing: 4) {
-                    if let subtitle = session.lastEvent ?? session.currentTask {
-                        Text(subtitle)
+                if let desc = statusDescription {
+                    HStack(spacing: 4) {
+                        Text(desc)
                             .font(.system(size: 13))
                             .foregroundStyle(subtitleColor)
                             .lineLimit(1)
-                    } else {
-                        Text("\(session.projectName) · \(statusLabel)")
-                            .font(.system(size: 13))
-                            .foregroundStyle(theme.secondaryText)
-                            .lineLimit(1)
+                        Spacer()
+                        Text(relativeTime(session.updatedAt))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(theme.tertiaryText)
                     }
-                    Spacer()
-                    Text(relativeTime(session.startedAt))
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(theme.tertiaryText)
                 }
                 if !session.tasks.isEmpty {
                     MiniProgressBar(tasks: session.tasks)
@@ -115,11 +118,6 @@ private struct SessionRowContent: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-    }
-
-    private var statusLabel: String {
-        guard session.status == .needsInput else { return session.status.label }
-        return session.waitingReason?.label ?? "Needs Input"
     }
 
     private var subtitleColor: Color {

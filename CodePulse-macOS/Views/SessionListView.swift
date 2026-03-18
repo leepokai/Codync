@@ -8,7 +8,6 @@ struct SessionListView: View {
     @Environment(\.theme) private var injectedTheme
 
     private var theme: CodePulseTheme {
-        // If a notch theme is injected from the panel, use it; otherwise derive from user preference
         injectedTheme.isPanel ? injectedTheme : CodePulseTheme(isDark: isDarkMode)
     }
 
@@ -49,7 +48,9 @@ struct SessionListView: View {
                 .frame(maxHeight: 420)
             }
 
-            Divider().padding(.horizontal, 8)
+            Divider()
+                .opacity(theme.isPanel ? 0.3 : 1)
+                .padding(.horizontal, 8)
 
             footer
         }
@@ -72,16 +73,18 @@ struct SessionListView: View {
         HStack(alignment: .center, spacing: 8) {
             Text("CodePulse")
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(theme.secondaryText.opacity(0.6))
+                .foregroundStyle(theme.tertiaryText)
 
             Spacer()
 
-            Button(action: { isDarkMode.toggle() }) {
-                Image(systemName: isDarkMode ? "sun.max" : "moon")
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.secondaryText)
+            if !theme.isPanel {
+                Button(action: { isDarkMode.toggle() }) {
+                    Image(systemName: isDarkMode ? "sun.max" : "moon")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.secondaryText)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             Button(action: { NSApp.terminate(nil) }) {
                 Text("Quit")

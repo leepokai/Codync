@@ -14,6 +14,7 @@ public enum CKRecordMapper {
         record["model"] = session.model as CKRecordValue
         record["summary"] = session.summary as CKRecordValue
         record["currentTask"] = (session.currentTask ?? "") as CKRecordValue
+        record["waitingReason"] = (session.waitingReason?.rawValue ?? "") as CKRecordValue
         record["contextPct"] = session.contextPct as CKRecordValue
         record["costUSD"] = session.costUSD as CKRecordValue
         record["startedAt"] = session.startedAt as CKRecordValue
@@ -35,6 +36,7 @@ public enum CKRecordMapper {
         record["model"] = session.model as CKRecordValue
         record["summary"] = session.summary as CKRecordValue
         record["currentTask"] = (session.currentTask ?? "") as CKRecordValue
+        record["waitingReason"] = (session.waitingReason?.rawValue ?? "") as CKRecordValue
         record["contextPct"] = session.contextPct as CKRecordValue
         record["costUSD"] = session.costUSD as CKRecordValue
         record["startedAt"] = session.startedAt as CKRecordValue
@@ -54,6 +56,7 @@ public enum CKRecordMapper {
         if let tasksData = record["tasks"] as? Data {
             tasks = (try? JSONDecoder().decode([TaskItem].self, from: tasksData)) ?? []
         }
+        let waitingReason = (record["waitingReason"] as? String).flatMap(WaitingReason.init)
         return SessionState(
             sessionId: sessionId,
             projectName: record["projectName"] as? String ?? "",
@@ -62,6 +65,7 @@ public enum CKRecordMapper {
             model: record["model"] as? String ?? "Unknown",
             summary: record["summary"] as? String ?? "",
             currentTask: record["currentTask"] as? String,
+            waitingReason: waitingReason,
             tasks: tasks,
             contextPct: record["contextPct"] as? Int ?? 0,
             costUSD: record["costUSD"] as? Double ?? 0,

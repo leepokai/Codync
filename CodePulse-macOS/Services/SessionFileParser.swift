@@ -1,7 +1,7 @@
 import Foundation
 import CodePulseShared
 
-struct RawSessionFile: Codable {
+struct RawSessionFile: Codable, Equatable {
     let pid: Int
     let sessionId: String
     let cwd: String
@@ -110,5 +110,14 @@ enum SessionFileParser {
         guard let data = try? Data(contentsOf: path),
               let index = try? JSONDecoder().decode(SessionIndex.self, from: data) else { return nil }
         return index.entries.first { $0.sessionId == sessionId }
+    }
+
+    /// Fall back to the latest entry in sessions-index.json for a project.
+    /// Used when the active sessionId (resolved from JSONL) differs from what's in the index.
+    static func parseLatestSessionIndex(cwd: String) -> SessionIndexEntry? {
+        let path = ClaudePaths.sessionIndexPath(cwd: cwd)
+        guard let data = try? Data(contentsOf: path),
+              let index = try? JSONDecoder().decode(SessionIndex.self, from: data) else { return nil }
+        return index.entries.last
     }
 }

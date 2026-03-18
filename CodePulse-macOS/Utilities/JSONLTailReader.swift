@@ -82,6 +82,8 @@ struct JSONLTranscriptEntry: Codable {
     let agentId: String?
     let promptId: String?
     let data: JSONLProgressData?
+    /// Present on "last-prompt" type entries
+    let lastPrompt: String?
 }
 
 struct JSONLSessionInfo {

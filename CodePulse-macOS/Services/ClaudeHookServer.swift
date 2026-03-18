@@ -1,11 +1,13 @@
 import Foundation
 import Network
+import CodePulseShared
 import os
 
 private let logger = Logger(subsystem: "com.pokai.CodePulse", category: "HookServer")
 
-/// Minimal hook server — only receives Notification events for instant permission detection.
-/// Uses a command hook (shell script) instead of HTTP hook to avoid blocking Claude Code.
+/// Hook-driven status detection server.
+/// Receives events from 7 Claude Code hooks via notify.sh command script.
+/// Hook events are the primary status source — JSONL parsing is supplementary.
 final class ClaudeHookServer: @unchecked Sendable {
     private var listener: NWListener?
     private let port: UInt16
@@ -13,41 +15,85 @@ final class ClaudeHookServer: @unchecked Sendable {
     private let lock = NSLock()
 
     private var _permissionSessions: Set<String> = []
+    private var _stopSessions: Set<String> = []
+    private var _toolRunningSessions: Set<String> = []
 
-    /// Sessions currently waiting for permission (thread-safe)
-    var permissionSessions: Set<String> {
-        lock.lock()
-        defer { lock.unlock() }
-        return _permissionSessions
-    }
+    /// Maps cwd → most recently seen sessionId from hook events.
+    /// This is the authoritative source for "what sessionId is active for this project",
+    /// because hook events contain the REAL session_id (not the stale one in session files).
+    private var _cwdToSessionId: [String: String] = [:]
 
-    /// Check if a specific session needs permission
+    // MARK: - Thread-safe accessors
+
     func needsPermission(_ sessionId: String) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return _permissionSessions.contains(sessionId)
+        withLock { _permissionSessions.contains(sessionId) }
     }
 
-    /// Clear permission state (called when JSONL shows activity resumed)
+    func isStopped(_ sessionId: String) -> Bool {
+        withLock { _stopSessions.contains(sessionId) }
+    }
+
+    func isToolRunning(_ sessionId: String) -> Bool {
+        withLock { _toolRunningSessions.contains(sessionId) }
+    }
+
     func clearPermission(_ sessionId: String) {
-        lock.lock()
-        _permissionSessions.remove(sessionId)
-        lock.unlock()
+        withLock { _permissionSessions.remove(sessionId) }
     }
 
-    var onPermissionEvent: (@Sendable () -> Void)?
+    func clearStop(_ sessionId: String) {
+        withLock { _stopSessions.remove(sessionId) }
+    }
+
+    /// Remove all state for sessions no longer alive.
+    func pruneStale(activeSessionIds: Set<String>) {
+        withLock {
+            _permissionSessions.formIntersection(activeSessionIds)
+            _stopSessions.formIntersection(activeSessionIds)
+            _toolRunningSessions.formIntersection(activeSessionIds)
+        }
+    }
+
+    /// Get the real sessionId for a cwd, as reported by hook events.
+    /// Returns nil if no hook event has been received for this cwd yet.
+    func activeSessionId(forCwd cwd: String) -> String? {
+        withLock { _cwdToSessionId[cwd] }
+    }
+
+    // MARK: - Callbacks
+
+    var onHookSignal: (@Sendable (_ sessionId: String, _ signal: HookSignalType, _ toolName: String?) -> Void)?
     var onSessionEvent: (@Sendable () -> Void)?
-    /// Hook signal for TranscriptWatcher: (sessionId, signalType, toolName?)
-    var onHookSignal: (@Sendable (_ sessionId: String, _ signalType: String, _ toolName: String?) -> Void)?
 
     init(port: UInt16 = 19221) {
         self.port = port
     }
 
+    // MARK: - Lock helper
+
+    @discardableResult
+    private func withLock<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    /// Update all three state sets atomically for a session.
+    private func setSessionState(
+        _ sessionId: String,
+        permission: Bool? = nil,
+        stopped: Bool? = nil,
+        toolRunning: Bool? = nil
+    ) {
+        withLock {
+            if let p = permission { if p { _permissionSessions.insert(sessionId) } else { _permissionSessions.remove(sessionId) } }
+            if let s = stopped { if s { _stopSessions.insert(sessionId) } else { _stopSessions.remove(sessionId) } }
+            if let t = toolRunning { if t { _toolRunningSessions.insert(sessionId) } else { _toolRunningSessions.remove(sessionId) } }
+        }
+    }
+
     // MARK: - Hook Configuration
 
-    /// Install notify.sh and register a single Notification command hook.
-    /// Also cleans up ALL old CodePulse HTTP hooks from settings.json.
     func ensureHooksConfigured() {
         installNotifyScript()
         updateSettingsJson()
@@ -62,23 +108,17 @@ final class ClaudeHookServer: @unchecked Sendable {
 
         let script = """
         #!/bin/bash
-        # CodePulse: non-blocking hook notification
-        # Backgrounds curl so synchronous hooks (SessionStart) return instantly.
-        # If CodePulse isn't running, curl fails silently — Claude Code is unaffected.
+        INPUT=$(cat)
         curl -s --max-time 1 -X POST "http://127.0.0.1:\(port)/codepulse-event" \
           -H "Content-Type: application/json" \
-          -d "$HOOK_INPUT" 2>/dev/null &
+          -d "$INPUT" 2>/dev/null &
         exit 0
         """
 
         try? script.write(to: scriptPath, atomically: true, encoding: .utf8)
-
-        // Make executable
         var attrs = [FileAttributeKey: Any]()
         attrs[.posixPermissions] = 0o755
         try? FileManager.default.setAttributes(attrs, ofItemAtPath: scriptPath.path)
-
-        logger.info("Installed notify.sh at \(scriptPath.path)")
     }
 
     private func updateSettingsJson() {
@@ -89,15 +129,12 @@ final class ClaudeHookServer: @unchecked Sendable {
 
         guard FileManager.default.fileExists(atPath: settingsURL.path),
               let data = try? Data(contentsOf: settingsURL),
-              var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            logger.warning("Could not read ~/.claude/settings.json")
-            return
-        }
+              var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
         var hooks = root["hooks"] as? [String: Any] ?? [:]
         var changed = false
 
-        // 1. Remove ALL old CodePulse HTTP hooks from every event type
+        // Remove old CodePulse hooks
         for event in hooks.keys {
             guard var entries = hooks[event] as? [[String: Any]] else { continue }
             let before = entries.count
@@ -114,11 +151,12 @@ final class ClaudeHookServer: @unchecked Sendable {
             }
         }
 
-        // 2. Register command hooks for Notification, SessionStart, SessionEnd
+        // Register all 7 hooks
         let commandHook: [String: Any] = ["type": "command", "command": scriptPath]
         let hookEntry: [String: Any] = ["hooks": [commandHook]]
+        let hookEvents = ["Notification", "Stop", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SessionStart", "SessionEnd"]
 
-        for event in ["Notification", "SessionStart", "SessionEnd", "PermissionRequest", "PreCompact"] {
+        for event in hookEvents {
             var entries = hooks[event] as? [[String: Any]] ?? []
             let alreadyPresent = entries.contains { entry in
                 guard let entryHooks = entry["hooks"] as? [[String: Any]] else { return false }
@@ -135,12 +173,12 @@ final class ClaudeHookServer: @unchecked Sendable {
             root["hooks"] = hooks
             if let data = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) {
                 try? data.write(to: settingsURL, options: .atomic)
-                logger.info("Updated hooks in settings.json (Notification command hook only)")
+                logger.info("Updated hooks in settings.json (7 hook events)")
             }
         }
     }
 
-    // MARK: - Server (receives events from notify.sh)
+    // MARK: - Server
 
     func start() {
         do {
@@ -158,14 +196,10 @@ final class ClaudeHookServer: @unchecked Sendable {
 
         listener?.stateUpdateHandler = { state in
             if case .ready = state {
-                logger.info("Notification hook server listening on port \(self.port)")
+                logger.info("Hook server listening on port \(self.port)")
             }
         }
-
-        listener?.newConnectionHandler = { [weak self] connection in
-            self?.handleConnection(connection)
-        }
-
+        listener?.newConnectionHandler = { [weak self] conn in self?.handleConnection(conn) }
         listener?.start(queue: queue)
     }
 
@@ -178,17 +212,12 @@ final class ClaudeHookServer: @unchecked Sendable {
 
     private func handleConnection(_ connection: NWConnection) {
         connection.start(queue: queue)
-
         var accumulated = Data()
 
         func receiveMore() {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
                 if let data { accumulated.append(data) }
-
-                if accumulated.count > 512_000 {
-                    connection.cancel()
-                    return
-                }
+                if accumulated.count > 512_000 { connection.cancel(); return }
 
                 let done = isComplete || error != nil
                 let hasFullRequest = String(data: accumulated, encoding: .utf8)?.contains("\r\n\r\n") ?? false
@@ -220,6 +249,14 @@ final class ClaudeHookServer: @unchecked Sendable {
         let eventName = json["hook_event_name"] as? String ?? ""
         let sessionId = json["session_id"] as? String
         let toolName = json["tool_name"] as? String
+        let cwd = json["cwd"] as? String
+
+        // Track cwd → sessionId mapping from every hook event.
+        // This is the only reliable way to know the real sessionId for a project,
+        // because session files record the initial ID which becomes stale after /resume.
+        if let sessionId, let cwd {
+            withLock { _cwdToSessionId[cwd] = sessionId }
+        }
 
         switch eventName {
         case "Notification":
@@ -227,57 +264,59 @@ final class ClaudeHookServer: @unchecked Sendable {
             let notificationType = json["notification_type"] as? String
                 ?? (json["message"] as? [String: Any])?["notification_type"] as? String
 
-            switch notificationType {
-            case "permission_prompt":
-                lock.lock()
-                _permissionSessions.insert(sessionId)
-                lock.unlock()
-                logger.debug("Permission needed for session \(sessionId.prefix(8))...")
-                DispatchQueue.main.async { [weak self] in
-                    self?.onHookSignal?(sessionId, "permission_request", toolName)
-                    self?.onPermissionEvent?()
-                }
-            case "elicitation_dialog":
-                DispatchQueue.main.async { [weak self] in
-                    self?.onHookSignal?(sessionId, "elicitation_dialog", nil)
-                    self?.onPermissionEvent?()
-                }
-            case "idle_prompt":
-                DispatchQueue.main.async { [weak self] in
-                    self?.onHookSignal?(sessionId, "idle_prompt", nil)
-                }
-            default:
-                break
+            if toolName == "AskUserQuestion" {
+                setSessionState(sessionId, permission: true, stopped: false, toolRunning: false)
+                emit(sessionId, .askUserQuestion, toolName)
+            } else if notificationType == "permission_prompt" {
+                setSessionState(sessionId, permission: true, stopped: false, toolRunning: false)
+                emit(sessionId, .permissionRequest, toolName)
+            } else if notificationType == "elicitation_dialog" {
+                setSessionState(sessionId, permission: true, stopped: false)
+                emit(sessionId, .elicitationDialog, nil)
             }
 
-        case "PermissionRequest":
+        case "Stop":
             guard let sessionId else { return }
-            lock.lock()
-            _permissionSessions.insert(sessionId)
-            lock.unlock()
-            logger.debug("PermissionRequest for session \(sessionId.prefix(8))...")
-            DispatchQueue.main.async { [weak self] in
-                self?.onHookSignal?(sessionId, "permission_request", toolName)
-                self?.onPermissionEvent?()
-            }
+            setSessionState(sessionId, permission: false, stopped: true, toolRunning: false)
+            emit(sessionId, .stop, nil)
 
-        case "PreCompact":
+        case "UserPromptSubmit":
             guard let sessionId else { return }
-            logger.debug("PreCompact for session \(sessionId.prefix(8))...")
-            DispatchQueue.main.async { [weak self] in
-                self?.onHookSignal?(sessionId, "pre_compact", nil)
-            }
+            setSessionState(sessionId, permission: false, stopped: false, toolRunning: false)
+            emit(sessionId, .userPromptSubmit, nil)
+
+        case "PreToolUse":
+            guard let sessionId else { return }
+            setSessionState(sessionId, stopped: false, toolRunning: true)
+            emit(sessionId, .preToolUse, toolName)
+
+        case "PostToolUse":
+            guard let sessionId else { return }
+            setSessionState(sessionId, toolRunning: false)
+            emit(sessionId, .postToolUse, toolName)
 
         case "SessionStart":
-            logger.info("SessionStart hook fired\(sessionId.map { " for \($0.prefix(8))..." } ?? "")")
+            logger.info("SessionStart\(sessionId.map { " \($0.prefix(8))..." } ?? "")")
             DispatchQueue.main.async { [weak self] in self?.onSessionEvent?() }
 
         case "SessionEnd":
-            logger.info("SessionEnd hook fired\(sessionId.map { " for \($0.prefix(8))..." } ?? "")")
+            guard let sessionId else {
+                DispatchQueue.main.async { [weak self] in self?.onSessionEvent?() }
+                return
+            }
+            setSessionState(sessionId, permission: false, stopped: false, toolRunning: false)
+            logger.info("SessionEnd \(sessionId.prefix(8))...")
             DispatchQueue.main.async { [weak self] in self?.onSessionEvent?() }
 
         default:
             break
+        }
+    }
+
+    private func emit(_ sessionId: String, _ signal: HookSignalType, _ toolName: String?) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onHookSignal?(sessionId, signal, toolName)
+            self?.onSessionEvent?()
         }
     }
 }

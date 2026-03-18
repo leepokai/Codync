@@ -25,31 +25,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        scanner.hookServer = hookServer
         stateManager = SessionStateManager(scanner: scanner)
         stateManager.hookServer = hookServer
         cloudKitSync = CloudKitSync(stateManager: stateManager)
         menuBarController = MenuBarController(stateManager: stateManager)
 
-        // Hook events: Notification, PermissionRequest, PreCompact, SessionStart, SessionEnd
         hookServer.ensureHooksConfigured()
-        hookServer.onPermissionEvent = { [weak self] in
-            self?.scanner.scan()
-        }
+        // SessionStart/SessionEnd: immediate refresh (new/removed session)
         hookServer.onSessionEvent = { [weak self] in
-            self?.scanner.scan()
+            self?.stateManager.refreshFromHookState()
         }
-        hookServer.onHookSignal = { [weak self] sessionId, signalType, toolName in
+        // All other hooks: immediate refresh with hook signal applied first
+        hookServer.onHookSignal = { [weak self] sessionId, signal, toolName in
             self?.stateManager.transcriptWatcher.handleHookSignal(
-                sessionId: sessionId, signalType: signalType, toolName: toolName
+                sessionId: sessionId, signal: signal, toolName: toolName
             )
-            self?.scanner.scan()
+            self?.stateManager.refreshFromHookState()
         }
         hookServer.start()
 
         scanner.start()
-        logger.info("CodePulse launched — JSONL watcher + Notification/SessionStart/SessionEnd hooks active")
+        logger.info("CodePulse launched — hook-driven status detection (7 hooks) + JSONL supplementary data")
 
-        // Clean up orphan CloudKit records from prior crashes or stale sessions
         Task {
             do {
                 let activeIds = Set(scanner.activeSessions.keys)

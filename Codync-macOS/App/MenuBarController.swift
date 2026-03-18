@@ -10,7 +10,8 @@ final class CodyncPanelState: ObservableObject {
     @Published var headerSize: CGSize = .zero
     @Published var contentHeight: CGFloat = 0
     var collapsedRect: CGRect = .zero
-    var panelRect: CGRect = .zero
+    var panelRect: CGRect = .zero      // fixed size — used for hitTest
+    var contentRect: CGRect = .zero    // dynamic — used for click-outside dismissal
 
     private let expandedWidth: CGFloat = 380
     private let expandedHeight: CGFloat = 500
@@ -19,10 +20,10 @@ final class CodyncPanelState: ObservableObject {
     func updateGeometry(for screen: NSScreen) {
         screenRef = screen
         headerSize = screen.notchSize
-        recomputePanelRect()
+        recomputeRects()
     }
 
-    func recomputePanelRect() {
+    func recomputeRects() {
         guard let screen = screenRef else { return }
         let centerX = screen.frame.origin.x + screen.frame.width / 2
 
@@ -33,12 +34,21 @@ final class CodyncPanelState: ObservableObject {
             height: headerSize.height
         )
 
-        let height = contentHeight > 0 ? min(contentHeight, expandedHeight) : expandedHeight
+        // hitTest rect — always full size so clicks reach SwiftUI
         panelRect = CGRect(
             x: centerX - expandedWidth / 2,
-            y: screen.frame.maxY - height,
+            y: screen.frame.maxY - expandedHeight,
             width: expandedWidth,
-            height: height
+            height: expandedHeight
+        )
+
+        // content rect — dynamic, for click-outside dismissal
+        let h = contentHeight > 0 ? min(contentHeight, expandedHeight) : expandedHeight
+        contentRect = CGRect(
+            x: centerX - expandedWidth / 2,
+            y: screen.frame.maxY - h,
+            width: expandedWidth,
+            height: h
         )
     }
 }
@@ -152,8 +162,8 @@ final class MenuBarController: NSObject {
         panelState.$contentHeight
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.panelState.recomputePanelRect()
-                self.hitTestView?.panelRect = self.panelState.panelRect
+                self.panelState.recomputeRects()
+                // hitTestView.panelRect stays fixed — only contentRect is dynamic
             }
             .store(in: &cancellables)
 
@@ -181,16 +191,7 @@ final class MenuBarController: NSObject {
 
     private func handleGlobalClick() {
         guard panelState.isExpanded else { return }
-
-        let mouseLocation = NSEvent.mouseLocation
-
-        if panelState.panelRect.contains(mouseLocation) { return }
-
-        if let button = statusItem.button, let buttonWindow = button.window {
-            let buttonScreenFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-            if buttonScreenFrame.contains(mouseLocation) { return }
-        }
-
+        // Global monitor only fires for clicks OUTSIDE our app — dismiss panel
         panelState.isExpanded = false
     }
 
@@ -210,7 +211,7 @@ final class MenuBarController: NSObject {
             let screen = NSScreen.builtInOrMain
             panelState.updateGeometry(for: screen)
             hitTestView?.collapsedRect = panelState.collapsedRect
-            hitTestView?.panelRect = panelState.panelRect
+            hitTestView?.panelRect = panelState.panelRect  // fixed full-size rect
             panel?.setFrame(fullScreenTopFrame(for: screen), display: true)
         }
     }

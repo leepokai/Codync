@@ -6,6 +6,9 @@ import CodyncShared
 struct CodyncLiveActivityWidget: Widget {
     let kind: String = "CodyncLiveActivity"
 
+    // Monochrome palette — dark navy on light Lock Screen background
+    private static let fg = Color(red: 47/255, green: 59/255, blue: 84/255)
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: CodyncAttributes.self) { context in
             lockScreenBanner(context: context)
@@ -13,8 +16,9 @@ struct CodyncLiveActivityWidget: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Circle()
-                        .fill(islandStatusColor(context.state))
+                        .fill(.white)
                         .frame(width: 8, height: 8)
+                        .opacity(context.state.status == "completed" ? 0.5 : 1)
                         .padding(.top, 6)
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -36,11 +40,10 @@ struct CodyncLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if context.state.totalCount > 0 {
-                        // Progress bar in Dynamic Island
                         HStack(spacing: 2) {
                             ForEach(Array(context.state.tasks.enumerated()), id: \.offset) { _, task in
                                 RoundedRectangle(cornerRadius: 2)
-                                    .fill(taskColor(task.status))
+                                    .fill(islandTaskColor(task.status))
                                     .frame(height: 4)
                             }
                         }
@@ -50,7 +53,7 @@ struct CodyncLiveActivityWidget: Widget {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark")
                                     .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(.white.opacity(0.7))
                                 Text(prev.truncatedContent)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
@@ -61,13 +64,14 @@ struct CodyncLiveActivityWidget: Widget {
                 }
             } compactLeading: {
                 Circle()
-                    .fill(islandStatusColor(context.state))
+                    .fill(.white)
                     .frame(width: 6, height: 6)
+                    .opacity(context.state.status == "completed" ? 0.5 : 1)
             } compactTrailing: {
                 if context.state.status == "completed" {
                     Text("Done")
                         .font(.caption2)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(.white.opacity(0.5))
                 } else if context.state.totalCount > 0 {
                     Text("\(context.state.completedCount)/\(context.state.totalCount)")
                         .font(.caption2)
@@ -80,8 +84,9 @@ struct CodyncLiveActivityWidget: Widget {
                 }
             } minimal: {
                 Circle()
-                    .fill(islandStatusColor(context.state))
+                    .fill(.white)
                     .frame(width: 6, height: 6)
+                    .opacity(context.state.status == "completed" ? 0.5 : 1)
             }
         }
     }
@@ -90,69 +95,60 @@ struct CodyncLiveActivityWidget: Widget {
 
     @ViewBuilder
     private func lockScreenBanner(context: ActivityViewContext<CodyncAttributes>) -> some View {
-        let state = context.state
-
-        if state.totalCount > 0 {
+        if context.state.totalCount > 0 {
             progressBanner(context: context)
         } else {
-            chowderBanner(context: context)
+            cardBanner(context: context)
         }
     }
 
-    // MARK: - Progress Bar Mode (has task list)
+    // MARK: - Progress Bar Mode
 
     @ViewBuilder
     private func progressBanner(context: ActivityViewContext<CodyncAttributes>) -> some View {
         let state = context.state
         let isCompleted = state.status == "completed"
-        let primaryFg = Color(red: 47/255, green: 59/255, blue: 84/255)
         let progress = state.totalCount > 0
             ? Double(state.completedCount) / Double(state.totalCount)
             : 0
 
         VStack(alignment: .leading, spacing: 0) {
-            // Header
-            bannerHeader(context: context, primaryFg: primaryFg)
+            bannerHeader(context: context)
 
-            // Current task + progress
             VStack(alignment: .leading, spacing: 10) {
                 if isCompleted {
-                    // Completion
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 20))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Self.fg)
                         VStack(alignment: .leading, spacing: 1) {
                             Text("All tasks complete")
                                 .font(.subheadline.bold())
-                                .foregroundStyle(primaryFg)
+                                .foregroundStyle(Self.fg)
                             Text("$\(String(format: "%.2f", state.costUSD))")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Self.fg.opacity(0.5))
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 6)
                 } else if let task = state.currentTask {
-                    // Current task
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "arrow.turn.down.right")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(primaryFg.opacity(0.4))
+                            .foregroundStyle(Self.fg.opacity(0.4))
                             .frame(width: 16, height: 16)
                             .padding(.top, 1)
                         Text(task)
                             .font(.callout)
-                            .foregroundStyle(primaryFg)
+                            .foregroundStyle(Self.fg)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, 6)
                 }
 
-                // Progress bar
                 VStack(spacing: 6) {
-                    // Segmented progress
                     HStack(spacing: 2) {
                         ForEach(Array(state.tasks.enumerated()), id: \.offset) { _, task in
                             RoundedRectangle(cornerRadius: 3)
@@ -162,23 +158,21 @@ struct CodyncLiveActivityWidget: Widget {
                     }
                     .padding(.horizontal, 6)
 
-                    // Count + percentage
                     HStack {
                         Text("\(state.completedCount)/\(state.totalCount) tasks")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Self.fg.opacity(0.5))
                         Spacer()
                         Text("\(Int(progress * 100))%")
                             .font(.caption.bold())
-                            .foregroundStyle(primaryFg.opacity(0.6))
+                            .foregroundStyle(Self.fg.opacity(0.6))
                     }
                     .padding(.horizontal, 6)
                 }
             }
             .frame(maxHeight: .infinity)
 
-            // Footer
-            bannerFooter(context: context, primaryFg: primaryFg, isWaiting: false)
+            bannerFooter(context: context, isWaiting: false)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
@@ -187,10 +181,10 @@ struct CodyncLiveActivityWidget: Widget {
         .activityBackgroundTint(.clear)
     }
 
-    // MARK: - Chowder Card Mode (no task list)
+    // MARK: - Card Stack Mode
 
     @ViewBuilder
-    private func chowderBanner(context: ActivityViewContext<CodyncAttributes>) -> some View {
+    private func cardBanner(context: ActivityViewContext<CodyncAttributes>) -> some View {
         let state = context.state
         let isCompleted = state.status == "completed"
 
@@ -208,13 +202,9 @@ struct CodyncLiveActivityWidget: Widget {
         let frontCard = completedTasks.last?.truncatedContent
         let isWaiting = cards.isEmpty && !isCompleted
 
-        let primaryFg = Color(red: 47/255, green: 59/255, blue: 84/255)
-
         VStack(alignment: .leading, spacing: 4) {
-            // Header
-            bannerHeader(context: context, primaryFg: primaryFg)
+            bannerHeader(context: context)
 
-            // Cards area
             ZStack {
                 if isCompleted {
                     VStack(alignment: .center, spacing: 8) {
@@ -222,15 +212,15 @@ struct CodyncLiveActivityWidget: Widget {
                             .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 28, height: 28)
-                            .background(Color.green, in: Circle())
+                            .background(Self.fg, in: Circle())
 
                         VStack(spacing: 2) {
                             Text("Session Complete")
                                 .font(.subheadline.bold())
-                                .foregroundStyle(primaryFg)
+                                .foregroundStyle(Self.fg)
                             Text("$\(String(format: "%.2f", state.costUSD))")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Self.fg.opacity(0.5))
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -239,11 +229,11 @@ struct CodyncLiveActivityWidget: Widget {
                     Text(state.currentTask ?? "Analyzing code…")
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Self.fg)
                         .padding(12)
                         .frame(minWidth: 52)
                         .background(
-                            Color.blue.opacity(0.12),
+                            Self.fg.opacity(0.08),
                             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                         )
                         .padding(.leading, 48)
@@ -267,8 +257,7 @@ struct CodyncLiveActivityWidget: Widget {
             .frame(maxHeight: .infinity)
             .zIndex(10)
 
-            // Footer
-            bannerFooter(context: context, primaryFg: primaryFg, isWaiting: isWaiting)
+            bannerFooter(context: context, isWaiting: isWaiting)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
@@ -277,19 +266,19 @@ struct CodyncLiveActivityWidget: Widget {
         .activityBackgroundTint(.clear)
     }
 
-    // MARK: - Shared Banner Components
+    // MARK: - Shared Components
 
     @ViewBuilder
-    private func bannerHeader(context: ActivityViewContext<CodyncAttributes>, primaryFg: Color) -> some View {
+    private func bannerHeader(context: ActivityViewContext<CodyncAttributes>) -> some View {
         let state = context.state
 
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(primaryFg.opacity(0.6))
+                    .foregroundStyle(Self.fg.opacity(0.6))
                     .frame(width: 21, height: 21)
-                    .background(primaryFg.opacity(0.08), in: Circle())
+                    .background(Self.fg.opacity(0.08), in: Circle())
 
                 Text(context.attributes.projectName)
                     .font(.callout.bold())
@@ -309,14 +298,14 @@ struct CodyncLiveActivityWidget: Widget {
                     .padding(.horizontal, 8)
                     .overlay {
                         Capsule()
-                            .stroke(primaryFg.opacity(alert ? 0.06 : 0.12))
+                            .stroke(Self.fg.opacity(alert ? 0.06 : 0.12))
                     }
-                    .background(primaryFg.opacity(alert ? 0.12 : 0), in: Capsule())
+                    .background(Self.fg.opacity(alert ? 0.12 : 0), in: Capsule())
                     .monospacedDigit()
             } else {
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(statusColor(state.status))
+                        .fill(Self.fg)
                         .frame(width: 5, height: 5)
                     Text(statusLabel(state.status))
                         .opacity(0.48)
@@ -327,11 +316,11 @@ struct CodyncLiveActivityWidget: Widget {
         .font(.subheadline.bold())
         .frame(height: 28)
         .padding(.horizontal, 6)
-        .foregroundStyle(primaryFg)
+        .foregroundStyle(Self.fg)
     }
 
     @ViewBuilder
-    private func bannerFooter(context: ActivityViewContext<CodyncAttributes>, primaryFg: Color, isWaiting: Bool) -> some View {
+    private func bannerFooter(context: ActivityViewContext<CodyncAttributes>, isWaiting: Bool) -> some View {
         let state = context.state
         let isCompleted = state.status == "completed"
 
@@ -342,7 +331,7 @@ struct CodyncLiveActivityWidget: Widget {
                     .padding(.leading, 8)
             } else {
                 HStack(spacing: 2) {
-                    Image(systemName: statusIcon(state.status))
+                    Image(systemName: "arrow.turn.down.right")
                         .frame(width: 24, height: 18)
                     Text(isWaiting ? "Starting…" : (state.currentTask ?? statusLabel(state.status)))
                         .lineLimit(1)
@@ -369,7 +358,7 @@ struct CodyncLiveActivityWidget: Widget {
                     .layoutPriority(1)
             }
         }
-        .foregroundStyle(primaryFg)
+        .foregroundStyle(Self.fg)
         .padding(.leading, 4)
         .padding(.trailing, 12)
         .font(.footnote.bold())
@@ -377,22 +366,6 @@ struct CodyncLiveActivityWidget: Widget {
     }
 
     // MARK: - Helpers
-
-    private func statusColor(_ status: String) -> Color {
-        switch status {
-        case "working": .blue
-        case "idle": .secondary
-        case "needsInput": .orange
-        case "compacting": .purple
-        case "error": .red
-        case "completed": .green
-        default: .gray
-        }
-    }
-
-    private func islandStatusColor(_ state: CodyncAttributes.ContentState) -> Color {
-        state.status == "completed" ? .green : .blue
-    }
 
     private func statusLabel(_ status: String) -> String {
         switch status {
@@ -406,46 +379,47 @@ struct CodyncLiveActivityWidget: Widget {
         }
     }
 
-    private func statusIcon(_ status: String) -> String {
+    /// Lock Screen task segments — monochrome navy at different opacities
+    private func taskColor(_ status: TaskStatus) -> Color {
         switch status {
-        case "working": "arrow.turn.down.right"
-        case "idle": "pause.circle"
-        case "needsInput": "exclamationmark.bubble"
-        case "compacting": "arrow.triangle.2.circlepath"
-        case "error": "exclamationmark.triangle"
-        default: "arrow.turn.down.right"
+        case .completed: Self.fg
+        case .inProgress: Self.fg.opacity(0.4)
+        case .pending: Self.fg.opacity(0.12)
         }
     }
 
-    private func taskColor(_ status: TaskStatus) -> Color {
+    /// Dynamic Island task segments — monochrome white at different opacities
+    private func islandTaskColor(_ status: TaskStatus) -> Color {
         switch status {
-        case .completed: .blue
-        case .inProgress: .blue.opacity(0.4)
-        case .pending: Color(.systemGray4)
+        case .completed: .white
+        case .inProgress: .white.opacity(0.4)
+        case .pending: .white.opacity(0.12)
         }
     }
 }
 
-// MARK: - Task Card (chowder mode)
+// MARK: - Task Card
 
 struct TaskCard: View {
     let text: String
     let isBehind: Bool
 
+    private static let fg = Color(red: 47/255, green: 59/255, blue: 84/255)
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.black.opacity(0.5))
+                .foregroundStyle(Self.fg.opacity(0.5))
                 .frame(width: 21, height: 21)
                 .background(
                     Circle()
-                        .foregroundStyle(.black.opacity(0.12))
+                        .foregroundStyle(Self.fg.opacity(0.12))
                 )
 
             Text(text)
                 .font(.callout)
-                .foregroundStyle(.black)
+                .foregroundStyle(Self.fg)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

@@ -80,17 +80,10 @@ struct CodyncTheme {
 
     // MARK: - Semantic colors
 
-    var accent: Color { .blue }
+    var accent: Color { primaryText }
 
-    /// Attention state — bright white on panel, orange on standard
-    var warning: Color {
-        isPanel ? Self.panelForeground : .orange
-    }
-
-    /// Permission alert — bright white on panel, red on standard
-    var danger: Color {
-        isPanel ? Self.panelForeground : .red.opacity(0.85)
-    }
+    var warning: Color { primaryText }
+    var danger: Color { primaryText }
 
     /// Color for a waiting session based on its reason.
     /// Permission prompt = danger (red), everything else = warning (yellow/orange).

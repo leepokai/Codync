@@ -27,7 +27,7 @@ struct CodyncTheme: Sendable {
 
     // MARK: - Semantic
 
-    var accent: Color { Color(red: 0.35, green: 0.56, blue: 1.0) }
+    var accent: Color { Self.fg }
     var warning: Color { Self.fg }
     var danger: Color { Self.fg }
 

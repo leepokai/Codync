@@ -8,15 +8,6 @@ struct SessionRowView: View {
     @State private var isHovered = false
     @State private var isPressed = false
 
-    /// Status description: summary (lastPrompt/firstPrompt) or lastEvent
-    private var statusDescription: String? {
-        if session.status == .working, let event = session.lastEvent, !event.isEmpty {
-            return event
-        }
-        let desc = session.summary
-        return desc != session.projectName ? desc : nil
-    }
-
     var body: some View {
         Button(action: {
             withAnimation(.spring(duration: 0.15)) { isPressed = true }
@@ -43,7 +34,7 @@ struct SessionRowView: View {
                             SessionTagView(tag: session.model)
                         }
                     }
-                    if let desc = statusDescription {
+                    if let desc = session.statusDescription {
                         Text(desc)
                             .font(.system(size: 11))
                             .foregroundStyle(subtitleColor)

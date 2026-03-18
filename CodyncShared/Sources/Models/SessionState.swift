@@ -32,6 +32,14 @@ public struct SessionState: Codable, Identifiable, Equatable, Sendable {
         Array(tasks.suffix(10))
     }
 
+    /// Display text below project name: lastEvent when working, otherwise summary
+    public var statusDescription: String? {
+        if status == .working, let event = lastEvent, !event.isEmpty {
+            return event
+        }
+        return summary != projectName ? summary : nil
+    }
+
     public init(
         sessionId: String, projectName: String, gitBranch: String,
         status: SessionStatus, model: String, summary: String,

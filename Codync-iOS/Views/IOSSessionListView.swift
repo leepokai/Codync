@@ -80,15 +80,6 @@ private struct SessionRowContent: View {
     let onTogglePin: () -> Void
     @Environment(\.theme) private var theme
 
-    /// Matches macOS SessionRowView.statusDescription
-    private var statusDescription: String? {
-        if session.status == .working, let event = session.lastEvent, !event.isEmpty {
-            return event
-        }
-        let desc = session.summary
-        return desc != session.projectName ? desc : nil
-    }
-
     var body: some View {
         HStack(spacing: 10) {
             SessionStatusView(
@@ -109,9 +100,9 @@ private struct SessionRowContent: View {
                     }
                     Spacer(minLength: 4)
                 }
-                if statusDescription != nil || !session.tasks.isEmpty {
+                if session.statusDescription != nil || !session.tasks.isEmpty {
                     HStack(spacing: 4) {
-                        if let desc = statusDescription {
+                        if let desc = session.statusDescription {
                             Text(desc)
                                 .font(.system(size: 13))
                                 .foregroundStyle(subtitleColor)

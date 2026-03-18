@@ -18,10 +18,12 @@ final class ClaudeHookServer: @unchecked Sendable {
     private var _stopSessions: Set<String> = []
     private var _toolRunningSessions: Set<String> = []
 
-    /// Maps cwd → most recently seen sessionId from hook events.
-    /// This is the authoritative source for "what sessionId is active for this project",
-    /// because hook events contain the REAL session_id (not the stale one in session files).
-    private var _cwdToSessionId: [String: String] = [:]
+    /// All sessionIds seen from hook events, grouped by cwd.
+    private var _cwdToSessionIds: [String: Set<String>] = [:]
+
+    /// Maps TTY → sessionId. TTY uniquely identifies a terminal,
+    /// so this correctly resolves multiple sessions in the same cwd.
+    private var _ttyToSessionId: [String: String] = [:]
 
     // MARK: - Thread-safe accessors
 
@@ -51,13 +53,23 @@ final class ClaudeHookServer: @unchecked Sendable {
             _permissionSessions.formIntersection(activeSessionIds)
             _stopSessions.formIntersection(activeSessionIds)
             _toolRunningSessions.formIntersection(activeSessionIds)
+            // Prune cwd and tty mappings
+            for (cwd, ids) in _cwdToSessionIds {
+                let pruned = ids.intersection(activeSessionIds)
+                _cwdToSessionIds[cwd] = pruned.isEmpty ? nil : pruned
+            }
+            _ttyToSessionId = _ttyToSessionId.filter { activeSessionIds.contains($0.value) }
         }
     }
 
-    /// Get the real sessionId for a cwd, as reported by hook events.
-    /// Returns nil if no hook event has been received for this cwd yet.
-    func activeSessionId(forCwd cwd: String) -> String? {
-        withLock { _cwdToSessionId[cwd] }
+    /// Get all sessionIds seen from hooks for a cwd.
+    func activeSessionIds(forCwd cwd: String) -> Set<String> {
+        withLock { _cwdToSessionIds[cwd] ?? [] }
+    }
+
+    /// Get the sessionId for a specific TTY device.
+    func sessionId(forTty tty: String) -> String? {
+        withLock { _ttyToSessionId[tty] }
     }
 
     // MARK: - Callbacks
@@ -106,9 +118,31 @@ final class ClaudeHookServer: @unchecked Sendable {
 
         try? FileManager.default.createDirectory(at: scriptDir, withIntermediateDirectories: true)
 
+        // Detect TTY from parent process chain (like cc-status-bar's TtyDetector).
+        // This uniquely identifies which terminal the hook fired from,
+        // allowing us to distinguish multiple sessions in the same cwd.
         let script = """
         #!/bin/bash
         INPUT=$(cat)
+
+        # Detect TTY from ancestor processes
+        TTY=""
+        PID=$$
+        for i in 1 2 3 4 5; do
+          T=$(ps -o tty= -p $PID 2>/dev/null | tr -d ' ')
+          if [ -n "$T" ] && [ "$T" != "??" ]; then
+            TTY="/dev/$T"
+            break
+          fi
+          PID=$(ps -o ppid= -p $PID 2>/dev/null | tr -d ' ')
+          [ -z "$PID" ] || [ "$PID" = "0" ] && break
+        done
+
+        # Inject tty into the JSON payload (use | as sed delimiter to avoid /dev/ conflicts)
+        if [ -n "$TTY" ]; then
+          INPUT=$(echo "$INPUT" | sed 's|}$|,"tty":"'"$TTY"'"}|')
+        fi
+
         curl -s --max-time 1 -X POST "http://127.0.0.1:\(port)/codepulse-event" \
           -H "Content-Type: application/json" \
           -d "$INPUT" 2>/dev/null &
@@ -251,11 +285,14 @@ final class ClaudeHookServer: @unchecked Sendable {
         let toolName = json["tool_name"] as? String
         let cwd = json["cwd"] as? String
 
-        // Track cwd → sessionId mapping from every hook event.
-        // This is the only reliable way to know the real sessionId for a project,
-        // because session files record the initial ID which becomes stale after /resume.
+        let tty = json["tty"] as? String
+
+        // Track sessionId by cwd and by TTY
         if let sessionId, let cwd {
-            withLock { _cwdToSessionId[cwd] = sessionId }
+            withLock {
+                _cwdToSessionIds[cwd, default: []].insert(sessionId)
+                if let tty { _ttyToSessionId[tty] = sessionId }
+            }
         }
 
         switch eventName {
@@ -297,16 +334,16 @@ final class ClaudeHookServer: @unchecked Sendable {
 
         case "SessionStart":
             logger.info("SessionStart\(sessionId.map { " \($0.prefix(8))..." } ?? "")")
-            DispatchQueue.main.async { [weak self] in self?.onSessionEvent?() }
+            Task { @MainActor [weak self] in self?.onSessionEvent?() }
 
         case "SessionEnd":
             guard let sessionId else {
-                DispatchQueue.main.async { [weak self] in self?.onSessionEvent?() }
+                Task { @MainActor [weak self] in self?.onSessionEvent?() }
                 return
             }
             setSessionState(sessionId, permission: false, stopped: false, toolRunning: false)
             logger.info("SessionEnd \(sessionId.prefix(8))...")
-            DispatchQueue.main.async { [weak self] in self?.onSessionEvent?() }
+            Task { @MainActor [weak self] in self?.onSessionEvent?() }
 
         default:
             break
@@ -314,7 +351,7 @@ final class ClaudeHookServer: @unchecked Sendable {
     }
 
     private func emit(_ sessionId: String, _ signal: HookSignalType, _ toolName: String?) {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             self?.onHookSignal?(sessionId, signal, toolName)
             self?.onSessionEvent?()
         }

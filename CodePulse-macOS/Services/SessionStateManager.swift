@@ -124,10 +124,16 @@ final class SessionStateManager: ObservableObject {
             }
         }
 
-        let newSessions = updated.sorted { $0.startedAt > $1.startedAt }
-        if newSessions != sessions {
-            sessions = newSessions
+        // Sort: working first, then by most recent activity
+        let newSessions = updated.sorted { a, b in
+            let aWeight = a.status == .working ? 0 : a.status == .needsInput ? 1 : 2
+            let bWeight = b.status == .working ? 0 : b.status == .needsInput ? 1 : 2
+            if aWeight != bWeight { return aWeight < bWeight }
+            return a.updatedAt > b.updatedAt
         }
+        // Always assign — hook state changes (status, waitingReason) must propagate
+        // to UI even when the session list structure hasn't changed
+        sessions = newSessions
     }
 
     private var skipPermissionsCache: [Int: Bool] = [:]

@@ -1,6 +1,5 @@
 import Foundation
 import CloudKit
-import Combine
 import CodyncShared
 import os
 
@@ -10,6 +9,7 @@ private let logger = Logger(subsystem: "com.pokai.Codync.ios", category: "CloudK
 final class CloudKitReceiver: ObservableObject {
     @Published var sessions: [SessionState] = []
     private var pollTimer: Timer?
+    private var isFetching = false
 
     func start() async {
         do {
@@ -23,6 +23,9 @@ final class CloudKitReceiver: ObservableObject {
     }
 
     func fetch() async {
+        guard !isFetching else { return }
+        isFetching = true
+        defer { isFetching = false }
         do {
             sessions = try await CloudKitManager.shared.fetchAll()
             logger.debug("Fetched \(self.sessions.count) sessions")
@@ -38,8 +41,8 @@ final class CloudKitReceiver: ObservableObject {
 
     func startPolling() {
         guard pollTimer == nil else { return }
-        logger.info("Starting CloudKit polling (3s interval)")
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+        logger.info("Starting CloudKit polling (1s interval)")
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.fetch()
             }

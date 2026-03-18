@@ -4,13 +4,14 @@ import CodyncShared
 struct IOSRootView: View {
     @ObservedObject var receiver: CloudKitReceiver
     @ObservedObject var liveActivityManager: LiveActivityManager
+    @AppStorage("codync_onboardingComplete") private var onboardingComplete = false
 
     private let theme = CodyncTheme()
 
     var body: some View {
         NavigationStack {
             Group {
-                if receiver.sessions.isEmpty {
+                if !onboardingComplete {
                     IOSOnboardingView()
                 } else {
                     IOSSessionListView(
@@ -23,6 +24,9 @@ struct IOSRootView: View {
         .environment(\.theme, theme)
         .preferredColorScheme(.dark)
         .onChange(of: receiver.sessions) { _, sessions in
+            if !sessions.isEmpty {
+                onboardingComplete = true
+            }
             liveActivityManager.updateSessions(sessions)
         }
     }

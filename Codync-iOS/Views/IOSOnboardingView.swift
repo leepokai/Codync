@@ -66,7 +66,8 @@ struct IOSOnboardingView: View {
             }
             .padding(.bottom, 32)
         }
-        .background(theme.background)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(theme.background.ignoresSafeArea())
         .task {
             await checkICloudStatus()
         }

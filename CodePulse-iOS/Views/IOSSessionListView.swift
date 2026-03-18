@@ -6,6 +6,16 @@ struct IOSSessionListView: View {
     @ObservedObject var liveActivityManager: LiveActivityManager
     @Environment(\.theme) private var theme
 
+    /// Sort: working first → needsInput → rest, then by most recent activity
+    private var sortedSessions: [SessionState] {
+        sessions.sorted { a, b in
+            let aWeight = a.status == .working ? 0 : a.status == .needsInput ? 1 : 2
+            let bWeight = b.status == .working ? 0 : b.status == .needsInput ? 1 : 2
+            if aWeight != bWeight { return aWeight < bWeight }
+            return a.updatedAt > b.updatedAt
+        }
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 1) {
@@ -14,7 +24,7 @@ struct IOSSessionListView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 4)
 
-                ForEach(sessions) { session in
+                ForEach(sortedSessions) { session in
                     NavigationLink(destination: IOSSessionDetailView(session: session)) {
                         SessionRowContent(
                             session: session,
@@ -25,6 +35,7 @@ struct IOSSessionListView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .tint(theme.primaryText)
                 }
             }
         }
@@ -96,13 +107,16 @@ private struct SessionRowContent: View {
                     if !session.model.isEmpty {
                         SessionTagView(tag: session.model)
                     }
+                    Spacer(minLength: 4)
                 }
-                if let desc = statusDescription {
+                if statusDescription != nil || !session.tasks.isEmpty {
                     HStack(spacing: 4) {
-                        Text(desc)
-                            .font(.system(size: 13))
-                            .foregroundStyle(subtitleColor)
-                            .lineLimit(1)
+                        if let desc = statusDescription {
+                            Text(desc)
+                                .font(.system(size: 13))
+                                .foregroundStyle(subtitleColor)
+                                .lineLimit(1)
+                        }
                         Spacer()
                         Text(relativeTime(session.updatedAt))
                             .font(.system(size: 12, design: .monospaced))

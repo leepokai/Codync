@@ -120,7 +120,7 @@ private struct MinimalDotView: View {
 // MARK: - Claude Sparkle
 
 struct ClaudeSparkleView: View {
-    private static let phases: [String] = ["·", "✢", "✳", "✶", "✻", "✽"]
+    private static let phases: [String] = ["·", "✢", "✶", "✻", "✽"]
     private static let cycle: [String] = phases + phases.dropFirst().dropLast().reversed()
     @Environment(\.theme) private var theme
     @State private var currentIndex = 0

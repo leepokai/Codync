@@ -1,0 +1,97 @@
+import Foundation
+import Combine
+import CloudKit
+import CodyncShared
+import os
+
+private let logger = Logger(subsystem: "com.pokai.Codync", category: "CloudKitSync")
+
+@MainActor
+final class CloudKitSync {
+    private let stateManager: SessionStateManager
+    private var cancellables = Set<AnyCancellable>()
+    private var previousStates: [String: SessionState] = [:]
+    private var previousSessionIds: Set<String> = []
+    private var isSyncing = false
+    private var quotaBackoffUntil: Date?
+
+    private static func log(_ msg: String) {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codync/sync.log")
+        let line = "[\(Date())] \(msg)\n"
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
+        else { try? line.write(to: url, atomically: false, encoding: .utf8) }
+    }
+
+    init(stateManager: SessionStateManager) {
+        self.stateManager = stateManager
+        stateManager.$sessions
+            .throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] sessions in
+                self?.syncToCloud(sessions)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func syncToCloud(_ sessions: [SessionState]) {
+        guard !isSyncing else { return }
+
+        if let backoff = quotaBackoffUntil, Date() < backoff { return }
+        quotaBackoffUntil = nil
+
+        let currentIds = Set(sessions.map(\.sessionId))
+
+        // DELETE only when session disappears from the list entirely.
+        // This means the PID is dead and SessionScanner dropped it.
+        // Status changes (working → idle → needsInput → completed) are always SAVED, never deleted.
+        let disappearedIds = previousSessionIds.subtracting(currentIds)
+        let toDelete = Array(disappearedIds)
+
+        // SAVE any session whose state changed
+        let toSave = sessions.filter { session in
+            previousStates[session.sessionId]?.updatedAt != session.updatedAt
+            || previousStates[session.sessionId]?.status != session.status
+            || previousStates[session.sessionId]?.waitingReason != session.waitingReason
+        }
+
+        guard !toDelete.isEmpty || !toSave.isEmpty else {
+            previousSessionIds = currentIds
+            return
+        }
+
+        isSyncing = true
+
+        Task {
+            defer {
+                isSyncing = false
+                previousSessionIds = currentIds
+            }
+
+            do {
+                if !toDelete.isEmpty {
+                    Self.log("deleteByIds \(toDelete.count) sessions (PID dead)")
+                    try await CloudKitManager.shared.deleteByIds(toDelete)
+                    Self.log("SUCCESS: deleted \(toDelete.count)")
+                    for id in toDelete {
+                        previousStates.removeValue(forKey: id)
+                    }
+                }
+
+                if !toSave.isEmpty {
+                    Self.log("saveBatch \(toSave.count) sessions")
+                    try await CloudKitManager.shared.saveBatch(toSave)
+                    Self.log("SUCCESS: saved \(toSave.count)")
+                    for session in toSave {
+                        previousStates[session.sessionId] = session
+                    }
+                }
+            } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {
+                let retryAfter = error.retryAfterSeconds ?? 600
+                Self.log("QUOTA: backoff \(Int(retryAfter * 2))s")
+                quotaBackoffUntil = Date().addingTimeInterval(retryAfter * 2)
+            } catch {
+                Self.log("ERROR: \(error)")
+                quotaBackoffUntil = Date().addingTimeInterval(300)
+            }
+        }
+    }
+}

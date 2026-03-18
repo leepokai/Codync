@@ -25,7 +25,7 @@ final class CloudKitSync {
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
         stateManager.$sessions
-            .throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
+            .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] sessions in
                 self?.syncToCloud(sessions)
             }
@@ -46,11 +46,18 @@ final class CloudKitSync {
         let disappearedIds = previousSessionIds.subtracting(currentIds)
         let toDelete = Array(disappearedIds)
 
-        // SAVE any session whose state changed
+        // SAVE any session whose state changed (exclude durationSec/updatedAt — they change every second)
         let toSave = sessions.filter { session in
-            previousStates[session.sessionId]?.updatedAt != session.updatedAt
-            || previousStates[session.sessionId]?.status != session.status
-            || previousStates[session.sessionId]?.waitingReason != session.waitingReason
+            guard let prev = previousStates[session.sessionId] else { return true }
+            return prev.status != session.status
+                || prev.currentTask != session.currentTask
+                || prev.waitingReason != session.waitingReason
+                || prev.tasks != session.tasks
+                || prev.model != session.model
+                || prev.summary != session.summary
+                || prev.costUSD != session.costUSD
+                || prev.contextPct != session.contextPct
+                || prev.lastEvent != session.lastEvent
         }
 
         guard !toDelete.isEmpty || !toSave.isEmpty else {

@@ -1,0 +1,24 @@
+DEFINE SCHEMA
+
+    RECORD TYPE SessionState (
+        "___createTime" TIMESTAMP,
+        "___modTime" TIMESTAMP,
+        "___recordID" REFERENCE QUERYABLE,
+        sessionId STRING QUERYABLE,
+        projectName STRING,
+        gitBranch STRING,
+        status STRING QUERYABLE,
+        model STRING,
+        summary STRING,
+        currentTask STRING,
+        waitingReason STRING,
+        contextPct INT64,
+        costUSD DOUBLE,
+        startedAt TIMESTAMP,
+        durationSec INT64,
+        deviceId STRING,
+        updatedAt TIMESTAMP QUERYABLE SORTABLE,
+        tasks BYTES,
+        GRANT WRITE TO "_creator",
+        GRANT READ TO "_creator"
+    );

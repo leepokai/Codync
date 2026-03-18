@@ -183,7 +183,8 @@ final class LiveActivityManager: ObservableObject {
             currentTask: session.currentTask,
             contextPct: session.contextPct,
             costUSD: session.costUSD,
-            durationSec: session.durationSec
+            durationSec: session.durationSec,
+            sessionStartDate: session.startedAt
         )
     }
 

@@ -25,7 +25,7 @@ final class CloudKitSync {
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
         stateManager.$sessions
-            .throttle(for: .seconds(5), scheduler: RunLoop.main, latest: true)
+            .throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] sessions in
                 self?.syncToCloud(sessions)
             }
@@ -35,21 +35,22 @@ final class CloudKitSync {
     private func syncToCloud(_ sessions: [SessionState]) {
         guard !isSyncing else { return }
 
-        // Respect quota backoff
         if let backoff = quotaBackoffUntil, Date() < backoff { return }
         quotaBackoffUntil = nil
 
         let currentIds = Set(sessions.map(\.sessionId))
 
-        // Sessions that disappeared or completed since last sync → delete from CloudKit
-        let completedIds = sessions.filter { $0.status == .completed }.map(\.sessionId)
+        // DELETE only when session disappears from the list entirely.
+        // This means the PID is dead and SessionScanner dropped it.
+        // Status changes (working → idle → needsInput → completed) are always SAVED, never deleted.
         let disappearedIds = previousSessionIds.subtracting(currentIds)
-        let toDelete = Array(Set(completedIds).union(disappearedIds))
+        let toDelete = Array(disappearedIds)
 
-        // Active sessions with changed content → save to CloudKit
+        // SAVE any session whose state changed
         let toSave = sessions.filter { session in
-            session.status != .completed
-            && previousStates[session.sessionId]?.updatedAt != session.updatedAt
+            previousStates[session.sessionId]?.updatedAt != session.updatedAt
+            || previousStates[session.sessionId]?.status != session.status
+            || previousStates[session.sessionId]?.waitingReason != session.waitingReason
         }
 
         guard !toDelete.isEmpty || !toSave.isEmpty else {
@@ -67,7 +68,7 @@ final class CloudKitSync {
 
             do {
                 if !toDelete.isEmpty {
-                    Self.log("deleteByIds \(toDelete.count) sessions")
+                    Self.log("deleteByIds \(toDelete.count) sessions (PID dead)")
                     try await CloudKitManager.shared.deleteByIds(toDelete)
                     Self.log("SUCCESS: deleted \(toDelete.count)")
                     for id in toDelete {

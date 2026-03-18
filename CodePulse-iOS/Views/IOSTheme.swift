@@ -1,29 +1,43 @@
 import SwiftUI
+import CodePulseShared
 
+/// CodePulse iOS design system — Vercel/Cursor inspired, dark-only.
+/// Pure black background + #ededed foreground with opacity hierarchy.
 struct CodePulseTheme: Sendable {
-    let isDark: Bool
+    // Single-source foreground — #ededed varied by opacity
+    private static let fg = Color(red: 0.93, green: 0.93, blue: 0.93)
 
-    var background: Color {
-        isDark ? Color(red: 0.11, green: 0.11, blue: 0.12) : .white
+    // MARK: - Backgrounds
+
+    var background: Color { Color(red: 0.06, green: 0.06, blue: 0.07) }
+    var cardBackground: Color { Color.white.opacity(0.05) }
+    var hoverBackground: Color { Color.white.opacity(0.06) }
+    var rowBackground: Color { Color.white.opacity(0.03) }
+
+    // MARK: - Text hierarchy
+
+    var primaryText: Color { Self.fg }
+    var secondaryText: Color { Self.fg.opacity(0.55) }
+    var tertiaryText: Color { Self.fg.opacity(0.35) }
+
+    // MARK: - Borders
+
+    var separator: Color { Color.white.opacity(0.08) }
+    var border: Color { Color.white.opacity(0.08) }
+
+    // MARK: - Semantic
+
+    var accent: Color { Color(red: 0.35, green: 0.56, blue: 1.0) }
+    var warning: Color { Self.fg }
+    var danger: Color { Self.fg }
+
+    func waitingColor(for reason: WaitingReason?) -> Color {
+        reason?.isPermission == true ? danger : warning
     }
-    var cardBackground: Color {
-        isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.03)
-    }
-    var primaryText: Color {
-        isDark ? Color(red: 0.96, green: 0.96, blue: 0.97) : Color(red: 0.11, green: 0.11, blue: 0.12)
-    }
-    var secondaryText: Color {
-        isDark ? Color(red: 0.56, green: 0.56, blue: 0.58) : Color(red: 0.53, green: 0.53, blue: 0.55)
-    }
-    var separator: Color {
-        isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)
-    }
-    var accent: Color { .blue }
-    var warning: Color { .orange }
 }
 
 private struct ThemeKey: EnvironmentKey {
-    static let defaultValue = CodePulseTheme(isDark: false)
+    static let defaultValue = CodePulseTheme()
 }
 
 extension EnvironmentValues {

@@ -20,6 +20,7 @@ struct IOSSessionDetailView: View {
         .background(theme.background)
         .navigationTitle(session.summary)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 
     private var headerSection: some View {
@@ -28,11 +29,12 @@ struct IOSSessionDetailView: View {
                 SessionStatusView(
                     status: session.status,
                     completedTasks: session.completedTaskCount,
-                    totalTasks: session.totalTaskCount
+                    totalTasks: session.totalTaskCount,
+                    waitingReason: session.waitingReason
                 )
-                Text(session.status.label)
+                Text(statusLabel)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(session.status == .needsInput ? theme.warning : theme.secondaryText)
+                    .foregroundStyle(statusLabelColor)
                 Spacer()
                 if !session.model.isEmpty {
                     SessionTagView(tag: session.model)
@@ -40,7 +42,7 @@ struct IOSSessionDetailView: View {
             }
             HStack(spacing: 6) {
                 Label(session.projectName, systemImage: "folder")
-                if !session.gitBranch.isEmpty {
+                if !session.gitBranch.isEmpty && session.gitBranch != "unknown" {
                     Text("·")
                     Text(session.gitBranch)
                 }
@@ -53,15 +55,19 @@ struct IOSSessionDetailView: View {
     private var statsCard: some View {
         HStack(spacing: 0) {
             statItem("\(session.contextPct)%", "Context")
-            Divider().frame(height: 28)
+            Divider().frame(height: 28).overlay(theme.separator)
             statItem(String(format: "$%.2f", session.costUSD), "Cost")
-            Divider().frame(height: 28)
+            Divider().frame(height: 28).overlay(theme.separator)
             statItem(formatDuration(session.durationSec), "Duration")
         }
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(theme.cardBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(theme.border, lineWidth: 1)
+                )
         )
     }
 
@@ -97,15 +103,25 @@ struct IOSSessionDetailView: View {
         }
     }
 
+    private var statusLabel: String {
+        guard session.status == .needsInput else { return session.status.label }
+        return session.waitingReason?.label ?? "Needs Input"
+    }
+
+    private var statusLabelColor: Color {
+        guard session.status == .needsInput else { return theme.secondaryText }
+        return theme.waitingColor(for: session.waitingReason)
+    }
+
     private func taskIcon(_ status: TaskStatus) -> some View {
         Group {
             switch status {
             case .completed:
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue)
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.primaryText.opacity(0.7))
             case .inProgress:
-                Image(systemName: "circlebadge.fill").foregroundStyle(.blue)
+                Image(systemName: "circlebadge.fill").foregroundStyle(theme.accent)
             case .pending:
-                Image(systemName: "circle").foregroundStyle(theme.secondaryText)
+                Image(systemName: "circle").foregroundStyle(theme.tertiaryText)
             }
         }
         .font(.system(size: 14))
@@ -114,11 +130,11 @@ struct IOSSessionDetailView: View {
     private func statItem(_ value: String, _ label: String) -> some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .font(.system(size: 16, weight: .semibold, design: .monospaced))
                 .foregroundStyle(theme.primaryText)
             Text(label)
                 .font(.system(size: 11))
-                .foregroundStyle(theme.secondaryText)
+                .foregroundStyle(theme.tertiaryText)
         }
         .frame(maxWidth: .infinity)
     }
@@ -135,6 +151,7 @@ struct IOSSessionDetailView: View {
 private struct DetailProgressRing: View {
     let completed: Int
     let total: Int
+    @Environment(\.theme) private var theme
     @State private var animatedProgress: Double = 0
 
     private var progress: Double {
@@ -143,14 +160,14 @@ private struct DetailProgressRing: View {
 
     var body: some View {
         ZStack {
-            Circle().stroke(Color.primary.opacity(0.06), lineWidth: 3.5)
+            Circle().stroke(theme.secondaryText.opacity(0.15), lineWidth: 3.5)
             Circle()
                 .trim(from: 0, to: animatedProgress)
-                .stroke(Color.blue, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                .stroke(theme.primaryText.opacity(0.7), style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text("\(Int(progress * 100))%")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(theme.primaryText)
         }
         .frame(width: 44, height: 44)
         .onAppear { withAnimation(.easeOut(duration: 0.6)) { animatedProgress = progress } }

@@ -22,10 +22,12 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
         public let contextPct: Int
         public let costUSD: Double
         public let durationSec: Int
+        public let sessionStartDate: Date
 
         public init(status: String, model: String, tasks: [TaskItem],
                     completedCount: Int, totalCount: Int, currentTask: String?,
-                    contextPct: Int, costUSD: Double, durationSec: Int) {
+                    contextPct: Int, costUSD: Double, durationSec: Int,
+                    sessionStartDate: Date = Date()) {
             self.status = status
             self.model = model
             self.tasks = tasks
@@ -35,6 +37,7 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
             self.contextPct = contextPct
             self.costUSD = costUSD
             self.durationSec = durationSec
+            self.sessionStartDate = sessionStartDate
         }
     }
 }
@@ -60,10 +63,12 @@ public struct CodyncAttributes: Codable, Sendable {
         public let contextPct: Int
         public let costUSD: Double
         public let durationSec: Int
+        public let sessionStartDate: Date
 
         public init(status: String, model: String, tasks: [TaskItem],
                     completedCount: Int, totalCount: Int, currentTask: String?,
-                    contextPct: Int, costUSD: Double, durationSec: Int) {
+                    contextPct: Int, costUSD: Double, durationSec: Int,
+                    sessionStartDate: Date = Date()) {
             self.status = status
             self.model = model
             self.tasks = tasks
@@ -73,6 +78,7 @@ public struct CodyncAttributes: Codable, Sendable {
             self.contextPct = contextPct
             self.costUSD = costUSD
             self.durationSec = durationSec
+            self.sessionStartDate = sessionStartDate
         }
     }
 }

@@ -8,14 +8,22 @@ import CodyncShared
 final class CodyncPanelState: ObservableObject {
     @Published var isExpanded = false
     @Published var headerSize: CGSize = .zero
+    @Published var contentHeight: CGFloat = 0
     var collapsedRect: CGRect = .zero
     var panelRect: CGRect = .zero
 
     private let expandedWidth: CGFloat = 380
     private let expandedHeight: CGFloat = 500
+    private var screenRef: NSScreen?
 
     func updateGeometry(for screen: NSScreen) {
+        screenRef = screen
         headerSize = screen.notchSize
+        recomputePanelRect()
+    }
+
+    func recomputePanelRect() {
+        guard let screen = screenRef else { return }
         let centerX = screen.frame.origin.x + screen.frame.width / 2
 
         collapsedRect = CGRect(
@@ -24,11 +32,13 @@ final class CodyncPanelState: ObservableObject {
             width: headerSize.width,
             height: headerSize.height
         )
+
+        let height = contentHeight > 0 ? min(contentHeight, expandedHeight) : expandedHeight
         panelRect = CGRect(
             x: centerX - expandedWidth / 2,
-            y: screen.frame.maxY - expandedHeight,
+            y: screen.frame.maxY - height,
             width: expandedWidth,
-            height: expandedHeight
+            height: height
         )
     }
 }
@@ -136,6 +146,14 @@ final class MenuBarController: NSObject {
         panelState.$isExpanded
             .sink { [weak self] expanded in
                 self?.hitTestView?.isExpanded = expanded
+            }
+            .store(in: &cancellables)
+
+        panelState.$contentHeight
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.panelState.recomputePanelRect()
+                self.hitTestView?.panelRect = self.panelState.panelRect
             }
             .store(in: &cancellables)
 
@@ -276,7 +294,22 @@ private struct CodyncPanelContentView: View {
             bottomCornerRadius: bottomCornerRadius
         ))
         .shadow(color: isExpanded ? .black.opacity(0.6) : .clear, radius: 8)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+            }
+        )
+        .onPreferenceChange(ContentHeightKey.self) { height in
+            if height > 0 { panelState.contentHeight = height }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(panelAnimation, value: isExpanded)
+    }
+}
+
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

@@ -5,8 +5,12 @@ struct SessionListView: View {
     @ObservedObject var stateManager: SessionStateManager
     @AppStorage("codepulse_darkMode") private var isDarkMode = false
     @State private var selectedSession: SessionState?
+    @Environment(\.theme) private var injectedTheme
 
-    private var theme: CodePulseTheme { CodePulseTheme(isDark: isDarkMode) }
+    private var theme: CodePulseTheme {
+        // If a notch theme is injected from the panel, use it; otherwise derive from user preference
+        injectedTheme.isPanel ? injectedTheme : CodePulseTheme(isDark: isDarkMode)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,7 +27,7 @@ struct SessionListView: View {
         .fixedSize(horizontal: true, vertical: true)
         .background(theme.background)
         .environment(\.theme, theme)
-        .preferredColorScheme(isDarkMode ? .dark : .light)
+        .preferredColorScheme(theme.isPanel ? .dark : (isDarkMode ? .dark : .light))
     }
 
     private var sessionList: some View {

@@ -14,6 +14,7 @@ public enum CKRecordMapper {
         record["model"] = session.model as CKRecordValue
         record["summary"] = session.summary as CKRecordValue
         record["currentTask"] = (session.currentTask ?? "") as CKRecordValue
+        record["lastEvent"] = (session.lastEvent ?? "") as CKRecordValue
         record["waitingReason"] = (session.waitingReason?.rawValue ?? "") as CKRecordValue
         record["contextPct"] = session.contextPct as CKRecordValue
         record["costUSD"] = session.costUSD as CKRecordValue
@@ -36,6 +37,7 @@ public enum CKRecordMapper {
         record["model"] = session.model as CKRecordValue
         record["summary"] = session.summary as CKRecordValue
         record["currentTask"] = (session.currentTask ?? "") as CKRecordValue
+        record["lastEvent"] = (session.lastEvent ?? "") as CKRecordValue
         record["waitingReason"] = (session.waitingReason?.rawValue ?? "") as CKRecordValue
         record["contextPct"] = session.contextPct as CKRecordValue
         record["costUSD"] = session.costUSD as CKRecordValue
@@ -65,6 +67,7 @@ public enum CKRecordMapper {
             model: record["model"] as? String ?? "Unknown",
             summary: record["summary"] as? String ?? "",
             currentTask: record["currentTask"] as? String,
+            lastEvent: record["lastEvent"] as? String,
             waitingReason: waitingReason,
             tasks: tasks,
             contextPct: record["contextPct"] as? Int ?? 0,

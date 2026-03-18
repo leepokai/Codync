@@ -11,6 +11,7 @@ DEFINE SCHEMA
         model STRING,
         summary STRING,
         currentTask STRING,
+        lastEvent STRING,
         waitingReason STRING,
         contextPct INT64,
         costUSD DOUBLE,

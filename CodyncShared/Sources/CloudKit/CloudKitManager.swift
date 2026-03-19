@@ -114,6 +114,35 @@ public final class CloudKitManager: Sendable {
         logger.info("Deleted \(sessionIds.count) session records from CloudKit")
     }
 
+    // MARK: - Pinned Sessions
+
+    static let pinnedRecordType = "PinnedSession"
+
+    public func fetchPinnedSessionIds() async throws -> Set<String> {
+        let query = CKQuery(recordType: Self.pinnedRecordType, predicate: NSPredicate(value: true))
+        let (results, _) = try await database.records(matching: query, inZoneWith: Self.zoneID, resultsLimit: 10)
+        var ids = Set<String>()
+        for (_, result) in results {
+            if case .success(let record) = result,
+               let sessionId = record["sessionId"] as? String {
+                ids.insert(sessionId)
+            }
+        }
+        return ids
+    }
+
+    public func pinSession(_ sessionId: String) async throws {
+        let recordID = CKRecord.ID(recordName: "pin-\(sessionId)", zoneID: Self.zoneID)
+        let record = CKRecord(recordType: Self.pinnedRecordType, recordID: recordID)
+        record["sessionId"] = sessionId as CKRecordValue
+        _ = try await database.save(record)
+    }
+
+    public func unpinSession(_ sessionId: String) async throws {
+        let recordID = CKRecord.ID(recordName: "pin-\(sessionId)", zoneID: Self.zoneID)
+        try await database.deleteRecord(withID: recordID)
+    }
+
     public func deleteOrphans(activeSessionIds: Set<String>) async throws {
         let query = CKQuery(recordType: CKRecordMapper.recordType, predicate: NSPredicate(value: true))
         let (results, _) = try await database.records(

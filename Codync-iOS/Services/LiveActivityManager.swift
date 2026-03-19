@@ -7,33 +7,12 @@ import os
 
 private let logger = Logger(subsystem: "com.pokai.Codync.ios", category: "LiveActivity")
 
-enum TrackingMode: String, CaseIterable, Sendable {
-    case auto
-    case manual
-
-    var label: String {
-        switch self {
-        case .auto: "Auto"
-        case .manual: "Manual"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .auto: "antenna.radiowaves.left.and.right"
-        case .manual: "hand.tap"
-        }
-    }
-}
-
 @MainActor
 final class LiveActivityManager: ObservableObject {
     @Published private(set) var trackedSessionIds: Set<String> = []
-    @Published var trackingMode: TrackingMode {
-        didSet { UserDefaults.standard.set(trackingMode.rawValue, forKey: "codync_trackingMode") }
-    }
+    @Published private(set) var pinnedSessionIds: Set<String> = []
+    private var graceTimers: [String: Date] = [:]
     private var activities: [String: Activity<CodyncAttributes>] = [:]
-    private var manualPins: Set<String> = [] // user-pinned sessions in manual mode
     private var sessionsByID: [String: SessionState] = [:]
     private var lastPushedState: [String: CodyncAttributes.ContentState] = [:]
     private var tickTimer: Timer?
@@ -42,8 +21,6 @@ final class LiveActivityManager: ObservableObject {
     private static let maxActivities = 4
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: "codync_trackingMode") ?? "auto"
-        self.trackingMode = TrackingMode(rawValue: saved) ?? .auto
         startTicking()
     }
 
@@ -70,94 +47,132 @@ final class LiveActivityManager: ObservableObject {
     }
 
     func isPinned(sessionId: String) -> Bool {
-        manualPins.contains(sessionId)
+        pinnedSessionIds.contains(sessionId)
     }
 
-    // Manual mode: toggle pin
-    func togglePin(_ session: SessionState) {
-        if manualPins.contains(session.sessionId) {
-            manualPins.remove(session.sessionId)
-            stopTracking(sessionId: session.sessionId)
+    // MARK: - Pin / Unpin
+
+    func togglePin(_ sessionId: String) {
+        if pinnedSessionIds.contains(sessionId) {
+            pinnedSessionIds.remove(sessionId)
+            Task { try? await CloudKitManager.shared.unpinSession(sessionId) }
         } else {
-            guard manualPins.count < Self.maxActivities else { return }
-            manualPins.insert(session.sessionId)
-            startTracking(session)
+            guard pinnedSessionIds.count < Self.maxActivities else { return }
+            pinnedSessionIds.insert(sessionId)
+            Task { try? await CloudKitManager.shared.pinSession(sessionId) }
+        }
+        // Re-evaluate tracking with current sessions
+        updateSessions(Array(sessionsByID.values))
+    }
+
+    func loadPinnedSessions() async {
+        do {
+            pinnedSessionIds = try await CloudKitManager.shared.fetchPinnedSessionIds()
+        } catch {
+            // First run or no pins yet — not an error
         }
     }
 
+    // MARK: - Unified Update
+
     func updateSessions(_ sessions: [SessionState]) {
         sessionsByID = Dictionary(sessions.map { ($0.sessionId, $0) }, uniquingKeysWith: { _, last in last })
-        // Clean up completed sessions (snapshot IDs first to avoid mutation during iteration)
+
+        // 1. Clean up completed/dead sessions
         let completedIds = trackedSessionIds.filter { id in
-            sessionsByID[id]?.status == .completed
+            guard let session = sessionsByID[id] else { return true }
+            return session.status == .completed
         }
         for sessionId in completedIds {
             if let session = sessionsByID[sessionId] {
                 sendCompletionNotification(session)
             }
             stopTracking(sessionId: sessionId)
-            manualPins.remove(sessionId)
+            pinnedSessionIds.remove(sessionId)
+            graceTimers.removeValue(forKey: sessionId)
         }
 
-        switch trackingMode {
-        case .auto:
-            autoUpdate(sessions)
-        case .manual:
-            manualUpdate(sessions)
+        // Also clean pinned sessions that no longer exist
+        let deadPinIds = pinnedSessionIds.filter { sessionsByID[$0] == nil }
+        for sessionId in deadPinIds {
+            pinnedSessionIds.remove(sessionId)
         }
-    }
 
-    // MARK: - Auto mode
-
-    /// Priority: active sessions (working > needsInput > compacting) sorted by progress desc, then startedAt desc.
-    /// Includes non-working active states so the Dynamic Island persists through status transitions
-    /// (e.g., working → needsInput between turns, or working → compacting).
-    private func autoUpdate(_ sessions: [SessionState]) {
-        let active = sessions
-            .filter { $0.status == .working || $0.status == .needsInput || $0.status == .compacting }
-            .sorted { a, b in
-                let priorityOf: (SessionStatus) -> Int = { switch $0 {
-                    case .working: 0
-                    case .needsInput: 1
-                    case .compacting: 2
-                    default: 3
-                }}
-                let pa = priorityOf(a.status), pb = priorityOf(b.status)
-                if pa != pb { return pa < pb }
-                let progressA = a.totalTaskCount > 0 ? Double(a.completedTaskCount) / Double(a.totalTaskCount) : 0
-                let progressB = b.totalTaskCount > 0 ? Double(b.completedTaskCount) / Double(b.totalTaskCount) : 0
-                if progressA != progressB { return progressA > progressB }
-                return a.startedAt > b.startedAt
+        // 2. Update grace timers for currently tracked sessions
+        for sessionId in trackedSessionIds {
+            guard let session = sessionsByID[sessionId] else { continue }
+            if session.status == .idle {
+                // Start grace timer if not already running
+                if graceTimers[sessionId] == nil {
+                    graceTimers[sessionId] = Date()
+                }
+            } else {
+                // Session is active again — remove grace timer
+                graceTimers.removeValue(forKey: sessionId)
             }
+        }
 
-        let desired = Set(active.prefix(Self.maxActivities).map(\.sessionId))
+        // 3. Build desired set: pinned first, then auto-fill
+        var desired: [String] = []
 
-        // Stop tracking sessions no longer in top N (snapshot to avoid mutation during iteration)
-        let toRemove = trackedSessionIds.filter { !desired.contains($0) }
+        // Add pinned sessions (that still exist and aren't completed)
+        for sessionId in pinnedSessionIds {
+            guard desired.count < Self.maxActivities else { break }
+            guard let session = sessionsByID[sessionId], session.status != .completed else { continue }
+            desired.append(sessionId)
+        }
+
+        // Auto-fill remaining slots with best candidates
+        let remainingSlots = Self.maxActivities - desired.count
+        if remainingSlots > 0 {
+            let candidates = sessions
+                .filter { !desired.contains($0.sessionId) && $0.status != .completed }
+                .sorted { autoFillPriority($0) < autoFillPriority($1) }
+
+            for session in candidates.prefix(remainingSlots) {
+                // Skip idle sessions past grace that aren't pinned
+                if session.status == .idle && !isInGrace(session.sessionId) {
+                    continue
+                }
+                desired.append(session.sessionId)
+            }
+        }
+
+        let desiredSet = Set(desired)
+
+        // 4. Stop tracking sessions not in desired set
+        let toRemove = trackedSessionIds.filter { !desiredSet.contains($0) }
         for sessionId in toRemove {
             stopTracking(sessionId: sessionId)
+            graceTimers.removeValue(forKey: sessionId)
         }
 
-        // Start tracking new top sessions, update existing
-        for session in active.prefix(Self.maxActivities) {
-            if !isTracking(sessionId: session.sessionId) {
-                startTracking(session)
-            } else {
-                pushUpdateIfChanged(session)
-            }
-        }
-    }
-
-    // MARK: - Manual mode
-
-    private func manualUpdate(_ sessions: [SessionState]) {
-        for sessionId in manualPins {
+        // 5. Start/update tracking for desired sessions
+        for sessionId in desired {
             guard let session = sessionsByID[sessionId] else { continue }
             if !isTracking(sessionId: sessionId) {
                 startTracking(session)
             } else {
                 pushUpdateIfChanged(session)
             }
+        }
+    }
+
+    // MARK: - Grace Period Helpers
+
+    private func isInGrace(_ sessionId: String) -> Bool {
+        guard let start = graceTimers[sessionId] else { return false }
+        return Date().timeIntervalSince(start) < 60
+    }
+
+    private func autoFillPriority(_ session: SessionState) -> Int {
+        switch session.status {
+        case .working: return 0
+        case .needsInput: return 1
+        case .compacting: return 2
+        case .idle: return isInGrace(session.sessionId) ? 3 : 4
+        case .error: return 4
+        case .completed: return 5
         }
     }
 
@@ -237,18 +252,6 @@ final class LiveActivityManager: ObservableObject {
         Task {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
-    }
-
-    /// When switching modes, stop all current activities and re-evaluate
-    func onModeChanged(sessions: [SessionState]) {
-        // Stop all
-        for sessionId in Array(trackedSessionIds) {
-            stopTracking(sessionId: sessionId)
-        }
-        if trackingMode == .auto {
-            manualPins.removeAll()
-        }
-        updateSessions(sessions)
     }
 
     private func contentState(from session: SessionState) -> CodyncAttributes.ContentState {

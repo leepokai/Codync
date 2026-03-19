@@ -16,6 +16,9 @@ struct CodyncIOSApp: App {
                     let center = UNUserNotificationCenter.current()
                     try? await center.requestAuthorization(options: [.alert, .sound, .badge])
                 }
+                .task {
+                    await appDelegate.liveActivityManager.loadPinnedSessions()
+                }
         }
     }
 }

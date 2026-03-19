@@ -27,7 +27,7 @@ struct CodyncTheme {
 
     /// Elevated surface for cards/stats — Vercel uses #111 or white 4-5%
     var cardBackground: Color {
-        if isPanel { return .white.opacity(0.05) }
+        if isPanel { return .white.opacity(0.10) }
         return isDark ? .white.opacity(0.05) : .black.opacity(0.03)
     }
 

@@ -6,6 +6,10 @@ struct SessionListView: View {
     var panelState: CodyncPanelState?
     @AppStorage("codync_darkMode") private var isDarkMode = false
     @State private var selectedSession: SessionState?
+    @State private var displayedSessions: [SessionState] = []
+    @State private var reorderTimer: Timer?
+    @State private var previousOrder: [String] = []
+    @State private var cardStyles: [String: GlassCardStyle] = [:]
     @Environment(\.theme) private var injectedTheme
 
     private var theme: CodyncTheme {
@@ -28,6 +32,21 @@ struct SessionListView: View {
         .background(theme.background)
         .environment(\.theme, theme)
         .preferredColorScheme(theme.isDark ? .dark : .light)
+        .task {
+            displayedSessions = stateManager.sessions
+            reorderTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
+                Task { @MainActor in
+                    let sorted = stateManager.sessions
+                    withAnimation(.spring(duration: 0.6, bounce: 0.15)) {
+                        displayedSessions = sorted
+                    }
+                }
+            }
+        }
+        .onDisappear {
+            reorderTimer?.invalidate()
+            reorderTimer = nil
+        }
     }
 
     private var sessionList: some View {
@@ -36,15 +55,16 @@ struct SessionListView: View {
                 PanelHeaderView(panelState: panelState)
             }
 
-            if stateManager.sessions.isEmpty {
+            if displayedSessions.isEmpty && stateManager.sessions.isEmpty {
                 emptyState
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 2) {
-                        ForEach(stateManager.sessions) { session in
+                        ForEach(displayedSessions) { session in
                             SessionRowView(session: session) {
                                 withAnimation(.easeInOut(duration: 0.2)) { selectedSession = session }
                             }
+                            .glassCard(cardStyles[session.sessionId] ?? .normal, isDark: theme.isDark)
                         }
                     }
                     .padding(.vertical, 6)
@@ -54,6 +74,23 @@ struct SessionListView: View {
                 .background(theme.cardBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
+            }
+        }
+        .onChange(of: displayedSessions.map(\.sessionId)) { _, newOrder in
+            var newStyles: [String: GlassCardStyle] = [:]
+            for (newIdx, id) in newOrder.enumerated() {
+                if let oldIdx = previousOrder.firstIndex(of: id) {
+                    if newIdx < oldIdx { newStyles[id] = .elevated }
+                    else if newIdx > oldIdx { newStyles[id] = .receded }
+                }
+            }
+            cardStyles = newStyles
+            previousOrder = newOrder
+
+            // Reset after 0.8s
+            Task {
+                try? await Task.sleep(for: .seconds(0.8))
+                withAnimation(.easeOut(duration: 0.3)) { cardStyles = [:] }
             }
         }
     }

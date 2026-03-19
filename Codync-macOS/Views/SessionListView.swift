@@ -10,6 +10,7 @@ struct SessionListView: View {
     @State private var reorderTimer: Timer?
     @State private var previousOrder: [String] = []
     @State private var cardStyles: [String: GlassCardStyle] = [:]
+    @State private var pinnedSessionIds: Set<String> = []
     @Environment(\.theme) private var injectedTheme
 
     private var theme: CodyncTheme {
@@ -34,6 +35,7 @@ struct SessionListView: View {
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .task {
             displayedSessions = stateManager.sessions
+            pinnedSessionIds = (try? await CloudKitManager.shared.fetchPinnedSessionIds()) ?? []
             reorderTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
                 Task { @MainActor in
                     let sorted = stateManager.sessions
@@ -61,7 +63,7 @@ struct SessionListView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 2) {
                         ForEach(displayedSessions) { session in
-                            SessionRowView(session: session) {
+                            SessionRowView(session: session, isPinned: pinnedSessionIds.contains(session.sessionId)) {
                                 withAnimation(.easeInOut(duration: 0.2)) { selectedSession = session }
                             }
                             .glassCard(cardStyles[session.sessionId] ?? .normal, isDark: theme.isDark)

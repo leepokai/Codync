@@ -6,6 +6,8 @@ struct IOSRootView: View {
     @ObservedObject var liveActivityManager: LiveActivityManager
     @AppStorage("codync_onboardingComplete") private var onboardingComplete = false
     @AppStorage("codync_darkMode") private var isDarkMode = true
+    @State private var displayedSessions: [SessionState] = []
+    @State private var reorderTimer: Timer?
 
     var body: some View {
         NavigationStack {
@@ -14,7 +16,7 @@ struct IOSRootView: View {
                     IOSOnboardingView()
                 } else {
                     IOSSessionListView(
-                        sessions: receiver.sessions,
+                        sessions: displayedSessions,
                         liveActivityManager: liveActivityManager
                     )
                 }
@@ -27,6 +29,32 @@ struct IOSRootView: View {
                 onboardingComplete = true
             }
             liveActivityManager.updateSessions(sessions)
+        }
+        .task {
+            // Initialize with current sessions
+            displayedSessions = sortSessions(receiver.sessions)
+            // Start 3-second reorder timer
+            reorderTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
+                Task { @MainActor in
+                    let sorted = sortSessions(receiver.sessions)
+                    withAnimation(.spring(duration: 0.6, bounce: 0.15)) {
+                        displayedSessions = sorted
+                    }
+                }
+            }
+        }
+        .onDisappear {
+            reorderTimer?.invalidate()
+            reorderTimer = nil
+        }
+    }
+
+    private func sortSessions(_ sessions: [SessionState]) -> [SessionState] {
+        sessions.sorted { a, b in
+            let aWeight = a.status == .working ? 0 : a.status == .needsInput ? 1 : 2
+            let bWeight = b.status == .working ? 0 : b.status == .needsInput ? 1 : 2
+            if aWeight != bWeight { return aWeight < bWeight }
+            return a.updatedAt > b.updatedAt
         }
     }
 }

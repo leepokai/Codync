@@ -40,7 +40,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any]
     ) async -> UIBackgroundFetchResult {
         let notification = CKNotification(fromRemoteNotificationDictionary: userInfo)
-        guard notification?.subscriptionID == "session-changes" else {
+        let subID = notification?.subscriptionID
+        guard subID == "session-zone-changes" || subID == "session-changes" else {
             return .noData
         }
         logger.debug("CloudKit push received")

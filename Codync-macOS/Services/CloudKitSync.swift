@@ -24,6 +24,17 @@ final class CloudKitSync {
 
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
+
+        // Ensure custom zone exists before any saves
+        Task {
+            do {
+                try await CloudKitManager.shared.ensureZoneExists()
+                Self.log("Custom zone ready")
+            } catch {
+                Self.log("Zone creation failed: \(error) — will retry on next save")
+            }
+        }
+
         stateManager.$sessions
             .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] sessions in

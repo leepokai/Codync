@@ -43,9 +43,12 @@ struct SessionListView: View {
                         }
                     }
                     .padding(.vertical, 6)
-                    .padding(.horizontal, 2)
+                    .padding(.horizontal, 4)
                 }
                 .frame(maxHeight: 420)
+                .background(theme.cardBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
             }
 
             Divider()

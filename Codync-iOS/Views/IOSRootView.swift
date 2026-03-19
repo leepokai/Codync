@@ -5,8 +5,7 @@ struct IOSRootView: View {
     @ObservedObject var receiver: CloudKitReceiver
     @ObservedObject var liveActivityManager: LiveActivityManager
     @AppStorage("codync_onboardingComplete") private var onboardingComplete = false
-
-    private let theme = CodyncTheme()
+    @AppStorage("codync_darkMode") private var isDarkMode = true
 
     var body: some View {
         NavigationStack {
@@ -21,8 +20,8 @@ struct IOSRootView: View {
                 }
             }
         }
-        .environment(\.theme, theme)
-        .preferredColorScheme(.dark)
+        .environment(\.theme, CodyncTheme(isDark: isDarkMode))
+        .preferredColorScheme(isDarkMode ? .dark : .light)
         .onChange(of: receiver.sessions) { _, sessions in
             if !sessions.isEmpty {
                 onboardingComplete = true

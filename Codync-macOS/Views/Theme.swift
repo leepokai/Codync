@@ -4,7 +4,7 @@ import CodyncShared
 /// Codync design system inspired by Vercel/Cursor.
 /// Panel mode: pure black + single-source opacity hierarchy.
 /// Standard mode: light/dark adaptive colors.
-struct CodyncTheme {
+struct CodyncTheme: GlassThemeProvider, Sendable {
     let isDark: Bool
     let isPanel: Bool
 
@@ -21,8 +21,12 @@ struct CodyncTheme {
     // MARK: - Backgrounds
 
     var background: Color {
-        if isPanel { return .black }
+        if isPanel { return isDark ? .black : Color(red: 0.95, green: 0.95, blue: 0.96) }
         return isDark ? Color(red: 0.11, green: 0.11, blue: 0.12) : .white
+    }
+
+    var glassBackground: Color {
+        isDark ? Color.white.opacity(0.05) : Color.white.opacity(0.70)
     }
 
     /// Elevated surface for cards/stats — Vercel uses #111 or white 4-5%

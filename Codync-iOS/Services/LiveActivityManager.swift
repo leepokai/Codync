@@ -30,12 +30,34 @@ final class LiveActivityManager: ObservableObject {
     }
     private var activities: [String: Activity<CodyncAttributes>] = [:]
     private var manualPins: Set<String> = [] // user-pinned sessions in manual mode
+    private var sessionsByID: [String: SessionState] = [:]
+    private var lastPushedState: [String: CodyncAttributes.ContentState] = [:]
+    private var tickTimer: Timer?
 
     private static let maxActivities = 4
 
     init() {
         let saved = UserDefaults.standard.string(forKey: "codync_trackingMode") ?? "auto"
         self.trackingMode = TrackingMode(rawValue: saved) ?? .auto
+        startTicking()
+    }
+
+    /// Tick every second to keep durationSec fresh — drives sparkle animation in Dynamic Island.
+    /// Timer callback is @Sendable, so we hop back to @MainActor via Task.
+    private func startTicking() {
+        tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.tickActivities()
+            }
+        }
+    }
+
+    private func tickActivities() {
+        guard !activities.isEmpty else { return }
+        for sessionId in activities.keys {
+            guard let session = sessionsByID[sessionId] else { continue }
+            pushUpdateIfChanged(session)
+        }
     }
 
     func isTracking(sessionId: String) -> Bool {
@@ -59,12 +81,13 @@ final class LiveActivityManager: ObservableObject {
     }
 
     func updateSessions(_ sessions: [SessionState]) {
+        sessionsByID = Dictionary(sessions.map { ($0.sessionId, $0) }, uniquingKeysWith: { _, last in last })
         // Clean up completed sessions (snapshot IDs first to avoid mutation during iteration)
         let completedIds = trackedSessionIds.filter { id in
-            sessions.first(where: { $0.sessionId == id })?.status == .completed
+            sessionsByID[id]?.status == .completed
         }
         for sessionId in completedIds {
-            if let session = sessions.first(where: { $0.sessionId == sessionId }) {
+            if let session = sessionsByID[sessionId] {
                 sendCompletionNotification(session)
             }
             stopTracking(sessionId: sessionId)
@@ -81,18 +104,28 @@ final class LiveActivityManager: ObservableObject {
 
     // MARK: - Auto mode
 
-    /// Priority: working sessions sorted by progress desc (near-completion first), then startedAt desc (newer first)
+    /// Priority: active sessions (working > needsInput > compacting) sorted by progress desc, then startedAt desc.
+    /// Includes non-working active states so the Dynamic Island persists through status transitions
+    /// (e.g., working → needsInput between turns, or working → compacting).
     private func autoUpdate(_ sessions: [SessionState]) {
-        let working = sessions
-            .filter { $0.status == .working }
+        let active = sessions
+            .filter { $0.status == .working || $0.status == .needsInput || $0.status == .compacting }
             .sorted { a, b in
+                let priorityOf: (SessionStatus) -> Int = { switch $0 {
+                    case .working: 0
+                    case .needsInput: 1
+                    case .compacting: 2
+                    default: 3
+                }}
+                let pa = priorityOf(a.status), pb = priorityOf(b.status)
+                if pa != pb { return pa < pb }
                 let progressA = a.totalTaskCount > 0 ? Double(a.completedTaskCount) / Double(a.totalTaskCount) : 0
                 let progressB = b.totalTaskCount > 0 ? Double(b.completedTaskCount) / Double(b.totalTaskCount) : 0
                 if progressA != progressB { return progressA > progressB }
                 return a.startedAt > b.startedAt
             }
 
-        let desired = Set(working.prefix(Self.maxActivities).map(\.sessionId))
+        let desired = Set(active.prefix(Self.maxActivities).map(\.sessionId))
 
         // Stop tracking sessions no longer in top N (snapshot to avoid mutation during iteration)
         let toRemove = trackedSessionIds.filter { !desired.contains($0) }
@@ -100,15 +133,12 @@ final class LiveActivityManager: ObservableObject {
             stopTracking(sessionId: sessionId)
         }
 
-        // Start tracking new top sessions
-        for session in working.prefix(Self.maxActivities) {
+        // Start tracking new top sessions, update existing
+        for session in active.prefix(Self.maxActivities) {
             if !isTracking(sessionId: session.sessionId) {
                 startTracking(session)
-            } else if let activity = activities[session.sessionId] {
-                let state = contentState(from: session)
-                Task { @MainActor in
-                    await activity.update(.init(state: state, staleDate: nil))
-                }
+            } else {
+                pushUpdateIfChanged(session)
             }
         }
     }
@@ -117,14 +147,11 @@ final class LiveActivityManager: ObservableObject {
 
     private func manualUpdate(_ sessions: [SessionState]) {
         for sessionId in manualPins {
-            guard let session = sessions.first(where: { $0.sessionId == sessionId }) else { continue }
+            guard let session = sessionsByID[sessionId] else { continue }
             if !isTracking(sessionId: sessionId) {
                 startTracking(session)
-            } else if let activity = activities[sessionId] {
-                let state = contentState(from: session)
-                Task { @MainActor in
-                    await activity.update(.init(state: state, staleDate: nil))
-                }
+            } else {
+                pushUpdateIfChanged(session)
             }
         }
     }
@@ -147,16 +174,29 @@ final class LiveActivityManager: ObservableObject {
                 pushType: nil
             )
             activities[session.sessionId] = activity
+            lastPushedState[session.sessionId] = state
             trackedSessionIds.insert(session.sessionId)
         } catch {
             print("Failed to start Live Activity: \(error)")
         }
     }
 
+    /// Push an activity update only if the content state actually changed.
+    private func pushUpdateIfChanged(_ session: SessionState) {
+        guard let activity = activities[session.sessionId] else { return }
+        let state = contentState(from: session)
+        guard state != lastPushedState[session.sessionId] else { return }
+        lastPushedState[session.sessionId] = state
+        Task {
+            await activity.update(.init(state: state, staleDate: nil))
+        }
+    }
+
     private func stopTracking(sessionId: String) {
         guard let activity = activities.removeValue(forKey: sessionId) else { return }
         trackedSessionIds.remove(sessionId)
-        Task { @MainActor in
+        lastPushedState.removeValue(forKey: sessionId)
+        Task {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
@@ -174,7 +214,9 @@ final class LiveActivityManager: ObservableObject {
     }
 
     private func contentState(from session: SessionState) -> CodyncAttributes.ContentState {
-        .init(
+        // Compute durationSec locally so it ticks every second — drives sparkle animation
+        let liveDuration = max(session.durationSec, Int(Date().timeIntervalSince(session.startedAt)))
+        return .init(
             status: session.status.rawValue,
             model: session.model,
             tasks: session.truncatedTasks,
@@ -183,7 +225,7 @@ final class LiveActivityManager: ObservableObject {
             currentTask: session.currentTask,
             contextPct: session.contextPct,
             costUSD: session.costUSD,
-            durationSec: session.durationSec,
+            durationSec: liveDuration,
             sessionStartDate: session.startedAt
         )
     }

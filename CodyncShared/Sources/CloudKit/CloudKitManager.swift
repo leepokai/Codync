@@ -20,11 +20,10 @@ public final class CloudKitManager: Sendable {
         // Fetch existing records to get change tags
         let recordIDs = sessions.map { CKRecord.ID(recordName: $0.sessionId) }
         var existing: [String: CKRecord] = [:]
-        if let results = try? await database.records(for: recordIDs) {
-            for (id, result) in results {
-                if case .success(let record) = result {
-                    existing[id.recordName] = record
-                }
+        let results = (try? await database.records(for: recordIDs)) ?? [:]
+        for (id, result) in results {
+            if case .success(let record) = result {
+                existing[id.recordName] = record
             }
         }
 
@@ -59,18 +58,36 @@ public final class CloudKitManager: Sendable {
 
     // MARK: - Subscribe (iOS)
 
+    private static let subscriptionKey = "codync_ck_subscription_created"
+
     public func subscribeToChanges() async throws {
+        let subscriptionID = "session-changes"
+
+        // Skip network call if we already created the subscription in a previous launch
+        if UserDefaults.standard.bool(forKey: Self.subscriptionKey) {
+            logger.info("CloudKit subscription already created (cached)")
+            return
+        }
+
+        // Check server — only needed on first launch or after reinstall
+        if (try? await database.subscription(for: subscriptionID)) != nil {
+            UserDefaults.standard.set(true, forKey: Self.subscriptionKey)
+            logger.info("CloudKit subscription already exists")
+            return
+        }
+
         let subscription = CKQuerySubscription(
             recordType: CKRecordMapper.recordType,
             predicate: NSPredicate(value: true),
-            subscriptionID: "session-changes",
+            subscriptionID: subscriptionID,
             options: [.firesOnRecordCreation, .firesOnRecordUpdate, .firesOnRecordDeletion]
         )
         let info = CKSubscription.NotificationInfo()
         info.shouldSendContentAvailable = true
         subscription.notificationInfo = info
         _ = try await database.save(subscription)
-        logger.info("Subscribed to CloudKit changes")
+        UserDefaults.standard.set(true, forKey: Self.subscriptionKey)
+        logger.info("Created CloudKit subscription")
     }
 
     // MARK: - Delete

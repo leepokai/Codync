@@ -12,9 +12,15 @@ final class CloudKitReceiver: ObservableObject {
     private var isFetching = false
 
     func start() async {
+        // Ensure custom zone exists before subscribing
+        do {
+            try await CloudKitManager.shared.ensureZoneExists()
+        } catch {
+            logger.warning("Zone creation failed: \(error.localizedDescription)")
+        }
         do {
             try await CloudKitManager.shared.subscribeToChanges()
-            logger.info("CloudKit subscription active")
+            logger.info("CloudKit zone subscription active")
         } catch {
             logger.error("Failed to subscribe to CloudKit: \(error.localizedDescription)")
         }

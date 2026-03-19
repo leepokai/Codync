@@ -3,6 +3,7 @@ import CodyncShared
 
 struct SessionListView: View {
     @ObservedObject var stateManager: SessionStateManager
+    var panelState: CodyncPanelState?
     @AppStorage("codync_darkMode") private var isDarkMode = false
     @State private var selectedSession: SessionState?
     @Environment(\.theme) private var injectedTheme
@@ -26,11 +27,15 @@ struct SessionListView: View {
         .fixedSize(horizontal: true, vertical: true)
         .background(theme.background)
         .environment(\.theme, theme)
-        .preferredColorScheme(theme.isPanel ? .dark : (isDarkMode ? .dark : .light))
+        .preferredColorScheme(theme.isDark ? .dark : .light)
     }
 
     private var sessionList: some View {
         VStack(spacing: 0) {
+            if let panelState {
+                PanelHeaderView(panelState: panelState)
+            }
+
             if stateManager.sessions.isEmpty {
                 emptyState
             } else {
@@ -50,12 +55,6 @@ struct SessionListView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
             }
-
-            Divider()
-                .opacity(theme.isPanel ? 0.3 : 1)
-                .padding(.horizontal, 8)
-
-            footer
         }
     }
 
@@ -72,35 +71,4 @@ struct SessionListView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var footer: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text("Codync")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(theme.tertiaryText)
-
-            Spacer()
-
-            if !theme.isPanel {
-                Button(action: { isDarkMode.toggle() }) {
-                    Image(systemName: isDarkMode ? "sun.max" : "moon")
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.secondaryText)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Button(action: { NSApp.terminate(nil) }) {
-                Text("Quit")
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.secondaryText)
-            }
-            .buttonStyle(.plain)
-            .onHover { inside in
-                if inside { NSCursor.pointingHand.push() }
-                else { NSCursor.pop() }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
 }

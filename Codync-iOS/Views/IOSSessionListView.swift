@@ -5,76 +5,52 @@ struct IOSSessionListView: View {
     let sessions: [SessionState]
     @ObservedObject var liveActivityManager: LiveActivityManager
     @Environment(\.theme) private var theme
-
-    /// Sort: working first → needsInput → rest, then by most recent activity
-    private var sortedSessions: [SessionState] {
-        sessions.sorted { a, b in
-            let aWeight = a.status == .working ? 0 : a.status == .needsInput ? 1 : 2
-            let bWeight = b.status == .working ? 0 : b.status == .needsInput ? 1 : 2
-            if aWeight != bWeight { return aWeight < bWeight }
-            return a.updatedAt > b.updatedAt
-        }
-    }
+    @State private var previousOrder: [String] = []
+    @State private var cardStyles: [String: GlassCardStyle] = [:]
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 1) {
-                trackingModeRow
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-
-                ForEach(sortedSessions) { session in
+                ForEach(sessions) { session in
                     NavigationLink(destination: IOSSessionDetailView(session: session)) {
                         SessionRowContent(
                             session: session,
-                            trackingMode: liveActivityManager.trackingMode,
                             isTracking: liveActivityManager.isTracking(sessionId: session.sessionId),
                             isPinned: liveActivityManager.isPinned(sessionId: session.sessionId),
-                            onTogglePin: { liveActivityManager.togglePin(session) }
+                            onTogglePin: { liveActivityManager.togglePin(session.sessionId) }
                         )
                     }
                     .buttonStyle(.plain)
                     .tint(theme.primaryText)
+                    .glassCard(cardStyles[session.sessionId] ?? .normal, isDark: theme.isDark)
                 }
             }
         }
         .background(theme.background)
         .navigationTitle("Codync")
         .toolbarColorScheme(.dark, for: .navigationBar)
-    }
-
-    private var trackingModeRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: liveActivityManager.trackingMode.icon)
-                .font(.system(size: 13))
-                .foregroundStyle(theme.accent)
-                .frame(width: 20)
-
-            Text("Live Activity")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(theme.primaryText)
-
-            Spacer()
-
-            Picker("", selection: $liveActivityManager.trackingMode) {
-                ForEach(TrackingMode.allCases, id: \.self) { mode in
-                    Text(mode.label).tag(mode)
+        .onChange(of: sessions.map(\.sessionId)) { _, newOrder in
+            var newStyles: [String: GlassCardStyle] = [:]
+            for (newIdx, id) in newOrder.enumerated() {
+                if let oldIdx = previousOrder.firstIndex(of: id) {
+                    if newIdx < oldIdx { newStyles[id] = .elevated }
+                    else if newIdx > oldIdx { newStyles[id] = .receded }
                 }
             }
-            .pickerStyle(.segmented)
-            .frame(width: 140)
-            .onChange(of: liveActivityManager.trackingMode) { _, _ in
-                liveActivityManager.onModeChanged(sessions: sessions)
+            cardStyles = newStyles
+            previousOrder = newOrder
+
+            // Reset after 0.8s
+            Task {
+                try? await Task.sleep(for: .seconds(0.8))
+                withAnimation(.easeOut(duration: 0.3)) { cardStyles = [:] }
             }
         }
-        .padding(.vertical, 6)
     }
 }
 
 private struct SessionRowContent: View {
     let session: SessionState
-    let trackingMode: TrackingMode
     let isTracking: Bool
     let isPinned: Bool
     let onTogglePin: () -> Void
@@ -119,23 +95,6 @@ private struct SessionRowContent: View {
                 }
             }
 
-            liveActivityIndicator
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-
-    private var subtitleColor: Color {
-        guard session.status == .needsInput else { return theme.secondaryText }
-        return theme.waitingColor(for: session.waitingReason)
-    }
-
-    @ViewBuilder
-    private var liveActivityIndicator: some View {
-        switch trackingMode {
-        case .auto:
-            EmptyView()
-        case .manual:
             Button(action: onTogglePin) {
                 Image(systemName: isPinned ? "pin.fill" : "pin")
                     .font(.system(size: 13))
@@ -145,6 +104,13 @@ private struct SessionRowContent: View {
             }
             .buttonStyle(.plain)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private var subtitleColor: Color {
+        guard session.status == .needsInput else { return theme.secondaryText }
+        return theme.waitingColor(for: session.waitingReason)
     }
 
     private func relativeTime(_ date: Date) -> String {

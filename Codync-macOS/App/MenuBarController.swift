@@ -70,10 +70,14 @@ final class MenuBarController: NSObject {
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
         super.init()
-        setupStatusItem()
-        setupPanel()
+        if NSScreen.builtInOrMain.hasNotch {
+            setupPanel()
+        } else {
+            setupStatusItem()
+            setupPanel()
+            observeSessionCount()
+        }
         setupClickOutsideMonitor()
-        observeSessionCount()
         observeScreenChanges()
         observePanelState()
     }
@@ -264,12 +268,21 @@ private struct CodyncPanelContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header — matches screen notch height, tappable to expand
-            Color.clear
-                .frame(height: headerSize.height)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    panelState.isExpanded.toggle()
+            ZStack {
+                Color.clear
+                HStack {
+                    Spacer()
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.trailing, 8)
                 }
+            }
+            .frame(height: headerSize.height)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                panelState.isExpanded.toggle()
+            }
 
             // Session list appears when expanded
             if isExpanded {

@@ -35,7 +35,7 @@ public protocol GlassThemeProvider: Sendable {
 
     // Semantic
     var accent: Color { get }
-    func waitingColor(for reason: WaitingReason) -> Color
+    func waitingColor(for reason: WaitingReason?) -> Color
 }
 
 // MARK: - Default glass token implementations
@@ -150,50 +150,31 @@ public struct GlassCardModifier: ViewModifier {
             : Color.white.opacity(0.75)
     }
 
+    private let cornerRadius: CGFloat = 14
+
     public func body(content: Content) -> some View {
-        switch style {
-        case .normal:
-            content
-                .background(resolvedBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(resolvedBorderColor, lineWidth: resolvedBorderWidth)
-                )
-                .scaleEffect(resolvedScale)
-                .opacity(resolvedOpacity)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        case .elevated:
-            content
-                .background(resolvedBackground)
-                .overlay(
-                    // Subtle inner top highlight using a gradient mask
-                    GeometryReader { proxy in
-                        LinearGradient(
-                            colors: [innerHighlight, Color.clear],
-                            startPoint: .top,
-                            endPoint: .center
-                        )
-                        .frame(height: proxy.size.height)
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(resolvedBorderColor, lineWidth: resolvedBorderWidth)
-                )
-                .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: 4)
-                .scaleEffect(resolvedScale)
-                .opacity(resolvedOpacity)
-
-        case .receded:
-            content
-                .background(resolvedBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(resolvedBorderColor, lineWidth: resolvedBorderWidth)
-                )
-                .scaleEffect(resolvedScale)
-                .opacity(resolvedOpacity)
-        }
+        content
+            .background(resolvedBackground, in: shape)
+            .overlay {
+                if style == .elevated {
+                    LinearGradient(
+                        colors: [innerHighlight, Color.clear],
+                        startPoint: .top,
+                        endPoint: .center
+                    )
+                    .clipShape(shape)
+                }
+            }
+            .overlay(shape.stroke(resolvedBorderColor, lineWidth: resolvedBorderWidth))
+            .shadow(
+                color: style == .elevated ? shadowColor : .clear,
+                radius: style == .elevated ? shadowRadius : 0,
+                x: 0, y: 4
+            )
+            .scaleEffect(resolvedScale)
+            .opacity(resolvedOpacity)
     }
 }
 

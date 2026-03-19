@@ -16,3 +16,7 @@ build/
 .swiftpm/
 Package.resolved
 .firecrawl/
+
+# APNs secrets
+**/APNsSecrets.swift
+*.p8

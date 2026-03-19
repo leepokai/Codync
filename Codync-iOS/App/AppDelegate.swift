@@ -1,9 +1,16 @@
 import UIKit
 import CloudKit
 import CodyncShared
+import os
+
+private let logger = Logger(subsystem: "com.pokai.Codync.ios", category: "AppDelegate")
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
-    weak var receiver: CloudKitReceiver?
+    // AppDelegate OWNS these objects so they exist before any push can arrive.
+    // Previously they were weak refs assigned from .task{}, creating a race condition
+    // where push could arrive before wiring completed.
+    let receiver = CloudKitReceiver()
+    let liveActivityManager = LiveActivityManager()
 
     func application(
         _ application: UIApplication,
@@ -15,13 +22,30 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(
         _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        let hex = deviceToken.prefix(4).map { String(format: "%02x", $0) }.joined()
+        logger.info("APNs device token registered: \(hex)...")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        logger.error("APNs registration failed: \(error.localizedDescription)")
+    }
+
+    func application(
+        _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any]
     ) async -> UIBackgroundFetchResult {
         let notification = CKNotification(fromRemoteNotificationDictionary: userInfo)
         guard notification?.subscriptionID == "session-changes" else {
             return .noData
         }
-        await receiver?.fetch()
+        logger.debug("CloudKit push received")
+        await receiver.fetch()
+        liveActivityManager.updateSessions(receiver.sessions)
         return .newData
     }
 }

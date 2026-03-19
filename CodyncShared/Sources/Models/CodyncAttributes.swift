@@ -39,6 +39,12 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
             self.durationSec = durationSec
             self.sessionStartDate = sessionStartDate
         }
+
+        /// Whether the session is actively processing (working or compacting)
+        public var isBusy: Bool { status == "working" || status == "compacting" }
+
+        /// Whether the session has finished
+        public var isCompleted: Bool { status == "completed" }
     }
 }
 
@@ -80,6 +86,12 @@ public struct CodyncAttributes: Codable, Sendable {
             self.durationSec = durationSec
             self.sessionStartDate = sessionStartDate
         }
+
+        /// Whether the session is actively processing (working or compacting)
+        public var isBusy: Bool { status == "working" || status == "compacting" }
+
+        /// Whether the session has finished
+        public var isCompleted: Bool { status == "completed" }
     }
 }
 

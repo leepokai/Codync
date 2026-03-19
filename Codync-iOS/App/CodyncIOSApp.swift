@@ -4,15 +4,13 @@ import CodyncShared
 @main
 struct CodyncIOSApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var receiver = CloudKitReceiver()
-    @StateObject private var liveActivityManager = LiveActivityManager()
 
     var body: some Scene {
         WindowGroup {
-            IOSRootView(receiver: receiver, liveActivityManager: liveActivityManager)
+            // AppDelegate owns receiver & liveActivityManager — no race condition
+            IOSRootView(receiver: appDelegate.receiver, liveActivityManager: appDelegate.liveActivityManager)
                 .task {
-                    appDelegate.receiver = receiver
-                    await receiver.start()
+                    await appDelegate.receiver.start()
                 }
                 .task {
                     let center = UNUserNotificationCenter.current()

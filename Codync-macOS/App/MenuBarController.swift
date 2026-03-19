@@ -7,6 +7,7 @@ import CodyncShared
 @MainActor
 final class CodyncPanelState: ObservableObject {
     @Published var isExpanded = false
+    @Published var isPinned = false
     @Published var headerSize: CGSize = .zero
     @Published var contentHeight: CGFloat = 0
     var collapsedRect: CGRect = .zero
@@ -190,8 +191,7 @@ final class MenuBarController: NSObject {
     }
 
     private func handleGlobalClick() {
-        guard panelState.isExpanded else { return }
-        // Global monitor only fires for clicks OUTSIDE our app — dismiss panel
+        guard panelState.isExpanded, !panelState.isPinned else { return }
         panelState.isExpanded = false
     }
 
@@ -242,6 +242,7 @@ private final class CodyncHitTestView: NSView {
 private struct CodyncPanelContentView: View {
     @ObservedObject var panelState: CodyncPanelState
     @ObservedObject var stateManager: SessionStateManager
+    @AppStorage("codync_darkMode") private var isDarkMode = true
 
     private var headerSize: CGSize { panelState.headerSize }
     private var isExpanded: Bool { panelState.isExpanded }
@@ -270,11 +271,11 @@ private struct CodyncPanelContentView: View {
                     panelState.isExpanded.toggle()
                 }
 
-            // Session list appears when expanded — pure black panel theme
+            // Session list appears when expanded
             if isExpanded {
-                SessionListView(stateManager: stateManager)
-                    .environment(\.theme, CodyncTheme(isDark: true, isPanel: true))
-                    .preferredColorScheme(.dark)
+                SessionListView(stateManager: stateManager, panelState: panelState)
+                    .environment(\.theme, CodyncTheme(isDark: isDarkMode, isPanel: true))
+                    .preferredColorScheme(isDarkMode ? .dark : .light)
                     .transition(
                         .asymmetric(
                             insertion: .opacity
@@ -289,7 +290,7 @@ private struct CodyncPanelContentView: View {
         .frame(width: isExpanded ? 320 : headerSize.width - 12)
         .padding(.horizontal, isExpanded ? 19 : 6)
         .padding(.bottom, isExpanded ? 12 : 0)
-        .background(Color.black)
+        .background(isDarkMode ? Color.black : Color(red: 0.95, green: 0.95, blue: 0.96))
         .clipShape(CodyncPanelShape(
             topCornerRadius: topCornerRadius,
             bottomCornerRadius: bottomCornerRadius

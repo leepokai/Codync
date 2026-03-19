@@ -22,6 +22,7 @@
 		7851B112737C5DD8B8C3380C /* JSONLTailReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05154CFD496486BA9E126E9D /* JSONLTailReader.swift */; };
 		804863D604952293533147CF /* CodyncLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3B652652FD106495A82565C8 /* CodyncLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		911C6ABDB9539A60844931F2 /* PIDChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D161FDC49BE96E3A73FEA33 /* PIDChecker.swift */; };
+		PANEL001122334455667788 /* PanelHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PANEL002233445566778899 /* PanelHeaderView.swift */; };
 		A30C11E610763F5064698D43 /* IOSSessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01A225437E7A00B3337883E /* IOSSessionListView.swift */; };
 		A98E0466D559EC6EBE0E39F4 /* ClaudeHookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */; };
 		APNS0001D559EC6EBE0E39F4 /* APNsPushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */; };
@@ -102,6 +103,7 @@
 		AA11BB22CC33DD44EE55FF66 /* CodyncPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncPanel.swift; sourceTree = "<group>"; };
 		AABBCCDD11223344556677EE /* CodyncPanelShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncPanelShape.swift; sourceTree = "<group>"; };
 		AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
+		PANEL002233445566778899 /* PanelHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelHeaderView.swift; sourceTree = "<group>"; };
 		B3C4D5E6F708192A3B4C5D6E /* TranscriptWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptWatcher.swift; sourceTree = "<group>"; };
 		BB22CC33DD44EE55FF660011 /* EventMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventMonitor.swift; sourceTree = "<group>"; };
 		CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
@@ -227,6 +229,7 @@
 		81EF17B3D3346D74A837F710 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				PANEL002233445566778899 /* PanelHeaderView.swift */,
 				D10CABFC27BF22D45064777A /* SessionDetailView.swift */,
 				DA699D0197B8A14FD7D1BDC4 /* SessionListView.swift */,
 				AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */,
@@ -433,6 +436,7 @@
 				EE55FF6600112233445566AA /* EventMonitor.swift in Sources */,
 				4450C6683BA7614D2DBB5E55 /* MenuBarController.swift in Sources */,
 				FF66001122334455667788BB /* NSScreen+Notch.swift in Sources */,
+				PANEL001122334455667788 /* PanelHeaderView.swift in Sources */,
 				911C6ABDB9539A60844931F2 /* PIDChecker.swift in Sources */,
 				BF17F10AC69617C12975E0EB /* SessionDetailView.swift in Sources */,
 				73382915E3200DDC5EF16C2F /* SessionFileParser.swift in Sources */,

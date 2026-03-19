@@ -34,6 +34,8 @@ struct CodyncLiveActivityWidget: Widget {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
+                            .id(context.state.currentTask ?? context.state.status)
+                            .transition(.blurReplace)
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -194,6 +196,12 @@ struct CodyncLiveActivityWidget: Widget {
         .padding(.vertical, 10)
         .frame(height: 160)
         .background(Color.white.opacity(state.isCompleted ? 1 : 0.75))
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+        )
         .activityBackgroundTint(.clear)
     }
 
@@ -278,6 +286,12 @@ struct CodyncLiveActivityWidget: Widget {
         .padding(.vertical, 10)
         .frame(height: 160)
         .background(Color.white.opacity(isWaiting || state.isCompleted ? 1 : 0.75))
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+        )
         .activityBackgroundTint(.clear)
     }
 
@@ -464,7 +478,10 @@ struct TaskCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 60)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: isBehind ? 10 : 16, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: isBehind ? 10 : 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
         .scaleEffect(isBehind ? 0.9 : 1)
         .offset(y: isBehind ? 10 : 0)
         .opacity(isBehind ? 0.72 : 1)

@@ -1,17 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "notch-icon.png",
+      "filename" : "codync-icon.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "notch-icon@2x.png",
+      "filename" : "codync-icon@2x.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "notch-icon@3x.png",
+      "filename" : "codync-icon@3x.png",
       "idiom" : "universal",
       "scale" : "3x"
     }

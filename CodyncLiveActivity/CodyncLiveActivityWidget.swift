@@ -196,12 +196,6 @@ struct CodyncLiveActivityWidget: Widget {
         .padding(.vertical, 10)
         .frame(height: 160)
         .background(Color.white.opacity(state.isCompleted ? 1 : 0.75))
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-        )
         .activityBackgroundTint(.clear)
     }
 
@@ -212,17 +206,22 @@ struct CodyncLiveActivityWidget: Widget {
         let state = context.state
 
         let completedTasks = state.tasks.filter { $0.status == .completed }
-        let cards: [String] = {
-            var result: [String] = []
-            if completedTasks.count >= 2 {
-                result.append(completedTasks[completedTasks.count - 2].truncatedContent)
-            }
+        let currentTool = nonEmpty(state.currentTask)
+        let cards: [(text: String, isInProgress: Bool)] = {
+            var result: [(String, Bool)] = []
+            // Show last completed task behind
             if let last = completedTasks.last {
-                result.append(last.truncatedContent)
+                result.append((last.truncatedContent, false))
+            }
+            // Show current tool as front card (in-progress)
+            if let tool = currentTool, state.isBusy {
+                result.append((tool, true))
+            } else if completedTasks.count >= 2 {
+                // No active tool — show last 2 completed
+                result.insert((completedTasks[completedTasks.count - 2].truncatedContent, false), at: 0)
             }
             return result
         }()
-        let frontCard = completedTasks.last?.truncatedContent
         let isWaiting = cards.isEmpty && !state.isCompleted
 
         VStack(alignment: .leading, spacing: 4) {
@@ -266,9 +265,9 @@ struct CodyncLiveActivityWidget: Widget {
                         .transition(.blurReplace)
                 } else {
                     ZStack {
-                        ForEach(cards, id: \.self) { card in
-                            let isBehind = card != frontCard
-                            TaskCard(text: card, isBehind: isBehind)
+                        ForEach(Array(cards.enumerated()), id: \.offset) { idx, card in
+                            let isBehind = idx < cards.count - 1
+                            TaskCard(text: card.text, isBehind: isBehind, isInProgress: card.isInProgress)
                         }
                     }
                     .compositingGroup()
@@ -286,12 +285,6 @@ struct CodyncLiveActivityWidget: Widget {
         .padding(.vertical, 10)
         .frame(height: 160)
         .background(Color.white.opacity(isWaiting || state.isCompleted ? 1 : 0.75))
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-        )
         .activityBackgroundTint(.clear)
     }
 
@@ -457,17 +450,27 @@ struct CodyncLiveActivityWidget: Widget {
 struct TaskCard: View {
     let text: String
     let isBehind: Bool
+    var isInProgress: Bool = false
+
+    private var cornerRadius: CGFloat { isBehind ? 10 : 16 }
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(widgetFg.opacity(0.5))
-                .frame(width: 21, height: 21)
-                .background(
-                    Circle()
-                        .foregroundStyle(widgetFg.opacity(0.12))
-                )
+            if isInProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(widgetFg.opacity(0.6))
+                    .frame(width: 21, height: 21)
+            } else {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(widgetFg.opacity(0.5))
+                    .frame(width: 21, height: 21)
+                    .background(
+                        Circle()
+                            .foregroundStyle(widgetFg.opacity(0.12))
+                    )
+            }
 
             Text(text)
                 .font(.callout)
@@ -478,10 +481,7 @@ struct TaskCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 60)
-        .background(
-            RoundedRectangle(cornerRadius: isBehind ? 10 : 16, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
+        .background(Color.white, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .scaleEffect(isBehind ? 0.9 : 1)
         .offset(y: isBehind ? 10 : 0)
         .opacity(isBehind ? 0.72 : 1)

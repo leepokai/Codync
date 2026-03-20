@@ -216,7 +216,7 @@ final class LiveActivityManager: ObservableObject {
         let state = contentState(from: session)
 
         let prev = lastPushedState[session.sessionId]
-        let meaningfulChange = prev == nil
+        let fieldChange = prev == nil
             || prev?.status != state.status
             || prev?.model != state.model
             || prev?.completedCount != state.completedCount
@@ -224,8 +224,10 @@ final class LiveActivityManager: ObservableObject {
             || prev?.currentTask != state.currentTask
             || prev?.contextPct != state.contextPct
             || prev?.costUSD != state.costUSD
+        // Update every 8s for sparkle animation cycle, even without field changes
+        let animationTick = prev != nil && (state.durationSec / 8 != prev!.durationSec / 8)
 
-        guard meaningfulChange else { return }
+        guard fieldChange || animationTick else { return }
 
         if let prev, prev.status != state.status {
             logger.info("[\(session.projectName)] status changed: \(prev.status) → \(state.status)")

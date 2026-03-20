@@ -28,10 +28,11 @@ final class CodyncPanelState: ObservableObject {
         guard let screen = screenRef else { return }
         let centerX = screen.frame.origin.x + screen.frame.width / 2
 
+        let iconExtension: CGFloat = 40
         collapsedRect = CGRect(
             x: centerX - headerSize.width / 2,
             y: screen.frame.maxY - headerSize.height,
-            width: headerSize.width,
+            width: headerSize.width + iconExtension,
             height: headerSize.height
         )
 
@@ -268,8 +269,16 @@ private struct CodyncPanelContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header — matches screen notch height, tappable to expand
-            Color.clear
-                .frame(height: headerSize.height)
+            HStack(spacing: 0) {
+                Color.clear
+                if !isExpanded {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .frame(width: 28, height: headerSize.height)
+                }
+            }
+            .frame(height: headerSize.height)
             .contentShape(Rectangle())
             .onTapGesture {
                 panelState.isExpanded.toggle()
@@ -291,7 +300,7 @@ private struct CodyncPanelContentView: View {
                     )
             }
         }
-        .frame(width: isExpanded ? 320 : headerSize.width - 12)
+        .frame(width: isExpanded ? 320 : headerSize.width + 18)
         .padding(.horizontal, isExpanded ? 19 : 6)
         .padding(.bottom, isExpanded ? 12 : 0)
         .background(Color.black)
@@ -299,15 +308,8 @@ private struct CodyncPanelContentView: View {
             topCornerRadius: topCornerRadius,
             bottomCornerRadius: bottomCornerRadius
         ))
-        .overlay(alignment: .topTrailing) {
-            if !isExpanded {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .offset(x: 15, y: 7)
-            }
-        }
         .shadow(color: isExpanded ? .black.opacity(0.6) : .clear, radius: 8)
+        .offset(x: isExpanded ? 0 : 15)
         .background(
             GeometryReader { geo in
                 Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)

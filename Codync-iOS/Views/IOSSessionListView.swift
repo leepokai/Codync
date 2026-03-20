@@ -27,7 +27,16 @@ struct IOSSessionListView: View {
             }
         }
         .background(theme.background)
-        .navigationTitle("Codync")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Image("CodyncIcon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+        }
         .toolbarColorScheme(.dark, for: .navigationBar)
         .onChange(of: sessions.map(\.sessionId)) { _, newOrder in
             var newStyles: [String: GlassCardStyle] = [:]

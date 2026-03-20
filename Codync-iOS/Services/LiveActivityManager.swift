@@ -1,6 +1,7 @@
 import ActivityKit
 import CloudKit
 import Foundation
+import UIKit
 import UserNotifications
 import CodyncShared
 import os
@@ -181,6 +182,12 @@ final class LiveActivityManager: ObservableObject {
     private func startTracking(_ session: SessionState) {
         guard !isTracking(sessionId: session.sessionId) else { return }
         guard trackedSessionIds.count < Self.maxActivities else { return }
+
+        // Can only START Live Activities when app is in foreground
+        guard UIApplication.shared.applicationState == .active else {
+            logger.debug("Skipping Live Activity start — app in background")
+            return
+        }
 
         let attributes = CodyncAttributes(
             sessionId: session.sessionId,

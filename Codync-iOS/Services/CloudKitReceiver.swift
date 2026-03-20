@@ -47,8 +47,8 @@ final class CloudKitReceiver: ObservableObject {
 
     func startPolling() {
         guard pollTimer == nil else { return }
-        logger.info("Starting CloudKit polling (1s interval)")
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        logger.info("Starting CloudKit polling (5s interval)")
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.fetch()
             }

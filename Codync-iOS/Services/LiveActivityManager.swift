@@ -17,7 +17,6 @@ final class LiveActivityManager: ObservableObject {
     private var sessionsByID: [String: SessionState] = [:]
     private var lastPushedState: [String: CodyncAttributes.ContentState] = [:]
     private var tickTimer: Timer?
-    private var pushTokenTasks: [String: Task<Void, Never>] = [:]
 
     private static let maxActivities = 4
 
@@ -199,46 +198,14 @@ final class LiveActivityManager: ObservableObject {
         do {
             let activity = try Activity.request(
                 attributes: attributes,
-                content: .init(state: state, staleDate: nil),
-                pushType: .token
+                content: .init(state: state, staleDate: nil)
             )
             activities[session.sessionId] = activity
             lastPushedState[session.sessionId] = state
             trackedSessionIds.insert(session.sessionId)
-            observePushToken(activity: activity, sessionId: session.sessionId)
-            logger.info("Started Live Activity for \(session.sessionId) with push token support")
+            logger.info("Started Live Activity for \(session.sessionId)")
         } catch {
             logger.error("Failed to start Live Activity: \(error)")
-        }
-    }
-
-    /// Observe push token updates and sync to CloudKit for the macOS app to read.
-    private func observePushToken(activity: Activity<CodyncAttributes>, sessionId: String) {
-        pushTokenTasks[sessionId]?.cancel()
-        pushTokenTasks[sessionId] = Task {
-            for await token in activity.pushTokenUpdates {
-                let hex = token.map { String(format: "%02x", $0) }.joined()
-                logger.info("Push token for \(sessionId): \(hex.prefix(8))...")
-                await savePushToken(sessionId: sessionId, token: token)
-            }
-        }
-    }
-
-    /// Save push token to CloudKit so macOS can read it and POST to the Worker.
-    private func savePushToken(sessionId: String, token: Data) async {
-        let recordID = CKRecord.ID(
-            recordName: "pushtoken-\(sessionId)",
-            zoneID: CloudKitManager.zoneID
-        )
-        let record = CKRecord(recordType: "PushToken", recordID: recordID)
-        record["sessionId"] = sessionId as CKRecordValue
-        record["token"] = token.map { String(format: "%02x", $0) }.joined() as CKRecordValue
-        record["updatedAt"] = Date() as CKRecordValue
-        do {
-            _ = try await CloudKitManager.shared.database.save(record)
-            logger.info("Saved push token to CloudKit for \(sessionId)")
-        } catch {
-            logger.error("Failed to save push token: \(error.localizedDescription)")
         }
     }
 
@@ -275,7 +242,6 @@ final class LiveActivityManager: ObservableObject {
         guard let activity = activities.removeValue(forKey: sessionId) else { return }
         trackedSessionIds.remove(sessionId)
         lastPushedState.removeValue(forKey: sessionId)
-        pushTokenTasks.removeValue(forKey: sessionId)?.cancel()
         Task {
             await activity.end(nil, dismissalPolicy: .immediate)
         }

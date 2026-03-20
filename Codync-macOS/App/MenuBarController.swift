@@ -275,9 +275,9 @@ private struct CodyncPanelContentView: View {
                     Image("CodyncIcon")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 16, height: 16)
-                        .foregroundStyle(.white.opacity(0.9))
-                        .frame(width: 28, height: headerSize.height)
+                        .frame(width: 18, height: 18)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .frame(width: 32, height: headerSize.height)
                 }
             }
             .frame(height: headerSize.height)
@@ -311,7 +311,7 @@ private struct CodyncPanelContentView: View {
             bottomCornerRadius: bottomCornerRadius
         ))
         .shadow(color: isExpanded ? .black.opacity(0.6) : .clear, radius: 8)
-        .offset(x: isExpanded ? 0 : 15)
+        .offset(x: isExpanded ? 0 : 15, y: isExpanded ? 0 : -2)
         .background(
             GeometryReader { geo in
                 Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)

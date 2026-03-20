@@ -7,9 +7,11 @@ struct PanelHeaderView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text("Codync")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(theme.primaryText)
+            Image("CodyncIcon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 16, height: 16)
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
 
             Spacer()
 

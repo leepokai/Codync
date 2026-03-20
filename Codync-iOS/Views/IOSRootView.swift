@@ -33,11 +33,11 @@ struct IOSRootView: View {
         .task {
             // Initialize with current sessions
             displayedSessions = sortSessions(receiver.sessions)
-            // Start 3-second reorder timer
-            reorderTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
+            // Start 5-second reorder timer
+            reorderTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
                 Task { @MainActor in
                     let sorted = sortSessions(receiver.sessions)
-                    withAnimation(.spring(duration: 0.6, bounce: 0.15)) {
+                    withAnimation(.spring(duration: 2.0, bounce: 0.1)) {
                         displayedSessions = sorted
                     }
                 }

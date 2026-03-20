@@ -36,10 +36,10 @@ struct SessionListView: View {
         .task {
             displayedSessions = stateManager.sessions
             pinnedSessionIds = (try? await CloudKitManager.shared.fetchPinnedSessionIds()) ?? []
-            reorderTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
+            reorderTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
                 Task { @MainActor in
                     let sorted = stateManager.sessions
-                    withAnimation(.spring(duration: 0.6, bounce: 0.15)) {
+                    withAnimation(.spring(duration: 2.0, bounce: 0.1)) {
                         displayedSessions = sorted
                     }
                 }
@@ -91,7 +91,7 @@ struct SessionListView: View {
 
             // Reset after 0.8s
             Task {
-                try? await Task.sleep(for: .seconds(0.8))
+                try? await Task.sleep(for: .seconds(2.0))
                 withAnimation(.easeOut(duration: 0.3)) { cardStyles = [:] }
             }
         }

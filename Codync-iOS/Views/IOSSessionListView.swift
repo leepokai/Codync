@@ -40,9 +40,9 @@ struct IOSSessionListView: View {
             cardStyles = newStyles
             previousOrder = newOrder
 
-            // Reset after 0.8s
+            // Reset after animation completes
             Task {
-                try? await Task.sleep(for: .seconds(0.8))
+                try? await Task.sleep(for: .seconds(2.0))
                 withAnimation(.easeOut(duration: 0.3)) { cardStyles = [:] }
             }
         }

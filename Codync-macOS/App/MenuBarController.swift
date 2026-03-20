@@ -273,8 +273,8 @@ private struct CodyncPanelContentView: View {
                 HStack {
                     Spacer()
                     Image(systemName: "sparkle")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.9))
                         .padding(.trailing, 8)
                 }
             }
@@ -303,7 +303,7 @@ private struct CodyncPanelContentView: View {
         .frame(width: isExpanded ? 320 : headerSize.width - 12)
         .padding(.horizontal, isExpanded ? 19 : 6)
         .padding(.bottom, isExpanded ? 12 : 0)
-        .background(isDarkMode ? Color.black : Color(red: 0.95, green: 0.95, blue: 0.96))
+        .background(Color.black)
         .clipShape(CodyncPanelShape(
             topCornerRadius: topCornerRadius,
             bottomCornerRadius: bottomCornerRadius

@@ -44,8 +44,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         guard subID == "session-zone-changes" || subID == "session-changes" else {
             return .noData
         }
-        logger.info("CloudKit push received")
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm:ss"
+        let ts = fmt.string(from: Date())
+        logger.info("[\(ts)] CloudKit push received")
         await receiver.fetch(source: "silent-push")
+        let statuses = receiver.sessions.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")
+        logger.info("[\(ts)] → \(statuses)")
         liveActivityManager.updateSessions(receiver.sessions)
         return .newData
     }

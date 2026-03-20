@@ -15,6 +15,15 @@ final class CloudKitSync {
     private var isSyncing = false
     private var quotaBackoffUntil: Date?
 
+    private static func log(_ msg: String) {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codync/sync.log")
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm:ss"
+        let line = "[\(fmt.string(from: Date()))] \(msg)\n"
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
+        else { try? line.write(to: url, atomically: false, encoding: .utf8) }
+    }
+
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
 
@@ -79,28 +88,29 @@ final class CloudKitSync {
 
             do {
                 if !toDelete.isEmpty {
-                    logger.info("deleteByIds \(toDelete.count) sessions (PID dead)")
+                    Self.log("delete \(toDelete.count) sessions")
                     try await CloudKitManager.shared.deleteByIds(toDelete)
-                    logger.info("Deleted \(toDelete.count) sessions")
+                    Self.log("deleted OK")
                     for id in toDelete {
                         previousStates.removeValue(forKey: id)
                     }
                 }
 
                 if !toSave.isEmpty {
-                    logger.info("saveBatch \(toSave.count) sessions")
+                    let desc = toSave.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")
+                    Self.log("save \(toSave.count): \(desc)")
                     try await CloudKitManager.shared.saveBatch(toSave)
-                    logger.info("Saved \(toSave.count) sessions")
+                    Self.log("saved OK")
                     for session in toSave {
                         previousStates[session.sessionId] = session
                     }
                 }
             } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {
                 let retryAfter = error.retryAfterSeconds ?? 600
-                logger.warning("QUOTA: backoff \(Int(retryAfter * 2))s")
+                Self.log("QUOTA: backoff \(Int(retryAfter * 2))s")
                 quotaBackoffUntil = Date().addingTimeInterval(retryAfter * 2)
             } catch {
-                logger.error("CloudKit sync error: \(error)")
+                Self.log("ERROR: \(error)")
                 quotaBackoffUntil = Date().addingTimeInterval(300)
             }
         }

@@ -272,8 +272,10 @@ private struct CodyncPanelContentView: View {
             HStack(spacing: 0) {
                 Color.clear
                 if !isExpanded {
-                    Image(systemName: "sparkle")
-                        .font(.system(size: 14, weight: .medium))
+                    Image("CodyncIcon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
                         .foregroundStyle(.white.opacity(0.9))
                         .frame(width: 28, height: headerSize.height)
                 }

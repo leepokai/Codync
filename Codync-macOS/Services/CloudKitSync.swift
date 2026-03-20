@@ -15,13 +15,6 @@ final class CloudKitSync {
     private var isSyncing = false
     private var quotaBackoffUntil: Date?
 
-    private static func log(_ msg: String) {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codync/sync.log")
-        let line = "[\(Date())] \(msg)\n"
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
-        else { try? line.write(to: url, atomically: false, encoding: .utf8) }
-    }
-
     init(stateManager: SessionStateManager) {
         self.stateManager = stateManager
 
@@ -29,9 +22,9 @@ final class CloudKitSync {
         Task {
             do {
                 try await CloudKitManager.shared.ensureZoneExists()
-                Self.log("Custom zone ready")
+                logger.info("Custom zone ready")
             } catch {
-                Self.log("Zone creation failed: \(error) — will retry on next save")
+                logger.warning("Zone creation failed: \(error) — will retry on next save")
             }
         }
 
@@ -85,40 +78,29 @@ final class CloudKitSync {
             }
 
             do {
-                // Send end push BEFORE deleting (tokens still needed)
-                for id in toDelete {
-                    await APNsPushService.shared.sendEnd(sessionId: id)
-                }
-
                 if !toDelete.isEmpty {
-                    Self.log("deleteByIds \(toDelete.count) sessions (PID dead)")
+                    logger.info("deleteByIds \(toDelete.count) sessions (PID dead)")
                     try await CloudKitManager.shared.deleteByIds(toDelete)
-                    Self.log("SUCCESS: deleted \(toDelete.count)")
+                    logger.info("Deleted \(toDelete.count) sessions")
                     for id in toDelete {
                         previousStates.removeValue(forKey: id)
                     }
                 }
 
                 if !toSave.isEmpty {
-                    Self.log("saveBatch \(toSave.count) sessions")
+                    logger.info("saveBatch \(toSave.count) sessions")
                     try await CloudKitManager.shared.saveBatch(toSave)
-                    Self.log("SUCCESS: saved \(toSave.count)")
+                    logger.info("Saved \(toSave.count) sessions")
                     for session in toSave {
                         previousStates[session.sessionId] = session
-                    }
-
-                    // Push to APNs via Worker relay for Live Activity background updates
-                    await APNsPushService.shared.fetchPushTokens()
-                    for session in toSave {
-                        await APNsPushService.shared.sendUpdate(session: session)
                     }
                 }
             } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {
                 let retryAfter = error.retryAfterSeconds ?? 600
-                Self.log("QUOTA: backoff \(Int(retryAfter * 2))s")
+                logger.warning("QUOTA: backoff \(Int(retryAfter * 2))s")
                 quotaBackoffUntil = Date().addingTimeInterval(retryAfter * 2)
             } catch {
-                Self.log("ERROR: \(error)")
+                logger.error("CloudKit sync error: \(error)")
                 quotaBackoffUntil = Date().addingTimeInterval(300)
             }
         }

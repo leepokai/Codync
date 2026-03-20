@@ -77,6 +77,8 @@ final class LiveActivityManager: ObservableObject {
     // MARK: - Unified Update
 
     func updateSessions(_ sessions: [SessionState]) {
+        let statuses = sessions.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")
+        logger.debug("updateSessions: \(statuses)")
         sessionsByID = Dictionary(sessions.map { ($0.sessionId, $0) }, uniquingKeysWith: { _, last in last })
 
         // 1. Clean up completed/dead sessions
@@ -240,14 +242,32 @@ final class LiveActivityManager: ObservableObject {
         }
     }
 
-    /// Push an activity update only if the content state actually changed.
+    /// Push an activity update only if non-time fields changed.
+    /// durationSec changes every second — comparing it would cause constant updates.
     private func pushUpdateIfChanged(_ session: SessionState) {
         guard let activity = activities[session.sessionId] else { return }
         let state = contentState(from: session)
-        guard state != lastPushedState[session.sessionId] else { return }
+
+        let prev = lastPushedState[session.sessionId]
+        let meaningfulChange = prev == nil
+            || prev?.status != state.status
+            || prev?.model != state.model
+            || prev?.completedCount != state.completedCount
+            || prev?.totalCount != state.totalCount
+            || prev?.currentTask != state.currentTask
+            || prev?.contextPct != state.contextPct
+            || prev?.costUSD != state.costUSD
+
+        guard meaningfulChange else { return }
+
+        if let prev, prev.status != state.status {
+            logger.info("[\(session.projectName)] status changed: \(prev.status) → \(state.status)")
+        }
         lastPushedState[session.sessionId] = state
+        // Pinned sessions get highest relevance → iOS shows them in Dynamic Island
+        let score: Double = pinnedSessionIds.contains(session.sessionId) ? 100 : 25
         Task {
-            await activity.update(.init(state: state, staleDate: nil))
+            await activity.update(.init(state: state, staleDate: nil, relevanceScore: score))
         }
     }
 

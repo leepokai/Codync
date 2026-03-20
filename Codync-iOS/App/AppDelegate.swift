@@ -44,8 +44,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         guard subID == "session-zone-changes" || subID == "session-changes" else {
             return .noData
         }
-        logger.debug("CloudKit push received")
-        await receiver.fetch()
+        logger.info("CloudKit push received")
+        await receiver.fetch(source: "silent-push")
         liveActivityManager.updateSessions(receiver.sessions)
         return .newData
     }

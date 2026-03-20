@@ -224,8 +224,8 @@ final class LiveActivityManager: ObservableObject {
             || prev?.currentTask != state.currentTask
             || prev?.contextPct != state.contextPct
             || prev?.costUSD != state.costUSD
-        // Update every 8s for sparkle animation cycle, even without field changes
-        let animationTick = prev != nil && (state.durationSec / 8 != prev!.durationSec / 8)
+        // Update every 2s for sparkle animation, even without field changes
+        let animationTick = prev != nil && (state.durationSec / 2 != prev!.durationSec / 2)
 
         guard fieldChange || animationTick else { return }
 

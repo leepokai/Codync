@@ -22,7 +22,6 @@
 		7851B112737C5DD8B8C3380C /* JSONLTailReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05154CFD496486BA9E126E9D /* JSONLTailReader.swift */; };
 		804863D604952293533147CF /* CodyncLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3B652652FD106495A82565C8 /* CodyncLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		911C6ABDB9539A60844931F2 /* PIDChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D161FDC49BE96E3A73FEA33 /* PIDChecker.swift */; };
-		PANEL001122334455667788 /* PanelHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PANEL002233445566778899 /* PanelHeaderView.swift */; };
 		A30C11E610763F5064698D43 /* IOSSessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01A225437E7A00B3337883E /* IOSSessionListView.swift */; };
 		A98E0466D559EC6EBE0E39F4 /* ClaudeHookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */; };
 		APNS0001D559EC6EBE0E39F4 /* APNsPushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */; };
@@ -49,6 +48,7 @@
 		F4F54F91459EE6A15DD7B246 /* CodyncIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8453D8BE6EE838E1B9EA4588 /* CodyncIOSApp.swift */; };
 		F5A6B7C8D9E0F1A2B3C4D5E6 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A6B7C8D9E0F1A2B3C4D5E7 /* AppDelegate.swift */; };
 		FF66001122334455667788BB /* NSScreen+Notch.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC33DD44EE55FF6600112233 /* NSScreen+Notch.swift */; };
+		PANEL001122334455667788 /* PanelHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PANEL002233445566778899 /* PanelHeaderView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -88,7 +88,6 @@
 		4A67A3CD19408484AB11BB73 /* CodyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncApp.swift; sourceTree = "<group>"; };
 		4C55AF6C89E20B6FD1CF5CD4 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		8453D8BE6EE838E1B9EA4588 /* CodyncIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncIOSApp.swift; sourceTree = "<group>"; };
-		F5A6B7C8D9E0F1A2B3C4D5E7 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		8A9A7BAE27F6E4CEEDA1B48D /* CodyncLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncLiveActivityWidget.swift; sourceTree = "<group>"; };
 		8B5EA7075E9DC97237EF2227 /* Codync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Codync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8F1E5418D5496E651BD58FA2 /* ClaudePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePaths.swift; sourceTree = "<group>"; };
@@ -102,8 +101,9 @@
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* SessionTagView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTagView.swift; sourceTree = "<group>"; };
 		AA11BB22CC33DD44EE55FF66 /* CodyncPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncPanel.swift; sourceTree = "<group>"; };
 		AABBCCDD11223344556677EE /* CodyncPanelShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncPanelShape.swift; sourceTree = "<group>"; };
+		AB156A392F6DC850001D15CE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
-		PANEL002233445566778899 /* PanelHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelHeaderView.swift; sourceTree = "<group>"; };
+		APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APNsPushService.swift; sourceTree = "<group>"; };
 		B3C4D5E6F708192A3B4C5D6E /* TranscriptWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptWatcher.swift; sourceTree = "<group>"; };
 		BB22CC33DD44EE55FF660011 /* EventMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventMonitor.swift; sourceTree = "<group>"; };
 		CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
@@ -116,10 +116,11 @@
 		DA699D0197B8A14FD7D1BDC4 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
 		DF291DF4A4EF932B774F227D /* IOSRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRootView.swift; sourceTree = "<group>"; };
 		E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeHookServer.swift; sourceTree = "<group>"; };
-		APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APNsPushService.swift; sourceTree = "<group>"; };
 		F033CA1408917B1655BC66D2 /* CodyncShared */ = {isa = PBXFileReference; lastKnownFileType = folder; path = CodyncShared; sourceTree = SOURCE_ROOT; };
 		F19A27E00B1B13A579A950F4 /* CloudKitReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitReceiver.swift; sourceTree = "<group>"; };
+		F5A6B7C8D9E0F1A2B3C4D5E7 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		F71E03612F167D883C324D25 /* SessionStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateManager.swift; sourceTree = "<group>"; };
+		PANEL002233445566778899 /* PanelHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelHeaderView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -163,6 +164,7 @@
 		0C96AC38D8727BFA29C5A3C2 /* Codync-iOS */ = {
 			isa = PBXGroup;
 			children = (
+				AB156A392F6DC850001D15CE /* Info.plist */,
 				9580D32B5B29E049090D66C8 /* Assets.xcassets */,
 				1826180B05CCD48B46767A6C /* App */,
 				BF38CE6E12412C3D21C0B979 /* Services */,
@@ -627,6 +629,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Codync-iOS/Info.plist";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -656,6 +659,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Codync-iOS/Info.plist";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

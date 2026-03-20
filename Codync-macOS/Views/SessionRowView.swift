@@ -3,7 +3,6 @@ import CodyncShared
 
 struct SessionRowView: View {
     let session: SessionState
-    var isPinned: Bool = false
     let onSelect: () -> Void
     @Environment(\.theme) private var theme
     @State private var isHovered = false
@@ -65,32 +64,6 @@ struct SessionRowView: View {
         .padding(.horizontal, 2)
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
-        }
-        .overlay(alignment: .topTrailing) {
-            if isHovered {
-                Button(action: { togglePin() }) {
-                    Image(systemName: isPinned ? "pin.fill" : "pin")
-                        .font(.system(size: 9))
-                        .foregroundStyle(theme.secondaryText)
-                        .padding(4)
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity)
-            }
-        }
-    }
-
-    private func togglePin() {
-        Task {
-            do {
-                if isPinned {
-                    try await CloudKitManager.shared.unpinSession(session.sessionId)
-                } else {
-                    try await CloudKitManager.shared.pinSession(session.sessionId)
-                }
-            } catch {
-                // Silently fail — pin is best-effort
-            }
         }
     }
 

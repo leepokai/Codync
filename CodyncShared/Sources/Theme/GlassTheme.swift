@@ -153,28 +153,33 @@ public struct GlassCardModifier: ViewModifier {
     private let cornerRadius: CGFloat = 14
 
     public func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if style == .normal {
+            // Pass-through — no glass effect in normal state
+            content
+        } else {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        content
-            .background(resolvedBackground, in: shape)
-            .overlay {
-                if style == .elevated {
-                    LinearGradient(
-                        colors: [innerHighlight, Color.clear],
-                        startPoint: .top,
-                        endPoint: .center
-                    )
-                    .clipShape(shape)
+            content
+                .background(resolvedBackground, in: shape)
+                .overlay {
+                    if style == .elevated {
+                        LinearGradient(
+                            colors: [innerHighlight, Color.clear],
+                            startPoint: .top,
+                            endPoint: .center
+                        )
+                        .clipShape(shape)
+                    }
                 }
-            }
-            .overlay(shape.stroke(resolvedBorderColor, lineWidth: resolvedBorderWidth))
-            .shadow(
-                color: style == .elevated ? shadowColor : .clear,
-                radius: style == .elevated ? shadowRadius : 0,
-                x: 0, y: 4
-            )
-            .scaleEffect(resolvedScale)
-            .opacity(resolvedOpacity)
+                .overlay(shape.stroke(resolvedBorderColor, lineWidth: resolvedBorderWidth))
+                .shadow(
+                    color: style == .elevated ? shadowColor : .clear,
+                    radius: style == .elevated ? shadowRadius : 0,
+                    x: 0, y: 4
+                )
+                .scaleEffect(resolvedScale)
+                .opacity(resolvedOpacity)
+        }
     }
 }
 

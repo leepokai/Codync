@@ -34,6 +34,7 @@ struct SessionListView: View {
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .task {
             displayedSessions = stateManager.sessions
+            reorderTimer?.invalidate()
             reorderTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
                 Task { @MainActor in
                     let sorted = stateManager.sessions
@@ -87,7 +88,7 @@ struct SessionListView: View {
             cardStyles = newStyles
             previousOrder = newOrder
 
-            // Reset after 0.8s
+            // Reset after animation completes
             Task {
                 try? await Task.sleep(for: .seconds(2.0))
                 withAnimation(.easeOut(duration: 0.3)) { cardStyles = [:] }

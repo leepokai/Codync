@@ -18,21 +18,13 @@ final class APNsPushService {
 
     private init() {
         logger.info("APNs push service ready (Worker relay)")
-        Self.log("APNs push service initialized")
-    }
-
-    private static func log(_ msg: String) {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codync/apns.log")
-        let line = "[\(Date())] \(msg)\n"
-        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
-        else { try? line.write(to: url, atomically: false, encoding: .utf8) }
     }
 
     // MARK: - Public API
 
     func sendUpdate(session: SessionState) async {
         guard let tokenHex = pushTokens[session.sessionId] else {
-            Self.log("SKIP update \(session.sessionId.prefix(8))… — no push token (have \(pushTokens.count) tokens: \(pushTokens.keys.map { String($0.prefix(8)) }))")
+            logger.debug("SKIP update \(session.sessionId.prefix(8))… — no push token")
             return
         }
 
@@ -42,7 +34,7 @@ final class APNsPushService {
             "event": "update",
             "contentState": contentState
         ]
-        Self.log("SENDING update \(session.sessionId.prefix(8))… status=\(session.status.rawValue) token=\(tokenHex.prefix(8))…")
+        logger.info("Sending update \(session.sessionId.prefix(8))… status=\(session.status.rawValue)")
         await post(payload: payload, label: "update \(session.sessionId)")
     }
 
@@ -80,16 +72,14 @@ final class APNsPushService {
             }
             if tokens != pushTokens {
                 pushTokens = tokens
-                Self.log("Fetched \(tokens.count) push tokens: \(tokens.keys.map { String($0.prefix(8)) })")
                 if !tokens.isEmpty {
                     logger.info("Fetched \(tokens.count) push tokens from CloudKit")
                 }
             }
         } catch let error as CKError where error.code == .unknownItem {
             // PushToken record type doesn't exist yet — iOS hasn't saved any tokens
-            Self.log("No PushToken record type in CloudKit (iOS hasn't registered any)")
+            logger.debug("No PushToken record type in CloudKit yet")
         } catch {
-            Self.log("ERROR fetching tokens: \(error)")
             logger.warning("Failed to fetch push tokens: \(error)")
         }
     }
@@ -111,16 +101,14 @@ final class APNsPushService {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse {
-                let reason = String(data: data, encoding: .utf8) ?? ""
                 if http.statusCode == 200 {
-                    Self.log("Worker OK for \(label)")
+                    logger.debug("Worker OK for \(label)")
                 } else {
-                    Self.log("Worker \(http.statusCode) for \(label): \(reason)")
+                    let reason = String(data: data, encoding: .utf8) ?? ""
                     logger.warning("Worker \(http.statusCode) for \(label): \(reason)")
                 }
             }
         } catch {
-            Self.log("Worker POST failed for \(label): \(error.localizedDescription)")
             logger.error("Worker POST failed for \(label): \(error.localizedDescription)")
         }
     }

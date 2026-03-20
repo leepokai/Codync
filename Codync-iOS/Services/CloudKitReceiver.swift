@@ -8,7 +8,6 @@ private let logger = Logger(subsystem: "com.pokai.Codync.ios", category: "CloudK
 @MainActor
 final class CloudKitReceiver: ObservableObject {
     @Published var sessions: [SessionState] = []
-    private var pollTimer: Timer?
     private var isFetching = false
 
     func start() async {
@@ -24,40 +23,18 @@ final class CloudKitReceiver: ObservableObject {
         } catch {
             logger.error("Failed to subscribe to CloudKit: \(error.localizedDescription)")
         }
-        await fetch()
-        startPolling()
+        await fetch(source: "initial")
     }
 
-    func fetch() async {
+    func fetch(source: String = "unknown") async {
         guard !isFetching else { return }
         isFetching = true
         defer { isFetching = false }
         do {
             sessions = try await CloudKitManager.shared.fetchAll()
-            logger.debug("Fetched \(self.sessions.count) sessions")
+            logger.info("Fetched \(self.sessions.count) sessions (source: \(source))")
         } catch {
             logger.error("CloudKit fetch failed: \(error.localizedDescription)")
         }
-    }
-
-    func onRemoteNotification() async {
-        logger.debug("Remote notification received")
-        await fetch()
-    }
-
-    func startPolling() {
-        guard pollTimer == nil else { return }
-        logger.info("Starting CloudKit polling (5s interval)")
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                await self?.fetch()
-            }
-        }
-    }
-
-    func stopPolling() {
-        pollTimer?.invalidate()
-        pollTimer = nil
-        logger.info("Stopped CloudKit polling")
     }
 }

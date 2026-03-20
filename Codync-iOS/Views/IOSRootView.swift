@@ -34,6 +34,7 @@ struct IOSRootView: View {
             // Initialize with current sessions
             displayedSessions = sortSessions(receiver.sessions)
             // Start 5-second reorder timer
+            reorderTimer?.invalidate()
             reorderTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
                 Task { @MainActor in
                     let sorted = sortSessions(receiver.sessions)

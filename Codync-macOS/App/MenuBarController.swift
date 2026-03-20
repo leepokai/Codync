@@ -268,17 +268,8 @@ private struct CodyncPanelContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header — matches screen notch height, tappable to expand
-            ZStack {
-                Color.clear
-                HStack {
-                    Spacer()
-                    Image(systemName: "sparkle")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.9))
-                        .padding(.trailing, 8)
-                }
-            }
-            .frame(height: headerSize.height)
+            Color.clear
+                .frame(height: headerSize.height)
             .contentShape(Rectangle())
             .onTapGesture {
                 panelState.isExpanded.toggle()
@@ -308,6 +299,14 @@ private struct CodyncPanelContentView: View {
             topCornerRadius: topCornerRadius,
             bottomCornerRadius: bottomCornerRadius
         ))
+        .overlay(alignment: .topTrailing) {
+            if !isExpanded {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .offset(x: 15, y: 7)
+            }
+        }
         .shadow(color: isExpanded ? .black.opacity(0.6) : .clear, radius: 8)
         .background(
             GeometryReader { geo in

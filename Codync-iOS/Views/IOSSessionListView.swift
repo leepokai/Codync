@@ -40,13 +40,6 @@ struct IOSSessionListView: View {
         .background(theme.background)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Image("CodyncIcon")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 22, height: 22)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     withAnimation(.easeInOut(duration: 0.25)) {

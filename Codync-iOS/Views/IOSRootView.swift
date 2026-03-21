@@ -9,10 +9,13 @@ struct IOSRootView: View {
     @AppStorage("codync_darkMode") private var isDarkMode = true
     @State private var displayedSessions: [SessionState] = []
     @State private var reorderTimer: Timer?
+    @State private var showSplash = true
 
     var body: some View {
         Group {
-            if !onboardingComplete {
+            if showSplash {
+                splashView
+            } else if !onboardingComplete {
                 NavigationStack {
                     IOSOnboardingView()
                 }
@@ -48,6 +51,25 @@ struct IOSRootView: View {
         .onDisappear {
             reorderTimer?.invalidate()
             reorderTimer = nil
+        }
+    }
+
+    private var splashView: some View {
+        ZStack {
+            Color(red: 0.06, green: 0.06, blue: 0.07)
+                .ignoresSafeArea()
+            Image("CodyncIcon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    showSplash = false
+                }
+            }
         }
     }
 

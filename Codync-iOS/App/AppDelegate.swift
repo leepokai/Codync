@@ -6,17 +6,27 @@ import os
 private let logger = Logger(subsystem: "com.pokai.Codync.ios", category: "AppDelegate")
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
-    // AppDelegate OWNS these objects so they exist before any push can arrive.
-    // Previously they were weak refs assigned from .task{}, creating a race condition
-    // where push could arrive before wiring completed.
     let receiver = CloudKitReceiver()
     let liveActivityManager = LiveActivityManager()
+    let primarySessionManager = PrimarySessionManager()
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         application.registerForRemoteNotifications()
+        Task {
+            async let startReceiver: () = receiver.start()
+            async let loadPins: () = liveActivityManager.loadPinnedSessions()
+            async let loadPrimary: () = primarySessionManager.load()
+            _ = await (startReceiver, loadPins, loadPrimary)
+
+            liveActivityManager.updateSessions(receiver.sessions)
+            primarySessionManager.autoSelect(from: receiver.sessions)
+
+            let center = UNUserNotificationCenter.current()
+            try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+        }
         return true
     }
 
@@ -52,6 +62,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         let statuses = receiver.sessions.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")
         logger.info("[\(ts)] → \(statuses)")
         liveActivityManager.updateSessions(receiver.sessions)
+        primarySessionManager.autoSelect(from: receiver.sessions)
         return .newData
     }
 }

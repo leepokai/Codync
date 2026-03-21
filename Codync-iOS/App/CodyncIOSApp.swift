@@ -4,21 +4,24 @@ import CodyncShared
 @main
 struct CodyncIOSApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            // AppDelegate owns receiver & liveActivityManager — no race condition
-            IOSRootView(receiver: appDelegate.receiver, liveActivityManager: appDelegate.liveActivityManager)
-                .task {
-                    await appDelegate.receiver.start()
+            IOSRootView(
+                receiver: appDelegate.receiver,
+                liveActivityManager: appDelegate.liveActivityManager,
+                primarySessionManager: appDelegate.primarySessionManager
+            )
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task {
+                    await appDelegate.receiver.fetch(source: "foreground-return")
+                    appDelegate.liveActivityManager.updateSessions(appDelegate.receiver.sessions)
+                    appDelegate.primarySessionManager.autoSelect(from: appDelegate.receiver.sessions)
                 }
-                .task {
-                    let center = UNUserNotificationCenter.current()
-                    try? await center.requestAuthorization(options: [.alert, .sound, .badge])
-                }
-                .task {
-                    await appDelegate.liveActivityManager.loadPinnedSessions()
-                }
+            }
         }
     }
 }

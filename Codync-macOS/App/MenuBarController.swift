@@ -289,8 +289,8 @@ private struct CodyncPanelContentView: View {
             // Session list appears when expanded
             if isExpanded {
                 SessionListView(stateManager: stateManager, panelState: panelState)
-                    .environment(\.theme, CodyncTheme(isDark: isDarkMode, isPanel: true))
-                    .preferredColorScheme(isDarkMode ? .dark : .light)
+                    .environment(\.theme, CodyncTheme(isDark: true, isPanel: true))
+                    .preferredColorScheme(.dark)
                     .transition(
                         .asymmetric(
                             insertion: .opacity

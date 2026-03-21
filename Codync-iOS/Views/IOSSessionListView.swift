@@ -5,9 +5,6 @@ struct IOSSessionListView: View {
     let sessions: [SessionState]
     @ObservedObject var liveActivityManager: LiveActivityManager
     @Environment(\.theme) private var theme
-    @State private var previousOrder: [String] = []
-    @State private var cardStyles: [String: GlassCardStyle] = [:]
-
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 1) {
@@ -22,7 +19,6 @@ struct IOSSessionListView: View {
                     }
                     .buttonStyle(.plain)
                     .tint(theme.primaryText)
-                    .glassCard(cardStyles[session.sessionId] ?? .normal, isDark: theme.isDark)
                 }
             }
         }
@@ -38,23 +34,6 @@ struct IOSSessionListView: View {
             }
         }
         .toolbarColorScheme(.dark, for: .navigationBar)
-        .onChange(of: sessions.map(\.sessionId)) { _, newOrder in
-            var newStyles: [String: GlassCardStyle] = [:]
-            for (newIdx, id) in newOrder.enumerated() {
-                if let oldIdx = previousOrder.firstIndex(of: id) {
-                    if newIdx < oldIdx { newStyles[id] = .elevated }
-                    else if newIdx > oldIdx { newStyles[id] = .receded }
-                }
-            }
-            cardStyles = newStyles
-            previousOrder = newOrder
-
-            // Reset after animation completes
-            Task {
-                try? await Task.sleep(for: .seconds(2.0))
-                withAnimation(.easeOut(duration: 0.3)) { cardStyles = [:] }
-            }
-        }
     }
 }
 

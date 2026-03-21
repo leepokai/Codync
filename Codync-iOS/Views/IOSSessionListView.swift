@@ -4,17 +4,31 @@ import CodyncShared
 struct IOSSessionListView: View {
     let sessions: [SessionState]
     @ObservedObject var liveActivityManager: LiveActivityManager
+    @ObservedObject var primarySessionManager: PrimarySessionManager
     @Environment(\.theme) private var theme
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 1) {
+                // Mode switcher
+                modeSection
+
+                // Primary session controls (Overall mode only)
+                if liveActivityManager.mode == .overall {
+                    primarySection
+                }
+
+                // Session list
                 ForEach(sessions) { session in
                     NavigationLink(destination: IOSSessionDetailView(session: session)) {
                         SessionRowContent(
                             session: session,
                             isTracking: liveActivityManager.isTracking(sessionId: session.sessionId),
                             isPinned: liveActivityManager.isPinned(sessionId: session.sessionId),
-                            onTogglePin: { liveActivityManager.togglePin(session.sessionId) }
+                            isPrimary: primarySessionManager.primarySessionId == session.sessionId,
+                            showPrimary: liveActivityManager.mode == .overall,
+                            onTogglePin: { liveActivityManager.togglePin(session.sessionId) },
+                            onSetPrimary: { primarySessionManager.manualLock(session.sessionId) }
                         )
                     }
                     .buttonStyle(.plain)
@@ -35,13 +49,93 @@ struct IOSSessionListView: View {
         }
         .toolbarColorScheme(.dark, for: .navigationBar)
     }
+
+    @ViewBuilder
+    private var modeSection: some View {
+        Picker("Live Activity Mode", selection: Binding(
+            get: { liveActivityManager.mode },
+            set: { liveActivityManager.switchMode(to: $0) }
+        )) {
+            Text("Overall").tag(LiveActivityMode.overall)
+            Text("Individual").tag(LiveActivityMode.individual)
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var primarySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Max sessions picker
+            HStack {
+                Text("Max Sessions")
+                    .font(.caption.bold())
+                    .foregroundStyle(theme.secondaryText)
+                Spacer()
+                Picker("Max", selection: Binding(
+                    get: { liveActivityManager.maxOverallSessions },
+                    set: { newVal in
+                        liveActivityManager.maxOverallSessions = newVal
+                        Task { await liveActivityManager.savePreference() }
+                    }
+                )) {
+                    ForEach(1...4, id: \.self) { n in
+                        Text("\(n)").tag(n)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+
+            // Primary session
+            HStack {
+                Text("Primary Session")
+                    .font(.caption.bold())
+                    .foregroundStyle(theme.secondaryText)
+                Spacer()
+                if primarySessionManager.isManuallyLocked {
+                    Button("Unlock") {
+                        primarySessionManager.unlock()
+                        primarySessionManager.autoSelect(from: sessions)
+                    }
+                    .font(.caption)
+                }
+            }
+            if let primaryId = primarySessionManager.primarySessionId,
+               let session = sessions.first(where: { $0.sessionId == primaryId }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.yellow)
+                    Text(session.projectName)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(theme.primaryText)
+                    if primarySessionManager.isManuallyLocked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(theme.tertiaryText)
+                    }
+                }
+            } else {
+                Text("No active session")
+                    .font(.subheadline)
+                    .foregroundStyle(theme.tertiaryText)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
 }
 
 private struct SessionRowContent: View {
     let session: SessionState
     let isTracking: Bool
     let isPinned: Bool
+    let isPrimary: Bool
+    let showPrimary: Bool
     let onTogglePin: () -> Void
+    let onSetPrimary: () -> Void
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -55,6 +149,11 @@ private struct SessionRowContent: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 5) {
+                    if showPrimary && isPrimary {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                    }
                     Text(session.projectName)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(theme.primaryText)
@@ -83,14 +182,25 @@ private struct SessionRowContent: View {
                 }
             }
 
-            Button(action: onTogglePin) {
-                Image(systemName: isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 13))
-                    .foregroundStyle(isPinned ? theme.primaryText : theme.tertiaryText)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+            if showPrimary {
+                Button(action: onSetPrimary) {
+                    Image(systemName: isPrimary ? "star.fill" : "star")
+                        .font(.system(size: 13))
+                        .foregroundStyle(isPrimary ? .yellow : theme.tertiaryText)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button(action: onTogglePin) {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                        .font(.system(size: 13))
+                        .foregroundStyle(isPinned ? theme.primaryText : theme.tertiaryText)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)

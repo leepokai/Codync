@@ -19,7 +19,8 @@ struct TabRootView: View {
                 NavigationStack {
                     IOSSessionListView(
                         sessions: sessions,
-                        liveActivityManager: liveActivityManager
+                        liveActivityManager: liveActivityManager,
+                        primarySessionManager: primarySessionManager
                     )
                 }
             }

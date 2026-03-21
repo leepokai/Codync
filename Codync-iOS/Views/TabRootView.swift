@@ -47,7 +47,8 @@ struct TabRootView: View {
                     description: "Track OpenAI Codex jobs and costs"
                 )
             } label: {
-                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                Image("CodexIcon")
+                    .renderingMode(.template)
             }
         }
     }

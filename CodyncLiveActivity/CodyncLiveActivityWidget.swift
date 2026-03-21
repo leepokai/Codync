@@ -584,10 +584,9 @@ struct OverallLiveActivityWidget: Widget {
         ActivityConfiguration(for: OverallAttributes.self) { context in
             overallLockScreen(context: context)
         } dynamicIsland: { context in
-            let primary = context.state.sessions.first { $0.sessionId == context.state.primarySessionId }
-                ?? context.state.sessions.first
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
+                    let primary = self.primarySession(from: context.state)
                     if let p = primary, p.status == .working {
                         Circle().fill(.white).frame(width: 8, height: 8)
                     } else {
@@ -595,6 +594,7 @@ struct OverallLiveActivityWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.center) {
+                    let primary = self.primarySession(from: context.state)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(primary?.projectName ?? "Codync")
                             .font(.headline)
@@ -729,6 +729,11 @@ struct OverallLiveActivityWidget: Widget {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
+    }
+
+    private func primarySession(from state: OverallAttributes.ContentState) -> SessionSummary? {
+        state.sessions.first { $0.sessionId == state.primarySessionId }
+            ?? state.sessions.first
     }
 
     private func overallStatusLabel(_ status: String) -> String {

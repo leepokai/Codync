@@ -70,6 +70,7 @@ final class SessionStateManager: ObservableObject {
             let startDate = Date(timeIntervalSince1970: TimeInterval(raw.startedAt) / 1000)
             let duration = Int(Date().timeIntervalSince(startDate))
             let currentTask = tasks.first(where: { $0.status == .inProgress })?.activeForm
+                ?? transcript?.lastEvent
             let lastEvent = transcript?.lastEvent
 
             // Summary priority: sessions-index summary > lastPrompt > firstPrompt > project name

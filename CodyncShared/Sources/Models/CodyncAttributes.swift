@@ -22,6 +22,7 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
         public let totalCount: Int
         public let currentTask: String?
         public let previousTask: String?
+        public let secondPreviousTask: String?
         public let contextPct: Int
         public let costUSD: Double
         public let durationSec: Int
@@ -30,6 +31,7 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
         public init(status: String, model: String, tasks: [TaskItem],
                     completedCount: Int, totalCount: Int, currentTask: String?,
                     previousTask: String? = nil,
+                    secondPreviousTask: String? = nil,
                     contextPct: Int, costUSD: Double, durationSec: Int,
                     sessionStartDate: Date = Date()) {
             self.status = status
@@ -39,6 +41,7 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
             self.totalCount = totalCount
             self.currentTask = currentTask
             self.previousTask = previousTask
+            self.secondPreviousTask = secondPreviousTask
             self.contextPct = contextPct
             self.costUSD = costUSD
             self.durationSec = durationSec
@@ -74,6 +77,7 @@ public struct CodyncAttributes: Codable, Sendable {
         public let totalCount: Int
         public let currentTask: String?
         public let previousTask: String?
+        public let secondPreviousTask: String?
         public let contextPct: Int
         public let costUSD: Double
         public let durationSec: Int
@@ -82,6 +86,7 @@ public struct CodyncAttributes: Codable, Sendable {
         public init(status: String, model: String, tasks: [TaskItem],
                     completedCount: Int, totalCount: Int, currentTask: String?,
                     previousTask: String? = nil,
+                    secondPreviousTask: String? = nil,
                     contextPct: Int, costUSD: Double, durationSec: Int,
                     sessionStartDate: Date = Date()) {
             self.status = status
@@ -91,6 +96,7 @@ public struct CodyncAttributes: Codable, Sendable {
             self.totalCount = totalCount
             self.currentTask = currentTask
             self.previousTask = previousTask
+            self.secondPreviousTask = secondPreviousTask
             self.contextPct = contextPct
             self.costUSD = costUSD
             self.durationSec = durationSec

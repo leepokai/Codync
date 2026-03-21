@@ -250,18 +250,30 @@ struct CodyncLiveActivityWidget: Widget {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .transition(.blurReplace)
                 } else {
-                    // Middle card: last completed tool step (Chowder-style)
-                    TaskCard(
-                        text: simplifyToolText(prevTool) ?? prevTool ?? "",
-                        icon: toolIcon(for: prevTool),
-                        isBehind: false,
-                        isInProgress: false
-                    )
-                    .id(prevTool)
-                    .transition(.asymmetric(
-                        insertion: .offset(y: 120),
-                        removal: .opacity
-                    ))
+                    // Stacked cards: secondPrevious behind, previous in front
+                    let secondPrev = nonEmpty(state.secondPreviousTask)
+                    ZStack {
+                        if let sp = secondPrev {
+                            TaskCard(
+                                text: simplifyToolText(sp) ?? sp,
+                                icon: toolIcon(for: sp),
+                                isBehind: true,
+                                isInProgress: false
+                            )
+                        }
+                        TaskCard(
+                            text: simplifyToolText(prevTool) ?? prevTool ?? "",
+                            icon: toolIcon(for: prevTool),
+                            isBehind: false,
+                            isInProgress: false
+                        )
+                        .id(prevTool)
+                        .transition(.asymmetric(
+                            insertion: .offset(y: 120),
+                            removal: .opacity
+                        ))
+                    }
+                    .compositingGroup()
                 }
             }
             .frame(height: 80)

@@ -574,3 +574,172 @@ struct ProgressRing: View {
         .frame(width: size, height: size)
     }
 }
+
+// MARK: - Overall Live Activity Widget
+
+struct OverallLiveActivityWidget: Widget {
+    let kind: String = "CodyncOverallLiveActivity"
+
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: OverallAttributes.self) { context in
+            overallLockScreen(context: context)
+        } dynamicIsland: { context in
+            let primary = context.state.sessions.first { $0.sessionId == context.state.primarySessionId }
+                ?? context.state.sessions.first
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    if let p = primary, p.status == .working {
+                        Circle().fill(.white).frame(width: 8, height: 8)
+                    } else {
+                        Circle().fill(.white.opacity(0.5)).frame(width: 8, height: 8)
+                    }
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(primary?.projectName ?? "Codync")
+                            .font(.headline)
+                        Text(primary?.currentTask ?? overallStatusLabel(primary?.status.rawValue ?? "idle"))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text(String(format: "$%.2f", context.state.totalCost))
+                        .font(.caption2.bold())
+                        .foregroundStyle(.secondary)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    HStack(spacing: 4) {
+                        ForEach(context.state.sessions, id: \.sessionId) { s in
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(s.sessionId == context.state.primarySessionId ? .white : .white.opacity(0.5))
+                                    .frame(width: 5, height: 5)
+                                Text(s.projectName)
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            } compactLeading: {
+                Circle().fill(.white).frame(width: 6, height: 6)
+            } compactTrailing: {
+                Text("\(context.state.sessions.count)")
+                    .font(.caption2.bold())
+            } minimal: {
+                Circle().fill(.white).frame(width: 6, height: 6)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func overallLockScreen(context: ActivityViewContext<OverallAttributes>) -> some View {
+        let sessions = context.state.sessions
+        let primaryId = context.state.primarySessionId
+
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(widgetFg.opacity(0.6))
+                        .frame(width: 21, height: 21)
+                        .background(widgetFg.opacity(0.08), in: Circle())
+                    Text("Codync")
+                        .font(.callout.bold())
+                        .opacity(0.72)
+                }
+                Spacer()
+                Text(String(format: "$%.2f", context.state.totalCost))
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .opacity(0.5)
+            }
+            .foregroundStyle(widgetFg)
+            .padding(.horizontal, 6)
+            .frame(height: 28)
+
+            // Session rows — layout adapts by count
+            VStack(spacing: 2) {
+                ForEach(sessions, id: \.sessionId) { session in
+                    let isPrimary = session.sessionId == primaryId
+                    if sessions.count <= 3 {
+                        mediumRow(session: session, isPrimary: isPrimary)
+                    } else {
+                        compactRow(session: session, isPrimary: isPrimary)
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .frame(height: 160)
+        .background(Color.white.opacity(0.75))
+        .activityBackgroundTint(.clear)
+    }
+
+    @ViewBuilder
+    private func mediumRow(session: SessionSummary, isPrimary: Bool) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(isPrimary ? widgetFg : widgetFg.opacity(0.4))
+                .frame(width: 6, height: 6)
+            Text(session.projectName)
+                .font(.subheadline.bold())
+                .foregroundStyle(widgetFg)
+                .lineLimit(1)
+            Text(session.model)
+                .font(.caption2)
+                .foregroundStyle(widgetFg.opacity(0.4))
+            Spacer()
+            if let task = session.currentTask, !task.isEmpty {
+                Text(task)
+                    .font(.caption2)
+                    .foregroundStyle(widgetFg.opacity(0.6))
+                    .lineLimit(1)
+                    .frame(maxWidth: 120, alignment: .trailing)
+            } else {
+                Text(overallStatusLabel(session.status.rawValue))
+                    .font(.caption2)
+                    .foregroundStyle(widgetFg.opacity(0.4))
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func compactRow(session: SessionSummary, isPrimary: Bool) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(isPrimary ? widgetFg : widgetFg.opacity(0.4))
+                .frame(width: 5, height: 5)
+            Text(session.projectName)
+                .font(.caption.bold())
+                .foregroundStyle(widgetFg)
+                .lineLimit(1)
+            Spacer()
+            Text(overallStatusLabel(session.status.rawValue))
+                .font(.caption2)
+                .foregroundStyle(widgetFg.opacity(0.4))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+    }
+
+    private func overallStatusLabel(_ status: String) -> String {
+        switch status {
+        case "working": "Working"
+        case "idle": "Idle"
+        case "needsInput": "Needs Input"
+        case "compacting": "Compacting"
+        case "error": "Error"
+        case "completed": "Complete"
+        default: "Working"
+        }
+    }
+}

@@ -192,7 +192,8 @@ final class LiveActivityManager: ObservableObject {
 
         let attributes = CodyncAttributes(
             sessionId: session.sessionId,
-            projectName: session.projectName
+            projectName: session.projectName,
+            summary: session.summary
         )
         let state = contentState(from: session)
         do {

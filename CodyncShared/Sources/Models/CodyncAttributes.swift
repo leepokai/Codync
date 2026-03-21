@@ -6,10 +6,12 @@ import ActivityKit
 public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
     public let sessionId: String
     public let projectName: String
+    public let summary: String
 
-    public init(sessionId: String, projectName: String) {
+    public init(sessionId: String, projectName: String, summary: String = "") {
         self.sessionId = sessionId
         self.projectName = projectName
+        self.summary = summary
     }
 
     public struct ContentState: Codable, Hashable, Sendable {
@@ -53,10 +55,12 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
 public struct CodyncAttributes: Codable, Sendable {
     public let sessionId: String
     public let projectName: String
+    public let summary: String
 
-    public init(sessionId: String, projectName: String) {
+    public init(sessionId: String, projectName: String, summary: String = "") {
         self.sessionId = sessionId
         self.projectName = projectName
+        self.summary = summary
     }
 
     public struct ContentState: Codable, Hashable, Sendable {

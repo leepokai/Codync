@@ -160,4 +160,71 @@ public final class CloudKitManager: Sendable {
             logger.info("Cleaned up \(deletedCount) orphan records from CloudKit")
         }
     }
+
+    // MARK: - Primary Session
+
+    static let primarySessionRecordType = "PrimarySession"
+    private static let primarySessionRecordName = "primary-session"
+
+    public func fetchPrimarySession() async -> (sessionId: String?, locked: Bool) {
+        let recordID = CKRecord.ID(recordName: Self.primarySessionRecordName, zoneID: Self.zoneID)
+        do {
+            let record = try await database.record(for: recordID)
+            let sessionId = record["sessionId"] as? String
+            let locked = (record["isManuallyLocked"] as? Int64 ?? 0) == 1
+            return (sessionId, locked)
+        } catch {
+            return (nil, false)
+        }
+    }
+
+    public func setPrimarySession(_ sessionId: String, locked: Bool) async {
+        let recordID = CKRecord.ID(recordName: Self.primarySessionRecordName, zoneID: Self.zoneID)
+        let record: CKRecord
+        if let existing = try? await database.record(for: recordID) {
+            record = existing
+        } else {
+            record = CKRecord(recordType: Self.primarySessionRecordType, recordID: recordID)
+        }
+        record["sessionId"] = sessionId as CKRecordValue
+        record["isManuallyLocked"] = (locked ? 1 : 0) as CKRecordValue
+        record["updatedAt"] = Date() as CKRecordValue
+        _ = try? await database.save(record)
+    }
+
+    public func clearPrimarySession() async {
+        let recordID = CKRecord.ID(recordName: Self.primarySessionRecordName, zoneID: Self.zoneID)
+        try? await database.deleteRecord(withID: recordID)
+    }
+
+    // MARK: - Live Activity Preference
+
+    static let liveActivityPrefRecordType = "LiveActivityPreference"
+    private static let liveActivityPrefRecordName = "live-activity-pref"
+
+    public func fetchLiveActivityPreference() async -> (mode: LiveActivityMode, maxSessions: Int) {
+        let recordID = CKRecord.ID(recordName: Self.liveActivityPrefRecordName, zoneID: Self.zoneID)
+        do {
+            let record = try await database.record(for: recordID)
+            let modeStr = record["mode"] as? String ?? "overall"
+            let mode = LiveActivityMode(rawValue: modeStr) ?? .overall
+            let maxSessions = record["maxSessions"] as? Int64 ?? 4
+            return (mode, Int(maxSessions))
+        } catch {
+            return (.overall, 4)
+        }
+    }
+
+    public func setLiveActivityPreference(mode: LiveActivityMode, maxSessions: Int) async {
+        let recordID = CKRecord.ID(recordName: Self.liveActivityPrefRecordName, zoneID: Self.zoneID)
+        let record: CKRecord
+        if let existing = try? await database.record(for: recordID) {
+            record = existing
+        } else {
+            record = CKRecord(recordType: Self.liveActivityPrefRecordType, recordID: recordID)
+        }
+        record["mode"] = mode.rawValue as CKRecordValue
+        record["maxSessions"] = maxSessions as CKRecordValue
+        _ = try? await database.save(record)
+    }
 }

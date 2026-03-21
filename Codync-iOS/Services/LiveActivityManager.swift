@@ -16,6 +16,7 @@ final class LiveActivityManager: ObservableObject {
     private var activities: [String: Activity<CodyncAttributes>] = [:]
     private var sessionsByID: [String: SessionState] = [:]
     private var lastPushedState: [String: CodyncAttributes.ContentState] = [:]
+    private var previousTasks: [String: String] = [:]  // sessionId → last completed tool
     private var tickTimer: Timer?
 
     private static let maxActivities = 4
@@ -223,6 +224,7 @@ final class LiveActivityManager: ObservableObject {
             || prev?.completedCount != state.completedCount
             || prev?.totalCount != state.totalCount
             || prev?.currentTask != state.currentTask
+            || prev?.previousTask != state.previousTask
             || prev?.contextPct != state.contextPct
             || prev?.costUSD != state.costUSD
         // Update every 2s for sparkle animation, even without field changes
@@ -251,7 +253,14 @@ final class LiveActivityManager: ObservableObject {
     }
 
     private func contentState(from session: SessionState) -> CodyncAttributes.ContentState {
-        // Compute durationSec locally so it ticks every second — drives sparkle animation
+        // Track tool changes: when currentTask changes, old one becomes previousTask
+        let currentTool = session.currentTask
+        if let current = currentTool,
+           let prev = lastPushedState[session.sessionId]?.currentTask,
+           current != prev, !prev.isEmpty {
+            previousTasks[session.sessionId] = prev
+        }
+
         let liveDuration = max(session.durationSec, Int(Date().timeIntervalSince(session.startedAt)))
         return .init(
             status: session.status.rawValue,
@@ -259,7 +268,8 @@ final class LiveActivityManager: ObservableObject {
             tasks: session.truncatedTasks,
             completedCount: session.completedTaskCount,
             totalCount: session.totalTaskCount,
-            currentTask: session.currentTask,
+            currentTask: currentTool,
+            previousTask: previousTasks[session.sessionId],
             contextPct: session.contextPct,
             costUSD: session.costUSD,
             durationSec: liveDuration,

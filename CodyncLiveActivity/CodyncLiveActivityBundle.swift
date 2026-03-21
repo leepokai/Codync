@@ -5,5 +5,6 @@ import SwiftUI
 struct CodyncLiveActivityBundle: WidgetBundle {
     var body: some Widget {
         CodyncLiveActivityWidget()
+        OverallLiveActivityWidget()
     }
 }

@@ -351,10 +351,11 @@ struct CodyncLiveActivityWidget: Widget {
                     .transition(.blurReplace)
                     .padding(.leading, 8)
             } else {
-                HStack(spacing: 2) {
-                    Image(systemName: "arrow.turn.down.right")
-                        .frame(width: 24, height: 18)
-                    Text(isWaiting ? "Starting…" : (nonEmpty(state.currentTask) ?? statusLabel(state.status)))
+                HStack(spacing: 4) {
+                    Image(systemName: toolIcon(for: state.currentTask))
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 20, height: 18)
+                    Text(isWaiting ? "Thinking…" : (nonEmpty(state.currentTask) ?? statusLabel(state.status)))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .multilineTextAlignment(.leading)
@@ -387,6 +388,22 @@ struct CodyncLiveActivityWidget: Widget {
     }
 
     // MARK: - Helpers
+
+    /// Map Claude Code tool names to SF Symbol icons
+    private func toolIcon(for task: String?) -> String {
+        guard let task = task?.lowercased() else { return "arrow.turn.down.right" }
+        if task.contains("read") || task.contains("reading") { return "doc.text" }
+        if task.contains("edit") || task.contains("editing") || task.contains("write") || task.contains("writing") { return "pencil.line" }
+        if task.contains("bash") || task.contains("command") || task.contains("running") { return "terminal" }
+        if task.contains("grep") || task.contains("search") || task.contains("glob") { return "magnifyingglass" }
+        if task.contains("agent") || task.contains("dispatch") { return "person.2" }
+        if task.contains("notebook") { return "book" }
+        if task.contains("web") || task.contains("fetch") { return "globe" }
+        if task.contains("git") || task.contains("commit") || task.contains("push") { return "arrow.triangle.branch" }
+        if task.contains("test") { return "checkmark.diamond" }
+        if task.contains("todo") || task.contains("task") { return "checklist" }
+        return "arrow.turn.down.right"
+    }
 
     /// Treat empty strings as nil — CloudKit stores nil optionals as ""
     private func nonEmpty(_ value: String?) -> String? {

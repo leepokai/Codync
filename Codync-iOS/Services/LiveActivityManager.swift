@@ -16,7 +16,8 @@ final class LiveActivityManager: ObservableObject {
     private var activities: [String: Activity<CodyncAttributes>] = [:]
     private var sessionsByID: [String: SessionState] = [:]
     private var lastPushedState: [String: CodyncAttributes.ContentState] = [:]
-    private var previousTasks: [String: String] = [:]  // sessionId → last completed tool
+    private var previousTasks: [String: String] = [:]        // sessionId → last completed tool
+    private var secondPreviousTasks: [String: String] = [:]  // sessionId → second-last tool
     private var tickTimer: Timer?
 
     private static let maxActivities = 4
@@ -258,6 +259,8 @@ final class LiveActivityManager: ObservableObject {
         if let current = currentTool,
            let prev = lastPushedState[session.sessionId]?.currentTask,
            current != prev, !prev.isEmpty {
+            // Shift chain: previous → secondPrevious, current → previous
+            secondPreviousTasks[session.sessionId] = previousTasks[session.sessionId]
             previousTasks[session.sessionId] = prev
         }
 
@@ -270,6 +273,7 @@ final class LiveActivityManager: ObservableObject {
             totalCount: session.totalTaskCount,
             currentTask: currentTool,
             previousTask: previousTasks[session.sessionId],
+            secondPreviousTask: secondPreviousTasks[session.sessionId],
             contextPct: session.contextPct,
             costUSD: session.costUSD,
             durationSec: liveDuration,

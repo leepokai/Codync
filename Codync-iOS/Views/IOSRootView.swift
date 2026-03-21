@@ -4,22 +4,24 @@ import CodyncShared
 struct IOSRootView: View {
     @ObservedObject var receiver: CloudKitReceiver
     @ObservedObject var liveActivityManager: LiveActivityManager
+    @ObservedObject var primarySessionManager: PrimarySessionManager
     @AppStorage("codync_onboardingComplete") private var onboardingComplete = false
     @AppStorage("codync_darkMode") private var isDarkMode = true
     @State private var displayedSessions: [SessionState] = []
     @State private var reorderTimer: Timer?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if !onboardingComplete {
+        Group {
+            if !onboardingComplete {
+                NavigationStack {
                     IOSOnboardingView()
-                } else {
-                    IOSSessionListView(
-                        sessions: displayedSessions,
-                        liveActivityManager: liveActivityManager
-                    )
                 }
+            } else {
+                TabRootView(
+                    sessions: displayedSessions,
+                    liveActivityManager: liveActivityManager,
+                    primarySessionManager: primarySessionManager
+                )
             }
         }
         .environment(\.theme, CodyncTheme(isDark: isDarkMode))
@@ -29,11 +31,10 @@ struct IOSRootView: View {
                 onboardingComplete = true
             }
             liveActivityManager.updateSessions(sessions)
+            primarySessionManager.autoSelect(from: sessions)
         }
         .task {
-            // Initialize with current sessions
             displayedSessions = sortSessions(receiver.sessions)
-            // Start 5-second reorder timer
             reorderTimer?.invalidate()
             reorderTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
                 Task { @MainActor in

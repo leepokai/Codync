@@ -205,24 +205,9 @@ struct CodyncLiveActivityWidget: Widget {
     private func cardBanner(context: ActivityViewContext<CodyncAttributes>) -> some View {
         let state = context.state
 
-        let completedTasks = state.tasks.filter { $0.status == .completed }
-        let currentTool = nonEmpty(state.currentTask)
-        let cards: [(text: String, isInProgress: Bool)] = {
-            var result: [(String, Bool)] = []
-            // Show last completed task behind
-            if let last = completedTasks.last {
-                result.append((last.truncatedContent, false))
-            }
-            // Show current tool as front card (in-progress)
-            if let tool = currentTool, state.isBusy {
-                result.append((tool, true))
-            } else if completedTasks.count >= 2 {
-                // No active tool — show last 2 completed
-                result.insert((completedTasks[completedTasks.count - 2].truncatedContent, false), at: 0)
-            }
-            return result
-        }()
-        let isWaiting = cards.isEmpty && !state.isCompleted
+        let prevTool = nonEmpty(state.previousTask)
+        let hasToolActivity = prevTool != nil
+        let isWaiting = !hasToolActivity && !state.isCompleted
 
         VStack(alignment: .leading, spacing: 4) {
             bannerHeader(context: context)
@@ -248,7 +233,7 @@ struct CodyncLiveActivityWidget: Widget {
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 12)
                 } else if isWaiting {
-                    let prompt = nonEmpty(context.attributes.summary) ?? nonEmpty(state.currentTask) ?? "Analyzing code…"
+                    let prompt = nonEmpty(context.attributes.summary) ?? "Analyzing code…"
                     Text(prompt)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -265,19 +250,18 @@ struct CodyncLiveActivityWidget: Widget {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .transition(.blurReplace)
                 } else {
-                    ZStack {
-                        ForEach(Array(cards.enumerated()), id: \.offset) { idx, card in
-                            let isBehind = idx < cards.count - 1
-                            TaskCard(
-                                text: simplifyToolText(card.text) ?? card.text,
-                                icon: toolIcon(for: card.text),
-                                isBehind: isBehind,
-                                isInProgress: card.isInProgress
-                            )
-                        }
-                    }
-                    .compositingGroup()
-                    .transition(.blurReplace)
+                    // Middle card: last completed tool step (Chowder-style)
+                    TaskCard(
+                        text: simplifyToolText(prevTool) ?? prevTool ?? "",
+                        icon: toolIcon(for: prevTool),
+                        isBehind: false,
+                        isInProgress: false
+                    )
+                    .id(prevTool)
+                    .transition(.asymmetric(
+                        insertion: .offset(y: 120),
+                        removal: .opacity
+                    ))
                 }
             }
             .frame(height: 80)

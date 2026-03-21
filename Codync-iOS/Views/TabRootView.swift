@@ -13,6 +13,8 @@ struct TabRootView: View {
     @ObservedObject var primarySessionManager: PrimarySessionManager
     @AppStorage("codync_selectedTab") private var selectedTab: String = AppTab.claudeCode.rawValue
 
+    private let iconSize: CGFloat = 22
+
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab(value: AppTab.claudeCode.rawValue) {
@@ -25,7 +27,10 @@ struct TabRootView: View {
                 }
             } label: {
                 Image("ClaudeIcon")
+                    .resizable()
                     .renderingMode(.template)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: iconSize, height: iconSize)
             }
 
             Tab(value: AppTab.cowork.rawValue) {
@@ -37,6 +42,7 @@ struct TabRootView: View {
                 )
             } label: {
                 Image(systemName: "person.2.fill")
+                    .font(.system(size: iconSize))
             }
 
             Tab(value: AppTab.codex.rawValue) {
@@ -48,7 +54,10 @@ struct TabRootView: View {
                 )
             } label: {
                 Image("CodexIcon")
+                    .resizable()
                     .renderingMode(.template)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: iconSize, height: iconSize)
             }
         }
     }

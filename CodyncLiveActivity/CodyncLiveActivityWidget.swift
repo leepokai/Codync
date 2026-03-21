@@ -248,14 +248,15 @@ struct CodyncLiveActivityWidget: Widget {
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 12)
                 } else if isWaiting {
-                    Text(nonEmpty(state.currentTask) ?? "Analyzing code…")
+                    let prompt = nonEmpty(context.attributes.summary) ?? nonEmpty(state.currentTask) ?? "Analyzing code…"
+                    Text(prompt)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                        .foregroundStyle(widgetFg)
+                        .foregroundStyle(.blue)
                         .padding(12)
                         .frame(minWidth: 52)
                         .background(
-                            widgetFg.opacity(0.08),
+                            Color.blue.opacity(0.12),
                             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                         )
                         .padding(.leading, 48)
@@ -267,7 +268,12 @@ struct CodyncLiveActivityWidget: Widget {
                     ZStack {
                         ForEach(Array(cards.enumerated()), id: \.offset) { idx, card in
                             let isBehind = idx < cards.count - 1
-                            TaskCard(text: card.text, isBehind: isBehind, isInProgress: card.isInProgress)
+                            TaskCard(
+                                text: simplifyToolText(card.text) ?? card.text,
+                                icon: toolIcon(for: card.text),
+                                isBehind: isBehind,
+                                isInProgress: card.isInProgress
+                            )
                         }
                     }
                     .compositingGroup()
@@ -405,6 +411,28 @@ struct CodyncLiveActivityWidget: Widget {
         return "arrow.turn.down.right"
     }
 
+    /// Simplify tool text for card display: "Running: cd /Users/foo/bar && cmd" → "Running command"
+    private func simplifyToolText(_ text: String?) -> String? {
+        guard let text, !text.isEmpty else { return nil }
+        let lower = text.lowercased()
+        if lower.hasPrefix("running:") || lower.contains("bash") { return "Running command" }
+        if lower.hasPrefix("reading") {
+            let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Reading ", with: "")).lastPathComponent
+            return file.isEmpty ? "Reading file" : "Reading \(file)"
+        }
+        if lower.hasPrefix("editing") || lower.hasPrefix("writing") {
+            let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Editing ", with: "").replacingOccurrences(of: "Writing ", with: "")).lastPathComponent
+            return file.isEmpty ? "Editing file" : "Editing \(file)"
+        }
+        if lower.contains("grep") || lower.contains("search") { return "Searching code" }
+        if lower.contains("glob") { return "Finding files" }
+        if lower.contains("agent") { return "Dispatching agent" }
+        if lower.contains("git") { return "Git operation" }
+        if lower.contains("web") || lower.contains("fetch") { return "Fetching web" }
+        if text.count > 40 { return String(text.prefix(37)) + "…" }
+        return text
+    }
+
     /// Treat empty strings as nil — CloudKit stores nil optionals as ""
     private func nonEmpty(_ value: String?) -> String? {
         guard let value, !value.isEmpty else { return nil }
@@ -466,6 +494,7 @@ struct CodyncLiveActivityWidget: Widget {
 
 struct TaskCard: View {
     let text: String
+    let icon: String
     let isBehind: Bool
     var isInProgress: Bool = false
 
@@ -473,21 +502,14 @@ struct TaskCard: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if isInProgress {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(widgetFg.opacity(0.6))
-                    .frame(width: 21, height: 21)
-            } else {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(widgetFg.opacity(0.5))
-                    .frame(width: 21, height: 21)
-                    .background(
-                        Circle()
-                            .foregroundStyle(widgetFg.opacity(0.12))
-                    )
-            }
+            Image(systemName: isInProgress ? icon : "checkmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(widgetFg.opacity(0.5))
+                .frame(width: 21, height: 21)
+                .background(
+                    Circle()
+                        .foregroundStyle(widgetFg.opacity(0.12))
+                )
 
             Text(text)
                 .font(.callout)

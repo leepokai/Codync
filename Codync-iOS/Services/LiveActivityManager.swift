@@ -260,9 +260,10 @@ final class LiveActivityManager: ObservableObject {
             } catch {
                 logger.error("Failed to start Overall Live Activity: \(error)")
             }
-        } else {
+        } else if let activity = overallActivity {
+            let content = ActivityContent(state: state, staleDate: nil, relevanceScore: 100)
             Task {
-                await overallActivity?.update(.init(state: state, staleDate: nil, relevanceScore: 100))
+                await activity.update(content)
             }
         }
 

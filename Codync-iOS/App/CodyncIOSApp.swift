@@ -14,7 +14,7 @@ struct CodyncIOSApp: App {
                 primarySessionManager: appDelegate.primarySessionManager
             )
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             if phase == .active {
                 Task {
                     await appDelegate.receiver.fetch(source: "foreground-return")

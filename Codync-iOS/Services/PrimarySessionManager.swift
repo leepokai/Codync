@@ -10,7 +10,7 @@ final class PrimarySessionManager: ObservableObject {
     @Published var isManuallyLocked: Bool = false
 
     func autoSelect(from sessions: [SessionState]) {
-        guard !isManuallyLocked else {
+        if isManuallyLocked {
             if let lockedId = primarySessionId,
                !sessions.contains(where: { $0.sessionId == lockedId }) {
                 logger.info("Locked primary session \(lockedId) no longer exists, unlocking")

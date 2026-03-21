@@ -19,6 +19,11 @@ final class LiveActivityManager: ObservableObject {
     private var previousTasks: [String: String] = [:]        // sessionId → last completed tool
     private var secondPreviousTasks: [String: String] = [:]  // sessionId → second-last tool
     private var tickTimer: Timer?
+    @Published var mode: LiveActivityMode = .overall
+    @Published var maxOverallSessions: Int = 4
+    private var overallActivity: Activity<OverallAttributes>?
+    private var lastOverallState: OverallAttributes.ContentState?
+    private var overallTrackedIds: Set<String> = []
 
     private static let maxActivities = 4
 
@@ -75,12 +80,64 @@ final class LiveActivityManager: ObservableObject {
         }
     }
 
+    func loadPreference() async {
+        let pref = await CloudKitManager.shared.fetchLiveActivityPreference()
+        mode = pref.mode
+        maxOverallSessions = pref.maxSessions
+    }
+
+    func savePreference() async {
+        await CloudKitManager.shared.setLiveActivityPreference(mode: mode, maxSessions: maxOverallSessions)
+    }
+
+    // MARK: - Recovery
+
+    /// Recover Activity references that iOS still manages but we lost
+    /// (e.g., after app termination + background relaunch).
+    private func recoverOrphanedActivities() {
+        for activity in Activity<CodyncAttributes>.activities {
+            let sid = activity.attributes.sessionId
+            guard activity.activityState == .active || activity.activityState == .stale else {
+                continue
+            }
+            if activities[sid] == nil {
+                activities[sid] = activity
+                trackedSessionIds.insert(sid)
+                logger.info("Recovered orphaned Live Activity for \(sid)")
+            }
+        }
+    }
+
+    /// Prune activities that iOS has ended/dismissed but we still hold references to.
+    private func pruneEndedActivities() {
+        for (sid, activity) in activities {
+            if activity.activityState == .ended || activity.activityState == .dismissed {
+                activities.removeValue(forKey: sid)
+                trackedSessionIds.remove(sid)
+                lastPushedState.removeValue(forKey: sid)
+                logger.info("Pruned ended Live Activity for \(sid)")
+            }
+        }
+    }
+
     // MARK: - Unified Update
 
     func updateSessions(_ sessions: [SessionState]) {
         let statuses = sessions.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")
-        logger.debug("updateSessions: \(statuses)")
+        logger.debug("updateSessions (\(self.mode.rawValue)): \(statuses)")
         sessionsByID = Dictionary(sessions.map { ($0.sessionId, $0) }, uniquingKeysWith: { _, last in last })
+
+        switch mode {
+        case .individual: updateIndividual(sessions)
+        case .overall:    updateOverall(sessions)
+        }
+    }
+
+    private func updateIndividual(_ sessions: [SessionState]) {
+        // Recover any activities iOS still has running but we lost track of
+        recoverOrphanedActivities()
+        // Remove stale references to activities iOS has already ended
+        pruneEndedActivities()
 
         // 1. Clean up completed/dead sessions
         let completedIds = trackedSessionIds.filter { id in
@@ -160,6 +217,98 @@ final class LiveActivityManager: ObservableObject {
                 pushUpdateIfChanged(session)
             }
         }
+    }
+
+    private func updateOverall(_ sessions: [SessionState]) {
+        let active = sessions
+            .filter { $0.status != .completed }
+            .sorted { autoFillPriority($0) < autoFillPriority($1) }
+            .prefix(maxOverallSessions)
+
+        let summaries = active.map { session in
+            SessionSummary(
+                sessionId: session.sessionId,
+                projectName: session.projectName,
+                status: session.status,
+                model: session.model,
+                currentTask: session.currentTask,
+                costUSD: session.costUSD
+            )
+        }
+
+        let totalCost = sessions.reduce(0) { $0 + $1.costUSD }
+        let primaryId = active.first { $0.status == .working }?.sessionId
+            ?? active.first?.sessionId
+
+        let state = OverallAttributes.ContentState(
+            sessions: summaries,
+            primarySessionId: primaryId,
+            totalCost: totalCost
+        )
+
+        guard state != lastOverallState else { return }
+        lastOverallState = state
+
+        if overallActivity == nil {
+            guard UIApplication.shared.applicationState == .active else { return }
+            do {
+                overallActivity = try Activity.request(
+                    attributes: OverallAttributes(),
+                    content: .init(state: state, staleDate: nil)
+                )
+                logger.info("Started Overall Live Activity with \(summaries.count) sessions")
+            } catch {
+                logger.error("Failed to start Overall Live Activity: \(error)")
+            }
+        } else {
+            Task {
+                await overallActivity?.update(.init(state: state, staleDate: nil, relevanceScore: 100))
+            }
+        }
+
+        // Track sessions seen in Overall mode
+        for session in active {
+            overallTrackedIds.insert(session.sessionId)
+        }
+
+        // Send completion notifications for newly completed sessions
+        for session in sessions where session.status == .completed {
+            if overallTrackedIds.contains(session.sessionId) {
+                sendCompletionNotification(session)
+                overallTrackedIds.remove(session.sessionId)
+            }
+        }
+    }
+
+    func switchMode(to newMode: LiveActivityMode) {
+        guard newMode != mode else { return }
+        logger.info("Switching Live Activity mode: \(self.mode.rawValue) → \(newMode.rawValue)")
+
+        // End all current activities
+        if mode == .individual {
+            for sessionId in Array(trackedSessionIds) {
+                stopTracking(sessionId: sessionId)
+            }
+        } else {
+            if let activity = overallActivity {
+                Task { await activity.end(nil, dismissalPolicy: .immediate) }
+                overallActivity = nil
+                lastOverallState = nil
+            }
+        }
+
+        // Reset transient state
+        previousTasks.removeAll()
+        secondPreviousTasks.removeAll()
+        graceTimers.removeAll()
+        lastPushedState.removeAll()
+        overallTrackedIds.removeAll()
+
+        mode = newMode
+        Task { await savePreference() }
+
+        // Recreate with current data
+        updateSessions(Array(sessionsByID.values))
     }
 
     // MARK: - Grace Period Helpers

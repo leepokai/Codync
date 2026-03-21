@@ -34,18 +34,40 @@ final class LiveActivityManager: ObservableObject {
     /// Tick every second to keep durationSec fresh — drives sparkle animation in Dynamic Island.
     /// Timer callback is @Sendable, so we hop back to @MainActor via Task.
     private func startTicking() {
-        tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        tickTimer?.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tickActivities()
             }
         }
+        // Fire in .common mode so ticking survives scroll tracking
+        RunLoop.main.add(timer, forMode: .common)
+        tickTimer = timer
+    }
+
+    /// Re-establish the tick timer after returning from background — iOS can silently
+    /// invalidate timers during long suspensions.
+    func ensureTimerRunning() {
+        if tickTimer == nil || tickTimer?.isValid == false {
+            logger.info("Tick timer was dead — restarting")
+            startTicking()
+        }
     }
 
     private func tickActivities() {
-        guard !activities.isEmpty else { return }
-        for sessionId in activities.keys {
-            guard let session = sessionsByID[sessionId] else { continue }
-            pushUpdateIfChanged(session)
+        // Individual mode: tick each tracked activity
+        if !activities.isEmpty {
+            for sessionId in activities.keys {
+                guard let session = sessionsByID[sessionId] else { continue }
+                pushUpdateIfChanged(session)
+            }
+        }
+        // Overall mode: detect iOS-ended activity so next updateSessions() recreates it
+        if let activity = overallActivity,
+           activity.activityState == .ended || activity.activityState == .dismissed {
+            logger.info("Tick detected Overall Activity ended by iOS — clearing")
+            overallActivity = nil
+            lastOverallState = nil
         }
     }
 
@@ -220,6 +242,14 @@ final class LiveActivityManager: ObservableObject {
     }
 
     private func updateOverall(_ sessions: [SessionState]) {
+        // Detect if iOS ended the activity (stale timeout, user dismissed, etc.)
+        if let activity = overallActivity,
+           activity.activityState == .ended || activity.activityState == .dismissed {
+            logger.info("Overall Live Activity was ended by iOS — will recreate")
+            overallActivity = nil
+            lastOverallState = nil
+        }
+
         let active = sessions
             .filter { $0.status != .completed }
             .sorted { autoFillPriority($0) < autoFillPriority($1) }

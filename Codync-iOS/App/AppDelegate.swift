@@ -18,8 +18,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         Task {
             async let startReceiver: () = receiver.start()
             async let loadPins: () = liveActivityManager.loadPinnedSessions()
+            async let loadPref: () = liveActivityManager.loadPreference()
             async let loadPrimary: () = primarySessionManager.load()
-            _ = await (startReceiver, loadPins, loadPrimary)
+            _ = await (startReceiver, loadPins, loadPref, loadPrimary)
 
             liveActivityManager.updateSessions(receiver.sessions)
             primarySessionManager.autoSelect(from: receiver.sessions)

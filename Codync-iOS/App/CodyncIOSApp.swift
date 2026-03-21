@@ -16,6 +16,8 @@ struct CodyncIOSApp: App {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
+                // Timer can silently die after long background suspension
+                appDelegate.liveActivityManager.ensureTimerRunning()
                 Task {
                     await appDelegate.receiver.fetch(source: "foreground-return")
                     appDelegate.liveActivityManager.updateSessions(appDelegate.receiver.sessions)

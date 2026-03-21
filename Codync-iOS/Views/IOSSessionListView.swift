@@ -6,16 +6,17 @@ struct IOSSessionListView: View {
     @ObservedObject var liveActivityManager: LiveActivityManager
     @ObservedObject var primarySessionManager: PrimarySessionManager
     @Environment(\.theme) private var theme
+    @State private var showSettings = false
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 1) {
-                // Mode switcher
-                modeSection
-
-                // Primary session controls (Overall mode only)
-                if liveActivityManager.mode == .overall {
-                    primarySection
+                // Collapsible settings
+                if showSettings {
+                    modeSection
+                    if liveActivityManager.mode == .overall {
+                        primarySection
+                    }
                 }
 
                 // Session list
@@ -45,6 +46,17 @@ struct IOSSessionListView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 22, height: 22)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showSettings.toggle()
+                    }
+                } label: {
+                    Image(systemName: showSettings ? "gearshape.fill" : "gearshape")
+                        .font(.system(size: 15))
+                        .foregroundStyle(showSettings ? theme.accent : theme.secondaryText)
+                }
             }
         }
         .toolbarColorScheme(.dark, for: .navigationBar)

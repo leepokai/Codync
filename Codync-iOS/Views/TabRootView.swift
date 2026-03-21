@@ -15,7 +15,7 @@ struct TabRootView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            Tab("Claude Code", image: "ClaudeIcon", value: AppTab.claudeCode.rawValue) {
+            Tab(value: AppTab.claudeCode.rawValue) {
                 NavigationStack {
                     IOSSessionListView(
                         sessions: sessions,
@@ -23,24 +23,32 @@ struct TabRootView: View {
                         primarySessionManager: primarySessionManager
                     )
                 }
+            } label: {
+                Image("ClaudeIcon")
+                    .renderingMode(.template)
             }
 
-            Tab("Cowork", systemImage: "person.2.fill", value: AppTab.cowork.rawValue) {
+            Tab(value: AppTab.cowork.rawValue) {
                 ComingSoonView(
                     icon: "person.2.fill",
                     isSystemImage: true,
                     title: "Cowork",
                     description: "Monitor Claude Cowork sessions in real time"
                 )
+            } label: {
+                Image(systemName: "person.2.fill")
             }
 
-            Tab("Codex", image: "CodexIcon", value: AppTab.codex.rawValue) {
+            Tab(value: AppTab.codex.rawValue) {
                 ComingSoonView(
                     icon: "CodexColorIcon",
                     isSystemImage: false,
                     title: "Codex",
                     description: "Track OpenAI Codex jobs and costs"
                 )
+            } label: {
+                Image("CodexIcon")
+                    .renderingMode(.template)
             }
         }
     }

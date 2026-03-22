@@ -17,7 +17,7 @@ struct IOSRootView: View {
                 splashView
             } else if !onboardingComplete {
                 NavigationStack {
-                    IOSOnboardingView()
+                    IOSOnboardingView(liveActivityManager: liveActivityManager)
                 }
             } else {
                 TabRootView(
@@ -30,9 +30,6 @@ struct IOSRootView: View {
         .environment(\.theme, CodyncTheme(isDark: isDarkMode))
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onChange(of: receiver.sessions) { _, sessions in
-            if !sessions.isEmpty {
-                onboardingComplete = true
-            }
             liveActivityManager.updateSessions(sessions)
             primarySessionManager.autoSelect(from: sessions)
         }

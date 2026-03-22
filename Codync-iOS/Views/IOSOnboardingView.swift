@@ -1,9 +1,13 @@
 import SwiftUI
 import CloudKit
+import CodyncShared
 
 struct IOSOnboardingView: View {
+    @ObservedObject var liveActivityManager: LiveActivityManager
     @Environment(\.theme) private var theme
+    @AppStorage("codync_onboardingComplete") private var onboardingComplete = false
     @State private var iCloudStatus: ICloudStatus = .checking
+    @State private var selectedMode: LiveActivityMode = .overall
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,15 +59,40 @@ struct IOSOnboardingView: View {
             )
             .padding(.horizontal, 24)
 
+            // Mode selection
+            VStack(spacing: 12) {
+                Text("Live Activity Format")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                ModePillToggle(mode: $selectedMode)
+                LiveActivityPreview(mode: selectedMode)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+
             Spacer()
 
-            HStack(spacing: 6) {
-                ClaudeSparkleView()
-                    .frame(width: 14, height: 14)
-                Text("Waiting for sessions…")
-                    .font(.system(size: 14))
-                    .foregroundStyle(theme.tertiaryText)
+            Button {
+                liveActivityManager.mode = selectedMode
+                Task { await liveActivityManager.savePreference() }
+                onboardingComplete = true
+            } label: {
+                Text("Get Started")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(theme.isDark ? .black : .white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(iCloudStatus.isError
+                                  ? theme.primaryText.opacity(0.2)
+                                  : theme.primaryText)
+                    )
             }
+            .disabled(iCloudStatus.isError)
+            .padding(.horizontal, 24)
             .padding(.bottom, 32)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -79,7 +108,7 @@ struct IOSOnboardingView: View {
         case .available: return "iCloud is ready"
         case .noAccount: return "Sign in to iCloud in Settings"
         case .restricted: return "iCloud is restricted on this device"
-        case .quotaExceeded: return "iCloud storage is full — free up space"
+        case .quotaExceeded: return "iCloud 储存空间已满 — 前往 iCloud 相簿删除一张照片以释放空间"
         case .error(let msg): return msg
         }
     }

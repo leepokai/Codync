@@ -60,6 +60,10 @@ final class ClaudeHookServer: @unchecked Sendable {
         withLock { _stopSessions.remove(sessionId) }
     }
 
+    func clearToolRunning(_ sessionId: String) {
+        withLock { _toolRunningSessions.remove(sessionId) }
+    }
+
     /// Remove all state for sessions no longer alive.
     func pruneStale(activeSessionIds: Set<String>) {
         withLock {

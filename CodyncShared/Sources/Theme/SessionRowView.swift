@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Shared session row used in both Live Activity widget and in-app preview.
 /// Renders: dot + project name + model tag + spacer + current task
-public struct SessionRowView: View {
+public struct OverallSessionRow: View {
     public let projectName: String
     public let model: String
     public let currentTask: String?

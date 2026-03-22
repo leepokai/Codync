@@ -681,7 +681,7 @@ struct OverallLiveActivityWidget: Widget {
     private func overallSessionRow(session: SessionSummary, isPrimary: Bool, isDark: Bool) -> some View {
         let fg: Color = isDark ? .white : widgetFg
 
-        SessionRowView(
+        OverallSessionRow(
             projectName: session.projectName,
             model: session.model,
             currentTask: session.currentTask,

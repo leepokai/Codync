@@ -679,38 +679,16 @@ struct OverallLiveActivityWidget: Widget {
 
     @ViewBuilder
     private func overallSessionRow(session: SessionSummary, isPrimary: Bool, isDark: Bool) -> some View {
-        let task = session.currentTask.flatMap { $0.isEmpty ? nil : $0 }
         let fg: Color = isDark ? .white : widgetFg
 
-        HStack(spacing: 8) {
-            Circle()
-                .fill(overallDotColor(session.status, isDark: isDark))
-                .frame(width: 8, height: 8)
-
-            Text(session.projectName)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(fg)
-                .lineLimit(1)
-                .layoutPriority(1)
-
-            Text(modelLabel(session.model))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(fg.opacity(0.6))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(fg.opacity(0.1), in: Capsule())
-
-            if let task {
-                Text(task)
-                    .font(.caption)
-                    .foregroundStyle(fg.opacity(0.4))
-                    .lineLimit(1)
-                    .id(task)
-                    .transition(.push(from: .bottom))
-            }
-
-            Spacer(minLength: 0)
-        }
+        SessionRowView(
+            projectName: session.projectName,
+            model: session.model,
+            currentTask: session.currentTask,
+            status: session.status,
+            isPrimary: isPrimary,
+            fg: fg
+        )
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
@@ -718,18 +696,6 @@ struct OverallLiveActivityWidget: Widget {
     private func primarySession(from state: OverallAttributes.ContentState) -> SessionSummary? {
         state.sessions.first { $0.sessionId == state.primarySessionId }
             ?? state.sessions.first
-    }
-
-    private func overallDotColor(_ status: SessionStatus, isDark: Bool) -> Color {
-        let base: Color = isDark ? .white : widgetFg
-        switch status {
-        case .working: return base
-        case .needsInput: return base.opacity(0.7)
-        case .compacting: return base.opacity(0.5)
-        case .idle: return base.opacity(0.3)
-        case .error: return base.opacity(0.5)
-        case .completed: return base.opacity(0.3)
-        }
     }
 
     private func modelLabel(_ model: String) -> String {

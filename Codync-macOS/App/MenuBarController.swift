@@ -311,7 +311,7 @@ private struct CodyncPanelContentView: View {
             bottomCornerRadius: bottomCornerRadius
         ))
         .shadow(color: isExpanded ? .black.opacity(0.6) : .clear, radius: 8)
-        .offset(x: isExpanded ? 0 : 15, y: isExpanded ? 0 : -2)
+        .offset(x: isExpanded ? 0 : 15)
         .background(
             GeometryReader { geo in
                 Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)

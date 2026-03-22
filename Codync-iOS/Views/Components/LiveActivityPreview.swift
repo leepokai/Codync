@@ -43,6 +43,8 @@ struct LiveActivityPreview: View {
                         .stroke(theme.primaryText.opacity(0.06), lineWidth: 1)
                 )
         )
+        .animation(.easeInOut(duration: 0.3), value: displaySessions.map(\.sessionId))
+        .animation(.easeInOut(duration: 0.3), value: displaySessions.map(\.currentTask))
     }
 
     // MARK: - Overall Preview
@@ -50,40 +52,19 @@ struct LiveActivityPreview: View {
     @ViewBuilder
     private var overallPreview: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(displaySessions.enumerated()), id: \.offset) { index, session in
+            ForEach(Array(displaySessions.enumerated()), id: \.element.sessionId) { index, session in
                 let isPrimary = primarySessionId != nil
                     ? session.sessionId == primarySessionId
                     : index == 0
 
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(dotColor(for: session.status, isPrimary: isPrimary))
-                        .frame(width: 7, height: 7)
-
-                    Text(session.projectName)
-                        .font(.system(size: 13, weight: isPrimary ? .semibold : .medium))
-                        .foregroundStyle(theme.primaryText)
-                        .lineLimit(1)
-                        .layoutPriority(1)
-
-                    Text(modelDisplayLabel(session.model))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(theme.primaryText.opacity(0.5))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule().fill(theme.primaryText.opacity(0.08))
-                        )
-
-                    Spacer(minLength: 0)
-
-                    if let task = session.currentTask, !task.isEmpty {
-                        Text(task)
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.primaryText.opacity(0.3))
-                            .lineLimit(1)
-                    }
-                }
+                SessionRowView(
+                    projectName: session.projectName,
+                    model: session.model,
+                    currentTask: session.currentTask,
+                    status: session.status,
+                    isPrimary: isPrimary,
+                    fg: theme.primaryText
+                )
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(
@@ -99,7 +80,7 @@ struct LiveActivityPreview: View {
     @ViewBuilder
     private var individualPreview: some View {
         VStack(spacing: 8) {
-            ForEach(Array(displaySessions.enumerated()), id: \.offset) { index, session in
+            ForEach(Array(displaySessions.enumerated()), id: \.element.sessionId) { index, session in
                 let isPrimary = primarySessionId != nil
                     ? session.sessionId == primarySessionId
                     : index == 0
@@ -156,6 +137,8 @@ struct LiveActivityPreview: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(theme.primaryText)
                     .lineLimit(1)
+                    .id(session.currentTask)
+                    .transition(.push(from: .bottom))
 
                 Spacer()
 
@@ -201,15 +184,6 @@ struct LiveActivityPreview: View {
         .offset(y: isBehind ? 6 : 0)
         .opacity(isBehind ? 0.5 : 1)
         .zIndex(isBehind ? 0 : 1)
-    }
-
-    private func dotColor(for status: SessionStatus, isPrimary: Bool) -> Color {
-        if isPrimary { return theme.primaryText }
-        switch status {
-        case .working: return theme.primaryText
-        case .idle: return theme.primaryText.opacity(0.3)
-        default: return theme.primaryText.opacity(0.5)
-        }
     }
 
     // MARK: - Mock Data

@@ -28,8 +28,8 @@ extension NSScreen {
         let fullWidth = frame.width
         let leftPadding = auxiliaryTopLeftArea?.width ?? 0
         let rightPadding = auxiliaryTopRightArea?.width ?? 0
-        let notchWidth = fullWidth - leftPadding - rightPadding + 4
-        let notchHeight = safeAreaInsets.top + 2
+        let notchWidth = fullWidth - leftPadding - rightPadding
+        let notchHeight = safeAreaInsets.top + 1
         return CGSize(width: notchWidth, height: notchHeight)
     }
 }

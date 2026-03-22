@@ -92,6 +92,9 @@ struct LiveActivityPreview: View {
 
     @ViewBuilder
     private func individualCard(session: SessionState, isPrimary: Bool) -> some View {
+        let currentTool = session.currentTask ?? "Working…"
+        let prevTool = session.lastEvent ?? session.summary
+
         VStack(alignment: .leading, spacing: 0) {
             // Header
             HStack(spacing: 6) {
@@ -118,12 +121,19 @@ struct LiveActivityPreview: View {
 
             Spacer().frame(height: 6)
 
-            // Mini card stack
+            // Mini card stack — mirrors widget's TaskCard behavior
             ZStack {
-                miniCard(text: "Searching code", isBehind: true)
-                miniCard(text: session.currentTask ?? "Reading file", isBehind: false)
+                miniCard(text: prevTool, isBehind: true)
+                miniCard(text: currentTool, isBehind: false)
+                    .id(currentTool)
+                    .transition(.asymmetric(
+                        insertion: .offset(y: 80),
+                        removal: .opacity
+                    ))
             }
             .frame(height: 36)
+            .compositingGroup()
+            .clipped()
 
             Spacer().frame(height: 6)
 
@@ -133,11 +143,11 @@ struct LiveActivityPreview: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(theme.primaryText.opacity(0.4))
                     .frame(width: 14, height: 14)
-                Text(session.currentTask ?? "Working…")
+                Text(currentTool)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(theme.primaryText)
                     .lineLimit(1)
-                    .id(session.currentTask)
+                    .id(currentTool)
                     .transition(.push(from: .bottom))
 
                 Spacer()

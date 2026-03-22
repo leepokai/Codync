@@ -10,18 +10,19 @@ struct IOSSessionListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 1) {
+            LazyVStack(spacing: 4) {
                 // Collapsible settings
                 if showSettings {
                     modeSection
                 }
 
                 // Session list
-                ForEach(sessions) { session in
+                ForEach(Array(sessions.enumerated()), id: \.element.sessionId) { index, session in
                     NavigationLink(destination: IOSSessionDetailView(session: session)) {
                         SessionRowContent(
                             session: session,
                             isPrimary: primarySessionManager.primarySessionId == session.sessionId,
+                            depth: index,
                             onSetPrimary: { primarySessionManager.manualLock(session.sessionId) }
                         )
                     }
@@ -33,16 +34,27 @@ struct IOSSessionListView: View {
         .background(theme.background)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .principal) {
                 Button {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         showSettings.toggle()
                     }
                 } label: {
-                    Image(systemName: showSettings ? "gearshape.fill" : "gearshape")
-                        .font(.system(size: 15))
-                        .foregroundStyle(showSettings ? theme.accent : theme.secondaryText)
+                    HStack(spacing: 5) {
+                        Image(systemName: showSettings ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("Preview")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(showSettings ? theme.primaryText : theme.secondaryText)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(showSettings ? theme.primaryText.opacity(0.1) : theme.primaryText.opacity(0.05))
+                    )
                 }
+                .buttonStyle(.plain)
             }
         }
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -94,6 +106,7 @@ struct IOSSessionListView: View {
 private struct SessionRowContent: View {
     let session: SessionState
     let isPrimary: Bool
+    var depth: Int = 0
     let onSetPrimary: () -> Void
     @Environment(\.theme) private var theme
 
@@ -159,6 +172,9 @@ private struct SessionRowContent: View {
                     .padding(.horizontal, 8)
                 : nil
         )
+        .opacity(depth == 0 ? 1.0 : max(0.65, 1.0 - Double(depth) * 0.1))
+        .animation(.spring(duration: 0.5, bounce: 0.15), value: isPrimary)
+        .animation(.spring(duration: 0.5, bounce: 0.15), value: depth)
     }
 
     private var subtitleColor: Color {

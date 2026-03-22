@@ -10,27 +10,31 @@ final class PrimarySessionManager: ObservableObject {
     @Published var isManuallyLocked: Bool = false
 
     func autoSelect(from sessions: [SessionState]) {
-        if isManuallyLocked {
-            if let lockedId = primarySessionId,
-               !sessions.contains(where: { $0.sessionId == lockedId }) {
-                logger.info("Locked primary session \(lockedId) no longer exists, unlocking")
-                isManuallyLocked = false
-            } else {
-                return
+        guard isManuallyLocked else {
+            // No manual lock — no primary session
+            if primarySessionId != nil {
+                primarySessionId = nil
             }
+            return
         }
-        let best = sessions
-            .sorted { autoFillPriority($0) > autoFillPriority($1) }
-            .first
-        if primarySessionId != best?.sessionId {
-            primarySessionId = best?.sessionId
-            if let id = primarySessionId {
-                logger.info("Auto-selected primary: \(id)")
-            }
+        // If locked session disappeared, unlock
+        if let lockedId = primarySessionId,
+           !sessions.contains(where: { $0.sessionId == lockedId }) {
+            logger.info("Locked primary session \(lockedId) no longer exists, unlocking")
+            isManuallyLocked = false
+            primarySessionId = nil
         }
     }
 
     func manualLock(_ sessionId: String) {
+        if primarySessionId == sessionId && isManuallyLocked {
+            // Tap again to deselect — let algorithm auto-decide
+            isManuallyLocked = false
+            primarySessionId = nil
+            logger.info("Deselected primary: \(sessionId)")
+            Task { await save() }
+            return
+        }
         primarySessionId = sessionId
         isManuallyLocked = true
         logger.info("Manually locked primary: \(sessionId)")

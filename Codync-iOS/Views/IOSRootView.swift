@@ -71,7 +71,11 @@ struct IOSRootView: View {
     }
 
     private func sortSessions(_ sessions: [SessionState]) -> [SessionState] {
-        sessions.sorted { a, b in
+        let primaryId = primarySessionManager.primarySessionId
+        return sessions.sorted { a, b in
+            // Primary session always first
+            if a.sessionId == primaryId { return true }
+            if b.sessionId == primaryId { return false }
             let aWeight = a.status == .working ? 0 : a.status == .needsInput ? 1 : 2
             let bWeight = b.status == .working ? 0 : b.status == .needsInput ? 1 : 2
             if aWeight != bWeight { return aWeight < bWeight }

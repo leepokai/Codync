@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             primarySessionManager.autoSelect(from: receiver.sessions)
 
             let center = UNUserNotificationCenter.current()
-            try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+            _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
         }
         return true
     }

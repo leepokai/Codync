@@ -3,8 +3,12 @@ import WidgetKit
 import SwiftUI
 import CodyncShared
 
-/// Monochrome palette — dark navy on light Lock Screen background
-private let widgetFg = Color(red: 47/255, green: 59/255, blue: 84/255)
+/// Monochrome palette — dark navy for light mode, white for dark mode
+private let widgetFgLight = Color(red: 47/255, green: 59/255, blue: 84/255)
+private let widgetFgDark = Color(red: 0.93, green: 0.93, blue: 0.93)
+
+/// Legacy alias used in Dynamic Island (always dark background)
+private let widgetFg = widgetFgLight
 
 struct CodyncLiveActivityWidget: Widget {
     let kind: String = "CodyncLiveActivity"
@@ -126,6 +130,8 @@ struct CodyncLiveActivityWidget: Widget {
     @ViewBuilder
     private func progressBanner(context: ActivityViewContext<CodyncAttributes>) -> some View {
         let state = context.state
+        let dark = state.isDark
+        let fg = dark ? widgetFgDark : widgetFgLight
         let progress = state.totalCount > 0
             ? Double(state.completedCount) / Double(state.totalCount)
             : 0
@@ -138,14 +144,14 @@ struct CodyncLiveActivityWidget: Widget {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 20))
-                            .foregroundStyle(widgetFg)
+                            .foregroundStyle(fg)
                         VStack(alignment: .leading, spacing: 1) {
                             Text("All tasks complete")
                                 .font(.subheadline.bold())
-                                .foregroundStyle(widgetFg)
+                                .foregroundStyle(fg)
                             Text("$\(String(format: "%.2f", state.costUSD))")
                                 .font(.caption)
-                                .foregroundStyle(widgetFg.opacity(0.5))
+                                .foregroundStyle(fg.opacity(0.5))
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -154,12 +160,12 @@ struct CodyncLiveActivityWidget: Widget {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "arrow.turn.down.right")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(widgetFg.opacity(0.4))
+                            .foregroundStyle(fg.opacity(0.4))
                             .frame(width: 16, height: 16)
                             .padding(.top, 1)
                         Text(task)
                             .font(.callout)
-                            .foregroundStyle(widgetFg)
+                            .foregroundStyle(fg)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -170,7 +176,7 @@ struct CodyncLiveActivityWidget: Widget {
                     HStack(spacing: 2) {
                         ForEach(Array(state.tasks.enumerated()), id: \.offset) { _, task in
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(taskColor(task.status))
+                                .fill(taskColor(task.status, isDark: dark))
                                 .frame(height: 6)
                         }
                     }
@@ -179,11 +185,11 @@ struct CodyncLiveActivityWidget: Widget {
                     HStack {
                         Text("\(state.completedCount)/\(state.totalCount) tasks")
                             .font(.caption)
-                            .foregroundStyle(widgetFg.opacity(0.5))
+                            .foregroundStyle(fg.opacity(0.5))
                         Spacer()
                         Text("\(Int(progress * 100))%")
                             .font(.caption.bold())
-                            .foregroundStyle(widgetFg.opacity(0.6))
+                            .foregroundStyle(fg.opacity(0.6))
                     }
                     .padding(.horizontal, 6)
                 }
@@ -195,7 +201,7 @@ struct CodyncLiveActivityWidget: Widget {
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
         .frame(height: 160)
-        .background(Color.white.opacity(state.isCompleted ? 1 : 0.75))
+        .background(dark ? Color.black.opacity(0.8) : Color.white.opacity(state.isCompleted ? 1 : 0.75))
         .activityBackgroundTint(.clear)
     }
 
@@ -204,6 +210,8 @@ struct CodyncLiveActivityWidget: Widget {
     @ViewBuilder
     private func cardBanner(context: ActivityViewContext<CodyncAttributes>) -> some View {
         let state = context.state
+        let dark = state.isDark
+        let fg = dark ? widgetFgDark : widgetFgLight
 
         let prevTool = nonEmpty(state.previousTask)
         let hasToolActivity = prevTool != nil
@@ -217,17 +225,17 @@ struct CodyncLiveActivityWidget: Widget {
                     VStack(alignment: .center, spacing: 8) {
                         Image(systemName: "checkmark")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(dark ? Color.black : Color.white)
                             .frame(width: 28, height: 28)
-                            .background(widgetFg, in: Circle())
+                            .background(fg, in: Circle())
 
                         VStack(spacing: 2) {
                             Text("Session Complete")
                                 .font(.subheadline.bold())
-                                .foregroundStyle(widgetFg)
+                                .foregroundStyle(fg)
                             Text("$\(String(format: "%.2f", state.costUSD))")
                                 .font(.footnote)
-                                .foregroundStyle(widgetFg.opacity(0.5))
+                                .foregroundStyle(fg.opacity(0.5))
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -237,11 +245,11 @@ struct CodyncLiveActivityWidget: Widget {
                     Text(prompt)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(dark ? .white : .blue)
                         .padding(12)
                         .frame(minWidth: 52)
                         .background(
-                            Color.blue.opacity(0.12),
+                            (dark ? Color.white : Color.blue).opacity(0.12),
                             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                         )
                         .padding(.leading, 48)
@@ -258,14 +266,14 @@ struct CodyncLiveActivityWidget: Widget {
                                 text: simplifyToolText(sp) ?? sp,
                                 icon: toolIcon(for: sp),
                                 isBehind: true,
-                                isInProgress: false
+                                isDark: dark
                             )
                         }
                         TaskCard(
                             text: simplifyToolText(prevTool) ?? prevTool ?? "",
                             icon: toolIcon(for: prevTool),
                             isBehind: false,
-                            isInProgress: false
+                            isDark: dark
                         )
                         .id(prevTool)
                         .transition(.asymmetric(
@@ -286,7 +294,7 @@ struct CodyncLiveActivityWidget: Widget {
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
         .frame(height: 160)
-        .background(Color.white.opacity(isWaiting || state.isCompleted ? 1 : 0.75))
+        .background(dark ? Color.black.opacity(0.8) : Color.white.opacity(isWaiting || state.isCompleted ? 1 : 0.75))
         .activityBackgroundTint(.clear)
     }
 
@@ -295,14 +303,15 @@ struct CodyncLiveActivityWidget: Widget {
     @ViewBuilder
     private func bannerHeader(context: ActivityViewContext<CodyncAttributes>) -> some View {
         let state = context.state
+        let fg = state.isDark ? widgetFgDark : widgetFgLight
 
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(widgetFg.opacity(0.6))
+                    .foregroundStyle(fg.opacity(0.6))
                     .frame(width: 21, height: 21)
-                    .background(widgetFg.opacity(0.08), in: Circle())
+                    .background(fg.opacity(0.08), in: Circle())
 
                 Text(context.attributes.projectName)
                     .font(.callout.bold())
@@ -322,14 +331,14 @@ struct CodyncLiveActivityWidget: Widget {
                     .padding(.horizontal, 8)
                     .overlay {
                         Capsule()
-                            .stroke(widgetFg.opacity(alert ? 0.06 : 0.12))
+                            .stroke(fg.opacity(alert ? 0.06 : 0.12))
                     }
-                    .background(widgetFg.opacity(alert ? 0.12 : 0), in: Capsule())
+                    .background(fg.opacity(alert ? 0.12 : 0), in: Capsule())
                     .monospacedDigit()
             } else {
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(widgetFg)
+                        .fill(fg)
                         .frame(width: 5, height: 5)
                     Text(statusLabel(state.status))
                         .opacity(0.48)
@@ -340,12 +349,13 @@ struct CodyncLiveActivityWidget: Widget {
         .font(.subheadline.bold())
         .frame(height: 28)
         .padding(.horizontal, 6)
-        .foregroundStyle(widgetFg)
+        .foregroundStyle(fg)
     }
 
     @ViewBuilder
     private func bannerFooter(context: ActivityViewContext<CodyncAttributes>, isWaiting: Bool) -> some View {
         let state = context.state
+        let fg = state.isDark ? widgetFgDark : widgetFgLight
 
         HStack(spacing: 6) {
             if state.isCompleted {
@@ -382,7 +392,7 @@ struct CodyncLiveActivityWidget: Widget {
                     .layoutPriority(1)
             }
         }
-        .foregroundStyle(widgetFg)
+        .foregroundStyle(fg)
         .padding(.leading, 4)
         .padding(.trailing, 12)
         .font(.footnote.bold())
@@ -467,12 +477,13 @@ struct CodyncLiveActivityWidget: Widget {
         }
     }
 
-    /// Lock Screen task segments — monochrome navy at different opacities
-    private func taskColor(_ status: TaskStatus) -> Color {
+    /// Lock Screen task segments — adapts to light/dark mode
+    private func taskColor(_ status: TaskStatus, isDark: Bool = false) -> Color {
+        let fg = isDark ? widgetFgDark : widgetFgLight
         switch status {
-        case .completed: widgetFg
-        case .inProgress: widgetFg.opacity(0.4)
-        case .pending: widgetFg.opacity(0.12)
+        case .completed: return fg
+        case .inProgress: return fg.opacity(0.4)
+        case .pending: return fg.opacity(0.12)
         }
     }
 
@@ -493,30 +504,39 @@ struct TaskCard: View {
     let icon: String
     let isBehind: Bool
     var isInProgress: Bool = false
+    var isDark: Bool = false
 
     private var cornerRadius: CGFloat { isBehind ? 10 : 16 }
+    private var fg: Color { isDark ? widgetFgDark : widgetFgLight }
+    private var cardBg: Color {
+        if isBehind {
+            return isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.85)
+        }
+        // Front card must be opaque to hide the card behind it
+        return isDark ? Color(red: 0.14, green: 0.14, blue: 0.16) : Color.white
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: isInProgress ? icon : "checkmark")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(widgetFg.opacity(0.5))
+                .foregroundStyle(fg.opacity(0.5))
                 .frame(width: 21, height: 21)
                 .background(
                     Circle()
-                        .foregroundStyle(widgetFg.opacity(0.12))
+                        .foregroundStyle(fg.opacity(0.12))
                 )
 
             Text(text)
                 .font(.callout)
-                .foregroundStyle(widgetFg)
+                .foregroundStyle(fg)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 60)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .background(cardBg, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .scaleEffect(isBehind ? 0.9 : 1)
         .offset(y: isBehind ? 10 : 0)
         .opacity(isBehind ? 0.72 : 1)
@@ -598,7 +618,7 @@ struct OverallLiveActivityWidget: Widget {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(primary?.projectName ?? "Codync")
                             .font(.headline)
-                        Text(primary?.currentTask ?? overallStatusLabel(primary?.status.rawValue ?? "idle"))
+                        Text(primary?.currentTask ?? statusLabel(primary?.status.rawValue ?? "idle"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -638,97 +658,58 @@ struct OverallLiveActivityWidget: Widget {
     private func overallLockScreen(context: ActivityViewContext<OverallAttributes>) -> some View {
         let sessions = context.state.sessions
         let primaryId = context.state.primarySessionId
+        let dark = context.state.isDark
 
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left.forwardslash.chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(widgetFg.opacity(0.6))
-                        .frame(width: 21, height: 21)
-                        .background(widgetFg.opacity(0.08), in: Circle())
-                    Text("Codync")
-                        .font(.callout.bold())
-                        .opacity(0.72)
-                }
-                Spacer()
-                Text(String(format: "$%.2f", context.state.totalCost))
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .opacity(0.5)
+        VStack(spacing: 0) {
+            ForEach(sessions, id: \.sessionId) { session in
+                let isPrimary = session.sessionId == primaryId
+                overallSessionRow(session: session, isPrimary: isPrimary, isDark: dark)
+                    .id(session.sessionId)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .foregroundStyle(widgetFg)
-            .padding(.horizontal, 6)
-            .frame(height: 28)
-
-            // Session rows — layout adapts by count
-            VStack(spacing: 2) {
-                ForEach(sessions, id: \.sessionId) { session in
-                    let isPrimary = session.sessionId == primaryId
-                    if sessions.count <= 3 {
-                        mediumRow(session: session, isPrimary: isPrimary)
-                    } else {
-                        compactRow(session: session, isPrimary: isPrimary)
-                    }
-                }
-            }
-            .frame(maxHeight: .infinity)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 10)
-        .frame(height: 160)
-        .background(Color.white.opacity(0.75))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(dark ? Color.black.opacity(0.8) : Color.white)
         .activityBackgroundTint(.clear)
     }
 
     @ViewBuilder
-    private func mediumRow(session: SessionSummary, isPrimary: Bool) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(isPrimary ? widgetFg : widgetFg.opacity(0.4))
-                .frame(width: 6, height: 6)
-            Text(session.projectName)
-                .font(.subheadline.bold())
-                .foregroundStyle(widgetFg)
-                .lineLimit(1)
-            Text(session.model)
-                .font(.caption2)
-                .foregroundStyle(widgetFg.opacity(0.4))
-            Spacer()
-            if let task = session.currentTask, !task.isEmpty {
-                Text(task)
-                    .font(.caption2)
-                    .foregroundStyle(widgetFg.opacity(0.6))
-                    .lineLimit(1)
-                    .frame(maxWidth: 120, alignment: .trailing)
-            } else {
-                Text(overallStatusLabel(session.status.rawValue))
-                    .font(.caption2)
-                    .foregroundStyle(widgetFg.opacity(0.4))
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-    }
+    private func overallSessionRow(session: SessionSummary, isPrimary: Bool, isDark: Bool) -> some View {
+        let task = session.currentTask.flatMap { $0.isEmpty ? nil : $0 }
+        let fg: Color = isDark ? .white : widgetFg
 
-    @ViewBuilder
-    private func compactRow(session: SessionSummary, isPrimary: Bool) -> some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(isPrimary ? widgetFg : widgetFg.opacity(0.4))
-                .frame(width: 5, height: 5)
+                .fill(overallDotColor(session.status, isDark: isDark))
+                .frame(width: 8, height: 8)
+
             Text(session.projectName)
-                .font(.caption.bold())
-                .foregroundStyle(widgetFg)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(fg)
                 .lineLimit(1)
-            Spacer()
-            Text(overallStatusLabel(session.status.rawValue))
-                .font(.caption2)
-                .foregroundStyle(widgetFg.opacity(0.4))
+                .layoutPriority(1)
+
+            Text(modelLabel(session.model))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(fg.opacity(0.6))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(fg.opacity(0.1), in: Capsule())
+
+            if let task {
+                Text(task)
+                    .font(.caption)
+                    .foregroundStyle(fg.opacity(0.4))
+                    .lineLimit(1)
+                    .transition(.blurReplace)
+            }
+
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private func primarySession(from state: OverallAttributes.ContentState) -> SessionSummary? {
@@ -736,7 +717,27 @@ struct OverallLiveActivityWidget: Widget {
             ?? state.sessions.first
     }
 
-    private func overallStatusLabel(_ status: String) -> String {
+    private func overallDotColor(_ status: SessionStatus, isDark: Bool) -> Color {
+        let base: Color = isDark ? .white : widgetFg
+        switch status {
+        case .working: return base
+        case .needsInput: return base.opacity(0.7)
+        case .compacting: return base.opacity(0.5)
+        case .idle: return base.opacity(0.3)
+        case .error: return base.opacity(0.5)
+        case .completed: return base.opacity(0.3)
+        }
+    }
+
+    private func modelLabel(_ model: String) -> String {
+        let lower = model.lowercased()
+        if lower.contains("opus") { return "Opus" }
+        if lower.contains("sonnet") { return "Sonnet" }
+        if lower.contains("haiku") { return "Haiku" }
+        return model
+    }
+
+    private func statusLabel(_ status: String) -> String {
         switch status {
         case "working": "Working"
         case "idle": "Idle"

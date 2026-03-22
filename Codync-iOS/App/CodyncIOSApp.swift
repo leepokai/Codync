@@ -14,12 +14,15 @@ struct CodyncIOSApp: App {
                 primarySessionManager: appDelegate.primarySessionManager
             )
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                // Timer can silently die after long background suspension
                 appDelegate.liveActivityManager.ensureTimerRunning()
+                // Force push current state immediately (isDark, duration, etc.)
+                appDelegate.liveActivityManager.invalidateCache()
+                appDelegate.liveActivityManager.updateSessions(appDelegate.receiver.sessions)
+                // Then fetch fresh data from CloudKit
                 Task {
-                    await appDelegate.receiver.fetch(source: "foreground-return")
+                    await appDelegate.receiver.fetch(source: "foreground-return", force: true)
                     appDelegate.liveActivityManager.updateSessions(appDelegate.receiver.sessions)
                     appDelegate.primarySessionManager.autoSelect(from: appDelegate.receiver.sessions)
                 }

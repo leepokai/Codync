@@ -21,11 +21,7 @@ struct IOSSessionListView: View {
                     NavigationLink(destination: IOSSessionDetailView(session: session)) {
                         SessionRowContent(
                             session: session,
-                            isTracking: liveActivityManager.isTracking(sessionId: session.sessionId),
-                            isPinned: liveActivityManager.isPinned(sessionId: session.sessionId),
                             isPrimary: primarySessionManager.primarySessionId == session.sessionId,
-                            showPrimary: liveActivityManager.mode == .overall,
-                            onTogglePin: { liveActivityManager.togglePin(session.sessionId) },
                             onSetPrimary: { primarySessionManager.manualLock(session.sessionId) }
                         )
                     }
@@ -64,30 +60,30 @@ struct IOSSessionListView: View {
 
             LiveActivityPreview(
                 mode: liveActivityManager.mode,
-                sessions: sessions.isEmpty ? nil : sessions
+                sessions: sessions.isEmpty ? nil : sessions,
+                primarySessionId: primarySessionManager.primarySessionId,
+                maxSessions: liveActivityManager.maxOverallSessions
             )
 
-            if liveActivityManager.mode == .overall {
-                HStack {
-                    Text("Max Sessions")
-                        .font(.caption.bold())
-                        .foregroundStyle(theme.secondaryText)
-                    Spacer()
-                    Picker("Max", selection: Binding(
-                        get: { liveActivityManager.maxOverallSessions },
-                        set: { newVal in
-                            liveActivityManager.maxOverallSessions = newVal
-                            Task { await liveActivityManager.savePreference() }
-                        }
-                    )) {
-                        ForEach(1...4, id: \.self) { n in
-                            Text("\(n)").tag(n)
-                        }
+            HStack {
+                Text("Max Live Activities")
+                    .font(.caption.bold())
+                    .foregroundStyle(theme.secondaryText)
+                Spacer()
+                Picker("Max", selection: Binding(
+                    get: { liveActivityManager.maxOverallSessions },
+                    set: { newVal in
+                        liveActivityManager.maxOverallSessions = newVal
+                        Task { await liveActivityManager.savePreference() }
+                        liveActivityManager.updateSessions(sessions)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(width: 160)
+                )) {
+                    ForEach(1...4, id: \.self) { n in
+                        Text("\(n)").tag(n)
+                    }
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .pickerStyle(.segmented)
+                .frame(width: 160)
             }
         }
         .padding(.horizontal, 16)
@@ -97,11 +93,7 @@ struct IOSSessionListView: View {
 
 private struct SessionRowContent: View {
     let session: SessionState
-    let isTracking: Bool
-    let isPinned: Bool
     let isPrimary: Bool
-    let showPrimary: Bool
-    let onTogglePin: () -> Void
     let onSetPrimary: () -> Void
     @Environment(\.theme) private var theme
 
@@ -116,11 +108,6 @@ private struct SessionRowContent: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 5) {
-                    if showPrimary && isPrimary {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.yellow)
-                    }
                     Text(session.projectName)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(theme.primaryText)
@@ -137,40 +124,41 @@ private struct SessionRowContent: View {
                                 .font(.system(size: 13))
                                 .foregroundStyle(subtitleColor)
                                 .lineLimit(1)
+                                .id(desc)
+                                .transition(.push(from: .bottom))
+                                .animation(.easeInOut(duration: 0.3), value: desc)
                         }
                         Spacer()
                         Text(relativeTime(session.updatedAt))
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(theme.tertiaryText)
                     }
+                    .clipped()
                 }
                 if !session.tasks.isEmpty {
                     MiniProgressBar(tasks: session.tasks)
                 }
             }
 
-            if showPrimary {
-                Button(action: onSetPrimary) {
-                    Image(systemName: isPrimary ? "star.fill" : "star")
-                        .font(.system(size: 13))
-                        .foregroundStyle(isPrimary ? .yellow : theme.tertiaryText)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            } else {
-                Button(action: onTogglePin) {
-                    Image(systemName: isPinned ? "pin.fill" : "pin")
-                        .font(.system(size: 13))
-                        .foregroundStyle(isPinned ? theme.primaryText : theme.tertiaryText)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+            Button(action: onSetPrimary) {
+                Circle()
+                    .fill(isPrimary ? theme.primaryText : theme.tertiaryText.opacity(0.3))
+                    .frame(width: isPrimary ? 8 : 6, height: isPrimary ? 8 : 6)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .padding(.vertical, isPrimary ? 4 : 0)
+        .background(
+            isPrimary
+                ? RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(theme.primaryText.opacity(0.06))
+                    .padding(.horizontal, 8)
+                : nil
+        )
     }
 
     private var subtitleColor: Color {

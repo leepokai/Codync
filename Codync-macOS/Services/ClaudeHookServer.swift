@@ -5,6 +5,19 @@ import os
 
 private let logger = Logger(subsystem: "com.pokai.Codync", category: "HookServer")
 
+/// Thread-safe mutable data buffer for accumulating connection bytes.
+private final class AccumulatedData: @unchecked Sendable {
+    private var _data = Data()
+    private let lock = NSLock()
+
+    var data: Data { lock.withLock { _data } }
+    var count: Int { lock.withLock { _data.count } }
+
+    func append(_ newData: Data) {
+        lock.withLock { _data.append(newData) }
+    }
+}
+
 /// Hook-driven status detection server.
 /// Receives events from 7 Claude Code hooks via notify.sh command script.
 /// Hook events are the primary status source — JSONL parsing is supplementary.
@@ -246,18 +259,19 @@ final class ClaudeHookServer: @unchecked Sendable {
 
     private func handleConnection(_ connection: NWConnection) {
         connection.start(queue: queue)
-        var accumulated = Data()
+        let accumulated = AccumulatedData()
 
-        func receiveMore() {
+        @Sendable func receiveMore() {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
                 if let data { accumulated.append(data) }
                 if accumulated.count > 512_000 { connection.cancel(); return }
 
                 let done = isComplete || error != nil
-                let hasFullRequest = String(data: accumulated, encoding: .utf8)?.contains("\r\n\r\n") ?? false
+                let snapshot = accumulated.data
+                let hasFullRequest = String(data: snapshot, encoding: .utf8)?.contains("\r\n\r\n") ?? false
 
                 if done || hasFullRequest {
-                    self?.processRequest(accumulated)
+                    self?.processRequest(snapshot)
                     let response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"
                     connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
                         connection.cancel()

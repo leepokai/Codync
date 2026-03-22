@@ -27,13 +27,14 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
         public let costUSD: Double
         public let durationSec: Int
         public let sessionStartDate: Date
+        public let isDark: Bool
 
         public init(status: String, model: String, tasks: [TaskItem],
                     completedCount: Int, totalCount: Int, currentTask: String?,
                     previousTask: String? = nil,
                     secondPreviousTask: String? = nil,
                     contextPct: Int, costUSD: Double, durationSec: Int,
-                    sessionStartDate: Date = Date()) {
+                    sessionStartDate: Date = Date(), isDark: Bool = true) {
             self.status = status
             self.model = model
             self.tasks = tasks
@@ -46,6 +47,7 @@ public struct CodyncAttributes: ActivityAttributes, Codable, Sendable {
             self.costUSD = costUSD
             self.durationSec = durationSec
             self.sessionStartDate = sessionStartDate
+            self.isDark = isDark
         }
 
         /// Whether the session is actively processing (working or compacting)
@@ -82,13 +84,14 @@ public struct CodyncAttributes: Codable, Sendable {
         public let costUSD: Double
         public let durationSec: Int
         public let sessionStartDate: Date
+        public let isDark: Bool
 
         public init(status: String, model: String, tasks: [TaskItem],
                     completedCount: Int, totalCount: Int, currentTask: String?,
                     previousTask: String? = nil,
                     secondPreviousTask: String? = nil,
                     contextPct: Int, costUSD: Double, durationSec: Int,
-                    sessionStartDate: Date = Date()) {
+                    sessionStartDate: Date = Date(), isDark: Bool = true) {
             self.status = status
             self.model = model
             self.tasks = tasks
@@ -101,6 +104,7 @@ public struct CodyncAttributes: Codable, Sendable {
             self.costUSD = costUSD
             self.durationSec = durationSec
             self.sessionStartDate = sessionStartDate
+            self.isDark = isDark
         }
 
         /// Whether the session is actively processing (working or compacting)

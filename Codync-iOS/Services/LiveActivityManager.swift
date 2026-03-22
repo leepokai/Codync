@@ -204,30 +204,21 @@ final class LiveActivityManager: ObservableObject {
             }
         }
 
-        // 3. Build desired set: pinned first, then auto-fill
+        // 3. Build desired set: auto-fill by priority up to maxOverallSessions
         var desired: [String] = []
 
-        // Add pinned sessions (that still exist and aren't completed)
-        for sessionId in pinnedSessionIds {
-            guard desired.count < Self.maxActivities else { break }
-            guard let session = sessionsByID[sessionId], session.status != .completed else { continue }
-            desired.append(sessionId)
-        }
+        let maxSlots = maxOverallSessions
+        let candidates = sessions
+            .filter { $0.status != .completed }
+            .sorted { autoFillPriority($0) < autoFillPriority($1) }
 
-        // Auto-fill remaining slots with best candidates
-        let remainingSlots = Self.maxActivities - desired.count
-        if remainingSlots > 0 {
-            let candidates = sessions
-                .filter { !desired.contains($0.sessionId) && $0.status != .completed }
-                .sorted { autoFillPriority($0) < autoFillPriority($1) }
-
-            for session in candidates.prefix(remainingSlots) {
-                // Skip idle sessions past grace that aren't pinned
-                if session.status == .idle && !isInGrace(session.sessionId) {
-                    continue
-                }
-                desired.append(session.sessionId)
+        for session in candidates {
+            guard desired.count < maxSlots else { break }
+            // Skip idle sessions past grace
+            if session.status == .idle && !isInGrace(session.sessionId) {
+                continue
             }
+            desired.append(session.sessionId)
         }
 
         let desiredSet = Set(desired)

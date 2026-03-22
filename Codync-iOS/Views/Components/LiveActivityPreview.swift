@@ -57,7 +57,7 @@ struct LiveActivityPreview: View {
                     ? session.sessionId == primarySessionId
                     : index == 0
 
-                SessionRowView(
+                OverallSessionRow(
                     projectName: session.projectName,
                     model: session.model,
                     currentTask: session.currentTask,

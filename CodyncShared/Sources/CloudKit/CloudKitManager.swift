@@ -82,7 +82,7 @@ public final class CloudKitManager: Sendable {
         }
 
         // Delete old default-zone subscription if it exists
-        try? await database.deleteSubscription(withID: "session-changes")
+        _ = try? await database.deleteSubscription(withID: "session-changes")
 
         if (try? await database.subscription(for: subscriptionID)) != nil {
             UserDefaults.standard.set(true, forKey: Self.subscriptionKey)
@@ -109,7 +109,7 @@ public final class CloudKitManager: Sendable {
         guard !sessionIds.isEmpty else { return }
         let recordIDs = sessionIds.map { CKRecord.ID(recordName: $0, zoneID: Self.zoneID) }
         for id in recordIDs {
-            try? await database.deleteRecord(withID: id)
+            _ = try? await database.deleteRecord(withID: id)
         }
         logger.info("Deleted \(sessionIds.count) session records from CloudKit")
     }
@@ -152,7 +152,7 @@ public final class CloudKitManager: Sendable {
         for (id, result) in results {
             guard case .success = result else { continue }
             if !activeSessionIds.contains(id.recordName) {
-                try? await database.deleteRecord(withID: id)
+                _ = try? await database.deleteRecord(withID: id)
                 deletedCount += 1
             }
         }
@@ -194,7 +194,7 @@ public final class CloudKitManager: Sendable {
 
     public func clearPrimarySession() async {
         let recordID = CKRecord.ID(recordName: Self.primarySessionRecordName, zoneID: Self.zoneID)
-        try? await database.deleteRecord(withID: recordID)
+        _ = try? await database.deleteRecord(withID: recordID)
     }
 
     // MARK: - Live Activity Preference

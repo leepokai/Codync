@@ -8,11 +8,13 @@ public struct OverallAttributes: ActivityAttributes, Codable, Sendable {
         public let sessions: [SessionSummary]
         public let primarySessionId: String?
         public let totalCost: Double
+        public let isDark: Bool
 
-        public init(sessions: [SessionSummary], primarySessionId: String?, totalCost: Double) {
+        public init(sessions: [SessionSummary], primarySessionId: String?, totalCost: Double, isDark: Bool = true) {
             self.sessions = sessions
             self.primarySessionId = primarySessionId
             self.totalCost = totalCost
+            self.isDark = isDark
         }
     }
 
@@ -26,11 +28,13 @@ public struct OverallAttributes: Codable, Sendable {
         public let sessions: [SessionSummary]
         public let primarySessionId: String?
         public let totalCost: Double
+        public let isDark: Bool
 
-        public init(sessions: [SessionSummary], primarySessionId: String?, totalCost: Double) {
+        public init(sessions: [SessionSummary], primarySessionId: String?, totalCost: Double, isDark: Bool = true) {
             self.sessions = sessions
             self.primarySessionId = primarySessionId
             self.totalCost = totalCost
+            self.isDark = isDark
         }
     }
 

@@ -4,11 +4,13 @@ import CodyncShared
 struct LiveActivityPreview: View {
     let mode: LiveActivityMode
     var sessions: [SessionState]?
+    var primarySessionId: String?
+    var maxSessions: Int = 4
     @Environment(\.theme) private var theme
 
     private var displaySessions: [SessionState] {
-        if let sessions, !sessions.isEmpty { return Array(sessions.prefix(4)) }
-        return Self.mockSessions
+        if let sessions, !sessions.isEmpty { return Array(sessions.prefix(maxSessions)) }
+        return Array(Self.mockSessions.prefix(maxSessions))
     }
 
     var body: some View {
@@ -47,17 +49,22 @@ struct LiveActivityPreview: View {
 
     @ViewBuilder
     private var overallPreview: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 4) {
             ForEach(Array(displaySessions.enumerated()), id: \.offset) { index, session in
+                let isPrimary = primarySessionId != nil
+                    ? session.sessionId == primarySessionId
+                    : index == 0
+
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(dotColor(for: session.status, isFirst: index == 0))
+                        .fill(dotColor(for: session.status, isPrimary: isPrimary))
                         .frame(width: 7, height: 7)
 
                     Text(session.projectName)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13, weight: isPrimary ? .semibold : .medium))
                         .foregroundStyle(theme.primaryText)
                         .lineLimit(1)
+                        .layoutPriority(1)
 
                     Text(modelLabel(session.model))
                         .font(.system(size: 10, weight: .medium))
@@ -68,14 +75,21 @@ struct LiveActivityPreview: View {
                             Capsule().fill(theme.primaryText.opacity(0.08))
                         )
 
+                    Spacer(minLength: 0)
+
                     if let task = session.currentTask, !task.isEmpty {
-                        Spacer(minLength: 0)
                         Text(task)
                             .font(.system(size: 11))
                             .foregroundStyle(theme.primaryText.opacity(0.3))
                             .lineLimit(1)
                     }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isPrimary ? theme.primaryText.opacity(0.06) : .clear)
+                )
             }
         }
     }
@@ -84,93 +98,113 @@ struct LiveActivityPreview: View {
 
     @ViewBuilder
     private var individualPreview: some View {
-        let session = displaySessions.first ?? Self.mockSessions[0]
+        VStack(spacing: 8) {
+            ForEach(Array(displaySessions.enumerated()), id: \.offset) { index, session in
+                let isPrimary = primarySessionId != nil
+                    ? session.sessionId == primarySessionId
+                    : index == 0
 
+                individualCard(session: session, isPrimary: isPrimary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func individualCard(session: SessionState, isPrimary: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(theme.primaryText.opacity(0.6))
-                    .frame(width: 18, height: 18)
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(theme.primaryText.opacity(0.5))
+                    .frame(width: 15, height: 15)
                     .background(Circle().fill(theme.primaryText.opacity(0.08)))
 
                 Text(session.projectName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(theme.primaryText.opacity(0.72))
+                    .lineLimit(1)
 
                 Spacer()
 
-                Text(String(format: "$%.2f", session.costUSD))
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.primaryText.opacity(0.6))
+                if session.costUSD > 0 {
+                    Text(String(format: "$%.2f", session.costUSD))
+                        .font(.system(size: 10))
+                        .foregroundStyle(theme.primaryText.opacity(0.5))
+                        .monospacedDigit()
+                }
             }
 
-            Spacer().frame(height: 10)
+            Spacer().frame(height: 6)
 
-            // Card stack
+            // Mini card stack
             ZStack {
-                // Behind card
-                mockCard(text: "Searching code", icon: "checkmark", isBehind: true)
-                // Front card
-                mockCard(text: "Reading AppDelegate.swift", icon: "checkmark", isBehind: false)
+                miniCard(text: "Searching code", isBehind: true)
+                miniCard(text: session.currentTask ?? "Reading file", isBehind: false)
             }
-            .frame(height: 52)
+            .frame(height: 36)
 
-            Spacer().frame(height: 10)
+            Spacer().frame(height: 6)
 
             // Footer
-            HStack(spacing: 6) {
-                Image(systemName: "pencil.line")
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(theme.primaryText.opacity(0.4))
+                    .frame(width: 14, height: 14)
+                Text(session.currentTask ?? "Working…")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(theme.primaryText)
-                    .frame(width: 20, height: 18)
-                Text("Editing ViewModel.swift")
-                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(theme.primaryText)
                     .lineLimit(1)
 
                 Spacer()
 
                 Text("02:34")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.primaryText.opacity(0.5))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(theme.primaryText.opacity(0.4))
                     .monospacedDigit()
             }
         }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isPrimary ? theme.primaryText.opacity(0.06) : .clear)
+        )
     }
 
     // MARK: - Helpers
 
     @ViewBuilder
-    private func mockCard(text: String, icon: String, isBehind: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(theme.primaryText.opacity(0.5))
-                .frame(width: 18, height: 18)
+    private func miniCard(text: String, isBehind: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(theme.primaryText.opacity(0.4))
+                .frame(width: 14, height: 14)
                 .background(Circle().fill(theme.primaryText.opacity(0.08)))
 
             Text(text)
-                .font(.system(size: 12))
-                .foregroundStyle(isBehind ? theme.primaryText.opacity(0.5) : theme.primaryText)
+                .font(.system(size: 10))
+                .foregroundStyle(isBehind ? theme.primaryText.opacity(0.4) : theme.primaryText)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
+        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: isBehind ? 8 : 12, style: .continuous)
-                .fill(theme.primaryText.opacity(isBehind ? 0.04 : 0.08))
+            RoundedRectangle(cornerRadius: isBehind ? 6 : 10, style: .continuous)
+                .fill(isBehind
+                      ? theme.primaryText.opacity(0.03)
+                      : Color(red: 0.14, green: 0.14, blue: 0.16))
         )
-        .scaleEffect(isBehind ? 0.9 : 1)
-        .offset(y: isBehind ? 8 : 0)
-        .opacity(isBehind ? 0.6 : 1)
+        .scaleEffect(isBehind ? 0.92 : 1)
+        .offset(y: isBehind ? 6 : 0)
+        .opacity(isBehind ? 0.5 : 1)
         .zIndex(isBehind ? 0 : 1)
     }
 
-    private func dotColor(for status: SessionStatus, isFirst: Bool) -> Color {
-        if isFirst { return theme.primaryText }
+    private func dotColor(for status: SessionStatus, isPrimary: Bool) -> Color {
+        if isPrimary { return theme.primaryText }
         switch status {
         case .working: return theme.primaryText
         case .idle: return theme.primaryText.opacity(0.3)

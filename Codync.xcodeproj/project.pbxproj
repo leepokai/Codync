@@ -52,6 +52,7 @@
 		F5A6B7C8D9E0F1A2B3C4D5E6 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A6B7C8D9E0F1A2B3C4D5E7 /* AppDelegate.swift */; };
 		FF66001122334455667788BB /* NSScreen+Notch.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC33DD44EE55FF6600112233 /* NSScreen+Notch.swift */; };
 		PANEL001122334455667788 /* PanelHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PANEL002233445566778899 /* PanelHeaderView.swift */; };
+		F7407323258F4D54ABC49AA7 /* ModePillToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D38EB22B9A74DB4A5A84274 /* ModePillToggle.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -80,6 +81,7 @@
 
 /* Begin PBXFileReference section */
 		05154CFD496486BA9E126E9D /* JSONLTailReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONLTailReader.swift; sourceTree = "<group>"; };
+		9D38EB22B9A74DB4A5A84274 /* ModePillToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModePillToggle.swift; sourceTree = "<group>"; };
 		0D161FDC49BE96E3A73FEA33 /* PIDChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PIDChecker.swift; sourceTree = "<group>"; };
 		22479FA0953120F3B50A1AF3 /* CloudKitSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitSync.swift; sourceTree = "<group>"; };
 		3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -192,6 +194,7 @@
 		32B90F722211C6377233886C /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				1A0CEB1937DE4129AB71C6FC /* Components */,
 				A7B8C9D0E1F2A3B4C5D6E7F8 /* ComingSoonView.swift */,
 				D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */,
 				DF291DF4A4EF932B774F227D /* IOSRootView.swift */,
@@ -203,6 +206,14 @@
 				E5F6A7B8C9D0E1F2A3B4C5D6 /* TabRootView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		1A0CEB1937DE4129AB71C6FC /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				9D38EB22B9A74DB4A5A84274 /* ModePillToggle.swift */,
+			);
+			path = Components;
 			sourceTree = "<group>";
 		};
 		38DD3C2C943D4DCC5208E8BB /* Codync-macOS */ = {
@@ -480,6 +491,7 @@
 				B1C2D3E4F5A6B7C8D9E0F1A1 /* IOSTheme.swift in Sources */,
 				B1C2D3E4F5A6B7C8D9E0F1A2 /* IOSStatusIndicator.swift in Sources */,
 				B1C2D3E4F5A6B7C8D9E0F1A3 /* IOSSessionTagView.swift in Sources */,
+				F7407323258F4D54ABC49AA7 /* ModePillToggle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

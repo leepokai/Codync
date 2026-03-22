@@ -184,8 +184,14 @@ final class SessionStateManager: ObservableObject {
         }
 
         // 4. Hook: Tool currently running → working
+        //    But transcript idle/end_turn overrides stale toolRunning
+        //    (handles lost postToolUse hooks)
         if hookServer?.isToolRunning(sessionId) == true {
-            return (.working, nil)
+            if let transcript, transcript.status == .idle {
+                hookServer?.clearToolRunning(sessionId)
+            } else {
+                return (.working, nil)
+            }
         }
 
         // 5. Transcript state (supplementary — for working/compacting/idle)

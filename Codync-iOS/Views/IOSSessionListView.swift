@@ -14,9 +14,6 @@ struct IOSSessionListView: View {
                 // Collapsible settings
                 if showSettings {
                     modeSection
-                    if liveActivityManager.mode == .overall {
-                        primarySection
-                    }
                 }
 
                 // Session list
@@ -57,79 +54,44 @@ struct IOSSessionListView: View {
 
     @ViewBuilder
     private var modeSection: some View {
-        Picker("Live Activity Mode", selection: Binding(
-            get: { liveActivityManager.mode },
-            set: { newMode in Task { await liveActivityManager.switchMode(to: newMode) } }
-        )) {
-            Text("Overall").tag(LiveActivityMode.overall)
-            Text("Individual").tag(LiveActivityMode.individual)
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
+        VStack(spacing: 14) {
+            ModePillToggle(mode: Binding(
+                get: { liveActivityManager.mode },
+                set: { newMode in
+                    Task { await liveActivityManager.switchMode(to: newMode) }
+                }
+            ))
 
-    @ViewBuilder
-    private var primarySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Max sessions picker
-            HStack {
-                Text("Max Sessions")
-                    .font(.caption.bold())
-                    .foregroundStyle(theme.secondaryText)
-                Spacer()
-                Picker("Max", selection: Binding(
-                    get: { liveActivityManager.maxOverallSessions },
-                    set: { newVal in
-                        liveActivityManager.maxOverallSessions = newVal
-                        Task { await liveActivityManager.savePreference() }
-                    }
-                )) {
-                    ForEach(1...4, id: \.self) { n in
-                        Text("\(n)").tag(n)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
-            }
+            LiveActivityPreview(
+                mode: liveActivityManager.mode,
+                sessions: sessions.isEmpty ? nil : sessions
+            )
 
-            // Primary session
-            HStack {
-                Text("Primary Session")
-                    .font(.caption.bold())
-                    .foregroundStyle(theme.secondaryText)
-                Spacer()
-                if primarySessionManager.isManuallyLocked {
-                    Button("Unlock") {
-                        primarySessionManager.unlock()
-                        primarySessionManager.autoSelect(from: sessions)
+            if liveActivityManager.mode == .overall {
+                HStack {
+                    Text("Max Sessions")
+                        .font(.caption.bold())
+                        .foregroundStyle(theme.secondaryText)
+                    Spacer()
+                    Picker("Max", selection: Binding(
+                        get: { liveActivityManager.maxOverallSessions },
+                        set: { newVal in
+                            liveActivityManager.maxOverallSessions = newVal
+                            Task { await liveActivityManager.savePreference() }
+                        }
+                    )) {
+                        ForEach(1...4, id: \.self) { n in
+                            Text("\(n)").tag(n)
+                        }
                     }
-                    .font(.caption)
+                    .pickerStyle(.segmented)
+                    .frame(width: 160)
                 }
-            }
-            if let primaryId = primarySessionManager.primarySessionId,
-               let session = sessions.first(where: { $0.sessionId == primaryId }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.yellow)
-                    Text(session.projectName)
-                        .font(.subheadline.bold())
-                        .foregroundStyle(theme.primaryText)
-                    if primarySessionManager.isManuallyLocked {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 9))
-                            .foregroundStyle(theme.tertiaryText)
-                    }
-                }
-            } else {
-                Text("No active session")
-                    .font(.subheadline)
-                    .foregroundStyle(theme.tertiaryText)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
     }
 }
 

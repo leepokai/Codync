@@ -39,7 +39,7 @@ struct CodyncLiveActivityWidget: Widget {
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .id(context.state.currentTask ?? context.state.status)
-                            .transition(.blurReplace)
+                            .transition(.push(from: .bottom))
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -170,6 +170,8 @@ struct CodyncLiveActivityWidget: Widget {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, 6)
+                    .id(task)
+                    .transition(.push(from: .bottom))
                 }
 
                 VStack(spacing: 6) {
@@ -256,7 +258,7 @@ struct CodyncLiveActivityWidget: Widget {
                         .padding(.trailing, 8)
                         .font(.callout)
                         .frame(maxWidth: .infinity, alignment: .trailing)
-                        .transition(.blurReplace)
+                        .transition(.push(from: .bottom))
                 } else {
                     // Stacked cards: secondPrevious behind, previous in front
                     let secondPrev = nonEmpty(state.secondPreviousTask)
@@ -343,7 +345,7 @@ struct CodyncLiveActivityWidget: Widget {
                     Text(statusLabel(state.status))
                         .opacity(0.48)
                 }
-                .transition(.blurReplace)
+                .transition(.push(from: .bottom))
             }
         }
         .font(.subheadline.bold())
@@ -360,7 +362,7 @@ struct CodyncLiveActivityWidget: Widget {
         HStack(spacing: 6) {
             if state.isCompleted {
                 Text("^[\(state.totalCount) task](inflect: true) completed")
-                    .transition(.blurReplace)
+                    .transition(.push(from: .bottom))
                     .padding(.leading, 8)
             } else {
                 HStack(spacing: 4) {
@@ -373,7 +375,7 @@ struct CodyncLiveActivityWidget: Widget {
                         .multilineTextAlignment(.leading)
                 }
                 .id(state.currentTask)
-                .transition(.blurReplace)
+                .transition(.push(from: .bottom))
             }
 
             Spacer()
@@ -703,7 +705,8 @@ struct OverallLiveActivityWidget: Widget {
                     .font(.caption)
                     .foregroundStyle(fg.opacity(0.4))
                     .lineLimit(1)
-                    .transition(.blurReplace)
+                    .id(task)
+                    .transition(.push(from: .bottom))
             }
 
             Spacer(minLength: 0)
@@ -730,11 +733,7 @@ struct OverallLiveActivityWidget: Widget {
     }
 
     private func modelLabel(_ model: String) -> String {
-        let lower = model.lowercased()
-        if lower.contains("opus") { return "Opus" }
-        if lower.contains("sonnet") { return "Sonnet" }
-        if lower.contains("haiku") { return "Haiku" }
-        return model
+        modelDisplayLabel(model)
     }
 
     private func statusLabel(_ status: String) -> String {

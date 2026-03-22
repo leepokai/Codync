@@ -66,7 +66,7 @@ struct LiveActivityPreview: View {
                         .lineLimit(1)
                         .layoutPriority(1)
 
-                    Text(modelLabel(session.model))
+                    Text(modelDisplayLabel(session.model))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(theme.primaryText.opacity(0.5))
                         .padding(.horizontal, 7)
@@ -210,14 +210,6 @@ struct LiveActivityPreview: View {
         case .idle: return theme.primaryText.opacity(0.3)
         default: return theme.primaryText.opacity(0.5)
         }
-    }
-
-    private func modelLabel(_ model: String) -> String {
-        let lower = model.lowercased()
-        if lower.contains("opus") { return "Opus" }
-        if lower.contains("sonnet") { return "Sonnet" }
-        if lower.contains("haiku") { return "Haiku" }
-        return model
     }
 
     // MARK: - Mock Data

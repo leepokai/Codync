@@ -35,14 +35,17 @@ struct TabRootView: View {
 
             Tab(value: AppTab.cowork.rawValue) {
                 ComingSoonView(
-                    icon: "person.2.fill",
-                    isSystemImage: true,
+                    icon: "CoworkColorIcon",
+                    isSystemImage: false,
                     title: "Cowork",
                     description: "Monitor Claude Cowork sessions in real time"
                 )
             } label: {
-                Image(systemName: "person.2.fill")
-                    .font(.system(size: iconSize))
+                Image("CoworkIcon")
+                    .resizable()
+                    .renderingMode(.template)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: iconSize, height: iconSize)
             }
 
             Tab(value: AppTab.codex.rawValue) {

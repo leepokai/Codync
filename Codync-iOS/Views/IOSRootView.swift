@@ -33,6 +33,11 @@ struct IOSRootView: View {
             liveActivityManager.updateSessions(sessions)
             primarySessionManager.autoSelect(from: sessions)
         }
+        .onChange(of: primarySessionManager.primarySessionId) { _, _ in
+            withAnimation(.spring(duration: 0.5, bounce: 0.1)) {
+                displayedSessions = sortSessions(receiver.sessions)
+            }
+        }
         .task {
             displayedSessions = sortSessions(receiver.sessions)
             reorderTimer?.invalidate()

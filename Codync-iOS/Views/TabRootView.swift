@@ -35,7 +35,7 @@ struct TabRootView: View {
 
             Tab(value: AppTab.cowork.rawValue) {
                 ComingSoonView(
-                    icon: "CoworkColorIcon",
+                    icon: "CoworkIcon",
                     isSystemImage: false,
                     title: "Cowork",
                     description: "Monitor Claude Cowork sessions in real time"
@@ -50,7 +50,7 @@ struct TabRootView: View {
 
             Tab(value: AppTab.codex.rawValue) {
                 ComingSoonView(
-                    icon: "CodexColorIcon",
+                    icon: "CodexIcon",
                     isSystemImage: false,
                     title: "Codex",
                     description: "Track OpenAI Codex jobs and costs"

@@ -59,7 +59,7 @@ struct IOSSessionListView: View {
     private var modeSection: some View {
         Picker("Live Activity Mode", selection: Binding(
             get: { liveActivityManager.mode },
-            set: { liveActivityManager.switchMode(to: $0) }
+            set: { newMode in Task { await liveActivityManager.switchMode(to: newMode) } }
         )) {
             Text("Overall").tag(LiveActivityMode.overall)
             Text("Individual").tag(LiveActivityMode.individual)

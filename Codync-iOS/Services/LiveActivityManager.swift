@@ -1,12 +1,14 @@
 import ActivityKit
 import CloudKit
 import Foundation
+import SwiftUI
 import UIKit
 import UserNotifications
 import CodyncShared
 import os
 
 private let logger = Logger(subsystem: "com.pokai.Codync.ios", category: "LiveActivity")
+
 
 @MainActor
 final class LiveActivityManager: ObservableObject {
@@ -24,6 +26,7 @@ final class LiveActivityManager: ObservableObject {
     private var overallActivity: Activity<OverallAttributes>?
     private var lastOverallState: OverallAttributes.ContentState?
     private var overallTrackedIds: Set<String> = []
+    @AppStorage("codync_darkMode") private var isDarkMode = true
 
     private static let maxActivities = 4
 
@@ -52,6 +55,12 @@ final class LiveActivityManager: ObservableObject {
             logger.info("Tick timer was dead — restarting")
             startTicking()
         }
+    }
+
+    /// Clear cached state so the next updateSessions() pushes unconditionally.
+    func invalidateCache() {
+        lastPushedState.removeAll()
+        lastOverallState = nil
     }
 
     private func tickActivities() {
@@ -256,13 +265,15 @@ final class LiveActivityManager: ObservableObject {
             .prefix(maxOverallSessions)
 
         let summaries = active.map { session in
-            SessionSummary(
+            let liveDuration = max(session.durationSec, Int(Date().timeIntervalSince(session.startedAt)))
+            return SessionSummary(
                 sessionId: session.sessionId,
                 projectName: session.projectName,
                 status: session.status,
                 model: session.model,
                 currentTask: session.currentTask,
-                costUSD: session.costUSD
+                costUSD: session.costUSD,
+                durationSec: liveDuration
             )
         }
 
@@ -273,7 +284,8 @@ final class LiveActivityManager: ObservableObject {
         let state = OverallAttributes.ContentState(
             sessions: summaries,
             primarySessionId: primaryId,
-            totalCost: totalCost
+            totalCost: totalCost,
+            isDark: isDarkMode
         )
 
         guard state != lastOverallState else { return }
@@ -311,34 +323,51 @@ final class LiveActivityManager: ObservableObject {
         }
     }
 
-    func switchMode(to newMode: LiveActivityMode) {
+    func switchMode(to newMode: LiveActivityMode) async {
         guard newMode != mode else { return }
         logger.info("Switching Live Activity mode: \(self.mode.rawValue) → \(newMode.rawValue)")
 
-        // End all current activities
+        // 1. End current mode's activities with await
         if mode == .individual {
-            for sessionId in Array(trackedSessionIds) {
-                stopTracking(sessionId: sessionId)
+            let snapshot = Array(activities.values)
+            activities.removeAll()
+            trackedSessionIds.removeAll()
+            lastPushedState.removeAll()
+            for activity in snapshot {
+                await Task { await activity.end(nil, dismissalPolicy: .immediate) }.value
             }
-        } else {
-            if let activity = overallActivity {
-                Task { await activity.end(nil, dismissalPolicy: .immediate) }
-                overallActivity = nil
-                lastOverallState = nil
-            }
+        } else if let activity = overallActivity {
+            overallActivity = nil
+            lastOverallState = nil
+            await Task { await activity.end(nil, dismissalPolicy: .immediate) }.value
         }
 
-        // Reset transient state
+        // 2. Scan and end ALL orphaned iOS-managed activities (crash recovery)
+        for activity in Activity<CodyncAttributes>.activities
+            where activity.activityState == .active || activity.activityState == .stale {
+            await Task { await activity.end(nil, dismissalPolicy: .immediate) }.value
+        }
+        for activity in Activity<OverallAttributes>.activities
+            where activity.activityState == .active || activity.activityState == .stale {
+            await Task { await activity.end(nil, dismissalPolicy: .immediate) }.value
+        }
+
+        // 3. Safety clear all internal state
+        activities.removeAll()
+        trackedSessionIds.removeAll()
         previousTasks.removeAll()
         secondPreviousTasks.removeAll()
         graceTimers.removeAll()
         lastPushedState.removeAll()
+        overallActivity = nil
+        lastOverallState = nil
         overallTrackedIds.removeAll()
 
+        // 4-5. Set new mode and persist
         mode = newMode
-        Task { await savePreference() }
+        await savePreference()
 
-        // Recreate with current data
+        // 6. Recreate with current data
         updateSessions(Array(sessionsByID.values))
     }
 
@@ -457,7 +486,8 @@ final class LiveActivityManager: ObservableObject {
             contextPct: session.contextPct,
             costUSD: session.costUSD,
             durationSec: liveDuration,
-            sessionStartDate: session.startedAt
+            sessionStartDate: session.startedAt,
+            isDark: isDarkMode
         )
     }
 

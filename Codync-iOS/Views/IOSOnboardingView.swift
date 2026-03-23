@@ -10,8 +10,9 @@ struct IOSOnboardingView: View {
     @State private var currentPage = 0
     @State private var iCloudStatus: ICloudStatus = .checking
     @State private var selectedMode: LiveActivityMode = .overall
+    @State private var showPaywall = false
 
-    private let totalPages = 7
+    private let totalPages = 8
 
     var body: some View {
         ZStack {
@@ -25,12 +26,21 @@ struct IOSOnboardingView: View {
                 modePage.tag(4)
                 primarySessionPage.tag(5)
                 proPage.tag(6)
+                liveActivityPermissionPage.tag(7)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut(duration: 0.3), value: currentPage)
         }
         .task {
             await checkICloudStatus()
+        }
+        .sheet(isPresented: $showPaywall) {
+            CodyncPaywallView()
+                .onDisappear {
+                    if PremiumManager.shared.isPro {
+                        withAnimation { currentPage = 7 }
+                    }
+                }
         }
     }
 
@@ -389,31 +399,67 @@ struct IOSOnboardingView: View {
 
     // MARK: - Page 6: Primary Session
 
+    @State private var demoPrimary = 0
+
     private var primarySessionPage: some View {
         OnboardingPage(
             theme: theme,
             content: {
                 Spacer()
 
-                // Faux session list with primary indicator
-                VStack(spacing: 0) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(theme.cardBackground)
-
-                        VStack(spacing: 2) {
-                            fauxSessionRow(name: "Codync", model: "Opus", isPrimary: true, isSelected: true)
-                            fauxSessionRow(name: "MyApp", model: "Sonnet", isPrimary: false, isSelected: false)
-                            fauxSessionRow(name: "Backend", model: "Haiku", isPrimary: false, isSelected: false)
+                // Interactive demo list
+                let sessions = [
+                    ("Codync", "Opus"),
+                    ("MyApp", "Sonnet"),
+                    ("Backend", "Haiku"),
+                ]
+                VStack(spacing: 2) {
+                    ForEach(Array(sessions.enumerated()), id: \.offset) { index, session in
+                        let isPrimary = index == demoPrimary
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(theme.primaryText.opacity(isPrimary ? 1 : 0.35))
+                                .frame(width: 7, height: 7)
+                            Text(session.0)
+                                .font(.system(size: 14, weight: isPrimary ? .semibold : .regular))
+                                .foregroundStyle(theme.primaryText)
+                            Text(session.1)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(theme.secondaryText)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(theme.primaryText.opacity(0.08), in: Capsule())
+                            Spacer()
+                            Button {
+                                withAnimation(.spring(duration: 0.3)) { demoPrimary = index }
+                            } label: {
+                                Circle()
+                                    .fill(isPrimary ? theme.primaryText : theme.tertiaryText.opacity(0.3))
+                                    .frame(width: isPrimary ? 8 : 6, height: isPrimary ? 8 : 6)
+                                    .frame(width: 28, height: 28)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .padding(10)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            isPrimary
+                                ? RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(theme.primaryText.opacity(0.06))
+                                : nil
+                        )
                     }
-                    .frame(height: 150)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(theme.border, lineWidth: 1)
-                    )
                 }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(theme.cardBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(theme.border, lineWidth: 1)
+                        )
+                )
                 .padding(.horizontal, 40)
 
                 Spacer().frame(height: 36)
@@ -424,33 +470,11 @@ struct IOSOnboardingView: View {
 
                 Spacer().frame(height: 12)
 
-                Text("Tap the circle on the right to set\nyour primary session.")
+                Text("Tap the circle on the right to try it.\nShown first on Dynamic Island and Lock Screen.")
                     .multilineTextAlignment(.center)
-                    .font(.system(size: 17))
+                    .font(.system(size: 16))
                     .foregroundStyle(theme.secondaryText)
                     .lineSpacing(4)
-
-                Spacer().frame(height: 16)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(theme.primaryText)
-                            .frame(width: 8, height: 8)
-                        Text("Shown first in Dynamic Island and Lock Screen")
-                            .font(.system(size: 14))
-                            .foregroundStyle(theme.secondaryText)
-                    }
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(theme.primaryText)
-                            .frame(width: 8, height: 8)
-                        Text("Highlighted in the session list on Mac and iPhone")
-                            .font(.system(size: 14))
-                            .foregroundStyle(theme.secondaryText)
-                    }
-                }
-                .padding(.horizontal, 32)
 
                 Spacer()
             },
@@ -458,41 +482,6 @@ struct IOSOnboardingView: View {
             primaryAction: { withAnimation { currentPage = 6 } },
             secondaryButton: "Back",
             secondaryAction: { withAnimation { currentPage = 4 } }
-        )
-    }
-
-    private func fauxSessionRow(name: String, model: String, isPrimary: Bool, isSelected: Bool) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(theme.primaryText.opacity(isPrimary ? 1 : 0.4))
-                .frame(width: 7, height: 7)
-
-            Text(name)
-                .font(.system(size: 14, weight: isPrimary ? .semibold : .regular))
-                .foregroundStyle(theme.primaryText)
-
-            Text(model)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(theme.secondaryText)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(theme.primaryText.opacity(0.08), in: Capsule())
-
-            Spacer()
-
-            // Primary indicator circle
-            Circle()
-                .fill(isSelected ? theme.primaryText : theme.tertiaryText.opacity(0.3))
-                .frame(width: isSelected ? 8 : 6, height: isSelected ? 8 : 6)
-                .frame(width: 24, height: 24)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            isPrimary
-                ? RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(theme.primaryText.opacity(0.06))
-                : nil
         )
     }
 
@@ -504,51 +493,137 @@ struct IOSOnboardingView: View {
             content: {
                 Spacer()
 
-                Image(systemName: "bolt.fill")
+                Image(systemName: "crown.fill")
                     .font(.system(size: 44))
-                    .foregroundStyle(theme.primaryText.opacity(0.8))
+                    .foregroundStyle(theme.primaryText)
 
-                Spacer().frame(height: 24)
+                Spacer().frame(height: 20)
 
-                Text("Codync Pro")
+                HStack(spacing: 8) {
+                    Text("Codync Pro")
+                        .font(.system(size: 32, weight: .bold))
+                    Text("$0.99/mo")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(theme.secondaryText)
+                }
+                .foregroundStyle(theme.primaryText)
+
+                Spacer().frame(height: 14)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 15))
+                    Text("Free: sync stops after the app is closed for a while")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(theme.primaryText)
+                .padding(.horizontal, 28)
+
+                Spacer().frame(height: 20)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    proFeatureRow("Instant push updates to Live Activity")
+                    proFeatureRow("Works even when app is closed")
+                    proFeatureRow("Background completion alerts")
+                }
+                .padding(.horizontal, 40)
+
+                Spacer()
+            },
+            primaryButton: PremiumManager.shared.isPro ? "Continue" : "Subscribe & Start",
+            primaryAction: {
+                if PremiumManager.shared.isPro {
+                    withAnimation { currentPage = 7 }
+                } else {
+                    showPaywall = true
+                }
+            },
+            secondaryButton: PremiumManager.shared.isPro ? "Back" : "Continue Free",
+            secondaryAction: {
+                withAnimation { currentPage = 7 }
+            }
+        )
+    }
+
+    // MARK: - Page 8: Live Activity Permission
+
+    private var liveActivityPermissionPage: some View {
+        OnboardingPage(
+            theme: theme,
+            content: {
+                Spacer()
+
+                // Faux Live Activity permission dialog — mimics real iOS alert
+                VStack(spacing: 0) {
+                    // Session list (dark card)
+                    VStack(spacing: 2) {
+                        fauxLARow(name: "my-project", model: "Opus", task: "Reading file...")
+                        fauxLARow(name: "backend", model: "Sonnet", task: nil)
+                        fauxLARow(name: "web-app", model: "Haiku", task: "Editing code")
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color(white: 0.13))
+                    )
+
+                    Spacer().frame(height: 8)
+
+                    // Permission dialog — frosted glass style
+                    VStack(spacing: 0) {
+                        Text("Allow Live Activities\nfrom \u{201C}Codync\u{201D}?")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(3)
+                            .padding(.top, 18)
+                            .padding(.bottom, 16)
+                            .padding(.horizontal, 16)
+
+                        Divider().overlay(.white.opacity(0.12))
+
+                        HStack(spacing: 0) {
+                            Button {} label: {
+                                Text("Don't Allow")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(.white.opacity(0.55))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                            }
+
+                            Divider().overlay(.white.opacity(0.12)).frame(height: 44)
+
+                            Button {} label: {
+                                Text("Allow")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.9))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                            }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .environment(\.colorScheme, .dark)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .padding(.horizontal, 36)
+
+                Spacer().frame(height: 32)
+
+                Text("Allow Live Activities")
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(theme.primaryText)
 
                 Spacer().frame(height: 12)
 
-                Text("Real-time sync, even when\nthe app is closed.")
+                Text("This is not a real prompt — just a preview.\nWhen iOS asks you later, tap \u{201C}Allow\u{201D}\nfor real-time Dynamic Island updates.")
                     .multilineTextAlignment(.center)
-                    .font(.system(size: 17))
+                    .font(.system(size: 16))
                     .foregroundStyle(theme.secondaryText)
                     .lineSpacing(4)
-
-                Spacer().frame(height: 8)
-
-                Text("Less than $1/month")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(theme.primaryText.opacity(0.6))
-
-                Spacer().frame(height: 24)
-
-                VStack(alignment: .leading, spacing: 14) {
-                    proFeatureRow(
-                        icon: "antenna.radiowaves.left.and.right",
-                        text: "Instant updates — under 2 seconds from Mac to iPhone"
-                    )
-                    proFeatureRow(
-                        icon: "livephoto",
-                        text: "Live Activity stays updated even when the app is closed or killed"
-                    )
-                    proFeatureRow(
-                        icon: "bell.badge",
-                        text: "Session completion alerts delivered in background"
-                    )
-                    proFeatureRow(
-                        icon: "clock.arrow.circlepath",
-                        text: "No more stale data — sessions stay fresh indefinitely"
-                    )
-                }
-                .padding(.horizontal, 32)
 
                 Spacer()
             },
@@ -558,21 +633,42 @@ struct IOSOnboardingView: View {
                 Task { await liveActivityManager.savePreference() }
                 onboardingComplete = true
             },
-            secondaryButton: "Start Free",
-            secondaryAction: {
-                liveActivityManager.mode = selectedMode
-                Task { await liveActivityManager.savePreference() }
-                onboardingComplete = true
-            }
+            secondaryButton: "Back",
+            secondaryAction: { withAnimation { currentPage = 6 } }
         )
     }
 
-    private func proFeatureRow(icon: String, text: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 15))
+    private func fauxLARow(name: String, model: String, task: String?) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(.white.opacity(task != nil ? 0.8 : 0.35))
+                .frame(width: 7, height: 7)
+            Text(name)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+            Text(model)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(.white.opacity(0.08), in: Capsule())
+            Spacer()
+            if let task {
+                Text(task)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+
+    private func proFeatureRow(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(theme.primaryText)
-                .frame(width: 28)
             Text(text)
                 .font(.system(size: 15))
                 .foregroundStyle(theme.secondaryText)
@@ -798,6 +894,15 @@ private struct NotificationOnboardingPage: View {
                         Task {
                             let center = UNUserNotificationCenter.current()
                             let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+                            if granted {
+                                // Send a test notification
+                                let content = UNMutableNotificationContent()
+                                content.title = "You're all set!"
+                                content.body = "Codync will notify you when sessions complete."
+                                content.sound = .default
+                                let request = UNNotificationRequest(identifier: "onboarding-test", content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false))
+                                try? await center.add(request)
+                            }
                             await MainActor.run {
                                 if granted {
                                     withAnimation(.spring(duration: 0.4)) {

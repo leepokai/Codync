@@ -1,0 +1,74 @@
+name: Release macOS
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project Codync.xcodeproj \
+            -scheme Codync \
+            -destination 'generic/platform=macOS' \
+            -archivePath build/Codync.xcarchive \
+            -quiet \
+            MARKETING_VERSION=${{ env.VERSION }} \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      - name: Create DMG
+        run: |
+          hdiutil create \
+            -volname "Codync" \
+            -srcfolder build/Codync.xcarchive/Products/Applications/Codync.app \
+            -ov -format UDZO \
+            build/Codync-macOS.dmg
+
+      - name: Create GitHub Release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            build/Codync-macOS.dmg \
+            --title "Codync ${{ github.ref_name }}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew tap
+        run: |
+          SHA=$(shasum -a 256 build/Codync-macOS.dmg | awk '{print $1}')
+          git clone https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/leepokai/homebrew-codync.git tap
+          cat > tap/Casks/codync.rb << RUBY
+          cask "codync" do
+            version "${{ env.VERSION }}"
+            sha256 "${SHA}"
+
+            url "https://github.com/leepokai/CodePulse/releases/download/v#{version}/Codync-macOS.dmg"
+            name "Codync"
+            desc "Real-time Claude Code session monitor for macOS menu bar"
+            homepage "https://codync.dev"
+
+            app "Codync.app"
+
+            zap trash: [
+              "~/Library/Preferences/com.pokai.Codync.plist",
+              "~/.codync",
+            ]
+          end
+          RUBY
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update Codync to ${{ env.VERSION }}" || exit 0
+          git push

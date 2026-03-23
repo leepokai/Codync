@@ -11,7 +11,7 @@ struct IOSOnboardingView: View {
     @State private var iCloudStatus: ICloudStatus = .checking
     @State private var selectedMode: LiveActivityMode = .overall
 
-    private let totalPages = 6
+    private let totalPages = 7
 
     var body: some View {
         ZStack {
@@ -23,7 +23,8 @@ struct IOSOnboardingView: View {
                 iCloudPage.tag(2)
                 notificationPage.tag(3)
                 modePage.tag(4)
-                proPage.tag(5)
+                primarySessionPage.tag(5)
+                proPage.tag(6)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut(duration: 0.3), value: currentPage)
@@ -77,65 +78,62 @@ struct IOSOnboardingView: View {
             content: {
                 Spacer()
 
-                // Mac mockup with notch
+                // Mac mockup with notch — 1:1 replica of macOS menu bar
                 VStack(spacing: 0) {
                     ZStack(alignment: .top) {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(Color(white: 0.12))
 
                         VStack(spacing: 0) {
-                            // macOS menu bar with notch
-                            HStack(spacing: 0) {
-                                // Left menu items
-                                HStack(spacing: 6) {
-                                    Image(systemName: "apple.logo")
-                                        .font(.system(size: 10))
-                                    Text("Finder")
-                                        .font(.system(size: 9, weight: .semibold))
-                                    Text("File")
-                                        .font(.system(size: 9))
-                                    Text("Edit")
-                                        .font(.system(size: 9))
-                                }
-                                .foregroundStyle(.white.opacity(0.6))
-                                .padding(.leading, 10)
+                            // macOS menu bar
+                            ZStack(alignment: .top) {
+                                // Menu bar background — translucent like real macOS
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.22, green: 0.38, blue: 0.58),
+                                        Color(red: 0.28, green: 0.45, blue: 0.65)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(height: 24)
 
-                                Spacer()
-
-                                // Notch — centered
-                                RoundedRectangle(cornerRadius: 0, style: .continuous)
-                                    .fill(.black)
-                                    .frame(width: 60, height: 16)
+                                // Notch with Codync icon inside
+                                HStack(spacing: 0) {
+                                    Spacer()
+                                    HStack(spacing: 0) {
+                                        Spacer().frame(width: 50)
+                                        Image("CodyncIcon")
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fit)
+                                            .frame(width: 13, height: 13)
+                                            .foregroundStyle(.white.opacity(0.9))
+                                            .padding(.trailing, 8)
+                                    }
+                                    .frame(height: 20)
+                                    .background(.black)
                                     .clipShape(
                                         .rect(
                                             topLeadingRadius: 0,
-                                            bottomLeadingRadius: 8,
-                                            bottomTrailingRadius: 8,
+                                            bottomLeadingRadius: 10,
+                                            bottomTrailingRadius: 10,
                                             topTrailingRadius: 0
                                         )
                                     )
-                                    .offset(y: -4)
-
-                                Spacer()
-
-                                // Right menu items — Codync icon separated from notch
-                                HStack(spacing: 5) {
-                                    Image("CodyncIcon")
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 11, height: 11)
-                                    Text("2")
-                                        .font(.system(size: 8, weight: .medium))
-                                    Image(systemName: "wifi")
-                                        .font(.system(size: 8))
-                                    Image(systemName: "battery.75")
-                                        .font(.system(size: 8))
+                                    Spacer()
                                 }
-                                .foregroundStyle(.white.opacity(0.6))
-                                .padding(.trailing, 10)
+                                .frame(height: 24, alignment: .top)
+                                .offset(x: 15)
                             }
-                            .frame(height: 22)
-                            .background(.white.opacity(0.06))
+                            .frame(height: 24)
+                            .clipShape(
+                                .rect(
+                                    topLeadingRadius: 12,
+                                    bottomLeadingRadius: 0,
+                                    bottomTrailingRadius: 0,
+                                    topTrailingRadius: 12
+                                )
+                            )
 
                             Spacer().frame(height: 8)
 
@@ -389,7 +387,116 @@ struct IOSOnboardingView: View {
         )
     }
 
-    // MARK: - Page 6: Pro Upsell
+    // MARK: - Page 6: Primary Session
+
+    private var primarySessionPage: some View {
+        OnboardingPage(
+            theme: theme,
+            content: {
+                Spacer()
+
+                // Faux session list with primary indicator
+                VStack(spacing: 0) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(theme.cardBackground)
+
+                        VStack(spacing: 2) {
+                            fauxSessionRow(name: "Codync", model: "Opus", isPrimary: true, isSelected: true)
+                            fauxSessionRow(name: "MyApp", model: "Sonnet", isPrimary: false, isSelected: false)
+                            fauxSessionRow(name: "Backend", model: "Haiku", isPrimary: false, isSelected: false)
+                        }
+                        .padding(10)
+                    }
+                    .frame(height: 150)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(theme.border, lineWidth: 1)
+                    )
+                }
+                .padding(.horizontal, 40)
+
+                Spacer().frame(height: 36)
+
+                Text("Primary Session")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundStyle(theme.primaryText)
+
+                Spacer().frame(height: 12)
+
+                Text("Tap the circle on the right to set\nyour primary session.")
+                    .multilineTextAlignment(.center)
+                    .font(.system(size: 17))
+                    .foregroundStyle(theme.secondaryText)
+                    .lineSpacing(4)
+
+                Spacer().frame(height: 16)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(theme.primaryText)
+                            .frame(width: 8, height: 8)
+                        Text("Shown first in Dynamic Island and Lock Screen")
+                            .font(.system(size: 14))
+                            .foregroundStyle(theme.secondaryText)
+                    }
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(theme.primaryText)
+                            .frame(width: 8, height: 8)
+                        Text("Highlighted in the session list on Mac and iPhone")
+                            .font(.system(size: 14))
+                            .foregroundStyle(theme.secondaryText)
+                    }
+                }
+                .padding(.horizontal, 32)
+
+                Spacer()
+            },
+            primaryButton: "Continue",
+            primaryAction: { withAnimation { currentPage = 6 } },
+            secondaryButton: "Back",
+            secondaryAction: { withAnimation { currentPage = 4 } }
+        )
+    }
+
+    private func fauxSessionRow(name: String, model: String, isPrimary: Bool, isSelected: Bool) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(theme.primaryText.opacity(isPrimary ? 1 : 0.4))
+                .frame(width: 7, height: 7)
+
+            Text(name)
+                .font(.system(size: 14, weight: isPrimary ? .semibold : .regular))
+                .foregroundStyle(theme.primaryText)
+
+            Text(model)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(theme.secondaryText)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(theme.primaryText.opacity(0.08), in: Capsule())
+
+            Spacer()
+
+            // Primary indicator circle
+            Circle()
+                .fill(isSelected ? theme.primaryText : theme.tertiaryText.opacity(0.3))
+                .frame(width: isSelected ? 8 : 6, height: isSelected ? 8 : 6)
+                .frame(width: 24, height: 24)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            isPrimary
+                ? RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(theme.primaryText.opacity(0.06))
+                : nil
+        )
+    }
+
+    // MARK: - Page 7: Pro Upsell
 
     private var proPage: some View {
         OnboardingPage(

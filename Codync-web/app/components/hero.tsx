@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import WaitlistForm from "../waitlist-form";
 
 export default function Hero() {
   return (
@@ -49,6 +50,15 @@ export default function Hero() {
           </svg>
           Open Source
         </motion.a>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.38 }}
+          className="mt-6"
+        >
+          <WaitlistForm />
+        </motion.div>
 
         <motion.div
           initial={{ opacity: 0 }}

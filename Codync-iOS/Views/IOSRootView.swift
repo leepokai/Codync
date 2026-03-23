@@ -6,7 +6,8 @@ struct IOSRootView: View {
     @ObservedObject var liveActivityManager: LiveActivityManager
     @ObservedObject var primarySessionManager: PrimarySessionManager
     @AppStorage("codync_onboardingComplete") private var onboardingComplete = false
-    @AppStorage("codync_darkMode") private var isDarkMode = true
+    @AppStorage("codync_darkMode") private var storedDarkMode = true
+    @State private var isDarkMode = true
     @State private var displayedSessions: [SessionState] = []
     @State private var reorderTimer: Timer?
     @State private var showSplash = true
@@ -29,6 +30,12 @@ struct IOSRootView: View {
         }
         .environment(\.theme, CodyncTheme(isDark: isDarkMode))
         .preferredColorScheme(isDarkMode ? .dark : .light)
+        .onAppear { isDarkMode = storedDarkMode }
+        .onChange(of: storedDarkMode) { _, newValue in
+            withAnimation(.easeInOut(duration: 0.4)) {
+                isDarkMode = newValue
+            }
+        }
         .onChange(of: receiver.sessions) { _, sessions in
             liveActivityManager.userPrimarySessionId = primarySessionManager.primarySessionId
             liveActivityManager.updateSessions(sessions)

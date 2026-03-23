@@ -1,4 +1,3 @@
-import WaitlistForm from "./waitlist-form";
 import Hero from "./components/hero";
 import DeviceShowcase from "./components/device-showcase";
 import Features from "./components/features";
@@ -15,10 +14,8 @@ export default function Home() {
       {/* Features */}
       <Features />
 
-      {/* Waitlist + CTA */}
+      {/* CTA */}
       <section className="flex flex-col items-center gap-8 px-6 py-20">
-        <WaitlistForm />
-
         <div className="flex flex-col items-center gap-3">
           <a
             href="https://apps.apple.com/app/id6760984418"

@@ -3,6 +3,7 @@ import CodyncShared
 
 struct SessionRowView: View {
     let session: SessionState
+    var isPrimary: Bool = false
     let onSelect: () -> Void
     @Environment(\.theme) private var theme
     @State private var isHovered = false
@@ -55,6 +56,7 @@ struct SessionRowView: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(isPressed ? theme.pressedBackground
                           : isHovered ? theme.hoverBackground
+                          : isPrimary ? theme.primaryText.opacity(0.06)
                           : Color.clear)
             )
             .scaleEffect(isPressed ? 0.98 : 1.0)

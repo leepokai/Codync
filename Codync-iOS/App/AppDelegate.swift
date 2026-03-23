@@ -84,6 +84,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any]
     ) async -> UIBackgroundFetchResult {
+        // Pro users rely on APNs Worker push — skip silent push to isolate testing
+        if PremiumManager.shared.isPro {
+            logger.info("CloudKit silent push skipped (Pro uses APNs Worker)")
+            return .noData
+        }
+
         let notification = CKNotification(fromRemoteNotificationDictionary: userInfo)
         let subID = notification?.subscriptionID
         guard subID == "session-zone-changes" || subID == "session-changes" else {

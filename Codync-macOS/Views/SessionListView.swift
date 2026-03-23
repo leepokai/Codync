@@ -65,7 +65,11 @@ struct SessionListView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 2) {
                         ForEach(displayedSessions) { session in
-                            SessionRowView(session: session) {
+                            SessionRowView(
+                                session: session,
+                                isPrimary: stateManager.primarySessionId != nil
+                                    && session.sessionId == stateManager.primarySessionId
+                            ) {
                                 withAnimation(.easeInOut(duration: 0.2)) { selectedSession = session }
                             }
                         }

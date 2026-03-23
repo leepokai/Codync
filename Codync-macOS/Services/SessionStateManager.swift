@@ -8,6 +8,7 @@ private let logger = Logger(subsystem: "com.pokai.Codync", category: "StateManag
 @MainActor
 final class SessionStateManager: ObservableObject {
     @Published var sessions: [SessionState] = []
+    @Published var primarySessionId: String?
 
     private let scanner: SessionScanner
     let transcriptWatcher = TranscriptWatcher()
@@ -125,8 +126,11 @@ final class SessionStateManager: ObservableObject {
             }
         }
 
-        // Sort: working first, then by most recent activity
+        // Sort: primary first, then working, then by most recent activity
+        let pid = primarySessionId
         let newSessions = updated.sorted { a, b in
+            if a.sessionId == pid { return true }
+            if b.sessionId == pid { return false }
             let aWeight = a.status == .working ? 0 : a.status == .needsInput ? 1 : 2
             let bWeight = b.status == .working ? 0 : b.status == .needsInput ? 1 : 2
             if aWeight != bWeight { return aWeight < bWeight }

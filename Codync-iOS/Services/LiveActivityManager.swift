@@ -249,13 +249,24 @@ final class LiveActivityManager: ObservableObject {
             lastOverallState = nil
         }
 
-        // Pro upgrade: if we have an activity without push token, recreate it
-        if let activity = overallActivity, PremiumManager.shared.isPro, activity.pushToken == nil {
-            logger.info("Pro active but Overall Activity has no push token — recreating")
-            Task { await activity.end(nil, dismissalPolicy: .immediate) }
-            overallActivity = nil
-            lastOverallState = nil
-            pushTokenTasks["__overall__"]?.cancel()
+        // Pro: ensure we're observing push token for existing activity
+        if let activity = overallActivity, PremiumManager.shared.isPro {
+            if activity.pushToken == nil && pushTokenTasks["__overall__"] == nil {
+                // Activity exists but wasn't created with pushType: .token — recreate
+                logger.info("Pro active but Overall Activity has no push token — recreating")
+                Task { await activity.end(nil, dismissalPolicy: .immediate) }
+                overallActivity = nil
+                lastOverallState = nil
+            } else if pushTokenTasks["__overall__"] == nil {
+                // Activity has token but we're not observing — start observing + save existing token
+                logger.info("Resuming push token observation for existing Overall Activity")
+                observeOverallPushToken(activity: activity)
+                if let token = activity.pushToken {
+                    let hex = token.map { String(format: "%02x", $0) }.joined()
+                    logger.info("Existing Overall push token: \(hex.prefix(8))...")
+                    Task { await savePushToken(sessionId: "__overall__", tokenHex: hex) }
+                }
+            }
         }
 
         let active = sortedSessions(sessions.filter { $0.status != .completed })
@@ -476,11 +487,17 @@ final class LiveActivityManager: ObservableObject {
             recordName: "pushtoken-\(sessionId)",
             zoneID: CloudKitManager.zoneID
         )
-        let record = CKRecord(recordType: "PushToken", recordID: recordID)
-        record["sessionId"] = sessionId as CKRecordValue
-        record["token"] = tokenHex as CKRecordValue
-        record["updatedAt"] = Date() as CKRecordValue
         do {
+            // Fetch existing record or create new one (upsert)
+            let record: CKRecord
+            do {
+                record = try await CloudKitManager.shared.database.record(for: recordID)
+            } catch {
+                record = CKRecord(recordType: "PushToken", recordID: recordID)
+            }
+            record["sessionId"] = sessionId as CKRecordValue
+            record["token"] = tokenHex as CKRecordValue
+            record["updatedAt"] = Date() as CKRecordValue
             _ = try await CloudKitManager.shared.database.save(record)
             logger.info("Saved push token to CloudKit for \(sessionId)")
         } catch {

@@ -38,6 +38,44 @@ final class APNsPushService {
         await post(payload: payload, label: "update \(session.sessionId)")
     }
 
+    func sendOverallUpdate(sessions: [SessionState], primarySessionId: String?) async {
+        guard let tokenHex = pushTokens["__overall__"] else {
+            logger.debug("SKIP overall update — no push token")
+            return
+        }
+
+        let summaries: [[String: Any]] = sessions.prefix(4).map { session in
+            let liveDuration = max(session.durationSec, Int(Date().timeIntervalSince(session.startedAt)))
+            var s: [String: Any] = [
+                "sessionId": session.sessionId,
+                "projectName": session.projectName,
+                "status": session.status.rawValue,
+                "model": session.model,
+                "costUSD": session.costUSD,
+                "durationSec": liveDuration,
+                "completedCount": session.completedTaskCount,
+                "totalCount": session.totalTaskCount
+            ]
+            if let task = session.currentTask { s["currentTask"] = task }
+            return s
+        }
+
+        let contentState: [String: Any] = [
+            "sessions": summaries,
+            "primarySessionId": primarySessionId as Any,
+            "totalCost": sessions.reduce(0) { $0 + $1.costUSD },
+            "isDark": true
+        ]
+
+        let payload: [String: Any] = [
+            "pushToken": tokenHex,
+            "event": "update",
+            "contentState": contentState
+        ]
+        logger.info("Sending overall update (\(sessions.count) sessions)")
+        await post(payload: payload, label: "overall-update")
+    }
+
     func sendEnd(sessionId: String) async {
         guard let tokenHex = pushTokens[sessionId] else { return }
 

@@ -1,0 +1,55 @@
+{
+  "identifier" : "CodyncStore",
+  "type" : "Default",
+  "version" : 2,
+  "products" : [
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : true,
+      "internalID" : "1",
+      "localizations" : [
+        {
+          "description" : "Always-on Live Activity updates",
+          "displayName" : "Codync Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.pokai.Codync.ios.pro.monthly",
+      "referenceName" : "Pro Monthly",
+      "subscriptionGroupID" : "21991861",
+      "type" : "RecurringSubscription",
+      "subscription" : {
+        "subscriptionPeriod" : "P1M",
+        "groupNumber" : 1,
+        "introductoryOffer" : null
+      }
+    }
+  ],
+  "subscriptionGroups" : [
+    {
+      "id" : "21991861",
+      "localizations" : [
+        {
+          "description" : "",
+          "displayName" : "Codync Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Codync Pro"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6760984418",
+    "_developerTeamID" : "7FUM8A8H72",
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      }
+    ]
+  }
+}

@@ -63,6 +63,6 @@ struct TabRootView: View {
                     .frame(width: iconSize, height: iconSize)
             }
         }
-        .tint(.white)
+        .tint(.primary)
     }
 }

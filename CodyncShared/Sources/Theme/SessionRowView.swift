@@ -9,10 +9,13 @@ public struct OverallSessionRow: View {
     public let status: SessionStatus
     public let isPrimary: Bool
     public let fg: Color
+    public var completedCount: Int = 0
+    public var totalCount: Int = 0
 
     public init(
         projectName: String, model: String, currentTask: String?,
-        status: SessionStatus, isPrimary: Bool, fg: Color
+        status: SessionStatus, isPrimary: Bool, fg: Color,
+        completedCount: Int = 0, totalCount: Int = 0
     ) {
         self.projectName = projectName
         self.model = model
@@ -20,13 +23,27 @@ public struct OverallSessionRow: View {
         self.status = status
         self.isPrimary = isPrimary
         self.fg = fg
+        self.completedCount = completedCount
+        self.totalCount = totalCount
     }
 
     public var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 7, height: 7)
+            if totalCount > 0 {
+                SegmentedRingView(
+                    completedCount: completedCount,
+                    totalCount: totalCount,
+                    isWorking: status == .working,
+                    fg: fg,
+                    lineWidth: 1.5,
+                    gapDegrees: 24
+                )
+                .frame(width: 12, height: 12)
+            } else {
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 7, height: 7)
+            }
 
             Text(projectName)
                 .font(.system(size: 13, weight: isPrimary ? .semibold : .medium))

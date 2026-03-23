@@ -27,7 +27,7 @@ export default function Home() {
             Download on the App Store
           </a>
           <p className="text-sm text-neutral-500">
-            Free with optional Pro subscription
+            Free &amp; open source. No account needed — just download and go.
           </p>
         </div>
       </section>

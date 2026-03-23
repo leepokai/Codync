@@ -93,6 +93,7 @@
 		22479FA0953120F3B50A1AF3 /* CloudKitSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitSync.swift; sourceTree = "<group>"; };
 		3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3B652652FD106495A82565C8 /* CodyncLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CodyncLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		XC0001SHARED00000000000000 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		3BCD1168005B123A7F9ACB37 /* CodyncLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncLiveActivityBundle.swift; sourceTree = "<group>"; };
 		3EB0548BFADFAFC3616A8C4B /* Codync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Codync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		42BAF66F7C50D732B7E69333 /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
@@ -532,7 +533,7 @@
 		05A665239A83C10C704662CC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 2;
+
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CodyncLiveActivity/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CodyncLiveActivity;
@@ -543,7 +544,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
 				PRODUCT_NAME = CodyncLiveActivity;
 				SDKROOT = iphoneos;
@@ -610,6 +611,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0.0;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -685,6 +688,7 @@
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -694,8 +698,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				CURRENT_PROJECT_VERSION = 2;
-				MARKETING_VERSION = 1.0.0;
+
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
 				PRODUCT_NAME = Codync;
 				SDKROOT = iphoneos;
@@ -716,6 +720,7 @@
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -725,8 +730,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				CURRENT_PROJECT_VERSION = 2;
-				MARKETING_VERSION = 1.0.0;
+
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
 				PRODUCT_NAME = Codync;
 				SDKROOT = iphoneos;
@@ -738,7 +743,7 @@
 		BBB96964FECC01CD9E90CE59 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 2;
+
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CodyncLiveActivity/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CodyncLiveActivity;
@@ -749,7 +754,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
 				PRODUCT_NAME = CodyncLiveActivity;
 				SDKROOT = iphoneos;
@@ -763,6 +768,8 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				MARKETING_VERSION = 1.0.0;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
 				CLANG_CXX_LIBRARY = "libc++";

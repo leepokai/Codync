@@ -70,9 +70,9 @@ const features = [
         <path d="M12 9.5V7M12 17v-2.5" strokeLinecap="round" />
       </svg>
     ),
-    title: "Privacy First",
+    title: "Zero Configuration",
     description:
-      "No accounts, no analytics, no tracking. Code never leaves your devices. Everything stays in iCloud.",
+      "One-click install, no login, no account. No analytics, no tracking. Your code never leaves your devices.",
   },
 ];
 

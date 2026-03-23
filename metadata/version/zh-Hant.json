@@ -1,0 +1,7 @@
+{
+  "description": "在 iPhone 上即時監控你的 Claude Code 工作階段。\n\nCodync 是專為使用 Mac 上 Claude Code 的開發者打造的隨身監控 app。即時掌握 AI 程式開發的狀態、費用、任務和上下文，透過 iCloud 自動同步。\n\n即時動態與動態島\n無需解鎖手機，直接在鎖定畫面和動態島查看工作階段狀態。提供兩種顯示模式：\n• 總覽模式 — 一覽所有工作階段的統一儀表板\n• 個別模式 — 每個工作階段獨立顯示\n\n即時工作階段監控\n• 追蹤狀態：運作中、閒置、等待輸入、已完成、錯誤\n• 查看正在使用的 AI 模型（Opus、Sonnet、Haiku）\n• 即時監控 token 費用\n• 檢視任務進度和當前工具活動\n• 查看上下文視窗使用百分比\n\niCloud 無縫同步\n零設定。Codync 透過 iCloud 自動從 Mac 同步所有工作階段資料。登入即可使用。\n\n主要工作階段控制\n將最重要的工作階段釘選為「主要」，在即時動態和通知中優先顯示。\n\nCODYNC PRO（$0.99/月）\n• 背景推播更新 — app 關閉時即時動態仍保持更新\n• 動態島常駐 — 在鎖定畫面持續顯示工作階段狀態\n• 即時 APNs 推送 — 零延遲即時更新\n\n專為執行長時間 AI 程式開發任務、希望隨時掌握進度的開發者而設計。",
+  "keywords": "claude,code,ai,工作階段,監控,開發者,即時動態,程式,助手,費用",
+  "promotionalText": "透過即時動態、動態島和即時推播通知，即時監控 Claude Code 工作階段。離開 Mac 也能隨時掌握進度。",
+  "supportUrl": "mailto:kevin2005ha@gmail.com",
+  "whatsNew": "首次發佈。"
+}

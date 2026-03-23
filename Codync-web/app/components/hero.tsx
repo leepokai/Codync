@@ -32,7 +32,7 @@ export default function Hero() {
         <p className="mt-4 text-lg sm:text-xl text-neutral-400 max-w-md leading-relaxed">
           Monitor your Claude Code sessions in real-time.
           <br />
-          <span className="text-neutral-500">iPhone. Mac. Dynamic Island.</span>
+          <span className="text-neutral-500">Zero config. One-click install. No login required.</span>
         </p>
 
         <motion.a

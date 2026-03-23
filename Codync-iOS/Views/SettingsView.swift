@@ -28,6 +28,26 @@ struct SettingsView: View {
                     Text("Appearance")
                 }
 
+                // MARK: - Notifications
+                Section {
+                    Button {
+                        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        HStack {
+                            Label("Push Notifications", systemImage: "bell.badge")
+                            Spacer()
+                            Image(systemName: "arrow.up.forward")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .tint(.primary)
+                } header: {
+                    Text("Notifications")
+                }
+
                 // MARK: - Support
                 Section {
                     Link(destination: URL(string: "mailto:kevin2005ha@gmail.com")!) {
@@ -50,6 +70,13 @@ struct SettingsView: View {
                         Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
                             .foregroundStyle(.secondary)
                     }
+                    Button {
+                        UserDefaults.standard.set(false, forKey: "codync_onboardingComplete")
+                        dismiss()
+                    } label: {
+                        Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
+                    }
+                    .tint(.secondary)
                 } header: {
                     Text("About")
                 }
@@ -74,7 +101,11 @@ struct SettingsView: View {
     private var subscriptionRow: some View {
         let premium = PremiumManager.shared
         Button {
-            if !premium.isPro {
+            if premium.isPro {
+                if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
+                    UIApplication.shared.open(url)
+                }
+            } else {
                 showPaywall = true
             }
         } label: {
@@ -82,14 +113,13 @@ struct SettingsView: View {
                 Label {
                     Text("Codync Pro")
                 } icon: {
-                    Image(systemName: premium.isPro ? "crown.fill" : "crown")
-                        .foregroundStyle(premium.isPro ? .yellow : .secondary)
+                    Image(systemName: premium.isPro ? "checkmark.seal.fill" : "seal")
                 }
                 Spacer()
                 if premium.isPro {
-                    Text("Active")
-                        .font(.subheadline)
-                        .foregroundStyle(.green)
+                    Image(systemName: "arrow.up.forward")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 } else {
                     Text("$0.99/mo")
                         .font(.subheadline)

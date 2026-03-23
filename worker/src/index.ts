@@ -11,6 +11,10 @@ interface PushRequest {
   pushToken: string;
   event?: "update" | "end";
   contentState?: Record<string, unknown>;
+  // Alert push fields
+  type?: "liveactivity" | "alert";
+  title?: string;
+  body?: string;
 }
 
 export default {
@@ -35,11 +39,44 @@ export default {
       return new Response("Missing pushToken", { status: 400 });
     }
 
-    const event = body.event ?? "update";
-    const bundleId = "com.pokai.Codync.ios";
-
-    // .dev.vars escapes newlines as literal \n — restore them
     const signingKey = env.APNS_SIGNING_KEY.replace(/\\n/g, "\n");
+    const bundleId = "com.pokai.Codync.ios";
+    const pushType = body.type ?? "liveactivity";
+
+    if (pushType === "alert") {
+      // Regular alert notification (e.g., session completed)
+      const client = new ApnsClient({
+        team: env.APNS_TEAM_ID,
+        keyId: env.APNS_KEY_ID,
+        signingKey,
+        defaultTopic: bundleId,
+        host: "api.sandbox.push.apple.com",
+      });
+
+      const notification = new Notification(body.pushToken, {
+        type: PushType.alert,
+        priority: Priority.immediate,
+        aps: {
+          alert: {
+            title: body.title ?? "Codync",
+            body: body.body ?? "",
+          },
+          sound: "default",
+        },
+      });
+
+      try {
+        await client.send(notification);
+        return Response.json({ success: true });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("APNs alert error:", message);
+        return Response.json({ success: false, error: message }, { status: 502 });
+      }
+    }
+
+    // Live Activity push
+    const event = body.event ?? "update";
 
     const client = new ApnsClient({
       team: env.APNS_TEAM_ID,

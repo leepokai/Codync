@@ -36,9 +36,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             liveActivityManager.updateSessions(receiver.sessions)
             primarySessionManager.autoSelect(from: receiver.sessions)
 
-            let center = UNUserNotificationCenter.current()
-            _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
-
             startForegroundPolling()
         }
         return true
@@ -69,8 +66,30 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        let hex = deviceToken.prefix(4).map { String(format: "%02x", $0) }.joined()
-        logger.info("APNs device token registered: \(hex)...")
+        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        logger.info("APNs device token registered: \(hex.prefix(8))...")
+        // Save device token to CloudKit for Pro alert push (session complete notifications)
+        Task {
+            guard PremiumManager.shared.isPro else { return }
+            let recordID = CKRecord.ID(
+                recordName: "device-push-token",
+                zoneID: CloudKitManager.zoneID
+            )
+            do {
+                let record: CKRecord
+                do {
+                    record = try await CloudKitManager.shared.database.record(for: recordID)
+                } catch {
+                    record = CKRecord(recordType: "DeviceToken", recordID: recordID)
+                }
+                record["token"] = hex as CKRecordValue
+                record["updatedAt"] = Date() as CKRecordValue
+                _ = try await CloudKitManager.shared.database.save(record)
+                logger.info("Saved device push token to CloudKit")
+            } catch {
+                logger.error("Failed to save device push token: \(error.localizedDescription)")
+            }
+        }
     }
 
     func application(

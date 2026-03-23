@@ -41,26 +41,10 @@ private struct MinimalDotView: View {
     private var needsPulse: Bool { status == .needsInput || status == .error }
 
     var body: some View {
-        ZStack {
-            if needsPulse {
-                Circle()
-                    .fill(dotColor.opacity(0.3))
-                    .frame(width: 16, height: 16)
-                    .scaleEffect(isPulsing ? 1.4 : 0.8)
-                    .opacity(isPulsing ? 0 : 0.6)
-            }
-            Circle()
-                .fill(dotColor)
-                .frame(width: 9, height: 9)
-                .scaleEffect(isPulsing && needsPulse ? 1.15 : 1.0)
-        }
-        .frame(width: 14, height: 14)
-        .animation(
-            needsPulse ? .easeInOut(duration: 1.5).repeatForever(autoreverses: true) : .default,
-            value: isPulsing
-        )
-        .onAppear { if needsPulse { isPulsing = true } }
-        .onChange(of: status) { _, _ in withAnimation { isPulsing = needsPulse } }
+        Circle()
+            .fill(dotColor)
+            .frame(width: 7, height: 7)
+            .frame(width: 14, height: 14)
     }
 
     private var dotColor: Color {

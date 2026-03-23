@@ -7,6 +7,7 @@ struct IOSSessionListView: View {
     @ObservedObject var primarySessionManager: PrimarySessionManager
     @Environment(\.theme) private var theme
     @State private var showSettings = false
+    @State private var showSettingsSheet = false
 
     var body: some View {
         ScrollView {
@@ -57,7 +58,21 @@ struct IOSSessionListView: View {
                 .buttonStyle(.plain)
             }
         }
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarColorScheme(theme.isDark ? .dark : .light, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showSettingsSheet = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(theme.secondaryText)
+                }
+            }
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            SettingsView()
+        }
     }
 
     @ViewBuilder

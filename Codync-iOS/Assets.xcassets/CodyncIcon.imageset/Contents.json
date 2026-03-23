@@ -1,17 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "codync-icon.png",
+      "filename" : "image.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "codync-icon@2x.png",
+      "filename" : "image 1.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "codync-icon@3x.png",
+      "filename" : "image 2.png",
       "idiom" : "universal",
       "scale" : "3x"
     }

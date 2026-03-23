@@ -88,7 +88,10 @@ final class MenuBarController: NSObject {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "waveform.path", accessibilityDescription: "Codync")
+            let icon = NSImage(named: "CodyncIcon")
+            icon?.size = NSSize(width: 18, height: 18)
+            icon?.isTemplate = true
+            button.image = icon
             button.action = #selector(togglePanel)
             button.target = self
         }

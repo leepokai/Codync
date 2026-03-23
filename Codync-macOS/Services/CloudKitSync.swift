@@ -87,6 +87,11 @@ final class CloudKitSync {
             }
 
             do {
+                // Send end push BEFORE deleting (tokens still needed)
+                for id in toDelete {
+                    await APNsPushService.shared.sendEnd(sessionId: id)
+                }
+
                 if !toDelete.isEmpty {
                     Self.log("delete \(toDelete.count) sessions")
                     try await CloudKitManager.shared.deleteByIds(toDelete)
@@ -104,6 +109,19 @@ final class CloudKitSync {
                     for session in toSave {
                         previousStates[session.sessionId] = session
                     }
+
+                    // Push to APNs via Worker relay for Live Activity background updates
+                    await APNsPushService.shared.fetchPushTokens()
+                    // Individual mode: per-session push
+                    for session in toSave {
+                        await APNsPushService.shared.sendUpdate(session: session)
+                    }
+                    // Overall mode: send all active sessions
+                    let allActive = sessions.filter { $0.status != .completed }
+                    await APNsPushService.shared.sendOverallUpdate(
+                        sessions: allActive,
+                        primarySessionId: allActive.first(where: { $0.status == .working })?.sessionId
+                    )
                 }
             } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {
                 let retryAfter = error.retryAfterSeconds ?? 600

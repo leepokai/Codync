@@ -27,6 +27,7 @@ final class LiveActivityManager: ObservableObject {
     private var overallActivity: Activity<OverallAttributes>?
     private var lastOverallState: OverallAttributes.ContentState?
     private var overallTrackedIds: Set<String> = []
+    private var pushTokenTasks: [String: Task<Void, Never>] = [:]
     @AppStorage("codync_darkMode") private var isDarkMode = true
 
     private static let maxActivities = 4
@@ -248,6 +249,15 @@ final class LiveActivityManager: ObservableObject {
             lastOverallState = nil
         }
 
+        // Pro upgrade: if we have an activity without push token, recreate it
+        if let activity = overallActivity, PremiumManager.shared.isPro, activity.pushToken == nil {
+            logger.info("Pro active but Overall Activity has no push token — recreating")
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+            overallActivity = nil
+            lastOverallState = nil
+            pushTokenTasks["__overall__"]?.cancel()
+        }
+
         let active = sortedSessions(sessions.filter { $0.status != .completed })
             .prefix(maxOverallSessions)
 
@@ -286,12 +296,18 @@ final class LiveActivityManager: ObservableObject {
 
         if overallActivity == nil {
             guard UIApplication.shared.applicationState == .active else { return }
+            let isPro = PremiumManager.shared.isPro
             do {
-                overallActivity = try Activity.request(
+                let activity = try Activity.request(
                     attributes: OverallAttributes(),
-                    content: .init(state: state, staleDate: nil)
+                    content: .init(state: state, staleDate: nil),
+                    pushType: isPro ? .token : nil
                 )
-                logger.info("Started Overall Live Activity with \(summaries.count) sessions")
+                overallActivity = activity
+                if isPro {
+                    observeOverallPushToken(activity: activity)
+                }
+                logger.info("Started Overall Live Activity with \(summaries.count) sessions (push: \(isPro))")
             } catch {
                 logger.error("Failed to start Overall Live Activity: \(error)")
             }
@@ -352,6 +368,8 @@ final class LiveActivityManager: ObservableObject {
         secondPreviousTasks.removeAll()
         graceTimers.removeAll()
         lastPushedState.removeAll()
+        pushTokenTasks.values.forEach { $0.cancel() }
+        pushTokenTasks.removeAll()
         overallActivity = nil
         lastOverallState = nil
         overallTrackedIds.removeAll()
@@ -410,17 +428,63 @@ final class LiveActivityManager: ObservableObject {
             summary: session.summary
         )
         let state = contentState(from: session)
+        let isPro = PremiumManager.shared.isPro
         do {
             let activity = try Activity.request(
                 attributes: attributes,
-                content: .init(state: state, staleDate: nil)
+                content: .init(state: state, staleDate: nil),
+                pushType: isPro ? .token : nil
             )
             activities[session.sessionId] = activity
             lastPushedState[session.sessionId] = state
             trackedSessionIds.insert(session.sessionId)
-            logger.info("Started Live Activity for \(session.sessionId)")
+            if isPro {
+                observePushToken(activity: activity, sessionId: session.sessionId)
+            }
+            logger.info("Started Live Activity for \(session.sessionId) (push: \(isPro))")
         } catch {
             logger.error("Failed to start Live Activity: \(error)")
+        }
+    }
+
+    // MARK: - Push Token Sync (Pro only)
+
+    private func observePushToken(activity: Activity<CodyncAttributes>, sessionId: String) {
+        pushTokenTasks[sessionId]?.cancel()
+        pushTokenTasks[sessionId] = Task {
+            for await token in activity.pushTokenUpdates {
+                let hex = token.map { String(format: "%02x", $0) }.joined()
+                logger.info("Push token for \(sessionId): \(hex.prefix(8))...")
+                await savePushToken(sessionId: sessionId, tokenHex: hex)
+            }
+        }
+    }
+
+    private func observeOverallPushToken(activity: Activity<OverallAttributes>) {
+        pushTokenTasks["__overall__"]?.cancel()
+        pushTokenTasks["__overall__"] = Task {
+            for await token in activity.pushTokenUpdates {
+                let hex = token.map { String(format: "%02x", $0) }.joined()
+                logger.info("Overall push token: \(hex.prefix(8))...")
+                await savePushToken(sessionId: "__overall__", tokenHex: hex)
+            }
+        }
+    }
+
+    private func savePushToken(sessionId: String, tokenHex: String) async {
+        let recordID = CKRecord.ID(
+            recordName: "pushtoken-\(sessionId)",
+            zoneID: CloudKitManager.zoneID
+        )
+        let record = CKRecord(recordType: "PushToken", recordID: recordID)
+        record["sessionId"] = sessionId as CKRecordValue
+        record["token"] = tokenHex as CKRecordValue
+        record["updatedAt"] = Date() as CKRecordValue
+        do {
+            _ = try await CloudKitManager.shared.database.save(record)
+            logger.info("Saved push token to CloudKit for \(sessionId)")
+        } catch {
+            logger.error("Failed to save push token: \(error.localizedDescription)")
         }
     }
 
@@ -460,6 +524,7 @@ final class LiveActivityManager: ObservableObject {
         guard let activity = activities.removeValue(forKey: sessionId) else { return }
         trackedSessionIds.remove(sessionId)
         lastPushedState.removeValue(forKey: sessionId)
+        pushTokenTasks.removeValue(forKey: sessionId)?.cancel()
         Task {
             await activity.end(nil, dismissalPolicy: .immediate)
         }

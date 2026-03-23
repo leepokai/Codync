@@ -15,7 +15,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        PremiumManager.shared.configure()
         application.registerForRemoteNotifications()
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                await self.receiver.fetch(source: "did-become-active", force: true)
+                self.liveActivityManager.userPrimarySessionId = self.primarySessionManager.primarySessionId
+                self.liveActivityManager.updateSessions(self.receiver.sessions)
+            }
+        }
         Task {
             async let startReceiver: () = receiver.start()
             async let loadPins: () = liveActivityManager.loadPinnedSessions()
@@ -39,7 +48,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func startForegroundPolling() {
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 await self.receiver.fetch(source: "poll", force: true)

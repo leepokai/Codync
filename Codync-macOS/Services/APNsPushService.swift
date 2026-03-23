@@ -17,7 +17,7 @@ final class APNsPushService {
     private var isFetchingTokens = false
     private var lastTokenFetch: Date = .distantPast
     private var lastPushTime: [String: Date] = [:]
-    private let pushInterval: TimeInterval = 1 // minimum seconds between pushes per token
+    private let pushInterval: TimeInterval = 2 // minimum seconds between pushes per token
 
     private init() {
         logger.info("APNs push service ready (Worker relay)")
@@ -109,7 +109,14 @@ final class APNsPushService {
             "title": "Session Complete",
             "body": "\(session.projectName) finished · \(cost)"
         ]
-        await post(payload: payload, label: "alert \(session.projectName)")
+        // Retry up to 3 times with backoff (429 from APNs rate limit)
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                try? await Task.sleep(for: .seconds(Double(attempt) * 2))
+            }
+            let success = await postWithResult(payload: payload, label: "alert \(session.projectName)")
+            if success { break }
+        }
     }
 
     // MARK: - Push Token Sync (from CloudKit)
@@ -148,6 +155,35 @@ final class APNsPushService {
     }
 
     // MARK: - HTTP
+
+    private func postWithResult(payload: [String: Any], label: String) async -> Bool {
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return false }
+        var request = URLRequest(url: workerURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiSecret)", forHTTPHeaderField: "Authorization")
+        request.httpBody = body
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse {
+                #if DEBUG
+                if http.statusCode == 200 {
+                    Self.log("APNs → \(label) ✓")
+                } else {
+                    let reason = String(data: data, encoding: .utf8) ?? ""
+                    Self.log("APNs → \(label) ✗ \(http.statusCode): \(reason)")
+                }
+                #endif
+                _ = data
+                return http.statusCode == 200
+            }
+        } catch {
+            #if DEBUG
+            Self.log("APNs → \(label) ✗ \(error.localizedDescription)")
+            #endif
+        }
+        return false
+    }
 
     private func post(payload: [String: Any], label: String) async {
         guard let body = try? JSONSerialization.data(withJSONObject: payload) else {

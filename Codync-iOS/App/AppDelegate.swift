@@ -15,7 +15,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        PremiumManager.shared.configure()
         application.registerForRemoteNotifications()
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -26,6 +25,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             }
         }
         Task {
+            PremiumManager.shared.configure()
             async let startReceiver: () = receiver.start()
             async let loadPins: () = liveActivityManager.loadPinnedSessions()
             async let loadPref: () = liveActivityManager.loadPreference()

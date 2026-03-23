@@ -12,7 +12,8 @@ final class APNsPushService {
     private let workerURL = URL(string: "https://codync-push.kevin2005ha.workers.dev")!
     private let apiSecret = "f1bf65b18870dffc6c28e69d275413e9c08b33010cb652a781106aaaaf99f329"
 
-    private var pushTokens: [String: String] = [:] // sessionId → token hex
+    private(set) var pushTokens: [String: String] = [:] // sessionId → token hex
+    var tokenCount: Int { pushTokens.count }
     private var isFetchingTokens = false
     private var lastTokenFetch: Date = .distantPast
 
@@ -89,20 +90,25 @@ final class APNsPushService {
 
     // MARK: - Push Token Sync (from CloudKit)
 
-    func fetchPushTokens() async {
+    func fetchPushTokens(sessionIds: [String] = []) async {
         guard !isFetchingTokens else { return }
-        guard Date().timeIntervalSince(lastTokenFetch) > 30 else { return }
+        guard Date().timeIntervalSince(lastTokenFetch) > 10 else { return }
         isFetchingTokens = true
-        lastTokenFetch = Date() // Update even on failure to avoid spamming
+        lastTokenFetch = Date()
         defer { isFetchingTokens = false }
 
-        let query = CKQuery(recordType: "PushToken", predicate: NSPredicate(value: true))
+        // Fetch known push token records by ID (query requires indexing; direct fetch doesn't)
+        var allIds = sessionIds
+        if !allIds.contains("__overall__") { allIds.append("__overall__") }
+
+        let recordIDs = allIds.map {
+            CKRecord.ID(recordName: "pushtoken-\($0)", zoneID: CloudKitManager.zoneID)
+        }
+
         do {
-            let (results, _) = try await CloudKitManager.shared.database.records(
-                matching: query, inZoneWith: CloudKitManager.zoneID, resultsLimit: 20
-            )
+            let recordResults = try await CloudKitManager.shared.database.records(for: recordIDs)
             var tokens: [String: String] = [:]
-            for (_, result) in results {
+            for (_, result) in recordResults {
                 guard case .success(let record) = result,
                       let sessionId = record["sessionId"] as? String,
                       let tokenHex = record["token"] as? String else { continue }
@@ -110,13 +116,8 @@ final class APNsPushService {
             }
             if tokens != pushTokens {
                 pushTokens = tokens
-                if !tokens.isEmpty {
-                    logger.info("Fetched \(tokens.count) push tokens from CloudKit")
-                }
+                logger.info("Fetched \(tokens.count) push tokens from CloudKit")
             }
-        } catch let error as CKError where error.code == .unknownItem {
-            // PushToken record type doesn't exist yet — iOS hasn't saved any tokens
-            logger.debug("No PushToken record type in CloudKit yet")
         } catch {
             logger.warning("Failed to fetch push tokens: \(error)")
         }

@@ -111,7 +111,8 @@ final class CloudKitSync {
                     }
 
                     // Push to APNs via Worker relay for Live Activity background updates
-                    await APNsPushService.shared.fetchPushTokens()
+                    await APNsPushService.shared.fetchPushTokens(sessionIds: sessions.map(\.sessionId))
+                    Self.log("APNs tokens: \(APNsPushService.shared.tokenCount)")
                     // Individual mode: per-session push
                     for session in toSave {
                         await APNsPushService.shared.sendUpdate(session: session)

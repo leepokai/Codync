@@ -16,6 +16,10 @@ export const metadata: Metadata = {
   title: "Codync — Real-time Claude Code Monitor",
   description:
     "Monitor your Claude Code sessions in real-time on iPhone and Mac. Live Activity on Dynamic Island, Lock Screen, and macOS menu bar.",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({

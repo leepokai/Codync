@@ -117,11 +117,16 @@ final class CloudKitSync {
                     for session in toSave {
                         await APNsPushService.shared.sendUpdate(session: session)
                     }
-                    // Overall mode: send all active sessions
+                    // Overall mode: send all active sessions with user's primary selection
                     let allActive = sessions.filter { $0.status != .completed }
+                    let primary = await CloudKitManager.shared.fetchPrimarySession()
+                    let primaryId = primary.sessionId
+                        ?? allActive.first(where: { $0.status == .working })?.sessionId
+                    // Sync primary to macOS panel sorting
+                    stateManager.primarySessionId = primaryId
                     await APNsPushService.shared.sendOverallUpdate(
                         sessions: allActive,
-                        primarySessionId: allActive.first(where: { $0.status == .working })?.sessionId
+                        primarySessionId: primaryId
                     )
                 }
             } catch let error as CKError where error.code == .quotaExceeded || error.code == .requestRateLimited {

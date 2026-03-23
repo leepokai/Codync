@@ -127,7 +127,7 @@ final class APNsPushService {
 
     private func post(payload: [String: Any], label: String) async {
         guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
-            logger.error("Failed to serialize payload for \(label)")
+            Self.log("APNs FAIL serialize \(label)")
             return
         }
 
@@ -141,15 +141,24 @@ final class APNsPushService {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse {
                 if http.statusCode == 200 {
-                    logger.debug("Worker OK for \(label)")
+                    Self.log("APNs → \(label) ✓")
                 } else {
                     let reason = String(data: data, encoding: .utf8) ?? ""
-                    logger.warning("Worker \(http.statusCode) for \(label): \(reason)")
+                    Self.log("APNs → \(label) ✗ \(http.statusCode): \(reason)")
                 }
             }
         } catch {
-            logger.error("Worker POST failed for \(label): \(error.localizedDescription)")
+            Self.log("APNs → \(label) ✗ \(error.localizedDescription)")
         }
+    }
+
+    private static func log(_ msg: String) {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codync/sync.log")
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm:ss"
+        let line = "[\(fmt.string(from: Date()))] \(msg)\n"
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
+        else { try? line.write(to: url, atomically: false, encoding: .utf8) }
     }
 
     // MARK: - Content State

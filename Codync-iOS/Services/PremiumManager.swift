@@ -12,31 +12,16 @@ final class PremiumManager {
     fileprivate(set) var isPro = false
     private(set) var isLoaded = false
 
-    #if DEBUG
-    /// When true, isPro is forced on and RevenueCat status is ignored
-    fileprivate let debugForcesPro = true
-    #else
-    fileprivate let debugForcesPro = false
-    #endif
-
     private init() {}
 
     func configure() {
         Purchases.logLevel = .warn
         Purchases.configure(withAPIKey: "appl_dMPFOjggBowEweUmCxskLNbwHkH")
         Purchases.shared.delegate = RCPurchasesDelegate.shared
-        Task {
-            await refreshStatus()
-        }
+        Task { await refreshStatus() }
     }
 
     func refreshStatus() async {
-        if debugForcesPro {
-            isPro = true
-            isLoaded = true
-            logger.info("Premium status: Pro (debug forced)")
-            return
-        }
         do {
             let info = try await Purchases.shared.customerInfo()
             isPro = info.entitlements["Codync Pro"]?.isActive == true
@@ -49,7 +34,6 @@ final class PremiumManager {
     }
 
     func restorePurchases() async throws {
-        if debugForcesPro { return }
         let info = try await Purchases.shared.restorePurchases()
         isPro = info.entitlements["Codync Pro"]?.isActive == true
         logger.info("Restored purchases: \(self.isPro ? "Pro" : "Free")")
@@ -64,9 +48,7 @@ private final class RCPurchasesDelegate: NSObject, RevenueCat.PurchasesDelegate,
     nonisolated func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
         let isPro = customerInfo.entitlements["Codync Pro"]?.isActive == true
         Task { @MainActor in
-            if !PremiumManager.shared.debugForcesPro {
-                PremiumManager.shared.isPro = isPro
-            }
+            PremiumManager.shared.isPro = isPro
             logger.info("Customer info updated: \(isPro ? "Pro" : "Free")")
         }
     }

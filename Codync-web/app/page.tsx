@@ -1,29 +1,15 @@
+import WaitlistForm from "./waitlist-form";
+
 export default function Home() {
   return (
     <main className="flex-1 flex flex-col items-center justify-center px-6">
       <div className="max-w-2xl w-full text-center space-y-8 py-24">
         <div className="flex justify-center">
-          <div className="w-20 h-20 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center">
-            <svg viewBox="0 0 100 100" className="w-12 h-12" fill="white">
-              {Array.from({ length: 14 }, (_, i) => {
-                const angle = (i * 360) / 14 - 90;
-                const rad = (angle * Math.PI) / 180;
-                const cx = 50 + Math.cos(rad) * 28;
-                const cy = 50 + Math.sin(rad) * 28;
-                return (
-                  <ellipse
-                    key={i}
-                    cx={cx}
-                    cy={cy}
-                    rx={5}
-                    ry={14}
-                    transform={`rotate(${angle + 90}, ${cx}, ${cy})`}
-                    opacity={0.9}
-                  />
-                );
-              })}
-            </svg>
-          </div>
+          <img
+            src="/icon.png"
+            alt="Codync"
+            className="w-20 h-20 rounded-2xl"
+          />
         </div>
 
         <div className="space-y-3">
@@ -46,9 +32,12 @@ export default function Home() {
           />
           <Feature
             title="Always-on Push"
-            description="Pro: APNs push keeps Live Activity updated even when app is closed"
+            description="Live Activity stays updated even when the app is closed"
           />
         </div>
+
+        {/* Waitlist */}
+        <WaitlistForm />
 
         <div className="flex flex-col items-center gap-3 pt-4">
           <a

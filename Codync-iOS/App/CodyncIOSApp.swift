@@ -19,6 +19,7 @@ struct CodyncIOSApp: App {
                 appDelegate.liveActivityManager.ensureTimerRunning()
                 // Force push current state immediately (isDark, duration, etc.)
                 appDelegate.liveActivityManager.invalidateCache()
+                appDelegate.liveActivityManager.userPrimarySessionId = appDelegate.primarySessionManager.primarySessionId
                 appDelegate.liveActivityManager.updateSessions(appDelegate.receiver.sessions)
                 // Then fetch fresh data from CloudKit
                 Task {

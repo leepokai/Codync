@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             async let loadPrimary: () = primarySessionManager.load()
             _ = await (startReceiver, loadPins, loadPref, loadPrimary)
 
+            liveActivityManager.userPrimarySessionId = primarySessionManager.primarySessionId
             liveActivityManager.updateSessions(receiver.sessions)
             primarySessionManager.autoSelect(from: receiver.sessions)
 

@@ -30,15 +30,19 @@ struct IOSRootView: View {
         .environment(\.theme, CodyncTheme(isDark: isDarkMode))
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onChange(of: receiver.sessions) { _, sessions in
+            liveActivityManager.userPrimarySessionId = primarySessionManager.primarySessionId
             liveActivityManager.updateSessions(sessions)
             primarySessionManager.autoSelect(from: sessions)
         }
-        .onChange(of: primarySessionManager.primarySessionId) { _, _ in
+        .onChange(of: primarySessionManager.primarySessionId) { _, newId in
+            liveActivityManager.userPrimarySessionId = newId
+            liveActivityManager.updateSessions(receiver.sessions)
             withAnimation(.spring(duration: 0.5, bounce: 0.1)) {
                 displayedSessions = sortSessions(receiver.sessions)
             }
         }
         .task {
+            liveActivityManager.userPrimarySessionId = primarySessionManager.primarySessionId
             displayedSessions = sortSessions(receiver.sessions)
             reorderTimer?.invalidate()
             reorderTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
@@ -76,15 +80,6 @@ struct IOSRootView: View {
     }
 
     private func sortSessions(_ sessions: [SessionState]) -> [SessionState] {
-        let primaryId = primarySessionManager.primarySessionId
-        return sessions.sorted { a, b in
-            // Primary session always first
-            if a.sessionId == primaryId { return true }
-            if b.sessionId == primaryId { return false }
-            let aWeight = a.status == .working ? 0 : a.status == .needsInput ? 1 : 2
-            let bWeight = b.status == .working ? 0 : b.status == .needsInput ? 1 : 2
-            if aWeight != bWeight { return aWeight < bWeight }
-            return a.updatedAt > b.updatedAt
-        }
+        liveActivityManager.sortedSessions(sessions)
     }
 }

@@ -119,7 +119,7 @@ private struct SessionRowContent: View {
                 waitingReason: session.waitingReason
             )
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(session.projectName)
                         .font(.system(size: 15, weight: .medium))
@@ -201,10 +201,10 @@ private struct MiniProgressBar: View {
             ForEach(tasks) { task in
                 RoundedRectangle(cornerRadius: 2)
                     .fill(color(for: task.status))
-                    .frame(height: 3)
+                    .frame(height: 5)
             }
         }
-        .padding(.top, 1)
+        .padding(.top, 2)
     }
 
     private func color(for status: TaskStatus) -> Color {

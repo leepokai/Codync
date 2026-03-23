@@ -23,6 +23,7 @@ final class LiveActivityManager: ObservableObject {
     private var tickTimer: Timer?
     @Published var mode: LiveActivityMode = .overall
     @Published var maxOverallSessions: Int = 4
+    var userPrimarySessionId: String?
     private var overallActivity: Activity<OverallAttributes>?
     private var lastOverallState: OverallAttributes.ContentState?
     private var overallTrackedIds: Set<String> = []
@@ -154,8 +155,7 @@ final class LiveActivityManager: ObservableObject {
     // MARK: - Unified Update
 
     func updateSessions(_ sessions: [SessionState]) {
-        let statuses = sessions.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")
-        logger.debug("updateSessions (\(self.mode.rawValue)): \(statuses)")
+        logger.debug("updateSessions (\(self.mode.rawValue)) primary=\(self.userPrimarySessionId ?? "none") sessions=\(sessions.count)")
         sessionsByID = Dictionary(sessions.map { ($0.sessionId, $0) }, uniquingKeysWith: { _, last in last })
 
         switch mode {
@@ -208,9 +208,7 @@ final class LiveActivityManager: ObservableObject {
         var desired: [String] = []
 
         let maxSlots = maxOverallSessions
-        let candidates = sessions
-            .filter { $0.status != .completed }
-            .sorted { autoFillPriority($0) < autoFillPriority($1) }
+        let candidates = sortedSessions(sessions.filter { $0.status != .completed })
 
         for session in candidates {
             guard desired.count < maxSlots else { break }
@@ -250,9 +248,7 @@ final class LiveActivityManager: ObservableObject {
             lastOverallState = nil
         }
 
-        let active = sessions
-            .filter { $0.status != .completed }
-            .sorted { autoFillPriority($0) < autoFillPriority($1) }
+        let active = sortedSessions(sessions.filter { $0.status != .completed })
             .prefix(maxOverallSessions)
 
         let summaries = active.map { session in
@@ -264,21 +260,27 @@ final class LiveActivityManager: ObservableObject {
                 model: session.model,
                 currentTask: session.currentTask,
                 costUSD: session.costUSD,
-                durationSec: liveDuration
+                durationSec: liveDuration,
+                completedCount: session.completedTaskCount,
+                totalCount: session.totalTaskCount
             )
         }
 
         let totalCost = sessions.reduce(0) { $0 + $1.costUSD }
-        let primaryId = active.first { $0.status == .working }?.sessionId
+        // User-selected primary takes precedence, then auto-pick first working
+        let resolvedPrimaryId = userPrimarySessionId.flatMap { id in
+            active.contains(where: { $0.sessionId == id }) ? id : nil
+        } ?? active.first(where: { $0.status == .working })?.sessionId
             ?? active.first?.sessionId
 
         let state = OverallAttributes.ContentState(
             sessions: summaries,
-            primarySessionId: primaryId,
+            primarySessionId: resolvedPrimaryId,
             totalCost: totalCost,
             isDark: isDarkMode
         )
 
+        logger.debug("Overall state: primary=\(resolvedPrimaryId ?? "nil"), sessions=\(summaries.count)")
         guard state != lastOverallState else { return }
         lastOverallState = state
 
@@ -367,6 +369,16 @@ final class LiveActivityManager: ObservableObject {
     private func isInGrace(_ sessionId: String) -> Bool {
         guard let start = graceTimers[sessionId] else { return false }
         return Date().timeIntervalSince(start) < 60
+    }
+
+    /// Unified session sort: primary first, then by status priority.
+    func sortedSessions(_ sessions: [SessionState]) -> [SessionState] {
+        let pid = userPrimarySessionId
+        return sessions.sorted { a, b in
+            if a.sessionId == pid { return true }
+            if b.sessionId == pid { return false }
+            return autoFillPriority(a) < autoFillPriority(b)
+        }
     }
 
     private func autoFillPriority(_ session: SessionState) -> Int {

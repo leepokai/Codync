@@ -63,7 +63,9 @@ struct LiveActivityPreview: View {
                     currentTask: session.currentTask,
                     status: session.status,
                     isPrimary: isPrimary,
-                    fg: theme.primaryText
+                    fg: theme.primaryText,
+                    completedCount: session.completedTaskCount,
+                    totalCount: session.totalTaskCount
                 )
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)

@@ -15,7 +15,11 @@ struct CodyncLiveActivityWidget: Widget {
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: CodyncAttributes.self) { context in
-            lockScreenBanner(context: context)
+            ActivityFamilyRouter {
+                WatchIndividualView(attributes: context.attributes, state: context.state)
+            } medium: {
+                lockScreenBanner(context: context)
+            }
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -112,6 +116,7 @@ struct CodyncLiveActivityWidget: Widget {
                 }
             }
         }
+        .supplementalActivityFamilies([.small])
     }
 
     // MARK: - Lock Screen Banner
@@ -604,7 +609,11 @@ struct OverallLiveActivityWidget: Widget {
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: OverallAttributes.self) { context in
-            overallLockScreen(context: context)
+            ActivityFamilyRouter {
+                WatchOverallView(state: context.state)
+            } medium: {
+                overallLockScreen(context: context)
+            }
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -654,6 +663,7 @@ struct OverallLiveActivityWidget: Widget {
                 Circle().fill(.white).frame(width: 6, height: 6)
             }
         }
+        .supplementalActivityFamilies([.small])
     }
 
     @ViewBuilder
@@ -687,10 +697,18 @@ struct OverallLiveActivityWidget: Widget {
             currentTask: session.currentTask,
             status: session.status,
             isPrimary: isPrimary,
-            fg: fg
+            fg: fg,
+            completedCount: session.completedCount,
+            totalCount: session.totalCount
         )
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .background(
+            isPrimary
+                ? RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(fg.opacity(0.06))
+                : nil
+        )
     }
 
     private func primarySession(from state: OverallAttributes.ContentState) -> SessionSummary? {
@@ -711,6 +729,295 @@ struct OverallLiveActivityWidget: Widget {
         case "error": "Error"
         case "completed": "Complete"
         default: "Working"
+        }
+    }
+}
+
+// MARK: - Activity Family Router
+
+/// Routes between Apple Watch Smart Stack (.small) and iPhone Lock Screen (.medium)
+struct ActivityFamilyRouter<Small: View, Medium: View>: View {
+    @Environment(\.activityFamily) var activityFamily
+    let small: () -> Small
+    let medium: () -> Medium
+
+    init(@ViewBuilder small: @escaping () -> Small, @ViewBuilder medium: @escaping () -> Medium) {
+        self.small = small
+        self.medium = medium
+    }
+
+    var body: some View {
+        switch activityFamily {
+        case .small:
+            small()
+        default:
+            medium()
+        }
+    }
+}
+
+// MARK: - Watch Individual View (Apple Watch Smart Stack)
+
+struct WatchIndividualView: View {
+    let attributes: CodyncAttributes
+    let state: CodyncAttributes.ContentState
+
+    var body: some View {
+        Group {
+            if state.isCompleted {
+                watchCompletedView
+            } else if state.totalCount > 0 {
+                watchProgressView
+            } else {
+                watchMinimalView
+            }
+        }
+        .padding(12)
+    }
+
+    // MARK: Completed — checkmark + ProjectName + $cost / Session Complete
+
+    @ViewBuilder
+    private var watchCompletedView: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.6))
+                Text(attributes.projectName)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer()
+                Text(String(format: "$%.2f", state.costUSD))
+                    .font(.caption.bold())
+                    .foregroundStyle(.white.opacity(0.5))
+                    .monospacedDigit()
+            }
+            Text("Session Complete")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.4))
+        }
+    }
+
+    // MARK: Progress (Design A) — sparkle + Project + timer / task / bars + count
+
+    @ViewBuilder
+    private var watchProgressView: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                watchStatusIndicator
+                Text(attributes.projectName)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer()
+                watchTimer
+            }
+
+            if let task = watchNonEmpty(state.currentTask) {
+                Text(task)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .id(task)
+                    .transition(.push(from: .bottom))
+            }
+
+            HStack(spacing: 2) {
+                ForEach(Array(state.tasks.enumerated()), id: \.offset) { _, task in
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(watchTaskColor(task.status))
+                        .frame(height: 3)
+                }
+
+                Text("\(state.completedCount)/\(state.totalCount)")
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.4))
+                    .fixedSize()
+                    .padding(.leading, 4)
+            }
+        }
+    }
+
+    // MARK: Minimal (Design C) — sparkle + Project + timer / icon + tool
+
+    @ViewBuilder
+    private var watchMinimalView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                watchStatusIndicator
+                Text(attributes.projectName)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer()
+                watchTimer
+            }
+
+            if let task = watchNonEmpty(state.currentTask) {
+                HStack(spacing: 5) {
+                    Image(systemName: watchToolIcon(for: task))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .frame(width: 14)
+                    Text(watchSimplifyTool(task) ?? task)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                }
+                .id(task)
+                .transition(.push(from: .bottom))
+            } else {
+                Text(watchStatusLabel(state.status))
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+        }
+    }
+
+    // MARK: Shared Components
+
+    @ViewBuilder
+    private var watchStatusIndicator: some View {
+        if state.isBusy {
+            IslandSparkle(durationSec: state.durationSec, size: 10)
+        } else {
+            Circle()
+                .fill(.white.opacity(state.isCompleted ? 0.4 : 0.6))
+                .frame(width: 6, height: 6)
+        }
+    }
+
+    @ViewBuilder
+    private var watchTimer: some View {
+        Text(state.sessionStartDate, style: .timer)
+            .font(.caption2.bold().monospacedDigit())
+            .foregroundStyle(.white.opacity(0.5))
+            .contentTransition(.numericText(countsDown: false))
+    }
+
+    // MARK: Helpers
+
+    private func watchTaskColor(_ status: TaskStatus) -> Color {
+        switch status {
+        case .completed: .white
+        case .inProgress: .white.opacity(0.4)
+        case .pending: .white.opacity(0.12)
+        }
+    }
+
+    private func watchNonEmpty(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        return value
+    }
+
+    private func watchStatusLabel(_ status: String) -> String {
+        switch status {
+        case "working": "Working"
+        case "idle": "Idle"
+        case "needsInput": "Needs Input"
+        case "compacting": "Compacting"
+        case "error": "Error"
+        case "completed": "Complete"
+        default: "Working"
+        }
+    }
+
+    private func watchToolIcon(for task: String?) -> String {
+        guard let task = task?.lowercased() else { return "arrow.turn.down.right" }
+        if task.contains("read") || task.contains("reading") { return "doc.text" }
+        if task.contains("edit") || task.contains("editing") || task.contains("write") || task.contains("writing") { return "pencil.line" }
+        if task.contains("bash") || task.contains("command") || task.contains("running") { return "terminal" }
+        if task.contains("grep") || task.contains("search") || task.contains("glob") { return "magnifyingglass" }
+        if task.contains("agent") || task.contains("dispatch") { return "person.2" }
+        if task.contains("web") || task.contains("fetch") { return "globe" }
+        if task.contains("git") { return "arrow.triangle.branch" }
+        if task.contains("test") { return "checkmark.diamond" }
+        if task.contains("todo") || task.contains("task") { return "checklist" }
+        return "arrow.turn.down.right"
+    }
+
+    private func watchSimplifyTool(_ text: String?) -> String? {
+        guard let text, !text.isEmpty else { return nil }
+        let lower = text.lowercased()
+        if lower.hasPrefix("running:") || lower.contains("bash") { return "Running command" }
+        if lower.hasPrefix("reading") {
+            let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Reading ", with: "")).lastPathComponent
+            return file.isEmpty ? "Reading file" : "Reading \(file)"
+        }
+        if lower.hasPrefix("editing") || lower.hasPrefix("writing") {
+            let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Editing ", with: "").replacingOccurrences(of: "Writing ", with: "")).lastPathComponent
+            return file.isEmpty ? "Editing file" : "Editing \(file)"
+        }
+        if lower.contains("grep") || lower.contains("search") { return "Searching code" }
+        if lower.contains("glob") { return "Finding files" }
+        if lower.contains("agent") { return "Dispatching agent" }
+        if lower.contains("git") { return "Git operation" }
+        if lower.contains("web") || lower.contains("fetch") { return "Fetching web" }
+        if text.count > 30 { return String(text.prefix(27)) + "…" }
+        return text
+    }
+}
+
+// MARK: - Watch Overall View (Apple Watch Smart Stack)
+
+struct WatchOverallView: View {
+    let state: OverallAttributes.ContentState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(state.sessions.prefix(3), id: \.sessionId) { session in
+                let isPrimary = session.sessionId == state.primarySessionId
+                watchSessionRow(session: session, isPrimary: isPrimary)
+                    .id(session.sessionId)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private func watchSessionRow(session: SessionSummary, isPrimary: Bool) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(watchDotColor(session: session, isPrimary: isPrimary))
+                .frame(width: 6, height: 6)
+
+            Text(session.projectName)
+                .font(.system(size: 13, weight: isPrimary ? .semibold : .medium))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .layoutPriority(1)
+
+            Text(modelDisplayLabel(session.model))
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.white.opacity(0.4))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(.white.opacity(0.08), in: Capsule())
+
+            Spacer(minLength: 0)
+
+            if session.status == .working {
+                IslandSparkle(durationSec: session.durationSec, size: 9)
+            } else if let task = session.currentTask, !task.isEmpty {
+                Text(task)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 5)
+    }
+
+    private func watchDotColor(session: SessionSummary, isPrimary: Bool) -> Color {
+        if isPrimary { return .white }
+        switch session.status {
+        case .working: return .white.opacity(0.8)
+        case .idle: return .white.opacity(0.3)
+        default: return .white.opacity(0.5)
         }
     }
 }

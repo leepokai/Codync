@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     let receiver = CloudKitReceiver()
     let liveActivityManager = LiveActivityManager()
     let primarySessionManager = PrimarySessionManager()
+    private var pollTimer: Timer?
 
     func application(
         _ application: UIApplication,
@@ -28,8 +29,31 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
             let center = UNUserNotificationCenter.current()
             _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+
+            startForegroundPolling()
         }
         return true
+    }
+
+    // MARK: - Foreground Polling
+
+    func startForegroundPolling() {
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                await self.receiver.fetch(source: "poll", force: true)
+                self.liveActivityManager.userPrimarySessionId = self.primarySessionManager.primarySessionId
+                self.liveActivityManager.updateSessions(self.receiver.sessions)
+                self.primarySessionManager.autoSelect(from: self.receiver.sessions)
+            }
+        }
+        RunLoop.main.add(pollTimer!, forMode: .common)
+    }
+
+    func stopForegroundPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
     }
 
     func application(
@@ -60,7 +84,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         fmt.dateFormat = "HH:mm:ss"
         let ts = fmt.string(from: Date())
         logger.info("[\(ts)] CloudKit push received")
-        await receiver.fetch(source: "silent-push")
+        await receiver.fetch(source: "silent-push", force: true)
         let statuses = receiver.sessions.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")
         logger.info("[\(ts)] → \(statuses)")
         liveActivityManager.updateSessions(receiver.sessions)

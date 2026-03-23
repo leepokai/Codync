@@ -17,16 +17,18 @@ struct CodyncIOSApp: App {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 appDelegate.liveActivityManager.ensureTimerRunning()
-                // Force push current state immediately (isDark, duration, etc.)
                 appDelegate.liveActivityManager.invalidateCache()
                 appDelegate.liveActivityManager.userPrimarySessionId = appDelegate.primarySessionManager.primarySessionId
                 appDelegate.liveActivityManager.updateSessions(appDelegate.receiver.sessions)
-                // Then fetch fresh data from CloudKit
+                // Fetch fresh + start polling while in foreground
                 Task {
                     await appDelegate.receiver.fetch(source: "foreground-return", force: true)
                     appDelegate.liveActivityManager.updateSessions(appDelegate.receiver.sessions)
                     appDelegate.primarySessionManager.autoSelect(from: appDelegate.receiver.sessions)
                 }
+                appDelegate.startForegroundPolling()
+            } else if phase == .background {
+                appDelegate.stopForegroundPolling()
             }
         }
     }

@@ -7,38 +7,19 @@ export default function DeviceShowcase() {
   return (
     <section className="relative px-6 py-16">
       <div className="max-w-5xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-center">
-          {/* iPhone — left */}
-          <Device
-            label="iPhone Live Activity"
-            delay={0.15}
-            className="md:col-span-1"
-            tiltIntensity={20}
-            glowId="iphone"
-          >
-            <div className="relative mx-auto w-[180px] aspect-[9/19.5] rounded-[2rem] border-2 border-neutral-700 bg-neutral-950 overflow-hidden">
-              <img
-                src="/demo-iphone.png"
-                alt="Codync iPhone"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.currentTarget.style.display = "none";
-                }}
-              />
-              <Placeholder label="iPhone" />
-              <DeviceGlow />
-            </div>
-          </Device>
+        {/* Mac as large background, iPhone & Watch overlaid */}
+        <div className="relative inline-block w-full">
 
-          {/* Mac — center, largest */}
+          {/* Mac — full width */}
           <Device
             label="macOS Menu Bar"
             delay={0}
-            className="md:col-span-3"
-            tiltIntensity={12}
+            className="w-full"
+            tiltIntensity={8}
             glowId="mac"
+            hideLabel
           >
-            <div className="relative w-full aspect-[16/10] rounded-xl border border-neutral-800 bg-neutral-950 overflow-hidden">
+            <div className="relative w-full aspect-[16/10] rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
               <img
                 src="/demo-mac.png"
                 alt="Codync macOS"
@@ -52,27 +33,63 @@ export default function DeviceShowcase() {
             </div>
           </Device>
 
-          {/* Watch — right */}
-          <Device
-            label="Apple Watch"
-            delay={0.3}
-            className="md:col-span-1"
-            tiltIntensity={25}
-            glowId="watch"
-          >
-            <div className="relative mx-auto w-[150px] aspect-square rounded-[2.5rem] border-2 border-neutral-700 bg-neutral-950 overflow-hidden">
-              <img
-                src="/demo-watch.png"
-                alt="Codync Watch"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.currentTarget.style.display = "none";
-                }}
-              />
-              <Placeholder label="Watch" />
-              <DeviceGlow />
-            </div>
-          </Device>
+          {/* iPhone — bottom-left overlap */}
+          <div className="absolute left-[3%] md:left-[5%] bottom-[-12%] z-10">
+            <Device
+              label="iPhone"
+              delay={0.15}
+              className=""
+              tiltIntensity={20}
+              glowId="iphone"
+              hideLabel
+            >
+              <div className="relative w-[120px] md:w-[160px] aspect-[9/19.5] rounded-[1.8rem] border-2 border-neutral-700 bg-neutral-950 overflow-hidden shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+                <img
+                  src="/demo-iphone.png"
+                  alt="Codync iPhone"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+                <Placeholder label="iPhone" />
+                <DeviceGlow />
+              </div>
+            </Device>
+          </div>
+
+          {/* Watch — bottom-right overlap */}
+          <div className="absolute right-[5%] md:right-[8%] bottom-[-6%] z-10">
+            <Device
+              label="Watch"
+              delay={0.3}
+              className=""
+              tiltIntensity={25}
+              glowId="watch"
+              hideLabel
+            >
+              <div className="relative w-[90px] md:w-[120px] aspect-square rounded-[2rem] border-2 border-neutral-700 bg-neutral-950 overflow-hidden shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+                <img
+                  src="/demo-watch.png"
+                  alt="Codync Watch"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+                <Placeholder label="Watch" />
+                <DeviceGlow />
+              </div>
+            </Device>
+          </div>
+
+        </div>
+
+        {/* Labels */}
+        <div className="flex justify-center gap-8 mt-20 text-sm text-neutral-500 font-medium">
+          <span>iPhone</span>
+          <span>macOS</span>
+          <span>Apple Watch</span>
         </div>
       </div>
     </section>
@@ -112,6 +129,7 @@ function Device({
   children,
   tiltIntensity = 15,
   glowId: _,
+  hideLabel = false,
 }: {
   label: string;
   delay: number;
@@ -119,6 +137,7 @@ function Device({
   children: React.ReactNode;
   tiltIntensity?: number;
   glowId?: string;
+  hideLabel?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
@@ -195,7 +214,7 @@ function Device({
         </GlowContext.Provider>
       </motion.div>
 
-      <p className="text-sm text-neutral-500 font-medium">{label}</p>
+      {!hideLabel && <p className="text-sm text-neutral-500 font-medium">{label}</p>}
     </motion.div>
   );
 }

@@ -1,11 +1,12 @@
 import UIKit
 import CloudKit
+import UserNotifications
 import CodyncShared
 import os
 
 private let logger = Logger(subsystem: "com.pokai.Codync.ios", category: "AppDelegate")
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     let receiver = CloudKitReceiver()
     let liveActivityManager = LiveActivityManager()
     let primarySessionManager = PrimarySessionManager()
@@ -15,6 +16,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
         application.registerForRemoteNotifications()
         NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -68,9 +70,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) {
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
         logger.info("APNs device token registered: \(hex.prefix(8))...")
-        // Save device token to CloudKit for Pro alert push (session complete notifications)
+        // Save device token to CloudKit for alert push (session complete notifications)
         Task {
-            guard PremiumManager.shared.isPro else { return }
             let recordID = CKRecord.ID(
                 recordName: "device-push-token",
                 zoneID: CloudKitManager.zoneID
@@ -124,5 +125,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         liveActivityManager.updateSessions(receiver.sessions)
         primarySessionManager.autoSelect(from: receiver.sessions)
         return .newData
+    }
+
+    // Show notifications even when app is in foreground
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
     }
 }

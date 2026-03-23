@@ -14,27 +14,16 @@ struct LiveActivityPreview: View {
     }
 
     var body: some View {
-        ZStack {
-            // Subtle top glow
-            RadialGradient(
-                colors: [theme.primaryText.opacity(0.04), .clear],
-                center: .top,
-                startRadius: 0,
-                endRadius: 60
-            )
-            .frame(height: 40)
-            .frame(maxHeight: .infinity, alignment: .top)
-
-            Group {
-                if mode == .overall {
-                    overallPreview
-                } else {
-                    individualPreview
-                }
+        Group {
+            if mode == .overall {
+                overallPreview
+            } else {
+                individualPreview
             }
-            .transition(.opacity.combined(with: .scale(scale: 0.96)))
         }
-        .padding(16)
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Color.black.opacity(0.6))

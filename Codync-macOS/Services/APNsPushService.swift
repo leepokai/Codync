@@ -88,6 +88,29 @@ final class APNsPushService {
         pushTokens.removeValue(forKey: sessionId)
     }
 
+    // MARK: - Alert Push (Pro: session completion)
+
+    func sendCompletionAlert(session: SessionState) async {
+        // Fetch device push token from CloudKit
+        let recordID = CKRecord.ID(
+            recordName: "device-push-token",
+            zoneID: CloudKitManager.zoneID
+        )
+        guard let record = try? await CloudKitManager.shared.database.record(for: recordID),
+              let tokenHex = record["token"] as? String else {
+            return
+        }
+
+        let cost = String(format: "$%.2f", session.costUSD)
+        let payload: [String: Any] = [
+            "pushToken": tokenHex,
+            "type": "alert",
+            "title": "Session Complete",
+            "body": "\(session.projectName) finished · \(cost)"
+        ]
+        await post(payload: payload, label: "alert \(session.projectName)")
+    }
+
     // MARK: - Push Token Sync (from CloudKit)
 
     func fetchPushTokens(sessionIds: [String] = []) async {
@@ -140,15 +163,20 @@ final class APNsPushService {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse {
+                #if DEBUG
                 if http.statusCode == 200 {
                     Self.log("APNs → \(label) ✓")
                 } else {
                     let reason = String(data: data, encoding: .utf8) ?? ""
                     Self.log("APNs → \(label) ✗ \(http.statusCode): \(reason)")
                 }
+                #endif
+                _ = data // suppress unused warning in release
             }
         } catch {
+            #if DEBUG
             Self.log("APNs → \(label) ✗ \(error.localizedDescription)")
+            #endif
         }
     }
 

@@ -195,6 +195,16 @@ struct CodyncPaywallView: View {
             let result = try await Purchases.shared.purchase(package: pkg)
             if !result.userCancelled {
                 await PremiumManager.shared.refreshStatus()
+                // Pro requires notifications for APNs push
+                let center = UNUserNotificationCenter.current()
+                let settings = await center.notificationSettings()
+                if settings.authorizationStatus == .notDetermined {
+                    _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+                } else if settings.authorizationStatus == .denied {
+                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                        await UIApplication.shared.open(url)
+                    }
+                }
                 dismiss()
             }
         } catch {

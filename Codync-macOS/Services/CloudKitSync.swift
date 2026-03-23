@@ -102,6 +102,13 @@ final class CloudKitSync {
                 }
 
                 if !toSave.isEmpty {
+                    // Send completion alert for newly completed sessions (Pro only)
+                    for session in toSave where session.status == .completed {
+                        if previousStates[session.sessionId]?.status != .completed {
+                            await APNsPushService.shared.sendCompletionAlert(session: session)
+                        }
+                    }
+
                     let desc = toSave.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")
                     Self.log("save \(toSave.count): \(desc)")
                     try await CloudKitManager.shared.saveBatch(toSave)
@@ -112,7 +119,9 @@ final class CloudKitSync {
 
                     // Push to APNs via Worker relay for Live Activity background updates
                     await APNsPushService.shared.fetchPushTokens(sessionIds: sessions.map(\.sessionId))
+                    #if DEBUG
                     Self.log("APNs tokens: \(APNsPushService.shared.tokenCount)")
+                    #endif
                     // Individual mode: per-session push
                     for session in toSave {
                         await APNsPushService.shared.sendUpdate(session: session)

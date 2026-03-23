@@ -16,22 +16,27 @@ jobs:
       - name: Set version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
-      - name: Archive
+      - name: Build
         run: |
-          xcodebuild archive \
+          xcodebuild build \
             -project Codync.xcodeproj \
             -scheme Codync \
+            -configuration Release \
             -destination 'generic/platform=macOS' \
-            -archivePath build/Codync.xcarchive \
+            -derivedDataPath build/derived \
             -quiet \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION=${{ env.VERSION }} \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
       - name: Create DMG
         run: |
+          APP_PATH=$(find build/derived -name "Codync.app" -path "*/Release/*" | head -1)
           hdiutil create \
             -volname "Codync" \
-            -srcfolder build/Codync.xcarchive/Products/Applications/Codync.app \
+            -srcfolder "$APP_PATH" \
             -ov -format UDZO \
             build/Codync-macOS.dmg
 

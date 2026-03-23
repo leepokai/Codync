@@ -1,6 +1,7 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useRef } from "react";
+import { motion, useMotionValue, useTransform } from "framer-motion";
 
 const features = [
   {
@@ -76,6 +77,55 @@ const features = [
   },
 ];
 
+function FeatureCard({ feature, index }: { feature: (typeof features)[number]; index: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+
+  function handleMouse(e: React.MouseEvent) {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return;
+    mouseX.set(e.clientX - rect.left);
+    mouseY.set(e.clientY - rect.top);
+  }
+
+  return (
+    <motion.div
+      ref={ref}
+      key={feature.title}
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-30px" }}
+      transition={{ duration: 0.5, delay: index * 0.08, ease: [0.21, 0.47, 0.32, 0.98] }}
+      onMouseMove={handleMouse}
+      className="group relative p-5 rounded-2xl border border-neutral-800 bg-neutral-900/30 hover:bg-neutral-900/60 hover:border-neutral-700 transition-all duration-300 overflow-hidden"
+    >
+      {/* Spotlight glow on hover */}
+      <motion.div
+        className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        style={{
+          background: useTransform(
+            [mouseX, mouseY],
+            ([x, y]) =>
+              `radial-gradient(300px circle at ${x}px ${y}px, rgba(255,255,255,0.04), transparent 60%)`
+          ),
+        }}
+      />
+      <div className="relative z-10">
+        <div className="w-9 h-9 rounded-lg bg-neutral-800/80 border border-neutral-700/50 flex items-center justify-center text-neutral-300 mb-3 group-hover:text-white group-hover:border-neutral-600 transition-colors">
+          {feature.icon}
+        </div>
+        <h3 className="font-semibold text-white text-sm mb-1.5">
+          {feature.title}
+        </h3>
+        <p className="text-sm text-neutral-400 leading-relaxed">
+          {feature.description}
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function Features() {
   return (
     <section className="px-6 py-20">
@@ -91,24 +141,7 @@ export default function Features() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {features.map((feature, i) => (
-            <motion.div
-              key={feature.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-30px" }}
-              transition={{ duration: 0.4, delay: i * 0.08 }}
-              className="group p-5 rounded-2xl border border-neutral-800 bg-neutral-900/30 hover:bg-neutral-900/60 hover:border-neutral-700 transition-all duration-300"
-            >
-              <div className="w-9 h-9 rounded-lg bg-neutral-800/80 border border-neutral-700/50 flex items-center justify-center text-neutral-300 mb-3 group-hover:text-white group-hover:border-neutral-600 transition-colors">
-                {feature.icon}
-              </div>
-              <h3 className="font-semibold text-white text-sm mb-1.5">
-                {feature.title}
-              </h3>
-              <p className="text-sm text-neutral-400 leading-relaxed">
-                {feature.description}
-              </p>
-            </motion.div>
+            <FeatureCard key={feature.title} feature={feature} index={i} />
           ))}
         </div>
       </div>

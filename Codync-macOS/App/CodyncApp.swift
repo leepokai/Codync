@@ -34,14 +34,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hookServer.ensureHooksConfigured()
         // SessionStart/SessionEnd: immediate refresh (new/removed session)
         hookServer.onSessionEvent = { [weak self] in
-            self?.stateManager.refreshFromHookState()
+            Task { @MainActor in
+                self?.stateManager.refreshFromHookState()
+            }
         }
         // All other hooks: immediate refresh with hook signal applied first
         hookServer.onHookSignal = { [weak self] sessionId, signal, toolName in
-            self?.stateManager.transcriptWatcher.handleHookSignal(
-                sessionId: sessionId, signal: signal, toolName: toolName
-            )
-            self?.stateManager.refreshFromHookState()
+            Task { @MainActor in
+                self?.stateManager.transcriptWatcher.handleHookSignal(
+                    sessionId: sessionId, signal: signal, toolName: toolName
+                )
+                self?.stateManager.refreshFromHookState()
+            }
         }
         hookServer.start()
 

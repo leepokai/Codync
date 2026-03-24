@@ -8,6 +8,8 @@ struct IOSSessionListView: View {
     @Environment(\.theme) private var theme
     @State private var showSettings = false
     @State private var showSettingsSheet = false
+    @State private var showPrimaryPrompt = false
+    @AppStorage("codync_didPromptPrimary") private var didPromptPrimary = false
 
     var body: some View {
         ScrollView {
@@ -72,6 +74,20 @@ struct IOSSessionListView: View {
         }
         .sheet(isPresented: $showSettingsSheet) {
             SettingsView()
+        }
+        .onChange(of: sessions) { _, newSessions in
+            if !didPromptPrimary,
+               !newSessions.isEmpty,
+               primarySessionManager.primarySessionId == nil {
+                showPrimaryPrompt = true
+            }
+        }
+        .alert("Select a Primary Session", isPresented: $showPrimaryPrompt) {
+            Button("OK") {
+                didPromptPrimary = true
+            }
+        } message: {
+            Text("Tap the circle on the right of a session to pin it as primary. Only the primary session will send completion notifications.")
         }
     }
 
@@ -144,18 +160,21 @@ private struct SessionRowContent: View {
                         SessionTagView(tag: session.model)
                     }
                     Spacer(minLength: 4)
+                    if session.statusDescription == nil {
+                        Text(relativeTime(session.updatedAt))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(theme.tertiaryText)
+                    }
                 }
-                if session.statusDescription != nil || !session.tasks.isEmpty {
+                if let desc = session.statusDescription {
                     HStack(spacing: 4) {
-                        if let desc = session.statusDescription {
-                            Text(desc)
-                                .font(.system(size: 13))
-                                .foregroundStyle(subtitleColor)
-                                .lineLimit(1)
-                                .id(desc)
-                                .transition(.push(from: .bottom))
-                                .animation(.easeInOut(duration: 0.3), value: desc)
-                        }
+                        Text(desc)
+                            .font(.system(size: 13))
+                            .foregroundStyle(subtitleColor)
+                            .lineLimit(1)
+                            .id(desc)
+                            .transition(.push(from: .bottom))
+                            .animation(.easeInOut(duration: 0.3), value: desc)
                         Spacer()
                         Text(relativeTime(session.updatedAt))
                             .font(.system(size: 12, design: .monospaced))

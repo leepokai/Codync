@@ -79,15 +79,14 @@ struct IOSSessionListView: View {
             if !didPromptPrimary,
                !newSessions.isEmpty,
                primarySessionManager.primarySessionId == nil {
+                didPromptPrimary = true
                 showPrimaryPrompt = true
             }
         }
         .alert("Select a Primary Session", isPresented: $showPrimaryPrompt) {
-            Button("OK") {
-                didPromptPrimary = true
-            }
+            Button("OK") {}
         } message: {
-            Text("Tap the circle on the right of a session to pin it as primary. Only the primary session will send completion notifications.")
+            Text("Tap the circle on the right of a session to pin it as primary. Only the primary session will send completion alerts.")
         }
     }
 
@@ -161,9 +160,7 @@ private struct SessionRowContent: View {
                     }
                     Spacer(minLength: 4)
                     if session.statusDescription == nil {
-                        Text(relativeTime(session.updatedAt))
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(theme.tertiaryText)
+                        timestampLabel
                     }
                 }
                 if let desc = session.statusDescription {
@@ -176,9 +173,7 @@ private struct SessionRowContent: View {
                             .transition(.push(from: .bottom))
                             .animation(.easeInOut(duration: 0.3), value: desc)
                         Spacer()
-                        Text(relativeTime(session.updatedAt))
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(theme.tertiaryText)
+                        timestampLabel
                     }
                     .clipped()
                 }
@@ -209,6 +204,12 @@ private struct SessionRowContent: View {
         .opacity(depth == 0 ? 1.0 : max(0.65, 1.0 - Double(depth) * 0.1))
         .animation(.spring(duration: 0.5, bounce: 0.15), value: isPrimary)
         .animation(.spring(duration: 0.5, bounce: 0.15), value: depth)
+    }
+
+    private var timestampLabel: some View {
+        Text(relativeTime(session.updatedAt))
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundStyle(theme.tertiaryText)
     }
 
     private var subtitleColor: Color {

@@ -105,13 +105,20 @@ final class CloudKitSync {
                     // Fetch primary session once — reused for alert + overall push
                     let primary = await CloudKitManager.shared.fetchPrimarySession()
 
-                    // Send completion alert only for primary session (Pro only)
-                    if let lockedPrimaryId = primary.sessionId, primary.locked {
-                        for session in toSave where session.status == .completed && session.sessionId == lockedPrimaryId {
-                            if previousStates[session.sessionId]?.status != .completed {
-                                await APNsPushService.shared.sendCompletionAlert(session: session)
-                            }
-                        }
+                    // Send completion alert for the locked primary session
+                    // Triggers on: working → idle (task finished) or working → completed (session ended)
+                    #if DEBUG
+                    let primarySession = toSave.first(where: { $0.sessionId == primary.sessionId })
+                    let prevStatus = primary.sessionId.flatMap { previousStates[$0]?.status }
+                    Self.log("ALERT CHECK: primaryId=\(primary.sessionId ?? "nil") locked=\(primary.locked) sessionStatus=\(primarySession?.status.rawValue ?? "not-in-toSave") prevStatus=\(prevStatus?.rawValue ?? "nil")")
+                    #endif
+                    if let lockedPrimaryId = primary.sessionId, primary.locked,
+                       let session = toSave.first(where: { $0.sessionId == lockedPrimaryId && ($0.status == .idle || $0.status == .needsInput || $0.status == .completed) }),
+                       previousStates[session.sessionId]?.status == .working {
+                        #if DEBUG
+                        Self.log("ALERT SENDING for \(session.projectName) (\(session.status.rawValue))")
+                        #endif
+                        await APNsPushService.shared.sendCompletionAlert(session: session)
                     }
 
                     let desc = toSave.map { "\($0.projectName):\($0.status.rawValue)" }.joined(separator: ", ")

@@ -17,6 +17,7 @@ final class LiveActivityManager: ObservableObject {
     private var graceTimers: [String: Date] = [:]
     private var activities: [String: Activity<CodyncAttributes>] = [:]
     private var sessionsByID: [String: SessionState] = [:]
+    private var previousStatuses: [String: SessionStatus] = [:]  // sessionId → last known status
     private var lastPushedState: [String: CodyncAttributes.ContentState] = [:]
     private var previousTasks: [String: String] = [:]        // sessionId → last completed tool
     private var secondPreviousTasks: [String: String] = [:]  // sessionId → second-last tool
@@ -159,6 +160,28 @@ final class LiveActivityManager: ObservableObject {
         logger.debug("updateSessions (\(self.mode.rawValue)) primary=\(self.userPrimarySessionId ?? "none") sessions=\(sessions.count)")
         sessionsByID = Dictionary(sessions.map { ($0.sessionId, $0) }, uniquingKeysWith: { _, last in last })
 
+        // Notify when primary session transitions from working → idle/completed
+        if let primaryId = userPrimarySessionId {
+            let session = sessionsByID[primaryId]
+            let prevStatus = previousStatuses[primaryId]
+            #if DEBUG
+            logger.info("ALERT CHECK: primary=\(primaryId.suffix(8)) status=\(session?.status.rawValue ?? "nil") prev=\(prevStatus?.rawValue ?? "nil")")
+            #endif
+            if let session,
+               (session.status == .idle || session.status == .needsInput || session.status == .completed),
+               prevStatus == .working {
+                #if DEBUG
+                logger.info("ALERT SENDING local notification for \(session.projectName)")
+                #endif
+                sendCompletionNotification(session)
+            }
+        }
+
+        // Track statuses for next comparison
+        for session in sessions {
+            previousStatuses[session.sessionId] = session.status
+        }
+
         switch mode {
         case .individual: updateIndividual(sessions)
         case .overall:    updateOverall(sessions)
@@ -177,9 +200,6 @@ final class LiveActivityManager: ObservableObject {
             return session.status == .completed
         }
         for sessionId in completedIds {
-            if let session = sessionsByID[sessionId] {
-                sendCompletionNotification(session)
-            }
             stopTracking(sessionId: sessionId)
             pinnedSessionIds.remove(sessionId)
             graceTimers.removeValue(forKey: sessionId)
@@ -241,6 +261,25 @@ final class LiveActivityManager: ObservableObject {
     }
 
     private func updateOverall(_ sessions: [SessionState]) {
+        // Recover orphaned Overall activity that iOS still manages but we lost reference to
+        // (e.g., after app termination + background relaunch)
+        if overallActivity == nil {
+            for activity in Activity<OverallAttributes>.activities
+                where activity.activityState == .active || activity.activityState == .stale {
+                overallActivity = activity
+                logger.info("Recovered orphaned Overall Live Activity")
+                break
+            }
+        }
+
+        // End any extra Overall activities beyond the one we're tracking
+        for activity in Activity<OverallAttributes>.activities
+            where activity.id != overallActivity?.id
+                && (activity.activityState == .active || activity.activityState == .stale) {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+            logger.info("Ended duplicate Overall Live Activity")
+        }
+
         // Detect if iOS ended the activity (stale timeout, user dismissed, etc.)
         if let activity = overallActivity,
            activity.activityState == .ended || activity.activityState == .dismissed {
@@ -334,12 +373,9 @@ final class LiveActivityManager: ObservableObject {
             overallTrackedIds.insert(session.sessionId)
         }
 
-        // Send completion notifications for newly completed sessions
+        // Clean up completed sessions from overall tracking
         for session in sessions where session.status == .completed {
-            if overallTrackedIds.contains(session.sessionId) {
-                sendCompletionNotification(session)
-                overallTrackedIds.remove(session.sessionId)
-            }
+            overallTrackedIds.remove(session.sessionId)
         }
     }
 
@@ -375,6 +411,7 @@ final class LiveActivityManager: ObservableObject {
         // 3. Safety clear all internal state
         activities.removeAll()
         trackedSessionIds.removeAll()
+        previousStatuses.removeAll()
         previousTasks.removeAll()
         secondPreviousTasks.removeAll()
         graceTimers.removeAll()

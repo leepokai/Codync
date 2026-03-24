@@ -15,7 +15,7 @@ struct SettingsView: View {
                 Section {
                     subscriptionRow
                 } header: {
-                    Text("Subscription")
+                    Text("Subscription").foregroundStyle(.secondary)
                 }
 
                 // MARK: - Appearance
@@ -25,7 +25,7 @@ struct SettingsView: View {
                     }
                     .tint(.primary)
                 } header: {
-                    Text("Appearance")
+                    Text("Appearance").foregroundStyle(.secondary)
                 }
 
                 // MARK: - Notifications
@@ -45,7 +45,7 @@ struct SettingsView: View {
                     }
                     .tint(.primary)
                 } header: {
-                    Text("Notifications")
+                    Text("Notifications").foregroundStyle(.secondary)
                 } footer: {
                     Text("Only the pinned primary session sends completion alerts.")
                 }
@@ -61,7 +61,7 @@ struct SettingsView: View {
                     }
                     .tint(.primary)
                 } header: {
-                    Text("Support")
+                    Text("Support").foregroundStyle(.secondary)
                 }
 
                 // MARK: - About
@@ -80,9 +80,10 @@ struct SettingsView: View {
                     }
                     .tint(.secondary)
                 } header: {
-                    Text("About")
+                    Text("About").foregroundStyle(.secondary)
                 }
             }
+            .tint(.primary)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -34,6 +34,8 @@ struct PanelHeaderView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(theme.secondaryText)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }

@@ -102,12 +102,11 @@ final class APNsPushService {
             return
         }
 
-        let cost = String(format: "$%.2f", session.costUSD)
         let payload: [String: Any] = [
             "pushToken": tokenHex,
             "type": "alert",
-            "title": "Session Complete",
-            "body": "\(session.projectName) finished · \(cost)"
+            "title": session.projectName,
+            "body": "Session complete"
         ]
         // Retry up to 3 times with backoff (429 from APNs rate limit)
         for attempt in 0..<3 {

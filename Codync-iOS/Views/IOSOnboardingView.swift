@@ -11,6 +11,7 @@ struct IOSOnboardingView: View {
     @State private var iCloudStatus: ICloudStatus = .checking
     @State private var selectedMode: LiveActivityMode = .overall
     @State private var showPaywall = false
+    @State private var showDemoVideo = false
 
     private let totalPages = 8
 
@@ -33,6 +34,9 @@ struct IOSOnboardingView: View {
         }
         .task {
             await checkICloudStatus()
+        }
+        .sheet(isPresented: $showDemoVideo) {
+            DemoVideoSheet()
         }
         .sheet(isPresented: $showPaywall) {
             CodyncPaywallView()
@@ -72,6 +76,24 @@ struct IOSOnboardingView: View {
                     .font(.system(size: 17))
                     .foregroundStyle(theme.secondaryText)
                     .lineSpacing(4)
+
+                Spacer().frame(height: 24)
+
+                Button { showDemoVideo = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.rectangle.fill")
+                            .font(.system(size: 14))
+                        Text("Watch Demo")
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                    .foregroundStyle(theme.primaryText)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(theme.primaryText.opacity(0.1))
+                    )
+                }
 
                 Spacer()
             },

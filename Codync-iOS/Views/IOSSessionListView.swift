@@ -8,6 +8,7 @@ struct IOSSessionListView: View {
     @Environment(\.theme) private var theme
     @State private var showSettings = false
     @State private var showSettingsSheet = false
+    @State private var showDemoVideo = false
     @State private var showPrimaryPrompt = false
     @AppStorage("codync_didPromptPrimary") private var didPromptPrimary = false
 
@@ -62,6 +63,13 @@ struct IOSSessionListView: View {
         }
         .toolbarColorScheme(theme.isDark ? .dark : .light, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { showDemoVideo = true } label: {
+                    Image(systemName: "play.rectangle")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(theme.secondaryText)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showSettingsSheet = true
@@ -74,6 +82,9 @@ struct IOSSessionListView: View {
         }
         .sheet(isPresented: $showSettingsSheet) {
             SettingsView()
+        }
+        .sheet(isPresented: $showDemoVideo) {
+            DemoVideoSheet()
         }
         .onChange(of: sessions) { _, newSessions in
             if !didPromptPrimary,

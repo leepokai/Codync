@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     func startForegroundPolling() {
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 await self.receiver.fetch(source: "poll", force: true)

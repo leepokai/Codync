@@ -1,6 +1,7 @@
 import Hero from "./components/hero";
 import DeviceShowcase from "./components/device-showcase";
-import Features from "./components/features";
+import VisualDemos from "./components/visual-demos";
+import DemoVideo from "./components/demo-video";
 
 export default function Home() {
   return (
@@ -11,18 +12,20 @@ export default function Home() {
       {/* Device Showcase */}
       <DeviceShowcase />
 
-      {/* Features */}
-      <Features />
+      {/* Demo Video */}
+      <DemoVideo />
+
+      {/* Visual Feature Demos */}
+      <VisualDemos />
 
       {/* CTA */}
       <section className="flex flex-col items-center gap-8 px-6 py-20">
         <div className="flex flex-col items-center gap-3">
-          <a
-            href="https://apps.apple.com/app/id6760984418"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-xl hover:bg-neutral-200 transition-colors"
+          <span
+            className="inline-flex items-center gap-2 px-6 py-3 bg-neutral-700 text-neutral-400 font-semibold rounded-xl cursor-not-allowed"
           >
-            Download on the App Store
-          </a>
+            Coming Soon on the App Store
+          </span>
           <p className="text-sm text-neutral-500">
             Free &amp; open source. No account needed — just download and go.
           </p>

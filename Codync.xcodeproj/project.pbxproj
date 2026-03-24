@@ -51,6 +51,7 @@
 		EDCB66A65FD85B26FE7B4664 /* SessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42BAF66F7C50D732B7E69333 /* SessionScanner.swift */; };
 		EE55FF6600112233445566AA /* EventMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF660011 /* EventMonitor.swift */; };
 		EEF78145300C2A3547AD832A /* IOSOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */; };
+		0CFFA94EEF8F4C33AB86012A /* YouTubePlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3716B87C0A7249268846AB6C /* YouTubePlayerView.swift */; };
 		EF0A0CEAD3C7B875064F8556 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */; };
 		F1E2D3C4B5A6F7E8D9C0B1A2 /* SessionTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* SessionTagView.swift */; };
 		F4F54F91459EE6A15DD7B246 /* CodyncIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8453D8BE6EE838E1B9EA4588 /* CodyncIOSApp.swift */; };
@@ -132,6 +133,7 @@
 		D10CABFC27BF22D45064777A /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 		D5E6F7A8B9C0D1E2F3A4B5C6 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSOnboardingView.swift; sourceTree = "<group>"; };
+		3716B87C0A7249268846AB6C /* YouTubePlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubePlayerView.swift; sourceTree = "<group>"; };
 		DA699D0197B8A14FD7D1BDC4 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
 		DF291DF4A4EF932B774F227D /* IOSRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRootView.swift; sourceTree = "<group>"; };
 		E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeHookServer.swift; sourceTree = "<group>"; };
@@ -212,6 +214,7 @@
 				PW0002A0B1C2D3E4F5A6B7C8 /* PaywallView.swift */,
 				SV0002A0B1C2D3E4F5A6B7C8 /* SettingsView.swift */,
 				D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */,
+				3716B87C0A7249268846AB6C /* YouTubePlayerView.swift */,
 				DF291DF4A4EF932B774F227D /* IOSRootView.swift */,
 				9C01C9748A39F3475869F956 /* IOSSessionDetailView.swift */,
 				A01A225437E7A00B3337883E /* IOSSessionListView.swift */,
@@ -502,6 +505,7 @@
 				F4F54F91459EE6A15DD7B246 /* CodyncIOSApp.swift in Sources */,
 				F5A6B7C8D9E0F1A2B3C4D5E6 /* AppDelegate.swift in Sources */,
 				EEF78145300C2A3547AD832A /* IOSOnboardingView.swift in Sources */,
+				0CFFA94EEF8F4C33AB86012A /* YouTubePlayerView.swift in Sources */,
 				DBD957B5BFDEC3B62B310F8F /* IOSRootView.swift in Sources */,
 				0B6B1D4B20837A47EAF88322 /* IOSSessionDetailView.swift in Sources */,
 				A30C11E610763F5064698D43 /* IOSSessionListView.swift in Sources */,

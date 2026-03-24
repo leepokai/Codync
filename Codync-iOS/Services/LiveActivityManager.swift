@@ -35,6 +35,22 @@ final class LiveActivityManager: ObservableObject {
 
     init() {
         startTicking()
+        // End all stale activities from previous app sessions on launch
+        endAllStaleActivities()
+    }
+
+    /// Clean up any lingering activities from previous app sessions (crash, reinstall, etc.)
+    private func endAllStaleActivities() {
+        for activity in Activity<CodyncAttributes>.activities
+            where activity.activityState == .active || activity.activityState == .stale {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+            logger.info("Cleaned up stale Individual activity: \(activity.attributes.sessionId)")
+        }
+        for activity in Activity<OverallAttributes>.activities
+            where activity.activityState == .active || activity.activityState == .stale {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+            logger.info("Cleaned up stale Overall activity")
+        }
     }
 
     /// Tick every second to keep durationSec fresh — drives sparkle animation in Dynamic Island.
@@ -168,7 +184,7 @@ final class LiveActivityManager: ObservableObject {
             logger.info("ALERT CHECK: primary=\(primaryId.suffix(8)) status=\(session?.status.rawValue ?? "nil") prev=\(prevStatus?.rawValue ?? "nil")")
             #endif
             if let session,
-               (session.status == .idle || session.status == .needsInput || session.status == .completed),
+               (session.status == .idle || session.status == .needsInput),
                prevStatus == .working {
                 #if DEBUG
                 logger.info("ALERT SENDING local notification for \(session.projectName)")
@@ -261,23 +277,13 @@ final class LiveActivityManager: ObservableObject {
     }
 
     private func updateOverall(_ sessions: [SessionState]) {
-        // Recover orphaned Overall activity that iOS still manages but we lost reference to
-        // (e.g., after app termination + background relaunch)
-        if overallActivity == nil {
-            for activity in Activity<OverallAttributes>.activities
-                where activity.activityState == .active || activity.activityState == .stale {
-                overallActivity = activity
-                logger.info("Recovered orphaned Overall Live Activity")
-                break
-            }
-        }
-
-        // End any extra Overall activities beyond the one we're tracking
+        // End orphaned Overall activities that iOS still manages but we lost reference to
+        // (e.g., after app reinstall or crash). Don't recover — end them and create fresh.
         for activity in Activity<OverallAttributes>.activities
             where activity.id != overallActivity?.id
                 && (activity.activityState == .active || activity.activityState == .stale) {
             Task { await activity.end(nil, dismissalPolicy: .immediate) }
-            logger.info("Ended duplicate Overall Live Activity")
+            logger.info("Ended orphaned Overall Live Activity")
         }
 
         // Detect if iOS ended the activity (stale timeout, user dismissed, etc.)
@@ -615,8 +621,8 @@ final class LiveActivityManager: ObservableObject {
 
     private func sendCompletionNotification(_ session: SessionState) {
         let content = UNMutableNotificationContent()
-        content.title = "Session Complete"
-        content.body = "\(session.summary) finished · $\(String(format: "%.2f", session.costUSD))"
+        content.title = session.projectName
+        content.body = "Session complete"
         content.sound = .default
         let request = UNNotificationRequest(identifier: session.sessionId, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)

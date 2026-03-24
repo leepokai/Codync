@@ -52,7 +52,7 @@ export default function DeviceShowcase() {
           {/* iPhone — bottom-left, inside Mac */}
           <div className="absolute left-[4%] md:left-[6%] bottom-[4%] z-10">
             <TiltCard delay={0.15} tiltIntensity={20}>
-              <p className="text-xs text-neutral-400 font-medium mb-1.5 ml-1">iPhone</p>
+              <p className="text-xs text-neutral-400 font-medium mb-1.5 ml-1 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">iPhone</p>
               <div className="relative w-[140px] md:w-[180px] aspect-[9/19.5] rounded-[1.8rem] md:rounded-[2.2rem] border-2 border-neutral-600 bg-neutral-950 overflow-hidden shadow-[0_10px_60px_rgba(0,0,0,0.8)]">
                 <img
                   src="/demo-iphone.png"
@@ -68,7 +68,7 @@ export default function DeviceShowcase() {
           {/* Watch — bottom-right, inside Mac */}
           <div className="absolute right-[4%] md:right-[7%] bottom-[6%] z-10">
             <TiltCard delay={0.3} tiltIntensity={25}>
-              <p className="text-xs text-neutral-400 font-medium mb-1.5 ml-1">watchOS</p>
+              <p className="text-xs text-neutral-400 font-medium mb-1.5 ml-1 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">watchOS</p>
               <div className="relative w-[120px] md:w-[170px] aspect-square rounded-[1.8rem] md:rounded-[2.2rem] border-2 border-neutral-600 bg-neutral-950 overflow-hidden shadow-[0_10px_60px_rgba(0,0,0,0.8)]">
                 <img
                   src="/demo-watch.png"

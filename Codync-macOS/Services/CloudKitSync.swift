@@ -106,14 +106,10 @@ final class CloudKitSync {
                     let primary = await CloudKitManager.shared.fetchPrimarySession()
 
                     // Send completion alert for the locked primary session
-                    // Triggers on: working → idle (task finished) or working → completed (session ended)
-                    #if DEBUG
-                    let primarySession = toSave.first(where: { $0.sessionId == primary.sessionId })
-                    let prevStatus = primary.sessionId.flatMap { previousStates[$0]?.status }
-                    Self.log("ALERT CHECK: primaryId=\(primary.sessionId ?? "nil") locked=\(primary.locked) status=\(primarySession?.status.rawValue ?? "not-in-toSave") prev=\(prevStatus?.rawValue ?? "nil")")
-                    #endif
+                    // Check ALL sessions (not just toSave) so throttle can't swallow the transition
                     if let lockedPrimaryId = primary.sessionId, primary.locked,
-                       let session = toSave.first(where: { $0.sessionId == lockedPrimaryId && ($0.status == .idle || $0.status == .needsInput) }),
+                       let session = sessions.first(where: { $0.sessionId == lockedPrimaryId }),
+                       (session.status == .idle || session.status == .needsInput),
                        previousStates[session.sessionId]?.status == .working {
                         #if DEBUG
                         Self.log("ALERT SENDING for \(session.projectName) (\(session.status.rawValue))")
@@ -126,6 +122,12 @@ final class CloudKitSync {
                     try await CloudKitManager.shared.saveBatch(toSave)
                     Self.log("saved OK")
                     for session in toSave {
+                        previousStates[session.sessionId] = session
+                    }
+                    // Always track primary session state for alert detection,
+                    // even if it wasn't in toSave (throttle may merge its changes)
+                    if let lockedPrimaryId = primary.sessionId, primary.locked,
+                       let session = sessions.first(where: { $0.sessionId == lockedPrimaryId }) {
                         previousStates[session.sessionId] = session
                     }
 

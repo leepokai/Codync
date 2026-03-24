@@ -19,6 +19,10 @@
 - **Do NOT register HTTP hooks** — they block Claude Code on ECONNREFUSED when app is down
 - Command hooks for PreToolUse/PostToolUse are safe — script exits in <20ms, imperceptible delay
 
+## App Store Upload
+
+- **IMPORTANT**: Every time you archive and upload a new build to App Store Connect, you MUST increment `CURRENT_PROJECT_VERSION` in the Xcode project first. App Store Connect rejects duplicate build numbers.
+
 ## Targets
 
 - `Codync-macOS` — macOS menu bar app

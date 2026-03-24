@@ -110,7 +110,7 @@ final class CloudKitSync {
                     #if DEBUG
                     let primarySession = toSave.first(where: { $0.sessionId == primary.sessionId })
                     let prevStatus = primary.sessionId.flatMap { previousStates[$0]?.status }
-                    Self.log("ALERT CHECK: primaryId=\(primary.sessionId ?? "nil") locked=\(primary.locked) sessionStatus=\(primarySession?.status.rawValue ?? "not-in-toSave") prevStatus=\(prevStatus?.rawValue ?? "nil")")
+                    Self.log("ALERT CHECK: primaryId=\(primary.sessionId ?? "nil") locked=\(primary.locked) status=\(primarySession?.status.rawValue ?? "not-in-toSave") prev=\(prevStatus?.rawValue ?? "nil")")
                     #endif
                     if let lockedPrimaryId = primary.sessionId, primary.locked,
                        let session = toSave.first(where: { $0.sessionId == lockedPrimaryId && ($0.status == .idle || $0.status == .needsInput) }),

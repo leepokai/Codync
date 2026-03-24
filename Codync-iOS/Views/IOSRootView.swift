@@ -9,7 +9,6 @@ struct IOSRootView: View {
     @AppStorage("codync_darkMode") private var storedDarkMode = true
     @State private var isDarkMode = true
     @State private var displayedSessions: [SessionState] = []
-    @State private var reorderTimer: Timer?
     @State private var showSplash = true
 
     var body: some View {
@@ -40,6 +39,9 @@ struct IOSRootView: View {
             liveActivityManager.userPrimarySessionId = primarySessionManager.primarySessionId
             liveActivityManager.updateSessions(sessions)
             primarySessionManager.autoSelect(from: sessions)
+            withAnimation(.spring(duration: 0.5, bounce: 0.1)) {
+                displayedSessions = sortSessions(sessions)
+            }
         }
         .onChange(of: primarySessionManager.primarySessionId) { _, newId in
             liveActivityManager.userPrimarySessionId = newId
@@ -51,19 +53,6 @@ struct IOSRootView: View {
         .task {
             liveActivityManager.userPrimarySessionId = primarySessionManager.primarySessionId
             displayedSessions = sortSessions(receiver.sessions)
-            reorderTimer?.invalidate()
-            reorderTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
-                Task { @MainActor in
-                    let sorted = sortSessions(receiver.sessions)
-                    withAnimation(.spring(duration: 2.0, bounce: 0.1)) {
-                        displayedSessions = sorted
-                    }
-                }
-            }
-        }
-        .onDisappear {
-            reorderTimer?.invalidate()
-            reorderTimer = nil
         }
     }
 

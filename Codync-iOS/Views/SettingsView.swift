@@ -46,6 +46,8 @@ struct SettingsView: View {
                     .tint(.primary)
                 } header: {
                     Text("Notifications")
+                } footer: {
+                    Text("Only the pinned primary session sends completion alerts.")
                 }
 
                 // MARK: - Support

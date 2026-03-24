@@ -102,10 +102,15 @@ final class CloudKitSync {
                 }
 
                 if !toSave.isEmpty {
-                    // Send completion alert for newly completed sessions (Pro only)
-                    for session in toSave where session.status == .completed {
-                        if previousStates[session.sessionId]?.status != .completed {
-                            await APNsPushService.shared.sendCompletionAlert(session: session)
+                    // Fetch primary session once — reused for alert + overall push
+                    let primary = await CloudKitManager.shared.fetchPrimarySession()
+
+                    // Send completion alert only for primary session (Pro only)
+                    if let lockedPrimaryId = primary.sessionId, primary.locked {
+                        for session in toSave where session.status == .completed && session.sessionId == lockedPrimaryId {
+                            if previousStates[session.sessionId]?.status != .completed {
+                                await APNsPushService.shared.sendCompletionAlert(session: session)
+                            }
                         }
                     }
 
@@ -128,7 +133,6 @@ final class CloudKitSync {
                     }
                     // Overall mode: send all active sessions with user's primary selection
                     let allActive = sessions.filter { $0.status != .completed }
-                    let primary = await CloudKitManager.shared.fetchPrimarySession()
                     let primaryId = primary.sessionId
                         ?? allActive.first(where: { $0.status == .working })?.sessionId
                     // Sync primary to macOS panel sorting

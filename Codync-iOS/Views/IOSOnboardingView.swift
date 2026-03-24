@@ -470,7 +470,7 @@ struct IOSOnboardingView: View {
 
                 Spacer().frame(height: 12)
 
-                Text("Tap the circle on the right to try it.\nShown first on Dynamic Island and Lock Screen.")
+                Text("Tap the circle to pin a session.\nShown first on Dynamic Island and Lock Screen.\nOnly the primary session triggers completion alerts.")
                     .multilineTextAlignment(.center)
                     .font(.system(size: 16))
                     .foregroundStyle(theme.secondaryText)
@@ -555,21 +555,21 @@ struct IOSOnboardingView: View {
 
                 // Faux Live Activity permission dialog — mimics real iOS alert
                 VStack(spacing: 0) {
-                    // Session list (dark card)
+                    // Session list (dark card) — top portion
                     VStack(spacing: 2) {
                         fauxLARow(name: "my-project", model: "Opus", task: "Reading file...")
                         fauxLARow(name: "backend", model: "Sonnet", task: nil)
                         fauxLARow(name: "web-app", model: "Haiku", task: "Editing code")
                     }
                     .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(white: 0.13))
-                    )
+                    .frame(maxWidth: .infinity)
+                    .background(Color(white: 0.13))
 
-                    Spacer().frame(height: 8)
+                    // Thin separator between session list and dialog
+                    Color.white.opacity(0.08)
+                        .frame(height: 1)
 
-                    // Permission dialog — frosted glass style
+                    // Permission dialog — bottom portion, slightly lighter
                     VStack(spacing: 0) {
                         Text("Allow Live Activities\nfrom \u{201C}Codync\u{201D}?")
                             .font(.system(size: 16, weight: .medium))
@@ -602,13 +602,13 @@ struct IOSOnboardingView: View {
                             }
                         }
                     }
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .environment(\.colorScheme, .dark)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Color(white: 0.18))
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(.white.opacity(0.1), lineWidth: 1)
+                )
                 .padding(.horizontal, 36)
 
                 Spacer().frame(height: 32)

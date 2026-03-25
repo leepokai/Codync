@@ -1,0 +1,3 @@
+[submodule "Codync-web"]
+	path = Codync-web
+	url = https://github.com/leepokai/Codync-web.git

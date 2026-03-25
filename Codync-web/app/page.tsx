@@ -34,6 +34,9 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="flex justify-center gap-6 px-6 py-10 text-sm text-neutral-500 border-t border-neutral-900">
+        <a href="/terms" className="hover:text-neutral-300 transition-colors">
+          Terms of Use
+        </a>
         <a href="/privacy" className="hover:text-neutral-300 transition-colors">
           Privacy Policy
         </a>

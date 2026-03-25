@@ -147,6 +147,16 @@ struct CodyncPaywallView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
 
+                    Spacer().frame(height: 12)
+
+                    // Terms & Privacy links
+                    HStack(spacing: 16) {
+                        Link("Terms of Use (EULA)", destination: URL(string: "https://codync.dev/terms")!)
+                        Link("Privacy Policy", destination: URL(string: "https://codync.dev/privacy")!)
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.tertiaryText)
+
                     Spacer().frame(height: 32)
                 }
             }

@@ -55,7 +55,13 @@ export default function Privacy() {
           <a href="mailto:kevin2005ha@gmail.com" className="text-white underline">kevin2005ha@gmail.com</a>.
         </Section>
 
-        <div className="pt-8">
+        <div className="pt-4">
+          <p className="text-neutral-400">
+            <a href="/terms" className="text-white underline">Terms of Use</a>
+          </p>
+        </div>
+
+        <div className="pt-4">
           <a href="/" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">
             &larr; Back to home
           </a>

@@ -27,6 +27,7 @@
 		A3F82B14C7E94D61B0E53D92 /* LiveActivityPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D91C43F0A24E87A2C74F56 /* LiveActivityPreview.swift */; };
 		A98E0466D559EC6EBE0E39F4 /* ClaudeHookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */; };
 		APNS0001D559EC6EBE0E39F4 /* APNsPushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */; };
+		APNS0003D559EC6EBE0E39F4 /* APNsSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = APNS0004D559EC6EBE0E39F4 /* APNsSecrets.swift */; };
 		B1C2D3E4F5A6B7C8D9E0F1A1 /* IOSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A1 /* IOSTheme.swift */; };
 		B1C2D3E4F5A6B7C8D9E0F1A2 /* IOSStatusIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A2 /* IOSStatusIndicator.swift */; };
 		B1C2D3E4F5A6B7C8D9E0F1A3 /* IOSSessionTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A3 /* IOSSessionTagView.swift */; };
@@ -118,6 +119,7 @@
 		AB156A392F6DC850001D15CE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
 		APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APNsPushService.swift; sourceTree = "<group>"; };
+		APNS0004D559EC6EBE0E39F4 /* APNsSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APNsSecrets.swift; sourceTree = "<group>"; };
 		B3C4D5E6F708192A3B4C5D6E /* TranscriptWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptWatcher.swift; sourceTree = "<group>"; };
 		B6D91C43F0A24E87A2C74F56 /* LiveActivityPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityPreview.swift; sourceTree = "<group>"; };
 		BB22CC33DD44EE55FF660011 /* EventMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventMonitor.swift; sourceTree = "<group>"; };
@@ -308,6 +310,7 @@
 			isa = PBXGroup;
 			children = (
 				APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */,
+				APNS0004D559EC6EBE0E39F4 /* APNsSecrets.swift */,
 				E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */,
 				22479FA0953120F3B50A1AF3 /* CloudKitSync.swift */,
 				A19BA18A6829F0BE991D4C7D /* SessionFileParser.swift */,
@@ -470,6 +473,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				APNS0001D559EC6EBE0E39F4 /* APNsPushService.swift in Sources */,
+				APNS0003D559EC6EBE0E39F4 /* APNsSecrets.swift in Sources */,
 				A98E0466D559EC6EBE0E39F4 /* ClaudeHookServer.swift in Sources */,
 				3DC7D9E7E79444359ED6D09F /* ClaudePaths.swift in Sources */,
 				106A1E305D6DBDFC35AF01BD /* CloudKitSync.swift in Sources */,

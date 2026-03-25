@@ -23,7 +23,7 @@ export default function Hero() {
           transition={{ duration: 0.5 }}
           className="mb-6 text-sm sm:text-base text-neutral-400 font-medium tracking-wide"
         >
-          Now you can vibe code with Claude Code while running 🏃‍♂️⌚
+          Now you can vibe code with Claude Code while jogging 🏃‍♂️⌚
         </motion.p>
 
         <motion.img

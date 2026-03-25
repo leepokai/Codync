@@ -16,9 +16,6 @@ final class APNsPushService {
     var tokenCount: Int { pushTokens.count }
     private var isFetchingTokens = false
     private var lastTokenFetch: Date = .distantPast
-    private var lastPushTime: [String: Date] = [:]
-    private let pushInterval: TimeInterval = 2 // minimum seconds between pushes per token
-
     private init() {
         logger.info("APNs push service ready (Worker relay)")
     }
@@ -27,9 +24,6 @@ final class APNsPushService {
 
     func sendUpdate(session: SessionState) async {
         guard let tokenHex = pushTokens[session.sessionId] else { return }
-        let key = session.sessionId
-        if let last = lastPushTime[key], Date().timeIntervalSince(last) < pushInterval { return }
-        lastPushTime[key] = Date()
 
         let contentState = Self.buildContentState(from: session)
         let payload: [String: Any] = [
@@ -42,9 +36,6 @@ final class APNsPushService {
 
     func sendOverallUpdate(sessions: [SessionState], primarySessionId: String?) async {
         guard let tokenHex = pushTokens["__overall__"] else { return }
-        let key = "__overall__"
-        if let last = lastPushTime[key], Date().timeIntervalSince(last) < pushInterval { return }
-        lastPushTime[key] = Date()
 
         let summaries: [[String: Any]] = sessions.prefix(4).map { session in
             let liveDuration = max(session.durationSec, Int(Date().timeIntervalSince(session.startedAt)))

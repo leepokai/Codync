@@ -17,6 +17,41 @@ interface PushRequest {
   body?: string;
 }
 
+// Cache ApnsClient instances at module level — reuses JWT token across requests
+// within the same Worker isolate (token valid 20-60 min per Apple docs)
+let cachedAlertClient: ApnsClient | null = null;
+let cachedLiveActivityClient: ApnsClient | null = null;
+let cachedEnvHash: string | null = null;
+
+function getClients(env: Env): { alertClient: ApnsClient; liveActivityClient: ApnsClient } {
+  const envHash = `${env.APNS_TEAM_ID}:${env.APNS_KEY_ID}`;
+  if (cachedAlertClient && cachedLiveActivityClient && cachedEnvHash === envHash) {
+    return { alertClient: cachedAlertClient, liveActivityClient: cachedLiveActivityClient };
+  }
+
+  const signingKey = env.APNS_SIGNING_KEY.replace(/\\n/g, "\n");
+  const bundleId = "com.pokai.Codync.ios";
+
+  cachedAlertClient = new ApnsClient({
+    team: env.APNS_TEAM_ID,
+    keyId: env.APNS_KEY_ID,
+    signingKey,
+    defaultTopic: bundleId,
+    host: "api.sandbox.push.apple.com",
+  });
+
+  cachedLiveActivityClient = new ApnsClient({
+    team: env.APNS_TEAM_ID,
+    keyId: env.APNS_KEY_ID,
+    signingKey,
+    defaultTopic: `${bundleId}.push-type.liveactivity`,
+    host: "api.sandbox.push.apple.com",
+  });
+
+  cachedEnvHash = envHash;
+  return { alertClient: cachedAlertClient, liveActivityClient: cachedLiveActivityClient };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method !== "POST") {
@@ -39,20 +74,11 @@ export default {
       return new Response("Missing pushToken", { status: 400 });
     }
 
-    const signingKey = env.APNS_SIGNING_KEY.replace(/\\n/g, "\n");
-    const bundleId = "com.pokai.Codync.ios";
+    const { alertClient, liveActivityClient } = getClients(env);
     const pushType = body.type ?? "liveactivity";
 
     if (pushType === "alert") {
       // Regular alert notification (e.g., session completed)
-      const client = new ApnsClient({
-        team: env.APNS_TEAM_ID,
-        keyId: env.APNS_KEY_ID,
-        signingKey,
-        defaultTopic: bundleId,
-        host: "api.sandbox.push.apple.com",
-      });
-
       const notification = new Notification(body.pushToken, {
         type: PushType.alert,
         priority: Priority.immediate,
@@ -66,7 +92,7 @@ export default {
       });
 
       try {
-        await client.send(notification);
+        await alertClient.send(notification);
         return Response.json({ success: true });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -77,14 +103,6 @@ export default {
 
     // Live Activity push
     const event = body.event ?? "update";
-
-    const client = new ApnsClient({
-      team: env.APNS_TEAM_ID,
-      keyId: env.APNS_KEY_ID,
-      signingKey,
-      defaultTopic: `${bundleId}.push-type.liveactivity`,
-      host: "api.sandbox.push.apple.com",
-    });
 
     const aps: Record<string, unknown> = {
       timestamp: Math.floor(Date.now() / 1000),
@@ -106,7 +124,7 @@ export default {
     });
 
     try {
-      await client.send(notification);
+      await liveActivityClient.send(notification);
       return Response.json({ success: true });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

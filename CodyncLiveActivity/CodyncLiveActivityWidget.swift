@@ -856,18 +856,12 @@ struct WatchIndividualView: View {
             }
 
             if let task = watchNonEmpty(state.currentTask) {
-                HStack(spacing: 5) {
-                    Image(systemName: watchToolIcon(for: task))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.4))
-                        .frame(width: 14)
-                    Text(watchSimplifyTool(task) ?? task)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(1)
-                }
-                .id(task)
-                .transition(.push(from: .bottom))
+                Text(task)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .id(task)
+                    .transition(.push(from: .bottom))
             } else {
                 Text(watchStatusLabel(state.status))
                     .font(.subheadline)
@@ -1000,13 +994,13 @@ struct WatchOverallView: View {
 
             Spacer(minLength: 0)
 
-            if session.status == .working {
-                IslandSparkle(durationSec: session.durationSec, size: 9)
-            } else if let task = session.currentTask, !task.isEmpty {
+            if let task = session.currentTask, !task.isEmpty {
                 Text(task)
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.35))
                     .lineLimit(1)
+            } else if session.status == .working {
+                IslandSparkle(durationSec: session.durationSec, size: 9)
             }
         }
         .padding(.vertical, 5)

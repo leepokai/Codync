@@ -147,9 +147,9 @@ function MenuBarDemo() {
 
   return (
     <div ref={ref} className="flex justify-center">
-      <div className="w-full max-w-[320px]">
+      <div className="w-full max-w-[320px] relative">
         {/* Mac menu bar with notch */}
-        <div className="relative rounded-t-xl">
+        <div className="relative">
           <div className="h-[26px] bg-gradient-to-r from-[#384f6b] to-[#4a6a8a] rounded-t-xl flex items-center px-3 relative overflow-visible">
             {/* Left: Apple + Finder */}
             <div className="flex items-center gap-3">
@@ -162,7 +162,7 @@ function MenuBarDemo() {
             {/* Center: Notch extending from above */}
             <div className="absolute left-1/2 -translate-x-1/2 -top-[10px] z-10">
               <div
-                className="flex items-end justify-end px-3 pb-[5px]"
+                className="flex items-end justify-center px-3 pb-[5px]"
                 style={{
                   width: 120,
                   height: 36,
@@ -181,30 +181,43 @@ function MenuBarDemo() {
           </div>
         </div>
 
-        {/* Popover — flush against menu bar, no gap */}
+        {/* Popover — connected dark panel like real app */}
         <motion.div
           initial={{ opacity: 0, y: -5, scaleY: 0.95 }}
           animate={inView ? { opacity: 1, y: 0, scaleY: 1 } : {}}
           transition={{ delay: 0.4, duration: 0.3 }}
-          className="origin-top ml-auto w-[260px] rounded-b-xl bg-[#1c1c1e] border border-t-0 border-white/10 shadow-2xl overflow-hidden -mt-px"
+          className="origin-top mx-auto w-[280px] rounded-2xl bg-[#1a1a1a] border border-white/[0.08] shadow-[0_12px_50px_rgba(0,0,0,0.8)] overflow-hidden mt-1.5"
         >
-          <div className="p-3 space-y-1">
+          {/* Panel header — icon + controls */}
+          <div className="flex items-center justify-between px-4 pt-3 pb-2">
+            <img src="/icon.png" alt="" className="w-[18px] h-[18px] opacity-80" />
+            <div className="flex items-center gap-2.5 text-white/30">
+              <span className="text-[10px]">☀</span>
+              <span className="text-[10px]">✦</span>
+              <span className="text-[10px]">✕</span>
+            </div>
+          </div>
+
+          {/* Session list */}
+          <div className="px-3 pb-2 space-y-0.5">
             {[
               { name: "Codync", model: "Opus", task: "Editing code...", active: true },
               { name: "MyApp", model: "Sonnet", task: "Reading file", active: true },
               { name: "backend", model: "Haiku", task: null, active: false },
             ].map((s) => (
-              <div key={s.name} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5">
+              <div key={s.name} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/5">
                 <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.active ? "bg-white/80" : "bg-white/30"}`} />
                 <span className="text-[11px] font-semibold text-white">{s.name}</span>
-                <span className="text-[8px] text-white/40 px-1.5 py-0.5 bg-white/8 rounded-full">{s.model}</span>
+                <span className="text-[8px] text-white/40 px-1.5 py-0.5 bg-white/[0.08] rounded-full">{s.model}</span>
                 <span className="text-[9px] text-white/30 ml-auto truncate max-w-[80px]">{s.task ?? "Idle"}</span>
               </div>
             ))}
           </div>
-          <div className="border-t border-white/8 px-3 py-2 flex justify-between items-center">
-            <span className="text-[9px] text-white/30">3 sessions</span>
-            <span className="text-[9px] text-white/30">$2.14 total</span>
+
+          {/* Footer */}
+          <div className="border-t border-white/[0.06] px-4 py-2 flex justify-between items-center">
+            <span className="text-[9px] text-white/25">3 sessions</span>
+            <span className="text-[9px] text-white/25">$2.14 total</span>
           </div>
         </motion.div>
       </div>

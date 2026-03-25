@@ -9,8 +9,8 @@ private let logger = Logger(subsystem: "com.pokai.Codync", category: "APNsPush")
 final class APNsPushService {
     static let shared = APNsPushService()
 
-    private let workerURL = URL(string: "https://codync-push.kevin2005ha.workers.dev")!
-    private let apiSecret = "f1bf65b18870dffc6c28e69d275413e9c08b33010cb652a781106aaaaf99f329"
+    private let workerURL = URL(string: APNsSecrets.workerURL)!
+    private let apiSecret = APNsSecrets.apiSecret
 
     private(set) var pushTokens: [String: String] = [:] // sessionId → token hex
     var tokenCount: Int { pushTokens.count }

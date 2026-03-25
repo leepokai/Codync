@@ -17,6 +17,15 @@ export default function Hero() {
         transition={{ duration: 0.6 }}
         className="relative z-10 flex flex-col items-center text-center"
       >
+        <motion.p
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="mb-6 text-sm sm:text-base text-neutral-400 font-medium tracking-wide"
+        >
+          Now you can vibe code with Claude Code while running 🏃‍♂️⌚
+        </motion.p>
+
         <motion.img
           src="/icon.png"
           alt="Codync"

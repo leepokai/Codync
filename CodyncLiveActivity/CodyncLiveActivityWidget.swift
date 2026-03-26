@@ -38,7 +38,7 @@ struct CodyncLiveActivityWidget: Widget {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(context.attributes.projectName)
                             .font(.headline)
-                        Text(nonEmpty(context.state.currentTask) ?? statusLabel(context.state.status))
+                        Text(simplifyToolText(context.state.currentTask) ?? statusLabel(context.state.status))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -54,6 +54,11 @@ struct CodyncLiveActivityWidget: Widget {
                             lineWidth: 2.5
                         )
                         .padding(.top, 4)
+                    } else if context.state.costUSD > 0 {
+                        Text(compactCost(context.state.costUSD))
+                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.5))
+                            .padding(.top, 4)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -66,9 +71,9 @@ struct CodyncLiveActivityWidget: Widget {
                             }
                         }
                     } else {
-                        let completed = context.state.tasks.filter { $0.status == .completed }
-                        if let prev = completed.last, !context.state.isCompleted {
-                            HStack(spacing: 6) {
+                        HStack(spacing: 6) {
+                            let completed = context.state.tasks.filter { $0.status == .completed }
+                            if let prev = completed.last, !context.state.isCompleted {
                                 Image(systemName: "checkmark")
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(.white.opacity(0.7))
@@ -76,7 +81,15 @@ struct CodyncLiveActivityWidget: Widget {
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
+                            } else {
+                                Text(modelDisplayLabel(context.state.model))
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white.opacity(0.5))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.white.opacity(0.1), in: Capsule())
                             }
+                            Spacer()
                         }
                     }
                 }
@@ -494,6 +507,12 @@ struct CodyncLiveActivityWidget: Widget {
         }
     }
 
+    /// Compact cost for Dynamic Island trailing (narrow space)
+    private func compactCost(_ cost: Double) -> String {
+        if cost >= 10 { return "$\(Int(cost))" }
+        return String(format: "$%.1f", cost)
+    }
+
     /// Dynamic Island task segments — monochrome white at different opacities
     private func islandTaskColor(_ status: TaskStatus) -> Color {
         switch status {
@@ -619,9 +638,11 @@ struct OverallLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     let primary = self.primarySession(from: context.state)
                     if let p = primary, p.status == .working {
-                        Circle().fill(.white).frame(width: 8, height: 8)
+                        IslandSparkle(durationSec: p.durationSec, size: 12)
+                            .padding(.top, 4)
                     } else {
                         Circle().fill(.white.opacity(0.5)).frame(width: 8, height: 8)
+                            .padding(.top, 6)
                     }
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -629,29 +650,41 @@ struct OverallLiveActivityWidget: Widget {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(primary?.projectName ?? "Codync")
                             .font(.headline)
-                        Text(primary?.currentTask ?? statusLabel(primary?.status.rawValue ?? "idle"))
+                        Text(overallSimplifyTask(primary) ?? statusLabel(primary?.status.rawValue ?? "idle"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .id(primary?.currentTask ?? primary?.status.rawValue ?? "idle")
+                            .transition(.push(from: .bottom))
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(String(format: "$%.2f", context.state.totalCost))
+                    // Session count badge — cost moved to bottom
+                    Text("\(context.state.sessions.count)")
                         .font(.caption2.bold())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 18, height: 18)
+                        .background(.white.opacity(0.12), in: Circle())
+                        .padding(.top, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(spacing: 4) {
-                        ForEach(context.state.sessions, id: \.sessionId) { s in
-                            HStack(spacing: 3) {
-                                Circle()
-                                    .fill(s.sessionId == context.state.primarySessionId ? .white : .white.opacity(0.5))
-                                    .frame(width: 5, height: 5)
-                                Text(s.projectName)
-                                    .font(.caption2)
-                                    .lineLimit(1)
+                    HStack(spacing: 0) {
+                        HStack(spacing: 8) {
+                            ForEach(context.state.sessions, id: \.sessionId) { s in
+                                HStack(spacing: 3) {
+                                    Circle()
+                                        .fill(overallDotColor(s, primaryId: context.state.primarySessionId))
+                                        .frame(width: 5, height: 5)
+                                    Text(s.projectName)
+                                        .font(.caption2)
+                                        .foregroundStyle(.white.opacity(
+                                            s.sessionId == context.state.primarySessionId ? 0.9 : 0.5
+                                        ))
+                                        .lineLimit(1)
+                                }
                             }
                         }
+                        Spacer(minLength: 0)
                     }
                 }
             } compactLeading: {
@@ -716,8 +749,37 @@ struct OverallLiveActivityWidget: Widget {
             ?? state.sessions.first
     }
 
-    private func modelLabel(_ model: String) -> String {
-        modelDisplayLabel(model)
+    /// Simplify task text for Overall DI expanded center
+    private func overallSimplifyTask(_ session: SessionSummary?) -> String? {
+        guard let task = session?.currentTask, !task.isEmpty else { return nil }
+        let lower = task.lowercased()
+        if lower.hasPrefix("running:") || lower.contains("bash") { return "Running command" }
+        if lower.hasPrefix("reading") {
+            let file = URL(fileURLWithPath: task.replacingOccurrences(of: "Reading ", with: "")).lastPathComponent
+            return file.isEmpty ? "Reading file" : "Reading \(file)"
+        }
+        if lower.hasPrefix("editing") || lower.hasPrefix("writing") {
+            let file = URL(fileURLWithPath: task.replacingOccurrences(of: "Editing ", with: "").replacingOccurrences(of: "Writing ", with: "")).lastPathComponent
+            return file.isEmpty ? "Editing file" : "Editing \(file)"
+        }
+        if lower.contains("grep") || lower.contains("search") { return "Searching code" }
+        if lower.contains("glob") { return "Finding files" }
+        if lower.contains("agent") { return "Dispatching agent" }
+        if lower.contains("git") { return "Git operation" }
+        if lower.contains("web") || lower.contains("fetch") { return "Fetching web" }
+        if lower.contains("mcp") { return "Using tool" }
+        if task.count > 40 { return String(task.prefix(37)) + "…" }
+        return task
+    }
+
+    /// Dot color for session list in Overall DI expanded
+    private func overallDotColor(_ session: SessionSummary, primaryId: String?) -> Color {
+        if session.sessionId == primaryId { return .white }
+        switch session.status {
+        case .working: return .white.opacity(0.8)
+        case .needsInput: return .white.opacity(0.9)
+        default: return .white.opacity(0.4)
+        }
     }
 
     private func statusLabel(_ status: String) -> String {

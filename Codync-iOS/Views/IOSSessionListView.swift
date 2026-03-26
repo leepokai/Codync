@@ -261,3 +261,4 @@ private struct MiniProgressBar: View {
         }
     }
 }
+

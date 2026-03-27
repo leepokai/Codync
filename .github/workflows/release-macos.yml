@@ -52,22 +52,26 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_FILE"
 
       - name: Build and archive
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
         run: |
           xcodebuild archive \
             -project Codync.xcodeproj \
             -scheme Codync \
             -configuration Release \
             -archivePath $RUNNER_TEMP/Codync.xcarchive \
-            CODE_SIGN_STYLE=Manual \
+            -allowProvisioningUpdates \
             CODE_SIGN_IDENTITY="Developer ID Application" \
-            DEVELOPMENT_TEAM=DEVELOPMENT_TEAM_REDACTED \
+            DEVELOPMENT_TEAM="$APPLE_DEVELOPMENT_TEAM" \
             MARKETING_VERSION=${{ env.VERSION }} \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
       - name: Export archive
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
         run: |
           /usr/libexec/PlistBuddy -c "Add :method string developer-id" $RUNNER_TEMP/export.plist
-          /usr/libexec/PlistBuddy -c "Add :teamID string DEVELOPMENT_TEAM_REDACTED" $RUNNER_TEMP/export.plist
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_DEVELOPMENT_TEAM" $RUNNER_TEMP/export.plist
 
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Codync.xcarchive \
@@ -77,7 +81,7 @@ jobs:
       - name: Notarize and staple
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           ditto -c -k --keepParent \

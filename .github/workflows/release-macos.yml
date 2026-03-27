@@ -67,7 +67,7 @@ jobs:
             version "${{ env.VERSION }}"
             sha256 "${SHA}"
 
-            url "https://github.com/leepokai/CodePulse/releases/download/v#{version}/Codync-macOS.dmg"
+            url "https://github.com/leepokai/Codync/releases/download/v#{version}/Codync-macOS.dmg"
             name "Codync"
             desc "Real-time Claude Code session monitor for macOS menu bar"
             homepage "https://codync.dev"

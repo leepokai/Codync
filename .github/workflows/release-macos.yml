@@ -56,30 +56,48 @@ jobs:
           echo "$PROVISION_PROFILE" | base64 --decode \
             > ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/codync-devid.provisionprofile
 
-      - name: Build and archive
-        env:
-          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+      - name: Build
         run: |
-          xcodebuild archive \
+          xcodebuild build \
             -project Codync.xcodeproj \
             -scheme Codync \
             -configuration Release \
-            -archivePath $RUNNER_TEMP/Codync.xcarchive \
-            DEVELOPMENT_TEAM="$APPLE_DEVELOPMENT_TEAM" \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build/derived \
+            -quiet \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION=${{ env.VERSION }} \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
-      - name: Export archive
-        env:
-          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+      - name: Sign app with Developer ID
         run: |
-          /usr/libexec/PlistBuddy -c "Add :method string developer-id" $RUNNER_TEMP/export.plist
-          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_DEVELOPMENT_TEAM" $RUNNER_TEMP/export.plist
+          APP_PATH=$(find build/derived -name "Codync.app" -path "*/Release/*" | head -1)
 
-          xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/Codync.xcarchive \
-            -exportOptionsPlist $RUNNER_TEMP/export.plist \
-            -exportPath $RUNNER_TEMP/export
+          cp ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/codync-devid.provisionprofile \
+            "$APP_PATH/Contents/embedded.provisionprofile"
+
+          cat > $RUNNER_TEMP/release.entitlements << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.developer.icloud-container-environment</key>
+            <string>Production</string>
+            <key>com.apple.developer.icloud-container-identifiers</key>
+            <array><string>iCloud.com.pokai.Codync</string></array>
+            <key>com.apple.developer.icloud-services</key>
+            <array><string>CloudKit</string></array>
+          </dict>
+          </plist>
+          PLIST
+
+          codesign --deep --force --options runtime \
+            --sign "Developer ID Application" \
+            --entitlements $RUNNER_TEMP/release.entitlements \
+            "$APP_PATH"
+          cp -R "$APP_PATH" "$RUNNER_TEMP/Codync.app"
 
       - name: Notarize and staple
         env:

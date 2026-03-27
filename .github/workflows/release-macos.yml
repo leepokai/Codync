@@ -65,10 +65,7 @@ jobs:
             -scheme Codync \
             -configuration Release \
             -archivePath $RUNNER_TEMP/Codync.xcarchive \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM="$APPLE_DEVELOPMENT_TEAM" \
-            PROVISIONING_PROFILE_SPECIFIER="Mac Team Direct Provisioning Profile: com.pokai.Codync" \
             MARKETING_VERSION=${{ env.VERSION }} \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
@@ -78,9 +75,6 @@ jobs:
         run: |
           /usr/libexec/PlistBuddy -c "Add :method string developer-id" $RUNNER_TEMP/export.plist
           /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_DEVELOPMENT_TEAM" $RUNNER_TEMP/export.plist
-          /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" $RUNNER_TEMP/export.plist
-          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" $RUNNER_TEMP/export.plist
-          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.pokai.Codync string Mac Team Direct Provisioning Profile: com.pokai.Codync" $RUNNER_TEMP/export.plist
 
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Codync.xcarchive \

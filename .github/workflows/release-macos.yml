@@ -106,7 +106,7 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           ditto -c -k --keepParent \
-            "$RUNNER_TEMP/export/Codync.app" \
+            "$RUNNER_TEMP/Codync.app" \
             "$RUNNER_TEMP/codync-submit.zip"
 
           xcrun notarytool submit "$RUNNER_TEMP/codync-submit.zip" \
@@ -115,13 +115,13 @@ jobs:
             --password "$APPLE_APP_PASSWORD" \
             --wait
 
-          xcrun stapler staple "$RUNNER_TEMP/export/Codync.app"
+          xcrun stapler staple "$RUNNER_TEMP/Codync.app"
 
       - name: Create DMG
         run: |
           DMG_DIR=$RUNNER_TEMP/dmg_staging
           mkdir -p "$DMG_DIR"
-          cp -R "$RUNNER_TEMP/export/Codync.app" "$DMG_DIR/"
+          cp -R "$RUNNER_TEMP/Codync.app" "$DMG_DIR/"
           ln -s /Applications "$DMG_DIR/Applications"
           hdiutil create -volname "Codync" -srcfolder "$DMG_DIR" \
             -ov -format UDZO build/Codync-macOS.dmg

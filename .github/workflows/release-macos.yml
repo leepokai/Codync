@@ -25,10 +25,11 @@ jobs:
           }
           SWIFT
 
-      - name: Install Apple certificate
+      - name: Install Apple certificate and provisioning profile
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          PROVISION_PROFILE: ${{ secrets.DEVELOPER_ID_PROVISION_PROFILE }}
         run: |
           CERT_FILE=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_FILE=$RUNNER_TEMP/app-signing.keychain-db
@@ -51,30 +52,40 @@ jobs:
 
           security list-keychain -d user -s "$KEYCHAIN_FILE"
 
-      - name: Build
-        run: |
-          xcodebuild build \
-            -project Codync.xcodeproj \
-            -scheme Codync \
-            -configuration Release \
-            -destination 'generic/platform=macOS' \
-            -derivedDataPath build/derived \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            MARKETING_VERSION=${{ env.VERSION }} \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+          mkdir -p ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles
+          echo "$PROVISION_PROFILE" | base64 --decode \
+            > ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/codync-devid.provisionprofile
 
-      - name: Sign app with Developer ID
+      - name: Build and archive
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
         run: |
-          APP_PATH=$(find build/derived -name "Codync.app" -path "*/Release/*" | head -1)
-          codesign --deep --force --options runtime \
-            --sign "Developer ID Application" \
-            --entitlements Codync-macOS/App/Codync.entitlements \
-            "$APP_PATH"
-          cp -R "$APP_PATH" "$RUNNER_TEMP/Codync.app"
+          xcodebuild archive \
+            -project Codync.xcodeproj \
+            -scheme Codync \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Codync.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="$APPLE_DEVELOPMENT_TEAM" \
+            PROVISIONING_PROFILE_SPECIFIER="Mac Team Direct Provisioning Profile: com.pokai.Codync" \
+            MARKETING_VERSION=${{ env.VERSION }} \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      - name: Export archive
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+        run: |
+          /usr/libexec/PlistBuddy -c "Add :method string developer-id" $RUNNER_TEMP/export.plist
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_DEVELOPMENT_TEAM" $RUNNER_TEMP/export.plist
+          /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" $RUNNER_TEMP/export.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" $RUNNER_TEMP/export.plist
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:com.pokai.Codync string Mac Team Direct Provisioning Profile: com.pokai.Codync" $RUNNER_TEMP/export.plist
+
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Codync.xcarchive \
+            -exportOptionsPlist $RUNNER_TEMP/export.plist \
+            -exportPath $RUNNER_TEMP/export
 
       - name: Notarize and staple
         env:
@@ -83,7 +94,7 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           ditto -c -k --keepParent \
-            "$RUNNER_TEMP/Codync.app" \
+            "$RUNNER_TEMP/export/Codync.app" \
             "$RUNNER_TEMP/codync-submit.zip"
 
           xcrun notarytool submit "$RUNNER_TEMP/codync-submit.zip" \
@@ -92,13 +103,13 @@ jobs:
             --password "$APPLE_APP_PASSWORD" \
             --wait
 
-          xcrun stapler staple "$RUNNER_TEMP/Codync.app"
+          xcrun stapler staple "$RUNNER_TEMP/export/Codync.app"
 
       - name: Create DMG
         run: |
           DMG_DIR=$RUNNER_TEMP/dmg_staging
           mkdir -p "$DMG_DIR"
-          cp -R "$RUNNER_TEMP/Codync.app" "$DMG_DIR/"
+          cp -R "$RUNNER_TEMP/export/Codync.app" "$DMG_DIR/"
           ln -s /Applications "$DMG_DIR/Applications"
           hdiutil create -volname "Codync" -srcfolder "$DMG_DIR" \
             -ov -format UDZO build/Codync-macOS.dmg

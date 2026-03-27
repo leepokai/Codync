@@ -60,9 +60,10 @@ jobs:
             -scheme Codync \
             -configuration Release \
             -archivePath $RUNNER_TEMP/Codync.xcarchive \
-            -allowProvisioningUpdates \
+            CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM="$APPLE_DEVELOPMENT_TEAM" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             MARKETING_VERSION=${{ env.VERSION }} \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 

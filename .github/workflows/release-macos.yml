@@ -25,29 +25,81 @@ jobs:
           }
           SWIFT
 
-      - name: Build
+      - name: Install Apple certificate
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
-          xcodebuild build \
+          CERT_FILE=$RUNNER_TEMP/certificate.p12
+          KEYCHAIN_FILE=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$CERT_FILE"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_FILE"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+
+          security import "$CERT_FILE" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_FILE"
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_FILE"
+
+          security list-keychain -d user -s "$KEYCHAIN_FILE"
+
+      - name: Build and archive
+        run: |
+          xcodebuild archive \
             -project Codync.xcodeproj \
             -scheme Codync \
             -configuration Release \
-            -destination 'generic/platform=macOS' \
-            -derivedDataPath build/derived \
-            -quiet \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
+            -archivePath $RUNNER_TEMP/Codync.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM=DEVELOPMENT_TEAM_REDACTED \
             MARKETING_VERSION=${{ env.VERSION }} \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
+      - name: Export archive
+        run: |
+          /usr/libexec/PlistBuddy -c "Add :method string developer-id" $RUNNER_TEMP/export.plist
+          /usr/libexec/PlistBuddy -c "Add :teamID string DEVELOPMENT_TEAM_REDACTED" $RUNNER_TEMP/export.plist
+
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Codync.xcarchive \
+            -exportOptionsPlist $RUNNER_TEMP/export.plist \
+            -exportPath $RUNNER_TEMP/export
+
+      - name: Notarize and staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent \
+            "$RUNNER_TEMP/export/Codync.app" \
+            "$RUNNER_TEMP/codync-submit.zip"
+
+          xcrun notarytool submit "$RUNNER_TEMP/codync-submit.zip" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+
+          xcrun stapler staple "$RUNNER_TEMP/export/Codync.app"
+
       - name: Create DMG
         run: |
-          APP_PATH=$(find build/derived -name "Codync.app" -path "*/Release/*" | head -1)
-          hdiutil create \
-            -volname "Codync" \
-            -srcfolder "$APP_PATH" \
-            -ov -format UDZO \
-            build/Codync-macOS.dmg
+          DMG_DIR=$RUNNER_TEMP/dmg_staging
+          mkdir -p "$DMG_DIR"
+          cp -R "$RUNNER_TEMP/export/Codync.app" "$DMG_DIR/"
+          ln -s /Applications "$DMG_DIR/Applications"
+          hdiutil create -volname "Codync" -srcfolder "$DMG_DIR" \
+            -ov -format UDZO build/Codync-macOS.dmg
 
       - name: Create GitHub Release
         run: |

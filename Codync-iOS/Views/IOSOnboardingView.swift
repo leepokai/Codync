@@ -214,6 +214,24 @@ struct IOSOnboardingView: View {
                     .foregroundStyle(theme.secondaryText)
                     .lineSpacing(4)
 
+                Spacer().frame(height: 16)
+
+                Link(destination: URL(string: "https://codync.dev")!) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 14))
+                        Text("codync.dev")
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                    .foregroundStyle(theme.primaryText)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(theme.primaryText.opacity(0.1))
+                    )
+                }
+
                 Spacer()
             },
             primaryButton: "Continue",

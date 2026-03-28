@@ -51,7 +51,7 @@ public struct OverallSessionRow: View {
                 .lineLimit(1)
                 .layoutPriority(1)
 
-            Text(modelDisplayLabel(model))
+            Text(model)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(fg.opacity(0.5))
                 .padding(.horizontal, 6)

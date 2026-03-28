@@ -639,10 +639,9 @@ struct OverallLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.center) {
                     let primary = self.primarySession(from: context.state)
-                    let anyWorking = context.state.sessions.contains { $0.status == .working }
                     HStack(spacing: 6) {
-                        if anyWorking {
-                            IslandSparkle(durationSec: primary?.durationSec ?? 0, size: 12)
+                        if let p = primary, p.status == .working {
+                            IslandSparkle(durationSec: p.durationSec, size: 12)
                         } else {
                             Circle()
                                 .fill(.white.opacity(0.3))

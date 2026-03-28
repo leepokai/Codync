@@ -22,3 +22,4 @@ Package.resolved
 **/RevenueCatSecrets.swift
 *.p8
 .wrangler/
+Codync.app/

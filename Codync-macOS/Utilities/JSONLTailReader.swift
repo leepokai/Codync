@@ -1,4 +1,5 @@
 import Foundation
+import CodyncShared
 
 struct JSONLUsage: Codable {
     let inputTokens: Int?
@@ -105,10 +106,7 @@ struct JSONLSessionInfo {
     }
 
     private var modelContextSize: Int {
-        if model.contains("opus") { return 200_000 }
-        if model.contains("sonnet") { return 200_000 }
-        if model.contains("haiku") { return 200_000 }
-        return 200_000
+        ModelInfo.parse(model).contextWindow
     }
 
     private var modelPricing: (Double, Double) {
@@ -127,7 +125,8 @@ enum JSONLTailReader {
         let fileSize = fileHandle.seekToEndOfFile()
         guard fileSize > 0 else { return [] }
 
-        let chunkSize = min(fileSize, UInt64(lineCount * 500))
+        // ~4KB per line: JSONL entries with tool outputs average 3-5KB
+        let chunkSize = min(fileSize, UInt64(lineCount * 4000))
         fileHandle.seek(toFileOffset: fileSize - chunkSize)
 
         guard let data = try? fileHandle.readToEnd(),
@@ -152,11 +151,12 @@ enum JSONLTailReader {
                     info.model = model
                 }
                 if let usage = message.usage {
-                    // Context%: use latest input tokens (each turn includes full context)
+                    // Context%: total context = input + cache_creation + cache_read
                     let inputTokens = usage.inputTokens ?? 0
-                    let cacheReadTokens = usage.cacheReadInputTokens ?? 0
+                    let cacheCreation = usage.cacheCreationInputTokens ?? 0
+                    let cacheRead = usage.cacheReadInputTokens ?? 0
                     if inputTokens > 0 {
-                        info.latestInputTokens = inputTokens + cacheReadTokens
+                        info.latestInputTokens = inputTokens + cacheCreation + cacheRead
                     }
                     // Cost: accumulate output tokens
                     totalOutputTokens += usage.outputTokens ?? 0

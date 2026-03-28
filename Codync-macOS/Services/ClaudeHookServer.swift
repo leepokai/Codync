@@ -5,7 +5,7 @@ import os
 
 private let logger = Logger(subsystem: "com.pokai.Codync", category: "HookServer")
 
-/// Thread-safe mutable data buffer for accumulating connection bytes.
+/// Thread-safe mutable data buffer for NWConnection receive loop.
 private final class AccumulatedData: @unchecked Sendable {
     private var _data = Data()
     private let lock = NSLock()

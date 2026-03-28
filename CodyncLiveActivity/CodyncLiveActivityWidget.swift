@@ -10,6 +10,56 @@ private let widgetFgDark = Color(red: 0.93, green: 0.93, blue: 0.93)
 /// Legacy alias used in Dynamic Island (always dark background)
 private let widgetFg = widgetFgLight
 
+/// Shared SF Symbol name for the code icon used across all DI/Watch views
+private let codeIconName = "chevron.left.forwardslash.chevron.right"
+
+/// Code icon opacity based on session state
+private func codeIconOpacity(isBusy: Bool, isCompleted: Bool) -> Double {
+    isBusy ? 0.8 : (isCompleted ? 0.3 : 0.5)
+}
+
+/// Treat empty strings as nil — CloudKit stores nil optionals as ""
+private func nonEmpty(_ value: String?) -> String? {
+    guard let value, !value.isEmpty else { return nil }
+    return value
+}
+
+/// Simplify tool text: "Running: cd /Users/foo/bar && cmd" → "Running command"
+private func simplifyToolText(_ text: String?) -> String? {
+    guard let text, !text.isEmpty else { return nil }
+    let lower = text.lowercased()
+    if lower.hasPrefix("running:") || lower.contains("bash") { return "Running command" }
+    if lower.hasPrefix("reading") {
+        let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Reading ", with: "")).lastPathComponent
+        return file.isEmpty ? "Reading file" : "Reading \(file)"
+    }
+    if lower.hasPrefix("editing") || lower.hasPrefix("writing") {
+        let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Editing ", with: "").replacingOccurrences(of: "Writing ", with: "")).lastPathComponent
+        return file.isEmpty ? "Editing file" : "Editing \(file)"
+    }
+    if lower.contains("grep") || lower.contains("search") { return "Searching code" }
+    if lower.contains("glob") { return "Finding files" }
+    if lower.contains("agent") { return "Dispatching agent" }
+    if lower.contains("git") { return "Git operation" }
+    if lower.contains("web") || lower.contains("fetch") { return "Fetching web" }
+    if lower.contains("mcp") { return "Using tool" }
+    if text.count > 40 { return String(text.prefix(37)) + "…" }
+    return text
+}
+
+/// Status label shared across all widgets
+private func statusLabel(_ status: String) -> String {
+    switch status {
+    case "working": "Working"
+    case "idle": "Idle"
+    case "needsInput": "Needs Input"
+    case "compacting": "Compacting"
+    case "error": "Error"
+    case "completed": "Complete"
+    default: "Working"
+    }
+}
+
 struct CodyncLiveActivityWidget: Widget {
     let kind: String = "CodyncLiveActivity"
 
@@ -23,16 +73,10 @@ struct CodyncLiveActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    if context.state.isBusy {
-                        IslandSparkle(durationSec: context.state.durationSec, size: 12)
-                            .padding(.top, 4)
-                    } else {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 8, height: 8)
-                            .opacity(context.state.isCompleted ? 0.5 : 1)
-                            .padding(.top, 6)
-                    }
+                    Image(systemName: codeIconName)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white.opacity(codeIconOpacity(isBusy: context.state.isBusy, isCompleted: context.state.isCompleted)))
+                        .padding(.top, 4)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -55,7 +99,7 @@ struct CodyncLiveActivityWidget: Widget {
                         )
                         .padding(.top, 4)
                     } else if context.state.costUSD > 0 {
-                        Text(compactCost(context.state.costUSD))
+                        Text(String(format: "$%.2f", context.state.costUSD))
                             .font(.system(size: 11, weight: .semibold).monospacedDigit())
                             .foregroundStyle(.white.opacity(0.5))
                             .padding(.top, 4)
@@ -81,13 +125,6 @@ struct CodyncLiveActivityWidget: Widget {
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
-                            } else {
-                                Text(modelDisplayLabel(context.state.model))
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.white.opacity(0.5))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(.white.opacity(0.1), in: Capsule())
                             }
                             Spacer()
                         }
@@ -100,13 +137,10 @@ struct CodyncLiveActivityWidget: Widget {
                         size: 14,
                         lineWidth: 2
                     )
-                } else if context.state.isBusy {
-                    IslandSparkle(durationSec: context.state.durationSec, size: 10)
                 } else {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 6, height: 6)
-                        .opacity(context.state.isCompleted ? 0.5 : 1)
+                    Image(systemName: codeIconName)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(codeIconOpacity(isBusy: context.state.isBusy, isCompleted: context.state.isCompleted)))
                 }
             } compactTrailing: {
                 Image(systemName: compactTrailingIcon(context.state.status))
@@ -119,13 +153,10 @@ struct CodyncLiveActivityWidget: Widget {
                         size: 11,
                         lineWidth: 2
                     )
-                } else if context.state.isBusy {
-                    IslandSparkle(durationSec: context.state.durationSec, size: 9)
                 } else {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 6, height: 6)
-                        .opacity(context.state.isCompleted ? 0.5 : 1)
+                    Image(systemName: codeIconName)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(codeIconOpacity(isBusy: context.state.isBusy, isCompleted: context.state.isCompleted)))
                 }
             }
         }
@@ -327,7 +358,7 @@ struct CodyncLiveActivityWidget: Widget {
 
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                Image(systemName: codeIconName)
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(fg.opacity(0.6))
                     .frame(width: 21, height: 21)
@@ -437,41 +468,14 @@ struct CodyncLiveActivityWidget: Widget {
         return "arrow.turn.down.right"
     }
 
-    /// Simplify tool text for card display: "Running: cd /Users/foo/bar && cmd" → "Running command"
-    private func simplifyToolText(_ text: String?) -> String? {
-        guard let text, !text.isEmpty else { return nil }
-        let lower = text.lowercased()
-        if lower.hasPrefix("running:") || lower.contains("bash") { return "Running command" }
-        if lower.hasPrefix("reading") {
-            let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Reading ", with: "")).lastPathComponent
-            return file.isEmpty ? "Reading file" : "Reading \(file)"
-        }
-        if lower.hasPrefix("editing") || lower.hasPrefix("writing") {
-            let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Editing ", with: "").replacingOccurrences(of: "Writing ", with: "")).lastPathComponent
-            return file.isEmpty ? "Editing file" : "Editing \(file)"
-        }
-        if lower.contains("grep") || lower.contains("search") { return "Searching code" }
-        if lower.contains("glob") { return "Finding files" }
-        if lower.contains("agent") { return "Dispatching agent" }
-        if lower.contains("git") { return "Git operation" }
-        if lower.contains("web") || lower.contains("fetch") { return "Fetching web" }
-        if text.count > 40 { return String(text.prefix(37)) + "…" }
-        return text
-    }
-
-    /// Treat empty strings as nil — CloudKit stores nil optionals as ""
-    private func nonEmpty(_ value: String?) -> String? {
-        guard let value, !value.isEmpty else { return nil }
-        return value
-    }
 
     private func compactTrailingIcon(_ status: String) -> String {
         switch status {
-        case "working", "compacting": "chevron.left.forwardslash.chevron.right"
+        case "working", "compacting": codeIconName
         case "needsInput": "hand.raised.fill"
         case "completed": "checkmark"
         case "idle": "pause"
-        default: "chevron.left.forwardslash.chevron.right"
+        default: codeIconName
         }
     }
 
@@ -485,18 +489,6 @@ struct CodyncLiveActivityWidget: Widget {
         }
     }
 
-    private func statusLabel(_ status: String) -> String {
-        switch status {
-        case "working": "Working"
-        case "idle": "Idle"
-        case "needsInput": "Needs Input"
-        case "compacting": "Compacting"
-        case "error": "Error"
-        case "completed": "Complete"
-        default: "Working"
-        }
-    }
-
     /// Lock Screen task segments — adapts to light/dark mode
     private func taskColor(_ status: TaskStatus, isDark: Bool = false) -> Color {
         let fg = isDark ? widgetFgDark : widgetFgLight
@@ -505,12 +497,6 @@ struct CodyncLiveActivityWidget: Widget {
         case .inProgress: return fg.opacity(0.4)
         case .pending: return fg.opacity(0.12)
         }
-    }
-
-    /// Compact cost for Dynamic Island trailing (narrow space)
-    private func compactCost(_ cost: Double) -> String {
-        if cost >= 10 { return "$\(Int(cost))" }
-        return String(format: "$%.1f", cost)
     }
 
     /// Dynamic Island task segments — monochrome white at different opacities
@@ -574,33 +560,6 @@ struct TaskCard: View {
     }
 }
 
-// MARK: - Island Sparkle
-
-/// Sparkle indicator for working state in Dynamic Island.
-/// Cycles through phases driven by durationSec (updated every second by LiveActivityManager tick timer).
-struct IslandSparkle: View {
-    let durationSec: Int
-    let size: CGFloat
-
-    // Same phases as ClaudeSparkleView: ·✢✶✻✽✻✶✢ (ping-pong)
-    private static let cycle: [String] = ["·", "✢", "✶", "✻", "✽", "✻", "✶", "✢"]
-
-    private var phase: Int { abs(durationSec) % Self.cycle.count }
-
-    private var opacity: Double {
-        let pos = Double(phase) / Double(Self.cycle.count - 1)
-        return 0.5 + sin(pos * .pi) * 0.5
-    }
-
-    var body: some View {
-        Text(Self.cycle[phase])
-            .font(.system(size: size))
-            .foregroundStyle(.white.opacity(opacity))
-            .contentTransition(.interpolate)
-            .animation(.easeInOut(duration: 0.3), value: phase)
-    }
-}
-
 // MARK: - Progress Ring
 
 struct ProgressRing: View {
@@ -639,17 +598,22 @@ struct OverallLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.center) {
                     let primary = self.primarySession(from: context.state)
+                    let anyWorking = context.state.sessions.contains { $0.status == .working }
                     HStack(spacing: 6) {
-                        if let p = primary, p.status == .working {
-                            IslandSparkle(durationSec: p.durationSec, size: 12)
+                        if let p = primary, p.totalCount > 0 {
+                            ProgressRing(
+                                progress: Double(p.completedCount) / Double(max(p.totalCount, 1)),
+                                size: 14,
+                                lineWidth: 2
+                            )
                         } else {
-                            Circle()
-                                .fill(.white.opacity(0.3))
-                                .frame(width: 6, height: 6)
+                            Image(systemName: codeIconName)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.3))
                         }
                         Text(primary?.projectName ?? "Codync")
                             .font(.headline)
-                        if let task = overallSimplifyTask(primary) {
+                        if let task = simplifyToolText(primary?.currentTask) {
                             Text(task)
                                 .font(.subheadline)
                                 .foregroundStyle(.white.opacity(0.5))
@@ -666,13 +630,22 @@ struct OverallLiveActivityWidget: Widget {
                     HStack(spacing: 6) {
                         ForEach(context.state.sessions, id: \.sessionId) { s in
                             let isPrimary = s.sessionId == primaryId
+                            let isWorking = s.status == .working
                             HStack(spacing: 4) {
-                                Circle()
-                                    .fill(overallStatusDotColor(s.status))
-                                    .frame(width: 5, height: 5)
+                                if s.totalCount > 0 {
+                                    ProgressRing(
+                                        progress: Double(s.completedCount) / Double(max(s.totalCount, 1)),
+                                        size: 8,
+                                        lineWidth: 1.5
+                                    )
+                                } else {
+                                    Circle()
+                                        .fill(.white.opacity(isWorking ? 1.0 : 0.3))
+                                        .frame(width: isWorking ? 6 : 5, height: isWorking ? 6 : 5)
+                                }
                                 Text(s.projectName)
                                     .font(.system(size: 11, weight: isPrimary ? .semibold : .regular))
-                                    .foregroundStyle(.white.opacity(isPrimary ? 0.9 : 0.5))
+                                    .foregroundStyle(.white.opacity(isWorking ? 0.9 : 0.4))
                                     .lineLimit(1)
                             }
                             .padding(.horizontal, 8)
@@ -683,12 +656,36 @@ struct OverallLiveActivityWidget: Widget {
                     .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                Circle().fill(.white).frame(width: 6, height: 6)
+                let primary = self.primarySession(from: context.state)
+                if let p = primary, p.totalCount > 0 {
+                    ProgressRing(
+                        progress: Double(p.completedCount) / Double(max(p.totalCount, 1)),
+                        size: 11,
+                        lineWidth: 2
+                    )
+                } else {
+                    let anyWorking = context.state.sessions.contains { $0.status == .working }
+                    Image(systemName: codeIconName)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.4))
+                }
             } compactTrailing: {
                 Text("\(context.state.sessions.count)")
                     .font(.caption2.bold())
             } minimal: {
-                Circle().fill(.white).frame(width: 6, height: 6)
+                let primary = self.primarySession(from: context.state)
+                if let p = primary, p.totalCount > 0 {
+                    ProgressRing(
+                        progress: Double(p.completedCount) / Double(max(p.totalCount, 1)),
+                        size: 11,
+                        lineWidth: 2
+                    )
+                } else {
+                    let anyWorking = context.state.sessions.contains { $0.status == .working }
+                    Image(systemName: codeIconName)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.4))
+                }
             }
         }
         .supplementalActivityFamilies([.small])
@@ -744,59 +741,6 @@ struct OverallLiveActivityWidget: Widget {
             ?? state.sessions.first
     }
 
-    /// Simplify task text for Overall DI expanded center
-    private func overallSimplifyTask(_ session: SessionSummary?) -> String? {
-        guard let task = session?.currentTask, !task.isEmpty else { return nil }
-        let lower = task.lowercased()
-        if lower.hasPrefix("running:") || lower.contains("bash") { return "Running command" }
-        if lower.hasPrefix("reading") {
-            let file = URL(fileURLWithPath: task.replacingOccurrences(of: "Reading ", with: "")).lastPathComponent
-            return file.isEmpty ? "Reading file" : "Reading \(file)"
-        }
-        if lower.hasPrefix("editing") || lower.hasPrefix("writing") {
-            let file = URL(fileURLWithPath: task.replacingOccurrences(of: "Editing ", with: "").replacingOccurrences(of: "Writing ", with: "")).lastPathComponent
-            return file.isEmpty ? "Editing file" : "Editing \(file)"
-        }
-        if lower.contains("grep") || lower.contains("search") { return "Searching code" }
-        if lower.contains("glob") { return "Finding files" }
-        if lower.contains("agent") { return "Dispatching agent" }
-        if lower.contains("git") { return "Git operation" }
-        if lower.contains("web") || lower.contains("fetch") { return "Fetching web" }
-        if lower.contains("mcp") { return "Using tool" }
-        if task.count > 40 { return String(task.prefix(37)) + "…" }
-        return task
-    }
-
-    /// Status-based dot color for session pills in Overall DI expanded (monochrome only)
-    private func overallStatusDotColor(_ status: SessionStatus) -> Color {
-        switch status {
-        case .working: return .white
-        case .needsInput: return .white.opacity(0.9)
-        case .idle: return .white.opacity(0.3)
-        case .completed: return .white.opacity(0.2)
-        case .compacting: return .white.opacity(0.6)
-        case .error: return .white.opacity(0.5)
-        }
-    }
-
-    /// Compact cost for Overall DI trailing
-    private func compactOverallCost(_ cost: Double) -> String {
-        if cost >= 10 { return "$\(Int(cost))" }
-        if cost >= 1 { return String(format: "$%.1f", cost) }
-        return String(format: "$%.2f", cost)
-    }
-
-    private func statusLabel(_ status: String) -> String {
-        switch status {
-        case "working": "Working"
-        case "idle": "Idle"
-        case "needsInput": "Needs Input"
-        case "compacting": "Compacting"
-        case "error": "Error"
-        case "completed": "Complete"
-        default: "Working"
-        }
-    }
 }
 
 // MARK: - Activity Family Router
@@ -881,7 +825,7 @@ struct WatchIndividualView: View {
                 watchTimer
             }
 
-            if let task = watchNonEmpty(state.currentTask) {
+            if let task = nonEmpty(state.currentTask) {
                 Text(task)
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.7))
@@ -921,7 +865,7 @@ struct WatchIndividualView: View {
                 watchTimer
             }
 
-            if let task = watchNonEmpty(state.currentTask) {
+            if let task = nonEmpty(state.currentTask) {
                 Text(task)
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.7))
@@ -929,7 +873,7 @@ struct WatchIndividualView: View {
                     .id(task)
                     .transition(.push(from: .bottom))
             } else {
-                Text(watchStatusLabel(state.status))
+                Text(statusLabel(state.status))
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.4))
             }
@@ -940,13 +884,9 @@ struct WatchIndividualView: View {
 
     @ViewBuilder
     private var watchStatusIndicator: some View {
-        if state.isBusy {
-            IslandSparkle(durationSec: state.durationSec, size: 10)
-        } else {
-            Circle()
-                .fill(.white.opacity(state.isCompleted ? 0.4 : 0.6))
-                .frame(width: 6, height: 6)
-        }
+        Image(systemName: codeIconName)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white.opacity(codeIconOpacity(isBusy: state.isBusy, isCompleted: state.isCompleted)))
     }
 
     @ViewBuilder
@@ -967,57 +907,6 @@ struct WatchIndividualView: View {
         }
     }
 
-    private func watchNonEmpty(_ value: String?) -> String? {
-        guard let value, !value.isEmpty else { return nil }
-        return value
-    }
-
-    private func watchStatusLabel(_ status: String) -> String {
-        switch status {
-        case "working": "Working"
-        case "idle": "Idle"
-        case "needsInput": "Needs Input"
-        case "compacting": "Compacting"
-        case "error": "Error"
-        case "completed": "Complete"
-        default: "Working"
-        }
-    }
-
-    private func watchToolIcon(for task: String?) -> String {
-        guard let task = task?.lowercased() else { return "arrow.turn.down.right" }
-        if task.contains("read") || task.contains("reading") { return "doc.text" }
-        if task.contains("edit") || task.contains("editing") || task.contains("write") || task.contains("writing") { return "pencil.line" }
-        if task.contains("bash") || task.contains("command") || task.contains("running") { return "terminal" }
-        if task.contains("grep") || task.contains("search") || task.contains("glob") { return "magnifyingglass" }
-        if task.contains("agent") || task.contains("dispatch") { return "person.2" }
-        if task.contains("web") || task.contains("fetch") { return "globe" }
-        if task.contains("git") { return "arrow.triangle.branch" }
-        if task.contains("test") { return "checkmark.diamond" }
-        if task.contains("todo") || task.contains("task") { return "checklist" }
-        return "arrow.turn.down.right"
-    }
-
-    private func watchSimplifyTool(_ text: String?) -> String? {
-        guard let text, !text.isEmpty else { return nil }
-        let lower = text.lowercased()
-        if lower.hasPrefix("running:") || lower.contains("bash") { return "Running command" }
-        if lower.hasPrefix("reading") {
-            let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Reading ", with: "")).lastPathComponent
-            return file.isEmpty ? "Reading file" : "Reading \(file)"
-        }
-        if lower.hasPrefix("editing") || lower.hasPrefix("writing") {
-            let file = URL(fileURLWithPath: text.replacingOccurrences(of: "Editing ", with: "").replacingOccurrences(of: "Writing ", with: "")).lastPathComponent
-            return file.isEmpty ? "Editing file" : "Editing \(file)"
-        }
-        if lower.contains("grep") || lower.contains("search") { return "Searching code" }
-        if lower.contains("glob") { return "Finding files" }
-        if lower.contains("agent") { return "Dispatching agent" }
-        if lower.contains("git") { return "Git operation" }
-        if lower.contains("web") || lower.contains("fetch") { return "Fetching web" }
-        if text.count > 30 { return String(text.prefix(27)) + "…" }
-        return text
-    }
 }
 
 // MARK: - Watch Overall View (Apple Watch Smart Stack)
@@ -1066,7 +955,9 @@ struct WatchOverallView: View {
                     .foregroundStyle(.white.opacity(0.35))
                     .lineLimit(1)
             } else if session.status == .working {
-                IslandSparkle(durationSec: session.durationSec, size: 9)
+                Image(systemName: codeIconName)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
         .padding(.vertical, 5)

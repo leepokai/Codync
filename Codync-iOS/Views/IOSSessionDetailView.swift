@@ -1,6 +1,8 @@
 import SwiftUI
 import CodyncShared
 
+// MARK: - Session Detail
+
 struct IOSSessionDetailView: View {
     let session: SessionState
     @Environment(\.theme) private var theme

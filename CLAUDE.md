@@ -22,6 +22,7 @@
 ## App Store Upload
 
 - **IMPORTANT**: Every time you archive and upload a new build to App Store Connect, you MUST increment `CURRENT_PROJECT_VERSION` in the Xcode project first. App Store Connect rejects duplicate build numbers.
+- Version numbers are defined in `Codync.xcodeproj/project.pbxproj`, NOT in `Shared.xcconfig` — the pbxproj values take precedence. Always modify `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` directly in the pbxproj.
 
 ## Targets
 

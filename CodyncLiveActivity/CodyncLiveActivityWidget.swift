@@ -91,14 +91,7 @@ struct CodyncLiveActivityWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if context.state.totalCount > 0 {
-                        ProgressRing(
-                            progress: Double(context.state.completedCount) / Double(max(context.state.totalCount, 1)),
-                            size: 18,
-                            lineWidth: 2.5
-                        )
-                        .padding(.top, 4)
-                    } else if context.state.costUSD > 0 {
+                    if context.state.costUSD > 0 {
                         Text(String(format: "$%.2f", context.state.costUSD))
                             .font(.system(size: 11, weight: .semibold).monospacedDigit())
                             .foregroundStyle(.white.opacity(0.5))
@@ -131,33 +124,17 @@ struct CodyncLiveActivityWidget: Widget {
                     }
                 }
             } compactLeading: {
-                if context.state.totalCount > 0 {
-                    ProgressRing(
-                        progress: Double(context.state.completedCount) / Double(max(context.state.totalCount, 1)),
-                        size: 14,
-                        lineWidth: 2
-                    )
-                } else {
-                    Image(systemName: codeIconName)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(codeIconOpacity(isBusy: context.state.isBusy, isCompleted: context.state.isCompleted)))
-                }
+                Image(systemName: codeIconName)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(codeIconOpacity(isBusy: context.state.isBusy, isCompleted: context.state.isCompleted)))
             } compactTrailing: {
                 Image(systemName: compactTrailingIcon(context.state.status))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.white.opacity(compactTrailingOpacity(context.state.status)))
             } minimal: {
-                if context.state.totalCount > 0 {
-                    ProgressRing(
-                        progress: Double(context.state.completedCount) / Double(max(context.state.totalCount, 1)),
-                        size: 11,
-                        lineWidth: 2
-                    )
-                } else {
-                    Image(systemName: codeIconName)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(codeIconOpacity(isBusy: context.state.isBusy, isCompleted: context.state.isCompleted)))
-                }
+                Image(systemName: codeIconName)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(codeIconOpacity(isBusy: context.state.isBusy, isCompleted: context.state.isCompleted)))
             }
         }
         .supplementalActivityFamilies([.small])
@@ -560,26 +537,6 @@ struct TaskCard: View {
     }
 }
 
-// MARK: - Progress Ring
-
-struct ProgressRing: View {
-    let progress: Double
-    let size: CGFloat
-    let lineWidth: CGFloat
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(.white.opacity(0.15), lineWidth: lineWidth)
-            Circle()
-                .trim(from: 0, to: min(progress, 1.0))
-                .stroke(.white, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-        }
-        .frame(width: size, height: size)
-    }
-}
-
 // MARK: - Overall Live Activity Widget
 
 struct OverallLiveActivityWidget: Widget {
@@ -600,17 +557,9 @@ struct OverallLiveActivityWidget: Widget {
                     let primary = self.primarySession(from: context.state)
                     let anyWorking = context.state.sessions.contains { $0.status == .working }
                     HStack(spacing: 6) {
-                        if let p = primary, p.totalCount > 0 {
-                            ProgressRing(
-                                progress: Double(p.completedCount) / Double(max(p.totalCount, 1)),
-                                size: 14,
-                                lineWidth: 2
-                            )
-                        } else {
-                            Image(systemName: codeIconName)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.3))
-                        }
+                        Image(systemName: codeIconName)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.3))
                         Text(primary?.projectName ?? "Codync")
                             .font(.headline)
                         if let task = simplifyToolText(primary?.currentTask) {
@@ -627,65 +576,51 @@ struct OverallLiveActivityWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     let primaryId = context.state.primarySessionId
-                    HStack(spacing: 6) {
-                        ForEach(context.state.sessions, id: \.sessionId) { s in
-                            let isPrimary = s.sessionId == primaryId
-                            let isWorking = s.status == .working
-                            HStack(spacing: 4) {
-                                if s.totalCount > 0 {
-                                    ProgressRing(
-                                        progress: Double(s.completedCount) / Double(max(s.totalCount, 1)),
-                                        size: 8,
-                                        lineWidth: 1.5
-                                    )
-                                } else {
+                    let primary = self.primarySession(from: context.state)
+                    VStack(spacing: 4) {
+                        if let p = primary, p.totalCount > 0 {
+                            HStack(spacing: 2) {
+                                ForEach(0..<p.totalCount, id: \.self) { i in
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(.white.opacity(i < p.completedCount ? 1.0 : 0.12))
+                                        .frame(height: 3)
+                                }
+                            }
+                        }
+                        HStack(spacing: 5) {
+                            ForEach(context.state.sessions, id: \.sessionId) { s in
+                                let isPrimary = s.sessionId == primaryId
+                                let isWorking = s.status == .working
+                                HStack(spacing: 3) {
                                     Circle()
                                         .fill(.white.opacity(isWorking ? 1.0 : 0.3))
-                                        .frame(width: isWorking ? 6 : 5, height: isWorking ? 6 : 5)
+                                        .frame(width: isWorking ? 5 : 4, height: isWorking ? 5 : 4)
+                                    Text(s.projectName)
+                                        .font(.system(size: 10, weight: isPrimary ? .semibold : .regular))
+                                        .foregroundStyle(.white.opacity(isWorking ? 0.9 : 0.4))
+                                        .lineLimit(1)
                                 }
-                                Text(s.projectName)
-                                    .font(.system(size: 11, weight: isPrimary ? .semibold : .regular))
-                                    .foregroundStyle(.white.opacity(isWorking ? 0.9 : 0.4))
-                                    .lineLimit(1)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(.white.opacity(isPrimary ? 0.15 : 0.06), in: Capsule())
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.white.opacity(isPrimary ? 0.15 : 0.06), in: Capsule())
                         }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
-                let primary = self.primarySession(from: context.state)
-                if let p = primary, p.totalCount > 0 {
-                    ProgressRing(
-                        progress: Double(p.completedCount) / Double(max(p.totalCount, 1)),
-                        size: 11,
-                        lineWidth: 2
-                    )
-                } else {
-                    let anyWorking = context.state.sessions.contains { $0.status == .working }
-                    Image(systemName: codeIconName)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.4))
-                }
+                let anyWorking = context.state.sessions.contains { $0.status == .working }
+                Image(systemName: codeIconName)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.4))
             } compactTrailing: {
                 Text("\(context.state.sessions.count)")
                     .font(.caption2.bold())
             } minimal: {
-                let primary = self.primarySession(from: context.state)
-                if let p = primary, p.totalCount > 0 {
-                    ProgressRing(
-                        progress: Double(p.completedCount) / Double(max(p.totalCount, 1)),
-                        size: 11,
-                        lineWidth: 2
-                    )
-                } else {
-                    let anyWorking = context.state.sessions.contains { $0.status == .working }
-                    Image(systemName: codeIconName)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.4))
-                }
+                let anyWorking = context.state.sessions.contains { $0.status == .working }
+                Image(systemName: codeIconName)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(anyWorking ? 0.8 : 0.4))
             }
         }
         .supplementalActivityFamilies([.small])

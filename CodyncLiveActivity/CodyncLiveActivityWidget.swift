@@ -636,56 +636,52 @@ struct OverallLiveActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    let primary = self.primarySession(from: context.state)
-                    if let p = primary, p.status == .working {
-                        IslandSparkle(durationSec: p.durationSec, size: 12)
-                            .padding(.top, 4)
-                    } else {
-                        Circle().fill(.white.opacity(0.5)).frame(width: 8, height: 8)
-                            .padding(.top, 6)
-                    }
                 }
                 DynamicIslandExpandedRegion(.center) {
                     let primary = self.primarySession(from: context.state)
-                    VStack(alignment: .leading, spacing: 4) {
+                    let anyWorking = context.state.sessions.contains { $0.status == .working }
+                    HStack(spacing: 6) {
+                        if anyWorking {
+                            IslandSparkle(durationSec: primary?.durationSec ?? 0, size: 12)
+                        } else {
+                            Circle()
+                                .fill(.white.opacity(0.3))
+                                .frame(width: 6, height: 6)
+                        }
                         Text(primary?.projectName ?? "Codync")
                             .font(.headline)
-                        Text(overallSimplifyTask(primary) ?? statusLabel(primary?.status.rawValue ?? "idle"))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .id(primary?.currentTask ?? primary?.status.rawValue ?? "idle")
-                            .transition(.push(from: .bottom))
+                        if let task = overallSimplifyTask(primary) {
+                            Text(task)
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.5))
+                                .lineLimit(1)
+                                .id(task)
+                                .transition(.push(from: .bottom))
+                        }
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    // Session count badge — cost moved to bottom
-                    Text("\(context.state.sessions.count)")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 18, height: 18)
-                        .background(.white.opacity(0.12), in: Circle())
-                        .padding(.top, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(spacing: 0) {
-                        HStack(spacing: 8) {
-                            ForEach(context.state.sessions, id: \.sessionId) { s in
-                                HStack(spacing: 3) {
-                                    Circle()
-                                        .fill(overallDotColor(s, primaryId: context.state.primarySessionId))
-                                        .frame(width: 5, height: 5)
-                                    Text(s.projectName)
-                                        .font(.caption2)
-                                        .foregroundStyle(.white.opacity(
-                                            s.sessionId == context.state.primarySessionId ? 0.9 : 0.5
-                                        ))
-                                        .lineLimit(1)
-                                }
+                    let primaryId = context.state.primarySessionId
+                    HStack(spacing: 6) {
+                        ForEach(context.state.sessions, id: \.sessionId) { s in
+                            let isPrimary = s.sessionId == primaryId
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(overallStatusDotColor(s.status))
+                                    .frame(width: 5, height: 5)
+                                Text(s.projectName)
+                                    .font(.system(size: 11, weight: isPrimary ? .semibold : .regular))
+                                    .foregroundStyle(.white.opacity(isPrimary ? 0.9 : 0.5))
+                                    .lineLimit(1)
                             }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.white.opacity(isPrimary ? 0.15 : 0.06), in: Capsule())
                         }
-                        Spacer(minLength: 0)
                     }
+                    .frame(maxWidth: .infinity)
                 }
             } compactLeading: {
                 Circle().fill(.white).frame(width: 6, height: 6)
@@ -772,14 +768,23 @@ struct OverallLiveActivityWidget: Widget {
         return task
     }
 
-    /// Dot color for session list in Overall DI expanded
-    private func overallDotColor(_ session: SessionSummary, primaryId: String?) -> Color {
-        if session.sessionId == primaryId { return .white }
-        switch session.status {
-        case .working: return .white.opacity(0.8)
+    /// Status-based dot color for session pills in Overall DI expanded (monochrome only)
+    private func overallStatusDotColor(_ status: SessionStatus) -> Color {
+        switch status {
+        case .working: return .white
         case .needsInput: return .white.opacity(0.9)
-        default: return .white.opacity(0.4)
+        case .idle: return .white.opacity(0.3)
+        case .completed: return .white.opacity(0.2)
+        case .compacting: return .white.opacity(0.6)
+        case .error: return .white.opacity(0.5)
         }
+    }
+
+    /// Compact cost for Overall DI trailing
+    private func compactOverallCost(_ cost: Double) -> String {
+        if cost >= 10 { return "$\(Int(cost))" }
+        if cost >= 1 { return String(format: "$%.1f", cost) }
+        return String(format: "$%.2f", cost)
     }
 
     private func statusLabel(_ status: String) -> String {

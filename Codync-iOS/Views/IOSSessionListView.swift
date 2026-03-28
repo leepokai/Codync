@@ -3,6 +3,7 @@ import CodyncShared
 
 struct IOSSessionListView: View {
     let sessions: [SessionState]
+    var syncError: CloudKitReceiver.SyncError?
     @ObservedObject var liveActivityManager: LiveActivityManager
     @ObservedObject var primarySessionManager: PrimarySessionManager
     @Environment(\.theme) private var theme
@@ -10,7 +11,10 @@ struct IOSSessionListView: View {
     @State private var showSettingsSheet = false
     @State private var showDemoVideo = false
     @State private var showPrimaryPrompt = false
+    @State private var showFreeWarning = false
+    @State private var showSyncError = false
     @AppStorage("codync_didPromptPrimary") private var didPromptPrimary = false
+    private var premium: PremiumManager { .shared }
 
     var body: some View {
         ScrollView {
@@ -70,6 +74,24 @@ struct IOSSessionListView: View {
                         .foregroundStyle(theme.secondaryText)
                 }
             }
+            ToolbarItem(placement: .topBarLeading) {
+                if !premium.isPro {
+                    Button { showFreeWarning = true } label: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(theme.secondaryText)
+                    }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if syncError != nil {
+                    Button { showSyncError = true } label: {
+                        Image(systemName: "icloud.slash")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(theme.secondaryText)
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showSettingsSheet = true
@@ -85,6 +107,12 @@ struct IOSSessionListView: View {
         }
         .sheet(isPresented: $showDemoVideo) {
             DemoVideoSheet()
+        }
+        .sheet(isPresented: $showFreeWarning) {
+            FreeWarningSheet()
+        }
+        .sheet(isPresented: $showSyncError) {
+            SyncErrorSheet(error: syncError)
         }
         .onChange(of: sessions) { _, newSessions in
             if !didPromptPrimary,

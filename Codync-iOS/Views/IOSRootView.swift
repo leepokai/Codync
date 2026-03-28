@@ -22,6 +22,7 @@ struct IOSRootView: View {
             } else {
                 TabRootView(
                     sessions: displayedSessions,
+                    syncError: receiver.syncError,
                     liveActivityManager: liveActivityManager,
                     primarySessionManager: primarySessionManager
                 )

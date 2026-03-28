@@ -10,6 +10,7 @@ import CodyncShared
 
 struct TabRootView: View {
     let sessions: [SessionState]
+    var syncError: CloudKitReceiver.SyncError?
     @ObservedObject var liveActivityManager: LiveActivityManager
     @ObservedObject var primarySessionManager: PrimarySessionManager
 
@@ -31,6 +32,7 @@ struct TabRootView: View {
         NavigationStack {
             IOSSessionListView(
                 sessions: sessions,
+                syncError: syncError,
                 liveActivityManager: liveActivityManager,
                 primarySessionManager: primarySessionManager
             )

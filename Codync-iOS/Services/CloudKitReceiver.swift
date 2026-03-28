@@ -8,7 +8,22 @@ private let logger = Logger(subsystem: "com.pokai.Codync.ios", category: "CloudK
 @MainActor
 final class CloudKitReceiver: ObservableObject {
     @Published var sessions: [SessionState] = []
+    @Published var syncError: SyncError?
     private var isFetching = false
+
+    enum SyncError {
+        case quotaExceeded
+        case networkUnavailable
+        case other(String)
+
+        var title: String {
+            switch self {
+            case .quotaExceeded: "iCloud Storage Full"
+            case .networkUnavailable: "No Network"
+            case .other: "Sync Error"
+            }
+        }
+    }
 
     private static let cacheURL: URL = {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -46,9 +61,17 @@ final class CloudKitReceiver: ObservableObject {
         defer { isFetching = false }
         do {
             sessions = try await CloudKitManager.shared.fetchAll()
+            syncError = nil
             logger.info("Fetched \(self.sessions.count) sessions (source: \(source))")
             persistCache()
+        } catch let error as CKError where error.code == .quotaExceeded {
+            syncError = .quotaExceeded
+            logger.error("CloudKit quota exceeded")
+        } catch let error as CKError where error.code == .networkUnavailable || error.code == .networkFailure {
+            syncError = .networkUnavailable
+            logger.error("CloudKit network unavailable")
         } catch {
+            syncError = .other(error.localizedDescription)
             logger.error("CloudKit fetch failed: \(error.localizedDescription)")
         }
     }

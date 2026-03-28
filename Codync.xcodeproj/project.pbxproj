@@ -62,6 +62,8 @@
 		RC0001A0B1C2D3E4F5A6B7C8 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = RC0003A0B1C2D3E4F5A6B7C8 /* RevenueCat */; };
 		RC0002A0B1C2D3E4F5A6B7C8 /* RevenueCatUI in Frameworks */ = {isa = PBXBuildFile; productRef = RC0004A0B1C2D3E4F5A6B7C8 /* RevenueCatUI */; };
 		SV0001A0B1C2D3E4F5A6B7C8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV0002A0B1C2D3E4F5A6B7C8 /* SettingsView.swift */; };
+		FW0001A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FW0002A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift */; };
+		SE0001A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE0002A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -145,6 +147,8 @@
 		RCS00200B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevenueCatSecrets.swift; sourceTree = "<group>"; };
 		PW0002A0B1C2D3E4F5A6B7C8 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 		SV0002A0B1C2D3E4F5A6B7C8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		FW0002A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeWarningSheet.swift; sourceTree = "<group>"; };
+		SE0002A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncErrorSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -224,6 +228,8 @@
 				1A0CEB1937DE4129AB71C6FC /* Components */,
 				A7B8C9D0E1F2A3B4C5D6E7F8 /* ComingSoonView.swift */,
 				PW0002A0B1C2D3E4F5A6B7C8 /* PaywallView.swift */,
+				FW0002A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift */,
+				SE0002A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift */,
 				SV0002A0B1C2D3E4F5A6B7C8 /* SettingsView.swift */,
 				D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */,
 				3716B87C0A7249268846AB6C /* YouTubePlayerView.swift */,
@@ -519,6 +525,8 @@
 				PM0001A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift in Sources */,
 				RCS00100B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift in Sources */,
 				PW0001A0B1C2D3E4F5A6B7C8 /* PaywallView.swift in Sources */,
+				FW0001A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift in Sources */,
+				SE0001A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift in Sources */,
 				SV0001A0B1C2D3E4F5A6B7C8 /* SettingsView.swift in Sources */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* PrimarySessionManager.swift in Sources */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* TabRootView.swift in Sources */,
@@ -654,7 +662,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -805,7 +813,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;

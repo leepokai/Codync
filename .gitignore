@@ -17,7 +17,8 @@ build/
 Package.resolved
 .firecrawl/
 
-# APNs secrets
+# Secrets
 **/APNsSecrets.swift
+**/RevenueCatSecrets.swift
 *.p8
 .wrangler/

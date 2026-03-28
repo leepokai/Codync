@@ -16,7 +16,7 @@ final class PremiumManager {
 
     func configure() {
         Purchases.logLevel = .warn
-        Purchases.configure(withAPIKey: "REVENUECAT_API_KEY_REDACTED")
+        Purchases.configure(withAPIKey: RevenueCatSecrets.apiKey)
         Purchases.shared.delegate = RCPurchasesDelegate.shared
         Task { await refreshStatus() }
     }

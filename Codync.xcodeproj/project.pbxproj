@@ -57,6 +57,7 @@
 		FF66001122334455667788BB /* NSScreen+Notch.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC33DD44EE55FF6600112233 /* NSScreen+Notch.swift */; };
 		PANEL001122334455667788 /* PanelHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PANEL002233445566778899 /* PanelHeaderView.swift */; };
 		PM0001A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = PM0002A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift */; };
+		RCS00100B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCS00200B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift */; };
 		PW0001A0B1C2D3E4F5A6B7C8 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PW0002A0B1C2D3E4F5A6B7C8 /* PaywallView.swift */; };
 		RC0001A0B1C2D3E4F5A6B7C8 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = RC0003A0B1C2D3E4F5A6B7C8 /* RevenueCat */; };
 		RC0002A0B1C2D3E4F5A6B7C8 /* RevenueCatUI in Frameworks */ = {isa = PBXBuildFile; productRef = RC0004A0B1C2D3E4F5A6B7C8 /* RevenueCatUI */; };
@@ -141,6 +142,7 @@
 		F71E03612F167D883C324D25 /* SessionStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateManager.swift; sourceTree = "<group>"; };
 		PANEL002233445566778899 /* PanelHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelHeaderView.swift; sourceTree = "<group>"; };
 		PM0002A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumManager.swift; sourceTree = "<group>"; };
+		RCS00200B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevenueCatSecrets.swift; sourceTree = "<group>"; };
 		PW0002A0B1C2D3E4F5A6B7C8 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 		SV0002A0B1C2D3E4F5A6B7C8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -301,6 +303,7 @@
 				F19A27E00B1B13A579A950F4 /* CloudKitReceiver.swift */,
 				CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */,
 				PM0002A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift */,
+				RCS00200B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift */,
 				C3D4E5F6A7B8C9D0E1F2A3B4 /* PrimarySessionManager.swift */,
 			);
 			path = Services;
@@ -514,6 +517,7 @@
 				A30C11E610763F5064698D43 /* IOSSessionListView.swift in Sources */,
 				EF0A0CEAD3C7B875064F8556 /* LiveActivityManager.swift in Sources */,
 				PM0001A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift in Sources */,
+				RCS00100B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift in Sources */,
 				PW0001A0B1C2D3E4F5A6B7C8 /* PaywallView.swift in Sources */,
 				SV0001A0B1C2D3E4F5A6B7C8 /* SettingsView.swift in Sources */,
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* PrimarySessionManager.swift in Sources */,
@@ -653,7 +657,6 @@
 				CURRENT_PROJECT_VERSION = 11;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -805,7 +808,6 @@
 				CURRENT_PROJECT_VERSION = 11;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = DEVELOPMENT_TEAM_REDACTED;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;

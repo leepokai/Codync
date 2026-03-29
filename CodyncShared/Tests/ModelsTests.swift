@@ -63,12 +63,6 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(ModelInfo.parse("claude-opus-4-1-20250805[1m]").contextWindow, 1_000_000)
     }
 
-    func testModelDisplayLabelCompat() {
-        // Existing function should delegate to ModelInfo
-        XCTAssertEqual(modelDisplayLabel("claude-opus-4-6"), "Opus 4.6")
-        XCTAssertEqual(modelDisplayLabel("claude-sonnet-4-6"), "Sonnet 4.6")
-    }
-
     func testTaskStatusDecoding() throws {
         let json = #"{"id":"1","content":"test","status":"in_progress"}"#
         let task = try JSONDecoder().decode(TaskItem.self, from: json.data(using: .utf8)!)

@@ -12,6 +12,11 @@ public struct ModelInfo: Sendable {
     public static func parse(_ model: String) -> ModelInfo {
         let lower = model.lowercased()
 
+        // Skip placeholder values
+        if lower == "unknown" || lower.contains("synthetic") {
+            return ModelInfo(family: "", version: "", displayLabel: "", contextWindow: 200_000)
+        }
+
         // Detect family
         let family: String
         if lower.contains("opus") { family = "Opus" }
@@ -86,8 +91,3 @@ public struct ModelInfo: Sendable {
     }
 }
 
-/// Simplify Claude model identifiers to display labels.
-/// Shared across main app and widget extension.
-public func modelDisplayLabel(_ model: String) -> String {
-    ModelInfo.parse(model).displayLabel
-}

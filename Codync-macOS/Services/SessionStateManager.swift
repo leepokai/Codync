@@ -98,7 +98,7 @@ final class SessionStateManager: ObservableObject {
                 projectName: projectName,
                 gitBranch: gitBranch,
                 status: status,
-                model: formatModel(transcript?.model ?? "Unknown"),
+                model: ModelInfo.parse(transcript?.model ?? "Unknown").displayLabel,
                 summary: summary,
                 currentTask: currentTask,
                 lastEvent: lastEvent,
@@ -248,8 +248,4 @@ final class SessionStateManager: ObservableObject {
         }
     }
 
-    private func formatModel(_ raw: String) -> String {
-        if raw == "Unknown" || raw.contains("synthetic") { return "" }
-        return ModelInfo.parse(raw).displayLabel
-    }
 }

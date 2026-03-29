@@ -233,13 +233,9 @@ final class TranscriptWatcher {
             tracker.state.model = model
         }
         if let usage = message.usage {
-            // Total context = input + cache_creation + cache_read
-            // (all three contribute to the model's context window usage)
-            let inputTokens = usage.inputTokens ?? 0
-            let cacheCreation = usage.cacheCreationInputTokens ?? 0
-            let cacheRead = usage.cacheReadInputTokens ?? 0
-            if inputTokens > 0 {
-                tracker.state.latestInputTokens = inputTokens + cacheCreation + cacheRead
+            let contextTokens = usage.totalContextTokens
+            if contextTokens > 0 {
+                tracker.state.latestInputTokens = contextTokens
             }
             tracker.state.totalOutputTokens += usage.outputTokens ?? 0
         }

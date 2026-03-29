@@ -1,11 +1,17 @@
 import Foundation
-import CodyncShared
 
 struct JSONLUsage: Codable {
     let inputTokens: Int?
     let outputTokens: Int?
     let cacheCreationInputTokens: Int?
     let cacheReadInputTokens: Int?
+
+    /// Total context window usage: input + cache_creation + cache_read
+    var totalContextTokens: Int {
+        let input = inputTokens ?? 0
+        guard input > 0 else { return 0 }
+        return input + (cacheCreationInputTokens ?? 0) + (cacheReadInputTokens ?? 0)
+    }
 
     enum CodingKeys: String, CodingKey {
         case inputTokens = "input_tokens"
@@ -89,32 +95,8 @@ struct JSONLTranscriptEntry: Codable {
 
 struct JSONLSessionInfo {
     var model: String = "Unknown"
-    var latestInputTokens: Int = 0  // Latest turn's input tokens (for context%)
-    var totalOutputTokens: Int = 0   // Sum of all output tokens (for cost)
-
-    var contextPct: Int {
-        let contextWindowSize = modelContextSize
-        guard contextWindowSize > 0, latestInputTokens > 0 else { return 0 }
-        return min(100, (latestInputTokens * 100) / contextWindowSize)
-    }
-
-    var costUSD: Double {
-        let (inputRate, outputRate) = modelPricing
-        let inputCost = Double(latestInputTokens) * inputRate / 1_000_000
-        let outputCost = Double(totalOutputTokens) * outputRate / 1_000_000
-        return inputCost + outputCost
-    }
-
-    private var modelContextSize: Int {
-        ModelInfo.parse(model).contextWindow
-    }
-
-    private var modelPricing: (Double, Double) {
-        if model.contains("opus") { return (15.0, 75.0) }
-        if model.contains("sonnet") { return (3.0, 15.0) }
-        if model.contains("haiku") { return (0.25, 1.25) }
-        return (3.0, 15.0)
-    }
+    var latestInputTokens: Int = 0
+    var totalOutputTokens: Int = 0
 }
 
 enum JSONLTailReader {
@@ -151,14 +133,10 @@ enum JSONLTailReader {
                     info.model = model
                 }
                 if let usage = message.usage {
-                    // Context%: total context = input + cache_creation + cache_read
-                    let inputTokens = usage.inputTokens ?? 0
-                    let cacheCreation = usage.cacheCreationInputTokens ?? 0
-                    let cacheRead = usage.cacheReadInputTokens ?? 0
-                    if inputTokens > 0 {
-                        info.latestInputTokens = inputTokens + cacheCreation + cacheRead
+                    let contextTokens = usage.totalContextTokens
+                    if contextTokens > 0 {
+                        info.latestInputTokens = contextTokens
                     }
-                    // Cost: accumulate output tokens
                     totalOutputTokens += usage.outputTokens ?? 0
                 }
             }

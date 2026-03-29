@@ -875,7 +875,7 @@ struct WatchOverallView: View {
                 .lineLimit(1)
                 .layoutPriority(1)
 
-            Text(modelDisplayLabel(session.model))
+            Text(session.model)
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.white.opacity(0.4))
                 .padding(.horizontal, 5)

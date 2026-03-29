@@ -83,9 +83,16 @@ final class SessionScanner: ObservableObject {
             return RawSessionFile(pid: file.pid, sessionId: hookSessionId, cwd: file.cwd, startedAt: file.startedAt)
         }
 
-        // 2. Original JSONL exists — use it
+        // 2. Original JSONL exists — but verify it's the most recent one.
+        //    Claude Code can keep stale PID files pointing to old sessionIds
+        //    while actively writing to a newer JSONL.
         let originalJsonl = ClaudePaths.jsonlPath(cwd: file.cwd, sessionId: file.sessionId)
         if FileManager.default.fileExists(atPath: originalJsonl.path) {
+            let resolved = resolveFromJsonlDirectory(file)
+            if resolved.sessionId != file.sessionId {
+                // A more recently modified JSONL exists — use it instead
+                return resolved
+            }
             return file
         }
 

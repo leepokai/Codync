@@ -249,10 +249,7 @@ final class SessionStateManager: ObservableObject {
     }
 
     private func formatModel(_ raw: String) -> String {
-        if raw.contains("opus") { return "Opus" }
-        if raw.contains("sonnet") { return "Sonnet" }
-        if raw.contains("haiku") { return "Haiku" }
         if raw == "Unknown" || raw.contains("synthetic") { return "" }
-        return raw
+        return ModelInfo.parse(raw).displayLabel
     }
 }

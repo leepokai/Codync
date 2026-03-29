@@ -41,6 +41,34 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(session.truncatedTasks.first?.id, "6")
     }
 
+    // MARK: - ModelInfo
+
+    func testModelDisplayLabel() {
+        XCTAssertEqual(ModelInfo.parse("claude-opus-4-6").displayLabel, "Opus 4.6")
+        XCTAssertEqual(ModelInfo.parse("claude-opus-4-6[1m]").displayLabel, "Opus 4.6")
+        XCTAssertEqual(ModelInfo.parse("claude-sonnet-4-6").displayLabel, "Sonnet 4.6")
+        XCTAssertEqual(ModelInfo.parse("claude-haiku-4-5-20251001").displayLabel, "Haiku 4.5")
+        XCTAssertEqual(ModelInfo.parse("claude-opus-4-1-20250805").displayLabel, "Opus 4.1")
+        XCTAssertEqual(ModelInfo.parse("claude-3-5-sonnet-20241022").displayLabel, "Sonnet 3.5")
+        XCTAssertEqual(ModelInfo.parse("unknown-model").displayLabel, "unknown-model")
+    }
+
+    func testModelContextWindow() {
+        XCTAssertEqual(ModelInfo.parse("claude-opus-4-6").contextWindow, 1_000_000)
+        XCTAssertEqual(ModelInfo.parse("claude-sonnet-4-6").contextWindow, 1_000_000)
+        XCTAssertEqual(ModelInfo.parse("claude-haiku-4-5-20251001").contextWindow, 200_000)
+        XCTAssertEqual(ModelInfo.parse("claude-opus-4-1-20250805").contextWindow, 200_000)
+        XCTAssertEqual(ModelInfo.parse("claude-3-5-sonnet-20241022").contextWindow, 200_000)
+        // [1m] suffix forces 1M even on older models
+        XCTAssertEqual(ModelInfo.parse("claude-opus-4-1-20250805[1m]").contextWindow, 1_000_000)
+    }
+
+    func testModelDisplayLabelCompat() {
+        // Existing function should delegate to ModelInfo
+        XCTAssertEqual(modelDisplayLabel("claude-opus-4-6"), "Opus 4.6")
+        XCTAssertEqual(modelDisplayLabel("claude-sonnet-4-6"), "Sonnet 4.6")
+    }
+
     func testTaskStatusDecoding() throws {
         let json = #"{"id":"1","content":"test","status":"in_progress"}"#
         let task = try JSONDecoder().decode(TaskItem.self, from: json.data(using: .utf8)!)

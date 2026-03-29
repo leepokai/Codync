@@ -17,9 +17,12 @@ struct TranscriptState: Sendable {
     var firstPrompt: String = ""
     var lastPrompt: String = ""
 
+    /// Context usage as percentage. Window size derived from model ID
+    /// (e.g., 1M for Opus 4.6+, 200k for older models).
     var contextPct: Int {
         guard latestInputTokens > 0 else { return 0 }
-        return min(100, (latestInputTokens * 100) / 200_000)
+        let contextWindow = ModelInfo.parse(model).contextWindow
+        return min(100, (latestInputTokens * 100) / contextWindow)
     }
 
     var costUSD: Double {
@@ -230,10 +233,13 @@ final class TranscriptWatcher {
             tracker.state.model = model
         }
         if let usage = message.usage {
+            // Total context = input + cache_creation + cache_read
+            // (all three contribute to the model's context window usage)
             let inputTokens = usage.inputTokens ?? 0
+            let cacheCreation = usage.cacheCreationInputTokens ?? 0
             let cacheRead = usage.cacheReadInputTokens ?? 0
             if inputTokens > 0 {
-                tracker.state.latestInputTokens = inputTokens + cacheRead
+                tracker.state.latestInputTokens = inputTokens + cacheCreation + cacheRead
             }
             tracker.state.totalOutputTokens += usage.outputTokens ?? 0
         }

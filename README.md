@@ -6,6 +6,7 @@ A real-time companion for [Claude Code](https://docs.anthropic.com/en/docs/claud
 
 [![Download on the App Store](https://img.shields.io/badge/App_Store-iOS-blue?logo=apple)](https://apps.apple.com/tw/app/codync/id6760984418?l=en-GB)
 [![Download for macOS](https://img.shields.io/badge/Download-macOS-black?logo=apple)](https://github.com/leepokai/Codync/releases/latest/download/Codync-macOS.dmg)
+[![Homebrew](https://img.shields.io/badge/Homebrew-codync-orange?logo=homebrew)](https://github.com/leepokai/homebrew-codync)
 
 ## Features
 
@@ -25,7 +26,14 @@ A real-time companion for [Claude Code](https://docs.anthropic.com/en/docs/claud
 
 ## Install
 
-**macOS** — Download the [latest DMG](https://github.com/leepokai/Codync/releases/latest/download/Codync-macOS.dmg) and drag to Applications
+**macOS (Homebrew)**
+
+```bash
+brew tap leepokai/codync
+brew install --cask codync
+```
+
+**macOS (Manual)** — Download the [latest DMG](https://github.com/leepokai/Codync/releases/latest/download/Codync-macOS.dmg) and drag to Applications
 
 **iOS** — Install from the [App Store](https://apps.apple.com/tw/app/codync/id6760984418?l=en-GB)
 

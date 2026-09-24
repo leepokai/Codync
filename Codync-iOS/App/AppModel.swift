@@ -165,10 +165,9 @@ final class AppModel {
             setUsage(newUsage)
             if hostRev < rev { rev = 0 }
         case let .bot(bot):
-            let old = bots[bot.id]
             bots[bot.id] = bot
             bump(bot.rev)
-            LiveActivities.shared.update(bot: bot, previous: old)
+            LiveActivities.shared.update(bot: bot)
         case let .botDeleted(id, r):
             bots[id] = nil
             entries[id] = nil

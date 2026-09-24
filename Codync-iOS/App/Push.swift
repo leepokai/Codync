@@ -98,7 +98,7 @@ final class LiveActivities {
     }
 
     /// Local updates while the app is open; the host pushes them otherwise.
-    func update(bot: Bot, previous: Bot?) {
+    func update(bot: Bot) {
         guard Self.find(bot.id) != nil else { return }
         let state = BotActivityAttributes.ContentState(
             status: bot.status,

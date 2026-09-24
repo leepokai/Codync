@@ -165,10 +165,6 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             hub.store.add_device(ticket, b["name"].as_str().unwrap_or("iPhone"))?;
             json!({})
         }
-        "unregisterDevice" => {
-            hub.store.remove_device(str_arg(&b, "ticket")?)?;
-            json!({})
-        }
         "registerActivity" => {
             let bot = str_arg(&b, "botId")?.to_owned();
             let ticket = str_arg(&b, "ticket")?.to_owned();

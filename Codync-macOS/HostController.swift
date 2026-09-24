@@ -17,8 +17,6 @@ final class HostController {
     }
 
     struct PairInfo: Decodable {
-        var name: String
-        var token: String
         var urls: [String]
         var pairingUrl: String
     }

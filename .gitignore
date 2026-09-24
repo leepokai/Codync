@@ -1,24 +1,16 @@
-.superpowers/
-docs/superpowers/
+.DS_Store
 
 # Xcode
 xcuserdata/
-*.xcscmblueprint
-*.xccheckout
 DerivedData/
-
-# Build artifacts
 build/
 
 # Swift Package Manager
 .build/
 .swiftpm/
 Package.resolved
-.firecrawl/
 
 # Secrets
-**/APNsSecrets.swift
-**/RevenueCatSecrets.swift
 *.p8
+.dev.vars
 .wrangler/
-Codync.app/

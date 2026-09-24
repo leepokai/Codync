@@ -1,0 +1,23 @@
+{
+  "name": "codync-relay",
+  "version": "1.0.0",
+  "description": "Codync APNs push relay (Cloudflare Worker)",
+  "main": "src/index.ts",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc",
+    "test": "node --experimental-strip-types --no-warnings test/ticket.test.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@fivesheepco/cloudflare-apns2": "^13.0.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.75.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260317.1"
+  },
+  "private": true
+}

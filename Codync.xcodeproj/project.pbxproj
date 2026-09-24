@@ -3,87 +3,53 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0205D611148BDCAB840D0F47 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9580D32B5B29E049090D66C8 /* Assets.xcassets */; };
-		0294408FF2BC2367453C118C /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA699D0197B8A14FD7D1BDC4 /* SessionListView.swift */; };
-		070688CBF55E74F38DC650E3 /* CodyncShared in Frameworks */ = {isa = PBXBuildFile; productRef = 4BA154F0B1967DCBBB7600E5 /* CodyncShared */; };
-		0B6B1D4B20837A47EAF88322 /* IOSSessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C01C9748A39F3475869F956 /* IOSSessionDetailView.swift */; };
-		0CFFA94EEF8F4C33AB86012A /* YouTubePlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3716B87C0A7249268846AB6C /* YouTubePlayerView.swift */; };
-		106A1E305D6DBDFC35AF01BD /* CloudKitSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22479FA0953120F3B50A1AF3 /* CloudKitSync.swift */; };
-		1122334455667788AABBCCDD /* CodyncPanelShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABBCCDD11223344556677EE /* CodyncPanelShape.swift */; };
-		21DBF9BED5F40E2F671CB1F9 /* StatusDotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEED6193555CB3FAC1BA7E2A /* StatusDotView.swift */; };
-		3DC7D9E7E79444359ED6D09F /* ClaudePaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F1E5418D5496E651BD58FA2 /* ClaudePaths.swift */; };
-		4450C6683BA7614D2DBB5E55 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C55AF6C89E20B6FD1CF5CD4 /* MenuBarController.swift */; };
-		6A5A77C9C3AF37A8E371F5CB /* SessionStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F71E03612F167D883C324D25 /* SessionStateManager.swift */; };
-		73382915E3200DDC5EF16C2F /* SessionFileParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19BA18A6829F0BE991D4C7D /* SessionFileParser.swift */; };
-		7534D98B6CDF84E44B0D25A9 /* CloudKitReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19A27E00B1B13A579A950F4 /* CloudKitReceiver.swift */; };
-		7851B112737C5DD8B8C3380C /* JSONLTailReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05154CFD496486BA9E126E9D /* JSONLTailReader.swift */; };
-		804863D604952293533147CF /* CodyncLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3B652652FD106495A82565C8 /* CodyncLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		911C6ABDB9539A60844931F2 /* PIDChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D161FDC49BE96E3A73FEA33 /* PIDChecker.swift */; };
-		A30C11E610763F5064698D43 /* IOSSessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01A225437E7A00B3337883E /* IOSSessionListView.swift */; };
-		A3F82B14C7E94D61B0E53D92 /* LiveActivityPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D91C43F0A24E87A2C74F56 /* LiveActivityPreview.swift */; };
-		A98E0466D559EC6EBE0E39F4 /* ClaudeHookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */; };
-		APNS0001D559EC6EBE0E39F4 /* APNsPushService.swift in Sources */ = {isa = PBXBuildFile; fileRef = APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */; };
-		APNS0003D559EC6EBE0E39F4 /* APNsSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = APNS0004D559EC6EBE0E39F4 /* APNsSecrets.swift */; };
-		B1C2D3E4F5A6B7C8D9E0F1A1 /* IOSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A1 /* IOSTheme.swift */; };
-		B1C2D3E4F5A6B7C8D9E0F1A2 /* IOSStatusIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A2 /* IOSStatusIndicator.swift */; };
-		B1C2D3E4F5A6B7C8D9E0F1A3 /* IOSSessionTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1A3 /* IOSSessionTagView.swift */; };
-		B575261E2F89280C4805C654 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */; };
-		B8C9D0E1F2A3B4C5D6E7F8A9 /* ComingSoonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B8C9D0E1F2A3B4C5D6E7F8 /* ComingSoonView.swift */; };
-		BB50434DF1BC51FED1AFED51 /* CodyncLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9A7BAE27F6E4CEEDA1B48D /* CodyncLiveActivityWidget.swift */; };
-		BF17F10AC69617C12975E0EB /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10CABFC27BF22D45064777A /* SessionDetailView.swift */; };
-		C4D5E6F7A8B9C0D1E2F3A4B5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5E6F7A8B9C0D1E2F3A4B5C6 /* Theme.swift */; };
-		C7E108B87747D1CB7E7E1699 /* CodyncShared in Frameworks */ = {isa = PBXBuildFile; productRef = C1CA2B270135307CC4E2724D /* CodyncShared */; };
-		D2A3B4C5E6F7081920314253 /* TranscriptWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C4D5E6F708192A3B4C5D6E /* TranscriptWatcher.swift */; };
-		D4BC114BC4A6C08EECD54925 /* CodyncShared in Frameworks */ = {isa = PBXBuildFile; productRef = 7660B5D6DD8CC2065A9F4ED3 /* CodyncShared */; };
-		D4E5F6A7B8C9D0E1F2A3B4C5 /* PrimarySessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A3B4 /* PrimarySessionManager.swift */; };
-		DBD957B5BFDEC3B62B310F8F /* IOSRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF291DF4A4EF932B774F227D /* IOSRootView.swift */; };
-		DD44EE55FF66001122334455 /* CodyncPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF66 /* CodyncPanel.swift */; };
-		E1740D692C1C19693058D20B /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */; };
-		E36D87A2D2D0F1177F263772 /* CodyncLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BCD1168005B123A7F9ACB37 /* CodyncLiveActivityBundle.swift */; };
-		EB132AF39AB968D2DFA6151B /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A67A3CD19408484AB11BB73 /* CodyncApp.swift */; };
-		EDCB66A65FD85B26FE7B4664 /* SessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42BAF66F7C50D732B7E69333 /* SessionScanner.swift */; };
-		EE55FF6600112233445566AA /* EventMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF660011 /* EventMonitor.swift */; };
-		EEF78145300C2A3547AD832A /* IOSOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */; };
-		EF0A0CEAD3C7B875064F8556 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */; };
-		F1E2D3C4B5A6F7E8D9C0B1A2 /* SessionTagView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* SessionTagView.swift */; };
-		F4F54F91459EE6A15DD7B246 /* CodyncIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8453D8BE6EE838E1B9EA4588 /* CodyncIOSApp.swift */; };
-		F5A6B7C8D9E0F1A2B3C4D5E6 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A6B7C8D9E0F1A2B3C4D5E7 /* AppDelegate.swift */; };
-		F6A7B8C9D0E1F2A3B4C5D6E7 /* TabRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F6A7B8C9D0E1F2A3B4C5D6 /* TabRootView.swift */; };
-		F7407323258F4D54ABC49AA7 /* ModePillToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D38EB22B9A74DB4A5A84274 /* ModePillToggle.swift */; };
-		FF66001122334455667788BB /* NSScreen+Notch.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC33DD44EE55FF6600112233 /* NSScreen+Notch.swift */; };
-		PANEL001122334455667788 /* PanelHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PANEL002233445566778899 /* PanelHeaderView.swift */; };
-		PM0001A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = PM0002A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift */; };
-		RCS00100B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCS00200B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift */; };
-		PW0001A0B1C2D3E4F5A6B7C8 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PW0002A0B1C2D3E4F5A6B7C8 /* PaywallView.swift */; };
-		RC0001A0B1C2D3E4F5A6B7C8 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = RC0003A0B1C2D3E4F5A6B7C8 /* RevenueCat */; };
-		RC0002A0B1C2D3E4F5A6B7C8 /* RevenueCatUI in Frameworks */ = {isa = PBXBuildFile; productRef = RC0004A0B1C2D3E4F5A6B7C8 /* RevenueCatUI */; };
-		SV0001A0B1C2D3E4F5A6B7C8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SV0002A0B1C2D3E4F5A6B7C8 /* SettingsView.swift */; };
-		FW0001A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FW0002A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift */; };
-		SE0001A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SE0002A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift */; };
+		07670DD412E0F79796D44699 /* BotListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 371D72CCCB665E6442DED8C8 /* BotListView.swift */; };
+		087DC53315FB092D4F6436AD /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBEF05AFCCF44C92BDA91A3 /* RootView.swift */; };
+		187068689418B6B25AE7B26A /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B274A0195CB3B2409EA4C194 /* WidgetKit.framework */; };
+		1BD8A64454E95EF3726132A4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9FCF7D2E2AEC8C83B89E7B36 /* Assets.xcassets */; };
+		1C2298904CADCA68ADF64F6B /* CodyncWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = E70F8B0E7E2E15AAA8A2A0A7 /* CodyncWidgets.swift */; };
+		2C21D097FD9AF73AE3B40DDE /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417B586A0D9A447747D1BEFC /* MarkdownText.swift */; };
+		341AB84FEF28FF194872D861 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = CDE38864BDC425F1240E1C02 /* CodyncKit */; };
+		4F70D744ED9A696854EADA91 /* TraceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A9EEFF0BB95647BE483A211 /* TraceView.swift */; };
+		55D43F0D178B7A63BA4E81F3 /* CodyncWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 04030896973C4041E7FEB319 /* CodyncWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		575ABFE8E1FBD2865793F45D /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 092242ADE0E7FF8A82051511 /* AppModel.swift */; };
+		61455BFB935FE1AAF67C4CD4 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E27E10BA8F07E552E99BE9 /* Push.swift */; };
+		745062481B4868CF3F2950BF /* BotEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF5B67443AC77DA4414E6EBE /* BotEditorView.swift */; };
+		76E613DFEABF73915C5FE9DC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF5474468D6EBF22CB2FA1E9 /* Assets.xcassets */; };
+		989285CFB52552A97D95366C /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528534881700FE0CF94A49BC /* PairingView.swift */; };
+		9D644515BB782DC91B1B71C8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD4B599F142017103B340A87 /* SettingsView.swift */; };
+		CED43A6F2ED71E48C95E9E38 /* HostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01C28522569623733B9B096D /* HostController.swift */; };
+		CEFE64EFFEA10B5ED60F2CE3 /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3FCD76B514C8ECF2211945A /* CodyncApp.swift */; };
+		D667C45D828CAD079A2EDD77 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4364B5D2EE15CB00ACF26E5D /* CodyncKit */; };
+		D8E9E7B47361EEE30424455F /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 234AA35A60DF7D3E6D7CA45E /* CodyncKit */; };
+		DC0510188C0A2C8FAEA5CC8D /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70DB39404824DBE6E38B94C /* ThreadView.swift */; };
+		ED9C1500FD1CC591FCBD26CB /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280FA54859773B9355860354 /* CodyncMacApp.swift */; };
+		FB33CDB6D44A6023BB565200 /* PermissionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D94A23B2E38E9DE6CAA984 /* PermissionCard.swift */; };
+		FEEBCD214CE268A636921FD9 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E47C60032C326157E0386B8 /* SwiftUI.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		B38F144A3A8B56B1FC2398CE /* PBXContainerItemProxy */ = {
+		65AAB675493CB6BE712818A9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 755EE78C119E5281024E6F90 /* Project object */;
+			containerPortal = 5B6351DD20AF4506794D6460 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 6B3B927655EA5C595A71E513;
-			remoteInfo = CodyncLiveActivity;
+			remoteGlobalIDString = 95A633B0E0FD05A1D35CA468;
+			remoteInfo = CodyncWidgets;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		FC965E0F58168E06F093EAB5 /* Embed Foundation Extensions */ = {
+		AA3D7E40FB2438A6CD2D3DE7 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				804863D604952293533147CF /* CodyncLiveActivity.appex in Embed Foundation Extensions */,
+				55D43F0D178B7A63BA4E81F3 /* CodyncWidgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -91,340 +57,248 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		05154CFD496486BA9E126E9D /* JSONLTailReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONLTailReader.swift; sourceTree = "<group>"; };
-		0D161FDC49BE96E3A73FEA33 /* PIDChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PIDChecker.swift; sourceTree = "<group>"; };
-		22479FA0953120F3B50A1AF3 /* CloudKitSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitSync.swift; sourceTree = "<group>"; };
-		3716B87C0A7249268846AB6C /* YouTubePlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubePlayerView.swift; sourceTree = "<group>"; };
-		3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		3B652652FD106495A82565C8 /* CodyncLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CodyncLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		3BCD1168005B123A7F9ACB37 /* CodyncLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncLiveActivityBundle.swift; sourceTree = "<group>"; };
-		3EB0548BFADFAFC3616A8C4B /* Codync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Codync.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		42BAF66F7C50D732B7E69333 /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
-		433D534BFD8D3D76B489B324 /* Codync-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Codync-iOS.entitlements"; sourceTree = "<group>"; };
-		4A67A3CD19408484AB11BB73 /* CodyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncApp.swift; sourceTree = "<group>"; };
-		4C55AF6C89E20B6FD1CF5CD4 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
-		8453D8BE6EE838E1B9EA4588 /* CodyncIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncIOSApp.swift; sourceTree = "<group>"; };
-		8A9A7BAE27F6E4CEEDA1B48D /* CodyncLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncLiveActivityWidget.swift; sourceTree = "<group>"; };
-		8B5EA7075E9DC97237EF2227 /* Codync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Codync.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		8F1E5418D5496E651BD58FA2 /* ClaudePaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePaths.swift; sourceTree = "<group>"; };
-		9580D32B5B29E049090D66C8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		9C01C9748A39F3475869F956 /* IOSSessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSessionDetailView.swift; sourceTree = "<group>"; };
-		9D38EB22B9A74DB4A5A84274 /* ModePillToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModePillToggle.swift; sourceTree = "<group>"; };
-		A01A225437E7A00B3337883E /* IOSSessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSessionListView.swift; sourceTree = "<group>"; };
-		A19BA18A6829F0BE991D4C7D /* SessionFileParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFileParser.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B8C9D0E1A1 /* IOSTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSTheme.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B8C9D0E1A2 /* IOSStatusIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSStatusIndicator.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B8C9D0E1A3 /* IOSSessionTagView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSessionTagView.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B8C9D0E1F2 /* SessionTagView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTagView.swift; sourceTree = "<group>"; };
-		A7B8C9D0E1F2A3B4C5D6E7F8 /* ComingSoonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComingSoonView.swift; sourceTree = "<group>"; };
-		AA11BB22CC33DD44EE55FF66 /* CodyncPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncPanel.swift; sourceTree = "<group>"; };
-		AABBCCDD11223344556677EE /* CodyncPanelShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncPanelShape.swift; sourceTree = "<group>"; };
-		AB156A392F6DC850001D15CE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
-		APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APNsPushService.swift; sourceTree = "<group>"; };
-		APNS0004D559EC6EBE0E39F4 /* APNsSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APNsSecrets.swift; sourceTree = "<group>"; };
-		B3C4D5E6F708192A3B4C5D6E /* TranscriptWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptWatcher.swift; sourceTree = "<group>"; };
-		B6D91C43F0A24E87A2C74F56 /* LiveActivityPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityPreview.swift; sourceTree = "<group>"; };
-		BB22CC33DD44EE55FF660011 /* EventMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventMonitor.swift; sourceTree = "<group>"; };
-		C3D4E5F6A7B8C9D0E1F2A3B4 /* PrimarySessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimarySessionManager.swift; sourceTree = "<group>"; };
-		CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
-		CC33DD44EE55FF6600112233 /* NSScreen+Notch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSScreen+Notch.swift"; sourceTree = "<group>"; };
-		CD5A99B72DC7E1F01D755DF6 /* Codync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Codync.entitlements; sourceTree = "<group>"; };
-		CEED6193555CB3FAC1BA7E2A /* StatusDotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusDotView.swift; sourceTree = "<group>"; };
-		D10CABFC27BF22D45064777A /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
-		D5E6F7A8B9C0D1E2F3A4B5C6 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSOnboardingView.swift; sourceTree = "<group>"; };
-		DA699D0197B8A14FD7D1BDC4 /* SessionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
-		DF291DF4A4EF932B774F227D /* IOSRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRootView.swift; sourceTree = "<group>"; };
-		E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeHookServer.swift; sourceTree = "<group>"; };
-		E5F6A7B8C9D0E1F2A3B4C5D6 /* TabRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabRootView.swift; sourceTree = "<group>"; };
-		F033CA1408917B1655BC66D2 /* CodyncShared */ = {isa = PBXFileReference; lastKnownFileType = folder; path = CodyncShared; sourceTree = SOURCE_ROOT; };
-		F19A27E00B1B13A579A950F4 /* CloudKitReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitReceiver.swift; sourceTree = "<group>"; };
-		F5A6B7C8D9E0F1A2B3C4D5E7 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		F71E03612F167D883C324D25 /* SessionStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStateManager.swift; sourceTree = "<group>"; };
-		PANEL002233445566778899 /* PanelHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelHeaderView.swift; sourceTree = "<group>"; };
-		PM0002A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumManager.swift; sourceTree = "<group>"; };
-		RCS00200B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevenueCatSecrets.swift; sourceTree = "<group>"; };
-		PW0002A0B1C2D3E4F5A6B7C8 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
-		SV0002A0B1C2D3E4F5A6B7C8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		FW0002A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeWarningSheet.swift; sourceTree = "<group>"; };
-		SE0002A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncErrorSheet.swift; sourceTree = "<group>"; };
+		01C28522569623733B9B096D /* HostController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostController.swift; sourceTree = "<group>"; };
+		04030896973C4041E7FEB319 /* CodyncWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodyncWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		092242ADE0E7FF8A82051511 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		155F1B6DC4518164BE2C527F /* Codync-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Codync-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1753C1409D62F8F721BE833F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		280FA54859773B9355860354 /* CodyncMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncMacApp.swift; sourceTree = "<group>"; };
+		2A9EEFF0BB95647BE483A211 /* TraceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceView.swift; sourceTree = "<group>"; };
+		31D94A23B2E38E9DE6CAA984 /* PermissionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionCard.swift; sourceTree = "<group>"; };
+		371D72CCCB665E6442DED8C8 /* BotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotListView.swift; sourceTree = "<group>"; };
+		38FE26380B2072AE3FBD5CF5 /* CodyncWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodyncWidgets.entitlements; sourceTree = "<group>"; };
+		417B586A0D9A447747D1BEFC /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
+		528534881700FE0CF94A49BC /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		6CCA896856A480F390EBA9AB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6EBEF05AFCCF44C92BDA91A3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		74E27E10BA8F07E552E99BE9 /* Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Push.swift; sourceTree = "<group>"; };
+		835DB0566D924C508E360B8F /* CodyncKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CodyncKit; path = CodyncKit; sourceTree = SOURCE_ROOT; };
+		84B947AD5A042EA315737BBC /* Codync-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Codync-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9FCF7D2E2AEC8C83B89E7B36 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A30032680EAD00ABD06D30BE /* Codync-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Codync-iOS.entitlements"; sourceTree = "<group>"; };
+		A3FCD76B514C8ECF2211945A /* CodyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncApp.swift; sourceTree = "<group>"; };
+		AF5474468D6EBF22CB2FA1E9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AF5B67443AC77DA4414E6EBE /* BotEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotEditorView.swift; sourceTree = "<group>"; };
+		B274A0195CB3B2409EA4C194 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		C70DB39404824DBE6E38B94C /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
+		CD4B599F142017103B340A87 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E70F8B0E7E2E15AAA8A2A0A7 /* CodyncWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncWidgets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		33BB45F688B4E120B83A8B95 /* Frameworks */ = {
+		23D362028BD4C2D187672C6B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D4BC114BC4A6C08EECD54925 /* CodyncShared in Frameworks */,
+				341AB84FEF28FF194872D861 /* CodyncKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B751B672F1F83A923532F25D /* Frameworks */ = {
+		BC19FCC84D9B1AF54A43BDB1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				070688CBF55E74F38DC650E3 /* CodyncShared in Frameworks */,
+				D8E9E7B47361EEE30424455F /* CodyncKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EBDCA5828CAAF005C11D4017 /* Frameworks */ = {
+		F84176A6E29D7445556D4800 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C7E108B87747D1CB7E7E1699 /* CodyncShared in Frameworks */,
-				RC0001A0B1C2D3E4F5A6B7C8 /* RevenueCat in Frameworks */,
-				RC0002A0B1C2D3E4F5A6B7C8 /* RevenueCatUI in Frameworks */,
+				D667C45D828CAD079A2EDD77 /* CodyncKit in Frameworks */,
+				187068689418B6B25AE7B26A /* WidgetKit.framework in Frameworks */,
+				FEEBCD214CE268A636921FD9 /* SwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		04721CC753DB3D170E2C8A15 /* Products */ = {
+		3B3D0635CC47A804415E49C9 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				3EB0548BFADFAFC3616A8C4B /* Codync.app */,
-				8B5EA7075E9DC97237EF2227 /* Codync.app */,
-				3B652652FD106495A82565C8 /* CodyncLiveActivity.appex */,
+				1E47C60032C326157E0386B8 /* SwiftUI.framework */,
+				B274A0195CB3B2409EA4C194 /* WidgetKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		3EC1FDCCFFFB4BA1A23FDDB0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				84B947AD5A042EA315737BBC /* Codync-iOS.app */,
+				155F1B6DC4518164BE2C527F /* Codync-macOS.app */,
+				04030896973C4041E7FEB319 /* CodyncWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		0C96AC38D8727BFA29C5A3C2 /* Codync-iOS */ = {
+		A5F024E89FF18E86F969369F /* CodyncWidgets */ = {
 			isa = PBXGroup;
 			children = (
-				AB156A392F6DC850001D15CE /* Info.plist */,
-				9580D32B5B29E049090D66C8 /* Assets.xcassets */,
-				1826180B05CCD48B46767A6C /* App */,
-				BF38CE6E12412C3D21C0B979 /* Services */,
-				32B90F722211C6377233886C /* Views */,
+				38FE26380B2072AE3FBD5CF5 /* CodyncWidgets.entitlements */,
+				E70F8B0E7E2E15AAA8A2A0A7 /* CodyncWidgets.swift */,
+				1753C1409D62F8F721BE833F /* Info.plist */,
 			);
-			path = "Codync-iOS";
+			path = CodyncWidgets;
 			sourceTree = "<group>";
 		};
-		1826180B05CCD48B46767A6C /* App */ = {
+		AD54741A2330C502CD3BB628 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				433D534BFD8D3D76B489B324 /* Codync-iOS.entitlements */,
-				F5A6B7C8D9E0F1A2B3C4D5E7 /* AppDelegate.swift */,
-				8453D8BE6EE838E1B9EA4588 /* CodyncIOSApp.swift */,
-			);
-			path = App;
-			sourceTree = "<group>";
-		};
-		1A0CEB1937DE4129AB71C6FC /* Components */ = {
-			isa = PBXGroup;
-			children = (
-				9D38EB22B9A74DB4A5A84274 /* ModePillToggle.swift */,
-				B6D91C43F0A24E87A2C74F56 /* LiveActivityPreview.swift */,
-			);
-			path = Components;
-			sourceTree = "<group>";
-		};
-		32B90F722211C6377233886C /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				1A0CEB1937DE4129AB71C6FC /* Components */,
-				A7B8C9D0E1F2A3B4C5D6E7F8 /* ComingSoonView.swift */,
-				PW0002A0B1C2D3E4F5A6B7C8 /* PaywallView.swift */,
-				FW0002A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift */,
-				SE0002A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift */,
-				SV0002A0B1C2D3E4F5A6B7C8 /* SettingsView.swift */,
-				D866EFD6224AECD6846B76BE /* IOSOnboardingView.swift */,
-				3716B87C0A7249268846AB6C /* YouTubePlayerView.swift */,
-				DF291DF4A4EF932B774F227D /* IOSRootView.swift */,
-				9C01C9748A39F3475869F956 /* IOSSessionDetailView.swift */,
-				A01A225437E7A00B3337883E /* IOSSessionListView.swift */,
-				A1B2C3D4E5F6A7B8C9D0E1A1 /* IOSTheme.swift */,
-				A1B2C3D4E5F6A7B8C9D0E1A2 /* IOSStatusIndicator.swift */,
-				A1B2C3D4E5F6A7B8C9D0E1A3 /* IOSSessionTagView.swift */,
-				E5F6A7B8C9D0E1F2A3B4C5D6 /* TabRootView.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
-		38DD3C2C943D4DCC5208E8BB /* Codync-macOS */ = {
-			isa = PBXGroup;
-			children = (
-				3935CEE144EC8AFCA3AEAEA3 /* Assets.xcassets */,
-				A938E4429F7EF26E67792A2E /* App */,
-				BF668ADCDAD9595E867B23D0 /* Services */,
-				3FCF1C54EE1B71553A70301E /* Utilities */,
-				81EF17B3D3346D74A837F710 /* Views */,
-			);
-			path = "Codync-macOS";
-			sourceTree = "<group>";
-		};
-		3FCF1C54EE1B71553A70301E /* Utilities */ = {
-			isa = PBXGroup;
-			children = (
-				8F1E5418D5496E651BD58FA2 /* ClaudePaths.swift */,
-				05154CFD496486BA9E126E9D /* JSONLTailReader.swift */,
-				0D161FDC49BE96E3A73FEA33 /* PIDChecker.swift */,
-			);
-			path = Utilities;
-			sourceTree = "<group>";
-		};
-		5B3C3F020EFA3298682EBB4D /* CodyncLiveActivity */ = {
-			isa = PBXGroup;
-			children = (
-				3BCD1168005B123A7F9ACB37 /* CodyncLiveActivityBundle.swift */,
-				8A9A7BAE27F6E4CEEDA1B48D /* CodyncLiveActivityWidget.swift */,
-			);
-			path = CodyncLiveActivity;
-			sourceTree = "<group>";
-		};
-		81EF17B3D3346D74A837F710 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				PANEL002233445566778899 /* PanelHeaderView.swift */,
-				D10CABFC27BF22D45064777A /* SessionDetailView.swift */,
-				DA699D0197B8A14FD7D1BDC4 /* SessionListView.swift */,
-				AD09204E8CD3C16D75BA3048 /* SessionRowView.swift */,
-				A1B2C3D4E5F6A7B8C9D0E1F2 /* SessionTagView.swift */,
-				CEED6193555CB3FAC1BA7E2A /* StatusDotView.swift */,
-				D5E6F7A8B9C0D1E2F3A4B5C6 /* Theme.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
-		A938E4429F7EF26E67792A2E /* App */ = {
-			isa = PBXGroup;
-			children = (
-				CD5A99B72DC7E1F01D755DF6 /* Codync.entitlements */,
-				4A67A3CD19408484AB11BB73 /* CodyncApp.swift */,
-				AABBCCDD11223344556677EE /* CodyncPanelShape.swift */,
-				AA11BB22CC33DD44EE55FF66 /* CodyncPanel.swift */,
-				BB22CC33DD44EE55FF660011 /* EventMonitor.swift */,
-				4C55AF6C89E20B6FD1CF5CD4 /* MenuBarController.swift */,
-				CC33DD44EE55FF6600112233 /* NSScreen+Notch.swift */,
-			);
-			path = App;
-			sourceTree = "<group>";
-		};
-		BF38CE6E12412C3D21C0B979 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				F19A27E00B1B13A579A950F4 /* CloudKitReceiver.swift */,
-				CADC1A963B2C1124F480F9CE /* LiveActivityManager.swift */,
-				PM0002A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift */,
-				RCS00200B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift */,
-				C3D4E5F6A7B8C9D0E1F2A3B4 /* PrimarySessionManager.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
-		BF668ADCDAD9595E867B23D0 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				APNS0002D559EC6EBE0E39F4 /* APNsPushService.swift */,
-				APNS0004D559EC6EBE0E39F4 /* APNsSecrets.swift */,
-				E25C5CD874B7119D57AB2BB1 /* ClaudeHookServer.swift */,
-				22479FA0953120F3B50A1AF3 /* CloudKitSync.swift */,
-				A19BA18A6829F0BE991D4C7D /* SessionFileParser.swift */,
-				42BAF66F7C50D732B7E69333 /* SessionScanner.swift */,
-				F71E03612F167D883C324D25 /* SessionStateManager.swift */,
-				B3C4D5E6F708192A3B4C5D6E /* TranscriptWatcher.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
-		E69FE1F86317CB89D608ED70 /* Packages */ = {
-			isa = PBXGroup;
-			children = (
-				F033CA1408917B1655BC66D2 /* CodyncShared */,
+				835DB0566D924C508E360B8F /* CodyncKit */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
 		};
-		F6E0D7AC712AA3B0F1759540 = {
+		C9B7D3953422AE726DDC6347 = {
 			isa = PBXGroup;
 			children = (
-				0C96AC38D8727BFA29C5A3C2 /* Codync-iOS */,
-				38DD3C2C943D4DCC5208E8BB /* Codync-macOS */,
-				5B3C3F020EFA3298682EBB4D /* CodyncLiveActivity */,
-				E69FE1F86317CB89D608ED70 /* Packages */,
-				04721CC753DB3D170E2C8A15 /* Products */,
+				E096D8F5E751972A522C83C9 /* Codync-iOS */,
+				D268A75203C21E1F0385AB59 /* Codync-macOS */,
+				A5F024E89FF18E86F969369F /* CodyncWidgets */,
+				AD54741A2330C502CD3BB628 /* Packages */,
+				3B3D0635CC47A804415E49C9 /* Frameworks */,
+				3EC1FDCCFFFB4BA1A23FDDB0 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		D268A75203C21E1F0385AB59 /* Codync-macOS */ = {
+			isa = PBXGroup;
+			children = (
+				9FCF7D2E2AEC8C83B89E7B36 /* Assets.xcassets */,
+				280FA54859773B9355860354 /* CodyncMacApp.swift */,
+				01C28522569623733B9B096D /* HostController.swift */,
+			);
+			path = "Codync-macOS";
+			sourceTree = "<group>";
+		};
+		E096D8F5E751972A522C83C9 /* Codync-iOS */ = {
+			isa = PBXGroup;
+			children = (
+				AF5474468D6EBF22CB2FA1E9 /* Assets.xcassets */,
+				A30032680EAD00ABD06D30BE /* Codync-iOS.entitlements */,
+				6CCA896856A480F390EBA9AB /* Info.plist */,
+				F474B3D70851CF6BC24ED9DE /* App */,
+				EE65F2FAD6D95ABE28885E83 /* Views */,
+			);
+			path = "Codync-iOS";
+			sourceTree = "<group>";
+		};
+		EE65F2FAD6D95ABE28885E83 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AF5B67443AC77DA4414E6EBE /* BotEditorView.swift */,
+				371D72CCCB665E6442DED8C8 /* BotListView.swift */,
+				417B586A0D9A447747D1BEFC /* MarkdownText.swift */,
+				528534881700FE0CF94A49BC /* PairingView.swift */,
+				31D94A23B2E38E9DE6CAA984 /* PermissionCard.swift */,
+				6EBEF05AFCCF44C92BDA91A3 /* RootView.swift */,
+				CD4B599F142017103B340A87 /* SettingsView.swift */,
+				C70DB39404824DBE6E38B94C /* ThreadView.swift */,
+				2A9EEFF0BB95647BE483A211 /* TraceView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		F474B3D70851CF6BC24ED9DE /* App */ = {
+			isa = PBXGroup;
+			children = (
+				092242ADE0E7FF8A82051511 /* AppModel.swift */,
+				A3FCD76B514C8ECF2211945A /* CodyncApp.swift */,
+				74E27E10BA8F07E552E99BE9 /* Push.swift */,
+			);
+			path = App;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		6B3B927655EA5C595A71E513 /* CodyncLiveActivity */ = {
+		306ED26C181D06BDE1E6EB55 /* Codync-iOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = DF32303A18F63D7469748788 /* Build configuration list for PBXNativeTarget "CodyncLiveActivity" */;
+			buildConfigurationList = 300BC84D64F107B41629DDFD /* Build configuration list for PBXNativeTarget "Codync-iOS" */;
 			buildPhases = (
-				20089E1B60BEFCC7A55A8FB6 /* Sources */,
-				B751B672F1F83A923532F25D /* Frameworks */,
+				A9B4AF2EC917CEFCB162B091 /* Sources */,
+				D4DD49FA9E802F4F2DF2B232 /* Resources */,
+				23D362028BD4C2D187672C6B /* Frameworks */,
+				AA3D7E40FB2438A6CD2D3DE7 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-			);
-			name = CodyncLiveActivity;
-			packageProductDependencies = (
-				4BA154F0B1967DCBBB7600E5 /* CodyncShared */,
-			);
-			productName = CodyncLiveActivity;
-			productReference = 3B652652FD106495A82565C8 /* CodyncLiveActivity.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
-		842C52E994476FBBD71C5E66 /* Codync-iOS */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = C0E163C029ACFE1211477667 /* Build configuration list for PBXNativeTarget "Codync-iOS" */;
-			buildPhases = (
-				E9BB052BDAD97370F33645C0 /* Sources */,
-				D24261284760002490375CA2 /* Resources */,
-				EBDCA5828CAAF005C11D4017 /* Frameworks */,
-				FC965E0F58168E06F093EAB5 /* Embed Foundation Extensions */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				2486A6FA3EF6F07F8C8C1869 /* PBXTargetDependency */,
+				3AA5CFC9DFBBAE9D4564C791 /* PBXTargetDependency */,
 			);
 			name = "Codync-iOS";
 			packageProductDependencies = (
-				C1CA2B270135307CC4E2724D /* CodyncShared */,
-				RC0003A0B1C2D3E4F5A6B7C8 /* RevenueCat */,
-				RC0004A0B1C2D3E4F5A6B7C8 /* RevenueCatUI */,
+				CDE38864BDC425F1240E1C02 /* CodyncKit */,
 			);
 			productName = "Codync-iOS";
-			productReference = 3EB0548BFADFAFC3616A8C4B /* Codync.app */;
+			productReference = 84B947AD5A042EA315737BBC /* Codync-iOS.app */;
 			productType = "com.apple.product-type.application";
 		};
-		AD1C1A5F9DF9E66175980B2F /* Codync */ = {
+		95A633B0E0FD05A1D35CA468 /* CodyncWidgets */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 760757829424481109E47CF8 /* Build configuration list for PBXNativeTarget "Codync" */;
+			buildConfigurationList = 44E0D659F23143196DD57DE0 /* Build configuration list for PBXNativeTarget "CodyncWidgets" */;
 			buildPhases = (
-				7F9A36AEDBA1D656A9BF8ADE /* Sources */,
-				B2D37B30DF1C57C6200F77CB /* Resources */,
-				33BB45F688B4E120B83A8B95 /* Frameworks */,
+				EB674074085209A1C457557E /* Sources */,
+				F84176A6E29D7445556D4800 /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = Codync;
+			name = CodyncWidgets;
 			packageProductDependencies = (
-				7660B5D6DD8CC2065A9F4ED3 /* CodyncShared */,
+				4364B5D2EE15CB00ACF26E5D /* CodyncKit */,
 			);
-			productName = Codync;
-			productReference = 8B5EA7075E9DC97237EF2227 /* Codync.app */;
+			productName = CodyncWidgets;
+			productReference = 04030896973C4041E7FEB319 /* CodyncWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		E8A9607522E696738C5CA56E /* Codync-macOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 055E41E3751AF5C2889C3938 /* Build configuration list for PBXNativeTarget "Codync-macOS" */;
+			buildPhases = (
+				E5233A2EF3EBD0703A3CD62B /* Sources */,
+				E7B25FBC4C007B3E1A7E8B39 /* Resources */,
+				BC19FCC84D9B1AF54A43BDB1 /* Frameworks */,
+				35A6B7A814D5FF8E400C0EBA /* Embed codync-host */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Codync-macOS";
+			packageProductDependencies = (
+				234AA35A60DF7D3E6D7CA45E /* CodyncKit */,
+			);
+			productName = "Codync-macOS";
+			productReference = 155F1B6DC4518164BE2C527F /* Codync-macOS.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		755EE78C119E5281024E6F90 /* Project object */ = {
+		5B6351DD20AF4506794D6460 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					306ED26C181D06BDE1E6EB55 = {
+						ProvisioningStyle = Automatic;
+					};
+					95A633B0E0FD05A1D35CA468 = {
+						ProvisioningStyle = Automatic;
+					};
+					E8A9607522E696738C5CA56E = {
+						ProvisioningStyle = Automatic;
+					};
+				};
 			};
-			buildConfigurationList = DA5B2EF5E622786143AC38D4 /* Build configuration list for PBXProject "Codync" */;
+			buildConfigurationList = F977CF173B7D60769B393751 /* Build configuration list for PBXProject "Codync" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -432,203 +306,113 @@
 				Base,
 				en,
 			);
-			mainGroup = F6E0D7AC712AA3B0F1759540;
+			mainGroup = C9B7D3953422AE726DDC6347;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				2546D0E01391BBF7D36B931E /* XCLocalSwiftPackageReference "CodyncShared" */,
-				RC0005A0B1C2D3E4F5A6B7C8 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
+				F89E9C0E1EDA8BE6657FAB55 /* XCLocalSwiftPackageReference "CodyncKit" */,
 			);
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AD1C1A5F9DF9E66175980B2F /* Codync */,
-				842C52E994476FBBD71C5E66 /* Codync-iOS */,
-				6B3B927655EA5C595A71E513 /* CodyncLiveActivity */,
+				306ED26C181D06BDE1E6EB55 /* Codync-iOS */,
+				E8A9607522E696738C5CA56E /* Codync-macOS */,
+				95A633B0E0FD05A1D35CA468 /* CodyncWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		B2D37B30DF1C57C6200F77CB /* Resources */ = {
+		D4DD49FA9E802F4F2DF2B232 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B575261E2F89280C4805C654 /* Assets.xcassets in Resources */,
+				76E613DFEABF73915C5FE9DC /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D24261284760002490375CA2 /* Resources */ = {
+		E7B25FBC4C007B3E1A7E8B39 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0205D611148BDCAB840D0F47 /* Assets.xcassets in Resources */,
+				1BD8A64454E95EF3726132A4 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		35A6B7A814D5FF8E400C0EBA /* Embed codync-host */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed codync-host";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Builds the Rust host and ships it inside Codync.app/Contents/MacOS.\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nif ! command -v cargo >/dev/null; then\n  echo \"warning: cargo not found; Codync.app will look for codync-host on PATH instead\"\n  exit 0\nfi\nPROFILE=release\n[ \"$CONFIGURATION\" = \"Debug\" ] && PROFILE=debug\nFLAGS=\"\"\n[ \"$PROFILE\" = \"release\" ] && FLAGS=\"--release\"\nif [ \"$PROFILE\" = \"release\" ]; then\n  rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null 2>&1 || true\n  cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" --target aarch64-apple-darwin &&\n  cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" --target x86_64-apple-darwin &&\n  lipo -create -output \"$SRCROOT/host/target/codync-host-universal\" \\\n    \"$SRCROOT/host/target/aarch64-apple-darwin/release/codync-host\" \\\n    \"$SRCROOT/host/target/x86_64-apple-darwin/release/codync-host\" &&\n  BIN=\"$SRCROOT/host/target/codync-host-universal\" ||\n  { cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" && BIN=\"$SRCROOT/host/target/release/codync-host\"; }\nelse\n  cargo build --manifest-path \"$SRCROOT/host/Cargo.toml\" && BIN=\"$SRCROOT/host/target/debug/codync-host\"\nfi\nDEST=\"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/codync-host\"\ncp \"$BIN\" \"$DEST\"\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ] && [ \"$CODE_SIGNING_ALLOWED\" != \"NO\" ]; then\n  codesign --force --options runtime --timestamp=none --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$DEST\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
-		20089E1B60BEFCC7A55A8FB6 /* Sources */ = {
+		A9B4AF2EC917CEFCB162B091 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E36D87A2D2D0F1177F263772 /* CodyncLiveActivityBundle.swift in Sources */,
-				BB50434DF1BC51FED1AFED51 /* CodyncLiveActivityWidget.swift in Sources */,
+				575ABFE8E1FBD2865793F45D /* AppModel.swift in Sources */,
+				745062481B4868CF3F2950BF /* BotEditorView.swift in Sources */,
+				07670DD412E0F79796D44699 /* BotListView.swift in Sources */,
+				CEFE64EFFEA10B5ED60F2CE3 /* CodyncApp.swift in Sources */,
+				2C21D097FD9AF73AE3B40DDE /* MarkdownText.swift in Sources */,
+				989285CFB52552A97D95366C /* PairingView.swift in Sources */,
+				FB33CDB6D44A6023BB565200 /* PermissionCard.swift in Sources */,
+				61455BFB935FE1AAF67C4CD4 /* Push.swift in Sources */,
+				087DC53315FB092D4F6436AD /* RootView.swift in Sources */,
+				9D644515BB782DC91B1B71C8 /* SettingsView.swift in Sources */,
+				DC0510188C0A2C8FAEA5CC8D /* ThreadView.swift in Sources */,
+				4F70D744ED9A696854EADA91 /* TraceView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		7F9A36AEDBA1D656A9BF8ADE /* Sources */ = {
+		E5233A2EF3EBD0703A3CD62B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				APNS0001D559EC6EBE0E39F4 /* APNsPushService.swift in Sources */,
-				APNS0003D559EC6EBE0E39F4 /* APNsSecrets.swift in Sources */,
-				A98E0466D559EC6EBE0E39F4 /* ClaudeHookServer.swift in Sources */,
-				3DC7D9E7E79444359ED6D09F /* ClaudePaths.swift in Sources */,
-				106A1E305D6DBDFC35AF01BD /* CloudKitSync.swift in Sources */,
-				EB132AF39AB968D2DFA6151B /* CodyncApp.swift in Sources */,
-				7851B112737C5DD8B8C3380C /* JSONLTailReader.swift in Sources */,
-				1122334455667788AABBCCDD /* CodyncPanelShape.swift in Sources */,
-				DD44EE55FF66001122334455 /* CodyncPanel.swift in Sources */,
-				EE55FF6600112233445566AA /* EventMonitor.swift in Sources */,
-				4450C6683BA7614D2DBB5E55 /* MenuBarController.swift in Sources */,
-				FF66001122334455667788BB /* NSScreen+Notch.swift in Sources */,
-				PANEL001122334455667788 /* PanelHeaderView.swift in Sources */,
-				911C6ABDB9539A60844931F2 /* PIDChecker.swift in Sources */,
-				BF17F10AC69617C12975E0EB /* SessionDetailView.swift in Sources */,
-				73382915E3200DDC5EF16C2F /* SessionFileParser.swift in Sources */,
-				0294408FF2BC2367453C118C /* SessionListView.swift in Sources */,
-				E1740D692C1C19693058D20B /* SessionRowView.swift in Sources */,
-				F1E2D3C4B5A6F7E8D9C0B1A2 /* SessionTagView.swift in Sources */,
-				EDCB66A65FD85B26FE7B4664 /* SessionScanner.swift in Sources */,
-				6A5A77C9C3AF37A8E371F5CB /* SessionStateManager.swift in Sources */,
-				21DBF9BED5F40E2F671CB1F9 /* StatusDotView.swift in Sources */,
-				D2A3B4C5E6F7081920314253 /* TranscriptWatcher.swift in Sources */,
-				C4D5E6F7A8B9C0D1E2F3A4B5 /* Theme.swift in Sources */,
+				ED9C1500FD1CC591FCBD26CB /* CodyncMacApp.swift in Sources */,
+				CED43A6F2ED71E48C95E9E38 /* HostController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		E9BB052BDAD97370F33645C0 /* Sources */ = {
+		EB674074085209A1C457557E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B8C9D0E1F2A3B4C5D6E7F8A9 /* ComingSoonView.swift in Sources */,
-				7534D98B6CDF84E44B0D25A9 /* CloudKitReceiver.swift in Sources */,
-				F4F54F91459EE6A15DD7B246 /* CodyncIOSApp.swift in Sources */,
-				F5A6B7C8D9E0F1A2B3C4D5E6 /* AppDelegate.swift in Sources */,
-				EEF78145300C2A3547AD832A /* IOSOnboardingView.swift in Sources */,
-				0CFFA94EEF8F4C33AB86012A /* YouTubePlayerView.swift in Sources */,
-				DBD957B5BFDEC3B62B310F8F /* IOSRootView.swift in Sources */,
-				0B6B1D4B20837A47EAF88322 /* IOSSessionDetailView.swift in Sources */,
-				A30C11E610763F5064698D43 /* IOSSessionListView.swift in Sources */,
-				EF0A0CEAD3C7B875064F8556 /* LiveActivityManager.swift in Sources */,
-				PM0001A0B1C2D3E4F5A6B7C8 /* PremiumManager.swift in Sources */,
-				RCS00100B1C2D3E4F5A6B7C8 /* RevenueCatSecrets.swift in Sources */,
-				PW0001A0B1C2D3E4F5A6B7C8 /* PaywallView.swift in Sources */,
-				FW0001A0B1C2D3E4F5A6B7C8 /* FreeWarningSheet.swift in Sources */,
-				SE0001A0B1C2D3E4F5A6B7C8 /* SyncErrorSheet.swift in Sources */,
-				SV0001A0B1C2D3E4F5A6B7C8 /* SettingsView.swift in Sources */,
-				D4E5F6A7B8C9D0E1F2A3B4C5 /* PrimarySessionManager.swift in Sources */,
-				F6A7B8C9D0E1F2A3B4C5D6E7 /* TabRootView.swift in Sources */,
-				B1C2D3E4F5A6B7C8D9E0F1A1 /* IOSTheme.swift in Sources */,
-				B1C2D3E4F5A6B7C8D9E0F1A2 /* IOSStatusIndicator.swift in Sources */,
-				B1C2D3E4F5A6B7C8D9E0F1A3 /* IOSSessionTagView.swift in Sources */,
-				F7407323258F4D54ABC49AA7 /* ModePillToggle.swift in Sources */,
-				A3F82B14C7E94D61B0E53D92 /* LiveActivityPreview.swift in Sources */,
+				1C2298904CADCA68ADF64F6B /* CodyncWidgets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		2486A6FA3EF6F07F8C8C1869 /* PBXTargetDependency */ = {
+		3AA5CFC9DFBBAE9D4564C791 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 6B3B927655EA5C595A71E513 /* CodyncLiveActivity */;
-			targetProxy = B38F144A3A8B56B1FC2398CE /* PBXContainerItemProxy */;
+			target = 95A633B0E0FD05A1D35CA468 /* CodyncWidgets */;
+			targetProxy = 65AAB675493CB6BE712818A9 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		05A665239A83C10C704662CC /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = CodyncLiveActivity/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = CodyncLiveActivity;
-				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
-				PRODUCT_NAME = CodyncLiveActivity;
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		0C75283ACAEDF302C26EABAE /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "Codync-macOS/App/Codync.entitlements";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync;
-				PRODUCT_NAME = Codync;
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SDKROOT = macosx;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
-		0F19986BCBA4168115C96CAA /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "Codync-macOS/App/Codync.entitlements";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync;
-				PRODUCT_NAME = Codync;
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SDKROOT = macosx;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
-		};
-		1BD4F14F5BA62C58590E3C84 /* Debug */ = {
+		0FE1E0F076B087CEBC2AD3BE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -661,13 +445,170 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		54EA3D52E88009D955D76EA4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = CodyncWidgets/CodyncWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CodyncWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
+				PRODUCT_NAME = CodyncWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5EAF02B30FB1CCFAE0E18AAE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync;
+				PRODUCT_NAME = Codync;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		7984345FB6F55041E94F9B88 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "Codync-iOS/Codync-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Codync-iOS/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Codync connects to the computer running your bots on your local network.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
+				PRODUCT_NAME = Codync;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7AECEDF558C927EA14CD5EB5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync;
+				PRODUCT_NAME = Codync;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		A8BF4A3388AA1B9ECD65A197 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 17;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -682,199 +623,105 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.5;
+				MARKETING_VERSION = 2.0.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
-		74301E9EAFCD478E76A7FDEF /* Release */ = {
+		AE9BE3BA396DE6267749F8AF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "Codync-iOS/App/Codync-iOS.entitlements";
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = CodyncWidgets/CodyncWidgets.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Codync-iOS/Info.plist";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
-				PRODUCT_NAME = Codync;
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		9A811AEDB402F850CF77C133 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "Codync-iOS/App/Codync-iOS.entitlements";
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Codync-iOS/Info.plist";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
-				PRODUCT_NAME = Codync;
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		BBB96964FECC01CD9E90CE59 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = CodyncLiveActivity/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = CodyncLiveActivity;
-				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				INFOPLIST_FILE = CodyncWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
-				PRODUCT_NAME = CodyncLiveActivity;
+				PRODUCT_NAME = CodyncWidgets;
 				SDKROOT = iphoneos;
-				SWIFT_VERSION = 6.0;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F1217CDE3A9CDFEC5BE16BD6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "Codync-iOS/Codync-iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Codync-iOS/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Codync connects to the computer running your bots on your local network.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
+				PRODUCT_NAME = Codync;
+				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		EB49C7981C3E87EE7E670063 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 16;
-				DEAD_CODE_STRIPPING = YES;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.5;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		760757829424481109E47CF8 /* Build configuration list for PBXNativeTarget "Codync" */ = {
+		055E41E3751AF5C2889C3938 /* Build configuration list for PBXNativeTarget "Codync-macOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0F19986BCBA4168115C96CAA /* Debug */,
-				0C75283ACAEDF302C26EABAE /* Release */,
+				5EAF02B30FB1CCFAE0E18AAE /* Debug */,
+				7AECEDF558C927EA14CD5EB5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		C0E163C029ACFE1211477667 /* Build configuration list for PBXNativeTarget "Codync-iOS" */ = {
+		300BC84D64F107B41629DDFD /* Build configuration list for PBXNativeTarget "Codync-iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				9A811AEDB402F850CF77C133 /* Debug */,
-				74301E9EAFCD478E76A7FDEF /* Release */,
+				F1217CDE3A9CDFEC5BE16BD6 /* Debug */,
+				7984345FB6F55041E94F9B88 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		DA5B2EF5E622786143AC38D4 /* Build configuration list for PBXProject "Codync" */ = {
+		44E0D659F23143196DD57DE0 /* Build configuration list for PBXNativeTarget "CodyncWidgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				1BD4F14F5BA62C58590E3C84 /* Debug */,
-				EB49C7981C3E87EE7E670063 /* Release */,
+				54EA3D52E88009D955D76EA4 /* Debug */,
+				AE9BE3BA396DE6267749F8AF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		DF32303A18F63D7469748788 /* Build configuration list for PBXNativeTarget "CodyncLiveActivity" */ = {
+		F977CF173B7D60769B393751 /* Build configuration list for PBXProject "Codync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				BBB96964FECC01CD9E90CE59 /* Debug */,
-				05A665239A83C10C704662CC /* Release */,
+				A8BF4A3388AA1B9ECD65A197 /* Debug */,
+				0FE1E0F076B087CEBC2AD3BE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -882,47 +729,26 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		2546D0E01391BBF7D36B931E /* XCLocalSwiftPackageReference "CodyncShared" */ = {
+		F89E9C0E1EDA8BE6657FAB55 /* XCLocalSwiftPackageReference "CodyncKit" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = CodyncShared;
+			relativePath = CodyncKit;
 		};
 /* End XCLocalSwiftPackageReference section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		RC0005A0B1C2D3E4F5A6B7C8 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/RevenueCat/purchases-ios-spm.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.0.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
 /* Begin XCSwiftPackageProductDependency section */
-		4BA154F0B1967DCBBB7600E5 /* CodyncShared */ = {
+		234AA35A60DF7D3E6D7CA45E /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = CodyncShared;
+			productName = CodyncKit;
 		};
-		7660B5D6DD8CC2065A9F4ED3 /* CodyncShared */ = {
+		4364B5D2EE15CB00ACF26E5D /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = CodyncShared;
+			productName = CodyncKit;
 		};
-		C1CA2B270135307CC4E2724D /* CodyncShared */ = {
+		CDE38864BDC425F1240E1C02 /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = CodyncShared;
-		};
-		RC0003A0B1C2D3E4F5A6B7C8 /* RevenueCat */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = RC0005A0B1C2D3E4F5A6B7C8 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
-			productName = RevenueCat;
-		};
-		RC0004A0B1C2D3E4F5A6B7C8 /* RevenueCatUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = RC0005A0B1C2D3E4F5A6B7C8 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
-			productName = RevenueCatUI;
+			productName = CodyncKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
-	rootObject = 755EE78C119E5281024E6F90 /* Project object */;
+	rootObject = 5B6351DD20AF4506794D6460 /* Project object */;
 }

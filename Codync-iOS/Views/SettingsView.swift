@@ -1,149 +1,179 @@
+import CodyncKit
 import SwiftUI
-import RevenueCatUI
+import UserNotifications
 
 struct SettingsView: View {
+    @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("codync_darkMode") private var isDarkMode = true
-    @State private var showPaywall = false
-
-    private var theme: CodyncTheme { CodyncTheme(isDark: isDarkMode) }
+    @State private var notificationsAllowed: Bool?
+    @State private var confirmUnpair = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                // MARK: - Subscription
-                Section {
-                    subscriptionRow
-                } header: {
-                    Text("Subscription").foregroundStyle(.secondary)
+        Form {
+            Section("Computer") {
+                LabeledContent("Name", value: model.hostName)
+                LabeledContent("Status") {
+                    switch model.connection {
+                    case .online: Text("Connected").foregroundStyle(Palette.accent)
+                    case .connecting: Text("Connecting…")
+                    case .offline: Text("Offline").foregroundStyle(Palette.warning)
+                    case .unpaired: Text("Not paired")
+                    }
                 }
-
-                // MARK: - Appearance
-                Section {
-                    Toggle(isOn: $isDarkMode) {
-                        Label("Dark Mode", systemImage: "moon.fill")
-                    }
-                    .tint(.primary)
-                } header: {
-                    Text("Appearance").foregroundStyle(.secondary)
+                if let url = model.client?.baseURL.absoluteString {
+                    LabeledContent("Address", value: url).font(.footnote.monospaced())
                 }
-
-                // MARK: - Notifications
-                Section {
-                    Button {
-                        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
-                            UIApplication.shared.open(url)
-                        }
-                    } label: {
-                        HStack {
-                            Label("Push Notifications", systemImage: "bell.badge")
-                            Spacer()
-                            Image(systemName: "arrow.up.forward")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .tint(.primary)
-                } header: {
-                    Text("Notifications").foregroundStyle(.secondary)
-                } footer: {
-                    Text("Only the pinned primary session sends completion alerts.")
-                }
-
-                // MARK: - Support
-                Section {
-                    Link(destination: URL(string: "mailto:kevin2005ha@gmail.com")!) {
-                        Label("Contact Support", systemImage: "envelope")
-                    }
-                    .tint(.primary)
-                    Link(destination: URL(string: "https://github.com/anthropics/claude-code")!) {
-                        Label("Claude Code", systemImage: "link")
-                    }
-                    .tint(.primary)
-                } header: {
-                    Text("Support").foregroundStyle(.secondary)
-                }
-
-                // MARK: - About
-                Section {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
-                            .foregroundStyle(.secondary)
-                    }
-                    Button {
-                        UserDefaults.standard.set(false, forKey: "codync_onboardingComplete")
-                        dismiss()
-                    } label: {
-                        Label("Reset Onboarding", systemImage: "arrow.counterclockwise")
-                    }
-                    .tint(.secondary)
-                } header: {
-                    Text("About").foregroundStyle(.secondary)
+                if let hello = model.hello {
+                    LabeledContent("Host version", value: hello.version)
+                    LabeledContent("System", value: hello.os)
                 }
             }
-            .tint(.primary)
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .sheet(isPresented: $showPaywall) {
-                CodyncPaywallView()
-                    .environment(\.theme, theme)
-                    .preferredColorScheme(isDarkMode ? .dark : .light)
-            }
-        }
-        .preferredColorScheme(isDarkMode ? .dark : .light)
-    }
 
-    @ViewBuilder
-    private var subscriptionRow: some View {
-        let premium = PremiumManager.shared
-        Button {
-            if premium.isPro {
-                if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
-                    UIApplication.shared.open(url)
-                }
-            } else {
-                showPaywall = true
+            Section {
+                ForEach(model.usage.providers) { UsageCard(provider: $0) }
+                Button("Refresh") { Task { await model.refreshUsage() } }
+            } header: {
+                Text("Usage limits")
+            } footer: {
+                Text("Read on your computer from Claude Code and Codex. Add the Codync widget to your Home or Lock Screen to keep an eye on them.")
             }
-        } label: {
-            HStack {
-                Label {
-                    Text("Codync Pro")
-                } icon: {
-                    Image(systemName: premium.isPro ? "checkmark.seal.fill" : "seal")
-                }
-                Spacer()
-                if premium.isPro {
-                    Image(systemName: "arrow.up.forward")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+
+            Section("Notifications") {
+                if notificationsAllowed == false {
+                    Button("Allow in Settings") {
+                        UIApplication.shared.open(URL(string: UIApplication.openNotificationSettingsURLString)!)
+                    }
+                } else if notificationsAllowed == nil {
+                    Button("Turn on notifications") {
+                        Task { notificationsAllowed = await PushRegistrar.shared.requestAuthorization() }
+                    }
                 } else {
-                    Text("$0.99/mo")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    Label("On — you'll hear when a bot needs you or finishes", systemImage: "bell.badge")
+                        .font(.footnote)
+                }
+            }
+
+            if !model.hiddenBots.isEmpty {
+                Section("Hidden bots") {
+                    ForEach(model.hiddenBots) { bot in
+                        HStack {
+                            CharacterAvatar(bot: bot, size: 28, animated: false)
+                            Text(bot.name)
+                            Spacer()
+                            Button("Unhide") { model.setHidden(bot, false) }
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Button("Unpair this phone", role: .destructive) { confirmUnpair = true }
+            } footer: {
+                Text("Bots and conversations stay on your computer.")
+            }
+
+            Section {
+                Link("Source code", destination: URL(string: "https://github.com/leepokai/Codync")!)
+                LabeledContent("App version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Palette.background)
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+        }
+        .confirmationDialog("Unpair from \(model.hostName)?", isPresented: $confirmUnpair, titleVisibility: .visible) {
+            Button("Unpair", role: .destructive) {
+                model.unpair()
+                dismiss()
+            }
+        }
+        .task {
+            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            notificationsAllowed = switch status {
+            case .authorized, .provisional, .ephemeral: true
+            case .denied: false
+            default: nil
+            }
+        }
+    }
+}
+
+struct UsageCard: View {
+    let provider: UsageProvider
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(provider.name).font(.subheadline.bold())
+                Spacer()
+                Text("updated \(RelativeTime.short(Date(milliseconds: provider.updatedAt)))")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.tertiary)
+            }
+            ForEach(provider.windows) { w in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(w.label).font(.caption)
+                        Spacer()
+                        Text("\(Int(w.percent.rounded()))%").font(.caption.monospacedDigit().bold())
+                        if let reset = w.resetDate {
+                            Text("· resets in \(RelativeTime.until(reset))").font(.caption2).foregroundStyle(Palette.tertiary)
+                        }
+                    }
+                    UsageBar(percent: w.percent)
                 }
             }
         }
-        .tint(.primary)
+        .padding(.vertical, 4)
+    }
+}
 
-        if !premium.isPro {
-            Button {
-                Task {
-                    try? await premium.restorePurchases()
-                }
-            } label: {
-                Label("Restore Purchases", systemImage: "arrow.clockwise")
+struct UsageBar: View {
+    let percent: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Palette.bubbleAgent)
+                Capsule()
+                    .fill(percent >= 90 ? Palette.danger : percent >= 70 ? Palette.warning : Palette.accentFill)
+                    .frame(width: geo.size.width * min(1, max(0.02, percent / 100)))
             }
-            .tint(.secondary)
+        }
+        .frame(height: 6)
+    }
+}
+
+/// Compact usage chips at the top of the roster.
+struct UsageStrip: View {
+    let usage: Usage
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(usage.providers) { p in
+                    ForEach(p.windows.prefix(2)) { w in
+                        HStack(spacing: 6) {
+                            Gauge(value: min(w.percent, 100), in: 0...100) { EmptyView() }
+                                .gaugeStyle(.accessoryCircularCapacity)
+                                .scaleEffect(0.42)
+                                .frame(width: 22, height: 22)
+                                .tint(w.percent >= 90 ? Palette.danger : w.percent >= 70 ? Palette.warning : Palette.accent)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("\(p.name) \(w.label)").font(.caption2).foregroundStyle(Palette.tertiary)
+                                Text("\(Int(w.percent.rounded()))%").font(.caption.bold().monospacedDigit()).foregroundStyle(Palette.text)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Palette.surface, in: Capsule())
+                        .overlay(Capsule().stroke(Palette.border))
+                    }
+                }
+            }
         }
     }
 }

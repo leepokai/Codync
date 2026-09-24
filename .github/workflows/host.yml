@@ -1,0 +1,65 @@
+name: codync-host
+
+on:
+  push:
+    branches: [main, v2]
+    paths: ["host/**", ".github/workflows/host.yml"]
+    tags: ["host-v*"]
+  pull_request:
+    paths: ["host/**"]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/host-v')
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        working-directory: host
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF_NAME#host-v}
+          NAME=codync-host-$VERSION-${{ matrix.target }}
+          mkdir $NAME
+          cp host/target/${{ matrix.target }}/release/codync-host $NAME/
+          cp LICENSE $NAME/
+          tar czf $NAME.tar.gz $NAME
+          shasum -a 256 $NAME.tar.gz > $NAME.tar.gz.sha256
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            codync-host-*.tar.gz
+            codync-host-*.tar.gz.sha256

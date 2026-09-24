@@ -16,20 +16,14 @@ jobs:
       - name: Set version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
-      - name: Generate APNsSecrets.swift
-        run: |
-          cat > Codync-macOS/Services/APNsSecrets.swift << 'SWIFT'
-          enum APNsSecrets {
-              static let workerURL = "${{ secrets.APNS_WORKER_URL }}"
-              static let apiSecret = "${{ secrets.APNS_API_SECRET }}"
-          }
-          SWIFT
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Install Apple certificate and provisioning profile
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          PROVISION_PROFILE: ${{ secrets.DEVELOPER_ID_PROVISION_PROFILE }}
         run: |
           CERT_FILE=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_FILE=$RUNNER_TEMP/app-signing.keychain-db
@@ -52,15 +46,11 @@ jobs:
 
           security list-keychain -d user -s "$KEYCHAIN_FILE"
 
-          mkdir -p ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles
-          echo "$PROVISION_PROFILE" | base64 --decode \
-            > ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/codync-devid.provisionprofile
-
       - name: Build
         run: |
           xcodebuild build \
             -project Codync.xcodeproj \
-            -scheme Codync \
+            -scheme Codync-macOS \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -derivedDataPath build/derived \
@@ -74,29 +64,11 @@ jobs:
       - name: Sign app with Developer ID
         run: |
           APP_PATH=$(find build/derived -name "Codync.app" -path "*/Release/*" | head -1)
-
-          cp ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/codync-devid.provisionprofile \
-            "$APP_PATH/Contents/embedded.provisionprofile"
-
-          cat > $RUNNER_TEMP/release.entitlements << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>com.apple.developer.icloud-container-environment</key>
-            <string>Production</string>
-            <key>com.apple.developer.icloud-container-identifiers</key>
-            <array><string>iCloud.com.pokai.Codync</string></array>
-            <key>com.apple.developer.icloud-services</key>
-            <array><string>CloudKit</string></array>
-          </dict>
-          </plist>
-          PLIST
-
-          codesign --deep --force --options runtime \
-            --sign "Developer ID Application" \
-            --entitlements $RUNNER_TEMP/release.entitlements \
-            "$APP_PATH"
+          # Nested helper first (the bundled Rust host), then the app itself.
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" "$APP_PATH/Contents/MacOS/codync-host"
+          codesign --force --options runtime --timestamp \
+            --sign "Developer ID Application" "$APP_PATH"
           cp -R "$APP_PATH" "$RUNNER_TEMP/Codync.app"
 
       - name: Notarize and staple
@@ -146,10 +118,11 @@ jobs:
 
             url "https://github.com/leepokai/Codync/releases/download/v#{version}/Codync-macOS.dmg"
             name "Codync"
-            desc "Real-time Claude Code session monitor for macOS menu bar"
+            desc "Message your coding agents (Claude Code, Codex, OpenCode) from your iPhone"
             homepage "https://codync.dev"
 
             app "Codync.app"
+            binary "#{appdir}/Codync.app/Contents/MacOS/codync-host"
 
             zap trash: [
               "~/Library/Preferences/com.pokai.Codync.plist",

@@ -1,0 +1,132 @@
+import CodyncKit
+import SwiftUI
+
+/// "Full conversation": everything the agent did — narration, thinking, tool
+/// calls with output and diffs, plans — grouped by turn.
+struct TraceView: View {
+    let botId: String
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let turns = Dictionary(grouping: model.thread(botId), by: \.turn)
+            .sorted { $0.key < $1.key }
+        List {
+            if turns.isEmpty {
+                Text("Nothing yet.").foregroundStyle(Palette.tertiary)
+            }
+            ForEach(turns, id: \.key) { turn, entries in
+                Section {
+                    ForEach(entries) { TraceRow(entry: $0) }
+                } header: {
+                    Text(entries.first { $0.kind == "user" }?.data.text ?? "Turn \(turn)")
+                        .lineLimit(1)
+                        .textCase(nil)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Palette.background)
+        .navigationTitle("Full conversation")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+        }
+        .defaultScrollAnchor(.bottom)
+    }
+}
+
+private struct TraceRow: View {
+    let entry: Entry
+
+    var body: some View {
+        let d = entry.data
+        switch entry.kind {
+        case "user":
+            Label { Text(d.text ?? "").foregroundStyle(Palette.text) } icon: { Image(systemName: "person.fill") }
+                .font(.subheadline)
+        case "agent":
+            VStack(alignment: .leading, spacing: 4) {
+                Text(d.final == true ? "Reply" : "Said").font(.caption2.bold()).foregroundStyle(Palette.tertiary)
+                MarkdownText(d.text ?? "")
+            }
+        case "thought":
+            DisclosureGroup {
+                Text(d.text ?? "").font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
+            } label: {
+                Label("Thinking", systemImage: "brain").font(.subheadline).foregroundStyle(Palette.secondary)
+            }
+        case "tool":
+            ToolRow(data: d)
+        case "plan":
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Plan", systemImage: "checklist").font(.subheadline.bold())
+                ForEach(Array((d.entries ?? []).enumerated()), id: \.offset) { _, item in
+                    Label {
+                        Text(item.content).strikethrough(item.status == "completed").foregroundStyle(Palette.text)
+                    } icon: {
+                        Image(systemName: item.status == "completed" ? "checkmark.circle.fill" : item.status == "in_progress" ? "circle.dotted" : "circle")
+                            .foregroundStyle(item.status == "completed" ? Palette.accent : Palette.tertiary)
+                    }
+                    .font(.footnote)
+                }
+            }
+        case "permission":
+            Label(d.title ?? "Approval", systemImage: "hand.raised")
+                .font(.subheadline)
+                .foregroundStyle(Palette.secondary)
+        default:
+            Text(d.text ?? "").font(.footnote).foregroundStyle(Palette.tertiary)
+        }
+    }
+}
+
+struct ToolRow: View {
+    let data: EntryData
+
+    private var icon: String {
+        switch data.toolKind {
+        case "read": "doc.text"
+        case "edit": "pencil"
+        case "delete": "trash"
+        case "move": "arrow.right.doc.on.clipboard"
+        case "search": "magnifyingglass"
+        case "execute": "terminal"
+        case "think": "brain"
+        case "fetch": "globe"
+        default: "wrench.and.screwdriver"
+        }
+    }
+
+    private var hasBody: Bool {
+        !(data.output ?? "").isEmpty || !(data.diffs ?? []).isEmpty
+    }
+
+    var body: some View {
+        if hasBody {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(data.diffs ?? [], id: \.self) { DiffView(diff: $0) }
+                    if let out = data.output, !out.isEmpty { CodeBox(text: out) }
+                }
+            } label: { label }
+        } else {
+            label
+        }
+    }
+
+    private var label: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).frame(width: 18).foregroundStyle(Palette.secondary)
+            Text(data.title ?? "Tool").font(.subheadline).foregroundStyle(Palette.text).lineLimit(2)
+            Spacer(minLength: 4)
+            switch data.status {
+            case "completed": Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+            case "failed": Image(systemName: "xmark").foregroundStyle(Palette.danger)
+            default: ProgressView().controlSize(.mini)
+            }
+        }
+        .font(.caption)
+    }
+}

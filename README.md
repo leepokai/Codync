@@ -1,71 +1,95 @@
 # Codync
 
-A real-time companion for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — monitor your coding sessions from anywhere, on any Apple device.
+**Your coding agents, as teammates you can message.**
 
-> Now you can vibe code with Claude Code while jogging.
+Codync turns Claude Code, Codex, OpenCode, Grok Build and Gemini CLI into persistent *bots* you delegate to from your iPhone — the way you'd message a colleague. Pick who, say what, put the phone away. You get a notification when a bot finishes or needs your approval.
+
+> Why bots? On a phone, "find the right working session, then pick an environment" is too slow. With bots you already know who to hand the intent to: open the chat, type, done.
 
 [![Download on the App Store](https://img.shields.io/badge/App_Store-iOS-blue?logo=apple)](https://apps.apple.com/tw/app/codync/id6760984418?l=en-GB)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS-black?logo=apple)](https://github.com/leepokai/Codync/releases/latest/download/Codync-macOS.dmg)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-orange?logo=homebrew)](https://github.com/leepokai/homebrew-codync)
 
-## Features
+## How it works
 
-- **Dynamic Island & Live Activity** — See session status right on your Lock Screen and Dynamic Island, even when the app is closed
-- **macOS Menu Bar** — Instant session overview without leaving your workflow
-- **Cross-device Sync** — CloudKit-powered sync between Mac and iPhone, no LAN required
-- **Push Notifications** — Get notified when Claude needs your input or finishes a task
-- **Hook-driven Detection** — 7 Claude Code hooks provide instant, accurate status with ~20ms latency
-- **Zero Configuration** — One-click install, no login, no account, no analytics
+```
+iPhone (Codync)  ⇄  HTTP + SSE over Tailscale / Wi-Fi  ⇄  codync-host  ⇄  ACP (stdio)  ⇄  claude · codex · opencode · grok · gemini
+       ▲                                                     │
+       └──────── APNs ◀── relay (Cloudflare Worker) ◀────────┘  "needs you" / "done"
+```
 
-## How It Works
+- **Bots** have a name, a character avatar, standing instructions, an agent backend, a project folder and a permission policy. Each bot is **one endless conversation**; the agent sessions underneath are an implementation detail (resumed with `session/load`, restarted with *New session*).
+- **The chat only shows what matters**: your messages, each turn's final reply, approval cards and notices. Every tool call, diff, plan and thought is one tap away in *Full conversation*. While a bot works, its row shows what it's doing right now.
+- **codync-host** (Rust, macOS + Linux) runs on your computer. It speaks the [Agent Client Protocol](https://agentclientprotocol.com) to each agent, keeps transcripts in SQLite, and serves the phone. Every change carries a global `rev`, so the phone reconnects with `since: rev` and never misses anything.
+- **Usage limits**: the host reads Claude (statusline `rate_limits`, or the OAuth usage endpoint with the token Claude Code already stored) and Codex (`~/.codex/sessions`) limits. Tokens never leave your computer; the phone and widgets only see percentages.
+- **Push** goes through a tiny relay that holds the APNs key. The phone trades its device token for an encrypted ticket; the host only ever holds tickets.
 
-1. **macOS app** installs lightweight hook scripts into Claude Code
-2. Hooks fire on session events (start, stop, tool use, permission requests, etc.)
-3. Session state syncs to iOS via CloudKit in real-time
-4. iOS app displays status via Live Activity, Dynamic Island, and push notifications
+UI patterns (roster, character avatars, approval cards, trace sheet, "needs you / done" notifications) follow Grok Bot.
 
 ## Install
 
-**macOS (Homebrew)**
+**Mac**
 
 ```bash
-brew tap leepokai/codync
-brew install --cask codync
+brew install --cask leepokai/codync/codync
 ```
 
-**macOS (Manual)** — Download the [latest DMG](https://github.com/leepokai/Codync/releases/latest/download/Codync-macOS.dmg) and drag to Applications
+Open Codync in the menu bar → **Install host** → **Pair iPhone**, and scan the code with the Codync app.
 
-**iOS** — Install from the [App Store](https://apps.apple.com/tw/app/codync/id6760984418?l=en-GB)
+**Linux**
 
-The in-app onboarding wizard will guide you through setup — just open the macOS app and follow the steps.
+```bash
+brew install leepokai/codync/codync-host   # or download a release tarball
+codync-host install                        # systemd --user service
+codync-host pair                           # shows the QR code in the terminal
+```
 
-## Project Structure
+Install [Tailscale](https://tailscale.com) on the computer and the phone to reach your bots from anywhere.
 
-| Target | Description |
+**Agents** — install and log in to whichever you use: `claude`, `codex`, `opencode`, `grok`, `gemini`. Claude Code and Codex are driven through their ACP adapters (`@agentclientprotocol/claude-agent-acp`, `@agentclientprotocol/codex-acp`), which `npx` fetches on first use, so Node.js is required for those two.
+
+Optional: show usage in Claude Code's status line and feed live limits to the host:
+
+```json
+{ "statusLine": { "type": "command", "command": "codync-host statusline" } }
+```
+
+## `codync-host`
+
+| Command | |
 |---|---|
-| `Codync-macOS` | macOS menu bar app — hook server, transcript parsing, CloudKit sync |
-| `Codync-iOS` | iOS companion — Live Activity, Dynamic Island, push notifications |
-| `CodyncShared` | Shared Swift Package — models, CloudKit logic, theme |
-| `CodyncLiveActivity` | iOS Live Activity widget extension |
-| `worker/` | Cloudflare Worker — APNs relay for background Live Activity updates |
-| `Codync-web/` | Landing page (Next.js) |
+| `codync-host install` / `uninstall` | background service (launchd on macOS, systemd `--user` on Linux); also removes Codync 1.x Claude hooks |
+| `codync-host pair [--json]` | pairing QR code / link |
+| `codync-host status` | installed? running? |
+| `codync-host serve [--port 19222]` | run in the foreground |
+| `codync-host statusline` | Claude Code status line command |
+| `codync-host reset-token` | unpair every phone |
 
-## Tech Stack
+Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). The API is `POST /api/<method>` + `GET /events` (SSE), both with `Authorization: Bearer <token>`; see `host/src/api.rs`.
 
-- Swift 6 strict concurrency
-- SwiftUI + `@Observable`
-- CloudKit for cross-device sync
-- Claude Code hooks (command-based, ~20ms overhead)
-- Cloudflare Worker for APNs relay
-- Next.js landing page
+## Repository
 
-## Acknowledgments
+| Path | |
+|---|---|
+| `host/` | `codync-host` — Rust daemon: ACP client, SQLite transcript, HTTP/SSE API, push, usage |
+| `Codync-iOS/` | iOS app: roster, threads, approval cards, trace, bot editor, pairing |
+| `CodyncWidgets/` | Usage widget + bot Live Activity |
+| `Codync-macOS/` | Menu bar app: installs/monitors the host, pairing QR, usage |
+| `CodyncKit/` | Shared Swift package: wire models, host client, theme, avatars |
+| `relay/` | Cloudflare Worker APNs relay with encrypted per-device tickets |
+| `packaging/` | Homebrew formula template |
 
-Inspired by these awesome projects:
+The Xcode project is generated: `xcodegen generate`.
 
-- [chowder-iOS](https://github.com/newmaterialco/chowder-iOS) — Native iOS client for AI agent interaction with real-time thinking and tool activity display
-- [notchi](https://github.com/sk-ruban/notchi) — macOS notch companion that reacts to Claude Code activity in real-time
+```bash
+cd host && cargo test            # host
+cd CodyncKit && swift test       # shared Swift
+cd relay && npm test             # relay tickets
+```
+
+## Versioning
+
+The major version is the phone ↔ host protocol: 2.x apps work with 2.x hosts. Codync 2 replaces the 1.x hook/CloudKit monitor entirely.
 
 ## License
 
-[MIT](LICENSE) © Po Kai Lee
+MIT

@@ -7,15 +7,25 @@
 //! "full conversation" sheet, and surface live as the roster activity line.
 
 use crate::acp::{self, Acp, Incoming};
-use crate::hub::Hub;
-use crate::push;
-use crate::store::{BotConfig, now_ms};
-use anyhow::{Result, anyhow};
+use crate::hub::{BotStatus, Hub};
+use crate::push::{self, AlertKind};
+use crate::store::{BotConfig, EntryKind, Permission, now_ms};
+use anyhow::{Result, anyhow, bail};
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+
+/// How a notice renders in the chat (wire values: `info` / `error` / `divider`).
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NoticeStyle {
+    Info,
+    Error,
+    Divider,
+}
 
 pub enum Cmd {
     Send { entry_id: String, text: String },
@@ -28,6 +38,8 @@ pub enum Cmd {
 
 pub struct BotHandle {
     pub tx: mpsc::UnboundedSender<Cmd>,
+    /// The actor task; it kills its agent process on the way out.
+    pub task: tokio::task::JoinHandle<()>,
 }
 
 pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
@@ -49,8 +61,8 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         stop_requested: false,
         exit_tail: None,
     };
-    tokio::spawn(actor.run(rx));
-    BotHandle { tx }
+    let task = tokio::spawn(actor.run(rx));
+    BotHandle { tx, task }
 }
 
 struct Conn {
@@ -110,7 +122,7 @@ impl Actor {
                     while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
                         self.on_incoming(Some(inc)).await;
                     }
-                    self.finish_turn(done).await;
+                    self.finish_turn(&done);
                     self.next_in_queue(&done_tx).await;
                 }
                 _ = flush_tick.tick() => self.flush(false),
@@ -141,20 +153,19 @@ impl Actor {
                 if self.turn.is_some() {
                     self.stop().await;
                 }
-                self.session_id = None;
-                let _ = self.hub.store.set_session(&self.cfg.id, None);
-                self.notice("New session — the agent starts with a fresh context.", "divider");
+                self.forget_session();
+                self.notice("New session — the agent starts with a fresh context.", NoticeStyle::Divider);
             }
             Cmd::Reconfigure(cfg) => {
                 let cfg = *cfg;
-                let restart = cfg.backend != self.cfg.backend || cfg.command != self.cfg.command || cfg.cwd != self.cfg.cwd;
+                let restart =
+                    cfg.backend != self.cfg.backend || cfg.command != self.cfg.command || cfg.cwd != self.cfg.cwd;
                 self.cfg = cfg;
                 if restart {
                     if let Some(c) = self.conn.take() {
                         c.acp.kill().await;
                     }
-                    self.session_id = None;
-                    let _ = self.hub.store.set_session(&self.cfg.id, None);
+                    self.forget_session();
                     // A running prompt now fails; finish_turn reports it.
                 }
             }
@@ -168,7 +179,7 @@ impl Actor {
         for (entry_id, _) in self.queue.drain(..) {
             if let Some(mut e) = self.hub.store.entry(&entry_id) {
                 e.data["status"] = "cancelled".into();
-                let _ = self.hub.set_entry(&entry_id, e.data);
+                self.hub.set_entry(&entry_id, &e.data);
             }
         }
         if self.turn.is_none() {
@@ -194,10 +205,10 @@ impl Actor {
                 {
                     msg = format!("{} needs you to sign in on your computer first. {}", h.name, h.setup);
                 }
-                self.notice(&msg, "error");
+                self.notice(&msg, NoticeStyle::Error);
                 self.turn = None;
                 self.hub.set_runtime(&self.id(), |r| {
-                    r.status = "error".into();
+                    r.status = BotStatus::Error;
                     r.activity = "Couldn't start".into();
                     r.started_at = None;
                 });
@@ -206,10 +217,10 @@ impl Actor {
     }
 
     async fn start_turn(&mut self, entry_id: &str, text: &str, done_tx: &mpsc::UnboundedSender<Done>) -> Result<()> {
-        let turn = self.hub.store.entry(entry_id).map(|e| e.turn).unwrap_or(0);
+        let turn = self.hub.store.entry(entry_id).map_or(0, |e| e.turn);
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             e.data["status"] = "sent".into();
-            self.hub.set_entry(entry_id, e.data)?;
+            self.hub.set_entry(entry_id, &e.data);
         }
         self.turn = Some(turn);
         self.stop_requested = false;
@@ -219,7 +230,7 @@ impl Actor {
         self.plan_entry = None;
         self.last_text = None;
         self.hub.set_runtime(&self.id(), |r| {
-            r.status = "working".into();
+            r.status = BotStatus::Working;
             r.activity = "Starting…".into();
             r.started_at = Some(now_ms());
         });
@@ -241,11 +252,17 @@ impl Actor {
         let mut prompt = text.to_owned();
         if self.session_fresh {
             self.session_fresh = false;
-            let mut profile = format!("You are \"{}\", a persistent agent the user delegates work to from their phone.", self.cfg.name);
+            let mut profile = format!(
+                "You are \"{}\", a persistent agent the user delegates work to from their phone.",
+                self.cfg.name
+            );
             if !self.cfg.description.trim().is_empty() {
-                profile.push_str(&format!(" Standing instructions:\n{}", self.cfg.description.trim()));
+                profile.push_str(" Standing instructions:\n");
+                profile.push_str(self.cfg.description.trim());
             }
-            profile.push_str("\nKeep your final reply short and phone-friendly: say what you did and what needs the user.");
+            profile.push_str(
+                "\nKeep your final reply short and phone-friendly: say what you did and what needs the user.",
+            );
             prompt = format!("<bot-profile>\n{profile}\n</bot-profile>\n\n{text}");
         }
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
@@ -287,7 +304,7 @@ impl Actor {
                         break;
                     }
                     Err(e) => {
-                        tracing::info!("`{command}` failed to start: {e}");
+                        tracing::info!(command, error = format!("{e:#}"), "agent failed to start");
                         last_err = Some(e);
                     }
                 }
@@ -296,13 +313,16 @@ impl Actor {
                 return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
             }
         }
-        let conn = self.conn.as_mut().unwrap();
+        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         if let Some(sid) = self.session_id.clone() {
             if conn.loaded.contains(&sid) {
                 return Ok(());
             }
             if !conn.can_load {
-                self.notice("This agent can't resume sessions after a restart — starting a fresh one.", "divider");
+                self.notice(
+                    "This agent can't resume sessions after a restart — starting a fresh one.",
+                    NoticeStyle::Divider,
+                );
                 self.session_id = None;
                 return Box::pin(self.ensure_session()).await;
             }
@@ -323,29 +343,29 @@ impl Actor {
                     return Ok(());
                 }
                 Err(e) => {
-                    tracing::warn!("session/load failed, starting fresh: {e}");
-                    self.notice("Couldn't resume the previous session — starting a fresh one.", "divider");
+                    tracing::warn!(error = format!("{e:#}"), "session/load failed; starting fresh");
+                    self.notice("Couldn't resume the previous session — starting a fresh one.", NoticeStyle::Divider);
                 }
             }
         }
-        let conn = self.conn.as_mut().unwrap();
-        let res = conn
-            .acp
-            .request("session/new", json!({"cwd": self.cfg.cwd, "mcpServers": []}))
-            .await?;
+        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
+        let res = conn.acp.request("session/new", json!({"cwd": self.cfg.cwd, "mcpServers": []})).await?;
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone());
         if let Some(model) = self.cfg.model.clone().filter(|m| !m.is_empty()) {
             let has_model = res["configOptions"].as_array().is_some_and(|o| o.iter().any(|o| o["id"] == "model"));
             let r = if has_model {
                 conn.acp
-                    .request("session/set_config_option", json!({"sessionId": sid, "configId": "model", "value": model}))
+                    .request(
+                        "session/set_config_option",
+                        json!({"sessionId": sid, "configId": "model", "value": model}),
+                    )
                     .await
             } else {
                 conn.acp.request("session/set_model", json!({"sessionId": sid, "modelId": model})).await
             };
             if let Err(e) = r {
-                tracing::warn!("couldn't set model {model}: {e}");
+                tracing::warn!(model, error = format!("{e:#}"), "couldn't set model");
             }
         }
         self.session_id = Some(sid.clone());
@@ -354,7 +374,7 @@ impl Actor {
         Ok(())
     }
 
-    async fn finish_turn(&mut self, done: Done) {
+    fn finish_turn(&mut self, done: &Done) {
         if self.turn.is_none() {
             return;
         }
@@ -365,7 +385,7 @@ impl Actor {
         for id in ids {
             if let Some(mut e) = self.hub.store.entry(&id) {
                 e.data["status"] = "expired".into();
-                let _ = self.hub.set_entry(&id, e.data);
+                self.hub.set_entry(&id, &e.data);
             }
         }
         let stopped = self.stop_requested || matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
@@ -375,7 +395,7 @@ impl Actor {
                 && matches!(e.data["status"].as_str(), Some("pending" | "in_progress"))
             {
                 e.data["status"] = if stopped || done.is_err() { "failed" } else { "completed" }.into();
-                let _ = self.hub.set_entry(entry_id, e.data);
+                self.hub.set_entry(entry_id, &e.data);
             }
         }
         let mut final_text = None;
@@ -384,7 +404,7 @@ impl Actor {
         {
             e.data["final"] = true.into();
             final_text = e.data["text"].as_str().map(str::to_owned);
-            let _ = self.hub.set_entry(&id, e.data);
+            self.hub.set_entry(&id, &e.data);
         }
         let stop_reason = match &done {
             Ok(v) => v["stopReason"].as_str().unwrap_or("end_turn").to_owned(),
@@ -394,24 +414,25 @@ impl Actor {
             (Err(e), _) if !self.stop_requested => {
                 let tail = self.exit_tail.take().filter(|t| !t.is_empty());
                 let detail = tail.map(|t| format!("\n\n{}", acp::truncate(&t, 1200))).unwrap_or_default();
-                self.notice(&format!("The agent failed: {e}{detail}"), "error")
+                self.notice(&format!("The agent failed: {e}{detail}"), NoticeStyle::Error);
             }
-            (_, "cancelled") | (Err(_), _) => self.notice("Stopped.", "info"),
-            (_, "max_tokens") => self.notice("The agent hit its output limit.", "info"),
-            (_, "max_turn_requests") => self.notice("The agent hit its step limit for this turn.", "info"),
-            (_, "refusal") => self.notice("The agent declined to continue.", "info"),
+            (_, "cancelled") | (Err(_), _) => self.notice("Stopped.", NoticeStyle::Info),
+            (_, "max_tokens") => self.notice("The agent hit its output limit.", NoticeStyle::Info),
+            (_, "max_turn_requests") => self.notice("The agent hit its step limit for this turn.", NoticeStyle::Info),
+            (_, "refusal") => self.notice("The agent declined to continue.", NoticeStyle::Info),
             _ => {}
         }
         let failed = done.is_err() && !self.stop_requested;
         self.turn = None;
         self.hub.set_runtime(&self.id(), |r| {
-            r.status = if failed { "error" } else { "idle" }.into();
+            r.status = if failed { BotStatus::Error } else { BotStatus::Idle };
             r.activity = String::new();
             r.started_at = None;
         });
         if !self.stop_requested {
-            let body = final_text.unwrap_or_else(|| if failed { "The agent failed.".into() } else { "Finished.".into() });
-            push::notify(&self.hub, &self.cfg, &self.cfg.name, &body, "done");
+            let body =
+                final_text.unwrap_or_else(|| if failed { "The agent failed.".into() } else { "Finished.".into() });
+            push::notify(&self.hub, &self.cfg, &self.cfg.name, &body, AlertKind::Done);
         }
         push::live_activity_end(&self.hub, &self.cfg.id);
     }
@@ -430,7 +451,10 @@ impl Actor {
                 self.exit_tail = Some(tail);
             }
             Some(Incoming::Notification { method, params }) => {
-                if method == "session/update" && params["sessionId"].as_str() == self.session_id.as_deref() && self.turn.is_some() {
+                if method == "session/update"
+                    && params["sessionId"].as_str() == self.session_id.as_deref()
+                    && self.turn.is_some()
+                {
                     self.on_update(&params["update"]);
                 }
             }
@@ -473,7 +497,7 @@ impl Actor {
                 });
                 merge_tool_content(&mut data, &u["content"]);
                 let title = data["title"].as_str().unwrap_or("Tool").to_owned();
-                if let Ok(e) = self.hub.add_entry(&self.cfg.id, "tool", turn, data) {
+                if let Some(e) = self.hub.add_entry(&self.cfg.id, EntryKind::Tool, turn, &data) {
                     self.tools.insert(tool_id, e.id);
                 }
                 self.set_activity(&title);
@@ -493,7 +517,7 @@ impl Actor {
                 merge_tool_content(&mut e.data, &u["content"]);
                 let status = e.data["status"].as_str().unwrap_or_default().to_owned();
                 let title = e.data["title"].as_str().unwrap_or_default().to_owned();
-                let _ = self.hub.set_entry(&entry_id, e.data);
+                self.hub.set_entry(&entry_id, &e.data);
                 if status == "in_progress" {
                     self.set_activity(&title);
                 }
@@ -508,10 +532,10 @@ impl Actor {
                 let data = json!({"entries": u["entries"].clone()});
                 match &self.plan_entry {
                     Some(id) => {
-                        let _ = self.hub.set_entry(id, data);
+                        self.hub.set_entry(id, &data);
                     }
                     None => {
-                        if let Ok(e) = self.hub.add_entry(&self.cfg.id, "plan", turn, data) {
+                        if let Some(e) = self.hub.add_entry(&self.cfg.id, EntryKind::Plan, turn, &data) {
                             self.plan_entry = Some(e.id);
                         }
                     }
@@ -524,7 +548,7 @@ impl Actor {
     async fn on_permission(&mut self, rpc_id: Value, params: Value) {
         let options = params["options"].as_array().cloned().unwrap_or_default();
         let tool = &params["toolCall"];
-        if self.cfg.permission == "auto" {
+        if self.cfg.permission == Permission::Auto {
             let pick = ["allow_once", "allow_always"]
                 .iter()
                 .find_map(|k| options.iter().find(|o| o["kind"] == *k))
@@ -549,10 +573,9 @@ impl Actor {
         let mut detail = json!({"output": "", "diffs": []});
         merge_tool_content(&mut detail, &tool["content"]);
         let raw = &tool["rawInput"];
-        let command = raw["command"]
-            .as_str()
-            .map(str::to_owned)
-            .or_else(|| raw["command"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" ")));
+        let command = raw["command"].as_str().map(str::to_owned).or_else(|| {
+            raw["command"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "))
+        });
         let data = json!({
             "title": title,
             "toolKind": tool["kind"].as_str().unwrap_or("other"),
@@ -566,14 +589,14 @@ impl Actor {
         });
         let turn = self.turn.unwrap_or(0);
         self.close_seg();
-        if let Ok(e) = self.hub.add_entry(&self.cfg.id, "permission", turn, data) {
+        if let Some(e) = self.hub.add_entry(&self.cfg.id, EntryKind::Permission, turn, &data) {
             self.perms.insert(e.id, rpc_id);
         }
         self.hub.set_runtime(&self.cfg.id, |r| {
-            r.status = "needsInput".into();
+            r.status = BotStatus::NeedsInput;
             r.activity = format!("Needs approval: {title}");
         });
-        push::notify(&self.hub, &self.cfg, &format!("{} needs you", self.cfg.name), &title, "needsInput");
+        push::notify(&self.hub, &self.cfg, &format!("{} needs you", self.cfg.name), &title, AlertKind::NeedsInput);
     }
 
     async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
@@ -588,11 +611,11 @@ impl Actor {
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             e.data["status"] = if option_id.is_some() { "answered" } else { "cancelled" }.into();
             e.data["selected"] = option_id.into();
-            let _ = self.hub.set_entry(entry_id, e.data);
+            self.hub.set_entry(entry_id, &e.data);
         }
         if self.perms.is_empty() && self.turn.is_some() {
             self.hub.set_runtime(&self.cfg.id, |r| {
-                r.status = "working".into();
+                r.status = BotStatus::Working;
                 r.activity = "Continuing…".into();
             });
         }
@@ -608,14 +631,15 @@ impl Actor {
         if !same {
             self.close_seg();
             let (k, data) = match kind {
-                SegKind::Text => ("agent", json!({"text": text, "final": false})),
-                SegKind::Thought => ("thought", json!({"text": text})),
+                SegKind::Text => (EntryKind::Agent, json!({"text": text, "final": false})),
+                SegKind::Thought => (EntryKind::Thought, json!({"text": text})),
             };
-            if let Ok(e) = self.hub.add_entry(&self.cfg.id, k, self.turn.unwrap_or(0), data) {
+            if let Some(e) = self.hub.add_entry(&self.cfg.id, k, self.turn.unwrap_or(0), &data) {
                 if kind == SegKind::Text {
                     self.last_text = Some(e.id.clone());
                 }
-                self.seg = Seg::Open { kind, entry_id: e.id, buf: text.to_owned(), flushed: Instant::now(), dirty: false };
+                self.seg =
+                    Seg::Open { kind, entry_id: e.id, buf: text.to_owned(), flushed: Instant::now(), dirty: false };
             }
             return;
         }
@@ -635,7 +659,7 @@ impl Actor {
                 SegKind::Text => json!({"text": buf, "final": false}),
                 SegKind::Thought => json!({"text": buf}),
             };
-            let _ = self.hub.set_entry(entry_id, data);
+            self.hub.set_entry(entry_id, &data);
             *flushed = Instant::now();
             *dirty = false;
         }
@@ -650,16 +674,24 @@ impl Actor {
         if self.hub.runtime(&self.cfg.id).activity != a {
             let a = a.to_owned();
             self.hub.set_runtime(&self.cfg.id, |r| {
-                if r.status == "working" {
+                if r.status == BotStatus::Working {
                     r.activity = a;
                 }
             });
         }
     }
 
-    fn notice(&self, text: &str, style: &str) {
+    /// Drops the ACP session so the next turn starts a fresh one.
+    fn forget_session(&mut self) {
+        self.session_id = None;
+        if let Err(error) = self.hub.store.set_session(&self.cfg.id, None) {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't clear the stored session");
+        }
+    }
+
+    fn notice(&self, text: &str, style: NoticeStyle) {
         let turn = self.turn.unwrap_or_else(|| self.hub.store.max_turn(&self.cfg.id));
-        let _ = self.hub.add_entry(&self.cfg.id, "notice", turn, json!({"text": text, "style": style}));
+        self.hub.add_entry(&self.cfg.id, EntryKind::Notice, turn, &json!({"text": text, "style": style}));
     }
 }
 
@@ -741,12 +773,13 @@ pub fn diff_summary(path: &str, old: &str, new: &str) -> Value {
     let suffix = a[prefix..].iter().rev().zip(b[prefix..].iter().rev()).take_while(|(x, y)| x == y).count();
     let removed = &a[prefix..a.len() - suffix];
     let added = &b[prefix..b.len() - suffix];
-    let mut patch = String::new();
-    for l in removed {
-        patch.push_str(&format!("-{l}\n"));
-    }
-    for l in added {
-        patch.push_str(&format!("+{l}\n"));
+    let mut unified = String::new();
+    for (sign, lines) in [('-', removed), ('+', added)] {
+        for l in lines {
+            unified.push(sign);
+            unified.push_str(l);
+            unified.push('\n');
+        }
     }
     json!({
         "path": path,
@@ -754,7 +787,7 @@ pub fn diff_summary(path: &str, old: &str, new: &str) -> Value {
         "removed": removed.len(),
         "isNew": old.is_empty(),
         "startLine": prefix + 1,
-        "patch": acp::truncate(&patch, 6000),
+        "patch": acp::truncate(&unified, 6000),
     })
 }
 

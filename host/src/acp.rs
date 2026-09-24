@@ -2,7 +2,8 @@
 //! process's stdio. Updates are kept as `serde_json::Value` on purpose so a
 //! newer adapter adding a variant never breaks parsing.
 
-use anyhow::{Result, anyhow, bail};
+use crate::LockExt;
+use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
@@ -10,7 +11,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
+
+/// stderr lines kept to explain a crash.
+const STDERR_TAIL_LINES: usize = 12;
 
 pub enum Incoming {
     Notification { method: String, params: Value },
@@ -18,13 +22,14 @@ pub enum Incoming {
     Closed { stderr_tail: String },
 }
 
-type Pending = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value, Value>>>>>;
+/// In-flight requests by JSON-RPC id. A std mutex: it's never held across an `.await`.
+type Pending = Arc<std::sync::Mutex<HashMap<i64, oneshot::Sender<Result<Value, Value>>>>>;
 
 pub struct Acp {
-    stdin: Mutex<ChildStdin>,
+    stdin: tokio::sync::Mutex<ChildStdin>,
     next_id: AtomicI64,
     pending: Pending,
-    child: Mutex<Child>,
+    child: tokio::sync::Mutex<Child>,
 }
 
 impl Acp {
@@ -39,22 +44,25 @@ impl Acp {
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|e| anyhow!("failed to start `{command}`: {e}"))?;
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
+            .with_context(|| format!("starting `{command}`"))?;
+        let stdin = child.stdin.take().expect("stdin is piped");
+        let stdout = child.stdout.take().expect("stdout is piped");
+        let stderr = child.stderr.take().expect("stderr is piped");
+        // Deliberately unbounded: `session/load` replays a whole history as notifications
+        // *before* its response, while the bot is still awaiting that response. A bounded
+        // queue would stall this reader, and with it the response — a deadlock.
         let (tx, rx) = mpsc::unbounded_channel();
-        let pending: Pending = Default::default();
+        let pending = Pending::default();
 
-        let tail = Arc::new(std::sync::Mutex::new(VecDeque::<String>::new()));
+        let tail = Arc::new(std::sync::Mutex::new(VecDeque::<String>::with_capacity(STDERR_TAIL_LINES)));
         {
             let tail = tail.clone();
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::debug!(target: "agent", "{line}");
-                    let mut t = tail.lock().unwrap();
-                    if t.len() == 12 {
+                    tracing::debug!(target: "agent", stderr = %line);
+                    let mut t = tail.locked();
+                    if t.len() == STDERR_TAIL_LINES {
                         t.pop_front();
                     }
                     t.push_back(line);
@@ -67,7 +75,7 @@ impl Acp {
                 let mut lines = BufReader::new(stdout).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     let Ok(msg) = serde_json::from_str::<Value>(&line) else {
-                        tracing::debug!(target: "agent", "non-json stdout: {line}");
+                        tracing::debug!(target: "agent", stdout = %line, "ignoring non-JSON output");
                         continue;
                     };
                     let method = msg["method"].as_str().map(str::to_owned);
@@ -80,7 +88,7 @@ impl Acp {
                         }
                         (None, Some(id)) => {
                             if let Some(id) = id.as_i64()
-                                && let Some(waiter) = pending.lock().await.remove(&id)
+                                && let Some(waiter) = pending.locked().remove(&id)
                             {
                                 let res = match msg.get("error") {
                                     Some(err) => Err(err.clone()),
@@ -93,19 +101,19 @@ impl Acp {
                     }
                 }
                 // Process gone: fail everyone still waiting.
-                for (_, w) in pending.lock().await.drain() {
+                for (_, w) in pending.locked().drain() {
                     let _ = w.send(Err(json!({"message": "agent process exited"})));
                 }
-                let stderr_tail = tail.lock().unwrap().iter().cloned().collect::<Vec<_>>().join("\n");
+                let stderr_tail = tail.locked().iter().cloned().collect::<Vec<_>>().join("\n");
                 let _ = tx.send(Incoming::Closed { stderr_tail });
             });
         }
 
         let acp = Arc::new(Self {
-            stdin: Mutex::new(stdin),
+            stdin: tokio::sync::Mutex::new(stdin),
             next_id: AtomicI64::new(1),
             pending,
-            child: Mutex::new(child),
+            child: tokio::sync::Mutex::new(child),
         });
         Ok((acp, rx))
     }
@@ -122,12 +130,12 @@ impl Acp {
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().await.insert(id, tx);
+        self.pending.locked().insert(id, tx);
         self.write(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).await?;
         match rx.await {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => {
-                let msg = e["message"].as_str().map(str::to_owned).unwrap_or_else(|| e.to_string());
+                let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
                 match e["data"]["details"].as_str().or(e["data"].as_str()) {
                     Some(d) => bail!("{msg} ({d})"),
                     None => bail!("{msg}"),
@@ -150,7 +158,12 @@ impl Acp {
     }
 
     pub async fn kill(&self) {
-        let _ = self.child.lock().await.kill().await;
+        // Already exited is fine; anything else is worth a log line.
+        if let Err(error) = self.child.lock().await.kill().await
+            && error.kind() != std::io::ErrorKind::InvalidInput
+        {
+            tracing::debug!(%error, "couldn't kill agent process");
+        }
     }
 }
 
@@ -162,12 +175,9 @@ pub fn content_text(v: &Value) -> String {
             Some("text") => o.get("text").and_then(Value::as_str).unwrap_or_default().to_owned(),
             Some("content") => o.get("content").map(content_text).unwrap_or_default(),
             Some("resource_link") => o.get("uri").and_then(Value::as_str).unwrap_or_default().to_owned(),
-            Some("resource") => o
-                .get("resource")
-                .and_then(|r| r.get("text"))
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
+            Some("resource") => {
+                o.get("resource").and_then(|r| r.get("text")).and_then(Value::as_str).unwrap_or_default().to_owned()
+            }
             _ => String::new(),
         },
         _ => String::new(),

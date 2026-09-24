@@ -1,3 +1,5 @@
+//! `codync-host`: runs coding-agent bots over ACP and serves the Codync apps.
+
 mod acp;
 mod api;
 mod backends;
@@ -9,14 +11,39 @@ mod service;
 mod store;
 mod usage;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use serde_json::json;
+use std::fmt::Write as _;
 use std::io::Read;
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+/// Poison-tolerant locking. Every critical section in the host is a short,
+/// self-contained update, so a panic elsewhere never leaves the data half
+/// written — and a daemon must not wedge every later caller over one panic.
+pub trait LockExt<T> {
+    fn locked(&self) -> MutexGuard<'_, T>;
+}
+
+impl<T> LockExt<T> for Mutex<T> {
+    fn locked(&self) -> MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// One shared HTTP client (connection pool + TLS config) for the whole process.
+pub fn http() -> &'static reqwest::Client {
+    static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+    &CLIENT
+}
+
 #[derive(Parser)]
-#[command(name = "codync-host", version, about = "Codync host: runs your coding-agent bots and serves the Codync phone app")]
+#[command(
+    name = "codync-host",
+    version,
+    about = "Codync host: runs your coding-agent bots and serves the Codync phone app"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Sub>,
@@ -68,15 +95,15 @@ enum Sub {
 /// `~/.codync/token` (0600) for local helpers like the statusline command.
 fn open_store() -> Result<(store::Store, String, String)> {
     let dir = service::data_dir();
-    std::fs::create_dir_all(&dir)?;
-    let store = store::Store::open(&dir.join("codync.db"))?;
-    let host_id = match store.kv_get("host_id") {
-        Some(v) => v,
-        None => {
-            let v = uuid::Uuid::new_v4().to_string();
-            store.kv_set("host_id", &v)?;
-            v
-        }
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let db = dir.join("codync.db");
+    let store = store::Store::open(&db).with_context(|| format!("opening {}", db.display()))?;
+    let host_id = if let Some(v) = store.kv_get("host_id") {
+        v
+    } else {
+        let v = uuid::Uuid::new_v4().to_string();
+        store.kv_set("host_id", &v)?;
+        v
     };
     let token = match store.kv_get("token") {
         Some(v) => v,
@@ -94,11 +121,12 @@ fn rotate_token(store: &store::Store) -> Result<String> {
 
 fn write_token_file(token: &str) -> Result<()> {
     let path = service::data_dir().join("token");
-    std::fs::write(&path, token)?;
+    std::fs::write(&path, token).with_context(|| format!("writing {}", path.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting {}", path.display()))?;
     }
     Ok(())
 }
@@ -114,7 +142,10 @@ async fn main() -> Result<()> {
             let name = service::host_name();
             let url = service::pairing_url(&name, &token, &urls);
             if json {
-                println!("{}", json!({"name": name, "hostId": host_id, "token": token, "urls": urls, "pairingUrl": url}));
+                println!(
+                    "{}",
+                    json!({"name": name, "hostId": host_id, "token": token, "urls": urls, "pairingUrl": url})
+                );
             } else {
                 let code = qrcode::QrCode::new(url.as_bytes())?;
                 println!("{}", code.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build());
@@ -132,11 +163,15 @@ async fn main() -> Result<()> {
             if let Some(home) = dirs::home_dir() {
                 match service::remove_legacy_hooks(&home.join(".claude/settings.json")) {
                     Ok(0) => {}
-                    Ok(n) => println!("Removed {n} Codync 1.x hook(s) from ~/.claude/settings.json (backup saved next to it)."),
+                    Ok(n) => println!(
+                        "Removed {n} Codync 1.x hook(s) from ~/.claude/settings.json (backup saved next to it)."
+                    ),
                     Err(e) => eprintln!("Couldn't clean up Codync 1.x hooks: {e}"),
                 }
                 match service::ensure_statusline(&home.join(".claude/settings.json")) {
-                    Ok(true) => println!("Claude Code's status line now also reports usage limits to Codync (your own status line still shows)."),
+                    Ok(true) => println!(
+                        "Claude Code's status line now also reports usage limits to Codync (your own status line still shows)."
+                    ),
                     Ok(false) => {}
                     Err(e) => eprintln!("Couldn't set Claude Code's status line: {e}"),
                 }
@@ -146,21 +181,27 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Sub::Uninstall => {
-            service::uninstall()?;
-            if let Some(home) = dirs::home_dir() {
-                let _ = service::restore_statusline(&home.join(".claude/settings.json"));
+            service::uninstall();
+            if let Some(home) = dirs::home_dir()
+                && let Err(e) = service::restore_statusline(&home.join(".claude/settings.json"))
+            {
+                eprintln!("Couldn't restore Claude Code's status line: {e:#}");
             }
             println!("Codync host service removed. Data is kept in {}", service::data_dir().display());
             Ok(())
         }
         Sub::Status { port } => {
-            let running = reqwest::Client::new()
+            let running = http()
                 .get(format!("http://127.0.0.1:{port}/health"))
                 .timeout(Duration::from_secs(2))
                 .send()
                 .await
                 .is_ok_and(|r| r.status().is_success());
-            println!("installed: {}\nrunning:   {running}\nport:      {port}\ndata:      {}", service::installed(), service::data_dir().display());
+            println!(
+                "installed: {}\nrunning:   {running}\nport:      {port}\ndata:      {}",
+                service::installed(),
+                service::data_dir().display()
+            );
             Ok(())
         }
         Sub::Statusline { port, wrapped } => {
@@ -189,10 +230,42 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     hub.start()?;
     tokio::spawn(registry::refresh_loop());
     tokio::spawn(usage::poll(hub.clone()));
-    let listener = tokio::net::TcpListener::bind((bind, port)).await?;
-    tracing::info!("codync-host {} listening on {bind}:{port}", env!("CARGO_PKG_VERSION"));
-    axum::serve(listener, api::router(hub)).await?;
+    let listener =
+        tokio::net::TcpListener::bind((bind, port)).await.with_context(|| format!("binding {bind}:{port}"))?;
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), bind, port, "codync-host listening");
+    axum::serve(listener, api::router(hub.clone())).with_graceful_shutdown(shutdown_signal()).await?;
+    // launchd/systemd stop us with SIGTERM: stop every agent instead of orphaning it.
+    hub.shutdown().await;
+    tracing::info!("codync-host stopped");
     Ok(())
+}
+
+/// Resolves on Ctrl-C or SIGTERM.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::warn!(%error, "can't listen for Ctrl-C");
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let term = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "can't listen for SIGTERM");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
+    tokio::select! {
+        () = ctrl_c => {}
+        () = term => {}
+    }
 }
 
 /// Never blocks Claude Code: 1 s budget, all errors ignored.
@@ -201,7 +274,7 @@ async fn statusline(port: u16, wrapped: String) {
     let _ = std::io::stdin().read_to_string(&mut input);
     let v: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
     if let Ok(token) = std::fs::read_to_string(service::data_dir().join("token")) {
-        let _ = reqwest::Client::new()
+        let _ = http()
             .post(format!("http://127.0.0.1:{port}/ingest/statusline"))
             .bearer_auth(token.trim())
             .json(&v)
@@ -212,11 +285,8 @@ async fn statusline(port: u16, wrapped: String) {
     if !wrapped.trim().is_empty() {
         // The user's own status line gets the same JSON on stdin.
         use std::io::Write;
-        if let Ok(mut child) = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(&wrapped)
-            .stdin(std::process::Stdio::piped())
-            .spawn()
+        if let Ok(mut child) =
+            std::process::Command::new("/bin/sh").arg("-c").arg(&wrapped).stdin(std::process::Stdio::piped()).spawn()
         {
             if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(input.as_bytes());
@@ -229,7 +299,7 @@ async fn statusline(port: u16, wrapped: String) {
     let mut line = model.to_owned();
     for (k, label) in [("five_hour", "5h"), ("seven_day", "7d")] {
         if let Some(p) = v["rate_limits"][k]["used_percentage"].as_f64() {
-            line.push_str(&format!(" · {label} {p:.0}%"));
+            let _ = write!(line, " · {label} {p:.0}%");
         }
     }
     println!("{line}");

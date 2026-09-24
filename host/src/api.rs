@@ -1,11 +1,12 @@
 //! HTTP API: `POST /api/<method>` commands + `GET /events` SSE.
 //! Auth: `Authorization: Bearer <token>` (or `?token=` for SSE).
 
+use crate::LockExt;
 use crate::bot::Cmd;
 use crate::hub::Hub;
-use crate::store::BotConfig;
+use crate::store::{BotConfig, EntryKind};
 use crate::{backends, usage};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -21,6 +22,9 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
 
+/// Entries a fresh client receives per bot before paging with `history`.
+const CATCH_UP_PER_BOT: i64 = 200;
+
 pub fn router(hub: Arc<Hub>) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -31,16 +35,25 @@ pub fn router(hub: Arc<Hub>) -> Router {
 }
 
 fn authorized(hub: &Hub, headers: &HeaderMap, query_token: Option<&str>) -> bool {
-    let header = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
+    let header = headers.get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "));
     let given = header.or(query_token).unwrap_or_default();
     // Constant-time compare.
     given.len() == hub.token.len() && given.bytes().zip(hub.token.bytes()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
 }
 
 struct ApiError(StatusCode, String);
+
+/// `POST /api/<method>` with a method this host doesn't know (404, not 400).
+#[derive(Debug)]
+struct UnknownMethod;
+
+impl std::fmt::Display for UnknownMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("unknown method")
+    }
+}
+
+impl std::error::Error for UnknownMethod {}
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -69,11 +82,12 @@ async fn command(
     if !authorized(&hub, &headers, None) {
         return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid token".into()));
     }
-    let body = body.map(|b| b.0).unwrap_or(Value::Null);
+    let body = body.map_or(Value::Null, |b| b.0);
     match dispatch(&hub, &method, body).await {
         Ok(v) => Ok(Json(v)),
-        Err(e) if e.to_string() == "unknown method" => Err(ApiError(StatusCode::NOT_FOUND, e.to_string())),
-        Err(e) => Err(ApiError(StatusCode::BAD_REQUEST, e.to_string())),
+        Err(e) if e.is::<UnknownMethod>() => Err(ApiError(StatusCode::NOT_FOUND, e.to_string())),
+        // `{:#}` keeps the context chain ("starting `npx …`: No such file or directory").
+        Err(e) => Err(ApiError(StatusCode::BAD_REQUEST, format!("{e:#}"))),
     }
 }
 
@@ -98,8 +112,8 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
                 "hostId": hub.host_id,
                 "rev": hub.store.current_rev(),
                 "bots": hub.bots_json(since)?,
-                "entries": hub.store.entries_since(since, 200)?,
-                "usage": hub.usage.lock().unwrap().clone(),
+                "entries": hub.store.entries_since(since, CATCH_UP_PER_BOT)?,
+                "usage": hub.usage.locked().clone(),
             })
         }
         "history" => {
@@ -111,10 +125,10 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
         "createBot" => {
             let mut b = b;
             b["id"] = "".into();
-            let cfg: BotConfig = serde_json::from_value(b).map_err(|e| anyhow!("invalid bot: {e}"))?;
+            let cfg: BotConfig = serde_json::from_value(b).context("invalid bot")?;
             json!({"bot": hub.create_bot(cfg)?})
         }
-        "updateBot" => json!({"bot": hub.update_bot(b)?}),
+        "updateBot" => json!({"bot": hub.update_bot(&b)?}),
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;
             json!({})
@@ -127,7 +141,7 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             let bot = str_arg(&b, "botId")?;
             let text = str_arg(&b, "text")?.trim();
             if text.is_empty() {
-                return Err(anyhow!("empty message"));
+                bail!("empty message");
             }
             let nonce = b["clientNonce"].as_str().unwrap_or_default();
             if !nonce.is_empty()
@@ -137,9 +151,13 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             }
             hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let turn = hub.store.max_turn(bot) + 1;
-            let e = hub.add_entry(bot, "user", turn, json!({"text": text, "clientNonce": nonce, "status": "queued"}))?;
+            let e = hub
+                .add_entry(bot, EntryKind::User, turn, &json!({"text": text, "clientNonce": nonce, "status": "queued"}))
+                .ok_or_else(|| anyhow!("couldn't save the message"))?;
             hub.send_cmd(bot, Cmd::Send { entry_id: e.id.clone(), text: text.to_owned() })?;
-            let _ = hub.mark_read(bot);
+            if let Err(error) = hub.mark_read(bot) {
+                tracing::warn!(%error, bot, "couldn't mark bot read after send");
+            }
             json!({"entry": e})
         }
         "stop" => {
@@ -168,7 +186,7 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
         "registerActivity" => {
             let bot = str_arg(&b, "botId")?.to_owned();
             let ticket = str_arg(&b, "ticket")?.to_owned();
-            let mut map = hub.activities.lock().unwrap();
+            let mut map = hub.activities.locked();
             let list = map.entry(bot).or_default();
             if !list.contains(&ticket) {
                 list.push(ticket);
@@ -183,11 +201,16 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             if b["refresh"].as_bool().unwrap_or(false) {
                 usage::refresh(hub).await;
             }
-            hub.usage.lock().unwrap().clone()
+            serde_json::to_value(&*hub.usage.locked())?
         }
-        "listDirs" => list_dirs(b["path"].as_str())?,
+        "listDirs" => {
+            let path = b["path"].as_str().map(std::path::PathBuf::from);
+            tokio::task::spawn_blocking(move || list_dirs(path)).await??
+        }
         "pairing" => {
-            let urls = crate::service::addresses(hub.port);
+            let port = hub.port;
+            // Shells out to `tailscale`: keep it off the async workers.
+            let urls = tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?;
             let url = crate::service::pairing_url(&crate::service::host_name(), &hub.token, &urls);
             let svg = qrcode::QrCode::new(url.as_bytes())?
                 .render::<qrcode::render::svg::Color>()
@@ -196,15 +219,19 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
                 .build();
             json!({"pairingUrl": url, "urls": urls, "svg": svg})
         }
-        _ => return Err(anyhow!("unknown method")),
+        _ => return Err(UnknownMethod.into()),
     })
 }
 
-fn list_dirs(path: Option<&str>) -> Result<Value> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow!("no home"))?;
-    let dir = path.map(std::path::PathBuf::from).unwrap_or(home);
-    let mut dirs: Vec<Value> = std::fs::read_dir(&dir)?
-        .filter_map(|e| e.ok())
+/// Blocking (`std::fs`): call through `spawn_blocking`.
+fn list_dirs(path: Option<std::path::PathBuf>) -> Result<Value> {
+    let dir = match path {
+        Some(p) => p,
+        None => dirs::home_dir().ok_or_else(|| anyhow!("no home directory"))?,
+    };
+    let mut dirs: Vec<Value> = std::fs::read_dir(&dir)
+        .with_context(|| format!("listing {}", dir.display()))?
+        .filter_map(Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -231,13 +258,19 @@ struct EventsQuery {
     client: Option<String>,
 }
 
-struct ClientGuard(Arc<Hub>, bool);
+/// Counts a connected iOS client (pushes are held while one is connected) for as long as its stream lives.
+struct IosClientGuard(Arc<Hub>);
 
-impl Drop for ClientGuard {
+impl IosClientGuard {
+    fn new(hub: Arc<Hub>) -> Self {
+        hub.ios_clients.fetch_add(1, Ordering::Relaxed);
+        Self(hub)
+    }
+}
+
+impl Drop for IosClientGuard {
     fn drop(&mut self) {
-        if self.1 {
-            self.0.ios_clients.fetch_sub(1, Ordering::Relaxed);
-        }
+        self.0.ios_clients.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -257,18 +290,18 @@ async fn events(
     for bot in hub.bots_json(since).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? {
         catch_up.push(json!({"type": "bot", "rev": bot["rev"], "bot": bot}));
     }
-    for e in hub.store.entries_since(since, 200).unwrap_or_default() {
+    let entries = hub
+        .store
+        .entries_since(since, CATCH_UP_PER_BOT)
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
+    for e in entries {
         catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
     }
     catch_up.sort_by_key(|v| v["rev"].as_i64().unwrap_or(0));
-    let hello = json!({"type": "hello", "hostId": hub.host_id, "rev": hub.store.current_rev(), "usage": hub.usage.lock().unwrap().clone()});
+    let hello = json!({"type": "hello", "hostId": hub.host_id, "rev": hub.store.current_rev(), "usage": hub.usage.locked().clone()});
     catch_up.insert(0, hello);
 
-    let is_ios = q.client.as_deref() == Some("ios");
-    if is_ios {
-        hub.ios_clients.fetch_add(1, Ordering::Relaxed);
-    }
-    let guard = Arc::new(ClientGuard(hub.clone(), is_ios));
+    let guard = Arc::new((q.client.as_deref() == Some("ios")).then(|| IosClientGuard::new(hub.clone())));
     let head = stream::iter(catch_up.into_iter().map(|v| Ok(Event::default().data(v.to_string()))));
     let tail = live.filter_map(move |msg| {
         let _keep = guard.clone();

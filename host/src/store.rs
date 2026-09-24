@@ -1,12 +1,54 @@
 //! SQLite persistence. Every mutation stamps a global, monotonically increasing
 //! `rev`; clients sync with `since: rev` and never need a separate event log.
+//!
+//! Calls are synchronous. They're single-row or indexed queries measured in
+//! microseconds, so async callers use them directly; the one bulk read (a fresh
+//! client's catch-up) is capped per bot.
 
+use crate::LockExt;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 use std::sync::Mutex;
+
+/// How a bot handles the agent's permission requests (wire values `ask` / `auto`).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Permission {
+    /// Every request becomes an approval card on the phone.
+    #[default]
+    Ask,
+    /// Requests are approved once, automatically.
+    Auto,
+}
+
+/// Transcript entry kinds (the `kind` column / wire field).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryKind {
+    User,
+    Agent,
+    Thought,
+    Tool,
+    Plan,
+    Permission,
+    Notice,
+}
+
+impl EntryKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Agent => "agent",
+            Self::Thought => "thought",
+            Self::Tool => "tool",
+            Self::Plan => "plan",
+            Self::Permission => "permission",
+            Self::Notice => "notice",
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -24,9 +66,8 @@ pub struct BotConfig {
     #[serde(default)]
     pub command: Option<String>,
     pub cwd: String,
-    /// `ask` = every permission request goes to the phone; `auto` = approve once automatically.
-    #[serde(default = "default_permission")]
-    pub permission: String,
+    #[serde(default)]
+    pub permission: Permission,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -44,9 +85,6 @@ fn default_color() -> String {
 }
 fn default_shape() -> String {
     "blob".into()
-}
-fn default_permission() -> String {
-    "ask".into()
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -71,6 +109,9 @@ pub struct BotRow {
     pub read_rev: i64,
 }
 
+/// Raw `bots` row before the config JSON is parsed.
+type RawBot = (String, String, i64, bool, Option<String>, i64);
+
 pub struct Store {
     db: Mutex<Connection>,
 }
@@ -78,8 +119,13 @@ pub struct Store {
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// Logs a failed read and treats it as "nothing there" — for the read paths that feed
+/// best-effort details (previews, unread badges), where one bad query mustn't fail a request.
+fn logged<T>(what: &str, r: rusqlite::Result<T>) -> Option<T> {
+    r.map_err(|error| tracing::warn!(%error, what, "database read failed")).ok()
 }
 
 fn next_rev(c: &Connection) -> Result<i64> {
@@ -105,7 +151,23 @@ fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     })
 }
 
+fn row_bot(r: &rusqlite::Row) -> rusqlite::Result<RawBot> {
+    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, i64>(3)? != 0, r.get(4)?, r.get(5)?))
+}
+
+/// A stored config that no longer parses is skipped (and logged) rather than failing every listing.
+fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<BotRow> {
+    match serde_json::from_str(&cfg) {
+        Ok(config) => Some(BotRow { config, rev, deleted, session_id, read_rev }),
+        Err(error) => {
+            tracing::warn!(bot = %id, %error, "skipping unreadable bot config");
+            None
+        }
+    }
+}
+
 const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, updated_at";
+const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
@@ -129,19 +191,13 @@ impl Store {
     }
 
     pub fn kv_get(&self, k: &str) -> Option<String> {
-        let c = self.db.lock().unwrap();
-        c.query_row("SELECT v FROM kv WHERE k = ?", [k], |r| r.get(0))
-            .optional()
-            .ok()
-            .flatten()
+        let c = self.db.locked();
+        logged("kv", c.query_row("SELECT v FROM kv WHERE k = ?", [k], |r| r.get(0)).optional()).flatten()
     }
 
     pub fn kv_set(&self, k: &str, v: &str) -> Result<()> {
-        let c = self.db.lock().unwrap();
-        c.execute(
-            "INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2",
-            params![k, v],
-        )?;
+        let c = self.db.locked();
+        c.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, v])?;
         Ok(())
     }
 
@@ -152,33 +208,20 @@ impl Store {
     // MARK: bots
 
     pub fn bots(&self) -> Result<Vec<BotRow>> {
-        let c = self.db.lock().unwrap();
-        let mut st = c.prepare("SELECT config, rev, deleted, session_id, read_rev FROM bots")?;
-        let rows = st
-            .query_map([], |r| {
-                let cfg: String = r.get(0)?;
-                Ok((cfg, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?, r.get(4)?))
-            })?
-            .filter_map(|r| r.ok())
-            .filter_map(|(cfg, rev, deleted, session_id, read_rev)| {
-                Some(BotRow {
-                    config: serde_json::from_str(&cfg).ok()?,
-                    rev,
-                    deleted,
-                    session_id,
-                    read_rev,
-                })
-            })
-            .collect();
-        Ok(rows)
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!("SELECT {BOT_COLS} FROM bots"))?;
+        let rows = st.query_map([], row_bot)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows.into_iter().filter_map(parse_bot).collect())
     }
 
     pub fn bot(&self, id: &str) -> Result<Option<BotRow>> {
-        Ok(self.bots()?.into_iter().find(|b| b.config.id == id))
+        let c = self.db.locked();
+        let row = c.query_row(&format!("SELECT {BOT_COLS} FROM bots WHERE id = ?1"), [id], row_bot).optional()?;
+        Ok(row.and_then(parse_bot))
     }
 
     pub fn save_bot(&self, cfg: &BotConfig) -> Result<i64> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         let rev = next_rev(&c)?;
         c.execute(
             "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
@@ -189,56 +232,50 @@ impl Store {
     }
 
     pub fn touch_bot(&self, id: &str) -> Result<i64> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         let rev = next_rev(&c)?;
         c.execute("UPDATE bots SET rev = ?2 WHERE id = ?1", params![id, rev])?;
         Ok(rev)
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<i64> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         let rev = next_rev(&c)?;
-        c.execute(
-            "UPDATE bots SET rev = ?2, deleted = 1, session_id = NULL WHERE id = ?1",
-            params![id, rev],
-        )?;
+        c.execute("UPDATE bots SET rev = ?2, deleted = 1, session_id = NULL WHERE id = ?1", params![id, rev])?;
         c.execute("DELETE FROM entries WHERE bot_id = ?1", [id])?;
         Ok(rev)
     }
 
     pub fn set_session(&self, id: &str, session: Option<&str>) -> Result<()> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         c.execute("UPDATE bots SET session_id = ?2 WHERE id = ?1", params![id, session])?;
         Ok(())
     }
 
     pub fn mark_read(&self, id: &str) -> Result<i64> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         let rev = next_rev(&c)?;
-        c.execute(
-            "UPDATE bots SET read_rev = ?2, rev = ?2 WHERE id = ?1",
-            params![id, rev],
-        )?;
+        c.execute("UPDATE bots SET read_rev = ?2, rev = ?2 WHERE id = ?1", params![id, rev])?;
         Ok(rev)
     }
 
     /// Final agent messages + pending permission cards newer than what the user has read.
     pub fn unread(&self, id: &str, read_rev: i64) -> i64 {
-        let c = self.db.lock().unwrap();
-        c.query_row(
+        let c = self.db.locked();
+        let n = c.query_row(
             "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND rev > ?2 AND
                ((kind = 'agent' AND json_extract(data, '$.final') = 1) OR
                 (kind = 'permission' AND json_extract(data, '$.status') = 'pending'))",
             params![id, read_rev],
             |r| r.get(0),
-        )
-        .unwrap_or(0)
+        );
+        logged("unread", n).unwrap_or(0)
     }
 
     /// Newest chat-visible line for the roster preview.
     pub fn last_message(&self, id: &str) -> Option<(String, i64)> {
-        let c = self.db.lock().unwrap();
-        c.query_row(
+        let c = self.db.locked();
+        let row = c.query_row(
             "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
              ORDER BY seq DESC LIMIT 1",
@@ -251,33 +288,31 @@ impl Store {
                     .ok()
                     .and_then(|v| v["text"].as_str().map(str::to_owned))
                     .unwrap_or_default();
-                let text = if kind == "user" { format!("You: {text}") } else { text };
+                let text = if kind == EntryKind::User.as_str() { format!("You: {text}") } else { text };
                 Ok((text, at))
             },
-        )
-        .optional()
-        .ok()
-        .flatten()
+        );
+        logged("last message", row.optional()).flatten()
     }
 
     // MARK: entries
 
-    pub fn insert_entry(&self, bot_id: &str, kind: &str, turn: i64, data: &Value) -> Result<Entry> {
-        let c = self.db.lock().unwrap();
+    pub fn insert_entry(&self, bot_id: &str, kind: EntryKind, turn: i64, data: &Value) -> Result<Entry> {
+        let c = self.db.locked();
         let rev = next_rev(&c)?;
         let now = now_ms();
         let id = uuid::Uuid::new_v4().to_string();
         c.execute(
             "INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at)
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-            params![id, bot_id, rev, kind, turn, data.to_string(), now],
+            params![id, bot_id, rev, kind.as_str(), turn, data.to_string(), now],
         )?;
         Ok(Entry {
             id,
             seq: c.last_insert_rowid(),
             bot_id: bot_id.into(),
             rev,
-            kind: kind.into(),
+            kind: kind.as_str().to_owned(),
             turn,
             data: data.clone(),
             created_at: now,
@@ -286,60 +321,43 @@ impl Store {
     }
 
     pub fn update_entry(&self, id: &str, data: &Value) -> Result<Option<Entry>> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         let rev = next_rev(&c)?;
         c.execute(
             "UPDATE entries SET rev = ?2, data = ?3, updated_at = ?4 WHERE id = ?1",
             params![id, rev, data.to_string(), now_ms()],
         )?;
-        Ok(c.query_row(
-            &format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"),
-            [id],
-            row_entry,
-        )
-        .optional()?)
+        Ok(c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry).optional()?)
     }
 
     pub fn entry(&self, id: &str) -> Option<Entry> {
-        let c = self.db.lock().unwrap();
-        c.query_row(
-            &format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"),
-            [id],
-            row_entry,
-        )
-        .optional()
-        .ok()
-        .flatten()
+        let c = self.db.locked();
+        let row = c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry);
+        logged("entry", row.optional()).flatten()
     }
 
     pub fn find_by_nonce(&self, bot_id: &str, nonce: &str) -> Option<Entry> {
-        let c = self.db.lock().unwrap();
-        c.query_row(
+        let c = self.db.locked();
+        let row = c.query_row(
             &format!(
                 "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user' AND json_extract(data, '$.clientNonce') = ?2"
             ),
             params![bot_id, nonce],
             row_entry,
-        )
-        .optional()
-        .ok()
-        .flatten()
+        );
+        logged("entry by nonce", row.optional()).flatten()
     }
 
     pub fn max_turn(&self, bot_id: &str) -> i64 {
-        let c = self.db.lock().unwrap();
-        c.query_row(
-            "SELECT COALESCE(MAX(turn), 0) FROM entries WHERE bot_id = ?1",
-            [bot_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(0)
+        let c = self.db.locked();
+        let n = c.query_row("SELECT COALESCE(MAX(turn), 0) FROM entries WHERE bot_id = ?1", [bot_id], |r| r.get(0));
+        logged("max turn", n).unwrap_or(0)
     }
 
     /// Entries changed after `since`. A fresh client (`since == 0`) only gets the
     /// newest `cap` entries per bot and pages older ones in with `history`.
     pub fn entries_since(&self, since: i64, cap: i64) -> Result<Vec<Entry>> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         let sql = if since == 0 {
             format!(
                 "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries)
@@ -349,50 +367,45 @@ impl Store {
             format!("SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 ORDER BY seq")
         };
         let mut st = c.prepare(&sql)?;
-        let rows = st.query_map(params![since, cap], row_entry)?.filter_map(|r| r.ok()).collect();
-        Ok(rows)
+        Ok(st.query_map(params![since, cap], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
     pub fn history(&self, bot_id: &str, before_seq: i64, limit: i64) -> Result<Vec<Entry>> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         let mut st = c.prepare(&format!(
             "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3"
         ))?;
-        let mut rows: Vec<Entry> = st
-            .query_map(params![bot_id, before_seq, limit], row_entry)?
-            .filter_map(|r| r.ok())
-            .collect();
+        let mut rows: Vec<Entry> =
+            st.query_map(params![bot_id, before_seq, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
         rows.reverse();
         Ok(rows)
     }
 
-    /// Permission cards left `pending` by a crash or restart can never be answered.
-    pub fn expire_pending(&self) -> Result<Vec<Entry>> {
+    /// Permission cards left `pending` (and sends left `queued`) by a crash or restart
+    /// can never be honored; returns how many were closed out.
+    pub fn expire_pending(&self) -> Result<usize> {
         let ids: Vec<String> = {
-            let c = self.db.lock().unwrap();
+            let c = self.db.locked();
             let mut st = c.prepare(
                 "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
                   OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')",
             )?;
-            st.query_map([], |r| r.get(0))?.filter_map(|r| r.ok()).collect()
+            st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
-        let mut out = vec![];
-        for id in ids {
-            if let Some(mut e) = self.entry(&id) {
-                let status = if e.kind == "user" { "failed" } else { "expired" };
+        for id in &ids {
+            if let Some(mut e) = self.entry(id) {
+                let status = if e.kind == EntryKind::User.as_str() { "failed" } else { "expired" };
                 e.data["status"] = status.into();
-                if let Some(e) = self.update_entry(&id, &e.data)? {
-                    out.push(e);
-                }
+                self.update_entry(id, &e.data)?;
             }
         }
-        Ok(out)
+        Ok(ids.len())
     }
 
     // MARK: devices
 
     pub fn add_device(&self, ticket: &str, name: &str) -> Result<()> {
-        let c = self.db.lock().unwrap();
+        let c = self.db.locked();
         c.execute(
             "INSERT INTO devices(ticket, name, created_at) VALUES(?1, ?2, ?3)
              ON CONFLICT(ticket) DO UPDATE SET name = ?2",
@@ -402,16 +415,16 @@ impl Store {
     }
 
     pub fn remove_device(&self, ticket: &str) -> Result<()> {
-        self.db.lock().unwrap().execute("DELETE FROM devices WHERE ticket = ?1", [ticket])?;
+        self.db.locked().execute("DELETE FROM devices WHERE ticket = ?1", [ticket])?;
         Ok(())
     }
 
     pub fn devices(&self) -> Vec<String> {
-        let c = self.db.lock().unwrap();
-        let Ok(mut st) = c.prepare("SELECT ticket FROM devices") else { return vec![] };
-        st.query_map([], |r| r.get(0))
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
-            .unwrap_or_default()
+        let c = self.db.locked();
+        let tickets = c
+            .prepare("SELECT ticket FROM devices")
+            .and_then(|mut st| st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>());
+        logged("devices", tickets).unwrap_or_default()
     }
 }
 
@@ -419,11 +432,15 @@ impl Store {
 mod tests {
     use super::*;
 
-    #[test]
-    fn rev_sync_and_unread() {
+    fn temp_store() -> Store {
         let dir = std::env::temp_dir().join(format!("codync-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let s = Store::open(&dir.join("t.db")).unwrap();
+        Store::open(&dir.join("t.db")).unwrap()
+    }
+
+    #[test]
+    fn rev_sync_and_unread() {
+        let s = temp_store();
         let cfg = BotConfig {
             id: "b1".into(),
             name: "Rev".into(),
@@ -433,7 +450,7 @@ mod tests {
             backend: "claude".into(),
             command: None,
             cwd: "/tmp".into(),
-            permission: "ask".into(),
+            permission: Permission::Ask,
             model: None,
             pinned: false,
             hidden: false,
@@ -441,8 +458,8 @@ mod tests {
             created_at: 0,
         };
         s.save_bot(&cfg).unwrap();
-        let u = s.insert_entry("b1", "user", 1, &serde_json::json!({"text": "hi"})).unwrap();
-        let a = s.insert_entry("b1", "agent", 1, &serde_json::json!({"text": "yo", "final": false})).unwrap();
+        let u = s.insert_entry("b1", EntryKind::User, 1, &serde_json::json!({"text": "hi"})).unwrap();
+        let a = s.insert_entry("b1", EntryKind::Agent, 1, &serde_json::json!({"text": "yo", "final": false})).unwrap();
         assert!(a.rev > u.rev);
         assert_eq!(s.unread("b1", 0), 0, "narration is not unread");
         let a2 = s.update_entry(&a.id, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
@@ -453,5 +470,26 @@ mod tests {
         let r = s.mark_read("b1").unwrap();
         assert_eq!(s.unread("b1", r), 0);
         assert_eq!(s.history("b1", a.seq, 10).unwrap().len(), 1);
+        assert_eq!(s.bot("b1").unwrap().unwrap().config.permission, Permission::Ask);
+        assert!(s.bot("missing").unwrap().is_none());
+    }
+
+    #[test]
+    fn restart_expires_pending_cards_and_queued_sends() {
+        let s = temp_store();
+        s.insert_entry("b1", EntryKind::Permission, 1, &serde_json::json!({"status": "pending"})).unwrap();
+        let q = s.insert_entry("b1", EntryKind::User, 2, &serde_json::json!({"status": "queued"})).unwrap();
+        s.insert_entry("b1", EntryKind::User, 1, &serde_json::json!({"status": "sent"})).unwrap();
+        assert_eq!(s.expire_pending().unwrap(), 2);
+        assert_eq!(s.entry(&q.id).unwrap().data["status"], "failed");
+        assert_eq!(s.expire_pending().unwrap(), 0, "idempotent");
+    }
+
+    #[test]
+    fn permission_wire_values_round_trip() {
+        let p: Permission = serde_json::from_str("\"auto\"").unwrap();
+        assert_eq!(p, Permission::Auto);
+        assert_eq!(serde_json::to_string(&Permission::Ask).unwrap(), "\"ask\"");
+        assert!(serde_json::from_str::<Permission>("\"yolo\"").is_err(), "unknown modes are rejected at the boundary");
     }
 }

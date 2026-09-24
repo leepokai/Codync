@@ -9,7 +9,8 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 - Use structured concurrency (`async/await`, `TaskGroup`) over Combine
 - Use `sending`, `nonisolated`, `@MainActor` correctly per Swift 6 rules
 - Avoid `@unchecked Sendable` — prefer proper `Sendable` conformance
-- Host is Rust 2024 edition; keep `cargo clippy -- -D warnings` clean
+- Host is Rust 2024 edition and follows the `rust-skills` rules (`~/.agents/skills/rust-skills`). Lints live in `host/Cargo.toml` (`[lints]`: default groups + pedantic, `unwrap_used`); CI runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+- Host conventions: no `unwrap()` outside tests (`expect("why this can't fail")` for true invariants); lock std mutexes with `LockExt::locked()` (poison-tolerant); enums, not strings, for states and modes (`BotStatus`, `Permission`, `EntryKind`, `AlertKind`); `tracing` with structured fields (`error = format!("{e:#}")` keeps the context chain); blocking fs/process work goes through `spawn_blocking`; registry JSON is untrusted (paths are validated)
 
 ## Architecture
 

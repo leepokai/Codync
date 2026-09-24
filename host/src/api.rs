@@ -175,6 +175,10 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             }
             json!({})
         }
+        "refreshBackends" => {
+            tokio::task::spawn_blocking(backends::hydrate_path).await?;
+            json!({"backends": backends::list()})
+        }
         "usage" => {
             if b["refresh"].as_bool().unwrap_or(false) {
                 usage::refresh(hub).await;
@@ -182,6 +186,16 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             hub.usage.lock().unwrap().clone()
         }
         "listDirs" => list_dirs(b["path"].as_str())?,
+        "pairing" => {
+            let urls = crate::service::addresses(hub.port);
+            let url = crate::service::pairing_url(&crate::service::host_name(), &hub.token, &urls);
+            let svg = qrcode::QrCode::new(url.as_bytes())?
+                .render::<qrcode::render::svg::Color>()
+                .quiet_zone(false)
+                .min_dimensions(200, 200)
+                .build();
+            json!({"pairingUrl": url, "urls": urls, "svg": svg})
+        }
         _ => return Err(anyhow!("unknown method")),
     })
 }

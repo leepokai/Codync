@@ -4,6 +4,7 @@ mod backends;
 mod bot;
 mod hub;
 mod push;
+mod registry;
 mod service;
 mod store;
 mod usage;
@@ -51,10 +52,13 @@ enum Sub {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
     },
-    /// Claude Code statusLine command: forwards usage limits to the host and prints a short status line.
+    /// Claude Code statusLine command: forwards usage limits to the host, then prints
+    /// the wrapped command's status line (`statusline -- <command>`) or a short default.
     Statusline {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
+        #[arg(last = true)]
+        wrapped: Vec<String>,
     },
     /// Rotate the pairing token (unpairs every phone).
     ResetToken,
@@ -131,6 +135,11 @@ async fn main() -> Result<()> {
                     Ok(n) => println!("Removed {n} Codync 1.x hook(s) from ~/.claude/settings.json (backup saved next to it)."),
                     Err(e) => eprintln!("Couldn't clean up Codync 1.x hooks: {e}"),
                 }
+                match service::ensure_statusline(&home.join(".claude/settings.json")) {
+                    Ok(true) => println!("Claude Code's status line now also reports usage limits to Codync (your own status line still shows)."),
+                    Ok(false) => {}
+                    Err(e) => eprintln!("Couldn't set Claude Code's status line: {e}"),
+                }
             }
             service::install(port)?;
             println!("Codync host installed and started on port {port}. Run `codync-host pair` to connect your phone.");
@@ -138,6 +147,9 @@ async fn main() -> Result<()> {
         }
         Sub::Uninstall => {
             service::uninstall()?;
+            if let Some(home) = dirs::home_dir() {
+                let _ = service::restore_statusline(&home.join(".claude/settings.json"));
+            }
             println!("Codync host service removed. Data is kept in {}", service::data_dir().display());
             Ok(())
         }
@@ -151,8 +163,8 @@ async fn main() -> Result<()> {
             println!("installed: {}\nrunning:   {running}\nport:      {port}\ndata:      {}", service::installed(), service::data_dir().display());
             Ok(())
         }
-        Sub::Statusline { port } => {
-            statusline(port).await;
+        Sub::Statusline { port, wrapped } => {
+            statusline(port, wrapped.join(" ")).await;
             Ok(())
         }
         Sub::ResetToken => {
@@ -172,8 +184,10 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
         .init();
     let (store, host_id, token) = open_store()?;
     write_token_file(&token)?;
-    let hub = hub::Hub::new(store, host_id, token);
+    tokio::task::spawn_blocking(backends::hydrate_path).await?;
+    let hub = hub::Hub::new(store, host_id, token, port);
     hub.start()?;
+    tokio::spawn(registry::refresh_loop());
     tokio::spawn(usage::poll(hub.clone()));
     let listener = tokio::net::TcpListener::bind((bind, port)).await?;
     tracing::info!("codync-host {} listening on {bind}:{port}", env!("CARGO_PKG_VERSION"));
@@ -182,7 +196,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
 }
 
 /// Never blocks Claude Code: 1 s budget, all errors ignored.
-async fn statusline(port: u16) {
+async fn statusline(port: u16, wrapped: String) {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
     let v: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
@@ -194,6 +208,22 @@ async fn statusline(port: u16) {
             .timeout(Duration::from_secs(1))
             .send()
             .await;
+    }
+    if !wrapped.trim().is_empty() {
+        // The user's own status line gets the same JSON on stdin.
+        use std::io::Write;
+        if let Ok(mut child) = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(&wrapped)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(input.as_bytes());
+            }
+            let _ = child.wait();
+        }
+        return;
     }
     let model = v["model"]["display_name"].as_str().unwrap_or("Claude");
     let mut line = model.to_owned();

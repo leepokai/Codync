@@ -1,17 +1,21 @@
 import CodyncKit
+import CodyncUI
 import SwiftUI
 
 struct RootView: View {
-    @Environment(AppModel.self) private var model
-    @Environment(Router.self) private var router
+    @Environment(BotStore.self) private var model
+
+    /// The open bot, as a NavigationStack path.
+    private var path: Binding<[String]> {
+        Binding(get: { model.selection.map { [$0] } ?? [] }, set: { model.selection = $0.last })
+    }
 
     var body: some View {
-        @Bindable var router = router
         Group {
             if model.pairing == nil {
                 PairingView()
             } else {
-                NavigationStack(path: $router.path) {
+                NavigationStack(path: path) {
                     BotListView()
                         .navigationDestination(for: String.self) { botId in
                             ThreadView(botId: botId)

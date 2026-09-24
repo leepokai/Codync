@@ -3,10 +3,10 @@ import SwiftUI
 
 /// Small block-level Markdown renderer: paragraphs, headings, lists, quotes and
 /// fenced code; inline styling comes from `AttributedString(markdown:)`.
-struct MarkdownText: View {
+public struct MarkdownText: View {
     let blocks: [Block]
 
-    init(_ source: String) {
+    public init(_ source: String) {
         blocks = Self.parse(source)
     }
 
@@ -18,7 +18,7 @@ struct MarkdownText: View {
         case code(String, language: String)
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 view(for: block)

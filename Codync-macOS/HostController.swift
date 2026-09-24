@@ -1,10 +1,11 @@
 import CodyncKit
+import CodyncUI
 import Foundation
 import Observation
 import ServiceManagement
 
 /// Manages the local codync-host: finds the binary, installs the background
-/// service, and mirrors bots + usage over the same API the phone uses.
+/// service, and owns the BotStore the menu and the chat window share.
 @MainActor
 @Observable
 final class HostController {
@@ -28,14 +29,16 @@ final class HostController {
         ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codync")
 
     private(set) var state: State = .starting
-    private(set) var bots: [Bot] = []
-    private(set) var usage = Usage()
+    /// Live mirror of the host (same store the iPhone uses), once it's reachable.
+    private(set) var store: BotStore?
     private(set) var pairInfo: PairInfo?
     private(set) var version: String?
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
     private var streamTask: Task<Void, Never>?
 
+    var bots: [Bot] { store?.roster ?? [] }
+    var usage: Usage { store?.usage ?? Usage() }
     var needsAttention: Bool { bots.contains(where: \.needsInput) }
     var working: Int { bots.filter(\.isWorking).count }
 
@@ -103,7 +106,7 @@ final class HostController {
         streamTask?.cancel()
         Task {
             _ = await Self.run(bin, ["uninstall"])
-            bots = []
+            store = nil
             state = .notInstalled
         }
     }
@@ -132,34 +135,32 @@ final class HostController {
         return HostClient(baseURL: URL(string: "http://127.0.0.1:\(Self.port)")!, token: token.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// Watches the host's health; the BotStore handles the event stream itself.
     private func connect() {
         streamTask?.cancel()
         streamTask = Task { [weak self] in
-            var attempts = 0
+            var failures = 0
             while !Task.isCancelled {
                 guard let self else { return }
-                guard let client = self.client(), await client.healthy(timeout: 2) else {
-                    attempts += 1
-                    self.state = attempts > 5 ? .failed("The host isn't responding. See the log for details.") : .starting
-                    try? await Task.sleep(for: .seconds(2))
-                    continue
-                }
-                attempts = 0
-                self.version = (try? await client.hello())?.version
-                var mirror: [String: Bot] = [:]
-                do {
-                    for try await event in client.events(since: 0, client: "mac") {
-                        self.state = .running
-                        switch event {
-                        case let .bot(bot): mirror[bot.id] = bot
-                        case let .botDeleted(id, _): mirror[id] = nil
-                        case let .hello(_, _, usage), let .usage(usage): self.usage = usage
-                        case .entry, .resync, .undecodable: break
-                        }
-                        self.bots = mirror.values.filter { !$0.hidden }.sorted { $0.lastAt > $1.lastAt }
+                if let client = self.client(), await client.healthy(timeout: 2) {
+                    failures = 0
+                    if self.store == nil || self.store?.pairing?.token != client.token {
+                        self.version = (try? await client.hello())?.version
+                        let store = BotStore(
+                            pairing: Pairing(name: Host.current().localizedName ?? "This Mac", token: client.token, urls: [client.baseURL.absoluteString]),
+                            clientKind: "mac",
+                            persistsPairing: false
+                        )
+                        store.restartStream()
+                        self.store = store
                     }
-                } catch {}
-                try? await Task.sleep(for: .seconds(2))
+                    self.state = .running
+                } else {
+                    failures += 1
+                    if failures > 5 { self.state = .failed("The host isn't responding. See the log for details.") }
+                    else if self.state != .running { self.state = .starting }
+                }
+                try? await Task.sleep(for: .seconds(5))
             }
         }
     }

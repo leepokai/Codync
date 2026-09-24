@@ -151,7 +151,15 @@ public struct UsageWindow: Codable, Hashable, Sendable, Identifiable {
     public var label: String
     public var percent: Double
     public var resetsAt: Int64?
+    /// Human text when only that is known ("Sep 26 at 12pm (Asia/Taipei)").
+    public var resetsText: String?
     public var resetDate: Date? { resetsAt.map(Date.init(milliseconds:)) }
+
+    /// "resets in 3h 20m" / "resets Sep 26 at 12pm", or nil.
+    public var resetDescription: String? {
+        if let d = resetDate { return "resets in \(RelativeTime.until(d))" }
+        return resetsText.map { "resets \($0.replacingOccurrences(of: #" \(.*\)$"#, with: "", options: .regularExpression))" }
+    }
 }
 
 public struct Backend: Codable, Hashable, Sendable, Identifiable {

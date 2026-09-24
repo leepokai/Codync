@@ -12,13 +12,12 @@
 		187068689418B6B25AE7B26A /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B274A0195CB3B2409EA4C194 /* WidgetKit.framework */; };
 		1BD8A64454E95EF3726132A4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9FCF7D2E2AEC8C83B89E7B36 /* Assets.xcassets */; };
 		1C2298904CADCA68ADF64F6B /* CodyncWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = E70F8B0E7E2E15AAA8A2A0A7 /* CodyncWidgets.swift */; };
-		2C21D097FD9AF73AE3B40DDE /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 417B586A0D9A447747D1BEFC /* MarkdownText.swift */; };
+		2C1D071F93F790133BCB64DC /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = C3EC157070A9B0A033C7F2A0 /* CodyncUI */; };
+		30814D765E2D3522EC337CB8 /* ChatWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F8473D6F162F5D18EF9D2EC /* ChatWindow.swift */; };
 		341AB84FEF28FF194872D861 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = CDE38864BDC425F1240E1C02 /* CodyncKit */; };
-		4F70D744ED9A696854EADA91 /* TraceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A9EEFF0BB95647BE483A211 /* TraceView.swift */; };
+		499113F4AB77E9EFEA72767F /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5DAFE014EAFE809C427A475D /* CodyncUI */; };
 		55D43F0D178B7A63BA4E81F3 /* CodyncWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 04030896973C4041E7FEB319 /* CodyncWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		575ABFE8E1FBD2865793F45D /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 092242ADE0E7FF8A82051511 /* AppModel.swift */; };
 		61455BFB935FE1AAF67C4CD4 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E27E10BA8F07E552E99BE9 /* Push.swift */; };
-		745062481B4868CF3F2950BF /* BotEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF5B67443AC77DA4414E6EBE /* BotEditorView.swift */; };
 		76E613DFEABF73915C5FE9DC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF5474468D6EBF22CB2FA1E9 /* Assets.xcassets */; };
 		989285CFB52552A97D95366C /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528534881700FE0CF94A49BC /* PairingView.swift */; };
 		9D644515BB782DC91B1B71C8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD4B599F142017103B340A87 /* SettingsView.swift */; };
@@ -26,9 +25,7 @@
 		CEFE64EFFEA10B5ED60F2CE3 /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3FCD76B514C8ECF2211945A /* CodyncApp.swift */; };
 		D667C45D828CAD079A2EDD77 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4364B5D2EE15CB00ACF26E5D /* CodyncKit */; };
 		D8E9E7B47361EEE30424455F /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 234AA35A60DF7D3E6D7CA45E /* CodyncKit */; };
-		DC0510188C0A2C8FAEA5CC8D /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70DB39404824DBE6E38B94C /* ThreadView.swift */; };
 		ED9C1500FD1CC591FCBD26CB /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280FA54859773B9355860354 /* CodyncMacApp.swift */; };
-		FB33CDB6D44A6023BB565200 /* PermissionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D94A23B2E38E9DE6CAA984 /* PermissionCard.swift */; };
 		FEEBCD214CE268A636921FD9 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E47C60032C326157E0386B8 /* SwiftUI.framework */; };
 /* End PBXBuildFile section */
 
@@ -59,19 +56,16 @@
 /* Begin PBXFileReference section */
 		01C28522569623733B9B096D /* HostController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostController.swift; sourceTree = "<group>"; };
 		04030896973C4041E7FEB319 /* CodyncWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodyncWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		092242ADE0E7FF8A82051511 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		155F1B6DC4518164BE2C527F /* Codync-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Codync-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		1753C1409D62F8F721BE833F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		280FA54859773B9355860354 /* CodyncMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncMacApp.swift; sourceTree = "<group>"; };
-		2A9EEFF0BB95647BE483A211 /* TraceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TraceView.swift; sourceTree = "<group>"; };
-		31D94A23B2E38E9DE6CAA984 /* PermissionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionCard.swift; sourceTree = "<group>"; };
 		371D72CCCB665E6442DED8C8 /* BotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotListView.swift; sourceTree = "<group>"; };
 		38FE26380B2072AE3FBD5CF5 /* CodyncWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodyncWidgets.entitlements; sourceTree = "<group>"; };
-		417B586A0D9A447747D1BEFC /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		528534881700FE0CF94A49BC /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		6CCA896856A480F390EBA9AB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6EBEF05AFCCF44C92BDA91A3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		6F8473D6F162F5D18EF9D2EC /* ChatWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWindow.swift; sourceTree = "<group>"; };
 		74E27E10BA8F07E552E99BE9 /* Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Push.swift; sourceTree = "<group>"; };
 		835DB0566D924C508E360B8F /* CodyncKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CodyncKit; path = CodyncKit; sourceTree = SOURCE_ROOT; };
 		84B947AD5A042EA315737BBC /* Codync-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Codync-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -79,9 +73,7 @@
 		A30032680EAD00ABD06D30BE /* Codync-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Codync-iOS.entitlements"; sourceTree = "<group>"; };
 		A3FCD76B514C8ECF2211945A /* CodyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncApp.swift; sourceTree = "<group>"; };
 		AF5474468D6EBF22CB2FA1E9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		AF5B67443AC77DA4414E6EBE /* BotEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotEditorView.swift; sourceTree = "<group>"; };
 		B274A0195CB3B2409EA4C194 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
-		C70DB39404824DBE6E38B94C /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
 		CD4B599F142017103B340A87 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E70F8B0E7E2E15AAA8A2A0A7 /* CodyncWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncWidgets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -92,6 +84,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				341AB84FEF28FF194872D861 /* CodyncKit in Frameworks */,
+				499113F4AB77E9EFEA72767F /* CodyncUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -100,6 +93,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D8E9E7B47361EEE30424455F /* CodyncKit in Frameworks */,
+				2C1D071F93F790133BCB64DC /* CodyncUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -169,6 +163,7 @@
 			isa = PBXGroup;
 			children = (
 				9FCF7D2E2AEC8C83B89E7B36 /* Assets.xcassets */,
+				6F8473D6F162F5D18EF9D2EC /* ChatWindow.swift */,
 				280FA54859773B9355860354 /* CodyncMacApp.swift */,
 				01C28522569623733B9B096D /* HostController.swift */,
 			);
@@ -190,15 +185,10 @@
 		EE65F2FAD6D95ABE28885E83 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				AF5B67443AC77DA4414E6EBE /* BotEditorView.swift */,
 				371D72CCCB665E6442DED8C8 /* BotListView.swift */,
-				417B586A0D9A447747D1BEFC /* MarkdownText.swift */,
 				528534881700FE0CF94A49BC /* PairingView.swift */,
-				31D94A23B2E38E9DE6CAA984 /* PermissionCard.swift */,
 				6EBEF05AFCCF44C92BDA91A3 /* RootView.swift */,
 				CD4B599F142017103B340A87 /* SettingsView.swift */,
-				C70DB39404824DBE6E38B94C /* ThreadView.swift */,
-				2A9EEFF0BB95647BE483A211 /* TraceView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -206,7 +196,6 @@
 		F474B3D70851CF6BC24ED9DE /* App */ = {
 			isa = PBXGroup;
 			children = (
-				092242ADE0E7FF8A82051511 /* AppModel.swift */,
 				A3FCD76B514C8ECF2211945A /* CodyncApp.swift */,
 				74E27E10BA8F07E552E99BE9 /* Push.swift */,
 			);
@@ -233,6 +222,7 @@
 			name = "Codync-iOS";
 			packageProductDependencies = (
 				CDE38864BDC425F1240E1C02 /* CodyncKit */,
+				5DAFE014EAFE809C427A475D /* CodyncUI */,
 			);
 			productName = "Codync-iOS";
 			productReference = 84B947AD5A042EA315737BBC /* Codync-iOS.app */;
@@ -273,6 +263,7 @@
 			name = "Codync-macOS";
 			packageProductDependencies = (
 				234AA35A60DF7D3E6D7CA45E /* CodyncKit */,
+				C3EC157070A9B0A033C7F2A0 /* CodyncUI */,
 			);
 			productName = "Codync-macOS";
 			productReference = 155F1B6DC4518164BE2C527F /* Codync-macOS.app */;
@@ -359,7 +350,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Builds the Rust host and ships it inside Codync.app/Contents/MacOS.\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nif ! command -v cargo >/dev/null; then\n  echo \"warning: cargo not found; Codync.app will look for codync-host on PATH instead\"\n  exit 0\nfi\nPROFILE=release\n[ \"$CONFIGURATION\" = \"Debug\" ] && PROFILE=debug\nFLAGS=\"\"\n[ \"$PROFILE\" = \"release\" ] && FLAGS=\"--release\"\nif [ \"$PROFILE\" = \"release\" ]; then\n  rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null 2>&1 || true\n  cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" --target aarch64-apple-darwin &&\n  cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" --target x86_64-apple-darwin &&\n  lipo -create -output \"$SRCROOT/host/target/codync-host-universal\" \\\n    \"$SRCROOT/host/target/aarch64-apple-darwin/release/codync-host\" \\\n    \"$SRCROOT/host/target/x86_64-apple-darwin/release/codync-host\" &&\n  BIN=\"$SRCROOT/host/target/codync-host-universal\" ||\n  { cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" && BIN=\"$SRCROOT/host/target/release/codync-host\"; }\nelse\n  cargo build --manifest-path \"$SRCROOT/host/Cargo.toml\" && BIN=\"$SRCROOT/host/target/debug/codync-host\"\nfi\nDEST=\"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/codync-host\"\ncp \"$BIN\" \"$DEST\"\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ] && [ \"$CODE_SIGNING_ALLOWED\" != \"NO\" ]; then\n  codesign --force --options runtime --timestamp=none --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$DEST\"\nfi\n";
+			shellScript = "# Builds the Rust host and ships it inside Codync.app/Contents/MacOS.\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\nif ! command -v cargo >/dev/null; then\n  echo \"warning: cargo not found; Codync.app will look for codync-host on PATH instead\"\n  exit 0\nfi\nPROFILE=release\n[ \"$CONFIGURATION\" = \"Debug\" ] && PROFILE=debug\nFLAGS=\"\"\n[ \"$PROFILE\" = \"release\" ] && FLAGS=\"--release\"\nif [ \"$PROFILE\" = \"release\" ]; then\n  rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null 2>&1 || true\n  cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" --target aarch64-apple-darwin &&\n  cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" --target x86_64-apple-darwin &&\n  lipo -create -output \"$SRCROOT/host/target/codync-host-universal\" \\\n    \"$SRCROOT/host/target/aarch64-apple-darwin/release/codync-host\" \\\n    \"$SRCROOT/host/target/x86_64-apple-darwin/release/codync-host\" &&\n  BIN=\"$SRCROOT/host/target/codync-host-universal\" ||\n  { cargo build --release --manifest-path \"$SRCROOT/host/Cargo.toml\" && BIN=\"$SRCROOT/host/target/release/codync-host\"; }\nelse\n  cargo build --manifest-path \"$SRCROOT/host/Cargo.toml\" && BIN=\"$SRCROOT/host/target/debug/codync-host\"\nfi\n[ -n \"$BIN\" ] || { echo \"error: building codync-host failed\"; exit 1; }\nDEST=\"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/codync-host\"\ncp \"$BIN\" \"$DEST\"\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ] && [ \"$CODE_SIGNING_ALLOWED\" != \"NO\" ]; then\n  codesign --force --options runtime --timestamp=none --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$DEST\"\nfi\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -369,18 +360,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				575ABFE8E1FBD2865793F45D /* AppModel.swift in Sources */,
-				745062481B4868CF3F2950BF /* BotEditorView.swift in Sources */,
 				07670DD412E0F79796D44699 /* BotListView.swift in Sources */,
 				CEFE64EFFEA10B5ED60F2CE3 /* CodyncApp.swift in Sources */,
-				2C21D097FD9AF73AE3B40DDE /* MarkdownText.swift in Sources */,
 				989285CFB52552A97D95366C /* PairingView.swift in Sources */,
-				FB33CDB6D44A6023BB565200 /* PermissionCard.swift in Sources */,
 				61455BFB935FE1AAF67C4CD4 /* Push.swift in Sources */,
 				087DC53315FB092D4F6436AD /* RootView.swift in Sources */,
 				9D644515BB782DC91B1B71C8 /* SettingsView.swift in Sources */,
-				DC0510188C0A2C8FAEA5CC8D /* ThreadView.swift in Sources */,
-				4F70D744ED9A696854EADA91 /* TraceView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -388,6 +373,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				30814D765E2D3522EC337CB8 /* ChatWindow.swift in Sources */,
 				ED9C1500FD1CC591FCBD26CB /* CodyncMacApp.swift in Sources */,
 				CED43A6F2ED71E48C95E9E38 /* HostController.swift in Sources */,
 			);
@@ -743,6 +729,14 @@
 		4364B5D2EE15CB00ACF26E5D /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CodyncKit;
+		};
+		5DAFE014EAFE809C427A475D /* CodyncUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodyncUI;
+		};
+		C3EC157070A9B0A033C7F2A0 /* CodyncUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodyncUI;
 		};
 		CDE38864BDC425F1240E1C02 /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;

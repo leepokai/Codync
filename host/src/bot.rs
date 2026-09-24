@@ -188,7 +188,13 @@ impl Actor {
         while self.turn.is_none() {
             let Some((entry_id, text)) = self.queue.pop_front() else { return };
             if let Err(e) = self.start_turn(&entry_id, &text, done_tx).await {
-                self.notice(&format!("Couldn't start the agent: {e}"), "error");
+                let mut msg = format!("Couldn't start the agent: {e}");
+                if e.to_string().to_lowercase().contains("auth")
+                    && let Some(h) = crate::backends::harness(&self.cfg.backend)
+                {
+                    msg = format!("{} needs you to sign in on your computer first. {}", h.name, h.setup);
+                }
+                self.notice(&msg, "error");
                 self.turn = None;
                 self.hub.set_runtime(&self.id(), |r| {
                     r.status = "error".into();
@@ -219,6 +225,18 @@ impl Actor {
         });
 
         self.ensure_session().await?;
+        // Session-start chatter (banners, command lists) isn't part of the reply.
+        // Some adapters (pi-acp) send it on a timer right after session/new.
+        if self.session_fresh {
+            tokio::time::sleep(Duration::from_millis(400)).await;
+        }
+        if let Some(conn) = self.conn.as_mut() {
+            while let Ok(inc) = conn.rx.try_recv() {
+                if let Incoming::Request { id, .. } = inc {
+                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
+                }
+            }
+        }
         let conn = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?;
         let mut prompt = text.to_owned();
         if self.session_fresh {
@@ -245,29 +263,38 @@ impl Actor {
 
     async fn ensure_session(&mut self) -> Result<()> {
         if self.conn.is_none() {
-            let command = match self.cfg.command.as_deref().map(str::trim) {
-                Some(c) if !c.is_empty() => c.to_owned(),
-                _ => crate::backends::command(&self.cfg.backend)
-                    .ok_or_else(|| anyhow!("unknown backend"))?
-                    .to_owned(),
+            let candidates = match self.cfg.command.as_deref().map(str::trim) {
+                Some(c) if !c.is_empty() => vec![c.to_owned()],
+                _ => {
+                    let hub = self.hub.clone();
+                    let id = self.cfg.id.clone();
+                    crate::backends::launch_candidates(&self.cfg.backend, move |msg: &str| {
+                        let msg = msg.to_owned();
+                        hub.set_runtime(&id, |r| r.activity = msg);
+                    })
+                    .await?
+                }
             };
             self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
-            let (acp, rx) = Acp::spawn(&command, &self.cfg.cwd)?;
-            let init = tokio::time::timeout(
-                Duration::from_secs(120),
-                acp.request(
-                    "initialize",
-                    json!({
-                        "protocolVersion": 1,
-                        "clientCapabilities": {"fs": {"readTextFile": false, "writeTextFile": false}, "terminal": false},
-                        "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
-                    }),
-                ),
-            )
-            .await
-            .map_err(|_| anyhow!("agent did not answer `initialize` within 2 minutes"))??;
-            let can_load = init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false);
-            self.conn = Some(Conn { acp, rx, can_load, loaded: HashSet::new() });
+            let mut last_err = None;
+            for (i, command) in candidates.iter().enumerate() {
+                let fallback_left = i + 1 < candidates.len();
+                // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
+                let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
+                match start_agent(command, &self.cfg.cwd, budget).await {
+                    Ok(conn) => {
+                        self.conn = Some(conn);
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::info!("`{command}` failed to start: {e}");
+                        last_err = Some(e);
+                    }
+                }
+            }
+            if self.conn.is_none() {
+                return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
+            }
         }
         let conn = self.conn.as_mut().unwrap();
         if let Some(sid) = self.session_id.clone() {
@@ -471,6 +498,12 @@ impl Actor {
                     self.set_activity(&title);
                 }
             }
+            "usage_update" => {
+                let info = &u["_meta"]["_claude/rateLimit"];
+                if info.is_object() {
+                    crate::usage::ingest_claude_rate_limit(&self.hub, info);
+                }
+            }
             "plan" => {
                 let data = json!({"entries": u["entries"].clone()});
                 match &self.plan_entry {
@@ -628,6 +661,36 @@ impl Actor {
         let turn = self.turn.unwrap_or_else(|| self.hub.store.max_turn(&self.cfg.id));
         let _ = self.hub.add_entry(&self.cfg.id, "notice", turn, json!({"text": text, "style": style}));
     }
+}
+
+/// Spawns an ACP agent and completes the `initialize` handshake.
+async fn start_agent(command: &str, cwd: &str, budget: Duration) -> Result<Conn> {
+    let (acp, rx) = Acp::spawn(command, cwd)?;
+    let init = tokio::time::timeout(
+        budget,
+        acp.request(
+            "initialize",
+            json!({
+                "protocolVersion": 1,
+                "clientCapabilities": {"fs": {"readTextFile": false, "writeTextFile": false}, "terminal": false},
+                "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
+            }),
+        ),
+    )
+    .await;
+    let init = match init {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => {
+            acp.kill().await;
+            return Err(e);
+        }
+        Err(_) => {
+            acp.kill().await;
+            return Err(anyhow!("the agent didn't answer the ACP handshake within {}s", budget.as_secs()));
+        }
+    };
+    let can_load = init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false);
+    Ok(Conn { acp, rx, can_load, loaded: HashSet::new() })
 }
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {

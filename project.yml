@@ -26,6 +26,9 @@ targets:
       - Codync-macOS
     dependencies:
       - package: CodyncKit
+        product: CodyncKit
+      - package: CodyncKit
+        product: CodyncUI
     settings:
       base:
         PRODUCT_NAME: Codync
@@ -65,6 +68,7 @@ targets:
           else
             cargo build --manifest-path "$SRCROOT/host/Cargo.toml" && BIN="$SRCROOT/host/target/debug/codync-host"
           fi
+          [ -n "$BIN" ] || { echo "error: building codync-host failed"; exit 1; }
           DEST="$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/codync-host"
           cp "$BIN" "$DEST"
           if [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ] && [ "$CODE_SIGNING_ALLOWED" != "NO" ]; then
@@ -77,6 +81,9 @@ targets:
       - Codync-iOS
     dependencies:
       - package: CodyncKit
+        product: CodyncKit
+      - package: CodyncKit
+        product: CodyncUI
       - target: CodyncWidgets
         embed: true
     settings:
@@ -106,6 +113,7 @@ targets:
       - CodyncWidgets
     dependencies:
       - package: CodyncKit
+        product: CodyncKit
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
     settings:

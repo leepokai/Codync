@@ -1,25 +1,25 @@
 import CodyncKit
+import CodyncUI
 import SwiftUI
 import UserNotifications
+import WidgetKit
 
 @main
 struct CodyncApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var model = AppModel()
-    @State private var router = Router.shared
+    @State private var model = AppStore.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(model)
-                .environment(router)
                 .tint(Palette.accent)
                 .onOpenURL { url in
                     if let p = Pairing(url: url) {
                         model.pair(p)
                     } else if url.host() == "bot" {
-                        router.open(botId: url.lastPathComponent)
+                        model.selection = url.lastPathComponent
                     }
                 }
                 .onChange(of: scenePhase, initial: true) { _, phase in
@@ -37,15 +37,20 @@ struct CodyncApp: App {
     }
 }
 
+/// The phone's store, wired to push registration, Live Activities and widgets.
 @MainActor
-@Observable
-final class Router {
-    static let shared = Router()
-    var path: [String] = []
-
-    func open(botId: String) {
-        path = [botId]
-    }
+enum AppStore {
+    static let shared: BotStore = {
+        let store = BotStore(pairing: SharedStore.pairing, clientKind: "ios", persistsPairing: true)
+        store.onPaired = { PushRegistrar.shared.syncDevice(with: $0) }
+        store.onBotUpdated = { LiveActivities.shared.update(bot: $0) }
+        store.onSent = { LiveActivities.shared.start(for: $0, model: store) }
+        store.onUsageChanged = { usage in
+            SharedStore.usage = usage
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+        return store
+    }()
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -61,7 +66,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let botId = response.notification.request.content.userInfo["botId"] as? String
         if let botId {
-            await MainActor.run { Router.shared.open(botId: botId) }
+            await MainActor.run { AppStore.shared.selection = botId }
         }
     }
 

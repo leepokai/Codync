@@ -22,6 +22,7 @@ pub struct Hub {
     pub store: Store,
     pub host_id: String,
     pub token: String,
+    pub port: u16,
     pub events: broadcast::Sender<Value>,
     /// Held across "mutate store + broadcast" so events leave in rev order.
     emit_lock: Mutex<()>,
@@ -35,12 +36,13 @@ pub struct Hub {
 }
 
 impl Hub {
-    pub fn new(store: Store, host_id: String, token: String) -> Arc<Self> {
+    pub fn new(store: Store, host_id: String, token: String, port: u16) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
         Arc::new(Self {
             store,
             host_id,
             token,
+            port,
             events,
             emit_lock: Mutex::new(()),
             bots: Default::default(),
@@ -238,7 +240,7 @@ fn validate(cfg: &BotConfig) -> Result<()> {
     if !std::path::Path::new(&cfg.cwd).is_dir() {
         return Err(anyhow!("workspace folder does not exist: {}", cfg.cwd));
     }
-    if cfg.command.as_deref().map(str::trim).unwrap_or_default().is_empty() && crate::backends::command(&cfg.backend).is_none() {
+    if cfg.command.as_deref().map(str::trim).unwrap_or_default().is_empty() && !crate::backends::is_known(&cfg.backend) {
         return Err(anyhow!("unknown backend {}", cfg.backend));
     }
     Ok(())

@@ -123,8 +123,8 @@ struct UsageWidgetView: View {
                             }
                         }
                         .frame(height: 5)
-                        if family == .systemMedium, let reset = item.window.resetDate {
-                            Text("resets \(reset, style: .relative)").font(.system(size: 9)).foregroundStyle(Palette.tertiary)
+                        if family == .systemMedium, let reset = item.window.resetDescription {
+                            Text(reset).font(.system(size: 9)).foregroundStyle(Palette.tertiary)
                         }
                     }
                 }

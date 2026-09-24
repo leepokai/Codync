@@ -1,25 +1,27 @@
 import CodyncKit
 import SwiftUI
 
-struct EditorRequest: Identifiable {
-    let id = UUID()
-    var draft: BotDraft
+public struct EditorRequest: Identifiable {
+    public let id = UUID()
+    public var draft: BotDraft
 
-    init(_ draft: BotDraft) { self.draft = draft }
+    public init(_ draft: BotDraft) { self.draft = draft }
 }
 
 /// Create or edit a bot: who it is, which agent, which project, how much it may do alone.
-struct BotEditorView: View {
-    @Environment(AppModel.self) private var model
+public struct BotEditorView: View {
+    @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State var draft: BotDraft
+
+    public init(draft: BotDraft) { _draft = State(initialValue: draft) }
     @State private var saving = false
     @State private var error: String?
     @State private var pickingFolder = false
 
     private var isNew: Bool { draft.id == nil }
 
-    var body: some View {
+    public var body: some View {
         Form {
             Section {
                 VStack(spacing: 14) {
@@ -55,11 +57,11 @@ struct BotEditorView: View {
                 if draft.backend == "custom" {
                     TextField("ACP command, e.g. my-agent --acp", text: Binding(get: { draft.command ?? "" }, set: { draft.command = $0.isEmpty ? nil : $0 }))
                         .font(.callout.monospaced())
-                        .textInputAutocapitalization(.never)
+                        .plainTextInput()
                         .autocorrectionDisabled()
                 }
                 TextField("Model (optional)", text: Binding(get: { draft.model ?? "" }, set: { draft.model = $0.isEmpty ? nil : $0 }))
-                    .textInputAutocapitalization(.never)
+                    .plainTextInput()
                     .autocorrectionDisabled()
             }
 
@@ -98,7 +100,7 @@ struct BotEditorView: View {
         .scrollContentBackground(.hidden)
         .background(Palette.background)
         .navigationTitle(isNew ? "New bot" : "Edit bot")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
@@ -137,7 +139,7 @@ struct BotEditorView: View {
             do {
                 let bot = try await model.save(draft)
                 dismiss()
-                if isNew { Router.shared.open(botId: bot.id) }
+                if isNew { model.selection = bot.id }
             } catch {
                 self.error = error.localizedDescription
             }
@@ -188,7 +190,7 @@ struct AvatarPicker: View {
 struct FolderPicker: View {
     let path: String?
     let onPick: (String) -> Void
-    @Environment(AppModel.self) private var model
+    @Environment(BotStore.self) private var model
     @State private var listing: DirListing?
     @State private var error: String?
     @State private var filter = ""
@@ -228,7 +230,7 @@ struct FolderPicker: View {
         }
         .searchable(text: $filter)
         .navigationTitle(listing.map { ($0.path as NSString).lastPathComponent } ?? "Folders")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .task {
             do { listing = try await model.listDirs(path) } catch { self.error = error.localizedDescription }
         }

@@ -1,4 +1,5 @@
 import CodyncKit
+import CodyncUI
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
@@ -16,11 +17,18 @@ struct CodyncMacApp: App {
                 .task { host.start() }
         }
         .menuBarExtraStyle(.window)
+
+        Window("Codync", id: "chat") {
+            ChatWindow()
+                .environment(host)
+        }
+        .defaultSize(width: 1100, height: 760)
     }
 }
 
 struct MenuView: View {
     @Environment(HostController.self) private var host
+    @Environment(\.openWindow) private var openWindow
     @State private var showPairing = false
 
     var body: some View {
@@ -48,10 +56,17 @@ struct MenuView: View {
             Spacer()
             if host.state == .running {
                 Button {
+                    openWindow(id: "chat")
+                    NSApp.activate()
+                } label: {
+                    Label("Open", systemImage: "bubble.left.and.bubble.right")
+                }
+                .controlSize(.small)
+                Button {
                     showPairing.toggle()
                     if showPairing { host.loadPairing() }
                 } label: {
-                    Label("Pair iPhone", systemImage: "qrcode")
+                    Label("Pair", systemImage: "qrcode")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Palette.accentFill)
@@ -118,6 +133,12 @@ struct MenuView: View {
                     VStack(spacing: 2) {
                         ForEach(host.bots) { bot in
                             BotLine(bot: bot) { host.stop(bot) }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    host.store?.selection = bot.id
+                                    openWindow(id: "chat")
+                                    NSApp.activate()
+                                }
                         }
                     }
                     .padding(6)

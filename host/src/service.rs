@@ -242,6 +242,54 @@ pub fn remove_legacy_hooks(settings: &std::path::Path) -> Result<usize> {
     Ok(removed)
 }
 
+const STATUSLINE_MARK: &str = " statusline --";
+
+/// Routes Claude Code's status line through `codync-host statusline` so usage
+/// limits reach the host locally. An existing status line keeps working: it is
+/// wrapped (`codync-host statusline -- <original>`) and restored on uninstall.
+pub fn ensure_statusline(settings: &std::path::Path) -> Result<bool> {
+    let text = std::fs::read_to_string(settings).unwrap_or_else(|_| "{}".into());
+    let mut v: serde_json::Value = serde_json::from_str(&text).context("parsing Claude settings")?;
+    let current = v["statusLine"]["command"].as_str().map(str::to_owned);
+    if current.as_deref().is_some_and(|c| c.contains(" statusline")) {
+        return Ok(false);
+    }
+    if v.get("statusLine").is_some() && current.is_none() {
+        return Ok(false); // not a command status line; leave it alone
+    }
+    let exe = std::env::current_exe()?.canonicalize()?;
+    let ours = format!("'{}' statusline", exe.to_string_lossy());
+    let command = match current {
+        Some(original) => format!("{ours} -- {original}"),
+        None => ours,
+    };
+    v["statusLine"] = serde_json::json!({"type": "command", "command": command});
+    if let Some(parent) = settings.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(settings, serde_json::to_string_pretty(&v)? + "\n")?;
+    Ok(true)
+}
+
+/// Undoes `ensure_statusline`.
+pub fn restore_statusline(settings: &std::path::Path) -> Result<()> {
+    let Ok(text) = std::fs::read_to_string(settings) else { return Ok(()) };
+    let mut v: serde_json::Value = serde_json::from_str(&text)?;
+    let Some(cmd) = v["statusLine"]["command"].as_str().map(str::to_owned) else { return Ok(()) };
+    // Ours always starts with the quoted host path followed by ` statusline`.
+    if !cmd.starts_with('\'') || !cmd.contains("' statusline") {
+        return Ok(());
+    }
+    match cmd.split_once(STATUSLINE_MARK) {
+        Some((_, original)) => v["statusLine"]["command"] = original.trim().into(),
+        None => {
+            v.as_object_mut().unwrap().remove("statusLine");
+        }
+    }
+    std::fs::write(settings, serde_json::to_string_pretty(&v)? + "\n")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod legacy_tests {
     #[test]
@@ -260,5 +308,20 @@ mod legacy_tests {
         assert!(v["hooks"].get("Notification").is_none());
         assert_eq!(v["model"], "x");
         assert!(dir.join("settings.json.codync-backup").exists());
+    }
+
+    #[test]
+    fn statusline_wraps_and_restores() {
+        let dir = std::env::temp_dir().join(format!("codync-sl-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("settings.json");
+        std::fs::write(&f, r#"{"statusLine":{"type":"command","command":"sh ~/mine.sh"}}"#).unwrap();
+        assert!(super::ensure_statusline(&f).unwrap());
+        assert!(!super::ensure_statusline(&f).unwrap(), "idempotent");
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
+        assert!(v["statusLine"]["command"].as_str().unwrap().ends_with("statusline -- sh ~/mine.sh"));
+        super::restore_statusline(&f).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
+        assert_eq!(v["statusLine"]["command"], "sh ~/mine.sh");
     }
 }

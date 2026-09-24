@@ -1,10 +1,11 @@
 import CodyncKit
+import CodyncUI
 import SwiftUI
 import VisionKit
 
 /// First run: explain the model, then pair with a computer running codync-host.
 struct PairingView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(BotStore.self) private var model
     @State private var scanning = false
     @State private var pasted = ""
     @State private var error: String?

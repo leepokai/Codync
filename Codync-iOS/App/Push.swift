@@ -1,5 +1,6 @@
 import ActivityKit
 import CodyncKit
+import CodyncUI
 import Foundation
 import UIKit
 import UserNotifications
@@ -33,7 +34,7 @@ final class PushRegistrar {
     static let shared = PushRegistrar()
 
     private var deviceToken: Data?
-    private weak var model: AppModel?
+    private weak var model: BotStore?
 
     func requestAuthorization() async -> Bool {
         let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
@@ -47,7 +48,7 @@ final class PushRegistrar {
     }
 
     /// Sends our ticket to the host whenever we have both a token and a pairing.
-    func syncDevice(with model: AppModel) {
+    func syncDevice(with model: BotStore) {
         self.model = model
         guard let token = deviceToken else {
             Task {
@@ -78,7 +79,7 @@ final class LiveActivities {
         Activity<BotActivityAttributes>.activities.first { $0.attributes.botId == botId }
     }
 
-    func start(for bot: Bot, model: AppModel) {
+    func start(for bot: Bot, model: BotStore) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled, Self.find(bot.id) == nil, let client = model.client else { return }
         let attributes = BotActivityAttributes(bot: bot)
         Task.detached { await Self.request(attributes: attributes, client: client) }

@@ -1,34 +1,45 @@
 import CodyncKit
 import Foundation
 import Observation
-import UIKit
-import WidgetKit
 import os
 
-private let log = Logger(subsystem: "com.pokai.Codync.ios", category: "AppModel")
+private let log = Logger(subsystem: "com.pokai.Codync", category: "BotStore")
 
-/// Single source of truth for the phone: mirrors the host's bots and
-/// transcripts via one SSE stream (catch-up since `rev`, then live).
+/// Single source of truth for a Codync client (iPhone app, Mac window): mirrors
+/// the host's bots and transcripts via one SSE stream (catch-up since `rev`, then live).
 @MainActor
 @Observable
-final class AppModel {
-    enum Connection: Equatable {
+public final class BotStore {
+    public enum Connection: Equatable {
         case unpaired
         case connecting
         case online
         case offline(String)
     }
 
-    private(set) var pairing: Pairing? = SharedStore.pairing
-    private(set) var connection: Connection = .unpaired
-    private(set) var client: HostClient?
-    private(set) var hello: Hello?
-    private(set) var bots: [String: Bot] = [:]
-    private(set) var entries: [String: [Entry]] = [:]
-    private(set) var usage = SharedStore.usage ?? Usage()
+    public private(set) var pairing: Pairing?
+    public private(set) var connection: Connection = .unpaired
+    public private(set) var client: HostClient?
+    public private(set) var hello: Hello?
+    public private(set) var bots: [String: Bot] = [:]
+    public private(set) var entries: [String: [Entry]] = [:]
+    public private(set) var usage = SharedStore.usage ?? Usage()
     /// Bots whose older history has been fully paged in.
-    private(set) var historyComplete: Set<String> = []
-    var lastError: String?
+    public private(set) var historyComplete: Set<String> = []
+    public var lastError: String?
+    /// The open conversation (iOS navigation path / Mac sidebar selection).
+    public var selection: String?
+
+    // Platform hooks (push registration, Live Activities, widgets).
+    public var onPaired: (@MainActor (BotStore) -> Void)?
+    public var onBotUpdated: (@MainActor (Bot) -> Void)?
+    public var onUsageChanged: (@MainActor (Usage) -> Void)?
+    public var onSent: (@MainActor (Bot) -> Void)?
+
+    /// `ios` clients suppress pushes while connected; others don't.
+    private let clientKind: String
+    /// Whether pairing lives in the shared App Group (iPhone) or is supplied each launch (Mac).
+    private let persistsPairing: Bool
 
     private var rev: Int64 = 0
     private var hostId: String?
@@ -37,46 +48,61 @@ final class AppModel {
     private var saveTask: Task<Void, Never>?
     private var rewound = false
 
-    init() {
+    public init(pairing: Pairing?, clientKind: String, persistsPairing: Bool) {
+        self.pairing = pairing
+        self.clientKind = clientKind
+        self.persistsPairing = persistsPairing
         loadCache()
         connection = pairing == nil ? .unpaired : .connecting
     }
 
     // MARK: derived
 
-    var hostName: String { hello?.name ?? pairing?.name ?? "Computer" }
+    private var orderedPairing: Pairing? {
+        guard persistsPairing else { return pairing }
+        return SharedStore.orderedPairing ?? pairing
+    }
+
+    public var hostName: String { hello?.name ?? pairing?.name ?? "Computer" }
 
     /// Roster order: pinned first (manual order not tracked yet), then most recent activity.
-    var roster: [Bot] {
+    public var roster: [Bot] {
         bots.values.filter { !$0.hidden }.sorted {
             if $0.pinned != $1.pinned { return $0.pinned }
             return $0.lastAt > $1.lastAt
         }
     }
 
-    var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
+    /// Display name for a harness id, as the host reports it (falls back to the built-in list).
+    public func backendName(_ id: String) -> String {
+        hello?.backends.first { $0.id == id }?.name ?? BackendInfo.name(id)
+    }
 
-    func thread(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
+
+    public func thread(_ botId: String) -> [Entry] { entries[botId] ?? [] }
 
     // MARK: pairing
 
-    func pair(_ p: Pairing) {
+    public func pair(_ p: Pairing) {
         let changedHost = pairing?.token != p.token
         pairing = p
-        SharedStore.pairing = p
-        SharedStore.preferredURL = nil
+        if persistsPairing {
+            SharedStore.pairing = p
+            SharedStore.preferredURL = nil
+        }
         if changedHost { resetMirror() }
         connection = .connecting
         restartStream()
-        PushRegistrar.shared.syncDevice(with: self)
+        onPaired?(self)
     }
 
-    func unpair() {
+    public func unpair() {
         streamTask?.cancel()
         pairing = nil
         client = nil
         hello = nil
-        SharedStore.pairing = nil
+        if persistsPairing { SharedStore.pairing = nil }
         resetMirror()
         connection = .unpaired
     }
@@ -92,7 +118,7 @@ final class AppModel {
 
     // MARK: lifecycle
 
-    func setActive(_ active: Bool) {
+    public func setActive(_ active: Bool) {
         isActive = active
         if active {
             restartStream()
@@ -104,7 +130,7 @@ final class AppModel {
         }
     }
 
-    func restartStream() {
+    public func restartStream() {
         streamTask?.cancel()
         guard pairing != nil, isActive else { return }
         streamTask = Task { [weak self] in await self?.runStream() }
@@ -113,7 +139,7 @@ final class AppModel {
     private func runStream() async {
         var backoff: Double = 1
         while !Task.isCancelled {
-            guard let pairing = SharedStore.orderedPairing else { return }
+            guard let pairing = orderedPairing else { return }
             if connection != .online { connection = .connecting }
             guard let client = await HostClient.resolve(pairing) else {
                 connection = .offline(HostError.unreachable.localizedDescription)
@@ -122,7 +148,7 @@ final class AppModel {
                 continue
             }
             self.client = client
-            SharedStore.preferredURL = client.baseURL.absoluteString
+            if persistsPairing { SharedStore.preferredURL = client.baseURL.absoluteString }
             do {
                 if hello == nil || hello?.hostId != hostId {
                     let h = try await client.hello()
@@ -133,7 +159,7 @@ final class AppModel {
                         cacheStamp = nil
                     }
                 }
-                for try await event in client.events(since: rev, client: "ios") {
+                for try await event in client.events(since: rev, client: clientKind) {
                     connection = .online
                     backoff = 1
                     apply(event)
@@ -167,7 +193,7 @@ final class AppModel {
         case let .bot(bot):
             bots[bot.id] = bot
             bump(bot.rev)
-            LiveActivities.shared.update(bot: bot)
+            onBotUpdated?(bot)
         case let .botDeleted(id, r):
             bots[id] = nil
             entries[id] = nil
@@ -196,6 +222,8 @@ final class AppModel {
     private func upsert(_ e: Entry) {
         var list = entries[e.botId] ?? []
         if let i = list.firstIndex(where: { $0.id == e.id }) {
+            // A late API response mustn't undo a newer SSE update.
+            guard e.rev >= list[i].rev else { return }
             list[i] = e
         } else {
             // Replace the optimistic copy of a message we sent.
@@ -215,8 +243,7 @@ final class AppModel {
     private func setUsage(_ u: Usage) {
         guard u != usage else { return }
         usage = u
-        SharedStore.usage = u
-        WidgetCenter.shared.reloadAllTimelines()
+        onUsageChanged?(u)
     }
 
     // MARK: actions
@@ -226,7 +253,7 @@ final class AppModel {
         return client
     }
 
-    func send(_ text: String, to botId: String) {
+    public func send(_ text: String, to botId: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let nonce = UUID().uuidString
@@ -240,20 +267,20 @@ final class AppModel {
             do {
                 let e = try await require().send(botId: botId, text: trimmed, clientNonce: nonce)
                 upsert(e)
-                if let bot = bots[botId] { LiveActivities.shared.start(for: bot, model: self) }
+                if let bot = bots[botId] { onSent?(bot) }
             } catch {
                 markLocal(nonce: nonce, botId: botId, status: "failed")
             }
         }
     }
 
-    func retry(_ entry: Entry) {
+    public func retry(_ entry: Entry) {
         guard let text = entry.data.text else { return }
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         send(text, to: entry.botId)
     }
 
-    func discard(_ entry: Entry) {
+    public func discard(_ entry: Entry) {
         entries[entry.botId]?.removeAll { $0.id == entry.id }
     }
 
@@ -263,56 +290,56 @@ final class AppModel {
         entries[botId] = list
     }
 
-    func stop(_ botId: String) { perform { try await $0.stop(botId) } }
-    func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
+    public func stop(_ botId: String) { perform { try await $0.stop(botId) } }
+    public func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
 
-    func respond(_ entry: Entry, option: String?) {
+    public func respond(_ entry: Entry, option: String?) {
         perform { try await $0.respondPermission(entryId: entry.id, optionId: option) }
     }
 
-    func markRead(_ botId: String) {
+    public func markRead(_ botId: String) {
         guard (bots[botId]?.unread ?? 0) > 0 else { return }
         bots[botId]?.unread = 0
         perform { try await $0.markRead(botId) }
     }
 
-    func setPinned(_ bot: Bot, _ pinned: Bool) {
+    public func setPinned(_ bot: Bot, _ pinned: Bool) {
         var d = BotDraft(bot)
         d.pinned = pinned
         bots[bot.id]?.pinned = pinned
         perform { _ = try await $0.updateBot(d) }
     }
 
-    func setHidden(_ bot: Bot, _ hidden: Bool) {
+    public func setHidden(_ bot: Bot, _ hidden: Bool) {
         var d = BotDraft(bot)
         d.hidden = hidden
         bots[bot.id]?.hidden = hidden
         perform { _ = try await $0.updateBot(d) }
     }
 
-    func delete(_ bot: Bot) {
+    public func delete(_ bot: Bot) {
         bots[bot.id] = nil
         entries[bot.id] = nil
         perform { try await $0.deleteBot(bot.id) }
     }
 
-    func save(_ draft: BotDraft) async throws -> Bot {
+    public func save(_ draft: BotDraft) async throws -> Bot {
         let client = try require()
         let bot = draft.id == nil ? try await client.createBot(draft) : try await client.updateBot(draft)
         bots[bot.id] = bot
         return bot
     }
 
-    func listDirs(_ path: String?) async throws -> DirListing {
+    public func listDirs(_ path: String?) async throws -> DirListing {
         try await require().listDirs(path)
     }
 
-    func refreshUsage() async {
+    public func refreshUsage() async {
         guard let client else { return }
         if let u = try? await client.usage(refresh: true) { setUsage(u) }
     }
 
-    func loadOlder(_ botId: String) async {
+    public func loadOlder(_ botId: String) async {
         guard let client, !historyComplete.contains(botId) else { return }
         let first = thread(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
         guard let older = try? await client.history(botId: botId, beforeSeq: first, limit: 100) else { return }
@@ -345,7 +372,7 @@ final class AppModel {
     private var cacheStamp: String?
 
     private static var cacheURL: URL {
-        URL.cachesDirectory.appending(path: "codync-mirror.json")
+        URL.cachesDirectory.appending(path: "codync-mirror-\(Bundle.main.bundleIdentifier ?? "app").json")
     }
 
     private func loadCache() {
@@ -368,7 +395,7 @@ final class AppModel {
         }
     }
 
-    func saveCache() {
+    public func saveCache() {
         // Keep the newest 200 entries per bot; older ones page in from the host.
         let kept = entries.values.flatMap { $0.filter { !$0.id.hasPrefix("local-") }.suffix(200) }
         let cache = Cache(stamp: "\(Self.appBuild)/\(hello?.version ?? "")", hostId: hostId, rev: rev, bots: Array(bots.values), entries: kept)

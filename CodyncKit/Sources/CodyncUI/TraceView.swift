@@ -3,12 +3,14 @@ import SwiftUI
 
 /// "Full conversation": everything the agent did — narration, thinking, tool
 /// calls with output and diffs, plans — grouped by turn.
-struct TraceView: View {
+public struct TraceView: View {
     let botId: String
-    @Environment(AppModel.self) private var model
+
+    public init(botId: String) { self.botId = botId }
+    @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
 
-    var body: some View {
+    public var body: some View {
         let turns = Dictionary(grouping: model.thread(botId), by: \.turn)
             .sorted { $0.key < $1.key }
         List {
@@ -25,11 +27,11 @@ struct TraceView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .groupedList()
         .scrollContentBackground(.hidden)
         .background(Palette.background)
         .navigationTitle("Full conversation")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
         }

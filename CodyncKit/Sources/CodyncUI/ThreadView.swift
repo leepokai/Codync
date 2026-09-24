@@ -3,9 +3,11 @@ import SwiftUI
 
 /// One endless conversation with a bot. Only deliberate messages show here;
 /// tool calls and thinking live in the "Full conversation" sheet.
-struct ThreadView: View {
+public struct ThreadView: View {
     let botId: String
-    @Environment(AppModel.self) private var model
+
+    public init(botId: String) { self.botId = botId }
+    @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
     @State private var showTrace = false
@@ -16,7 +18,7 @@ struct ThreadView: View {
 
     private var bot: Bot? { model.bots[botId] }
 
-    var body: some View {
+    public var body: some View {
         let thread = model.thread(botId)
         let items = ChatItem.build(thread)
         ScrollViewReader { proxy in
@@ -57,10 +59,10 @@ struct ThreadView: View {
         }
         .background(Palette.background)
         .safeAreaInset(edge: .bottom) { composer }
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .principal) { header }
-            ToolbarItem(placement: .topBarTrailing) { menu }
+            ToolbarItem(placement: .primaryAction) { menu }
         }
         .onAppear { model.markRead(botId) }
         .sheet(isPresented: $showTrace) {
@@ -126,7 +128,7 @@ struct ThreadView: View {
                     } else if let bot, bot.isWorking {
                         Text("Working").foregroundStyle(Palette.accent)
                     } else if let bot {
-                        Text("\(BackendInfo.name(bot.backend)) · \(bot.folderName)").foregroundStyle(Palette.tertiary)
+                        Text("\(model.backendName(bot.backend)) · \(bot.folderName)").foregroundStyle(Palette.tertiary)
                     }
                 }
                 .font(.caption2)
@@ -157,6 +159,7 @@ struct ThreadView: View {
         return HStack(alignment: .bottom, spacing: 8) {
             TextField(working ? "Message (queued until it's done)" : "Message \(bot?.name ?? "")", text: $draft, axis: .vertical)
                 .lineLimit(1...6)
+                .textFieldStyle(.plain)
                 .focused($composerFocused)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -230,7 +233,7 @@ struct ChatItem: Identifiable {
 struct UserBubble: View {
     let entry: Entry
     let botWorking: Bool
-    @Environment(AppModel.self) private var model
+    @Environment(BotStore.self) private var model
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
@@ -242,7 +245,7 @@ struct UserBubble: View {
                 .padding(.vertical, 9)
                 .background(Palette.accentFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = entry.data.text }
+                    Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
                 }
             status
         }
@@ -292,7 +295,7 @@ struct AgentBubble: View {
                 .padding(.vertical, 9)
                 .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = entry.data.text }
+                    Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
                     Button("Show what it did", systemImage: "list.bullet.rectangle", action: openTrace)
                 }
             Spacer(minLength: 24)
@@ -386,12 +389,13 @@ struct TypingDots: View {
 
 private struct IntroCard: View {
     let bot: Bot
+    @Environment(BotStore.self) private var model
 
     var body: some View {
         VStack(spacing: 12) {
             CharacterAvatar(bot: bot, size: 72)
             Text(bot.name).font(.title2.bold()).foregroundStyle(Palette.text)
-            Text("\(BackendInfo.name(bot.backend)) in \(bot.cwd)")
+            Text("\(model.backendName(bot.backend)) in \(bot.cwd)")
                 .font(.footnote.monospaced())
                 .foregroundStyle(Palette.tertiary)
                 .multilineTextAlignment(.center)

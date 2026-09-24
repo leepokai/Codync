@@ -158,7 +158,7 @@ struct MenuView: View {
                             HStack(spacing: 8) {
                                 Text("\(p.name) \(w.label)").font(.caption).foregroundStyle(Palette.secondary).frame(width: 130, alignment: .leading)
                                 ProgressView(value: min(w.percent, 100), total: 100)
-                                    .tint(w.percent >= 90 ? Palette.danger : w.percent >= 70 ? Palette.warning : Palette.accent)
+                                    .tint(Palette.usageTint(w.percent))
                                 Text("\(Int(w.percent.rounded()))%").font(.caption.monospacedDigit()).frame(width: 36, alignment: .trailing)
                             }
                         }

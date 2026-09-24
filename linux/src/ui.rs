@@ -1,7 +1,8 @@
 //! Main window: roster sidebar + conversation (Grok Bot's desktop layout).
 
 use crate::client::{self, Event};
-use crate::{avatar, dialogs, markup};
+use crate::rows::{agent_bubble, notice, permission_card, user_bubble};
+use crate::{avatar, dialogs};
 use adw::prelude::*;
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -44,16 +45,37 @@ pub type App = Rc<Ui>;
 
 pub fn build(app: &adw::Application) {
     // Sidebar
-    let roster = gtk::ListBox::builder().css_classes(["navigation-sidebar"]).build();
-    let usage_box = gtk::Box::builder().spacing(6).margin_start(12).margin_end(12).margin_bottom(6).build();
-    let usage_scroll = gtk::ScrolledWindow::builder().vscrollbar_policy(gtk::PolicyType::Never).child(&usage_box).build();
+    let roster = gtk::ListBox::builder()
+        .css_classes(["navigation-sidebar"])
+        .build();
+    let usage_box = gtk::Box::builder()
+        .spacing(6)
+        .margin_start(12)
+        .margin_end(12)
+        .margin_bottom(6)
+        .build();
+    let usage_scroll = gtk::ScrolledWindow::builder()
+        .vscrollbar_policy(gtk::PolicyType::Never)
+        .child(&usage_box)
+        .build();
     let banner = adw::Banner::new("Reconnecting to the Codync host…");
     let sidebar_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     sidebar_box.append(&banner);
     sidebar_box.append(&usage_scroll);
-    sidebar_box.append(&gtk::ScrolledWindow::builder().vexpand(true).child(&roster).build());
-    let new_btn = gtk::Button::builder().icon_name("document-edit-symbolic").tooltip_text("New bot").build();
-    let settings_btn = gtk::Button::builder().icon_name("emblem-system-symbolic").tooltip_text("Settings & pairing").build();
+    sidebar_box.append(
+        &gtk::ScrolledWindow::builder()
+            .vexpand(true)
+            .child(&roster)
+            .build(),
+    );
+    let new_btn = gtk::Button::builder()
+        .icon_name("document-edit-symbolic")
+        .tooltip_text("New bot")
+        .build();
+    let settings_btn = gtk::Button::builder()
+        .icon_name("emblem-system-symbolic")
+        .tooltip_text("Settings & pairing")
+        .build();
     let side_header = adw::HeaderBar::new();
     side_header.pack_start(&settings_btn);
     side_header.pack_end(&new_btn);
@@ -68,8 +90,14 @@ pub fn build(app: &adw::Application) {
     let head = gtk::Box::builder().spacing(8).build();
     head.append(&head_avatar);
     head.append(&title);
-    let trace_btn = gtk::Button::builder().icon_name("view-list-symbolic").tooltip_text("Full conversation").build();
-    let menu_btn = gtk::MenuButton::builder().icon_name("view-more-symbolic").tooltip_text("More").build();
+    let trace_btn = gtk::Button::builder()
+        .icon_name("view-list-symbolic")
+        .tooltip_text("Full conversation")
+        .build();
+    let menu_btn = gtk::MenuButton::builder()
+        .icon_name("view-more-symbolic")
+        .tooltip_text("More")
+        .build();
     let content_header = adw::HeaderBar::builder().title_widget(&head).build();
     content_header.pack_end(&menu_btn);
     content_header.pack_end(&trace_btn);
@@ -81,9 +109,21 @@ pub fn build(app: &adw::Application) {
         .margin_top(12)
         .margin_bottom(12)
         .build();
-    let clamp = adw::Clamp::builder().maximum_size(760).child(&thread).build();
-    let scroller = gtk::ScrolledWindow::builder().vexpand(true).child(&clamp).build();
-    let composer = gtk::TextView::builder().wrap_mode(gtk::WrapMode::WordChar).accepts_tab(false).hexpand(true).top_margin(4).bottom_margin(4).build();
+    let clamp = adw::Clamp::builder()
+        .maximum_size(760)
+        .child(&thread)
+        .build();
+    let scroller = gtk::ScrolledWindow::builder()
+        .vexpand(true)
+        .child(&clamp)
+        .build();
+    let composer = gtk::TextView::builder()
+        .wrap_mode(gtk::WrapMode::WordChar)
+        .accepts_tab(false)
+        .hexpand(true)
+        .top_margin(4)
+        .bottom_margin(4)
+        .build();
     let composer_frame = gtk::ScrolledWindow::builder()
         .child(&composer)
         .max_content_height(160)
@@ -92,9 +132,25 @@ pub fn build(app: &adw::Application) {
         .css_classes(["composer"])
         .hexpand(true)
         .build();
-    let send_btn = gtk::Button::builder().icon_name("go-up-symbolic").tooltip_text("Send").css_classes(["round", "accent-fill"]).valign(gtk::Align::End).build();
-    let stop_btn = gtk::Button::builder().icon_name("media-playback-stop-symbolic").tooltip_text("Stop").css_classes(["round"]).valign(gtk::Align::End).build();
-    let composer_row = gtk::Box::builder().spacing(8).margin_start(12).margin_end(12).margin_top(8).margin_bottom(12).build();
+    let send_btn = gtk::Button::builder()
+        .icon_name("go-up-symbolic")
+        .tooltip_text("Send")
+        .css_classes(["round", "accent-fill"])
+        .valign(gtk::Align::End)
+        .build();
+    let stop_btn = gtk::Button::builder()
+        .icon_name("media-playback-stop-symbolic")
+        .tooltip_text("Stop")
+        .css_classes(["round"])
+        .valign(gtk::Align::End)
+        .build();
+    let composer_row = gtk::Box::builder()
+        .spacing(8)
+        .margin_start(12)
+        .margin_end(12)
+        .margin_top(8)
+        .margin_bottom(12)
+        .build();
     composer_row.append(&composer_frame);
     composer_row.append(&stop_btn);
     composer_row.append(&send_btn);
@@ -115,11 +171,25 @@ pub fn build(app: &adw::Application) {
     content_view.set_content(Some(&content_stack));
     let content_page = adw::NavigationPage::new(&content_view, "Chat");
 
-    let split = adw::NavigationSplitView::builder().sidebar(&sidebar_page).content(&content_page).min_sidebar_width(260.0).build();
+    let split = adw::NavigationSplitView::builder()
+        .sidebar(&sidebar_page)
+        .content(&content_page)
+        .min_sidebar_width(260.0)
+        .build();
     let toasts = adw::ToastOverlay::new();
     toasts.set_child(Some(&split));
-    let window = adw::ApplicationWindow::builder().application(app).title("Codync").default_width(1100).default_height(760).content(&toasts).build();
-    let bp = adw::Breakpoint::new(adw::BreakpointCondition::new_length(adw::BreakpointConditionLengthType::MaxWidth, 640.0, adw::LengthUnit::Sp));
+    let window = adw::ApplicationWindow::builder()
+        .application(app)
+        .title("Codync")
+        .default_width(1100)
+        .default_height(760)
+        .content(&toasts)
+        .build();
+    let bp = adw::Breakpoint::new(adw::BreakpointCondition::new_length(
+        adw::BreakpointConditionLengthType::MaxWidth,
+        640.0,
+        adw::LengthUnit::Sp,
+    ));
     bp.add_setter(&split, "collapsed", Some(&true.to_value()));
     window.add_breakpoint(bp);
 
@@ -186,7 +256,9 @@ pub fn build(app: &adw::Application) {
         let ui2 = ui.clone();
         let keys = gtk::EventControllerKey::new();
         keys.connect_key_pressed(move |_, key, _, mods| {
-            if (key == gtk::gdk::Key::Return || key == gtk::gdk::Key::KP_Enter) && !mods.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+            if (key == gtk::gdk::Key::Return || key == gtk::gdk::Key::KP_Enter)
+                && !mods.contains(gtk::gdk::ModifierType::SHIFT_MASK)
+            {
                 send(&ui2);
                 return gtk::glib::Propagation::Stop;
             }
@@ -196,7 +268,9 @@ pub fn build(app: &adw::Application) {
     }
     {
         let ui2 = ui.clone();
-        ui.composer.buffer().connect_changed(move |_| update_composer(&ui2));
+        ui.composer
+            .buffer()
+            .connect_changed(move |_| update_composer(&ui2));
     }
     // Keep relative times fresh.
     {
@@ -284,8 +358,17 @@ fn notify(ui: &App, old: &Value, new: &Value) {
     }
     let name = new["name"].as_str().unwrap_or("Bot");
     let (title, body) = match (old["status"].as_str(), new["status"].as_str()) {
-        (Some(o), Some("needsInput")) if o != "needsInput" => (format!("{name} needs you"), new["activity"].as_str().unwrap_or("").to_owned()),
-        (Some("working" | "needsInput"), Some("idle")) => (name.to_owned(), new["lastMessage"].as_str().unwrap_or("Finished.").to_owned()),
+        (Some(o), Some("needsInput")) if o != "needsInput" => (
+            format!("{name} needs you"),
+            new["activity"].as_str().unwrap_or("").to_owned(),
+        ),
+        (Some("working" | "needsInput"), Some("idle")) => (
+            name.to_owned(),
+            new["lastMessage"]
+                .as_str()
+                .unwrap_or("Finished.")
+                .to_owned(),
+        ),
         _ => return,
     };
     let n = gtk::gio::Notification::new(&title);
@@ -337,7 +420,7 @@ pub fn render(ui: &App) {
     render_thread(ui);
 }
 
-fn working(b: &Value) -> bool {
+pub fn working(b: &Value) -> bool {
     matches!(b["status"].as_str(), Some("working" | "needsInput"))
 }
 
@@ -350,12 +433,18 @@ pub fn backend_name(st: &State, id: &str) -> String {
         .to_owned()
 }
 
-fn folder(p: &str) -> String {
-    std::path::Path::new(p).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| p.to_owned())
+pub fn folder(p: &str) -> String {
+    std::path::Path::new(p)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| p.to_owned())
 }
 
 pub fn ago(ms: i64) -> String {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
     let s = ((now - ms) / 1000).max(0);
     match s {
         0..60 => "now".into(),
@@ -373,9 +462,26 @@ fn render_usage(ui: &App) {
     for p in st.usage["providers"].as_array().into_iter().flatten() {
         for w in p["windows"].as_array().into_iter().flatten().take(2) {
             let pct = w["percent"].as_f64().unwrap_or(0.0);
-            let chip = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["chip"]).build();
-            chip.append(&gtk::Label::builder().label(format!("{} {}", p["name"].as_str().unwrap_or(""), w["label"].as_str().unwrap_or(""))).css_classes(["small", "muted"]).xalign(0.0).build());
-            let value = gtk::Label::builder().label(format!("{pct:.0}%")).xalign(0.0).css_classes(["heading"]).build();
+            let chip = gtk::Box::builder()
+                .orientation(gtk::Orientation::Vertical)
+                .css_classes(["chip"])
+                .build();
+            chip.append(
+                &gtk::Label::builder()
+                    .label(format!(
+                        "{} {}",
+                        p["name"].as_str().unwrap_or(""),
+                        w["label"].as_str().unwrap_or("")
+                    ))
+                    .css_classes(["small", "muted"])
+                    .xalign(0.0)
+                    .build(),
+            );
+            let value = gtk::Label::builder()
+                .label(format!("{pct:.0}%"))
+                .xalign(0.0)
+                .css_classes(["heading"])
+                .build();
             if pct >= 90.0 {
                 value.add_css_class("error");
             } else if pct >= 70.0 {
@@ -389,36 +495,119 @@ fn render_usage(ui: &App) {
 
 fn render_roster(ui: &App) {
     let st = ui.state.borrow();
-    let mut bots: Vec<&Value> = st.bots.values().filter(|b| !b["hidden"].as_bool().unwrap_or(false)).collect();
-    bots.sort_by_key(|b| (!b["pinned"].as_bool().unwrap_or(false), -b["lastAt"].as_i64().unwrap_or(0)));
+    let mut bots: Vec<&Value> = st
+        .bots
+        .values()
+        .filter(|b| !b["hidden"].as_bool().unwrap_or(false))
+        .collect();
+    bots.sort_by_key(|b| {
+        (
+            !b["pinned"].as_bool().unwrap_or(false),
+            -b["lastAt"].as_i64().unwrap_or(0),
+        )
+    });
     while let Some(c) = ui.roster.first_child() {
         ui.roster.remove(&c);
     }
     for b in bots {
         let id = b["id"].as_str().unwrap_or_default();
         let unread = b["unread"].as_i64().unwrap_or(0);
-        let status = if b["status"] == "needsInput" { "needs" } else if unread > 0 { "unread" } else { "" };
-        let row_box = gtk::Box::builder().spacing(10).margin_top(6).margin_bottom(6).build();
-        row_box.append(&avatar::widget(b["avatarShape"].as_str().unwrap_or("blob"), b["avatarColor"].as_str().unwrap_or("blue"), 40, working(b), status));
-        let text = gtk::Box::builder().orientation(gtk::Orientation::Vertical).hexpand(true).build();
+        let status = if b["status"] == "needsInput" {
+            "needs"
+        } else if unread > 0 {
+            "unread"
+        } else {
+            ""
+        };
+        let row_box = gtk::Box::builder()
+            .spacing(10)
+            .margin_top(6)
+            .margin_bottom(6)
+            .build();
+        row_box.append(&avatar::widget(
+            b["avatarShape"].as_str().unwrap_or("blob"),
+            b["avatarColor"].as_str().unwrap_or("blue"),
+            40,
+            working(b),
+            status,
+        ));
+        let text = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .hexpand(true)
+            .build();
         let top = gtk::Box::builder().spacing(6).build();
-        top.append(&gtk::Label::builder().label(b["name"].as_str().unwrap_or("")).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::End).css_classes(["heading"]).build());
-        let time = gtk::Label::builder().label(ago(b["lastAt"].as_i64().unwrap_or(0))).css_classes(["small", "muted"]).build();
+        top.append(
+            &gtk::Label::builder()
+                .label(b["name"].as_str().unwrap_or(""))
+                .xalign(0.0)
+                .hexpand(true)
+                .ellipsize(gtk::pango::EllipsizeMode::End)
+                .css_classes(["heading"])
+                .build(),
+        );
+        let time = gtk::Label::builder()
+            .label(ago(b["lastAt"].as_i64().unwrap_or(0)))
+            .css_classes(["small", "muted"])
+            .build();
         top.append(&time);
         text.append(&top);
         let (preview, class) = match b["status"].as_str() {
-            Some("needsInput") => (format!("✋ {}", b["activity"].as_str().filter(|s| !s.is_empty()).unwrap_or("Needs your approval")), "needs-text"),
-            Some("working") => (b["activity"].as_str().filter(|s| !s.is_empty()).unwrap_or("Working…").to_owned(), "accent-text"),
-            Some("error") => (b["lastMessage"].as_str().unwrap_or("Something went wrong").to_owned(), "error"),
+            Some("needsInput") => (
+                format!(
+                    "✋ {}",
+                    b["activity"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("Needs your approval")
+                ),
+                "needs-text",
+            ),
+            Some("working") => (
+                b["activity"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("Working…")
+                    .to_owned(),
+                "accent-text",
+            ),
+            Some("error") => (
+                b["lastMessage"]
+                    .as_str()
+                    .unwrap_or("Something went wrong")
+                    .to_owned(),
+                "error",
+            ),
             _ => (
-                b["lastMessage"].as_str().map(str::to_owned).unwrap_or_else(|| format!("{} · {}", backend_name(&st, b["backend"].as_str().unwrap_or("")), folder(b["cwd"].as_str().unwrap_or("")))),
+                b["lastMessage"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| {
+                        format!(
+                            "{} · {}",
+                            backend_name(&st, b["backend"].as_str().unwrap_or("")),
+                            folder(b["cwd"].as_str().unwrap_or(""))
+                        )
+                    }),
                 "dim-label",
             ),
         };
         let bottom = gtk::Box::builder().spacing(6).build();
-        bottom.append(&gtk::Label::builder().label(preview.replace('\n', " ")).xalign(0.0).hexpand(true).ellipsize(gtk::pango::EllipsizeMode::End).css_classes([class]).build());
+        bottom.append(
+            &gtk::Label::builder()
+                .label(preview.replace('\n', " "))
+                .xalign(0.0)
+                .hexpand(true)
+                .ellipsize(gtk::pango::EllipsizeMode::End)
+                .css_classes([class])
+                .build(),
+        );
         if unread > 0 {
-            bottom.append(&gtk::Label::builder().label(unread.to_string()).css_classes(["badge"]).build());
+            bottom.append(
+                &gtk::Label::builder()
+                    .label(unread.to_string())
+                    .css_classes(["badge"])
+                    .build(),
+            );
         }
         text.append(&bottom);
         row_box.append(&text);
@@ -449,7 +638,10 @@ fn render_thread(ui: &App) {
     };
     ui.content_stack.set_visible_child_name("chat");
     ui.chat_buttons.iter().for_each(|b| b.set_visible(true));
-    let switched = ui.shown_bot.replace(bot["id"].as_str().unwrap_or_default().to_owned()) != bot["id"].as_str().unwrap_or_default();
+    let switched = ui
+        .shown_bot
+        .replace(bot["id"].as_str().unwrap_or_default().to_owned())
+        != bot["id"].as_str().unwrap_or_default();
     let near_bottom = switched || {
         let adj = ui.scroller.vadjustment();
         adj.upper() - adj.value() - adj.page_size() < 120.0
@@ -458,22 +650,41 @@ fn render_thread(ui: &App) {
     let sub = match bot["status"].as_str() {
         Some("needsInput") => "Needs you".to_owned(),
         Some("working") => "Working".to_owned(),
-        _ => format!("{} · {}", backend_name(&st, bot["backend"].as_str().unwrap_or("")), folder(bot["cwd"].as_str().unwrap_or(""))),
+        _ => format!(
+            "{} · {}",
+            backend_name(&st, bot["backend"].as_str().unwrap_or("")),
+            folder(bot["cwd"].as_str().unwrap_or(""))
+        ),
     };
     ui.title.set_subtitle(&sub);
     while let Some(c) = ui.head_avatar.first_child() {
         ui.head_avatar.remove(&c);
     }
-    ui.head_avatar.append(&avatar::widget(bot["avatarShape"].as_str().unwrap_or("blob"), bot["avatarColor"].as_str().unwrap_or("blue"), 28, working(bot), ""));
+    ui.head_avatar.append(&avatar::widget(
+        bot["avatarShape"].as_str().unwrap_or("blob"),
+        bot["avatarColor"].as_str().unwrap_or("blue"),
+        28,
+        working(bot),
+        "",
+    ));
 
     while let Some(c) = ui.thread.first_child() {
         ui.thread.remove(&c);
     }
-    let entries: Vec<&Value> = st.entries.get(bot["id"].as_str().unwrap_or_default()).map(|l| l.iter().filter(|e| is_chat(e)).collect()).unwrap_or_default();
+    let entries: Vec<&Value> = st
+        .entries
+        .get(bot["id"].as_str().unwrap_or_default())
+        .map(|l| l.iter().filter(|e| is_chat(e)).collect())
+        .unwrap_or_default();
     if entries.is_empty() {
         let intro = adw::StatusPage::builder()
             .title(bot["name"].as_str().unwrap_or(""))
-            .description(format!("{} in {}\n\n{}\n\nTell it what you need.", backend_name(&st, bot["backend"].as_str().unwrap_or("")), bot["cwd"].as_str().unwrap_or(""), bot["description"].as_str().unwrap_or("")))
+            .description(format!(
+                "{} in {}\n\n{}\n\nTell it what you need.",
+                backend_name(&st, bot["backend"].as_str().unwrap_or("")),
+                bot["cwd"].as_str().unwrap_or(""),
+                bot["description"].as_str().unwrap_or("")
+            ))
             .build();
         ui.thread.append(&intro);
     }
@@ -482,13 +693,24 @@ fn render_thread(ui: &App) {
     for e in entries {
         let at = e["createdAt"].as_i64().unwrap_or(0);
         if at - last_time > 3_600_000 {
-            ui.thread.append(&gtk::Label::builder().label(ago(at)).css_classes(["small", "muted"]).margin_top(12).margin_bottom(6).build());
+            ui.thread.append(
+                &gtk::Label::builder()
+                    .label(ago(at))
+                    .css_classes(["small", "muted"])
+                    .margin_top(12)
+                    .margin_bottom(6)
+                    .build(),
+            );
             last_author = "";
         }
         last_time = at;
         let kind = e["kind"].as_str().unwrap_or_default();
         let start = kind != last_author;
-        last_author = if kind == "user" || kind == "agent" { kind } else { "" };
+        last_author = if kind == "user" || kind == "agent" {
+            kind
+        } else {
+            ""
+        };
         match kind {
             "user" => ui.thread.append(&user_bubble(e, working(bot), start)),
             "agent" => ui.thread.append(&agent_bubble(e, bot, start)),
@@ -498,11 +720,39 @@ fn render_thread(ui: &App) {
     }
     if working(bot) {
         let row = gtk::Box::builder().spacing(8).margin_top(10).build();
-        row.append(&avatar::widget(bot["avatarShape"].as_str().unwrap_or("blob"), bot["avatarColor"].as_str().unwrap_or("blue"), 28, true, ""));
+        row.append(&avatar::widget(
+            bot["avatarShape"].as_str().unwrap_or("blob"),
+            bot["avatarColor"].as_str().unwrap_or("blue"),
+            28,
+            true,
+            "",
+        ));
         let col = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        col.append(&gtk::Label::builder().label("•••").css_classes(["bubble", "bubble-agent", "muted"]).halign(gtk::Align::Start).build());
-        let act = bot["activity"].as_str().filter(|s| !s.is_empty()).unwrap_or("Working…");
-        col.append(&gtk::Label::builder().label(act).xalign(0.0).css_classes(["small", if bot["status"] == "needsInput" { "needs-text" } else { "dim-label" }]).build());
+        col.append(
+            &gtk::Label::builder()
+                .label("•••")
+                .css_classes(["bubble", "bubble-agent", "muted"])
+                .halign(gtk::Align::Start)
+                .build(),
+        );
+        let act = bot["activity"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Working…");
+        col.append(
+            &gtk::Label::builder()
+                .label(act)
+                .xalign(0.0)
+                .css_classes([
+                    "small",
+                    if bot["status"] == "needsInput" {
+                        "needs-text"
+                    } else {
+                        "dim-label"
+                    },
+                ])
+                .build(),
+        );
         row.append(&col);
         ui.thread.append(&row);
     }
@@ -513,132 +763,11 @@ fn render_thread(ui: &App) {
         gtk::glib::idle_add_local_once(move || {
             adj.set_value(adj.upper());
             let adj2 = adj.clone();
-            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || adj2.set_value(adj2.upper()));
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || {
+                adj2.set_value(adj2.upper())
+            });
         });
     }
-}
-
-fn user_bubble(e: &Value, bot_working: bool, start: bool) -> gtk::Widget {
-    let col = gtk::Box::builder().orientation(gtk::Orientation::Vertical).halign(gtk::Align::End).margin_start(60).margin_top(if start { 12 } else { 2 }).build();
-    col.append(&gtk::Label::builder().label(e["data"]["text"].as_str().unwrap_or("")).wrap(true).wrap_mode(gtk::pango::WrapMode::WordChar).selectable(true).xalign(0.0).css_classes(["bubble", "bubble-user"]).build());
-    let status = match e["data"]["status"].as_str() {
-        Some("sending") => "Sending…",
-        Some("queued") if bot_working => "Waiting to send — it'll read this when it's done",
-        Some("failed") => "Failed to send",
-        Some("cancelled") => "Not sent — stopped",
-        _ => "",
-    };
-    if !status.is_empty() {
-        col.append(&gtk::Label::builder().label(status).css_classes(["small", "muted"]).halign(gtk::Align::End).build());
-    }
-    col.upcast()
-}
-
-fn agent_bubble(e: &Value, bot: &Value, start: bool) -> gtk::Widget {
-    let row = gtk::Box::builder().spacing(8).margin_end(60).margin_top(if start { 12 } else { 2 }).build();
-    if start {
-        row.append(&avatar::widget(bot["avatarShape"].as_str().unwrap_or("blob"), bot["avatarColor"].as_str().unwrap_or("blue"), 28, false, ""));
-    } else {
-        row.append(&gtk::Box::builder().width_request(28).build());
-    }
-    let label = gtk::Label::builder()
-        .use_markup(true)
-        .label(markup::to_pango(e["data"]["text"].as_str().unwrap_or("")))
-        .wrap(true)
-        .wrap_mode(gtk::pango::WrapMode::WordChar)
-        .selectable(true)
-        .xalign(0.0)
-        .css_classes(["bubble", "bubble-agent"])
-        .valign(gtk::Align::End)
-        .build();
-    row.append(&label);
-    row.upcast()
-}
-
-fn notice(e: &Value) -> gtk::Widget {
-    let text = e["data"]["text"].as_str().unwrap_or("");
-    let label = gtk::Label::builder().label(text).wrap(true).selectable(true).margin_top(10).build();
-    match e["data"]["style"].as_str() {
-        Some("error") => {
-            label.add_css_class("notice-error");
-            label.set_xalign(0.0);
-        }
-        _ => label.add_css_class("dim-label"),
-    }
-    label.upcast()
-}
-
-fn permission_card(ui: &App, st: &State, e: &Value) -> gtk::Widget {
-    let d = &e["data"];
-    let pending = d["status"] == "pending";
-    let card = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(6).css_classes(["card"]).margin_start(36).margin_top(12).build();
-    if pending {
-        card.add_css_class("pending");
-    }
-    let headline = match d["toolKind"].as_str() {
-        Some("execute") => "Wants to run a command",
-        Some("edit" | "delete" | "move") => "Wants to change files",
-        Some("fetch") => "Wants to access the web",
-        Some("read" | "search") => "Wants to read files",
-        _ => "Wants to use a tool",
-    };
-    card.append(&gtk::Label::builder().label(format!("✋ {headline}")).xalign(0.0).css_classes(["heading"]).build());
-    card.append(&gtk::Label::builder().label(d["title"].as_str().unwrap_or("")).xalign(0.0).wrap(true).build());
-    let host = st.hello["name"].as_str().unwrap_or("this computer");
-    card.append(&gtk::Label::builder().label(format!("Runs on {host} · {}", folder(d["cwd"].as_str().unwrap_or("")))).xalign(0.0).css_classes(["small", "muted"]).build());
-    let mut detail = String::new();
-    if let Some(c) = d["command"].as_str() {
-        detail.push_str(c);
-    }
-    for diff in d["diffs"].as_array().into_iter().flatten() {
-        detail.push_str(&format!("\n{}  +{} −{}\n{}", diff["path"].as_str().unwrap_or(""), diff["added"], diff["removed"], diff["patch"].as_str().unwrap_or("")));
-    }
-    if !detail.trim().is_empty() {
-        let exp = gtk::Expander::new(Some("Details"));
-        exp.set_child(Some(&gtk::Label::builder().label(detail.trim()).xalign(0.0).selectable(true).wrap(true).css_classes(["codebox"]).build()));
-        card.append(&exp);
-    }
-    if pending {
-        let buttons = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).max_children_per_line(4).column_spacing(8).row_spacing(8).homogeneous(true).build();
-        let mut opts: Vec<&Value> = d["options"].as_array().into_iter().flatten().collect();
-        let rank = |k: &str| match k { "allow_once" => 0, "allow_always" => 1, "reject_once" => 2, _ => 3 };
-        opts.sort_by_key(|o| rank(o["kind"].as_str().unwrap_or("")));
-        for o in opts {
-            let kind = o["kind"].as_str().unwrap_or("");
-            let label = match kind { "allow_once" => "Allow once", "allow_always" => "Always allow", "reject_once" => "Deny", "reject_always" => "Never", _ => o["name"].as_str().unwrap_or("OK") };
-            let btn = gtk::Button::with_label(label);
-            if kind == "allow_once" {
-                btn.add_css_class("accent-fill");
-            } else if kind.starts_with("reject") {
-                btn.add_css_class("destructive-action");
-            }
-            let (entry_id, opt) = (e["id"].as_str().unwrap_or("").to_owned(), o["optionId"].clone());
-            let ui2 = ui.clone();
-            btn.connect_clicked(move |b| {
-                b.set_sensitive(false);
-                let ui3 = ui2.clone();
-                client::call("respondPermission", json!({"entryId": entry_id, "optionId": opt}), move |r| {
-                    if let Err(e) = r {
-                        toast(&ui3, &e);
-                    }
-                });
-            });
-            buttons.insert(&btn, -1);
-        }
-        card.append(&buttons);
-    } else {
-        let chosen = d["options"].as_array().into_iter().flatten().find(|o| o["optionId"] == d["selected"]);
-        let outcome = match (d["status"].as_str(), chosen.and_then(|o| o["kind"].as_str())) {
-            (Some("answered"), Some("allow_once")) => "Allowed once",
-            (Some("answered"), Some("allow_always")) => "Always allowed",
-            (Some("answered"), Some("reject_once")) => "Denied",
-            (Some("answered"), _) => "Answered",
-            (Some("cancelled"), _) => "Cancelled",
-            _ => "Expired — the agent moved on",
-        };
-        card.append(&gtk::Label::builder().label(outcome).xalign(0.0).css_classes(["small", "dim-label"]).build());
-    }
-    card.upcast()
 }
 
 fn update_composer(ui: &App) {
@@ -650,7 +779,10 @@ fn update_composer(ui: &App) {
 
 fn update_composer_for(ui: &App, bot: &Value) {
     let buf = ui.composer.buffer();
-    let has_text = !buf.text(&buf.start_iter(), &buf.end_iter(), false).trim().is_empty();
+    let has_text = !buf
+        .text(&buf.start_iter(), &buf.end_iter(), false)
+        .trim()
+        .is_empty();
     ui.stop_btn.set_visible(working(bot) && !has_text);
     ui.send_btn.set_visible(!working(bot) || has_text);
     ui.send_btn.set_sensitive(has_text);
@@ -658,8 +790,13 @@ fn update_composer_for(ui: &App, bot: &Value) {
 
 fn send(ui: &App) {
     let buf = ui.composer.buffer();
-    let text = buf.text(&buf.start_iter(), &buf.end_iter(), false).trim().to_owned();
-    let Some(bot) = ui.state.borrow().current.clone() else { return };
+    let text = buf
+        .text(&buf.start_iter(), &buf.end_iter(), false)
+        .trim()
+        .to_owned();
+    let Some(bot) = ui.state.borrow().current.clone() else {
+        return;
+    };
     if text.is_empty() {
         return;
     }
@@ -672,23 +809,34 @@ fn send(ui: &App) {
     );
     schedule(ui);
     let ui2 = ui.clone();
-    client::call("send", json!({"botId": bot, "text": text, "clientNonce": nonce}), move |r| {
-        let mut st = ui2.state.borrow_mut();
-        match r {
-            Ok(v) => upsert(&mut st, v["entry"].clone()),
-            Err(_) => {
-                if let Some(e) = st.entries.get_mut(&bot).and_then(|l| l.iter_mut().find(|e| e["id"] == format!("local-{nonce}"))) {
-                    e["data"]["status"] = "failed".into();
+    client::call(
+        "send",
+        json!({"botId": bot, "text": text, "clientNonce": nonce}),
+        move |r| {
+            let mut st = ui2.state.borrow_mut();
+            match r {
+                Ok(v) => upsert(&mut st, v["entry"].clone()),
+                Err(_) => {
+                    if let Some(e) = st
+                        .entries
+                        .get_mut(&bot)
+                        .and_then(|l| l.iter_mut().find(|e| e["id"] == format!("local-{nonce}")))
+                    {
+                        e["data"]["status"] = "failed".into();
+                    }
                 }
             }
-        }
-        drop(st);
-        schedule(&ui2);
-    });
+            drop(st);
+            schedule(&ui2);
+        },
+    );
 }
 
 fn now_ms() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
 }
 
 pub fn mark_read(ui: &App) {

@@ -79,17 +79,7 @@ struct BotListView: View {
         .sheet(isPresented: $showSettings) {
             NavigationStack { SettingsView() }
         }
-        .confirmationDialog(
-            "Delete \(confirmDelete?.name ?? "")?",
-            isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete bot and its conversation", role: .destructive) {
-                if let bot = confirmDelete { model.delete(bot) }
-            }
-        } message: {
-            Text("Files it changed on your computer stay as they are.")
-        }
+        .deleteBotConfirmation($confirmDelete)
     }
 }
 

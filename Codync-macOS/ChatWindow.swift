@@ -87,17 +87,7 @@ private struct ChatSplitView: View {
             NavigationStack { BotEditorView(draft: request.draft) }
                 .frame(minWidth: 520, minHeight: 640)
         }
-        .confirmationDialog("Delete \(confirmDelete?.name ?? "")?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
-            Button("Delete Bot and Conversation", role: .destructive) {
-                if let bot = confirmDelete { model.delete(bot) }
-            }
-        } message: {
-            Text("Files it changed on this computer stay as they are.")
-        }
-        .alert("Something went wrong", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(model.lastError ?? "")
-        }
+        .deleteBotConfirmation($confirmDelete)
+        .storeErrorAlert(model)
     }
 }

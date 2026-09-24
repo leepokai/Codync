@@ -241,6 +241,9 @@ public extension HostClient {
         try await call("usage", ["refresh": refresh])
     }
 
+    /// Pairing link + candidate addresses for showing a QR code on this computer.
+    func pairing() async throws -> PairingInfo { try await call("pairing") }
+
     func listDirs(_ path: String?) async throws -> DirListing {
         struct Body: Encodable { var path: String? }
         return try await call("listDirs", Body(path: path))

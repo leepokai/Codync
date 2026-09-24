@@ -17,11 +17,6 @@ final class HostController {
         case failed(String)
     }
 
-    struct PairInfo: Decodable {
-        var urls: [String]
-        var pairingUrl: String
-    }
-
     /// `CODYNC_PORT` / `CODYNC_HOME` point the app at a dev host started with `codync-host serve`.
     static let devPort = ProcessInfo.processInfo.environment["CODYNC_PORT"].flatMap(Int.init)
     static let port = devPort ?? 19222
@@ -31,7 +26,7 @@ final class HostController {
     private(set) var state: State = .starting
     /// Live mirror of the host (same store the iPhone uses), once it's reachable.
     private(set) var store: BotStore?
-    private(set) var pairInfo: PairInfo?
+    private(set) var pairInfo: PairingInfo?
     private(set) var version: String?
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
 
@@ -112,11 +107,8 @@ final class HostController {
     }
 
     func loadPairing() {
-        guard let bin = binaryURL else { return }
-        Task {
-            let result = await Self.run(bin, ["pair", "--json", "--port", "\(Self.port)"])
-            pairInfo = try? JSONDecoder().decode(PairInfo.self, from: Data(result.output.utf8))
-        }
+        guard let client = client() else { return }
+        Task { pairInfo = try? await client.pairing() }
     }
 
     func setLaunchAtLogin(_ on: Bool) {
@@ -170,12 +162,7 @@ final class HostController {
             let p = Process()
             p.executableURL = bin
             p.arguments = args
-            // GUI apps get a minimal PATH; give the service the usual tool locations.
-            var env = ProcessInfo.processInfo.environment
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            let extra = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.cargo/bin", "\(home)/.bun/bin", "\(home)/.opencode/bin"]
-            env["PATH"] = (extra + [loginShellPath() ?? "/usr/bin:/bin:/usr/sbin:/sbin"]).joined(separator: ":")
-            p.environment = env
+            // The host rebuilds PATH from the login shell itself (backends::hydrate_path).
             let pipe = Pipe()
             p.standardOutput = pipe
             p.standardError = pipe
@@ -185,20 +172,5 @@ final class HostController {
             }
             do { try p.run() } catch { cont.resume(returning: (-1, error.localizedDescription)) }
         }
-    }
-
-    /// The user's interactive PATH (nvm, asdf, …) so npx/claude/codex resolve in the service.
-    nonisolated static func loginShellPath() -> String? {
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        let p = Process()
-        p.executableURL = URL(filePath: shell)
-        p.arguments = ["-ilc", "printf %s \"$PATH\""]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return nil }
-        p.waitUntilExit()
-        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        return out.isEmpty ? nil : out
     }
 }

@@ -114,15 +114,7 @@ struct UsageWidgetView: View {
                         }
                         .font(.caption2)
                         .foregroundStyle(Palette.text)
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Palette.bubbleAgent)
-                                Capsule()
-                                    .fill(item.window.percent >= 90 ? Palette.danger : item.window.percent >= 70 ? Palette.warning : Palette.accentFill)
-                                    .frame(width: geo.size.width * min(1, max(0.02, item.window.percent / 100)))
-                            }
-                        }
-                        .frame(height: 5)
+                        UsageBar(percent: item.window.percent, height: 5)
                         if family == .systemMedium, let reset = item.window.resetDescription {
                             Text(reset).font(.system(size: 9)).foregroundStyle(Palette.tertiary)
                         }

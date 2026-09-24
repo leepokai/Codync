@@ -22,7 +22,11 @@ fn inline(line: &str) -> String {
 fn emphasis(s: &str) -> String {
     let mut out = String::new();
     for (i, part) in s.split("**").enumerate() {
-        if i % 2 == 1 { out.push_str(&format!("<b>{part}</b>")) } else { out.push_str(&links(part)) }
+        if i % 2 == 1 {
+            out.push_str(&format!("<b>{part}</b>"))
+        } else {
+            out.push_str(&links(part))
+        }
     }
     out
 }
@@ -32,8 +36,12 @@ fn links(s: &str) -> String {
     let mut out = String::new();
     let mut rest = s;
     while let Some(open) = rest.find('[') {
-        let Some(close) = rest[open..].find("](").map(|i| open + i) else { break };
-        let Some(end) = rest[close..].find(')').map(|i| close + i) else { break };
+        let Some(close) = rest[open..].find("](").map(|i| open + i) else {
+            break;
+        };
+        let Some(end) = rest[close..].find(')').map(|i| close + i) else {
+            break;
+        };
         let url = &rest[close + 2..end];
         if !url.starts_with("http") {
             break;
@@ -57,7 +65,11 @@ pub fn to_pango(src: &str) -> String {
         }
         if in_code {
             out.push(format!("<tt>{}</tt>", markup_escape_text(line)));
-        } else if let Some(h) = t.strip_prefix("### ").or_else(|| t.strip_prefix("## ")).or_else(|| t.strip_prefix("# ")) {
+        } else if let Some(h) = t
+            .strip_prefix("### ")
+            .or_else(|| t.strip_prefix("## "))
+            .or_else(|| t.strip_prefix("# "))
+        {
             out.push(format!("<b>{}</b>", inline(h)));
         } else if let Some(item) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) {
             out.push(format!("  •  {}", inline(item)));
@@ -73,7 +85,13 @@ mod tests {
     #[test]
     fn converts_common_markdown() {
         assert_eq!(super::to_pango("**hi** `a<b`"), "<b>hi</b> <tt>a&lt;b</tt>");
-        assert_eq!(super::to_pango("- x\n```\nfn()\n```"), "  •  x\n<tt>fn()</tt>");
-        assert_eq!(super::to_pango("[doc](https://a.b)"), "<a href=\"https://a.b\">doc</a>");
+        assert_eq!(
+            super::to_pango("- x\n```\nfn()\n```"),
+            "  •  x\n<tt>fn()</tt>"
+        );
+        assert_eq!(
+            super::to_pango("[doc](https://a.b)"),
+            "<a href=\"https://a.b\">doc</a>"
+        );
     }
 }

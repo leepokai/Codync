@@ -14,3 +14,4 @@ Package.resolved
 *.p8
 .dev.vars
 .wrangler/
+.claude/worktrees/

@@ -10,7 +10,13 @@ use std::time::Duration;
 
 pub fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap())
+    RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap()
+    })
 }
 
 pub fn data_dir() -> PathBuf {
@@ -20,7 +26,10 @@ pub fn data_dir() -> PathBuf {
 }
 
 pub fn port() -> u16 {
-    std::env::var("CODYNC_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(19222)
+    std::env::var("CODYNC_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(19222)
 }
 
 /// `CODYNC_URL` overrides the host address (e.g. a host outside a container).
@@ -29,7 +38,10 @@ pub fn base() -> String {
 }
 
 pub fn token() -> Option<String> {
-    std::fs::read_to_string(data_dir().join("token")).ok().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty())
+    std::fs::read_to_string(data_dir().join("token"))
+        .ok()
+        .map(|t| t.trim().to_owned())
+        .filter(|t| !t.is_empty())
 }
 
 fn http() -> &'static reqwest::Client {
@@ -49,7 +61,11 @@ async fn call_async(method: String, body: Value) -> Result<Value, String> {
         .map_err(|_| "Can't reach the Codync host.".to_owned())?;
     let ok = res.status().is_success();
     let v: Value = res.json().await.unwrap_or(Value::Null);
-    if ok { Ok(v) } else { Err(v["error"].as_str().unwrap_or("Host error").to_owned()) }
+    if ok {
+        Ok(v)
+    } else {
+        Err(v["error"].as_str().unwrap_or("Host error").to_owned())
+    }
 }
 
 /// Runs a host command off the main thread and hands the result back on it.
@@ -82,7 +98,11 @@ pub fn stream(tx: async_channel::Sender<Event>) {
     runtime().spawn(async move {
         loop {
             if let Some(token) = token() {
-                let url = format!("{}/events?since={}&client=linux", base(), REV.load(Ordering::Relaxed));
+                let url = format!(
+                    "{}/events?since={}&client=linux",
+                    base(),
+                    REV.load(Ordering::Relaxed)
+                );
                 if let Ok(res) = http().get(url).bearer_auth(token).send().await
                     && res.status().is_success()
                 {

@@ -4,6 +4,7 @@ mod avatar;
 mod client;
 mod dialogs;
 mod markup;
+mod rows;
 mod ui;
 
 use adw::prelude::*;

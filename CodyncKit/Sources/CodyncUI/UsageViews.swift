@@ -33,24 +33,6 @@ public struct UsageCard: View {
     }
 }
 
-public struct UsageBar: View {
-    let percent: Double
-
-    public init(percent: Double) { self.percent = percent }
-
-    public var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Palette.bubbleAgent)
-                Capsule()
-                    .fill(percent >= 90 ? Palette.danger : percent >= 70 ? Palette.warning : Palette.accentFill)
-                    .frame(width: geo.size.width * min(1, max(0.02, percent / 100)))
-            }
-        }
-        .frame(height: 6)
-    }
-}
-
 /// Compact usage chips at the top of the roster.
 public struct UsageStrip: View {
     let usage: Usage
@@ -67,7 +49,7 @@ public struct UsageStrip: View {
                                 .gaugeStyle(.accessoryCircularCapacity)
                                 .scaleEffect(0.42)
                                 .frame(width: 22, height: 22)
-                                .tint(w.percent >= 90 ? Palette.danger : w.percent >= 70 ? Palette.warning : Palette.accent)
+                                .tint(Palette.usageTint(w.percent))
                             VStack(alignment: .leading, spacing: 0) {
                                 Text("\(p.name) \(w.label)").font(.caption2).foregroundStyle(Palette.tertiary)
                                 Text("\(Int(w.percent.rounded()))%").font(.caption.bold().monospacedDigit()).foregroundStyle(Palette.text)

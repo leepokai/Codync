@@ -188,6 +188,11 @@ public struct SyncResponse: Codable, Sendable {
     public var usage: Usage
 }
 
+public struct PairingInfo: Codable, Sendable {
+    public var pairingUrl: String
+    public var urls: [String]
+}
+
 public struct DirListing: Codable, Sendable {
     public var path: String
     public var parent: String?

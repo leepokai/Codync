@@ -54,7 +54,9 @@ struct PairingView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .font(.callout.monospaced())
-                        Button("Pair") { pair(pasted) }
+                        Button("Pair", systemImage: "arrow.right.circle.fill") { pair(pasted) }
+                            .labelStyle(.iconOnly)
+                            .font(.title3)
                             .disabled(pasted.isEmpty)
                     }
                     .padding(12)

@@ -13,14 +13,17 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 ## Architecture
 
-- `host/` — **codync-host** (Rust, macOS + Linux). Drives agents over **ACP** (JSON-RPC on stdio, hand-rolled in `acp.rs`, updates kept as `serde_json::Value` so new adapter variants never break parsing). One actor per bot (`bot.rs`) owns the agent process + session and maps `session/update` onto transcript entries.
+- Clients: iOS app, native Mac window (menu bar app), native Linux app (`linux/`, GTK 4 + libadwaita in Rust). All talk to the host API; no web UI.
+- Shared Swift: `CodyncKit` (models, client, theme, avatars) + `CodyncUI` (`BotStore` + chat screens) used by iOS and macOS. Platform specifics go through `BotStore` hooks or `Platform.swift`.
+- UI principle: buttons an icon can express are icon-only (with tooltip / accessibility label); text only where an icon would be ambiguous (approval choices).
+- `host/` — **codync-host** (Rust, macOS + Linux). Detects installed harnesses (`backends.rs`: login-shell PATH + known dirs) and the ACP registry (`registry.rs`, cached in `~/.codync/registry.json`, binaries under `~/.codync/agents`). Drives agents over **ACP** (JSON-RPC on stdio, hand-rolled in `acp.rs`, updates kept as `serde_json::Value` so new adapter variants never break parsing). One actor per bot (`bot.rs`) owns the agent process + session and maps `session/update` onto transcript entries.
 - **Thread ≠ session**: a bot is one endless transcript (SQLite `entries`, ordered by `seq`); the ACP session underneath is resumed with `session/load` or replaced by *New session*.
 - **Chat shows only**: user messages, the *final* agent message of each turn (`data.final`), permission cards, notices. Narration, thoughts, tool calls, plans are trace entries (Full conversation sheet).
 - **Sync**: every mutation stamps a global `rev`. Clients call `GET /events?since=<rev>` (catch-up in rev order, then live). Emission happens under `Hub::emit_lock` so events leave in rev order. Clients upsert by id; never skip undecodable events (the iOS app rewinds to rev 0).
 - API: `POST /api/<method>` + SSE, bearer token (`~/.codync/token`). Default port **19222**, binds 0.0.0.0 for Tailscale/LAN.
 - Push: iOS registers its APNs token with `relay/` → gets an AES-GCM ticket → gives it to the host. Only two alert kinds: *needs you* and *done*, suppressed while the iOS app is connected.
-- Usage: host-only reads (Claude statusline ingest + `/api/oauth/usage` with the stored Claude Code token, Codex rollout files). Never refresh or write agent credentials.
-- macOS app is thin: embeds `codync-host` in `Contents/MacOS` (Xcode post-build script runs cargo), installs it as a launchd agent via `codync-host install`, shows status/pairing/usage. Not sandboxed, not Mac App Store (the host must spawn CLIs).
+- Usage: local only — `claude -p /usage --no-session-persistence`, the Claude status line (`codync-host statusline`, wrapping any existing one), Claude ACP `usage_update` rate-limit meta, Codex rollout files. Never call provider APIs with agent credentials.
+- macOS app is thin: embeds `codync-host` in `Contents/MacOS` (Xcode post-build script runs cargo), installs it as a launchd agent via `codync-host install`; menu bar shows status/pairing/usage and opens the native chat window (NavigationSplitView over `CodyncUI`). Not sandboxed, not Mac App Store (the host must spawn CLIs).
 - Do **not** reintroduce Claude Code hooks or CloudKit — both were removed in 2.0.
 
 ## Project generation
@@ -43,4 +46,5 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 - `Codync-macOS` — menu bar app + embedded host
 - `Codync-iOS` — iOS app
 - `CodyncWidgets` — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
-- `CodyncKit` — shared Swift package (models, host client, theme, avatars)
+- `CodyncKit` — shared Swift package: `CodyncKit` + `CodyncUI` libraries
+- `linux/` — `codync` GTK app (build/test in a container with libgtk-4-dev + libadwaita-1-dev)

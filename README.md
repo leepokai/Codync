@@ -2,7 +2,7 @@
 
 **Your coding agents, as teammates you can message.**
 
-Codync turns Claude Code, Codex, OpenCode, Grok Build and Gemini CLI into persistent *bots* you delegate to from your iPhone — the way you'd message a colleague. Pick who, say what, put the phone away. You get a notification when a bot finishes or needs your approval.
+Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, Pi, OpenCode, Grok Build, Gemini, Copilot and ~40 more — into persistent *bots* you delegate to from your iPhone, Mac or Linux desktop, the way you'd message a colleague. Pick who, say what, put the phone away. You get a notification when a bot finishes or needs your approval.
 
 > Why bots? On a phone, "find the right working session, then pick an environment" is too slow. With bots you already know who to hand the intent to: open the chat, type, done.
 
@@ -12,15 +12,16 @@ Codync turns Claude Code, Codex, OpenCode, Grok Build and Gemini CLI into persis
 ## How it works
 
 ```
-iPhone (Codync)  ⇄  HTTP + SSE over Tailscale / Wi-Fi  ⇄  codync-host  ⇄  ACP (stdio)  ⇄  claude · codex · opencode · grok · gemini
-       ▲                                                     │
-       └──────── APNs ◀── relay (Cloudflare Worker) ◀────────┘  "needs you" / "done"
+iPhone · Mac window · Linux (GTK)  ⇄  HTTP + SSE  ⇄  codync-host  ⇄  ACP (stdio)  ⇄  claude · codex · cursor · pi · opencode · …
+       ▲                                                  │
+       └──────── APNs ◀── relay (Cloudflare Worker) ◀─────┘  "needs you" / "done"
 ```
 
 - **Bots** have a name, a character avatar, standing instructions, an agent backend, a project folder and a permission policy. Each bot is **one endless conversation**; the agent sessions underneath are an implementation detail (resumed with `session/load`, restarted with *New session*).
 - **The chat only shows what matters**: your messages, each turn's final reply, approval cards and notices. Every tool call, diff, plan and thought is one tap away in *Full conversation*. While a bot works, its row shows what it's doing right now.
+- **Agents are detected automatically**: the host hydrates PATH from your login shell (plus Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), finds every harness you have installed, and prefers its native ACP mode. Anything else in the official [ACP registry](https://agentclientprotocol.com/registry) can be picked too — Codync fetches it on first use (npx, uvx or a checksummed binary).
 - **codync-host** (Rust, macOS + Linux) runs on your computer. It speaks the [Agent Client Protocol](https://agentclientprotocol.com) to each agent, keeps transcripts in SQLite, and serves the phone. Every change carries a global `rev`, so the phone reconnects with `since: rev` and never misses anything.
-- **Usage limits**: the host reads Claude (statusline `rate_limits`, or the OAuth usage endpoint with the token Claude Code already stored) and Codex (`~/.codex/sessions`) limits. Tokens never leave your computer; the phone and widgets only see percentages.
+- **Usage limits** come from your local installs, with no extra login: Claude via `claude -p /usage` (a local command, no model call) plus Claude Code's status line, Codex via `~/.codex/sessions`. The phone, widgets and menu bar only see percentages.
 - **Push** goes through a tiny relay that holds the APNs key. The phone trades its device token for an encrypted ticket; the host only ever holds tickets.
 
 UI patterns (roster, character avatars, approval cards, trace sheet, "needs you / done" notifications) follow Grok Bot.
@@ -33,25 +34,24 @@ UI patterns (roster, character avatars, approval cards, trace sheet, "needs you 
 brew install --cask leepokai/codync/codync
 ```
 
-Open Codync in the menu bar → **Install host** → **Pair iPhone**, and scan the code with the Codync app.
+Open Codync in the menu bar → **Install host**. The chat bubble opens the full Codync window; the QR button pairs your iPhone.
 
-**Linux**
+**Linux** — native GTK 4 / libadwaita app plus the host:
 
 ```bash
-brew install leepokai/codync/codync-host   # or download a release tarball
+brew install leepokai/codync/codync-host   # or a release tarball
 codync-host install                        # systemd --user service
-codync-host pair                           # shows the QR code in the terminal
+codync                                     # the desktop app (release tarball: bin/codync + .desktop file)
+codync-host pair                           # QR code in the terminal, or Settings in the app
 ```
+
+Building the Linux app yourself needs `libgtk-4-dev libadwaita-1-dev`: `cargo install --path linux`.
 
 Install [Tailscale](https://tailscale.com) on the computer and the phone to reach your bots from anywhere.
 
-**Agents** — install and log in to whichever you use: `claude`, `codex`, `opencode`, `grok`, `gemini`. Claude Code and Codex are driven through their ACP adapters (`@agentclientprotocol/claude-agent-acp`, `@agentclientprotocol/codex-acp`), which `npx` fetches on first use, so Node.js is required for those two.
+**Agents** — install and sign in to whichever you use; Codync finds them. Claude Code, Codex and Pi run through their ACP adapters (fetched by `npx`, so Node.js is needed for those).
 
-Optional: show usage in Claude Code's status line and feed live limits to the host:
-
-```json
-{ "statusLine": { "type": "command", "command": "codync-host statusline" } }
-```
+`codync-host install` also routes Claude Code's status line through `codync-host statusline` so live limits reach the host; an existing status line keeps working (it's wrapped, and restored on `uninstall`).
 
 ## `codync-host`
 
@@ -61,7 +61,7 @@ Optional: show usage in Claude Code's status line and feed live limits to the ho
 | `codync-host pair [--json]` | pairing QR code / link |
 | `codync-host status` | installed? running? |
 | `codync-host serve [--port 19222]` | run in the foreground |
-| `codync-host statusline` | Claude Code status line command |
+| `codync-host statusline [-- <your command>]` | Claude Code status line command (wraps yours) |
 | `codync-host reset-token` | unpair every phone |
 
 Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). **The token is full access** — whoever has it can run agents in any folder on your computer. Prefer Tailscale over open Wi-Fi (the API is plain HTTP; Tailscale encrypts it), and `codync-host reset-token` if a phone is lost. The API is `POST /api/<method>` + `GET /events` (SSE), both with `Authorization: Bearer <token>`; see `host/src/api.rs`.
@@ -71,10 +71,11 @@ Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). **The token is ful
 | Path | |
 |---|---|
 | `host/` | `codync-host` — Rust daemon: ACP client, SQLite transcript, HTTP/SSE API, push, usage |
-| `Codync-iOS/` | iOS app: roster, threads, approval cards, trace, bot editor, pairing |
+| `CodyncKit/` | Swift package: `CodyncKit` (wire models, host client, theme, avatars) and `CodyncUI` (store + chat screens shared by iPhone and Mac) |
+| `Codync-iOS/` | iOS app: pairing, roster, push, Live Activity glue |
 | `CodyncWidgets/` | Usage widget + bot Live Activity |
-| `Codync-macOS/` | Menu bar app: installs/monitors the host, pairing QR, usage |
-| `CodyncKit/` | Shared Swift package: wire models, host client, theme, avatars |
+| `Codync-macOS/` | Menu bar + native chat window; installs/monitors the host |
+| `linux/` | Native Linux app (GTK 4 + libadwaita, Rust) |
 | `relay/` | Cloudflare Worker APNs relay with encrypted per-device tickets |
 | `packaging/` | Homebrew formula template |
 
@@ -83,6 +84,7 @@ The Xcode project is generated: `xcodegen generate`.
 ```bash
 cd host && cargo test            # host
 cd CodyncKit && swift test       # shared Swift
+cd linux && cargo test           # Linux app (needs GTK dev packages)
 cd relay && npm test             # relay tickets
 ```
 

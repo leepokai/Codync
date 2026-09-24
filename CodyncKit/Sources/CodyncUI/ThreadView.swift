@@ -262,8 +262,8 @@ struct UserBubble: View {
         case "failed":
             HStack(spacing: 10) {
                 Text("Failed to send").foregroundStyle(Palette.danger)
-                Button("Resend") { model.retry(entry) }
-                Button("Delete") { model.discard(entry) }
+                Button("Resend", systemImage: "arrow.clockwise") { model.retry(entry) }.labelStyle(.iconOnly).help("Resend")
+                Button("Delete", systemImage: "trash") { model.discard(entry) }.labelStyle(.iconOnly).help("Delete")
             }
             .font(.caption2.bold())
         case "cancelled":

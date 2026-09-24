@@ -90,7 +90,9 @@ public struct ConnectionBanner: View {
                 Image(systemName: "wifi.exclamationmark").foregroundStyle(Palette.warning)
                 Text(reason).font(.footnote).foregroundStyle(Palette.secondary)
                 Spacer()
-                Button("Retry") { model.restartStream() }.font(.footnote.bold())
+                Button("Retry", systemImage: "arrow.clockwise") { model.restartStream() }
+                    .labelStyle(.iconOnly)
+                    .help("Retry")
             }
             .padding(10)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))

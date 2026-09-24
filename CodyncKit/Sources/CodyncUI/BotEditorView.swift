@@ -102,12 +102,16 @@ public struct BotEditorView: View {
         .navigationTitle(isNew ? "New bot" : "Edit bot")
         .inlineNavigationTitle()
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly).help("Cancel")
+            }
             ToolbarItem(placement: .confirmationAction) {
                 if saving {
                     ProgressView()
                 } else {
-                    Button(isNew ? "Create" : "Save") { save() }
+                    Button(isNew ? "Create" : "Save", systemImage: "checkmark") { save() }
+                        .labelStyle(.iconOnly)
+                        .help(isNew ? "Create" : "Save")
                         .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty || draft.cwd.isEmpty)
                 }
             }
@@ -119,7 +123,9 @@ public struct BotEditorView: View {
                     pickingFolder = false
                 }
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { pickingFolder = false } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel", systemImage: "xmark") { pickingFolder = false }.labelStyle(.iconOnly).help("Cancel")
+                    }
                 }
             }
         }

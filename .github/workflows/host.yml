@@ -3,10 +3,10 @@ name: codync-host
 on:
   push:
     branches: [main, v2]
-    paths: ["host/**", ".github/workflows/host.yml"]
+    paths: ["host/**", "linux/**", ".github/workflows/host.yml"]
     tags: ["host-v*"]
   pull_request:
-    paths: ["host/**"]
+    paths: ["host/**", "linux/**"]
 
 jobs:
   test:
@@ -27,6 +27,45 @@ jobs:
           workspaces: host
       - run: cargo clippy -- -D warnings
       - run: cargo test
+
+  linux-app:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: linux
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: linux
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
+      - name: Package
+        if: startsWith(github.ref, 'refs/tags/host-v')
+        run: |
+          VERSION=${GITHUB_REF_NAME#host-v}
+          NAME=codync-linux-$VERSION-${{ matrix.target }}
+          cargo build --release
+          mkdir -p $NAME/share/applications $NAME/share/icons/hicolor/scalable/apps $NAME/bin
+          cp target/release/codync $NAME/bin/
+          cp data/com.pokai.Codync.desktop $NAME/share/applications/
+          cp data/com.pokai.Codync.svg $NAME/share/icons/hicolor/scalable/apps/
+          tar czf ../$NAME.tar.gz $NAME
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/host-v')
+        with:
+          files: codync-linux-*.tar.gz
 
   release:
     if: startsWith(github.ref, 'refs/tags/host-v')

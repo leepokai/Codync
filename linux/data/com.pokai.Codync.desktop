@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Codync
+Comment=Message your coding-agent bots
+Exec=codync
+Icon=com.pokai.Codync
+Terminal=false
+Categories=Development;
+StartupWMClass=com.pokai.Codync

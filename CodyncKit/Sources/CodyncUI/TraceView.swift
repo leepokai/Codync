@@ -33,7 +33,9 @@ public struct TraceView: View {
         .navigationTitle("Full conversation")
         .inlineNavigationTitle()
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done", systemImage: "checkmark") { dismiss() }.labelStyle(.iconOnly).help("Done")
+            }
         }
         .defaultScrollAnchor(.bottom)
     }

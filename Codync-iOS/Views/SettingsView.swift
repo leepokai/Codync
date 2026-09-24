@@ -32,7 +32,9 @@ struct SettingsView: View {
 
             Section {
                 ForEach(model.usage.providers) { UsageCard(provider: $0) }
-                Button("Refresh") { Task { await model.refreshUsage() } }
+                Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refreshUsage() } }
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel("Refresh usage")
             } header: {
                 Text("Usage limits")
             } footer: {
@@ -61,7 +63,7 @@ struct SettingsView: View {
                             CharacterAvatar(bot: bot, size: 28, animated: false)
                             Text(bot.name)
                             Spacer()
-                            Button("Unhide") { model.setHidden(bot, false) }
+                            Button("Unhide", systemImage: "eye") { model.setHidden(bot, false) }.labelStyle(.iconOnly)
                         }
                     }
                 }
@@ -83,7 +85,9 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done", systemImage: "checkmark") { dismiss() }.labelStyle(.iconOnly)
+            }
         }
         .confirmationDialog("Unpair from \(model.hostName)?", isPresented: $confirmUnpair, titleVisibility: .visible) {
             Button("Unpair", role: .destructive) {

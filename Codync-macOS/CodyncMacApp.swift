@@ -59,15 +59,19 @@ struct MenuView: View {
                     openWindow(id: "chat")
                     NSApp.activate()
                 } label: {
-                    Label("Open", systemImage: "bubble.left.and.bubble.right")
+                    Image(systemName: "bubble.left.and.bubble.right")
                 }
+                .help("Open Codync")
+                .accessibilityLabel("Open Codync")
                 .controlSize(.small)
                 Button {
                     showPairing.toggle()
                     if showPairing { host.loadPairing() }
                 } label: {
-                    Label("Pair", systemImage: "qrcode")
+                    Image(systemName: "qrcode")
                 }
+                .help("Pair iPhone")
+                .accessibilityLabel("Pair iPhone")
                 .buttonStyle(.borderedProminent)
                 .tint(Palette.accentFill)
                 .foregroundStyle(Palette.onAccent)
@@ -182,7 +186,9 @@ struct MenuView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            Button("Quit") { NSApp.terminate(nil) }
+            Button("Quit Codync", systemImage: "power") { NSApp.terminate(nil) }
+                .labelStyle(.iconOnly)
+                .help("Quit Codync")
                 .font(.caption)
         }
         .padding(10)
@@ -206,7 +212,10 @@ private struct BotLine: View {
             }
             Spacer()
             if bot.isWorking && hovering {
-                Button("Stop", action: stop).controlSize(.small)
+                Button("Stop", systemImage: "stop.fill", action: stop)
+                    .labelStyle(.iconOnly)
+                    .help("Stop")
+                    .controlSize(.small)
             } else {
                 Text(RelativeTime.short(Date(milliseconds: bot.lastAt))).font(.caption2).foregroundStyle(Palette.tertiary)
             }
@@ -246,15 +255,20 @@ private struct PairingPanel: View {
                         .foregroundStyle(Palette.tertiary)
                         .multilineTextAlignment(.center)
                 }
-                Button("Copy link") {
+                Button("Copy pairing link", systemImage: "doc.on.doc") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(info.pairingUrl, forType: .string)
                 }
+                .labelStyle(.iconOnly)
+                .help("Copy pairing link")
                 .controlSize(.small)
             } else {
                 ProgressView()
             }
-            Button("Done", action: close).controlSize(.small)
+            Button("Close", systemImage: "xmark", action: close)
+                .labelStyle(.iconOnly)
+                .help("Close")
+                .controlSize(.small)
         }
         .frame(maxWidth: .infinity)
         .padding(16)

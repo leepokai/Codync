@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Grok-Bot-style character: a colored shape with eyes. The eyes look around
+/// Grok-Bot-style character: a colored shape with slit eyes. The eyes drift
 /// while the bot works; a badge shows when it needs you.
 public struct CharacterAvatar: View {
     public enum Mood: Sendable { case idle, working, needsInput }
@@ -28,8 +28,12 @@ public struct CharacterAvatar: View {
 
     public var body: some View {
         ZStack {
-            CharacterShape(kind: shape)
-                .fill(color.gradient)
+            // too few dots below ~24pt to read as a character — stay solid
+            if size < 24 {
+                CharacterShape(kind: shape).fill(color.gradient)
+            } else {
+                DottedBody(shape: shape, color: color, size: size, mood: mood)
+            }
             Eyes(size: size, working: mood == .working)
                 .offset(y: -size * 0.03)
         }
@@ -38,25 +42,94 @@ public struct CharacterAvatar: View {
     }
 }
 
+/// The body as a halftone of dots (after thinking-orbs): each dot is shaded as
+/// if the silhouette were a sphere, so size and ink carry the depth. The body
+/// is grey ink; the bot's color only lands on the brightest dots. Working
+/// swings the light around the body; needing you sends a ripple out from the
+/// center. Idle is a still frame lit from the upper left.
+private struct DottedBody: View {
+    let shape: String
+    let color: Color
+    let size: CGFloat
+    let mood: CharacterAvatar.Mood
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let step = size / 16
+        let dots = Self.grid(shape: shape, size: size, step: step)
+        let still = mood == .idle || reduceMotion
+        TimelineView(.animation(paused: still)) { timeline in
+            let t = still ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600)
+            Canvas { ctx, _ in
+                let half = size / 2
+                let yaw = mood == .working ? t * 1.4 : -0.7
+                let lx = sin(yaw) * 0.8, ly = 0.55, lz = cos(yaw) * 0.5 + 0.6  // never fully behind
+                let ll = (lx * lx + ly * ly + lz * lz).squareRoot()
+                for p in dots {
+                    let u = (p.x - half) / half, v = (half - p.y) / half
+                    let z = max(0.2, 1 - u * u - v * v).squareRoot()
+                    let nl = (u * u + v * v + z * z).squareRoot()
+                    var shade = 0.3 + 0.7 * max(0, (u * lx + v * ly + z * lz) / (nl * ll))
+                    if mood == .needsInput {
+                        let ripple = 0.5 + 0.5 * sin((u * u + v * v).squareRoot() * 9 - t * 5)
+                        shade *= 0.6 + 0.4 * ripple
+                    }
+                    let r = step * 0.38 * (0.3 + 0.7 * shade)
+                    let dot = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
+                    ctx.fill(dot, with: .color(Palette.text.opacity(0.12 + 0.33 * min(1, shade / 0.7))))
+                    if shade > 0.7 {
+                        ctx.fill(dot, with: .color(color.opacity((shade - 0.7) / 0.3)))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Hex-packed dot centers that fall inside the silhouette.
+    static func grid(shape: String, size: CGFloat, step: CGFloat) -> [CGPoint] {
+        let path = CharacterShape(kind: shape).path(in: CGRect(x: 0, y: 0, width: size, height: size))
+        let rowH = step * 0.866
+        var out: [CGPoint] = []
+        var row = 0
+        var y = rowH / 2
+        while y < size {
+            var x = row.isMultiple(of: 2) ? step / 2 : step
+            while x < size {
+                let p = CGPoint(x: x, y: y)
+                if path.contains(p) { out.append(p) }
+                x += step
+            }
+            y += rowH
+            row += 1
+        }
+        return out
+    }
+}
+
+/// Two thin lit slits that blink now and then and drift slowly while working.
 private struct Eyes: View {
     let size: CGFloat
     let working: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let eye = size * 0.17
-        HStack(spacing: size * 0.12) {
+        HStack(spacing: size * 0.2 - max(1.4, size * 0.038)) {
             ForEach(0..<2, id: \.self) { _ in
                 Capsule()
-                    .fill(.white)
-                    .frame(width: eye * 0.8, height: eye * 1.15)
-                    .overlay(
-                        Circle().fill(Color(hex: 0x141712)).frame(width: eye * 0.45)
-                    )
+                    .fill(Palette.text)
+                    .frame(width: max(1.4, size * 0.038), height: size * 0.12)
             }
         }
-        .phaseAnimator(working ? [-1.0, 1.0] : [0.0]) { view, phase in
-            view.offset(x: phase * size * 0.06)
-        } animation: { _ in .easeInOut(duration: 0.9) }
+        .keyframeAnimator(initialValue: 1.0, repeating: !reduceMotion) { view, open in
+            view.scaleEffect(y: open)
+        } keyframes: { _ in
+            LinearKeyframe(1.0, duration: 4.5)
+            LinearKeyframe(0.12, duration: 0.08)
+            LinearKeyframe(1.0, duration: 0.1)
+        }
+        .phaseAnimator(working && !reduceMotion ? [-1.0, 1.0] : [0.0]) { view, phase in
+            view.offset(x: phase * size * 0.04)
+        } animation: { _ in .easeInOut(duration: 1.6) }
     }
 }
 

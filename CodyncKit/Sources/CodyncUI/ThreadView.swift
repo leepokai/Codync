@@ -86,11 +86,10 @@ public struct ThreadView: View {
     @ViewBuilder private func row(_ item: ChatItem) -> some View {
         switch item.kind {
         case let .separator(date):
-            Text(date.formatted(.relative(presentation: .named)).capitalized + " · " + date.formatted(date: .omitted, time: .shortened))
-                .font(.caption2)
-                .foregroundStyle(Palette.tertiary)
+            Text(date.formatted(.relative(presentation: .named)) + " · " + date.formatted(date: .omitted, time: .shortened))
+                .metaStyle()
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, 16)
         case let .entry(e, groupStart):
             switch e.kind {
             case "user":
@@ -119,14 +118,13 @@ public struct ThreadView: View {
                 Text(bot?.name ?? "").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
                 Group {
                     if let bot, bot.needsInput {
-                        Text("Needs you").foregroundStyle(Palette.warning)
+                        Text("Needs you").metaStyle(Palette.warning)
                     } else if let bot, bot.isWorking {
-                        Text("Working").foregroundStyle(Palette.accent)
+                        Text("Working").metaStyle(Palette.secondary)
                     } else if let bot {
-                        Text("\(model.backendName(bot.backend)) · \(bot.folderName)").foregroundStyle(Palette.tertiary)
+                        Text("\(model.backendName(bot.backend)) · \(bot.folderName)").metaStyle()
                     }
                 }
-                .font(.caption2)
                 .lineLimit(1)
             }
         }
@@ -230,7 +228,7 @@ private struct IntroCard: View {
     var body: some View {
         VStack(spacing: 12) {
             CharacterAvatar(bot: bot, size: 72)
-            Text(bot.name).font(.title2.bold()).foregroundStyle(Palette.text)
+            Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
             Text("\(model.backendName(bot.backend)) in \(bot.cwd)")
                 .font(.footnote.monospaced())
                 .foregroundStyle(Palette.tertiary)

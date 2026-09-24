@@ -11,17 +11,17 @@ use adw::prelude::*;
 
 const CSS: &str = r#"
 .bubble { border-radius: 18px; padding: 8px 13px; }
-.bubble-user { background: #c7ec6b; color: #141712; }
-.bubble-agent { background: alpha(currentColor, 0.08); }
+.bubble-user { background: @window_fg_color; color: @window_bg_color; }
+.bubble-agent { padding-left: 0; padding-right: 0; }
 .card { border-radius: 16px; padding: 14px; border: 1px solid alpha(currentColor, 0.15); background: alpha(currentColor, 0.03); }
 .card.pending { border-color: alpha(#ff9800, 0.7); }
-.accent-fill { background: #c7ec6b; color: #141712; }
-.accent-fill:hover { background: shade(#c7ec6b, 0.95); }
-.accent-text { color: #6f8f1a; }
+.accent-fill { background: @window_fg_color; color: @window_bg_color; }
+.accent-fill:hover { background: alpha(@window_fg_color, 0.85); }
+.accent-text { color: @window_fg_color; }
 .needs-text { color: #e08600; }
 .muted { opacity: 0.6; }
 .small { font-size: 0.85em; }
-.badge { background: #c7ec6b; color: #141712; border-radius: 999px; padding: 0 6px; font-weight: bold; font-size: 0.8em; min-width: 12px; }
+.badge { background: @window_fg_color; color: @window_bg_color; border-radius: 999px; padding: 0 6px; font-weight: bold; font-size: 0.8em; min-width: 12px; }
 .chip { border-radius: 999px; padding: 3px 10px; border: 1px solid alpha(currentColor, 0.15); }
 .codebox { font-family: monospace; font-size: 0.9em; background: alpha(currentColor, 0.06); border-radius: 8px; padding: 8px; }
 .composer { border-radius: 20px; padding: 8px 12px; border: 1px solid alpha(currentColor, 0.18); }

@@ -51,7 +51,7 @@ public struct UsageStrip: View {
                                 .frame(width: 22, height: 22)
                                 .tint(Palette.usageTint(w.percent))
                             VStack(alignment: .leading, spacing: 0) {
-                                Text("\(p.name) \(w.label)").font(.caption2).foregroundStyle(Palette.tertiary)
+                                Text("\(p.name) \(w.label)").metaStyle()
                                 Text("\(Int(w.percent.rounded()))%").font(.caption.bold().monospacedDigit()).foregroundStyle(Palette.text)
                             }
                         }

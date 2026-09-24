@@ -36,26 +36,38 @@ public extension Color {
     }
 }
 
-/// Palette lifted from Grok Bot's shipped renderer: green-tinted graphite with a lime accent.
+/// Ink on paper: neutral graphite, and the text color doubles as the accent.
+/// Color comes from the bots themselves; the chrome stays monochrome, with
+/// amber kept for "needs you" and red for errors.
 public enum Palette {
-    public static let background = Color(light: 0xF6F7F3, dark: 0x121411)
-    public static let surface = Color(light: 0xFFFFFF, dark: 0x1A1D19)
-    public static let bubbleAgent = Color(light: 0xECEFE7, dark: 0x20231F)
-    public static let border = Color(light: 0xDCE0D6, dark: 0x343832)
-    public static let text = Color(light: 0x1A1D19, dark: 0xEEF3E7)
-    public static let secondary = Color(light: 0x5B6256, dark: 0xA9AFA3)
-    public static let tertiary = Color(light: 0x8A9184, dark: 0x747B70)
-    /// Lime used for fills (user bubbles, primary buttons).
-    public static let accentFill = Color(hex: 0xC7EC6B)
-    /// Lime/olive readable as text on the background.
-    public static let accent = Color(light: 0x557212, dark: 0xC7EC6B)
-    public static let onAccent = Color(hex: 0x141712)
-    public static let accentDim = Color(light: 0xC9D9A0, dark: 0x53632F)
+    public static let background = Color(light: 0xF7F7F5, dark: 0x0E0F0E)
+    public static let surface = Color(light: 0xFFFFFF, dark: 0x171817)
+    public static let bubbleAgent = Color(light: 0xEFEFEC, dark: 0x1E1F1E)
+    public static let border = Color(light: 0xE4E4E0, dark: 0x2A2B2A)
+    public static let text = Color(light: 0x161716, dark: 0xEDEDEA)
+    public static let secondary = Color(light: 0x5E5F5C, dark: 0xA3A4A0)
+    public static let tertiary = Color(light: 0x94958F, dark: 0x6C6D69)
+    /// Ink used for fills (user bubbles, primary buttons).
+    public static let accentFill = Color(light: 0x161716, dark: 0xEDEDEA)
+    /// Ink readable as text and tint on the background.
+    public static let accent = Color(light: 0x161716, dark: 0xEDEDEA)
+    public static let onAccent = Color(light: 0xF7F7F5, dark: 0x0E0F0E)
+    public static let accentDim = Color(light: 0xDADAD6, dark: 0x3A3B39)
     public static let danger = Color(light: 0xC23A2B, dark: 0xF0A7A7)
-    public static let warning = Color(hex: 0xFF9800)
-    public static let codeBackground = Color(light: 0xF0F2EC, dark: 0x1A1D19)
+    public static let warning = Color(hex: 0xF0A030)
+    public static let codeBackground = Color(light: 0xF1F1EE, dark: 0x141514)
     public static let added = Color(light: 0x2E7D32, dark: 0x8FD18B)
     public static let removed = Color(light: 0xC62828, dark: 0xF0A7A7)
+}
+
+public extension View {
+    /// Small tracked monospaced caps for metadata: times, states, section labels.
+    func metaStyle(_ color: Color = Palette.tertiary) -> some View {
+        font(.system(size: 10.5, weight: .medium, design: .monospaced))
+            .tracking(0.6)
+            .textCase(.uppercase)
+            .foregroundStyle(color)
+    }
 }
 
 public enum AvatarPalette {

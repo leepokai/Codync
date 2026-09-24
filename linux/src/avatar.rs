@@ -89,23 +89,73 @@ fn silhouette(cr: &Context, shape: &str) {
     }
 }
 
-pub fn draw(cr: &Context, size: f64, shape: &str, color: &str, look: f64) {
+#[derive(Clone, Copy, PartialEq)]
+pub enum Mood {
+    Idle,
+    Working,
+    Needs,
+}
+
+/// Same look as `CharacterAvatar` on Apple platforms: a halftone of dots shaded
+/// as if the silhouette were a sphere (grey ink, the bot's color only on the
+/// brightest dots) and two slit eyes. Working swings the light and drifts the
+/// eyes; needing you sends a ripple out from the center. Below 24px the body
+/// stays solid because the dots stop reading.
+pub fn draw(cr: &Context, size: f64, shape: &str, color: &str, ink: (f64, f64, f64), mood: Mood, t: f64) {
     cr.save().ok();
     cr.scale(size / 100.0, size / 100.0);
-    silhouette(cr, shape);
     let (r, g, b) = rgb(color_of(color));
-    cr.set_source_rgb(r, g, b);
-    cr.fill().ok();
-    // Eyes (they look side to side while the bot works).
-    let dx = look * 5.0;
-    for x in [31.0, 55.4] {
-        rounded_rect(cr, x + dx, 36.0, 13.6, 19.5, 6.8);
-        cr.set_source_rgb(1.0, 1.0, 1.0);
+    silhouette(cr, shape);
+    if size < 24.0 {
+        cr.set_source_rgb(r, g, b);
         cr.fill().ok();
-        cr.arc(x + 6.8 + dx * 1.3, 45.7, 3.8, 0.0, 2.0 * PI);
-        cr.set_source_rgb(0.08, 0.09, 0.07);
-        cr.fill().ok();
+    } else {
+        let step = 100.0 / 16.0;
+        let row_h = step * 0.866;
+        let mut dots = Vec::new();
+        let (mut y, mut row) = (row_h / 2.0, 0);
+        while y < 100.0 {
+            let mut x = if row % 2 == 0 { step / 2.0 } else { step };
+            while x < 100.0 {
+                if cr.in_fill(x, y).unwrap_or(false) {
+                    dots.push((x, y));
+                }
+                x += step;
+            }
+            y += row_h;
+            row += 1;
+        }
+        cr.new_path();
+        let yaw = if mood == Mood::Working { t * 1.4 } else { -0.7 };
+        let (lx, ly, lz) = (yaw.sin() * 0.8, 0.55, yaw.cos() * 0.5 + 0.6); // never fully behind
+        let ll = (lx * lx + ly * ly + lz * lz).sqrt();
+        for (x, y) in dots {
+            let (u, v) = ((x - 50.0) / 50.0, (50.0 - y) / 50.0);
+            let z = (1.0 - u * u - v * v).max(0.2).sqrt();
+            let nl = (u * u + v * v + z * z).sqrt();
+            let mut shade = 0.3 + 0.7 * ((u * lx + v * ly + z * lz) / (nl * ll)).max(0.0);
+            if mood == Mood::Needs {
+                shade *= 0.6 + 0.4 * (0.5 + 0.5 * ((u * u + v * v).sqrt() * 9.0 - t * 5.0).sin());
+            }
+            cr.arc(x, y, step * 0.38 * (0.3 + 0.7 * shade), 0.0, 2.0 * PI);
+            cr.set_source_rgba(ink.0, ink.1, ink.2, 0.12 + 0.33 * (shade / 0.7).min(1.0));
+            cr.fill_preserve().ok();
+            if shade > 0.7 {
+                cr.set_source_rgba(r, g, b, (shade - 0.7) / 0.3);
+                cr.fill_preserve().ok();
+            }
+            cr.new_path();
+        }
     }
+    let dx = if mood == Mood::Working { (t * 2.0 * PI / 3.2).sin() * 4.0 } else { 0.0 };
+    let phase = (t / 4.7).fract();
+    let blink = if mood != Mood::Idle && phase < 0.04 { ((phase - 0.02).abs() / 0.02).max(0.12) } else { 1.0 };
+    let (w, h) = ((1.4 * 100.0 / size).max(3.8), 12.0 * blink);
+    for side in [-1.0, 1.0] {
+        rounded_rect(cr, 50.0 + side * 10.0 + dx - w / 2.0, 47.0 - h / 2.0, w, h, w.min(h) / 2.0);
+    }
+    cr.set_source_rgb(ink.0, ink.1, ink.2);
+    cr.fill().ok();
     cr.restore().ok();
 }
 
@@ -113,15 +163,17 @@ pub fn draw(cr: &Context, size: f64, shape: &str, color: &str, look: f64) {
 pub fn widget(shape: &str, color: &str, size: i32, working: bool, status: &str) -> gtk::DrawingArea {
     let area = gtk::DrawingArea::builder().content_width(size).content_height(size).valign(gtk::Align::Center).build();
     let (shape, color, status) = (shape.to_owned(), color.to_owned(), status.to_owned());
+    let mood = if status == "needs" { Mood::Needs } else if working { Mood::Working } else { Mood::Idle };
     let start = std::time::Instant::now();
-    area.set_draw_func(move |_, cr, w, _| {
+    area.set_draw_func(move |area, cr, w, _| {
         let s = w as f64;
-        let look = if working { (start.elapsed().as_secs_f64() * 3.5).sin() } else { 0.0 };
-        draw(cr, s, &shape, &color, look);
+        let fg = area.color();
+        let ink = (fg.red() as f64, fg.green() as f64, fg.blue() as f64);
+        draw(cr, s, &shape, &color, ink, mood, start.elapsed().as_secs_f64());
         if !status.is_empty() {
             let d = s * if status == "needs" { 0.36 } else { 0.28 };
             let (cx, cy) = (s - d / 2.0, s - d / 2.0);
-            let (r, g, b) = if status == "needs" { rgb(0xFF9800) } else { rgb(0xC7EC6B) };
+            let (r, g, b) = if status == "needs" { rgb(0xF0A030) } else { ink };
             cr.arc(cx, cy, d / 2.0, 0.0, 2.0 * PI);
             cr.set_source_rgb(r, g, b);
             cr.fill().ok();

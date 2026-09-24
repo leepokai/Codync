@@ -2,12 +2,12 @@ import SwiftUI
 
 /// One place for "how full is this limit" colors, shared by the apps, the menu bar and widgets.
 public extension Palette {
-    /// Fill for bars: lime, orange from 70%, red from 90%.
+    /// Fill for bars: ink, amber from 70%, red from 90%.
     static func usageFill(_ percent: Double) -> Color {
         percent >= 90 ? danger : percent >= 70 ? warning : accentFill
     }
 
-    /// Tint for gauges and progress views (readable lime on light backgrounds).
+    /// Tint for gauges and progress views .
     static func usageTint(_ percent: Double) -> Color {
         percent >= 90 ? danger : percent >= 70 ? warning : accent
     }

@@ -21,16 +21,14 @@ public struct BotRow: View {
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     Text(RelativeTime.short(Date(milliseconds: bot.lastAt)))
-                        .font(.caption)
-                        .foregroundStyle(bot.unread > 0 ? Palette.accent : Palette.tertiary)
-                        .monospacedDigit()
+                        .metaStyle(bot.unread > 0 ? Palette.text : Palette.tertiary)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     preview
                     Spacer(minLength: 4)
                     if bot.unread > 0 {
                         Text("\(bot.unread)")
-                            .font(.caption2.bold())
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Palette.onAccent)
                             .padding(.horizontal, 6)
                             .frame(minWidth: 18, minHeight: 18)
@@ -52,12 +50,12 @@ public struct BotRow: View {
                 .lineLimit(1)
         } else if bot.isWorking {
             HStack(spacing: 6) {
-                ProgressView().controlSize(.mini)
+                ThinkingOrb(size: 13, color: Palette.secondary)
                 Text(bot.activity.isEmpty ? "Working…" : bot.activity)
                     .lineLimit(1)
             }
             .font(.subheadline)
-            .foregroundStyle(Palette.accent)
+            .foregroundStyle(Palette.secondary)
         } else if bot.status == "error" {
             Text(bot.lastMessage ?? "Something went wrong")
                 .font(.subheadline)

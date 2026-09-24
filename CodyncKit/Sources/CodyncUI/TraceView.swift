@@ -128,7 +128,7 @@ struct ToolRow: View {
             switch data.status {
             case "completed": Image(systemName: "checkmark").foregroundStyle(Palette.accent)
             case "failed": Image(systemName: "xmark").foregroundStyle(Palette.danger)
-            default: ProgressView().controlSize(.mini)
+            default: ThinkingOrb(size: 12, color: Palette.secondary)
             }
         }
         .font(.caption)

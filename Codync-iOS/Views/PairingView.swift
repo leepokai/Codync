@@ -22,7 +22,8 @@ struct PairingView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Your coding agents,\nas teammates.")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(.system(size: 34, weight: .semibold))
+                        .tracking(-0.6)
                         .foregroundStyle(Palette.text)
                     Text("Give each agent a name, a job and a project. Then just message the right one — it works on your computer while your phone is in your pocket.")
                         .font(.body)
@@ -103,11 +104,11 @@ private struct Step: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(n.map(String.init) ?? "")
-                .font(.footnote.bold())
-                .frame(width: 24, height: 24)
-                .background(n == nil ? .clear : Palette.accentDim, in: Circle())
-                .foregroundStyle(Palette.text)
+            Text(n.map { String(format: "%02d", $0) } ?? "")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .frame(width: 24, alignment: .leading)
+                .padding(.top, 2)
+                .foregroundStyle(Palette.tertiary)
             VStack(alignment: .leading, spacing: 6) {
                 if !title.isEmpty {
                     Text(title).font(.headline).foregroundStyle(Palette.text)

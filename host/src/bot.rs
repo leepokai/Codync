@@ -47,6 +47,7 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         last_text: None,
         perms: HashMap::new(),
         stop_requested: false,
+        exit_tail: None,
     };
     tokio::spawn(actor.run(rx));
     BotHandle { tx }
@@ -87,6 +88,8 @@ struct Actor {
     /// permission entry id -> JSON-RPC request id
     perms: HashMap<String, Value>,
     stop_requested: bool,
+    /// Last stderr lines of an agent process that just exited.
+    exit_tail: Option<String>,
 }
 
 type Done = Result<Value>;
@@ -204,6 +207,7 @@ impl Actor {
         }
         self.turn = Some(turn);
         self.stop_requested = false;
+        self.exit_tail = None;
         self.seg = Seg::None;
         self.tools.clear();
         self.plan_entry = None;
@@ -360,7 +364,11 @@ impl Actor {
             Err(_) => "error".into(),
         };
         match (&done, stop_reason.as_str()) {
-            (Err(e), _) if !self.stop_requested => self.notice(&format!("The agent failed: {e}"), "error"),
+            (Err(e), _) if !self.stop_requested => {
+                let tail = self.exit_tail.take().filter(|t| !t.is_empty());
+                let detail = tail.map(|t| format!("\n\n{}", acp::truncate(&t, 1200))).unwrap_or_default();
+                self.notice(&format!("The agent failed: {e}{detail}"), "error")
+            }
             (_, "cancelled") | (Err(_), _) => self.notice("Stopped.", "info"),
             (_, "max_tokens") => self.notice("The agent hit its output limit.", "info"),
             (_, "max_turn_requests") => self.notice("The agent hit its step limit for this turn.", "info"),
@@ -391,11 +399,8 @@ impl Actor {
                     _ => String::new(),
                 };
                 self.conn = None;
-                if self.turn.is_some() {
-                    let detail = if tail.is_empty() { String::new() } else { format!("\n\n{}", acp::truncate(&tail, 1200)) };
-                    self.notice(&format!("The agent process exited.{detail}"), "error");
-                }
-                // The in-flight prompt request resolves with an error and finishes the turn.
+                // The in-flight prompt request resolves with an error; finish_turn reports it with this output.
+                self.exit_tail = Some(tail);
             }
             Some(Incoming::Notification { method, params }) => {
                 if method == "session/update" && params["sessionId"].as_str() == self.session_id.as_deref() && self.turn.is_some() {

@@ -138,10 +138,12 @@ async function push(req: Request, env: Env): Promise<Response> {
     }
     return json({ ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    // 410 Unregistered / BadDeviceToken: tell the host to drop the ticket.
-    const gone = /Unregistered|BadDeviceToken|ExpiredToken/.test(message);
-    return json({ error: message, gone }, gone ? 410 : 502);
+    // ApnsError carries APNs' `reason` (e.g. "Unregistered") and `statusCode`.
+    const e = err as { reason?: string; statusCode?: number; message?: string };
+    const reason = e.reason ?? e.message ?? String(err);
+    // Dead device token: tell the host to drop the ticket.
+    const gone = e.statusCode === 410 || /Unregistered|BadDeviceToken|ExpiredToken/.test(reason);
+    return json({ error: reason, gone }, gone ? 410 : 502);
   }
 }
 

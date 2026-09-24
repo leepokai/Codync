@@ -64,7 +64,7 @@ Optional: show usage in Claude Code's status line and feed live limits to the ho
 | `codync-host statusline` | Claude Code status line command |
 | `codync-host reset-token` | unpair every phone |
 
-Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). The API is `POST /api/<method>` + `GET /events` (SSE), both with `Authorization: Bearer <token>`; see `host/src/api.rs`.
+Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). **The token is full access** — whoever has it can run agents in any folder on your computer. Prefer Tailscale over open Wi-Fi (the API is plain HTTP; Tailscale encrypts it), and `codync-host reset-token` if a phone is lost. The API is `POST /api/<method>` + `GET /events` (SSE), both with `Authorization: Bearer <token>`; see `host/src/api.rs`.
 
 ## Repository
 

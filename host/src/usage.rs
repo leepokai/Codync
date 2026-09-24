@@ -35,11 +35,25 @@ pub async fn poll(hub: Arc<Hub>) {
     }
 }
 
+static CLAUDE_BACKOFF_UNTIL: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
 pub async fn refresh(hub: &Hub) {
-    match claude_oauth_usage().await {
-        Ok(Some(p)) => merge(hub, p),
-        Ok(None) => {}
-        Err(e) => tracing::debug!("claude usage: {e}"),
+    // Live statusline data beats polling an undocumented endpoint.
+    let fresh_statusline = hub.usage.lock().unwrap()["providers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|p| p["id"] == "claude" && p["source"] == "statusline" && p["updatedAt"].as_i64().is_some_and(|t| crate::store::now_ms() - t < 600_000));
+    let backing_off = CLAUDE_BACKOFF_UNTIL.lock().unwrap().is_some_and(|t| std::time::Instant::now() < t);
+    if !fresh_statusline && !backing_off {
+        match claude_oauth_usage().await {
+            Ok(Some(p)) => merge(hub, p),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::debug!("claude usage: {e}");
+                *CLAUDE_BACKOFF_UNTIL.lock().unwrap() = Some(std::time::Instant::now() + Duration::from_secs(3600));
+            }
+        }
     }
     if let Some(p) = tokio::task::spawn_blocking(codex_usage).await.ok().flatten() {
         merge(hub, p);
@@ -64,8 +78,12 @@ fn claude_token() -> Option<String> {
     let raw = if cfg!(target_os = "macos") {
         let out = std::process::Command::new("security")
             .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+            .stdin(std::process::Stdio::null())
             .output()
             .ok()?;
+        if !out.status.success() {
+            return None;
+        }
         String::from_utf8(out.stdout).ok()?
     } else {
         std::fs::read_to_string(dirs::home_dir()?.join(".claude/.credentials.json")).ok()?

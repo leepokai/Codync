@@ -25,7 +25,7 @@ Use four-space indentation for Swift and Rust. Follow Swift 6 strict concurrency
 
 Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and `kebab-case.ts`. Follow role suffixes such as `View`, `Row`, and `Store`. See `docs/structure.md` and `CLAUDE.md` for architectural conventions.
 
-- No built-in system UI controls (`Menu`/`Picker`, `.switch` toggles, system lists, stock sheets and alerts): build our own from `CodyncKit` design primitives (e.g. `ToggleStyle.codync`). Anything with a background fill gets no border line.
+- No native/system UI at all: no `Menu`/`Picker`, `.switch` toggles, `Form`/`List` styling, `confirmationDialog`/`alert`, `ProgressView`, `.sheet`/`.popover`/`.fullScreenCover`, `.toolbar`/navigation bars, `TabView`, `ContentUnavailableView`. Use `kit/Sources/CodyncUI/Controls.swift` + `Chrome.swift` (`.codyncSheet`, `ModalHeader`, `ScreenHeader`, `TabBar`, `.codyncMenu`, `.codyncDialog`, `ToggleStyle.codync`). Every tap that shows/hides something animates (`Motion`). Anything with a background fill gets no border line.
 
 ## Testing Guidelines
 

@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		03774684DC8344D81AFED53B /* ChatWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A59E3A7670EAF57F2F4C9B9 /* ChatWindow.swift */; };
 		1C2F108FE28961E13EF9AF61 /* ViewingBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F16B11B2920E9D05621AFE7 /* ViewingBadge.swift */; };
-		24DF3CB466CC877FCB8BAED6 /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = BEE30A9D5C73E5A151F34180 /* CodyncUI */; };
+		24DF3CB466CC877FCB8BAED6 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 80868F96B9905FF52DCDFAE2 /* CodyncKit */; };
 		25667EBFCCC64B96FDCE95A9 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 59F5D19A417A7A50596902FA /* CodyncKit */; };
 		25FCB36A2661833502357807 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A657FB98BBE0D73807B263 /* Session.swift */; };
 		2CC074683AE086D6C77CC1E8 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B274A0195CB3B2409EA4C194 /* WidgetKit.framework */; };
@@ -22,6 +22,7 @@
 		513F59BF65DED5379AB950A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D2C705F063CD20F5B3036BD4 /* Assets.xcassets */; };
 		52CF04B855C6AAEC47B75B8F /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 06C9F37C6502131CAF0F145E /* CodyncUI */; };
 		5F9AE9B8E7FF66F194162BDC /* ScreenHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB932B6C1849B8DF7CF7C2E3 /* ScreenHelper.swift */; };
+		6A15821964A5EE5AEBB0C420 /* ClerkConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = 19D41F16A62FEF37BE0AD1FC /* ClerkConfig.plist */; };
 		826FEDA23997E436D632E579 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4CFB70DD8757C90695CDA211 /* PrivacyInfo.xcprivacy */; };
 		8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */; };
 		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
@@ -29,8 +30,10 @@
 		AFC0CD8BD1FA61F810C96057 /* com.pokai.Codync.screen.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 895BB6C2EB8986266EB4159A /* com.pokai.Codync.screen.plist */; };
 		B55C0D49B47C628C367BD92A /* AXTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97876A72710A37EB86A082C1 /* AXTree.swift */; };
 		B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739EC95223CC8F8717C33736 /* PairingView.swift */; };
+		B8B86B2B7F8D9EE8639A9E09 /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = BEE30A9D5C73E5A151F34180 /* CodyncUI */; };
 		C937F66F810AA238B73E8363 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */; };
 		CC9F6FB8055C38D5D625F738 /* BotListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E57711E223A292872322C5 /* BotListView.swift */; };
+		D1374E0F041B7FEA4DFB33E7 /* AccountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D2C6A291E95D607E9EB1E7 /* AccountSession.swift */; };
 		D4AB92074A9C0D9C72B4080A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */; };
 		DEF7478AB86DB605F52905F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */; };
 		E430F9317B690366F62164DB /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B79D48C1D6F90D53751B3F /* RootView.swift */; };
@@ -40,7 +43,7 @@
 		F0A26FABD15480810021C86A /* HostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A9881C76B67297BE26D8FD /* HostController.swift */; };
 		F191B13B972C72CB4253B449 /* CodyncWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00F135A0B168269BD6C2A199 /* CodyncWidgets.swift */; };
 		F842AE1C5ED96AF9A7F5D16C /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D734BEE7CD3F84677B0218B /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		F93D9960F7C20B2E629C1736 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 80868F96B9905FF52DCDFAE2 /* CodyncKit */; };
+		F93D9960F7C20B2E629C1736 /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7D524C19E9D41C0CF635A619 /* ClerkKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -97,6 +100,7 @@
 
 /* Begin PBXFileReference section */
 		00F135A0B168269BD6C2A199 /* CodyncWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncWidgets.swift; sourceTree = "<group>"; };
+		19D41F16A62FEF37BE0AD1FC /* ClerkConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = ClerkConfig.plist; sourceTree = "<group>"; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		1F16B11B2920E9D05621AFE7 /* ViewingBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewingBadge.swift; sourceTree = "<group>"; };
 		22F1B304BD18E48C91FC73E3 /* Widgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Widgets.entitlements; sourceTree = "<group>"; };
@@ -124,6 +128,7 @@
 		C5E57711E223A292872322C5 /* BotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotListView.swift; sourceTree = "<group>"; };
 		CE4D28E8291EEB43E17B11FA /* Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capture.swift; sourceTree = "<group>"; };
 		D0A657FB98BBE0D73807B263 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		D1D2C6A291E95D607E9EB1E7 /* AccountSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSession.swift; sourceTree = "<group>"; };
 		D2C705F063CD20F5B3036BD4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D3831394C093AF3A4E504BC5 /* IconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconButton.swift; sourceTree = "<group>"; };
 		DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -138,8 +143,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F93D9960F7C20B2E629C1736 /* CodyncKit in Frameworks */,
-				24DF3CB466CC877FCB8BAED6 /* CodyncUI in Frameworks */,
+				F93D9960F7C20B2E629C1736 /* ClerkKit in Frameworks */,
+				24DF3CB466CC877FCB8BAED6 /* CodyncKit in Frameworks */,
+				B8B86B2B7F8D9EE8639A9E09 /* CodyncUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -282,6 +288,7 @@
 		BDFF077DDD37FEC8B83F2AED /* App */ = {
 			isa = PBXGroup;
 			children = (
+				D1D2C6A291E95D607E9EB1E7 /* AccountSession.swift */,
 				2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */,
 				93A9881C76B67297BE26D8FD /* HostController.swift */,
 			);
@@ -338,6 +345,7 @@
 			isa = PBXGroup;
 			children = (
 				E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */,
+				19D41F16A62FEF37BE0AD1FC /* ClerkConfig.plist */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -363,6 +371,7 @@
 			);
 			name = macOS;
 			packageProductDependencies = (
+				7D524C19E9D41C0CF635A619 /* ClerkKit */,
 				80868F96B9905FF52DCDFAE2 /* CodyncKit */,
 				BEE30A9D5C73E5A151F34180 /* CodyncUI */,
 			);
@@ -470,6 +479,7 @@
 			mainGroup = C9B7D3953422AE726DDC6347;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				2C830647014432C6F20C557C /* XCRemoteSwiftPackageReference "clerk-ios" */,
 				979123F21565A4068586B502 /* XCRemoteSwiftPackageReference "WebRTC" */,
 				0E2B25AB265C8FA83E7E1560 /* XCLocalSwiftPackageReference "kit" */,
 			);
@@ -491,6 +501,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D4AB92074A9C0D9C72B4080A /* Assets.xcassets in Resources */,
+				6A15821964A5EE5AEBB0C420 /* ClerkConfig.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -577,6 +588,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D1374E0F041B7FEA4DFB33E7 /* AccountSession.swift in Sources */,
 				03774684DC8344D81AFED53B /* ChatWindow.swift in Sources */,
 				8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */,
 				F0A26FABD15480810021C86A /* HostController.swift in Sources */,
@@ -979,6 +991,14 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		2C830647014432C6F20C557C /* XCRemoteSwiftPackageReference "clerk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/clerk/clerk-ios";
+			requirement = {
+				kind = exactVersion;
+				version = 1.5.6;
+			};
+		};
 		979123F21565A4068586B502 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stasel/WebRTC";
@@ -1006,6 +1026,11 @@
 		59F5D19A417A7A50596902FA /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CodyncKit;
+		};
+		7D524C19E9D41C0CF635A619 /* ClerkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C830647014432C6F20C557C /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = ClerkKit;
 		};
 		80868F96B9905FF52DCDFAE2 /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;

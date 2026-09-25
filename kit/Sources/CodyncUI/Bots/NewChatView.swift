@@ -83,7 +83,10 @@ public struct NewChatView: View {
             .padding(16)
         }
         .background(Palette.background)
-        .onAppear { toFocused = true }
+        .task {
+            await Task.yield()
+            toFocused = true
+        }
     }
 
     private func pick(_ bot: Bot) {

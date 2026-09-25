@@ -3,14 +3,18 @@ import SwiftUI
 
 public struct BotRow: View {
     let bot: Bot
+    let compact: Bool
     @Environment(BotStore.self) private var model
 
-    public init(bot: Bot) { self.bot = bot }
+    public init(bot: Bot, compact: Bool = false) {
+        self.bot = bot
+        self.compact = compact
+    }
 
     // A Mac sidebar row is denser than a phone row (Grok Bot's desktop sidebar).
     #if os(macOS)
     private let avatar: CGFloat = 36
-    private let rowPadding: CGFloat = 4
+    private let rowPadding: CGFloat = 8
     private let lineSpacing: CGFloat = 1
     #else
     private let avatar: CGFloat = 46
@@ -19,7 +23,7 @@ public struct BotRow: View {
     #endif
 
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: compact ? 0 : 12) {
             AvatarWithStatus(bot: bot, size: avatar)
             VStack(alignment: .leading, spacing: lineSpacing) {
                 HStack(alignment: .firstTextBaseline) {
@@ -37,9 +41,11 @@ public struct BotRow: View {
                             .accessibilityLabel("Using the computer")
                     }
                     Spacer(minLength: 8)
+                    #if os(iOS)
                     Text(RelativeTime.day(Date(milliseconds: bot.lastAt)))
                         .font(.subheadline)
                         .foregroundStyle(bot.unread > 0 ? Palette.text : Palette.tertiary)
+                    #endif
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     preview
@@ -54,7 +60,12 @@ public struct BotRow: View {
                     }
                 }
             }
+            .frame(width: compact ? 0 : nil, alignment: .leading)
+            .opacity(compact ? 0 : 1)
+            .clipped()
+            .accessibilityHidden(compact)
         }
+        .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
         .padding(.vertical, rowPadding)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)

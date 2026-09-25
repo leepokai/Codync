@@ -6,24 +6,32 @@ import SwiftUI
 @main
 struct CodyncMacApp: App {
     @State private var host = HostController()
+    @State private var account = AccountSession()
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         MenuBarExtra {
             MenuView()
                 .environment(host)
+                .environment(account)
                 .frame(width: 340)
         } label: {
             // The Codync mark; a dot joins it when a bot needs you.
             Image(host.needsAttention ? "MenuBarIconAlert" : "MenuBarIcon")
-                .task { host.start() }
+                .task {
+                    host.start()
+                    openWindow(id: "chat")
+                }
         }
         .menuBarExtraStyle(.window)
 
         Window("Codync", id: "chat") {
             ChatWindow()
                 .environment(host)
+                .environment(account)
         }
         .defaultSize(width: 1100, height: 760)
+        .windowStyle(.hiddenTitleBar)
     }
 }
 

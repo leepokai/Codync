@@ -7,6 +7,9 @@ options:
     macOS: "14.0"
   createIntermediateGroups: true
 packages:
+  Clerk:
+    url: https://github.com/clerk/clerk-ios
+    exactVersion: 1.5.6
   CodyncKit:
     path: kit
   WebRTC:
@@ -37,6 +40,8 @@ targets:
             destination: wrapper
             subpath: Contents/Library/LaunchAgents
     dependencies:
+      - package: Clerk
+        product: ClerkKit
       - package: CodyncKit
         product: CodyncKit
       - package: CodyncKit

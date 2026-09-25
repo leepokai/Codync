@@ -42,7 +42,11 @@ struct UserBubble: View {
         case "cancelled":
             Text("Not sent — stopped").font(.caption2).foregroundStyle(Palette.tertiary)
         default:
-            EmptyView()
+            #if os(macOS)
+                Text(entry.date, style: .time).font(.system(size: 10)).foregroundStyle(Palette.tertiary)
+            #else
+                EmptyView()
+            #endif
         }
     }
 }
@@ -52,16 +56,28 @@ struct AgentBubble: View {
     let openTrace: () -> Void
 
     var body: some View {
-        MarkdownText(entry.data.text ?? "")
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .contextMenu {
-                Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
-                Button("Show what it did", systemImage: "list.bullet.rectangle", action: openTrace)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 4) {
+            MarkdownText(entry.data.text ?? "")
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .contextMenu {
+                    Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
+                    Button("Show what it did", systemImage: "list.bullet.rectangle", action: openTrace)
+                }
+            #if os(macOS)
+                Text(entry.date, style: .time)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.tertiary)
+                    .padding(.leading, 12)
+            #endif
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #if os(macOS)
+            .padding(.trailing, 64)
+        #else
             .padding(.trailing, 40)
+        #endif
     }
 }
 

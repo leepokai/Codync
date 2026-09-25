@@ -99,15 +99,32 @@ struct BotSettingsForm: View {
     let error: String?
     @Environment(BotStore.self) private var model
     @State private var pickingFolder = false
+    @State private var pickingAvatar = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(spacing: 16) {
+                    #if os(macOS)
+                    Button { pickingAvatar.toggle() } label: {
+                        CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 80)
+                            .padding(18)
+                            .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 20))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Edit Bot avatar")
+                    .help("Edit Bot avatar")
+                    .popover(isPresented: $pickingAvatar) {
+                        AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
+                            .padding(20)
+                            .frame(width: 300)
+                    }
+                    #else
                     CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 96)
                         .padding(18)
                         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                     AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
+                    #endif
                 }
                 .frame(maxWidth: .infinity)
 

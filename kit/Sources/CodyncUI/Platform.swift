@@ -60,7 +60,7 @@ extension View {
     /// hairline border and a soft shadow (as in Grok Bot's desktop app).
     @ViewBuilder func composerSurface(in shape: some Shape) -> some View {
         #if os(macOS)
-        background(Palette.background, in: shape)
+        background(Palette.bubbleUser, in: shape)
             .overlay(shape.stroke(Palette.border))
             .shadow(color: .black.opacity(0.06), radius: 10, y: 2)
         #else

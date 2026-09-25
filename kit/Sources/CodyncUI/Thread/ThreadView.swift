@@ -15,12 +15,40 @@ public struct ThreadView: View {
     @State private var confirmNewSession = false
     @State private var confirmDelete: Bot?
     /// Desktop: the bot's settings as an inspector beside the chat.
-    @State private var showSettings = false
+    @State private var showSettings = true
+    @State private var editingDetails = false
+    @State private var availableWidth: CGFloat = 800
+    @State private var compactDetails = false
     @FocusState private var composerFocused: Bool
 
     private var bot: Bot? { model.bots[botId] }
 
     public var body: some View {
+        #if os(macOS)
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    conversation.frame(maxWidth: .infinity)
+                    if showSettings && geometry.size.width >= 680 {
+                        Rectangle().fill(Palette.border).frame(width: 1)
+                        detailsPanel.frame(width: 320)
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.width
+                } action: {
+                    availableWidth = $0
+                }
+            }
+            .ignoresSafeArea(.container, edges: .top)
+            .sheet(isPresented: $compactDetails) {
+                detailsPanel.frame(width: 340, height: 600)
+            }
+        #else
+            conversation
+        #endif
+    }
+
+    @ViewBuilder private var conversation: some View {
         let thread = model.thread(botId)
         let items = ChatItem.build(thread)
         ScrollViewReader { proxy in
@@ -47,8 +75,12 @@ public struct ThreadView: View {
                     }
                     Color.clear.frame(height: 8).id("bottom")
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .padding(.top, 8)
+                #if os(macOS)
+                    .frame(maxWidth: 820)
+                    .frame(maxWidth: .infinity)
+                #endif
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
@@ -63,43 +95,66 @@ public struct ThreadView: View {
         .background(Palette.background)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 6) {
-                ConnectionBanner().padding(.horizontal, 14)
+                #if os(iOS)
+                    ConnectionBanner().padding(.horizontal, 14)
+                #endif
                 composer
             }
         }
         .inlineNavigationTitle()
         .toolbar {
-            ToolbarItem(placement: .principal) { header }
             #if os(iOS)
-            if model.screen?.agentBot == botId {
-                ToolbarItem(placement: .primaryAction) {
-                    // The bot is operating the computer: watch it live (and take over from there).
-                    Button("Watch the screen", systemImage: "cursorarrow.motionlines") {
-                        model.screenRequest = ScreenRequest(watching: botId)
-                    }
-                    .symbolEffect(.pulse, options: .repeating)
-                    .tint(Palette.accent)
-                }
-            }
+                ToolbarItem(placement: .principal) { header }
             #endif
-            ToolbarItem(placement: .primaryAction) { menu }
-            #if os(macOS)
-            ToolbarItem(placement: .primaryAction) {
-                Button("Settings", systemImage: "sidebar.right") { showSettings.toggle() }
-                    .help("Bot settings")
-            }
+            #if os(iOS)
+                if model.screen?.agentBot == botId {
+                    ToolbarItem(placement: .primaryAction) {
+                        // The bot is operating the computer: watch it live (and take over from there).
+                        Button("Watch the screen", systemImage: "cursorarrow.motionlines") {
+                            model.screenRequest = ScreenRequest(watching: botId)
+                        }
+                        .symbolEffect(.pulse, options: .repeating)
+                        .tint(Palette.accent)
+                    }
+                }
+            #endif
+            #if os(iOS)
+                ToolbarItem(placement: .primaryAction) { menu }
             #endif
         }
         #if os(macOS)
-        .inspector(isPresented: $showSettings) {
-            BotSettingsPanel(botId: botId)
-                .inspectorColumnWidth(min: 300, ideal: 360, max: 460)
-        }
-        .onAppear { if bot?.name == "New Bot", model.thread(botId).isEmpty { showSettings = true } }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    HStack {
+                        header
+                        Spacer(minLength: 8)
+                        menu
+                        if !showSettings || availableWidth < 680 {
+                            Button("Conversation details", systemImage: "chevron.right.2") { toggleDetails() }
+                                .labelStyle(.iconOnly)
+                                .help("Show conversation details")
+                                .keyboardShortcut("i", modifiers: [.command, .option])
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.secondary)
+                    .padding(.horizontal, 16)
+                    .frame(height: 44)
+                    Divider().overlay(Palette.border)
+                    ConnectionBanner().padding(.horizontal, 16).padding(.top, model.isOffline ? 8 : 0)
+                }
+                .background(Palette.background)
+            }
+            .onAppear {
+                if bot?.name == "New Bot", model.thread(botId).isEmpty { editingDetails = true }
+            }
         #endif
         .onAppear { model.markRead(botId) }
         .sheet(isPresented: $showTrace) {
             NavigationStack { TraceView(botId: botId) }
+                #if os(macOS)
+                    .frame(width: 620, height: 560)
+                #endif
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -118,14 +173,14 @@ public struct ThreadView: View {
 
     @ViewBuilder private func row(_ item: ChatItem) -> some View {
         switch item.kind {
-        case let .separator(date):
+        case .separator(let date):
             Text(RelativeTime.separator(date))
                 .font(.footnote)
                 .foregroundStyle(Palette.tertiary)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 18)
                 .padding(.bottom, 6)
-        case let .entry(e, groupStart):
+        case .entry(let e, let groupStart):
             switch e.kind {
             case "user":
                 UserBubble(entry: e, botWorking: bot?.isWorking == true)
@@ -147,39 +202,153 @@ public struct ThreadView: View {
     // MARK: chrome
 
     private var header: some View {
-        // A pill with the bot and its name; the avatar itself shows working / needs you.
-        HStack(spacing: 8) {
-            if let bot { CharacterAvatar(bot: bot, size: 26) }
-            Text(bot?.name ?? "")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(Palette.text)
-                .lineLimit(1)
-        }
-        .padding(.leading, 8)
-        .padding(.trailing, 16)
-        .padding(.vertical, 6)
-        .glass(in: Capsule())
-        .onTapGesture {
+        Button {
             #if os(macOS)
-            showSettings.toggle()
+                toggleDetails()
             #else
-            if let bot { editing = EditorRequest(BotDraft(bot)) }
+                if let bot { editing = EditorRequest(BotDraft(bot)) }
+            #endif
+        } label: {
+            HStack(spacing: 7) {
+                if let bot { CharacterAvatar(bot: bot, size: 22) }
+                Text(bot?.name ?? "")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(1)
+            }
+            #if os(iOS)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .glass(in: Capsule())
             #endif
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("View conversation details")
+        .help("View conversation details")
     }
+
+    #if os(macOS)
+        private func toggleDetails() {
+            if availableWidth < 680 { compactDetails.toggle() } else { showSettings.toggle() }
+        }
+
+        private var detailsPanel: some View {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    if editingDetails {
+                        Button("Back to details", systemImage: "chevron.left") { editingDetails = false }
+                            .labelStyle(.iconOnly)
+                        Text("Settings").font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                    } else {
+                        Spacer()
+                        Button("Bot settings", systemImage: "gearshape") { editingDetails = true }
+                            .labelStyle(.iconOnly)
+                            .help("Bot settings")
+                    }
+                    Button("Close details", systemImage: "chevron.right.2") {
+                        showSettings = false
+                        compactDetails = false
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("Close details")
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.secondary)
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                if editingDetails {
+                    BotSettingsPanel(botId: botId)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) {
+                            VStack(spacing: 12) {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "desktopcomputer")
+                                        .font(.system(size: 32, weight: .light))
+                                    Text(computerStatus)
+                                        .font(.system(size: 12))
+                                        .multilineTextAlignment(.center)
+                                        .foregroundStyle(Palette.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 164)
+                                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 0.5))
+                                Text(model.hostName)
+                                    .font(.caption)
+                                    .foregroundStyle(Palette.tertiary)
+                            }
+                            if let bot {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Agent").font(.system(size: 13, weight: .semibold))
+                                    Text(model.backendName(bot.backend)).foregroundStyle(Palette.secondary)
+                                    Text(bot.cwd)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Palette.secondary)
+                                        .textSelection(.enabled)
+                                    if !bot.description.isEmpty {
+                                        Text(bot.description).foregroundStyle(Palette.secondary)
+                                    }
+                                }
+                                .font(.system(size: 13))
+                            }
+                            Button {
+                                showTrace = true
+                            } label: {
+                                HStack {
+                                    Label("Full conversation", systemImage: "list.bullet.rectangle")
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption2)
+                                }
+                                .font(.system(size: 13))
+                                .padding(12)
+                                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+                    }
+                }
+            }
+            .background(Palette.background)
+        }
+
+        private var computerStatus: String {
+            guard !model.isOffline else { return "Computer is offline" }
+            guard let screen = model.screen, screen.enabled else { return "Remote screen is off" }
+            guard screen.connected else { return "Connecting to computer…" }
+            guard screen.capture else { return "Screen recording permission needed" }
+            return screen.agentBot == botId ? "This bot is using your Mac" : "Ready · View this Mac from your iPhone"
+        }
+    #endif
 
     private var menu: some View {
         Menu {
             Button("Full conversation", systemImage: "list.bullet.rectangle") { showTrace = true }
             if let bot {
-                Button("Edit profile", systemImage: "pencil") { editing = EditorRequest(BotDraft(bot)) }
+                Button("Edit profile", systemImage: "pencil") {
+                    #if os(macOS)
+                        editingDetails = true
+                        showSettings = true
+                        if availableWidth < 680 { compactDetails = true }
+                    #else
+                        editing = EditorRequest(BotDraft(bot))
+                    #endif
+                }
                 Button(bot.pinned ? "Unpin" : "Pin", systemImage: "pin") { model.setPinned(bot, !bot.pinned) }
             }
             Button("New session", systemImage: "arrow.counterclockwise") { confirmNewSession = true }
             Divider()
             Button("Delete bot", systemImage: "trash", role: .destructive) { confirmDelete = bot }
         } label: {
+            #if os(macOS)
+            Image(systemName: "square.and.arrow.up")
+            #else
             Image(systemName: "ellipsis.circle")
+            #endif
         }
     }
 
@@ -203,7 +372,9 @@ public struct ThreadView: View {
                 .padding(.vertical, 10)
                 .sendOnReturn(submit)
             if working && draft.isEmpty {
-                Button { model.stop(botId) } label: {
+                Button {
+                    model.stop(botId)
+                } label: {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 12, weight: .bold))
                         .frame(width: 34, height: 34)
@@ -231,9 +402,13 @@ public struct ThreadView: View {
         .padding(.trailing, 6)
         .padding(.vertical, 6)
         .composerSurface(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 16)
         .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.bottom, 16)
+        #if os(macOS)
+            .frame(maxWidth: 820)
+            .frame(maxWidth: .infinity)
+        #endif
     }
 }
 

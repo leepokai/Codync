@@ -49,6 +49,8 @@ pub struct Hub {
     /// botId -> Live Activity push tickets.
     pub activities: Mutex<HashMap<String, Vec<String>>>,
     pub screen: Arc<Screen>,
+    /// Setup terminals (installs, sign-ins).
+    pub terms: Arc<crate::term::Terms>,
 }
 
 impl Hub {
@@ -69,6 +71,7 @@ impl Hub {
             keep_awake: Mutex::default(),
             activities: Mutex::default(),
             screen,
+            terms: Arc::default(),
         })
     }
 

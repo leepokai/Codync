@@ -32,7 +32,7 @@ public final class BotStore {
     public private(set) var hello: Hello?
     public private(set) var bots: [String: Bot] = [:]
     public private(set) var entries: [String: [Entry]] = [:]
-    public private(set) var usage = SharedStore.usage ?? Usage()
+    public private(set) var usage: Usage
     /// The computer's remote screen (`nil`: the host predates it).
     public private(set) var screen: ScreenState?
     /// Installed on the computer, for the Plugins screen and bot settings.
@@ -60,6 +60,8 @@ public final class BotStore {
     private let clientKind: String
     /// Whether pairing lives in the shared App Group (iPhone) or is supplied each launch (Mac).
     private let persistsPairing: Bool
+    public let storage: SharedStore.Context
+    private var retired = false
 
     private var rev: Int64 = 0
     private var hostId: String?
@@ -68,11 +70,14 @@ public final class BotStore {
     private var saveTask: Task<Void, Never>?
     private var rewound = false
 
-    public init(pairing: Pairing?, clientKind: String, persistsPairing: Bool) {
+    public init(pairing: Pairing?, clientKind: String, persistsPairing: Bool, storage: SharedStore.Context? = nil) {
+        let storage = storage ?? (persistsPairing ? SharedStore.activeContext : SharedStore.Context(accountID: nil))
+        self.storage = storage
+        usage = storage.usage ?? Usage()
         self.pairing = pairing
         self.clientKind = clientKind
         self.persistsPairing = persistsPairing
-        computers = persistsPairing ? SharedStore.computers : pairing.map { [$0] } ?? []
+        computers = persistsPairing ? storage.computers : pairing.map { [$0] } ?? []
         loadCache()
         connection = pairing == nil ? .unpaired : .connecting
     }
@@ -81,7 +86,7 @@ public final class BotStore {
 
     private var orderedPairing: Pairing? {
         guard persistsPairing else { return pairing }
-        return SharedStore.orderedPairing ?? pairing
+        return storage.orderedPairing ?? pairing
     }
 
     public var isOffline: Bool {
@@ -110,15 +115,16 @@ public final class BotStore {
     // MARK: pairing
 
     public func pair(_ p: Pairing) {
+        guard !retired else { return }
         let changedHost = pairing?.token != p.token
         pairing = p
         if persistsPairing {
-            SharedStore.pairing = p
-            SharedStore.preferredURL = nil
+            storage.pairing = p
+            storage.preferredURL = nil
         }
         // Re-pairing the same computer (new token after a reset) replaces its old entry.
         computers = [p] + computers.filter { $0.token != p.token && $0.name != p.name }
-        if persistsPairing { SharedStore.computers = computers }
+        if persistsPairing { storage.computers = computers }
         if changedHost { resetMirror() }
         connection = .connecting
         restartStream()
@@ -128,7 +134,7 @@ public final class BotStore {
     /// Forgets a computer; forgetting the active one switches to the next, if any.
     public func forget(_ p: Pairing) {
         computers.removeAll { $0.token == p.token }
-        if persistsPairing { SharedStore.computers = computers }
+        if persistsPairing { storage.computers = computers }
         guard p.token == pairing?.token else { return }
         if let next = computers.first { pair(next) } else { unpair() }
     }
@@ -141,8 +147,8 @@ public final class BotStore {
         computers = computers.map { var c = $0; if c.token == token { change(&c) }; return c }
         if pairing?.token == token { change(&pairing!) }
         guard persistsPairing else { return }
-        SharedStore.computers = computers
-        if SharedStore.pairing?.token == token, var p = SharedStore.pairing { change(&p); SharedStore.pairing = p }
+        storage.computers = computers
+        if storage.pairing?.token == token, var p = storage.pairing { change(&p); storage.pairing = p }
     }
 
     public func unpair() {
@@ -150,7 +156,7 @@ public final class BotStore {
         pairing = nil
         client = nil
         hello = nil
-        if persistsPairing { SharedStore.pairing = nil }
+        if persistsPairing { storage.pairing = nil }
         resetMirror()
         connection = .unpaired
     }
@@ -167,7 +173,25 @@ public final class BotStore {
 
     // MARK: lifecycle
 
+    /// Permanently detach a store when the client changes accounts. Existing
+    /// async callbacks retain this old store and its fixed storage namespace.
+    public func retire() {
+        setActive(false)
+        retired = true
+        saveTask?.cancel()
+        onPaired = nil
+        onBotUpdated = nil
+        onUsageChanged = nil
+        onSent = nil
+        client = nil
+        selection = nil
+        screenRequest = nil
+        showProfile = false
+        showPlugins = false
+    }
+
     public func setActive(_ active: Bool) {
+        guard !retired else { return }
         isActive = active
         if active {
             restartStream()
@@ -181,7 +205,7 @@ public final class BotStore {
 
     public func restartStream() {
         streamTask?.cancel()
-        guard pairing != nil, isActive else { return }
+        guard pairing != nil, isActive, !retired else { return }
         if connection != .online { connection = .connecting }
         streamTask = Task { [weak self] in await self?.runStream() }
     }
@@ -191,16 +215,19 @@ public final class BotStore {
         while !Task.isCancelled {
             guard let pairing = orderedPairing else { return }
             guard let client = await HostClient.resolve(pairing) else {
+                guard !Task.isCancelled, !retired else { return }
                 connection = .offline(HostError.unreachable.localizedDescription)
                 try? await Task.sleep(for: .seconds(backoff))
                 backoff = min(backoff * 2, 20)
                 continue
             }
+            guard !Task.isCancelled, !retired else { return }
             self.client = client
-            if persistsPairing { SharedStore.preferredURL = client.baseURL.absoluteString }
+            if persistsPairing { storage.preferredURL = client.baseURL.absoluteString }
             do {
                 if hello == nil || hello?.hostId != hostId {
                     let h = try await client.hello()
+                    guard !Task.isCancelled, !retired else { return }
                     hello = h
                     if let device = h.device, self.pairing?.device != device, let token = self.pairing?.token {
                         updateComputer(token) { $0.device = device }
@@ -217,6 +244,7 @@ public final class BotStore {
                     }
                 }
                 for try await event in client.events(since: rev, client: clientKind) {
+                    guard !Task.isCancelled, !retired else { return }
                     connection = .online
                     backoff = 1
                     apply(event)
@@ -310,7 +338,7 @@ public final class BotStore {
     // MARK: actions
 
     private func require() throws -> HostClient {
-        guard let client, connection == .online else { throw HostError.unreachable }
+        guard !retired, let client, connection == .online else { throw HostError.unreachable }
         return client
     }
 
@@ -451,6 +479,12 @@ public final class BotStore {
         await refreshPlugins()
     }
 
+    /// Re-detects agents on the computer (after an install or sign-in).
+    public func refreshBackends() async {
+        guard let client, let backends = try? await client.refreshBackends() else { return }
+        hello?.backends = backends
+    }
+
     public func listDirs(_ path: String?) async throws -> DirListing {
         try await require().listDirs(path)
     }
@@ -492,13 +526,14 @@ public final class BotStore {
     private static let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
     private var cacheStamp: String?
 
-    private static var cacheURL: URL {
-        URL.cachesDirectory.appending(path: "codync-mirror-\(Bundle.main.bundleIdentifier ?? "app").json")
+    private var cacheURL: URL {
+        let computer = SharedStore.Context.digest(pairing?.token ?? "unpaired")
+        return URL.cachesDirectory.appending(path: "codync-mirror-\(Bundle.main.bundleIdentifier ?? "app")-\(storage.id)-\(computer).json")
     }
 
     private func loadCache() {
         guard pairing != nil,
-              let data = try? Data(contentsOf: Self.cacheURL),
+              let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(Cache.self, from: data),
               cache.stamp?.hasPrefix(Self.appBuild + "/") == true else { return }
         cacheStamp = cache.stamp
@@ -509,6 +544,7 @@ public final class BotStore {
     }
 
     private func scheduleSave() {
+        guard !retired else { return }
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .seconds(2))
@@ -517,11 +553,12 @@ public final class BotStore {
     }
 
     public func saveCache() {
+        guard !retired else { return }
         // Keep the newest 200 entries per bot; older ones page in from the host.
         let kept = entries.values.flatMap { $0.filter { !$0.id.hasPrefix("local-") }.suffix(200) }
         let cache = Cache(stamp: "\(Self.appBuild)/\(hello?.version ?? "")", hostId: hostId, rev: rev, bots: Array(bots.values), entries: kept)
         if let data = try? JSONEncoder().encode(cache) {
-            try? data.write(to: Self.cacheURL, options: .atomic)
+            try? data.write(to: cacheURL, options: .atomic)
         }
     }
 }

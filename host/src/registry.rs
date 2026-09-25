@@ -141,9 +141,23 @@ fn contained(rel: &str) -> Option<&Path> {
     p.components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir)).then_some(p)
 }
 
-/// Shell command that starts the agent over ACP stdio, downloading it first if needed.
+/// How to run a registry agent: `program` alone (what ACP `terminal` sign-in
+/// methods add their own args to) and `args` for its ACP mode.
+pub struct Cmd {
+    pub program: String,
+    pub args: String,
+}
+
+impl Cmd {
+    /// The shell command that starts it over ACP stdio.
+    pub fn acp(&self) -> String {
+        format!("{} {}", self.program, self.args)
+    }
+}
+
+/// Downloads the agent first if needed.
 /// `progress` receives short status lines ("Downloading Cursor…").
-pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<String> {
+pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
     let name = agent["name"].as_str().unwrap_or("agent");
     let d = &agent["distribution"];
     match launch_kind(agent) {
@@ -153,20 +167,27 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<String> {
             let cmd =
                 target["cmd"].as_str().and_then(contained).ok_or_else(|| anyhow!("registry entry has a bad cmd"))?;
             let dir = install_binary(agent, target, cmd, &progress).await?;
-            Ok(format!("{}{} {}", env_prefix(target), shell_quote(&dir.join(cmd).to_string_lossy()), args_of(target)))
+            Ok(Cmd {
+                program: format!("{}{}", env_prefix(target), shell_quote(&dir.join(cmd).to_string_lossy())),
+                args: args_of(target),
+            })
         }
-        Some(Launch::Npx) => Ok(format!(
-            "{}npx -y {} {}",
-            env_prefix(&d["npx"]),
-            shell_quote(d["npx"]["package"].as_str().unwrap_or_default()),
-            args_of(&d["npx"])
-        )),
-        Some(Launch::Uvx) => Ok(format!(
-            "{}uvx {} {}",
-            env_prefix(&d["uvx"]),
-            shell_quote(d["uvx"]["package"].as_str().unwrap_or_default()),
-            args_of(&d["uvx"])
-        )),
+        Some(Launch::Npx) => Ok(Cmd {
+            program: format!(
+                "{}npx -y {}",
+                env_prefix(&d["npx"]),
+                shell_quote(d["npx"]["package"].as_str().unwrap_or_default())
+            ),
+            args: args_of(&d["npx"]),
+        }),
+        Some(Launch::Uvx) => Ok(Cmd {
+            program: format!(
+                "{}uvx {}",
+                env_prefix(&d["uvx"]),
+                shell_quote(d["uvx"]["package"].as_str().unwrap_or_default())
+            ),
+            args: args_of(&d["uvx"]),
+        }),
         None => bail!(
             "{name} has no build for this computer (needs {})",
             if d["uvx"].is_object() { "uv" } else { "Node.js" }
@@ -292,7 +313,7 @@ mod tests {
     async fn npx_command_is_quoted() {
         let a = json!({"id": "x", "name": "X", "distribution": {"npx": {"package": "@s/x@1.0.0", "args": ["--acp", "a b"], "env": {"K": "v", "BAD;rm": "x"}}}});
         if crate::backends::on_path("npx") {
-            assert_eq!(command(&a, |_| {}).await.unwrap(), "K=v npx -y @s/x@1.0.0 --acp 'a b'");
+            assert_eq!(command(&a, |_| {}).await.unwrap().acp(), "K=v npx -y @s/x@1.0.0 --acp 'a b'");
         }
     }
 

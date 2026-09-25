@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Values shared between the iOS app and its widgets through the App Group.
 public enum SharedStore {
@@ -8,44 +9,104 @@ public enum SharedStore {
 
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
 
+    /// Widgets read only the account selected by the app. Stores capture a fixed
+    /// context so late responses from a previous account cannot write into it.
+    public static var activeAccountID: String? {
+        get { defaults.string(forKey: "activeAccountID") }
+        set { defaults.set(newValue, forKey: "activeAccountID") }
+    }
+
+    public static var activeContext: Context { Context(accountID: activeAccountID) }
+
+    public struct Context {
+        public let accountID: String?
+        private let defaults: UserDefaults
+        public var id: String { accountID.map { Self.digest($0) } ?? "local" }
+
+        public init(accountID: String?, defaults: UserDefaults = UserDefaults(suiteName: SharedStore.appGroup) ?? .standard) {
+            self.accountID = accountID
+            self.defaults = defaults
+        }
+
+        private func key(_ name: String) -> String { accountID == nil ? name : "account.\(id).\(name)" }
+        public static func digest(_ value: String) -> String {
+            SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        }
+        private func read<T: Decodable>(_ type: T.Type, _ name: String) -> T? {
+            defaults.data(forKey: key(name)).flatMap { try? JSONDecoder().decode(type, from: $0) }
+        }
+        private func write<T: Encodable>(_ value: T?, _ name: String) {
+            defaults.set(value.flatMap { try? JSONEncoder().encode($0) }, forKey: key(name))
+        }
+        public var pairing: Pairing? {
+            get { read(Pairing.self, "pairing") }
+            nonmutating set { write(newValue, "pairing") }
+        }
+        public var computers: [Pairing] {
+            get { read([Pairing].self, "computers") ?? pairing.map { [$0] } ?? [] }
+            nonmutating set { write(newValue, "computers") }
+        }
+        public var preferredURL: String? {
+            get { defaults.string(forKey: key("preferredURL")) }
+            nonmutating set { defaults.set(newValue, forKey: key("preferredURL")) }
+        }
+        public var usage: Usage? {
+            get { read(Usage.self, "usage") }
+            nonmutating set { write(newValue, "usage") }
+        }
+        public var bots: [Bot] {
+            get { read([Bot].self, "bots") ?? [] }
+            nonmutating set { write(newValue, "bots") }
+        }
+        /// Deep links carry the storage scope captured when a widget/activity
+        /// was created, so an old surface cannot open another account's bot.
+        public func botURL(_ botID: String) -> URL {
+            var url = URLComponents()
+            url.scheme = "codync"
+            url.host = "bot"
+            url.path = "/" + botID
+            url.queryItems = [
+                URLQueryItem(name: "scope", value: id),
+                URLQueryItem(name: "computer", value: Self.digest(pairing?.token ?? "unpaired"))
+            ]
+            return url.url!
+        }
+        public func acceptsBotURL(_ url: URL) -> Bool {
+            guard url.scheme == "codync", url.host == "bot" else { return false }
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard let scope = items.first(where: { $0.name == "scope" })?.value else {
+                return accountID == nil
+            }
+            return scope == id && items.first(where: { $0.name == "computer" })?.value == Self.digest(pairing?.token ?? "unpaired")
+        }
+        public var orderedPairing: Pairing? {
+            guard var p = pairing else { return nil }
+            if let preferredURL, let i = p.urls.firstIndex(of: preferredURL) {
+                p.urls.insert(p.urls.remove(at: i), at: 0)
+            }
+            return p
+        }
+    }
+
     public static var pairing: Pairing? {
-        get { defaults.data(forKey: "pairing").flatMap { try? JSONDecoder().decode(Pairing.self, from: $0) } }
-        set { defaults.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: "pairing") }
+        get { activeContext.pairing }
+        set { activeContext.pairing = newValue }
     }
-
-    /// Every computer this phone has paired with, most recently used first.
-    /// `pairing` is the active one.
     public static var computers: [Pairing] {
-        get {
-            let saved = defaults.data(forKey: "computers").flatMap { try? JSONDecoder().decode([Pairing].self, from: $0) } ?? []
-            return saved.isEmpty ? pairing.map { [$0] } ?? [] : saved
-        }
-        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "computers") }
+        get { activeContext.computers }
+        set { activeContext.computers = newValue }
     }
-
-    /// Last address that answered, tried first next time.
     public static var preferredURL: String? {
-        get { defaults.string(forKey: "preferredURL") }
-        set { defaults.set(newValue, forKey: "preferredURL") }
+        get { activeContext.preferredURL }
+        set { activeContext.preferredURL = newValue }
     }
-
     public static var usage: Usage? {
-        get { defaults.data(forKey: "usage").flatMap { try? JSONDecoder().decode(Usage.self, from: $0) } }
-        set { defaults.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: "usage") }
+        get { activeContext.usage }
+        set { activeContext.usage = newValue }
     }
-
-    /// Roster snapshot for the Bots widget, written by the app as bots change.
     public static var bots: [Bot] {
-        get { defaults.data(forKey: "bots").flatMap { try? JSONDecoder().decode([Bot].self, from: $0) } ?? [] }
-        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "bots") }
+        get { activeContext.bots }
+        set { activeContext.bots = newValue }
     }
-
-    /// Pairing with the last working address moved to the front.
-    public static var orderedPairing: Pairing? {
-        guard var p = pairing else { return nil }
-        if let preferred = preferredURL, let i = p.urls.firstIndex(of: preferred) {
-            p.urls.insert(p.urls.remove(at: i), at: 0)
-        }
-        return p
-    }
+    public static var orderedPairing: Pairing? { activeContext.orderedPairing }
 }

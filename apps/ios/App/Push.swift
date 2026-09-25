@@ -35,6 +35,13 @@ final class PushRegistrar {
 
     private var deviceToken: Data?
     private weak var model: BotStore?
+    private var registrationTask: Task<Void, Never>?
+
+    func deactivate() {
+        registrationTask?.cancel()
+        registrationTask = nil
+        model = nil
+    }
 
     func requestAuthorization() async -> Bool {
         let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
@@ -57,10 +64,15 @@ final class PushRegistrar {
             }
             return
         }
-        Task {
+        registrationTask?.cancel()
+        let pairing = model.storage.orderedPairing
+        registrationTask = Task { [weak model] in
             do {
                 let ticket = try await relayTicket(token: token, kind: "alert")
-                guard let pairing = SharedStore.orderedPairing, let client = await HostClient.resolve(pairing) else { return }
+                try Task.checkCancellation()
+                guard let model, self.model === model, let pairing,
+                      let client = await HostClient.resolve(pairing) else { return }
+                try Task.checkCancellation()
                 try await client.registerDevice(ticket: ticket, relay: SharedStore.relayURL, name: UIDevice.current.name)
                 log.info("device registered with host")
             } catch {
@@ -75,24 +87,47 @@ final class PushRegistrar {
 final class LiveActivities {
     static let shared = LiveActivities()
 
+    private var requests: [UUID: Task<Void, Never>] = [:]
+
+    func endAll() {
+        requests.values.forEach { $0.cancel() }
+        requests.removeAll()
+        let ids = Set(Activity<BotActivityAttributes>.activities.map(\.id))
+        Task.detached {
+            for activity in Activity<BotActivityAttributes>.activities where ids.contains(activity.id) {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+        }
+    }
+
     private nonisolated static func find(_ botId: String) -> Activity<BotActivityAttributes>? {
         Activity<BotActivityAttributes>.activities.first { $0.attributes.botId == botId }
     }
 
     func start(for bot: Bot, model: BotStore) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled, Self.find(bot.id) == nil, let client = model.client else { return }
-        let attributes = BotActivityAttributes(bot: bot)
-        Task.detached { await Self.request(attributes: attributes, client: client) }
+        let attributes = BotActivityAttributes(bot: bot, link: model.storage.botURL(bot.id))
+        let id = UUID()
+        requests[id] = Task.detached { [weak self] in
+            await Self.request(attributes: attributes, client: client)
+            await self?.finishedRequest(id)
+        }
     }
+
+    private func finishedRequest(_ id: UUID) { requests[id] = nil }
 
     private nonisolated static func request(attributes: BotActivityAttributes, client: HostClient) async {
         let state = BotActivityAttributes.ContentState(status: "working", activity: "Starting…", startedAt: .now)
         do {
+            try Task.checkCancellation()
             let activity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil), pushType: .token)
             for await token in activity.pushTokenUpdates {
+                guard !Task.isCancelled else { break }
                 guard let ticket = try? await relayTicket(token: token, kind: "liveactivity") else { continue }
+                guard !Task.isCancelled else { break }
                 try? await client.registerActivity(botId: attributes.botId, ticket: ticket)
             }
+            if Task.isCancelled { await activity.end(nil, dismissalPolicy: .immediate) }
         } catch {
             log.info("live activity not started: \(error.localizedDescription)")
         }

@@ -31,6 +31,9 @@ private struct ChatSplitView: View {
     @Environment(AccountSession.self) private var account
     @State private var editing: EditorRequest?
     @State private var confirmDelete: Bot?
+    @State private var contextBot: Bot?
+    @State private var contextPoint = CGPoint.zero
+    @State private var newSessionBot: Bot?
     @State private var composing = false
     @State private var previousSelection: String?
     @State private var hoveredBot: String?
@@ -89,7 +92,19 @@ private struct ChatSplitView: View {
                             .accessibilityAddTraits(model.selection == bot.id ? .isSelected : [])
                             .help(bot.name)
                             .onHover { hoveredBot = $0 ? bot.id : nil }
-                            .contextMenu { botMenu(bot) }
+                            .overlay {
+                                GeometryReader { geometry in
+                                    SecondaryClickCapture { point in
+                                        let frame = geometry.frame(in: .named("chat-window"))
+                                        contextPoint = CGPoint(x: frame.minX + point.x, y: frame.minY + point.y)
+                                        contextBot = bot
+                                    }
+                                }
+                            }
+                            .accessibilityAction(named: "Conversation actions") {
+                                contextPoint = CGPoint(x: compact ? 64 : sidebarWidth - 24, y: 100)
+                                contextBot = bot
+                            }
                         }
                     }
                     .padding(.horizontal, 12)
@@ -186,8 +201,8 @@ private struct ChatSplitView: View {
         // Animate mode changes from every entry point, while ordinary resizing tracks the pointer.
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: compact)
         .coordinateSpace(name: "chat-window")
-        .allowsHitTesting(!showAccount)
-        .accessibilityHidden(showAccount)
+        .allowsHitTesting(!showAccount && contextBot == nil)
+        .accessibilityHidden(showAccount || contextBot != nil)
         .overlay(alignment: .bottomLeading) {
             if showAccount {
                 ZStack(alignment: .bottomLeading) {
@@ -220,10 +235,26 @@ private struct ChatSplitView: View {
                         },
                         onSearch: { dismissAccountMenu(); compact = false; searchFocused = true }
                     )
-                    .frame(width: min(288, windowSize.width - 32))
+                    .frame(width: min(260, windowSize.width - 32))
                     .padding(.leading, 16)
                     .padding(.bottom, compact ? 68 : 64)
                     .transition(.scale(scale: 0.97, anchor: .bottomLeading).combined(with: .opacity))
+                }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if let bot = contextBot {
+                ZStack(alignment: .topLeading) {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture { contextBot = nil }
+                        .accessibilityLabel("Dismiss conversation menu")
+                        .accessibilityAddTraits(.isButton)
+                    DesktopActionMenu(items: botActions(bot), onDismiss: { contextBot = nil })
+                        .frame(width: 260)
+                        .offset(x: min(max(8, contextPoint.x), windowSize.width - 268),
+                                y: min(max(8, contextPoint.y), max(8, windowSize.height - 344)))
+                        .transition(.opacity)
                 }
             }
         }
@@ -271,6 +302,16 @@ private struct ChatSplitView: View {
             sidebarWidth = min(sidebarWidth, max(260, $0.width - 420))
         }
         .hiddenWindowTitle()
+        .confirmationDialog("Start a new session?", isPresented: Binding(
+            get: { newSessionBot != nil },
+            set: { if !$0 { newSessionBot = nil } }
+        ), titleVisibility: .visible) {
+            if let bot = newSessionBot {
+                Button("New session") { model.newSession(bot.id); newSessionBot = nil }
+            }
+        } message: {
+            Text("The conversation stays here, but the agent starts with a fresh context.")
+        }
         .deleteBotConfirmation($confirmDelete)
         .storeErrorAlert(model)
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: model.selection)
@@ -360,7 +401,7 @@ extension ChatSplitView {
         }
         .font(.system(size: 13))
         .padding(.horizontal, 9)
-        .frame(height: 32)
+        .frame(height: 28)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 0.5))
         .padding(.horizontal, 12)
@@ -377,7 +418,7 @@ extension ChatSplitView {
                 AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { profilePlaceholder }
             } else { profilePlaceholder }
         }
-        .frame(width: 32, height: 32)
+        .frame(width: 28, height: 28)
         .background(Palette.bubbleUser, in: Circle())
         .clipShape(Circle())
         .overlay(Circle().strokeBorder(Palette.text.opacity(0.08), lineWidth: 0.5))
@@ -407,7 +448,7 @@ extension ChatSplitView {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 8)
-                .frame(height: 42)
+                .frame(height: 36)
                 .background(hoveredFooter == "marketplace" ? Palette.bubbleAgent : .clear,
                             in: RoundedRectangle(cornerRadius: 10))
                 .contentShape(Rectangle())
@@ -426,7 +467,7 @@ extension ChatSplitView {
 
                 }
                 .padding(.horizontal, 8)
-                .frame(height: 44)
+                .frame(height: 38)
                 .background(hoveredFooter == "account" || showAccount ? Palette.bubbleAgent : .clear,
                             in: RoundedRectangle(cornerRadius: 10))
                 .contentShape(Rectangle())
@@ -498,13 +539,21 @@ extension ChatSplitView {
         .padding(.bottom, 10)
     }
 
-    @ViewBuilder fileprivate func botMenu(_ bot: Bot) -> some View {
-        Button(bot.pinned ? "Unpin" : "Pin") { model.setPinned(bot, !bot.pinned) }
-        Button("Edit Profile…") { editing = EditorRequest(BotDraft(bot)) }
-        Button("Mark as Read") { model.markRead(bot.id) }
-        Button("Hide from List") { model.setHidden(bot, true) }
-        Divider()
-        Button("Delete…", role: .destructive) { confirmDelete = bot }
+    private func botActions(_ bot: Bot) -> [DesktopActionMenu.Item] {
+        [
+            .init(title: bot.pinned ? "Unpin" : "Pin", icon: "pin", action: { model.setPinned(bot, !bot.pinned) }),
+            .init(title: "Mark as Read", icon: "bell.badge", action: { model.markRead(bot.id) }),
+            .init(title: "Edit Profile…", icon: "square.and.pencil", divider: true,
+                  action: { editing = EditorRequest(BotDraft(bot)) }),
+            .init(title: "Copy conversation ID", icon: "square.on.square", divider: true, action: {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(bot.id, forType: .string)
+            }),
+            .init(title: "New session", icon: "arrow.counterclockwise", action: { newSessionBot = bot }),
+            .init(title: "Hide from sidebar", icon: "eye.slash", divider: true,
+                  action: { model.setHidden(bot, true) }),
+            .init(title: "Delete", icon: "trash", destructive: true, action: { confirmDelete = bot })
+        ]
     }
 }
 
@@ -600,7 +649,7 @@ private struct SidebarAccountPanel: View {
             if let errorMessage, page == "main" {
                 Text(errorMessage).font(.system(size: 12)).foregroundStyle(Palette.warning)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
             }
         }
     }
@@ -615,20 +664,20 @@ private struct SidebarAccountPanel: View {
     }
 
     private var accountIdentity: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.crop.circle").font(.system(size: 18))
+        HStack(spacing: 8) {
+            Image(systemName: "person.crop.circle").font(.system(size: 15))
             Text(email ?? name).font(.system(size: 12)).lineLimit(1)
             Spacer()
             if !signedIn { Text("Not signed in").font(.system(size: 11)) }
         }
         .foregroundStyle(Palette.secondary)
-        .padding(.horizontal, 12)
-        .frame(height: 38)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
     }
 
     private var divider: some View {
         Rectangle().fill(Palette.text.opacity(0.13)).frame(height: 0.5)
-            .padding(.horizontal, 10).padding(.vertical, 7)
+            .padding(.horizontal, 10).padding(.vertical, 5)
     }
 
     private func navigate(_ destination: String) {
@@ -659,21 +708,22 @@ private struct AccountPanelRow: View {
     let detail: String?
     let chevron: Bool
     let keyboardFocused: Bool
+    var destructive = false
     let action: () -> Void
     @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: icon).font(.system(size: 16, weight: .regular)).frame(width: 20)
-                Text(title).font(.system(size: 14)).lineLimit(1)
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 14, weight: .regular)).frame(width: 20)
+                Text(title).font(.system(size: 12)).lineLimit(1)
                 Spacer(minLength: 8)
                 if let detail { Text(detail).font(.system(size: 13)).foregroundStyle(Palette.secondary) }
                 if chevron { Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(Palette.secondary) }
             }
-            .foregroundStyle(Palette.text)
-            .padding(.horizontal, 12)
-            .frame(height: 40)
+            .foregroundStyle(destructive ? Palette.danger : Palette.text)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
             .background(hovered || keyboardFocused ? Palette.text.opacity(0.08) : .clear,
                         in: RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
@@ -681,5 +731,89 @@ private struct AccountPanelRow: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .onHover { hovered = $0 }
+    }
+}
+
+/// A SwiftUI action surface shared by pointer and accessibility entry points.
+private struct DesktopActionMenu: View {
+    struct Item {
+        let title: String
+        let icon: String
+        var divider = false
+        var destructive = false
+        let action: () -> Void
+    }
+
+    let items: [Item]
+    let onDismiss: () -> Void
+    @State private var highlighted = 0
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ForEach(items.indices, id: \.self) { index in
+                let item = items[index]
+                if item.divider {
+                    Rectangle().fill(Palette.text.opacity(0.13)).frame(height: 0.5)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                }
+                AccountPanelRow(title: item.title, icon: item.icon, detail: nil,
+                                chevron: false, keyboardFocused: highlighted == index,
+                                destructive: item.destructive) { activate(index) }
+                    .onHover { if $0 { highlighted = index } }
+            }
+        }
+        .padding(7)
+        .background(Color(light: 0xFAFAFA, dark: 0x1B1B1B), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.text.opacity(0.15), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Conversation actions")
+        .focusable()
+        .focused($focused)
+        .focusEffectDisabled()
+        .onKeyPress(.escape) { onDismiss(); return .handled }
+        .onKeyPress(.downArrow) { move(1); return .handled }
+        .onKeyPress(.upArrow) { move(-1); return .handled }
+        .onKeyPress(.tab, phases: .down) { press in move(press.modifiers.contains(.shift) ? -1 : 1); return .handled }
+        .onKeyPress(.return) { activate(highlighted); return .handled }
+        .onKeyPress(.space) { activate(highlighted); return .handled }
+        .task { await Task.yield(); focused = true }
+    }
+
+    private func move(_ delta: Int) { highlighted = (highlighted + delta + items.count) % items.count }
+
+    private func activate(_ index: Int) {
+        guard items.indices.contains(index) else { return }
+        onDismiss()
+        items[index].action()
+    }
+}
+
+/// Intercepts only secondary clicks; primary clicks, scrolling and dragging pass through.
+private struct SecondaryClickCapture: NSViewRepresentable {
+    let onClick: (CGPoint) -> Void
+
+    func makeNSView(context: Context) -> CaptureView { CaptureView(onClick: onClick) }
+    func updateNSView(_ view: CaptureView, context: Context) { view.onClick = onClick }
+
+    final class CaptureView: NSView {
+        var onClick: (CGPoint) -> Void
+        override var isFlipped: Bool { true }
+
+        init(onClick: @escaping (CGPoint) -> Void) {
+            self.onClick = onClick
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent,
+                  event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+            else { return nil }
+            return super.hitTest(point)
+        }
+        override func rightMouseDown(with event: NSEvent) { onClick(convert(event.locationInWindow, from: nil)) }
+        override func mouseDown(with event: NSEvent) { onClick(convert(event.locationInWindow, from: nil)) }
     }
 }

@@ -11,11 +11,11 @@ struct UserBubble: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
             Text(entry.data.text ?? "")
-                .font(.body)
+                .font(InterfaceMetrics.body)
                 .foregroundStyle(Palette.text)
                 .textSelection(.enabled)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 16))
+                .padding(.vertical, InterfaceMetrics.value(mac: 8, mobile: 10))
                 .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .contextMenu {
                     Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
@@ -58,8 +58,8 @@ struct AgentBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             MarkdownText(entry.data.text ?? "")
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 16))
+                .padding(.vertical, InterfaceMetrics.value(mac: 8, mobile: 10))
                 .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .contextMenu {
                     Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
@@ -140,7 +140,7 @@ struct WorkingIndicator: View {
                     }
                     Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Palette.tertiary)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 16))
                 .padding(.vertical, 12)
                 .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             }

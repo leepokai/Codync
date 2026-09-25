@@ -12,8 +12,30 @@ final class AccountSession {
     private(set) var isBusy = false
     var errorMessage: String?
 
+    var showSwitcher = false
+
+    struct Account: Identifiable {
+        let id: String
+        let sessionID: String
+        let email: String
+        let avatarURL: URL?
+    }
+
+    var userID: String? { clerk?.session?.status == .active ? clerk?.user?.id : nil }
+    var accounts: [Account] {
+        var seen = Set<String>()
+        return (clerk?.auth.sessions ?? []).compactMap { session in
+            guard session.status == .active, session.expireAt > .now,
+                  let user = session.user, seen.insert(user.id).inserted else { return nil }
+            return Account(id: user.id, sessionID: session.id,
+                           email: user.primaryEmailAddress?.emailAddress ?? "Codync account",
+                           avatarURL: URL(string: user.imageUrl).flatMap { $0.scheme == "https" ? $0 : nil })
+        }
+    }
+    var supportsMultipleAccounts: Bool { clerk?.environment?.authConfig.singleSessionMode == false }
+
     var isConfigured: Bool { clerk != nil }
-    var isSignedIn: Bool { clerk?.user != nil }
+    var isSignedIn: Bool { userID != nil }
     var email: String? { clerk?.user?.primaryEmailAddress?.emailAddress }
     var avatarURL: URL? {
         guard let image = clerk?.user?.imageUrl, let url = URL(string: image), url.scheme == "https" else { return nil }
@@ -30,16 +52,17 @@ final class AccountSession {
             clerk = nil
             return
         }
+        let scheme = Bundle.main.bundleIdentifier ?? "com.pokai.Codync"
         clerk = Clerk.configure(publishableKey: key, options: .init(
             telemetryEnabled: false,
-            redirectConfig: .init(redirectUrl: "com.pokai.Codync://callback", callbackUrlScheme: "com.pokai.Codync")
+            redirectConfig: .init(redirectUrl: "\(scheme)://callback", callbackUrlScheme: scheme)
         ))
     }
 
     func signIn() async {
         guard !isBusy else { return }
         guard let clerk else {
-            errorMessage = "Sign-in setup isn't finished yet. You can continue using Codync on this Mac."
+            errorMessage = "Sign-in setup isn't finished yet. You can continue using local pairing."
             return
         }
         isBusy = true
@@ -47,7 +70,7 @@ final class AccountSession {
         defer { isBusy = false }
         do {
             // Start Google directly; Clerk transfers new users into sign-up.
-            let result = try await clerk.auth.signInWithOAuth(provider: .google)
+            let result = try await clerk.auth.signInWithOAuth(provider: .google, prefersEphemeralWebBrowserSession: isSignedIn)
             switch result {
             case .signIn(let signIn):
                 if signIn.status != .complete {
@@ -68,15 +91,33 @@ final class AccountSession {
     }
 
     func signOut() async {
-        guard !isBusy, let clerk else { return }
+        guard !isBusy, let clerk, let sessionID = clerk.session?.id else { return }
         isBusy = true
         errorMessage = nil
         defer { isBusy = false }
         do {
-            try await clerk.auth.signOut()
+            try await clerk.auth.signOut(sessionId: sessionID)
         } catch {
             errorMessage = "Couldn't sign out. Check your connection and try again."
         }
+    }
+
+    func switchAccount(_ account: Account) async {
+        guard !isBusy, let clerk, account.id != userID else { return }
+        isBusy = true
+        errorMessage = nil
+        defer { isBusy = false }
+        do {
+            try await clerk.auth.setActive(sessionId: account.sessionID)
+        } catch {
+            errorMessage = "Couldn't switch accounts. Check your connection or sign in again."
+        }
+    }
+
+    func handle(_ url: URL) async {
+        guard let clerk else { return }
+        do { try await clerk.handle(url) }
+        catch { errorMessage = "Couldn't finish signing in. Please try again." }
     }
 
     private struct Configuration: Decodable {

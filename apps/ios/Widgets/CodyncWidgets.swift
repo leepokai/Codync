@@ -20,6 +20,7 @@ struct BotsEntry: TimelineEntry {
     let date: Date
     let bots: [Bot]
     let paired: Bool
+    var links: [String: URL] = [:]
 }
 
 struct BotsTimeline: TimelineProvider {
@@ -32,7 +33,9 @@ struct BotsTimeline: TimelineProvider {
 
     /// The app writes the roster and reloads this widget when a bot's state changes.
     func getTimeline(in context: Context, completion: @escaping (Timeline<BotsEntry>) -> Void) {
-        let entry = BotsEntry(date: .now, bots: SharedStore.bots, paired: SharedStore.pairing != nil)
+        let storage = SharedStore.activeContext
+        let entry = BotsEntry(date: .now, bots: storage.bots, paired: storage.pairing != nil,
+                              links: Dictionary(storage.bots.map { ($0.id, storage.botURL($0.id)) }, uniquingKeysWith: { a, _ in a }))
         completion(Timeline(entries: [entry], policy: .never))
     }
 }
@@ -96,7 +99,7 @@ struct BotsWidgetView: View {
                     summary.frame(width: 104, alignment: .leading)
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(ordered.prefix(3)) { bot in
-                            Link(destination: URL(string: "codync://bot/\(bot.id)")!) { BotLine(bot: bot, detail: line(bot)) }
+                            Link(destination: entry.links[bot.id] ?? URL(string: "codync://computers")!) { BotLine(bot: bot, detail: line(bot)) }
                         }
                         Spacer(minLength: 0)
                     }
@@ -112,7 +115,7 @@ struct BotsWidgetView: View {
                     summary
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .widgetURL(ordered.first.map { URL(string: "codync://bot/\($0.id)")! })
+                .widgetURL(ordered.first.flatMap { entry.links[$0.id] })
             }
         }
     }
@@ -490,7 +493,7 @@ struct BotLiveActivity: Widget {
         ActivityConfiguration(for: BotActivityAttributes.self) { context in
             LockScreenView(context: context)
                 .activityBackgroundTint(Palette.background)
-                .widgetURL(URL(string: "codync://bot/\(context.attributes.botId)"))
+                .widgetURL(context.attributes.link ?? URL(string: "codync://computers"))
         } dynamicIsland: { context in
             let s = context.state
             return DynamicIsland {
@@ -523,7 +526,7 @@ struct BotLiveActivity: Widget {
             } minimal: {
                 CharacterAvatar(shape: context.attributes.avatarShape, color: context.attributes.avatarColor, size: 20)
             }
-            .widgetURL(URL(string: "codync://bot/\(context.attributes.botId)"))
+            .widgetURL(context.attributes.link ?? URL(string: "codync://computers"))
         }
     }
 }

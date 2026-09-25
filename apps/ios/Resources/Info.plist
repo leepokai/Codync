@@ -10,6 +10,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>codync</string>
+				<string>com.pokai.Codync.ios</string>
 			</array>
 		</dict>
 	</array>

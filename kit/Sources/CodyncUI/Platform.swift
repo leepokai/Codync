@@ -81,3 +81,30 @@ extension View {
         #endif
     }
 }
+
+/// Compact desktop metrics while preserving the phone's touch layout and Dynamic Type.
+enum InterfaceMetrics {
+    static func value(mac: CGFloat, mobile: CGFloat) -> CGFloat {
+        #if os(macOS)
+        mac
+        #else
+        mobile
+        #endif
+    }
+
+    static var body: Font {
+        #if os(macOS)
+        .system(size: 12)
+        #else
+        .body
+        #endif
+    }
+
+    static var secondary: Font {
+        #if os(macOS)
+        .system(size: 11)
+        #else
+        .subheadline
+        #endif
+    }
+}

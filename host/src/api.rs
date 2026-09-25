@@ -31,6 +31,7 @@ pub fn router(hub: Arc<Hub>) -> Router {
         .route("/health", get(health))
         .route("/events", get(events))
         .route("/api/{method}", post(command))
+        .route("/term/{id}", get(term_stream))
         .route("/ingest/statusline", post(statusline))
         .with_state(hub)
 }
@@ -211,6 +212,7 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
         }
         "refreshBackends" => {
             tokio::task::spawn_blocking(backends::hydrate_path).await?;
+            backends::refresh_sign_in().await;
             json!({"backends": backends::list()})
         }
         "usage" => {
@@ -269,6 +271,33 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             market::remove_skill(&hub.store, str_arg(&b, "id")?)?;
             json!({})
         }
+        "agentSetup" => {
+            let step: crate::term::Step =
+                serde_json::from_value(b["step"].clone()).context("`step` is install or login")?;
+            let (cols, rows) = term_size(&b);
+            json!({"term": hub.terms.start(str_arg(&b, "backend")?, step, b["method"].as_str(), cols, rows)?})
+        }
+        "agentAuth" => crate::auth::check(&hub.store, str_arg(&b, "backend")?).await?,
+        "agentAuthenticate" => {
+            crate::auth::authenticate(&hub.store, str_arg(&b, "backend")?, str_arg(&b, "method")?).await?
+        }
+        "setAgentEnv" => {
+            let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
+            crate::auth::set_env(&hub.store, str_arg(&b, "backend")?, vars).await?
+        }
+        "termInput" => {
+            hub.terms.write(str_arg(&b, "term")?, str_arg(&b, "data")?)?;
+            json!({})
+        }
+        "termResize" => {
+            let (cols, rows) = term_size(&b);
+            hub.terms.resize(str_arg(&b, "term")?, cols, rows)?;
+            json!({})
+        }
+        "termClose" => {
+            hub.terms.close(str_arg(&b, "term")?);
+            json!({})
+        }
         "screenStatus" => hub.screen.state(),
         "screenOffer" => {
             let display = b["display"].as_u64().and_then(|d| u32::try_from(d).ok());
@@ -321,6 +350,40 @@ fn list_dirs(path: Option<std::path::PathBuf>) -> Result<Value> {
         "isGit": dir.join(".git").exists(),
         "dirs": dirs,
     }))
+}
+
+fn term_size(b: &Value) -> (u16, u16) {
+    let dim = |k: &str, default: u16| b[k].as_u64().and_then(|v| u16::try_from(v).ok()).unwrap_or(default);
+    (dim("cols", 80), dim("rows", 24))
+}
+
+#[derive(Deserialize)]
+struct TokenQuery {
+    token: Option<String>,
+}
+
+/// A setup terminal's output: everything so far, then live, ending after `exit`.
+async fn term_stream(
+    State(hub): State<Arc<Hub>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Query(q): Query<TokenQuery>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    if !authorized(&hub, &headers, q.token.as_deref()) {
+        return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid token".into()));
+    }
+    let term = hub.terms.get(&id).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "that terminal is gone".into()))?;
+    let (head, rx) = term.attach();
+    let done = head.iter().any(|v| v["type"] == "exit");
+    let live = BroadcastStream::new(rx).filter_map(|msg| async move { msg.ok() }).scan(done, |done, v| {
+        let out = (!*done).then(|| {
+            *done = v["type"] == "exit";
+            v
+        });
+        async move { out }
+    });
+    let events = stream::iter(head).chain(live).map(|v| Ok(Event::default().data(v.to_string())));
+    Ok(Sse::new(events).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
 #[derive(Deserialize)]

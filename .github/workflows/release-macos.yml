@@ -46,6 +46,10 @@ jobs:
 
           security list-keychain -d user -s "$KEYCHAIN_FILE"
 
+      - name: Metal toolchain
+        # SwiftTerm (setup terminals) ships a Metal shader.
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Build
         run: |
           xcodebuild build \

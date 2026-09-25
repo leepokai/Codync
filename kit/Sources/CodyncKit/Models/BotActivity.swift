@@ -18,12 +18,14 @@ public struct BotActivityAttributes: ActivityAttributes {
         }
     }
 
+    public var link: URL?
     public var botId: String
     public var name: String
     public var avatarShape: String
     public var avatarColor: String
 
-    public init(bot: Bot) {
+    public init(bot: Bot, link: URL? = nil) {
+        self.link = link
         botId = bot.id
         name = bot.name
         avatarShape = bot.avatarShape

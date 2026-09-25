@@ -214,7 +214,7 @@ impl Actor {
                 if e.to_string().to_lowercase().contains("auth")
                     && let Some(h) = crate::backends::harness(&self.cfg.backend)
                 {
-                    msg = format!("{} needs you to sign in on your computer first. {}", h.name, h.setup);
+                    msg = format!("{0} needs you to sign in. Open {0} in Marketplace to sign in.", h.name);
                 }
                 self.notice(&msg, NoticeStyle::Error);
                 self.turn = None;
@@ -330,15 +330,20 @@ impl Actor {
                         hub.set_runtime(&id, |r| r.activity = msg);
                     })
                     .await?
+                    .iter()
+                    .map(crate::registry::Cmd::acp)
+                    .collect()
                 }
             };
             self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
+            // Keys saved from an "environment variable" sign-in.
+            let env = crate::auth::env(&self.hub.store, &self.cfg.backend);
             let mut last_err = None;
             for (i, command) in candidates.iter().enumerate() {
                 let fallback_left = i + 1 < candidates.len();
                 // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
-                match start_agent(command, &self.cfg.cwd, budget).await {
+                match start_agent(command, &self.cfg.cwd, &env, budget).await {
                     Ok(conn) => {
                         self.conn = Some(conn);
                         break;
@@ -737,8 +742,8 @@ impl Actor {
 }
 
 /// Spawns an ACP agent and completes the `initialize` handshake.
-async fn start_agent(command: &str, cwd: &str, budget: Duration) -> Result<Conn> {
-    let (acp, rx) = Acp::spawn(command, cwd)?;
+async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget: Duration) -> Result<Conn> {
+    let (acp, rx) = Acp::spawn(command, cwd, env)?;
     let init = tokio::time::timeout(
         budget,
         acp.request(

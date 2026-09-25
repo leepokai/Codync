@@ -1,25 +1,39 @@
 import CodyncKit
 import CodyncUI
 import SwiftUI
+import Observation
 import UserNotifications
 import WidgetKit
 
 @main
 struct CodyncApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var model = AppStore.shared
+    @State private var app = AppStore.shared
+    private var model: BotStore { app.model }
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = AppTab.bots
 
     var body: some Scene {
         WindowGroup {
             RootView(tab: $tab)
+                .id(app.contextID)
                 .environment(model)
+                .environment(app.account)
                 .tint(Palette.accent)
+                .sheet(isPresented: Bindable(app.account).showSwitcher) {
+                    NavigationStack { AccountSwitcherView().environment(app.account).environment(model) }
+                }
+                .onChange(of: app.account.userID, initial: true) { _, userID in
+                    app.switchAccount(to: userID)
+                    tab = .bots
+                }
                 .onOpenURL { url in
-                    if let p = Pairing(url: url) {
+                    if url.scheme == "com.pokai.Codync.ios" {
+                        Task { await app.account.handle(url) }
+                    } else if let p = Pairing(url: url) {
                         model.pair(p)
                     } else if url.host() == "bot" {
+                        guard model.storage.acceptsBotURL(url) else { return }
                         model.selection = url.lastPathComponent
                     } else if url.host() == "plugins" {
                         model.selection = nil
@@ -55,23 +69,57 @@ struct CodyncApp: App {
     }
 }
 
-/// The phone's store, wired to push registration, Live Activities and widgets.
+/// A new host mirror for each account prevents in-flight work from being
+/// applied to another user's screen or storage. Cloud ownership is separate.
 @MainActor
-enum AppStore {
-    static let shared: BotStore = {
-        let store = BotStore(pairing: SharedStore.pairing, clientKind: "ios", persistsPairing: true)
+@Observable
+final class AppStore {
+    static let shared = AppStore()
+    let account = AccountSession()
+    private(set) var model: BotStore
+    private(set) var contextID: String
+
+    private init() {
+        let storage = SharedStore.Context(accountID: account.userID)
+        SharedStore.activeAccountID = account.userID
+        contextID = storage.id
+        model = Self.makeStore(storage)
+    }
+
+    func switchAccount(to userID: String?) {
+        let storage = SharedStore.Context(accountID: userID)
+        guard storage.id != contextID else { return }
+        model.retire()
+        PushRegistrar.shared.deactivate()
+        LiveActivities.shared.endAll()
+        SharedStore.activeAccountID = userID
+        storage.bots = []
+        storage.usage = nil
+        contextID = storage.id
+        model = Self.makeStore(storage)
+        BotsWidgetFeed.reset()
+        WidgetCenter.shared.reloadAllTimelines()
+        model.setActive(true)
+    }
+
+    private static func makeStore(_ storage: SharedStore.Context) -> BotStore {
+        let store = BotStore(pairing: storage.pairing, clientKind: "ios", persistsPairing: true, storage: storage)
         store.onPaired = { PushRegistrar.shared.syncDevice(with: $0) }
-        store.onBotUpdated = {
-            LiveActivities.shared.update(bot: $0)
+        store.onBotUpdated = { [weak store] bot in
+            guard let store else { return }
+            LiveActivities.shared.update(bot: bot)
             BotsWidgetFeed.update(store.roster)
         }
-        store.onSent = { LiveActivities.shared.start(for: $0, model: store) }
+        store.onSent = { [weak store] bot in
+            guard let store else { return }
+            LiveActivities.shared.start(for: bot, model: store)
+        }
         store.onUsageChanged = { usage in
-            SharedStore.usage = usage
+            storage.usage = usage
             WidgetCenter.shared.reloadAllTimelines()
         }
         return store
-    }()
+    }
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -92,7 +140,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let botId = response.notification.request.content.userInfo["botId"] as? String
         if let botId {
-            await MainActor.run { AppStore.shared.selection = botId }
+            await MainActor.run {
+                // Legacy push payloads have no account/computer identity. Never
+                // route one into a signed-in account using only a naked bot ID.
+                let app = AppStore.shared
+                guard app.account.userID == nil, app.model.bots[botId] != nil else { return }
+                app.model.selection = botId
+            }
         }
     }
 
@@ -107,6 +161,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 @MainActor
 enum BotsWidgetFeed {
     private static var shown = ""
+
+    static func reset() { shown = "" }
 
     static func update(_ roster: [Bot]) {
         SharedStore.bots = roster

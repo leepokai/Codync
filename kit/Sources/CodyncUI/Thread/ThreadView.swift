@@ -12,6 +12,7 @@ public struct ThreadView: View {
     @State private var draft = ""
     @State private var showTrace = false
     @State private var editing: EditorRequest?
+    @State private var templateRequest: EditorRequest?
     @State private var confirmNewSession = false
     @State private var confirmDelete: Bot?
     /// Desktop: the bot's settings as an inspector beside the chat.
@@ -30,7 +31,7 @@ public struct ThreadView: View {
                     conversation.frame(maxWidth: .infinity)
                     if showSettings && geometry.size.width >= 680 {
                         Rectangle().fill(Palette.border).frame(width: 1)
-                        detailsPanel.frame(width: 320)
+                        detailsPanel.frame(width: 292)
                     }
                 }
                 .onGeometryChange(for: CGFloat.self) {
@@ -128,7 +129,11 @@ public struct ThreadView: View {
                     HStack {
                         header
                         Spacer(minLength: 8)
-                        menu
+                        if let bot {
+                            TemplateButton {
+                                templateRequest = EditorRequest(BotDraft(bot))
+                            }
+                        }
                         if !showSettings || availableWidth < 680 {
                             Button("Conversation details", systemImage: "chevron.right.2") { toggleDetails() }
                                 .labelStyle(.iconOnly)
@@ -157,6 +162,9 @@ public struct ThreadView: View {
                 #endif
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $templateRequest) { request in
+            BotTemplateView(draft: request.draft)
         }
         .sheet(item: $editing) { request in
             NavigationStack { BotEditorView(draft: request.draft) }
@@ -344,11 +352,7 @@ public struct ThreadView: View {
             Divider()
             Button("Delete bot", systemImage: "trash", role: .destructive) { confirmDelete = bot }
         } label: {
-            #if os(macOS)
-            Image(systemName: "square.and.arrow.up")
-            #else
             Image(systemName: "ellipsis.circle")
-            #endif
         }
     }
 
@@ -367,9 +371,10 @@ public struct ThreadView: View {
         return HStack(alignment: .bottom, spacing: 8) {
             TextField(working ? "Queue a message for \(bot?.name ?? "it")" : "Message \(bot?.name ?? "")", text: $draft, axis: .vertical)
                 .lineLimit(1...8)
+                .font(InterfaceMetrics.body)
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
-                .padding(.vertical, 10)
+                .padding(.vertical, InterfaceMetrics.value(mac: 7, mobile: 10))
                 .sendOnReturn(submit)
             if working && draft.isEmpty {
                 Button {
@@ -377,7 +382,7 @@ public struct ThreadView: View {
                 } label: {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 12, weight: .bold))
-                        .frame(width: 34, height: 34)
+                        .frame(width: InterfaceMetrics.value(mac: 28, mobile: 34), height: InterfaceMetrics.value(mac: 28, mobile: 34))
                         .background(Palette.accentFill, in: Circle())
                         .foregroundStyle(Palette.onAccent)
                 }
@@ -388,7 +393,7 @@ public struct ThreadView: View {
                 Button(action: submit) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 14, weight: .bold))
-                        .frame(width: 34, height: 34)
+                        .frame(width: InterfaceMetrics.value(mac: 28, mobile: 34), height: InterfaceMetrics.value(mac: 28, mobile: 34))
                         .background(canSend ? Palette.accentFill : Palette.accentDim, in: Circle())
                         .foregroundStyle(canSend ? Palette.onAccent : Palette.tertiary)
                 }
@@ -398,9 +403,9 @@ public struct ThreadView: View {
                 .help("Send")
             }
         }
-        .padding(.leading, 18)
+        .padding(.leading, InterfaceMetrics.value(mac: 14, mobile: 18))
         .padding(.trailing, 6)
-        .padding(.vertical, 6)
+        .padding(.vertical, InterfaceMetrics.value(mac: 4, mobile: 6))
         .composerSurface(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.top, 6)
@@ -469,5 +474,27 @@ private struct IntroCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 24)
+    }
+}
+
+/// The share glyph creates a settings template; conversation actions live in the sidebar.
+private struct TemplateButton: View {
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 15))
+                .foregroundStyle(hovered ? Palette.text : Palette.secondary)
+                .frame(width: 30, height: 30)
+                .background(hovered ? Palette.text.opacity(0.08) : .clear,
+                            in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .accessibilityLabel("Create template")
+        .help("Create template")
     }
 }

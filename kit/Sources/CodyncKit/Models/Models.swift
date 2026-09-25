@@ -204,6 +204,16 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
     public var registry: String?
     public var description: String?
     public var installed: Bool?
+    /// Known to Codync by name: it can install and sign in to it.
+    public var curated: Bool?
+    /// Missing when the host can't tell.
+    public var signedIn: Bool?
+    public var canInstall: Bool?
+}
+
+/// What a setup terminal on the computer runs.
+public enum SetupStep: String, Codable, Sendable {
+    case install, login
 }
 
 public struct Hello: Codable, Sendable {

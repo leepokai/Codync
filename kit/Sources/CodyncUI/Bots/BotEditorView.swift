@@ -103,12 +103,12 @@ struct BotSettingsForm: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: InterfaceMetrics.value(mac: 12, mobile: 18)) {
+                VStack(spacing: InterfaceMetrics.value(mac: 12, mobile: 16)) {
                     #if os(macOS)
                     Button { pickingAvatar.toggle() } label: {
-                        CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 80)
-                            .padding(18)
+                        CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 56)
+                            .padding(12)
                             .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 20))
                     }
                     .buttonStyle(.plain)
@@ -116,7 +116,7 @@ struct BotSettingsForm: View {
                     .help("Edit Bot avatar")
                     .popover(isPresented: $pickingAvatar) {
                         AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
-                            .padding(20)
+                            .padding(14)
                             .frame(width: 300)
                     }
                     #else
@@ -141,7 +141,12 @@ struct BotSettingsForm: View {
                 }
 
                 // Grok-style option card: no dividers, values in outlined pills.
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: InterfaceMetrics.value(mac: 12, mobile: 20)) {
+                    OptionRow("Computer") {
+                        Text(model.hostName)
+                            .lineLimit(1)
+                            .foregroundStyle(Palette.secondary)
+                    }
                     OptionRow("Agent") {
                         PillMenu(title: model.backendName(draft.backend), selection: $draft.backend,
                                  options: (model.hello?.backends ?? []).map { ($0.id, $0.available ? $0.name : "\($0.name) (not installed)") } + [("custom", "Custom command")])
@@ -161,7 +166,7 @@ struct BotSettingsForm: View {
                             .plainTextInput()
                             .multilineTextAlignment(.trailing)
                             .textFieldStyle(.plain)
-                            .frame(width: 130)
+                            .frame(width: InterfaceMetrics.value(mac: 100, mobile: 130))
                             .pill()
                     }
                     OptionRow("Project folder") {
@@ -182,7 +187,7 @@ struct BotSettingsForm: View {
                     Toggle(isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 })) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Notifications").foregroundStyle(Palette.text)
-                            Text("Get notified when this bot finishes or needs you").font(.subheadline).foregroundStyle(Palette.secondary)
+                            Text("Get notified when this bot finishes or needs you").font(InterfaceMetrics.secondary).foregroundStyle(Palette.secondary)
                         }
                     }
                     .toggleStyle(.switch)
@@ -194,15 +199,15 @@ struct BotSettingsForm: View {
                                 Text(model.screen?.enabled == true
                                     ? "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone."
                                     : "Let this bot see the screen and use the mouse and keyboard. Turn on Remote screen in Codync's menu on the computer first.")
-                                    .font(.subheadline).foregroundStyle(Palette.secondary)
+                                    .font(InterfaceMetrics.secondary).foregroundStyle(Palette.secondary)
                             }
                         }
                         .toggleStyle(.switch)
                         .tint(Palette.switchOn)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 20)
+                .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 18))
+                .padding(.vertical, InterfaceMetrics.value(mac: 14, mobile: 20))
                 .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
                 PluginToggles(
@@ -228,8 +233,12 @@ struct BotSettingsForm: View {
                     Text(error).font(.footnote).foregroundStyle(Palette.danger)
                 }
             }
-            .padding(20)
+            .padding(InterfaceMetrics.value(mac: 14, mobile: 20))
         }
+        .font(InterfaceMetrics.body)
+        #if os(macOS)
+        .controlSize(.small)
+        #endif
         .scrollDismissesKeyboard(.interactively)
         .background(Palette.background)
         .task { await model.refreshPlugins() }
@@ -263,7 +272,7 @@ private struct Field<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.subheadline).foregroundStyle(Palette.secondary).padding(.leading, 4)
+            Text(label).font(InterfaceMetrics.secondary).foregroundStyle(Palette.secondary).padding(.leading, 4)
             content
         }
     }
@@ -296,10 +305,10 @@ private struct PluginToggles: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.subheadline).foregroundStyle(Palette.secondary).padding(.leading, 4)
-            VStack(alignment: .leading, spacing: 16) {
+            Text(title).font(InterfaceMetrics.secondary).foregroundStyle(Palette.secondary).padding(.leading, 4)
+            VStack(alignment: .leading, spacing: InterfaceMetrics.value(mac: 12, mobile: 16)) {
                 if items.isEmpty {
-                    Text(empty).font(.subheadline).foregroundStyle(Palette.secondary)
+                    Text(empty).font(InterfaceMetrics.secondary).foregroundStyle(Palette.secondary)
                 }
                 ForEach(items, id: \.id) { item in
                     Toggle(isOn: Binding(
@@ -320,7 +329,7 @@ private struct PluginToggles: View {
                     .tint(Palette.switchOn)
                 }
             }
-            .padding(18)
+            .padding(InterfaceMetrics.value(mac: 12, mobile: 18))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
@@ -357,8 +366,8 @@ private struct PillMenu: View {
 extension View {
     /// The outlined value pill used in the options card.
     func pill() -> some View {
-        padding(.horizontal, 12)
-            .padding(.vertical, 7)
+        padding(.horizontal, InterfaceMetrics.value(mac: 9, mobile: 12))
+            .padding(.vertical, InterfaceMetrics.value(mac: 5, mobile: 7))
             .background(Palette.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Palette.border))
     }
@@ -366,8 +375,8 @@ extension View {
     /// A bordered, rounded input box.
     func fieldBox() -> some View {
         textFieldStyle(.plain)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+            .padding(.horizontal, InterfaceMetrics.value(mac: 10, mobile: 14))
+            .padding(.vertical, InterfaceMetrics.value(mac: 8, mobile: 11))
             .background(Palette.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.border))
     }

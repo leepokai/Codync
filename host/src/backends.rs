@@ -23,7 +23,53 @@ pub struct Harness {
     pub local: Option<&'static str>,
     /// Entry in the ACP registry (adapter or pinned build).
     pub registry: Option<&'static str>,
+    /// What to tell someone setting it up by hand.
     pub setup: &'static str,
+    /// How Codync installs the CLI for you (in a setup terminal).
+    pub install: Option<Install>,
+    /// Shell command that signs in, run in a setup terminal.
+    pub login: &'static str,
+    /// How to tell whether it's signed in without starting it.
+    pub signed_in: Option<SignInCheck>,
+}
+
+#[derive(Clone, Copy)]
+pub enum Install {
+    /// A vendor install script (`curl … | bash`).
+    Script(&'static str),
+    /// A global npm package.
+    Npm(&'static str),
+}
+
+impl Install {
+    pub fn command(self) -> String {
+        match self {
+            Self::Script(s) => s.to_owned(),
+            Self::Npm(pkg) => format!(
+                "command -v npm >/dev/null || {{ echo 'This needs Node.js first: https://nodejs.org'; exit 1; }}; npm install -g {pkg}"
+            ),
+        }
+    }
+}
+
+/// `<bin> <args>`, judged by exit code and stdout.
+#[derive(Clone, Copy)]
+pub struct SignInCheck {
+    pub args: &'static str,
+    pub ok: fn(bool, &str) -> bool,
+}
+
+fn exit_ok(success: bool, _: &str) -> bool {
+    success
+}
+
+fn claude_signed_in(_: bool, out: &str) -> bool {
+    serde_json::from_str::<Value>(out).is_ok_and(|v| v["loggedIn"] == true)
+}
+
+fn says_logged_in(_: bool, out: &str) -> bool {
+    let out = out.to_lowercase();
+    out.contains("logged in") && !out.contains("not logged in")
 }
 
 pub const HARNESSES: &[Harness] = &[
@@ -34,6 +80,9 @@ pub const HARNESSES: &[Harness] = &[
         local: None,
         registry: Some("claude-acp"),
         setup: "Install Claude Code and run `claude` once to sign in.",
+        install: Some(Install::Script("curl -fsSL https://claude.ai/install.sh | bash")),
+        login: "claude auth login",
+        signed_in: Some(SignInCheck { args: "auth status", ok: claude_signed_in }),
     },
     Harness {
         id: "codex",
@@ -42,6 +91,9 @@ pub const HARNESSES: &[Harness] = &[
         local: None,
         registry: Some("codex-acp"),
         setup: "Install Codex CLI and run `codex login`.",
+        install: Some(Install::Npm("@openai/codex")),
+        login: "codex login --device-auth",
+        signed_in: Some(SignInCheck { args: "login status", ok: exit_ok }),
     },
     Harness {
         id: "cursor",
@@ -50,6 +102,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("cursor"),
         setup: "Install Cursor CLI (curl https://cursor.com/install -fsS | bash) and run `cursor-agent login`.",
+        install: Some(Install::Script("curl https://cursor.com/install -fsS | bash")),
+        login: "cursor-agent login",
+        signed_in: Some(SignInCheck { args: "status", ok: says_logged_in }),
     },
     Harness {
         id: "pi",
@@ -58,6 +113,9 @@ pub const HARNESSES: &[Harness] = &[
         local: None,
         registry: Some("pi-acp"),
         setup: "Install pi (npm install -g @mariozechner/pi-coding-agent) and sign in with `pi`.",
+        install: Some(Install::Npm("@mariozechner/pi-coding-agent")),
+        login: "pi",
+        signed_in: None,
     },
     Harness {
         id: "opencode",
@@ -66,6 +124,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("opencode"),
         setup: "Install OpenCode (curl -fsSL https://opencode.ai/install | bash) and run `opencode auth login`.",
+        install: Some(Install::Script("curl -fsSL https://opencode.ai/install | bash")),
+        login: "opencode auth login",
+        signed_in: None,
     },
     Harness {
         id: "grok",
@@ -74,6 +135,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} agent stdio"),
         registry: Some("grok-build"),
         setup: "Install Grok Build (curl -fsSL https://x.ai/cli/install.sh | bash) and run `grok` once to sign in.",
+        install: Some(Install::Script("curl -fsSL https://x.ai/cli/install.sh | bash")),
+        login: "grok",
+        signed_in: None,
     },
     Harness {
         id: "gemini",
@@ -82,6 +146,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} --acp"),
         registry: Some("gemini"),
         setup: "Install Gemini CLI (npm install -g @google/gemini-cli) and run `gemini` once to sign in.",
+        install: Some(Install::Npm("@google/gemini-cli")),
+        login: "gemini",
+        signed_in: None,
     },
     Harness {
         id: "copilot",
@@ -90,6 +157,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} --acp --stdio"),
         registry: Some("github-copilot-cli"),
         setup: "Install Copilot CLI (npm install -g @github/copilot) and run `copilot` to sign in.",
+        install: Some(Install::Npm("@github/copilot")),
+        login: "copilot",
+        signed_in: None,
     },
     Harness {
         id: "qwen",
@@ -98,6 +168,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} --acp"),
         registry: Some("qwen-code"),
         setup: "Install Qwen Code (npm install -g @qwen-code/qwen-code) and sign in with `qwen`.",
+        install: Some(Install::Npm("@qwen-code/qwen-code")),
+        login: "qwen",
+        signed_in: None,
     },
     Harness {
         id: "goose",
@@ -106,6 +179,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("goose"),
         setup: "Install goose and run `goose configure`.",
+        install: None,
+        login: "goose configure",
+        signed_in: None,
     },
     Harness {
         id: "kimi",
@@ -114,6 +190,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("kimi"),
         setup: "Install Kimi CLI and sign in with `kimi`.",
+        install: None,
+        login: "kimi",
+        signed_in: None,
     },
     Harness {
         id: "droid",
@@ -122,6 +201,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} exec --output-format acp-daemon"),
         registry: Some("factory-droid"),
         setup: "Install Droid (curl -fsSL https://app.factory.ai/cli | sh) and sign in with `droid`.",
+        install: Some(Install::Script("curl -fsSL https://app.factory.ai/cli | sh")),
+        login: "droid",
+        signed_in: None,
     },
     Harness {
         id: "amp",
@@ -130,6 +212,9 @@ pub const HARNESSES: &[Harness] = &[
         local: None,
         registry: Some("amp-acp"),
         setup: "Install Amp and sign in with `amp login`.",
+        install: None,
+        login: "amp login",
+        signed_in: None,
     },
     Harness {
         id: "kilo",
@@ -138,6 +223,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("kilo"),
         setup: "Install Kilo CLI (npm install -g @kilocode/cli) and sign in.",
+        install: Some(Install::Npm("@kilocode/cli")),
+        login: "kilo",
+        signed_in: None,
     },
     Harness {
         id: "cline",
@@ -146,6 +234,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} --acp"),
         registry: Some("cline"),
         setup: "Install Cline CLI (npm install -g cline) and sign in.",
+        install: Some(Install::Npm("cline")),
+        login: "cline",
+        signed_in: None,
     },
     Harness {
         id: "auggie",
@@ -154,6 +245,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} --acp"),
         registry: Some("auggie"),
         setup: "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.",
+        install: Some(Install::Npm("@augmentcode/auggie")),
+        login: "auggie login",
+        signed_in: None,
     },
     Harness {
         id: "vibe",
@@ -162,6 +256,9 @@ pub const HARNESSES: &[Harness] = &[
         local: None,
         registry: Some("mistral-vibe"),
         setup: "Install Mistral Vibe and run `vibe` once to sign in.",
+        install: None,
+        login: "vibe",
+        signed_in: None,
     },
     Harness {
         id: "kiro",
@@ -170,6 +267,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: None,
         setup: "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.",
+        install: Some(Install::Script("curl -fsSL https://cli.kiro.dev/install | bash")),
+        login: "kiro-cli login",
+        signed_in: None,
     },
     Harness {
         id: "devin",
@@ -178,6 +278,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("devin"),
         setup: "Install the Devin CLI and sign in.",
+        install: None,
+        login: "devin",
+        signed_in: None,
     },
     Harness {
         id: "qoder",
@@ -186,6 +289,9 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} --acp"),
         registry: Some("qoder"),
         setup: "Install Qoder CLI and sign in.",
+        install: None,
+        login: "qodercli",
+        signed_in: None,
     },
 ];
 
@@ -338,6 +444,8 @@ pub fn list() -> Vec<Value> {
                 "path": path.map(|p| p.to_string_lossy().into_owned()),
                 "description": reg.and_then(|a| a["description"].as_str()).unwrap_or_default(),
                 "installHint": h.setup,
+                "signedIn": signed_in(h.id),
+                "canInstall": h.install.is_some(),
                 "command": h.local.unwrap_or_default(),
                 "registry": h.registry,
                 "curated": true,
@@ -359,6 +467,7 @@ pub fn list() -> Vec<Value> {
             "path": null,
             "description": a["description"],
             "installHint": format!("Codync installs it automatically. Sign in to {} on this computer first if it needs an account.", a["name"].as_str().unwrap_or(id)),
+            "signedIn": signed_in(id),
             "command": "",
             "registry": id,
             "curated": false,
@@ -368,20 +477,77 @@ pub fn list() -> Vec<Value> {
     out
 }
 
+// MARK: sign-in
+
+/// Last sign-in check per harness id; missing = can't tell.
+static SIGNED_IN: Mutex<Vec<(String, bool)>> = Mutex::new(Vec::new());
+
+pub fn signed_in(id: &str) -> Option<bool> {
+    SIGNED_IN.locked().iter().find(|(h, _)| h == id).map(|(_, ok)| *ok)
+}
+
+/// Records what a check found (`None`: can't tell).
+pub fn set_signed_in(id: &str, state: Option<bool>) {
+    let mut map = SIGNED_IN.locked();
+    map.retain(|(h, _)| h != id);
+    if let Some(ok) = state {
+        map.push((id.to_owned(), ok));
+    }
+}
+
+/// Re-checks every installed harness that can report its sign-in state.
+pub async fn refresh_sign_in() {
+    let checks = HARNESSES.iter().filter_map(|h| {
+        let check = h.signed_in?;
+        let bin = h.bins.iter().find_map(|b| which(b))?;
+        Some(async move {
+            let run = tokio::process::Command::new(bin)
+                .args(check.args.split_whitespace())
+                .stdin(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .kill_on_drop(true)
+                .output();
+            let ok = match tokio::time::timeout(Duration::from_secs(15), run).await {
+                Ok(Ok(out)) => Some((check.ok)(out.status.success(), &String::from_utf8_lossy(&out.stdout))),
+                Ok(Err(e)) => {
+                    tracing::info!(backend = h.id, error = %e, "sign-in check failed");
+                    None
+                }
+                Err(_) => None,
+            };
+            (h.id, ok)
+        })
+    });
+    let results = futures::future::join_all(checks).await;
+    for (id, ok) in results {
+        set_signed_in(id, ok);
+    }
+}
+
+/// `program` is some other harness's CLI (not `backend`'s own).
+pub fn belongs_to_other(backend: &str, program: &str) -> bool {
+    let name = Path::new(program).file_name().and_then(|n| n.to_str()).unwrap_or(program);
+    let own = |h: &Harness| h.id == backend || h.registry == Some(backend);
+    HARNESSES.iter().any(|h| !own(h) && h.bins.contains(&name))
+        && !HARNESSES.iter().any(|h| own(h) && h.bins.contains(&name))
+}
+
 pub fn is_known(id: &str) -> bool {
     harness(id).is_some() || registry::agent(id).is_some()
 }
 
 /// Ways to start this backend, best first. Local CLIs can be too old to speak
 /// ACP, so the registry build is kept as a fallback.
-pub async fn launch_candidates(id: &str, progress: impl Fn(&str)) -> anyhow::Result<Vec<String>> {
+pub async fn launch_candidates(id: &str, progress: impl Fn(&str)) -> anyhow::Result<Vec<registry::Cmd>> {
     let mut out = vec![];
     let h = harness(id);
     if let Some(h) = h
         && let Some(template) = h.local
         && let Some(path) = h.bins.iter().find_map(|b| which(b))
     {
-        out.push(template.replace("{bin}", &shell_quote(&path.to_string_lossy())));
+        let program = shell_quote(&path.to_string_lossy());
+        let args = template.strip_prefix("{bin}").unwrap_or(template).trim().to_owned();
+        out.push(registry::Cmd { program, args });
     }
     let reg_id = h.map_or(Some(id), |h| h.registry);
     if let Some(agent) = reg_id.and_then(registry::agent) {

@@ -36,14 +36,8 @@ public struct UsageBar: View {
 }
 
 public extension UsageProvider {
-    /// Each provider's own color, used by the Usage tab and the provider widget.
-    var tint: Color {
-        switch id {
-        case "claude": Color(hex: 0xD97757)
-        case "codex": Color(hex: 0x3D8BF2)
-        default: Palette.accent
-        }
-    }
+    /// Claude keeps its orange; everyone else is ink, like the rest of the app.
+    var tint: Color { id == "claude" ? Color(hex: 0xD97757) : Palette.accent }
 
     /// ACP registry id of the provider's agent, for its logo (`AgentIcon`).
     /// Claude and Codex run through ACP adapters (`claude-acp`, `codex-acp`); others by their own id.

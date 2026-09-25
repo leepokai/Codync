@@ -16,7 +16,12 @@ struct RootView: View {
     var body: some View {
         Group {
             if model.pairing == nil {
-                PairingView()
+                NavigationStack {
+                    PairingView()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) { AccountSwitcherButton() }
+                        }
+                }
             } else {
                 TabView(selection: $tab) {
                     Tab("Bots", systemImage: "bubble.left.and.bubble.right.fill", value: .bots) {

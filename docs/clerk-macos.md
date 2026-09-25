@@ -24,7 +24,7 @@ and publishable key. Never put a Clerk secret key in the Mac bundle or this file
 
 ## Flow
 
-`AccountSession` configures Clerk once. Continue with Google calls `clerk.auth.signInWithOAuth(provider: .google)`
+`apps/shared/AccountSession.swift` configures Clerk once per app. Continue with Google calls `clerk.auth.signInWithOAuth(provider: .google)`
 directly, without the Clerk Account Portal intermediary. Google authorization
 uses the SDK's system browser authentication session. Clerk handles new-user
 transfer, callback validation, session restoration and Keychain storage.
@@ -53,3 +53,30 @@ consent; compilation alone does not verify those steps.
 References:
 - https://clerk.com/docs/ios/getting-started/quickstart
 - https://github.com/clerk/clerk-ios
+
+## iOS account switching
+
+The iOS app now uses the same ClerkKit dependency and shared AccountSession.
+Its top-left button opens Accounts; Computers & settings is a separate destination
+inside that sheet. The iOS native application must be registered in the same Clerk
+instance with bundle ID `com.pokai.Codync.ios` and its own callback
+`com.pokai.Codync.ios://callback`. The iOS public configuration is in
+`apps/ios/Resources/ClerkConfig.plist`. The repository configuration does not prove
+that the corresponding Clerk Dashboard registration has been completed.
+
+To retain several accounts at once, enable multi-session support in the Clerk
+instance. The UI reads `authConfig.singleSessionMode`: with multi-session enabled,
+it lists active SDK sessions and switches with `auth.setActive(sessionId:)`; with
+single-session enabled, it asks the user to sign out before using another account.
+Signing out passes the current session ID, rather than signing out all accounts.
+
+Pairings and caches are partitioned by the Clerk user ID on this iPhone. Local
+pairings keep their original storage namespace and are not automatically claimed
+by a newly signed-in user. Each BotStore captures a fixed storage context, and is
+retired when changing accounts. This is client-side separation, not server-side
+ownership enforcement. Cloudflare device discovery, per-device grants, account-aware
+push revocation and Keychain migration remain work in the architecture plan.
+
+Verify with two real Google accounts: add both, switch, cancel OAuth, restart,
+check each account's pairings, sign out just one, and verify the other remains.
+A simulator build verifies compilation, not the Dashboard settings or OAuth flow.

@@ -25,6 +25,24 @@ pub enum Incoming {
 /// In-flight requests by JSON-RPC id. A std mutex: it's never held across an `.await`.
 type Pending = Arc<std::sync::Mutex<HashMap<i64, oneshot::Sender<Result<Value, Value>>>>>;
 
+/// A JSON-RPC error answer (downcast from `request`'s error to read the code).
+#[derive(Debug)]
+pub struct RpcError {
+    pub code: i64,
+    pub message: String,
+}
+
+/// ACP's "authentication required".
+pub const AUTH_REQUIRED: i64 = -32000;
+
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RpcError {}
+
 pub struct Acp {
     stdin: tokio::sync::Mutex<ChildStdin>,
     next_id: AtomicI64,
@@ -34,10 +52,16 @@ pub struct Acp {
 
 impl Acp {
     /// Spawns `command` through `sh -c` so user-provided commands (npx, env vars) just work.
-    pub fn spawn(command: &str, cwd: &str) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Incoming>)> {
+    /// `env` stays out of the command line (it can hold API keys).
+    pub fn spawn(
+        command: &str,
+        cwd: &str,
+        env: &[(String, String)],
+    ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Incoming>)> {
         let mut child = Command::new("/bin/sh")
             .arg("-c")
             .arg(format!("exec {command}"))
+            .envs(env.iter().map(|(k, v)| (k, v)))
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -136,10 +160,11 @@ impl Acp {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => {
                 let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
-                match e["data"]["details"].as_str().or(e["data"].as_str()) {
-                    Some(d) => bail!("{msg} ({d})"),
-                    None => bail!("{msg}"),
-                }
+                let message = match e["data"]["details"].as_str().or(e["data"].as_str()) {
+                    Some(d) => format!("{msg} ({d})"),
+                    None => msg,
+                };
+                Err(RpcError { code: e["code"].as_i64().unwrap_or_default(), message }.into())
             }
             Err(_) => bail!("{method}: connection closed"),
         }
@@ -214,7 +239,7 @@ mod tests {
     async fn request_response_roundtrip() {
         // A fake agent: answers `initialize`, then sends a notification and exits.
         let script = r#"read l; id=$(echo "$l" | sed 's/.*"id":\([0-9]*\).*/\1/'); echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"ok\":true}}"; echo '{"jsonrpc":"2.0","method":"session/update","params":{"x":1}}'"#;
-        let (acp, mut rx) = Acp::spawn(&format!("sh -c '{}'", script.replace('\'', "'\\''")), "/tmp").unwrap();
+        let (acp, mut rx) = Acp::spawn(&format!("sh -c '{}'", script.replace('\'', "'\\''")), "/tmp", &[]).unwrap();
         let res = acp.request("initialize", json!({})).await.unwrap();
         assert_eq!(res["ok"], true);
         match rx.recv().await.unwrap() {

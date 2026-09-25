@@ -74,7 +74,7 @@ struct PairingView: View {
                     }
                 }
 
-                Text("Your phone talks straight to your computer over Tailscale or local Wi-Fi. Codync has no account and no cloud copy of your code or chats.")
+                Text("Pair this computer with the account currently selected on this iPhone. Your phone connects over Tailscale or local Wi-Fi; your code and chats stay on the computer.")
                     .font(.footnote)
                     .foregroundStyle(Palette.tertiary)
             }

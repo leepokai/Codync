@@ -12,6 +12,7 @@
 		24DF3CB466CC877FCB8BAED6 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 80868F96B9905FF52DCDFAE2 /* CodyncKit */; };
 		25667EBFCCC64B96FDCE95A9 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 59F5D19A417A7A50596902FA /* CodyncKit */; };
 		25FCB36A2661833502357807 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A657FB98BBE0D73807B263 /* Session.swift */; };
+		28DE92C4209739829F6AD1A1 /* AccountSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFE4E0839DCD380109300DF1 /* AccountSwitcherView.swift */; };
 		2CC074683AE086D6C77CC1E8 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B274A0195CB3B2409EA4C194 /* WidgetKit.framework */; };
 		2D724C1001CF872BAFCAE7EA /* IconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3831394C093AF3A4E504BC5 /* IconButton.swift */; };
 		2F0A1C29DBBD1D700C10BE46 /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45CCA6BBDCF412897AEC105 /* CodyncApp.swift */; };
@@ -20,10 +21,11 @@
 		48DAAA1384E5B8D0BA27C895 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E47C60032C326157E0386B8 /* SwiftUI.framework */; };
 		498C81B8C82557C85F912238 /* HostLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CAC64DDC41D4A222A12DDE /* HostLink.swift */; };
 		513F59BF65DED5379AB950A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D2C705F063CD20F5B3036BD4 /* Assets.xcassets */; };
-		52CF04B855C6AAEC47B75B8F /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 06C9F37C6502131CAF0F145E /* CodyncUI */; };
+		52CF04B855C6AAEC47B75B8F /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1285DDFA0390A76ECDAAD6C0 /* CodyncKit */; };
 		5F9AE9B8E7FF66F194162BDC /* ScreenHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB932B6C1849B8DF7CF7C2E3 /* ScreenHelper.swift */; };
 		6A15821964A5EE5AEBB0C420 /* ClerkConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = 19D41F16A62FEF37BE0AD1FC /* ClerkConfig.plist */; };
 		826FEDA23997E436D632E579 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4CFB70DD8757C90695CDA211 /* PrivacyInfo.xcprivacy */; };
+		8AC8D90C21B92480E2809758 /* AccountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B8EAB09016D328195FE2AD /* AccountSession.swift */; };
 		8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */; };
 		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
 		ACCB28F3DB9C89108B7911E3 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842DA106CA15E3810C3C9461 /* Input.swift */; };
@@ -32,18 +34,20 @@
 		B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739EC95223CC8F8717C33736 /* PairingView.swift */; };
 		B8B86B2B7F8D9EE8639A9E09 /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = BEE30A9D5C73E5A151F34180 /* CodyncUI */; };
 		C937F66F810AA238B73E8363 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */; };
+		CA1174F732B066EAFA3D963C /* ClerkConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = D81BA172C8FED5521B00D5CF /* ClerkConfig.plist */; };
 		CC9F6FB8055C38D5D625F738 /* BotListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E57711E223A292872322C5 /* BotListView.swift */; };
-		D1374E0F041B7FEA4DFB33E7 /* AccountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D2C6A291E95D607E9EB1E7 /* AccountSession.swift */; };
 		D4AB92074A9C0D9C72B4080A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */; };
 		DEF7478AB86DB605F52905F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */; };
 		E430F9317B690366F62164DB /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B79D48C1D6F90D53751B3F /* RootView.swift */; };
-		EBB0417A5FB2CE6D514D21BE /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1285DDFA0390A76ECDAAD6C0 /* CodyncKit */; };
+		EBB0417A5FB2CE6D514D21BE /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = D9AB2F442A5F243653EAE936 /* ClerkKit */; };
 		EC14C7513A8D2999D97D5ABA /* Screen.app in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 741B706007BA1B91CB853699 /* Screen.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		ED143C01BF7AD4953101D160 /* UsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47BCE8E2AFA6CA829DBC489A /* UsageView.swift */; };
 		F0A26FABD15480810021C86A /* HostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A9881C76B67297BE26D8FD /* HostController.swift */; };
+		F171F16563D1FF6308697173 /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 06C9F37C6502131CAF0F145E /* CodyncUI */; };
 		F191B13B972C72CB4253B449 /* CodyncWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00F135A0B168269BD6C2A199 /* CodyncWidgets.swift */; };
 		F842AE1C5ED96AF9A7F5D16C /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D734BEE7CD3F84677B0218B /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F93D9960F7C20B2E629C1736 /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7D524C19E9D41C0CF635A619 /* ClerkKit */; };
+		FF6CF0FBF496B5B50F09E063 /* AccountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B8EAB09016D328195FE2AD /* AccountSession.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -124,15 +128,17 @@
 		991A0FD3EAAD4B446F3BF14E /* macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = macOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A59E3A7670EAF57F2F4C9B9 /* ChatWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWindow.swift; sourceTree = "<group>"; };
 		AB932B6C1849B8DF7CF7C2E3 /* ScreenHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenHelper.swift; sourceTree = "<group>"; };
+		AFE4E0839DCD380109300DF1 /* AccountSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSwitcherView.swift; sourceTree = "<group>"; };
 		B274A0195CB3B2409EA4C194 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		C5E57711E223A292872322C5 /* BotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotListView.swift; sourceTree = "<group>"; };
 		CE4D28E8291EEB43E17B11FA /* Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capture.swift; sourceTree = "<group>"; };
 		D0A657FB98BBE0D73807B263 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
-		D1D2C6A291E95D607E9EB1E7 /* AccountSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSession.swift; sourceTree = "<group>"; };
 		D2C705F063CD20F5B3036BD4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D3831394C093AF3A4E504BC5 /* IconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconButton.swift; sourceTree = "<group>"; };
+		D81BA172C8FED5521B00D5CF /* ClerkConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = ClerkConfig.plist; sourceTree = "<group>"; };
 		DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E1B79D48C1D6F90D53751B3F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		E4B8EAB09016D328195FE2AD /* AccountSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSession.swift; sourceTree = "<group>"; };
 		E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F0B6AECA1FDDD3064F3D4447 /* iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iOS.entitlements; sourceTree = "<group>"; };
 		F45CCA6BBDCF412897AEC105 /* CodyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncApp.swift; sourceTree = "<group>"; };
@@ -171,8 +177,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EBB0417A5FB2CE6D514D21BE /* CodyncKit in Frameworks */,
-				52CF04B855C6AAEC47B75B8F /* CodyncUI in Frameworks */,
+				EBB0417A5FB2CE6D514D21BE /* ClerkKit in Frameworks */,
+				52CF04B855C6AAEC47B75B8F /* CodyncKit in Frameworks */,
+				F171F16563D1FF6308697173 /* CodyncUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -182,6 +189,7 @@
 		1E45A5D617A608D762EC7EC5 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				AFE4E0839DCD380109300DF1 /* AccountSwitcherView.swift */,
 				C5E57711E223A292872322C5 /* BotListView.swift */,
 				739EC95223CC8F8717C33736 /* PairingView.swift */,
 				E1B79D48C1D6F90D53751B3F /* RootView.swift */,
@@ -206,6 +214,7 @@
 				B297A6ACE16EAA751102BC05 /* ios */,
 				C0244F098744E616AB7FA840 /* macos */,
 				E6BF4F999DB656FB8CB90885 /* screen */,
+				450E7ADDBD0DD2889F3BF989 /* shared */,
 			);
 			path = apps;
 			sourceTree = "<group>";
@@ -228,6 +237,14 @@
 				6D734BEE7CD3F84677B0218B /* Widgets.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		450E7ADDBD0DD2889F3BF989 /* shared */ = {
+			isa = PBXGroup;
+			children = (
+				E4B8EAB09016D328195FE2AD /* AccountSession.swift */,
+			);
+			path = shared;
 			sourceTree = "<group>";
 		};
 		5893B7E84BB07F9649417F2D /* App */ = {
@@ -288,7 +305,6 @@
 		BDFF077DDD37FEC8B83F2AED /* App */ = {
 			isa = PBXGroup;
 			children = (
-				D1D2C6A291E95D607E9EB1E7 /* AccountSession.swift */,
 				2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */,
 				93A9881C76B67297BE26D8FD /* HostController.swift */,
 			);
@@ -320,6 +336,7 @@
 			isa = PBXGroup;
 			children = (
 				D2C705F063CD20F5B3036BD4 /* Assets.xcassets */,
+				D81BA172C8FED5521B00D5CF /* ClerkConfig.plist */,
 				232B2C00B9575BFF7068BB62 /* Info.plist */,
 				F0B6AECA1FDDD3064F3D4447 /* iOS.entitlements */,
 				4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */,
@@ -414,6 +431,7 @@
 			);
 			name = iOS;
 			packageProductDependencies = (
+				D9AB2F442A5F243653EAE936 /* ClerkKit */,
 				1285DDFA0390A76ECDAAD6C0 /* CodyncKit */,
 				06C9F37C6502131CAF0F145E /* CodyncUI */,
 			);
@@ -510,6 +528,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				513F59BF65DED5379AB950A1 /* Assets.xcassets in Resources */,
+				CA1174F732B066EAFA3D963C /* ClerkConfig.plist in Resources */,
 				C937F66F810AA238B73E8363 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -574,6 +593,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FF6CF0FBF496B5B50F09E063 /* AccountSession.swift in Sources */,
+				28DE92C4209739829F6AD1A1 /* AccountSwitcherView.swift in Sources */,
 				CC9F6FB8055C38D5D625F738 /* BotListView.swift in Sources */,
 				2F0A1C29DBBD1D700C10BE46 /* CodyncApp.swift in Sources */,
 				B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */,
@@ -588,7 +609,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D1374E0F041B7FEA4DFB33E7 /* AccountSession.swift in Sources */,
+				8AC8D90C21B92480E2809758 /* AccountSession.swift in Sources */,
 				03774684DC8344D81AFED53B /* ChatWindow.swift in Sources */,
 				8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */,
 				F0A26FABD15480810021C86A /* HostController.swift in Sources */,
@@ -1039,6 +1060,11 @@
 		BEE30A9D5C73E5A151F34180 /* CodyncUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CodyncUI;
+		};
+		D9AB2F442A5F243653EAE936 /* ClerkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C830647014432C6F20C557C /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = ClerkKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

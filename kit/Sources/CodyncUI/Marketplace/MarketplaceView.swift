@@ -20,7 +20,7 @@ public struct MarketplaceView: View {
     @State private var busySkill: String?
     @State private var addingConnector = false
     @State private var writingSkill = false
-    @State private var newBot: EditorRequest?
+    @State private var agent: Backend?
     @State private var showInstalled = false
     /// Shown as a sheet: a close button in the header instead of the navigation bar.
     let close: (() -> Void)?
@@ -30,7 +30,7 @@ public struct MarketplaceView: View {
     private var query: String { search.trimmingCharacters(in: .whitespaces) }
 
     private var agents: [Backend] {
-        let all = (model.hello?.backends ?? []).filter { $0.available || $0.installed == true }
+        let all = (model.hello?.backends ?? []).filter { $0.available || $0.installed == true || $0.curated == true }
         let hits = query.isEmpty ? all : all.filter { $0.name.localizedCaseInsensitiveContains(query) }
         return Array(hits.prefix(query.isEmpty ? 8 : 12))
     }
@@ -154,6 +154,8 @@ public struct MarketplaceView: View {
         .task {
             await model.refreshPlugins()
         }
+        // Picks up CLIs installed or signed in outside Codync.
+        .task { await model.refreshBackends() }
         .task { await loadConnectors() }
         .task {
             do { skills = try await model.marketSkills() } catch { self.error = error.localizedDescription }
@@ -177,10 +179,10 @@ public struct MarketplaceView: View {
                 .frame(minWidth: 480, minHeight: 480)
                 #endif
         }
-        .sheet(item: $newBot) { request in
-            NavigationStack { BotEditorView(draft: request.draft) }
+        .sheet(item: $agent) { b in
+            NavigationStack { AgentSheet(initial: b) }
                 #if os(macOS)
-                .frame(minWidth: 520, minHeight: 640)
+                .frame(minWidth: 640, minHeight: 460)
                 #endif
         }
     }
@@ -235,11 +237,7 @@ public struct MarketplaceView: View {
     }
 
     private func agentCard(_ b: Backend) -> some View {
-        AgentCard(backend: b) {
-            var d = BotDraft(name: b.name)
-            d.backend = b.id
-            newBot = EditorRequest(d)
-        }
+        AgentCard(backend: b) { agent = b }
     }
 
     private func loadConnectors() async {
@@ -388,6 +386,14 @@ private struct AgentCard: View {
     let action: () -> Void
     @State private var hovering = false
 
+    private var status: String {
+        switch (backend.installed == true, backend.signedIn) {
+        case (true, false?): "Not signed in"
+        case (true, _): "Installed"
+        case (false, _): backend.curated == true ? "Not installed" : "Sets up on first use"
+        }
+    }
+
     var body: some View {
         Button(action: action) {
             VStack(spacing: 12) {
@@ -396,7 +402,7 @@ private struct AgentCard: View {
                     .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 VStack(spacing: 2) {
                     Text(backend.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
-                    Text(backend.installed == true ? "Installed" : "Sets up on first use")
+                    Text(status)
                         .font(.caption)
                         .foregroundStyle(Palette.secondary)
                         .lineLimit(1)
@@ -411,7 +417,126 @@ private struct AgentCard: View {
         }
         .buttonStyle(PressScale())
         .onHover { h in withAnimation(Motion.hover) { hovering = h } }
-        .help("New bot with \(backend.name)")
+        .help(backend.name)
+    }
+}
+
+/// Getting an agent ready on the computer: install it, then sign in. Both run
+/// in a terminal on that computer. Bots are made from New chat, not here.
+private struct AgentSheet: View {
+    let initial: Backend
+    @Environment(BotStore.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var running: SetupStep?
+
+    /// Live: an install or sign-in updates the host's list.
+    private var backend: Backend { model.hello?.backends.first { $0.id == initial.id } ?? initial }
+    private var installed: Bool { backend.installed == true }
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 14) {
+                    AgentIcon(registry: backend.registry, size: 30)
+                        .frame(width: 52, height: 52)
+                        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(backend.name).font(.title3.weight(.semibold))
+                        if let d = backend.description, !d.isEmpty {
+                            Text(d).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(3)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            if backend.curated == true {
+                Section {
+                    SetupStepRow(
+                        number: 1,
+                        title: "Install",
+                        detail: installed
+                            ? "Installed on \(model.hostName)."
+                            : backend.canInstall == true ? "Runs the official installer on \(model.hostName)." : backend.installHint,
+                        done: installed,
+                        action: installed || backend.canInstall != true ? nil : ("Install", { running = .install })
+                    )
+                    SetupStepRow(
+                        number: 2,
+                        title: "Sign in",
+                        detail: signInDetail,
+                        done: backend.signedIn == true,
+                        // Some CLIs drop the current sign-in as soon as a new one starts.
+                        action: installed && backend.signedIn != true ? ("Sign in", { running = .login }) : nil
+                    )
+                } footer: {
+                    Text("Each step runs in a terminal on \(model.hostName). Sign-in links open on this device.")
+                }
+            } else {
+                Section {
+                    Text("Codync downloads \(backend.name) the first time a bot uses it. If it needs an account, the bot tells you how to sign in.")
+                        .foregroundStyle(Palette.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle(backend.name)
+        .inlineNavigationTitle()
+        .navigationDestination(item: $running) { step in SetupTerminalView(backend: backend, step: step) }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
+            }
+        }
+    }
+
+    private var signInDetail: String {
+        guard installed else { return "After it's installed." }
+        switch backend.signedIn {
+        case true?: return "Signed in."
+        case false?: return "Not signed in yet."
+        case nil: return "Skip this if you've already signed in on \(model.hostName)."
+        }
+    }
+}
+
+private struct SetupStepRow: View {
+    let number: Int
+    let title: String
+    let detail: String
+    let done: Bool
+    let action: (label: String, run: () -> Void)?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(done ? Palette.accentFill : Palette.bubbleAgent)
+                if done {
+                    Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(Palette.onAccent)
+                } else {
+                    Text("\(number)").font(.caption.weight(.semibold)).foregroundStyle(Palette.secondary)
+                }
+            }
+            .frame(width: 26, height: 26)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.medium)).foregroundStyle(Palette.text)
+                Text(detail).font(.subheadline).foregroundStyle(Palette.secondary).textSelection(.enabled)
+            }
+            Spacer(minLength: 8)
+            if let action {
+                Button(action.label, action: action.run)
+                    .buttonStyle(.plain)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Palette.text)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Palette.bubbleAgent, in: Capsule())
+                    .fixedSize()
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(done ? "Done" : "")
     }
 }
 

@@ -59,10 +59,7 @@ struct BotListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button { model.showProfile = true } label: {
-                    ComputerBadge(model.pairing, size: 36)
-                }
-                .accessibilityLabel("Profile and computers")
+                AccountSwitcherButton()
             }
             // Grok-style bare top bar: no visible title, just the two buttons.
             ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }

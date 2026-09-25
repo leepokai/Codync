@@ -3,8 +3,7 @@ import CodyncUI
 import SwiftUI
 import UserNotifications
 
-/// The profile sheet behind the top-left button: which computer you're talking
-/// to (and switching between them), notifications, hidden bots.
+/// Computer connections and settings for the currently selected account.
 struct SettingsView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -45,8 +44,10 @@ struct SettingsView: View {
                     Label("Add a computer", systemImage: "plus")
                         .foregroundStyle(Palette.text)
                 }
+            } header: {
+                Text("Computers on this iPhone")
             } footer: {
-                Text("Each computer has its own bots. Tap one to switch.")
+                Text("Each bot runs on its own computer. Tap a computer to view its bots.")
             }
 
             Section {
@@ -88,6 +89,7 @@ struct SettingsView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Palette.background)
+        .navigationTitle("Computers & settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {

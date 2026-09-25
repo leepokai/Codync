@@ -13,8 +13,8 @@ public struct BotRow: View {
 
     // A Mac sidebar row is denser than a phone row (Grok Bot's desktop sidebar).
     #if os(macOS)
-    private let avatar: CGFloat = 36
-    private let rowPadding: CGFloat = 8
+    private let avatar: CGFloat = 30
+    private let rowPadding: CGFloat = 6
     private let lineSpacing: CGFloat = 1
     #else
     private let avatar: CGFloat = 46
@@ -23,7 +23,7 @@ public struct BotRow: View {
     #endif
 
     public var body: some View {
-        HStack(spacing: compact ? 0 : 12) {
+        HStack(spacing: compact ? 0 : InterfaceMetrics.value(mac: 8, mobile: 12)) {
             AvatarWithStatus(bot: bot, size: avatar)
             VStack(alignment: .leading, spacing: lineSpacing) {
                 HStack(alignment: .firstTextBaseline) {
@@ -31,7 +31,7 @@ public struct BotRow: View {
                         Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Palette.tertiary)
                     }
                     Text(bot.name)
-                        .font(.body.weight(.semibold))
+                        .font(InterfaceMetrics.body.weight(.semibold))
                         .foregroundStyle(Palette.text)
                         .lineLimit(1)
                     if model.screen?.agentBot == bot.id {
@@ -43,7 +43,7 @@ public struct BotRow: View {
                     Spacer(minLength: 8)
                     #if os(iOS)
                     Text(RelativeTime.day(Date(milliseconds: bot.lastAt)))
-                        .font(.subheadline)
+                        .font(InterfaceMetrics.secondary)
                         .foregroundStyle(bot.unread > 0 ? Palette.text : Palette.tertiary)
                     #endif
                 }
@@ -75,7 +75,7 @@ public struct BotRow: View {
     @ViewBuilder private var preview: some View {
         if bot.needsInput {
             Label(bot.activity.isEmpty ? "Needs your approval" : bot.activity, systemImage: "hand.raised.fill")
-                .font(.subheadline)
+                .font(InterfaceMetrics.secondary)
                 .foregroundStyle(Palette.warning)
                 .lineLimit(1)
         } else if bot.isWorking {
@@ -84,16 +84,16 @@ public struct BotRow: View {
                 Text(bot.activity.isEmpty ? "Working…" : bot.activity)
                     .lineLimit(1)
             }
-            .font(.subheadline)
+            .font(InterfaceMetrics.secondary)
             .foregroundStyle(Palette.secondary)
         } else if bot.status == "error" {
             Text(bot.lastMessage ?? "Something went wrong")
-                .font(.subheadline)
+                .font(InterfaceMetrics.secondary)
                 .foregroundStyle(Palette.danger)
                 .lineLimit(1)
         } else {
             Text(bot.lastMessage ?? "\(model.backendName(bot.backend)) · \(bot.folderName)")
-                .font(.subheadline)
+                .font(InterfaceMetrics.secondary)
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(1)
         }

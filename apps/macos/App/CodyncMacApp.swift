@@ -106,7 +106,7 @@ struct MenuView: View {
             if host.needsAttention {
                 ("A bot needs you", Palette.warning)
             } else if host.working > 0 {
-                ("\(host.working) bot\(host.working == 1 ? "" : "s") working", Palette.switchOn)
+                ("\(host.working) bot\(host.working == 1 ? "" : "s") working", Palette.accent)
             } else {
                 ("Connected", nil)
             }
@@ -248,15 +248,15 @@ private struct RemoteScreenSection: View {
             HStack(spacing: 10) {
                 Image(systemName: "display")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(screen.enabled ? .white : Palette.text)
+                    .foregroundStyle(screen.enabled ? Palette.onAccent : Palette.text)
                     .frame(width: 30, height: 30)
-                    .background(screen.enabled ? Palette.switchOn : Palette.bubbleUser, in: Circle())
+                    .background(screen.enabled ? Palette.accentFill : Palette.bubbleUser, in: Circle())
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Remote screen").font(.callout.weight(.medium)).foregroundStyle(Palette.text)
                     Text(subtitle(screen))
                         .font(.caption)
-                        .foregroundStyle(screen.enabled && screen.viewers > 0 ? Palette.switchOn : Palette.secondary)
+                        .foregroundStyle(screen.enabled && screen.viewers > 0 ? Palette.text : Palette.secondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -265,6 +265,8 @@ private struct RemoteScreenSection: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.mini)
+                    // Grey, not blue: a white track would hide the white knob.
+                    .tint(Palette.secondary)
             }
             if screen.enabled {
                 if host.screenAgentNeedsApproval {

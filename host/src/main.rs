@@ -2,6 +2,7 @@
 
 mod acp;
 mod api;
+mod auth;
 mod backends;
 mod bot;
 mod hub;
@@ -12,6 +13,7 @@ mod registry;
 mod screen;
 mod service;
 mod store;
+mod term;
 mod tui;
 mod usage;
 
@@ -270,6 +272,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     let hub = hub::Hub::new(store, host_id, token, port);
     hub.start()?;
     tokio::spawn(registry::refresh_loop());
+    tokio::spawn(backends::refresh_sign_in());
     tokio::spawn(usage::poll(hub.clone()));
     tokio::spawn(screen::serve_helpers(hub.screen.clone()));
     #[cfg(target_os = "linux")]

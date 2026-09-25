@@ -57,6 +57,12 @@ public enum HostEvent: Sendable {
     case undecodable(type: String)
 }
 
+/// A setup terminal's output stream.
+public enum TermEvent: Sendable {
+    case output(Data)
+    case exit(Int)
+}
+
 public struct Empty: Codable, Sendable {
     public init() {}
 }
@@ -119,9 +125,26 @@ public struct HostClient: Sendable {
     public func events(since: Int64, client: String) -> AsyncThrowingStream<HostEvent, Error> {
         var comps = URLComponents(url: baseURL.appending(path: "events"), resolvingAgainstBaseURL: false)!
         comps.queryItems = [.init(name: "since", value: String(since)), .init(name: "client", value: client)]
+        return sse(comps.url!, parse: Self.parseEvent)
+    }
+
+    /// A setup terminal's output: everything so far, then live, finishing after `.exit`.
+    public func termOutput(_ term: String) -> AsyncThrowingStream<TermEvent, Error> {
+        sse(baseURL.appending(path: "term/\(term)")) { data in
+            struct Raw: Decodable { var type: String; var data: String?; var code: Int? }
+            guard let raw = try? Self.decoder.decode(Raw.self, from: data) else { return nil }
+            switch raw.type {
+            case "output": return raw.data.flatMap { Data(base64Encoded: $0) }.map(TermEvent.output)
+            case "exit": return .exit(raw.code ?? -1)
+            default: return nil
+            }
+        }
+    }
+
+    private func sse<T: Sendable>(_ url: URL, parse: @escaping @Sendable (Data) -> T?) -> AsyncThrowingStream<T, Error> {
         // Idle timeout, not a total one: the host pings every 15 s, so silence this long means it's
         // gone (shut down, asleep, off the network) even if the socket never closed.
-        var req = URLRequest(url: comps.url!, timeoutInterval: 45)
+        var req = URLRequest(url: url, timeoutInterval: 45)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         let session = self.session
@@ -135,7 +158,7 @@ public struct HostClient: Sendable {
                     for try await line in bytes.lines {
                         guard line.hasPrefix("data:") else { continue }
                         let payload = Data(line.dropFirst(5).utf8)
-                        if let event = Self.parseEvent(payload) {
+                        if let event = parse(payload) {
                             continuation.yield(event)
                         }
                     }
@@ -283,6 +306,37 @@ public extension HostClient {
     /// Only accepted from the computer itself.
     func setScreenEnabled(_ on: Bool) async throws -> ScreenState {
         try await call("setScreenEnabled", ["enabled": on])
+    }
+}
+
+// MARK: - Agent setup
+
+public extension HostClient {
+    func refreshBackends() async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("refreshBackends", timeout: 60)
+        return res.backends
+    }
+
+    /// Starts (or rejoins) installing or signing in to `backend` in a terminal on the computer.
+    func agentSetup(backend: String, step: SetupStep, cols: Int, rows: Int) async throws -> String {
+        struct Body: Encodable { var backend: String; var step: SetupStep; var cols: Int; var rows: Int }
+        struct Res: Decodable { var term: String }
+        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, cols: cols, rows: rows))
+        return res.term
+    }
+
+    func termInput(_ term: String, _ bytes: Data) async throws {
+        let _: Empty = try await call("termInput", ["term": term, "data": bytes.base64EncodedString()])
+    }
+
+    func termResize(_ term: String, cols: Int, rows: Int) async throws {
+        struct Body: Encodable { var term: String; var cols: Int; var rows: Int }
+        let _: Empty = try await call("termResize", Body(term: term, cols: cols, rows: rows))
+    }
+
+    func termClose(_ term: String) async throws {
+        let _: Empty = try await call("termClose", ["term": term])
     }
 }
 

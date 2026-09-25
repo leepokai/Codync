@@ -8,27 +8,28 @@ public struct BotRow: View {
     public init(bot: Bot) { self.bot = bot }
 
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             AvatarWithStatus(bot: bot, size: 46)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     if bot.pinned {
                         Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Palette.tertiary)
                     }
                     Text(bot.name)
-                        .font(.body.weight(bot.unread > 0 ? .semibold : .medium))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(Palette.text)
                         .lineLimit(1)
                     Spacer(minLength: 8)
-                    Text(RelativeTime.short(Date(milliseconds: bot.lastAt)))
-                        .metaStyle(bot.unread > 0 ? Palette.text : Palette.tertiary)
+                    Text(RelativeTime.day(Date(milliseconds: bot.lastAt)))
+                        .font(.subheadline)
+                        .foregroundStyle(bot.unread > 0 ? Palette.text : Palette.tertiary)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     preview
                     Spacer(minLength: 4)
                     if bot.unread > 0 {
                         Text("\(bot.unread)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.caption2.bold())
                             .foregroundStyle(Palette.onAccent)
                             .padding(.horizontal, 6)
                             .frame(minWidth: 18, minHeight: 18)
@@ -37,7 +38,8 @@ public struct BotRow: View {
                 }
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
@@ -60,12 +62,12 @@ public struct BotRow: View {
             Text(bot.lastMessage ?? "Something went wrong")
                 .font(.subheadline)
                 .foregroundStyle(Palette.danger)
-                .lineLimit(2)
+                .lineLimit(1)
         } else {
             Text(bot.lastMessage ?? "\(model.backendName(bot.backend)) · \(bot.folderName)")
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
-                .lineLimit(2)
+                .lineLimit(1)
         }
     }
 }

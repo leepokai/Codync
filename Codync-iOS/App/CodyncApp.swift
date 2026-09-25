@@ -20,6 +20,9 @@ struct CodyncApp: App {
                         model.pair(p)
                     } else if url.host() == "bot" {
                         model.selection = url.lastPathComponent
+                    } else if url.host() == "computers" {
+                        model.selection = nil
+                        model.showProfile = true
                     }
                 }
                 .onChange(of: scenePhase, initial: true) { _, phase in
@@ -43,7 +46,10 @@ enum AppStore {
     static let shared: BotStore = {
         let store = BotStore(pairing: SharedStore.pairing, clientKind: "ios", persistsPairing: true)
         store.onPaired = { PushRegistrar.shared.syncDevice(with: $0) }
-        store.onBotUpdated = { LiveActivities.shared.update(bot: $0) }
+        store.onBotUpdated = {
+            LiveActivities.shared.update(bot: $0)
+            BotsWidgetFeed.update(store.roster)
+        }
         store.onSent = { LiveActivities.shared.start(for: $0, model: store) }
         store.onUsageChanged = { usage in
             SharedStore.usage = usage
@@ -73,5 +79,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         // The chat already shows it live.
         []
+    }
+}
+
+/// Keeps the Bots widget's snapshot current; asks WidgetKit to redraw only when
+/// something the widget shows changes (who is working / needs you / unread).
+@MainActor
+enum BotsWidgetFeed {
+    private static var shown = ""
+
+    static func update(_ roster: [Bot]) {
+        SharedStore.bots = roster
+        let signature = roster.map { "\($0.id):\($0.status):\($0.unread)" }.joined(separator: ",")
+        guard signature != shown else { return }
+        shown = signature
+        WidgetCenter.shared.reloadTimelines(ofKind: "CodyncBots")
     }
 }

@@ -18,6 +18,8 @@ public final class BotStore {
     }
 
     public private(set) var pairing: Pairing?
+    /// Computers this phone knows, most recently used first (the active one leads).
+    public private(set) var computers: [Pairing] = []
     public private(set) var connection: Connection = .unpaired
     public private(set) var client: HostClient?
     public private(set) var hello: Hello?
@@ -29,6 +31,8 @@ public final class BotStore {
     public var lastError: String?
     /// The open conversation (iOS navigation path / Mac sidebar selection).
     public var selection: String?
+    /// The phone's profile sheet (computers, usage); `codync://computers` opens it.
+    public var showProfile = false
 
     // Platform hooks (push registration, Live Activities, widgets).
     public var onPaired: (@MainActor (BotStore) -> Void)?
@@ -52,6 +56,7 @@ public final class BotStore {
         self.pairing = pairing
         self.clientKind = clientKind
         self.persistsPairing = persistsPairing
+        computers = persistsPairing ? SharedStore.computers : pairing.map { [$0] } ?? []
         loadCache()
         connection = pairing == nil ? .unpaired : .connecting
     }
@@ -91,10 +96,21 @@ public final class BotStore {
             SharedStore.pairing = p
             SharedStore.preferredURL = nil
         }
+        // Re-pairing the same computer (new token after a reset) replaces its old entry.
+        computers = [p] + computers.filter { $0.token != p.token && $0.name != p.name }
+        if persistsPairing { SharedStore.computers = computers }
         if changedHost { resetMirror() }
         connection = .connecting
         restartStream()
         onPaired?(self)
+    }
+
+    /// Forgets a computer; forgetting the active one switches to the next, if any.
+    public func forget(_ p: Pairing) {
+        computers.removeAll { $0.token == p.token }
+        if persistsPairing { SharedStore.computers = computers }
+        guard p.token == pairing?.token else { return }
+        if let next = computers.first { pair(next) } else { unpair() }
     }
 
     public func unpair() {

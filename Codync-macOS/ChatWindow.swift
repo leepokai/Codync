@@ -29,10 +29,12 @@ private struct ChatSplitView: View {
     @Environment(BotStore.self) private var model
     @State private var editing: EditorRequest?
     @State private var confirmDelete: Bot?
+    @State private var composing = false
+    @State private var columns: NavigationSplitViewVisibility = .all
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             List(selection: $model.selection) {
                 ConnectionBanner()
                 if !model.usage.providers.isEmpty {
@@ -56,13 +58,18 @@ private struct ChatSplitView: View {
             .navigationTitle(model.hostName)
             .toolbar {
                 ToolbarItem {
-                    Button("New Bot", systemImage: "square.and.pencil") { editing = EditorRequest(BotDraft()) }
+                    Button("New Message", systemImage: "square.and.pencil") {
+                        model.selection = nil
+                        composing = true
+                    }
                         .keyboardShortcut("n")
                         .disabled(model.connection != .online)
                 }
             }
         } detail: {
-            if let id = model.selection, model.bots[id] != nil {
+            if composing {
+                NewChatView { composing = false }
+            } else if let id = model.selection, model.bots[id] != nil {
                 NavigationStack { ThreadView(botId: id) }
                     .id(id)
             } else {
@@ -72,12 +79,15 @@ private struct ChatSplitView: View {
                         CharacterAvatar(shape: "squircle", color: "orange", size: 60)
                         CharacterAvatar(shape: "teardrop", color: "violet", size: 60, mood: .working)
                     }
-                    Text("Your coding agents, as teammates.").font(.title2.bold())
+                    Text("Your coding agents, as teammates.").font(.title2.weight(.semibold))
                     Text("Pick a bot, or create one for each kind of work and point it at a project.")
                         .foregroundStyle(Palette.secondary)
-                    Button("New Bot") { editing = EditorRequest(BotDraft()) }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Palette.accentFill)
+                    Button("New Bot") { composing = true }
+                        .buttonStyle(.plain)
+                        .font(.body.weight(.semibold))
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 9)
+                        .background(Palette.accentFill, in: Capsule())
                         .foregroundStyle(Palette.onAccent)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -89,5 +99,17 @@ private struct ChatSplitView: View {
         }
         .deleteBotConfirmation($confirmDelete)
         .storeErrorAlert(model)
+        .onChange(of: model.selection) { _, id in if id != nil { composing = false } }
+        #if DEBUG
+        .onAppear {
+            // Screenshot/UI checks: CODYNC_DEBUG_OPEN=compose | <bot name>
+            let target = ProcessInfo.processInfo.environment["CODYNC_DEBUG_OPEN"]
+            if target == "compose" {
+                composing = true
+            } else if let target, let bot = model.roster.first(where: { $0.name == target }) {
+                model.selection = bot.id
+            }
+        }
+        #endif
     }
 }

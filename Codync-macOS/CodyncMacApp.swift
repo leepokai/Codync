@@ -13,7 +13,8 @@ struct CodyncMacApp: App {
                 .environment(host)
                 .frame(width: 340)
         } label: {
-            Image(systemName: host.needsAttention ? "person.2.badge.gearshape.fill" : host.working > 0 ? "person.2.wave.2.fill" : "person.2.fill")
+            // The Codync mark; a dot joins it when a bot needs you.
+            Image(host.needsAttention ? "MenuBarIconAlert" : "MenuBarIcon")
                 .task { host.start() }
         }
         .menuBarExtraStyle(.window)

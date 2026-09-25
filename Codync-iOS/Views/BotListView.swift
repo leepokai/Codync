@@ -6,7 +6,6 @@ import SwiftUI
 struct BotListView: View {
     @Environment(BotStore.self) private var model
     @State private var editing: EditorRequest?
-    @State private var showSettings = false
     @State private var confirmDelete: Bot?
 
     var body: some View {
@@ -29,11 +28,14 @@ struct BotListView: View {
             }
 
             ForEach(roster) { bot in
-                NavigationLink(value: bot.id) {
+                // A plain button instead of a NavigationLink: same push, no chevron.
+                Button { model.selection = bot.id } label: {
                     BotRow(bot: bot)
                 }
+                .buttonStyle(.plain)
                 .listRowBackground(Palette.background)
-                .listRowSeparatorTint(Palette.border)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 .swipeActions(edge: .leading) {
                     Button(bot.pinned ? "Unpin" : "Pin", systemImage: bot.pinned ? "pin.slash" : "pin") {
                         model.setPinned(bot, !bot.pinned)
@@ -57,11 +59,16 @@ struct BotListView: View {
         .scrollContentBackground(.hidden)
         .background(Palette.background)
         .navigationTitle(model.hostName)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button("Settings", systemImage: "gearshape") { showSettings = true }
+                Button { model.showProfile = true } label: {
+                    ComputerBadge(name: model.pairing?.name ?? model.hostName, size: 36)
+                }
+                .accessibilityLabel("Profile and computers")
             }
+            // Grok-style bare top bar: no visible title, just the two buttons.
+            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("New bot", systemImage: "plus") {
                     editing = EditorRequest(BotDraft())
@@ -76,7 +83,7 @@ struct BotListView: View {
         .sheet(item: $editing) { request in
             NavigationStack { BotEditorView(draft: request.draft) }
         }
-        .sheet(isPresented: $showSettings) {
+        .sheet(isPresented: Bindable(model).showProfile) {
             NavigationStack { SettingsView() }
         }
         .deleteBotConfirmation($confirmDelete)

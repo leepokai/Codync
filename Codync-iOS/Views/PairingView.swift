@@ -5,6 +5,8 @@ import VisionKit
 
 /// First run: explain the model, then pair with a computer running codync-host.
 struct PairingView: View {
+    /// Set when adding another computer from the profile sheet; shows a close button.
+    var onDone: (() -> Void)?
     @Environment(BotStore.self) private var model
     @State private var scanning = false
     @State private var pasted = ""
@@ -76,6 +78,17 @@ struct PairingView: View {
             .padding(24)
         }
         .background(Palette.background)
+        .overlay(alignment: .topLeading) {
+            if let onDone {
+                Button("Close", systemImage: "xmark", action: onDone)
+                    .labelStyle(.iconOnly)
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .background(Palette.bubbleAgent, in: Circle())
+                    .foregroundStyle(Palette.text)
+                    .padding(16)
+            }
+        }
         .sheet(isPresented: $scanning) {
             QRScanner { code in
                 scanning = false
@@ -92,6 +105,7 @@ struct PairingView: View {
         }
         error = nil
         model.pair(p)
+        onDone?()
         Task { _ = await PushRegistrar.shared.requestAuthorization() }
     }
 }

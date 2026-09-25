@@ -3,57 +3,50 @@ import CodyncUI
 import SwiftUI
 import UserNotifications
 
+/// The profile sheet behind the top-left button: which computer you're talking
+/// to (and switching between them), usage, notifications, hidden bots.
 struct SettingsView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var notificationsAllowed: Bool?
-    @State private var confirmUnpair = false
+    @State private var addingComputer = false
+    @State private var confirmForget: Pairing?
 
     var body: some View {
         Form {
-            Section("Computer") {
-                LabeledContent("Name", value: model.hostName)
-                LabeledContent("Status") {
-                    switch model.connection {
-                    case .online: Text("Connected").foregroundStyle(Palette.accent)
-                    case .connecting: Text("Connecting…")
-                    case .offline: Text("Offline").foregroundStyle(Palette.warning)
-                    case .unpaired: Text("Not paired")
-                    }
+            Section {
+                ForEach(model.computers, id: \.token) { computer in
+                    ComputerRow(computer: computer, active: computer.token == model.pairing?.token)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if computer.token != model.pairing?.token { model.pair(computer) } }
+                        .swipeActions {
+                            Button("Remove", systemImage: "trash", role: .destructive) { confirmForget = computer }
+                        }
+                        .contextMenu {
+                            Button("Remove", systemImage: "trash", role: .destructive) { confirmForget = computer }
+                        }
                 }
-                if let url = model.client?.baseURL.absoluteString {
-                    LabeledContent("Address", value: url).font(.footnote.monospaced())
+                Button {
+                    addingComputer = true
+                } label: {
+                    Label("Add a computer", systemImage: "plus")
+                        .foregroundStyle(Palette.text)
                 }
-                if let hello = model.hello {
-                    LabeledContent("Host version", value: hello.version)
-                    LabeledContent("System", value: hello.os)
-                }
+            } footer: {
+                Text("Each computer has its own bots. Tap one to switch.")
             }
 
             Section {
-                ForEach(model.usage.providers) { UsageCard(provider: $0) }
-                Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refreshUsage() } }
-                    .labelStyle(.iconOnly)
-                    .accessibilityLabel("Refresh usage")
-            } header: {
-                Text("Usage limits")
-            } footer: {
-                Text("Read on your computer from Claude Code and Codex. Add the Codync widget to your Home or Lock Screen to keep an eye on them.")
-            }
-
-            Section("Notifications") {
-                if notificationsAllowed == false {
-                    Button("Allow in Settings") {
-                        UIApplication.shared.open(URL(string: UIApplication.openNotificationSettingsURLString)!)
+                NavigationLink {
+                    UsageDetail()
+                } label: {
+                    LabeledContent("Usage") {
+                        if let top = model.usage.providers.flatMap(\.windows).map(\.percent).max() {
+                            Text("\(Int(top.rounded()))%").monospacedDigit()
+                        }
                     }
-                } else if notificationsAllowed == nil {
-                    Button("Turn on notifications") {
-                        Task { notificationsAllowed = await PushRegistrar.shared.requestAuthorization() }
-                    }
-                } else {
-                    Label("On — you'll hear when a bot needs you or finishes", systemImage: "bell.badge")
-                        .font(.footnote)
                 }
+                notificationsRow
             }
 
             if !model.hiddenBots.isEmpty {
@@ -70,30 +63,32 @@ struct SettingsView: View {
             }
 
             Section {
-                Button("Unpair this phone", role: .destructive) { confirmUnpair = true }
-            } footer: {
-                Text("Bots and conversations stay on your computer.")
-            }
-
-            Section {
-                Link("Source code", destination: URL(string: "https://github.com/leepokai/Codync")!)
+                if let hello = model.hello {
+                    LabeledContent("Host version", value: hello.version)
+                }
                 LabeledContent("App version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                Link("Source code", destination: URL(string: "https://github.com/leepokai/Codync")!)
+                    .foregroundStyle(Palette.text)
             }
         }
         .scrollContentBackground(.hidden)
         .background(Palette.background)
-        .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done", systemImage: "checkmark") { dismiss() }.labelStyle(.iconOnly)
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
             }
         }
-        .confirmationDialog("Unpair from \(model.hostName)?", isPresented: $confirmUnpair, titleVisibility: .visible) {
-            Button("Unpair", role: .destructive) {
-                model.unpair()
-                dismiss()
+        .sheet(isPresented: $addingComputer) {
+            PairingView { addingComputer = false }
+        }
+        .confirmationDialog("Remove \(confirmForget?.name ?? "computer")?", isPresented: Binding(get: { confirmForget != nil }, set: { if !$0 { confirmForget = nil } }), titleVisibility: .visible) {
+            Button("Remove", role: .destructive) {
+                if let c = confirmForget { model.forget(c) }
+                if model.pairing == nil { dismiss() }
             }
+        } message: {
+            Text("Its bots and conversations stay on that computer. You can pair again any time.")
         }
         .task {
             let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
@@ -104,5 +99,74 @@ struct SettingsView: View {
             }
         }
     }
+
+    @ViewBuilder private var notificationsRow: some View {
+        if notificationsAllowed == true {
+            LabeledContent("Notifications", value: "On")
+        } else {
+            Button {
+                if notificationsAllowed == false {
+                    UIApplication.shared.open(URL(string: UIApplication.openNotificationSettingsURLString)!)
+                } else {
+                    Task { notificationsAllowed = await PushRegistrar.shared.requestAuthorization() }
+                }
+            } label: {
+                LabeledContent("Notifications", value: notificationsAllowed == false ? "Off in Settings" : "Turn on")
+                    .foregroundStyle(Palette.text)
+            }
+        }
+    }
 }
 
+private struct ComputerRow: View {
+    let computer: Pairing
+    let active: Bool
+    @Environment(BotStore.self) private var model
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ComputerBadge(name: computer.name, size: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(computer.name).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(status).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(1)
+            }
+            Spacer()
+            if active {
+                Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var status: String {
+        guard active else { return "\(computer.urls.count) address\(computer.urls.count == 1 ? "" : "es")" }
+        return switch model.connection {
+        case .online: "Connected · \(model.bots.count) bot\(model.bots.count == 1 ? "" : "s")"
+        case .connecting: "Connecting…"
+        case .offline: "Offline"
+        case .unpaired: "Not paired"
+        }
+    }
+}
+
+private struct UsageDetail: View {
+    @Environment(BotStore.self) private var model
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(model.usage.providers) { UsageCard(provider: $0) }
+                if model.usage.providers.isEmpty {
+                    Text("No usage reported yet.").foregroundStyle(Palette.secondary)
+                }
+            } footer: {
+                Text("Read on your computer from Claude Code and Codex. Add the Codync widget to your Home or Lock Screen to keep an eye on them.")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Palette.background)
+        .navigationTitle("Usage")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await model.refreshUsage() }
+    }
+}

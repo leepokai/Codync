@@ -14,6 +14,8 @@ public struct ThreadView: View {
     @State private var editing: EditorRequest?
     @State private var confirmNewSession = false
     @State private var confirmDelete: Bot?
+    /// Desktop: the bot's settings as an inspector beside the chat.
+    @State private var showSettings = false
     @FocusState private var composerFocused: Bool
 
     private var bot: Bot? { model.bots[botId] }
@@ -63,7 +65,20 @@ public struct ThreadView: View {
         .toolbar {
             ToolbarItem(placement: .principal) { header }
             ToolbarItem(placement: .primaryAction) { menu }
+            #if os(macOS)
+            ToolbarItem(placement: .primaryAction) {
+                Button("Settings", systemImage: "sidebar.right") { showSettings.toggle() }
+                    .help("Bot settings")
+            }
+            #endif
         }
+        #if os(macOS)
+        .inspector(isPresented: $showSettings) {
+            BotSettingsPanel(botId: botId)
+                .inspectorColumnWidth(min: 300, ideal: 360, max: 460)
+        }
+        .onAppear { if bot?.name == "New Bot", model.thread(botId).isEmpty { showSettings = true } }
+        #endif
         .onAppear { model.markRead(botId) }
         .sheet(isPresented: $showTrace) {
             NavigationStack { TraceView(botId: botId) }
@@ -86,18 +101,20 @@ public struct ThreadView: View {
     @ViewBuilder private func row(_ item: ChatItem) -> some View {
         switch item.kind {
         case let .separator(date):
-            Text(date.formatted(.relative(presentation: .named)) + " · " + date.formatted(date: .omitted, time: .shortened))
-                .metaStyle()
+            Text(RelativeTime.separator(date))
+                .font(.footnote)
+                .foregroundStyle(Palette.tertiary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.top, 18)
+                .padding(.bottom, 6)
         case let .entry(e, groupStart):
             switch e.kind {
             case "user":
                 UserBubble(entry: e, botWorking: bot?.isWorking == true)
-                    .padding(.top, groupStart ? 12 : 3)
+                    .padding(.top, groupStart ? 12 : 4)
             case "agent":
-                AgentBubble(entry: e, bot: bot, showAvatar: groupStart) { showTrace = true }
-                    .padding(.top, groupStart ? 12 : 3)
+                AgentBubble(entry: e) { showTrace = true }
+                    .padding(.top, groupStart ? 12 : 4)
             case "permission":
                 PermissionCard(entry: e, hostName: model.hostName) { option in
                     model.respond(e, option: option)
@@ -112,23 +129,25 @@ public struct ThreadView: View {
     // MARK: chrome
 
     private var header: some View {
+        // A pill with the bot and its name; the avatar itself shows working / needs you.
         HStack(spacing: 8) {
-            if let bot { CharacterAvatar(bot: bot, size: 28) }
-            VStack(alignment: .leading, spacing: 0) {
-                Text(bot?.name ?? "").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
-                Group {
-                    if let bot, bot.needsInput {
-                        Text("Needs you").metaStyle(Palette.warning)
-                    } else if let bot, bot.isWorking {
-                        Text("Working").metaStyle(Palette.secondary)
-                    } else if let bot {
-                        Text("\(model.backendName(bot.backend)) · \(bot.folderName)").metaStyle()
-                    }
-                }
+            if let bot { CharacterAvatar(bot: bot, size: 26) }
+            Text(bot?.name ?? "")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Palette.text)
                 .lineLimit(1)
-            }
         }
-        .onTapGesture { if let bot { editing = EditorRequest(BotDraft(bot)) } }
+        .padding(.leading, 8)
+        .padding(.trailing, 16)
+        .padding(.vertical, 6)
+        .glass(in: Capsule())
+        .onTapGesture {
+            #if os(macOS)
+            showSettings.toggle()
+            #else
+            if let bot { editing = EditorRequest(BotDraft(bot)) }
+            #endif
+        }
     }
 
     private var menu: some View {
@@ -150,23 +169,20 @@ public struct ThreadView: View {
         let working = bot?.isWorking == true
         let canSend = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.connection == .online
         return HStack(alignment: .bottom, spacing: 8) {
-            TextField(working ? "Message (queued until it's done)" : "Message \(bot?.name ?? "")", text: $draft, axis: .vertical)
+            TextField(working ? "Queue a message for \(bot?.name ?? "it")" : "Ask \(bot?.name ?? "")", text: $draft, axis: .vertical)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Palette.border))
+                .padding(.vertical, 11)
             if working && draft.isEmpty {
                 Button {
                     model.stop(botId)
                 } label: {
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(width: 38, height: 38)
-                        .background(Palette.bubbleAgent, in: Circle())
-                        .foregroundStyle(Palette.text)
+                        .font(.system(size: 13, weight: .bold))
+                        .frame(width: 36, height: 36)
+                        .background(Palette.accentFill, in: Circle())
+                        .foregroundStyle(Palette.onAccent)
                 }
                 .accessibilityLabel("Stop")
             } else {
@@ -175,18 +191,22 @@ public struct ThreadView: View {
                     draft = ""
                 } label: {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
-                        .frame(width: 38, height: 38)
-                        .background(canSend ? Palette.accentFill : Palette.bubbleAgent, in: Circle())
+                        .font(.system(size: 15, weight: .bold))
+                        .frame(width: 36, height: 36)
+                        .background(canSend ? Palette.accentFill : Palette.accentDim, in: Circle())
                         .foregroundStyle(canSend ? Palette.onAccent : Palette.tertiary)
                 }
                 .disabled(!canSend)
                 .accessibilityLabel("Send")
             }
         }
+        .padding(.leading, 18)
+        .padding(.trailing, 5)
+        .padding(.vertical, 5)
+        .glass(in: RoundedRectangle(cornerRadius: 23, style: .continuous))
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
     }
 }
 

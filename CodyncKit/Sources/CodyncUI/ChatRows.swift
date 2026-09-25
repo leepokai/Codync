@@ -12,18 +12,18 @@ struct UserBubble: View {
         VStack(alignment: .trailing, spacing: 4) {
             Text(entry.data.text ?? "")
                 .font(.body)
-                .foregroundStyle(Palette.onAccent)
+                .foregroundStyle(Palette.text)
                 .textSelection(.enabled)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 9)
-                .background(Palette.accentFill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .contextMenu {
                     Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
                 }
             status
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.leading, 48)
+        .padding(.leading, 56)
     }
 
     @ViewBuilder private var status: some View {
@@ -49,30 +49,19 @@ struct UserBubble: View {
 
 struct AgentBubble: View {
     let entry: Entry
-    let bot: Bot?
-    let showAvatar: Bool
     let openTrace: () -> Void
 
     var body: some View {
-        // Replies sit on the page like text in a document; only your own messages get a bubble.
-        HStack(alignment: .top, spacing: 10) {
-            Group {
-                if showAvatar, let bot {
-                    CharacterAvatar(bot: bot, size: 28, animated: false)
-                } else {
-                    Color.clear
-                }
+        MarkdownText(entry.data.text ?? "")
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .contextMenu {
+                Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
+                Button("Show what it did", systemImage: "list.bullet.rectangle", action: openTrace)
             }
-            .frame(width: 28, height: 28)
-            MarkdownText(entry.data.text ?? "")
-                .padding(.top, 4)
-                .contentShape(Rectangle())
-                .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
-                    Button("Show what it did", systemImage: "list.bullet.rectangle", action: openTrace)
-                }
-            Spacer(minLength: 24)
-        }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 40)
     }
 }
 
@@ -106,8 +95,9 @@ struct NoticeRow: View {
             .background(Palette.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
         default:
             Text(text)
-                .font(.caption)
-                .foregroundStyle(Palette.tertiary)
+                .font(.footnote)
+                .foregroundStyle(Palette.secondary)
+                .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -120,7 +110,6 @@ struct WorkingIndicator: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            CharacterAvatar(bot: bot, size: 28)
             Button(action: openTrace) {
                 HStack(spacing: 8) {
                     ThinkingOrb(size: 16, color: bot.needsInput ? Palette.warning : Palette.secondary)
@@ -130,11 +119,14 @@ struct WorkingIndicator: View {
                         .lineLimit(1)
                     if let started = bot.startedAt {
                         Text(Date(milliseconds: started), style: .timer)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.footnote.monospacedDigit())
                             .foregroundStyle(Palette.tertiary)
                     }
                     Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Palette.tertiary)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
             .buttonStyle(.plain)
             Spacer()

@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Grok-Bot-style character: a colored shape with slit eyes. The eyes drift
-/// while the bot works; a badge shows when it needs you.
+/// Grok-Bot-style character drawn like the app icon: an even grid of dots,
+/// shaded as if the silhouette were a ball, with the eyes left hollow (two
+/// missing pairs of dots). The eyes glance side to side while the bot works
+/// and blink now and then; a badge shows when it needs you.
 public struct CharacterAvatar: View {
     public enum Mood: Sendable { case idle, working, needsInput }
 
@@ -27,26 +29,20 @@ public struct CharacterAvatar: View {
     }
 
     public var body: some View {
-        ZStack {
-            // too few dots below ~24pt to read as a character — stay solid
-            if size < 24 {
-                CharacterShape(kind: shape).fill(color.gradient)
-            } else {
-                DottedBody(shape: shape, color: color, size: size, mood: mood)
-            }
-            Eyes(size: size, working: mood == .working)
-                .offset(y: -size * 0.03)
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        DottedBody(shape: shape, color: color, size: size, mood: mood)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
-/// The body as a halftone of dots (after thinking-orbs): each dot is shaded as
-/// if the silhouette were a sphere, so size and ink carry the depth. The body
-/// is grey ink; the bot's color only lands on the brightest dots. Working
-/// swings the light around the body; needing you sends a ripple out from the
-/// center. Idle is a still frame lit from the upper left.
+/// Grid geometry shared by the dotted body: 13 columns, the eyes are the dots
+/// in columns 4 and 8 of rows 4-6 (shifted one column while glancing).
+private enum Grid {
+    static let cells = 13
+    static let eyeColumns = [4, 8]
+    static let eyeRows = [4, 5, 6]
+}
+
 private struct DottedBody: View {
     let shape: String
     let color: Color
@@ -55,17 +51,34 @@ private struct DottedBody: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let step = size / 16
+        let step = size / CGFloat(Grid.cells)
         let dots = Self.grid(shape: shape, size: size, step: step)
         let still = mood == .idle || reduceMotion
         TimelineView(.animation(paused: still)) { timeline in
             let t = still ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600)
+            // Glance: whole-cell steps left / center / right, like a small display.
+            let glance = mood == .working ? Int((sin(t * 2 * .pi / 3.2) * 1.4).rounded()) : 0
+            let blinking = !still && (t / 4.7).truncatingRemainder(dividingBy: 1) < 0.035
+            let eyeRows = blinking ? [Grid.eyeRows[2]] : Grid.eyeRows
+            let eyeCols = Grid.eyeColumns.map { $0 + glance }
             Canvas { ctx, _ in
+                // Below ~24pt the dots stop reading: a solid body with the same hollow eyes.
+                if size < 24 {
+                    ctx.fill(CharacterShape(kind: shape).path(in: CGRect(x: 0, y: 0, width: size, height: size)), with: .color(color))
+                    ctx.blendMode = .clear
+                    for c in eyeCols {
+                        for r in eyeRows {
+                            ctx.fill(Path(CGRect(x: CGFloat(c) * step, y: CGFloat(r) * step, width: step, height: step)), with: .color(.black))
+                        }
+                    }
+                    return
+                }
                 let half = size / 2
                 let yaw = mood == .working ? t * 1.4 : -0.7
                 let lx = sin(yaw) * 0.8, ly = 0.55, lz = cos(yaw) * 0.5 + 0.6  // never fully behind
                 let ll = (lx * lx + ly * ly + lz * lz).squareRoot()
-                for p in dots {
+                for d in dots where !(eyeCols.contains(d.col) && eyeRows.contains(d.row)) {
+                    let p = d.center
                     let u = (p.x - half) / half, v = (half - p.y) / half
                     let z = max(0.2, 1 - u * u - v * v).squareRoot()
                     let nl = (u * u + v * v + z * z).squareRoot()
@@ -74,62 +87,34 @@ private struct DottedBody: View {
                         let ripple = 0.5 + 0.5 * sin((u * u + v * v).squareRoot() * 9 - t * 5)
                         shade *= 0.6 + 0.4 * ripple
                     }
-                    let r = step * 0.38 * (0.3 + 0.7 * shade)
+                    let r = step * 0.42 * (0.55 + 0.45 * shade)
                     let dot = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
-                    ctx.fill(dot, with: .color(Palette.text.opacity(0.12 + 0.33 * min(1, shade / 0.7))))
-                    if shade > 0.7 {
-                        ctx.fill(dot, with: .color(color.opacity((shade - 0.7) / 0.3)))
+                    ctx.fill(dot, with: .color(Palette.text.opacity(0.2 + 0.4 * min(1, shade / 0.7))))
+                    if shade > 0.6 {
+                        ctx.fill(dot, with: .color(color.opacity((shade - 0.6) / 0.4)))
                     }
                 }
             }
         }
     }
 
-    /// Hex-packed dot centers that fall inside the silhouette.
-    static func grid(shape: String, size: CGFloat, step: CGFloat) -> [CGPoint] {
+    struct Dot {
+        let row: Int
+        let col: Int
+        let center: CGPoint
+    }
+
+    /// Square-grid dot centers that fall inside the silhouette.
+    static func grid(shape: String, size: CGFloat, step: CGFloat) -> [Dot] {
         let path = CharacterShape(kind: shape).path(in: CGRect(x: 0, y: 0, width: size, height: size))
-        let rowH = step * 0.866
-        var out: [CGPoint] = []
-        var row = 0
-        var y = rowH / 2
-        while y < size {
-            var x = row.isMultiple(of: 2) ? step / 2 : step
-            while x < size {
-                let p = CGPoint(x: x, y: y)
-                if path.contains(p) { out.append(p) }
-                x += step
+        var out: [Dot] = []
+        for row in 0..<Grid.cells {
+            for col in 0..<Grid.cells {
+                let p = CGPoint(x: (CGFloat(col) + 0.5) * step, y: (CGFloat(row) + 0.5) * step)
+                if path.contains(p) { out.append(Dot(row: row, col: col, center: p)) }
             }
-            y += rowH
-            row += 1
         }
         return out
-    }
-}
-
-/// Two thin lit slits that blink now and then and drift slowly while working.
-private struct Eyes: View {
-    let size: CGFloat
-    let working: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: size * 0.2 - max(1.4, size * 0.038)) {
-            ForEach(0..<2, id: \.self) { _ in
-                Capsule()
-                    .fill(Palette.text)
-                    .frame(width: max(1.4, size * 0.038), height: size * 0.12)
-            }
-        }
-        .keyframeAnimator(initialValue: 1.0, repeating: !reduceMotion) { view, open in
-            view.scaleEffect(y: open)
-        } keyframes: { _ in
-            LinearKeyframe(1.0, duration: 4.5)
-            LinearKeyframe(0.12, duration: 0.08)
-            LinearKeyframe(1.0, duration: 0.1)
-        }
-        .phaseAnimator(working && !reduceMotion ? [-1.0, 1.0] : [0.0]) { view, phase in
-            view.offset(x: phase * size * 0.04)
-        } animation: { _ in .easeInOut(duration: 1.6) }
     }
 }
 
@@ -221,5 +206,28 @@ public struct AvatarWithStatus: View {
                         .overlay(Circle().stroke(Palette.background, lineWidth: 2))
                 }
             }
+    }
+}
+
+/// A computer's round monogram: the profile button and the rows that switch computers.
+public struct ComputerBadge: View {
+    let name: String
+    let size: CGFloat
+
+    public init(name: String, size: CGFloat = 36) {
+        self.name = name
+        self.size = size
+    }
+
+    public var body: some View {
+        Circle()
+            .fill(LinearGradient(colors: [Color(hex: 0x5A5A5A), Color(hex: 0x2E2E2E)], startPoint: .top, endPoint: .bottom))
+            .overlay(
+                Text(name.first.map { String($0).uppercased() } ?? "?")
+                    .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+            )
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }

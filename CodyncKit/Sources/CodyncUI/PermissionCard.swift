@@ -1,8 +1,8 @@
 import CodyncKit
 import SwiftUI
 
-/// Grok Bot's approval card: what the agent wants, where it runs, and
-/// Allow once / Always allow / Deny straight from the chat.
+/// Approval card in Grok Bot's choice-card style: what the agent wants, where
+/// it runs, and the answers as a list of rows.
 struct PermissionCard: View {
     let entry: Entry
     let hostName: String
@@ -25,13 +25,14 @@ struct PermissionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "hand.raised.fill")
-                    .foregroundStyle(pending ? Palette.warning : Palette.tertiary)
-                Text(headline).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(headline).font(.headline).foregroundStyle(Palette.text)
+                if pending {
+                    Circle().fill(Palette.warning).frame(width: 7, height: 7)
+                }
             }
             Text(d.title ?? "")
-                .font(.callout)
-                .foregroundStyle(Palette.text)
+                .font(.subheadline.monospaced())
+                .foregroundStyle(Palette.secondary)
                 .lineLimit(expanded ? nil : 3)
             Label("Runs on \(hostName)\(d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? "")", systemImage: "desktopcomputer")
                 .font(.caption)
@@ -62,13 +63,9 @@ struct PermissionCard: View {
                     .foregroundStyle(Palette.secondary)
             }
         }
-        .padding(14)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(pending ? Palette.warning.opacity(0.6) : Palette.border)
-        )
-        .padding(.leading, 36)
+        .padding(16)
+        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.trailing, 40)
     }
 
     private var hasDetail: Bool {
@@ -93,20 +90,23 @@ struct PermissionCard: View {
 
     private var buttons: some View {
         let options = ordered
-        return VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                ForEach(options.filter { $0.kind.hasPrefix("allow") }) { o in
-                    Button(label(o)) { respond(o.optionId) }
-                        .buttonStyle(CardButton(primary: o.kind == "allow_once"))
+        return VStack(spacing: 0) {
+            ForEach(Array(options.enumerated()), id: \.element.id) { i, o in
+                if i > 0 { Divider().overlay(Palette.border) }
+                Button { respond(o.optionId) } label: {
+                    Text(label(o))
+                        .font(.body.weight(o.kind == "allow_once" ? .semibold : .regular))
+                        .foregroundStyle(o.kind.hasPrefix("allow") ? Palette.text : Palette.danger)
+                        .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .contentShape(Rectangle())
                 }
-            }
-            HStack(spacing: 8) {
-                ForEach(options.filter { !$0.kind.hasPrefix("allow") }) { o in
-                    Button(label(o), role: .destructive) { respond(o.optionId) }
-                        .buttonStyle(CardButton(primary: false))
-                }
+                .buttonStyle(.plain)
             }
         }
+        .background(Palette.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Palette.border))
+        .padding(.top, 4)
     }
 
     private var outcome: String {
@@ -123,19 +123,6 @@ struct PermissionCard: View {
         case "cancelled": return "Cancelled"
         default: return "Expired — the agent moved on"
         }
-    }
-}
-
-struct CardButton: ButtonStyle {
-    let primary: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.subheadline.weight(.semibold))
-            .frame(maxWidth: .infinity, minHeight: 38)
-            .foregroundStyle(primary ? Palette.onAccent : configuration.role == .destructive ? Palette.danger : Palette.text)
-            .background(primary ? Palette.accentFill : Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
 

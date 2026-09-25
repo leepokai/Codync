@@ -36,38 +36,28 @@ public extension Color {
     }
 }
 
-/// Ink on paper: neutral graphite, and the text color doubles as the accent.
-/// Color comes from the bots themselves; the chrome stays monochrome, with
-/// amber kept for "needs you" and red for errors.
+/// Black and white: a pure black (or white) ground, grey bubbles, and color that
+/// comes only from the bots; amber marks "needs you" and red marks errors.
 public enum Palette {
-    public static let background = Color(light: 0xF7F7F5, dark: 0x0E0F0E)
-    public static let surface = Color(light: 0xFFFFFF, dark: 0x171817)
-    public static let bubbleAgent = Color(light: 0xEFEFEC, dark: 0x1E1F1E)
-    public static let border = Color(light: 0xE4E4E0, dark: 0x2A2B2A)
-    public static let text = Color(light: 0x161716, dark: 0xEDEDEA)
-    public static let secondary = Color(light: 0x5E5F5C, dark: 0xA3A4A0)
-    public static let tertiary = Color(light: 0x94958F, dark: 0x6C6D69)
-    /// Ink used for fills (user bubbles, primary buttons).
-    public static let accentFill = Color(light: 0x161716, dark: 0xEDEDEA)
+    public static let background = Color(light: 0xFFFFFF, dark: 0x000000)
+    public static let surface = Color(light: 0xF4F4F4, dark: 0x141414)
+    public static let bubbleAgent = Color(light: 0xF0F0F0, dark: 0x1C1C1C)
+    public static let bubbleUser = Color(light: 0xE2E2E2, dark: 0x3A3A3A)
+    public static let border = Color(light: 0xE6E6E6, dark: 0x262626)
+    public static let text = Color(light: 0x141414, dark: 0xF2F2F2)
+    public static let secondary = Color(light: 0x6B6B6B, dark: 0x9A9A9A)
+    public static let tertiary = Color(light: 0x9B9B9B, dark: 0x6E6E6E)
+    /// Ink used for fills (primary buttons, the send button, unread badges).
+    public static let accentFill = Color(light: 0x000000, dark: 0xFFFFFF)
     /// Ink readable as text and tint on the background.
-    public static let accent = Color(light: 0x161716, dark: 0xEDEDEA)
-    public static let onAccent = Color(light: 0xF7F7F5, dark: 0x0E0F0E)
-    public static let accentDim = Color(light: 0xDADAD6, dark: 0x3A3B39)
+    public static let accent = Color(light: 0x000000, dark: 0xFFFFFF)
+    public static let onAccent = Color(light: 0xFFFFFF, dark: 0x000000)
+    public static let accentDim = Color(light: 0xD9D9D9, dark: 0x333333)
     public static let danger = Color(light: 0xC23A2B, dark: 0xF0A7A7)
     public static let warning = Color(hex: 0xF0A030)
-    public static let codeBackground = Color(light: 0xF1F1EE, dark: 0x141514)
+    public static let codeBackground = Color(light: 0xF4F4F4, dark: 0x111111)
     public static let added = Color(light: 0x2E7D32, dark: 0x8FD18B)
     public static let removed = Color(light: 0xC62828, dark: 0xF0A7A7)
-}
-
-public extension View {
-    /// Small tracked monospaced caps for metadata: times, states, section labels.
-    func metaStyle(_ color: Color = Palette.tertiary) -> some View {
-        font(.system(size: 10.5, weight: .medium, design: .monospaced))
-            .tracking(0.6)
-            .textCase(.uppercase)
-            .foregroundStyle(color)
-    }
 }
 
 public enum AvatarPalette {
@@ -110,6 +100,24 @@ public enum RelativeTime {
         case ..<(86_400 * 7): return "\(Int(s / 86_400))d"
         default: return date.formatted(.dateTime.month(.abbreviated).day())
         }
+    }
+
+    /// Roster stamp: 3:45 AM · Yesterday · Wednesday · Sep 16
+    public static func day(_ date: Date, now: Date = .now) -> String {
+        let cal = Calendar.current
+        if cal.isDate(date, inSameDayAs: now) { return date.formatted(date: .omitted, time: .shortened) }
+        if cal.isDateInYesterday(date) { return String(localized: "Yesterday") }
+        if now.timeIntervalSince(date) < 6 * 86_400 { return date.formatted(.dateTime.weekday(.wide)) }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    /// Chat separator: Today 3:27 AM · Yesterday 5:20 PM · Sep 16 9:02 AM
+    public static func separator(_ date: Date) -> String {
+        let cal = Calendar.current
+        let day = cal.isDateInToday(date) ? String(localized: "Today")
+            : cal.isDateInYesterday(date) ? String(localized: "Yesterday")
+            : date.formatted(.dateTime.month(.abbreviated).day())
+        return day + " " + date.formatted(date: .omitted, time: .shortened)
     }
 
     public static func until(_ date: Date, now: Date = .now) -> String {

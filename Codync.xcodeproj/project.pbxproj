@@ -19,8 +19,10 @@
 		55D43F0D178B7A63BA4E81F3 /* CodyncWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 04030896973C4041E7FEB319 /* CodyncWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		61455BFB935FE1AAF67C4CD4 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E27E10BA8F07E552E99BE9 /* Push.swift */; };
 		76E613DFEABF73915C5FE9DC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF5474468D6EBF22CB2FA1E9 /* Assets.xcassets */; };
+		956D20C2D50A4D88F47AF700 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 6C77446ADDBAA86236BC6F35 /* PrivacyInfo.xcprivacy */; };
 		989285CFB52552A97D95366C /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528534881700FE0CF94A49BC /* PairingView.swift */; };
 		9D644515BB782DC91B1B71C8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD4B599F142017103B340A87 /* SettingsView.swift */; };
+		A5BC3A614AB38A7A4E28B160 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = DB5C5DC7D03F6400ABA9A133 /* PrivacyInfo.xcprivacy */; };
 		CED43A6F2ED71E48C95E9E38 /* HostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01C28522569623733B9B096D /* HostController.swift */; };
 		CEFE64EFFEA10B5ED60F2CE3 /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3FCD76B514C8ECF2211945A /* CodyncApp.swift */; };
 		D667C45D828CAD079A2EDD77 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4364B5D2EE15CB00ACF26E5D /* CodyncKit */; };
@@ -63,6 +65,7 @@
 		371D72CCCB665E6442DED8C8 /* BotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotListView.swift; sourceTree = "<group>"; };
 		38FE26380B2072AE3FBD5CF5 /* CodyncWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodyncWidgets.entitlements; sourceTree = "<group>"; };
 		528534881700FE0CF94A49BC /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		6C77446ADDBAA86236BC6F35 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		6CCA896856A480F390EBA9AB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6EBEF05AFCCF44C92BDA91A3 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		6F8473D6F162F5D18EF9D2EC /* ChatWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWindow.swift; sourceTree = "<group>"; };
@@ -75,6 +78,7 @@
 		AF5474468D6EBF22CB2FA1E9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B274A0195CB3B2409EA4C194 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		CD4B599F142017103B340A87 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		DB5C5DC7D03F6400ABA9A133 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		E70F8B0E7E2E15AAA8A2A0A7 /* CodyncWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncWidgets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -135,6 +139,7 @@
 				38FE26380B2072AE3FBD5CF5 /* CodyncWidgets.entitlements */,
 				E70F8B0E7E2E15AAA8A2A0A7 /* CodyncWidgets.swift */,
 				1753C1409D62F8F721BE833F /* Info.plist */,
+				DB5C5DC7D03F6400ABA9A133 /* PrivacyInfo.xcprivacy */,
 			);
 			path = CodyncWidgets;
 			sourceTree = "<group>";
@@ -176,6 +181,7 @@
 				AF5474468D6EBF22CB2FA1E9 /* Assets.xcassets */,
 				A30032680EAD00ABD06D30BE /* Codync-iOS.entitlements */,
 				6CCA896856A480F390EBA9AB /* Info.plist */,
+				6C77446ADDBAA86236BC6F35 /* PrivacyInfo.xcprivacy */,
 				F474B3D70851CF6BC24ED9DE /* App */,
 				EE65F2FAD6D95ABE28885E83 /* Views */,
 			);
@@ -233,6 +239,7 @@
 			buildConfigurationList = 44E0D659F23143196DD57DE0 /* Build configuration list for PBXNativeTarget "CodyncWidgets" */;
 			buildPhases = (
 				EB674074085209A1C457557E /* Sources */,
+				AD74120AC78F1A5E6D6E9CFF /* Resources */,
 				F84176A6E29D7445556D4800 /* Frameworks */,
 			);
 			buildRules = (
@@ -279,12 +286,15 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					306ED26C181D06BDE1E6EB55 = {
+						DevelopmentTeam = 7FUM8A8H72;
 						ProvisioningStyle = Automatic;
 					};
 					95A633B0E0FD05A1D35CA468 = {
+						DevelopmentTeam = 7FUM8A8H72;
 						ProvisioningStyle = Automatic;
 					};
 					E8A9607522E696738C5CA56E = {
+						DevelopmentTeam = 7FUM8A8H72;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -314,11 +324,20 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		AD74120AC78F1A5E6D6E9CFF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A5BC3A614AB38A7A4E28B160 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D4DD49FA9E802F4F2DF2B232 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				76E613DFEABF73915C5FE9DC /* Assets.xcassets in Resources */,
+				956D20C2D50A4D88F47AF700 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -436,6 +455,7 @@
 				CURRENT_PROJECT_VERSION = 17;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7FUM8A8H72;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -592,6 +612,7 @@
 				CURRENT_PROJECT_VERSION = 17;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7FUM8A8H72;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

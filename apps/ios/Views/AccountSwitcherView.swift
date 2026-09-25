@@ -104,7 +104,10 @@ struct AccountSwitcherView: View {
                     .labelStyle(.iconOnly)
             }
             if account.isBusy {
-                ToolbarItem(placement: .topBarTrailing) { ProgressView() }
+                ToolbarItem(placement: .topBarTrailing) {
+                    ThinkingOrb(state: .connecting, size: 20)
+                        .accessibilityHidden(false).accessibilityLabel("Signing in")
+                }
             }
         }
     }

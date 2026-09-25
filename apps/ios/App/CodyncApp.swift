@@ -44,6 +44,7 @@ struct CodyncApp: App {
                         _ = try? await app.pair(p)
                     }
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .usage }
+                    await LiveActivities.shared.previewIfRequested()
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_SCREEN"] != nil {
                         try? await Task.sleep(for: .seconds(2))
                         app.currentStore?.screenRequest = ScreenRequest()

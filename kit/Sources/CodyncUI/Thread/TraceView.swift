@@ -59,7 +59,9 @@ private struct TraceRow: View {
             DisclosureGroup {
                 Text(d.text ?? "").font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
             } label: {
-                Label("Thinking", systemImage: "brain").font(.subheadline).foregroundStyle(Palette.secondary)
+                Label { Text("Thinking") } icon: {
+                    ThinkingOrb(size: 16, color: Palette.secondary, animated: false)
+                }.font(.subheadline).foregroundStyle(Palette.secondary)
             }
         case "tool":
             ToolRow(data: d)
@@ -128,7 +130,7 @@ struct ToolRow: View {
             switch data.status {
             case "completed": Image(systemName: "checkmark").foregroundStyle(Palette.accent)
             case "failed": Image(systemName: "xmark").foregroundStyle(Palette.danger)
-            default: ThinkingOrb(size: 12, color: Palette.secondary)
+            default: ThinkingOrb(state: data.toolKind == "search" ? .searching : data.toolKind == "fetch" ? .connecting : .working, size: 16, color: Palette.secondary)
             }
         }
         .font(.caption)

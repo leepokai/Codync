@@ -1,0 +1,36 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+- `host/`: Rust daemon, ACP integration, SQLite storage, HTTP/SSE API, and terminal UI; unit tests live alongside modules in `src/`.
+- `kit/`: shared Swift package. `CodyncKit` contains models, clients, and design primitives; `CodyncUI` contains shared screens and stores. Tests and fixtures live in `kit/Tests/CodyncKitTests/`.
+- `apps/`: iOS, macOS, and Linux clients, plus `screen` and `screen-linux` helpers. Apple assets live in each target’s `Resources/`; widgets live in `apps/ios/Widgets/`.
+- `relay/`: Cloudflare push worker and `test/`; `web/`: website git submodule; `packaging/`: distribution templates; `docs/`: architecture and naming guidance.
+
+## Build, Test, and Development Commands
+
+Run from the repository root unless a command changes directories:
+
+- `xcodegen generate`: regenerate `Codync.xcodeproj` after editing `project.yml`; never edit `project.pbxproj` directly.
+- `xcodebuild build -project Codync.xcodeproj -scheme macOS -configuration Debug`: build the Mac app. Use Xcode’s `iOS` scheme to run on a simulator or device.
+- `cd host && cargo build`: build the host; `cargo run -- serve` starts it in the foreground.
+- `cd host && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`: run host CI checks.
+- `cd kit && swift test`: run shared Swift tests.
+- `cd apps/linux && cargo test`: test Linux code; requires GTK 4 and libadwaita development packages.
+- `cd relay && npm ci && npm test && npm run typecheck`: install dependencies and validate the relay.
+
+## Coding Style & Naming Conventions
+
+Use four-space indentation for Swift and Rust. Follow Swift 6 strict concurrency, SwiftUI, and structured `async/await`; avoid unchecked sendability. Rust uses edition 2024, rustfmt, and Clippy; avoid `unwrap()` outside tests.
+
+Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and `kebab-case.ts`. Follow role suffixes such as `View`, `Row`, and `Store`. See `docs/structure.md` and `CLAUDE.md` for architectural conventions.
+
+- No built-in system UI controls (`Menu`/`Picker`, `.switch` toggles, system lists, stock sheets and alerts): build our own from `CodyncKit` design primitives (e.g. `ToggleStyle.codync`). Anything with a background fill gets no border line.
+
+## Testing Guidelines
+
+Use Swift Testing (`@Test`, `#expect`), Rust unit tests, and the relay’s Node assertion tests. Name tests after observable behavior. Add regression coverage for changed logic; no numeric coverage threshold is configured.
+
+## Commit & Pull Request Guidelines
+
+History mixes descriptive subjects with scoped Conventional Commits, such as `feat(macos): ...`. Keep subjects concise and changes focused. PRs should explain behavior changes, link relevant issues, list validation performed, and include screenshots for UI changes. Update affected documentation in the same change.

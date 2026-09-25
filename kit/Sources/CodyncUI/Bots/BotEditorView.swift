@@ -190,8 +190,7 @@ struct BotSettingsForm: View {
                             Text("Get notified when this bot finishes or needs you").font(InterfaceMetrics.secondary).foregroundStyle(Palette.secondary)
                         }
                     }
-                    .toggleStyle(.switch)
-                    .tint(Palette.switchOn)
+                    .toggleStyle(.codync)
                     if model.screen != nil {
                         Toggle(isOn: Binding(get: { draft.computer ?? false }, set: { draft.computer = $0 })) {
                             VStack(alignment: .leading, spacing: 3) {
@@ -202,8 +201,7 @@ struct BotSettingsForm: View {
                                     .font(InterfaceMetrics.secondary).foregroundStyle(Palette.secondary)
                             }
                         }
-                        .toggleStyle(.switch)
-                        .tint(Palette.switchOn)
+                        .toggleStyle(.codync)
                     }
                 }
                 .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 18))
@@ -328,8 +326,7 @@ private struct PluginToggles: View {
                             }
                         }
                     }
-                    .toggleStyle(.switch)
-                    .tint(Palette.switchOn)
+                    .toggleStyle(.codync)
                 }
             }
             .padding(InterfaceMetrics.value(mac: 12, mobile: 18))
@@ -339,20 +336,15 @@ private struct PluginToggles: View {
     }
 }
 
-/// A value shown in an outlined pill with a chevron; tapping opens the choices.
+/// A value shown in a pill with a chevron; tapping opens our own list of choices.
 private struct PillMenu: View {
     let title: String
     @Binding var selection: String
     let options: [(id: String, label: String)]
+    @State private var open = false
 
     var body: some View {
-        Menu {
-            Picker(title, selection: $selection) {
-                ForEach(options, id: \.id) { Text($0.label).tag($0.id) }
-            }
-            .pickerStyle(.inline)
-            .labelsHidden()
-        } label: {
+        Button { open.toggle() } label: {
             HStack(spacing: 6) {
                 Text(title).lineLimit(1)
                 Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
@@ -360,28 +352,67 @@ private struct PillMenu: View {
             .foregroundStyle(Palette.text)
             .pill()
         }
-        .menuIndicator(.hidden)
         .buttonStyle(.plain)
         .fixedSize()
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(options, id: \.id) { option in
+                    ChoiceRow(label: option.label, selected: option.id == selection) {
+                        selection = option.id
+                        open = false
+                    }
+                }
+            }
+            .padding(6)
+            .frame(minWidth: 200)
+            .fixedSize()
+            .presentationCompactAdaptation(.popover)
+            .presentationBackground(Palette.bubbleAgent)
+        }
+    }
+}
+
+private struct ChoiceRow: View {
+    let label: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(label).foregroundStyle(Palette.text).lineLimit(1)
+                Spacer(minLength: 16)
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Palette.text)
+                    .opacity(selected ? 1 : 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, InterfaceMetrics.value(mac: 6, mobile: 10))
+            .background(hovering ? Palette.text.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in withAnimation(Motion.hover) { hovering = h } }
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
 extension View {
-    /// The outlined value pill used in the options card.
+    /// The value pill used in the options card.
     func pill() -> some View {
         padding(.horizontal, InterfaceMetrics.value(mac: 9, mobile: 12))
             .padding(.vertical, InterfaceMetrics.value(mac: 5, mobile: 7))
             .background(Palette.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Palette.border))
     }
 
-    /// A bordered, rounded input box.
+    /// A rounded input box.
     func fieldBox() -> some View {
         textFieldStyle(.plain)
             .padding(.horizontal, InterfaceMetrics.value(mac: 10, mobile: 14))
             .padding(.vertical, InterfaceMetrics.value(mac: 8, mobile: 11))
             .background(Palette.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.border))
     }
 }
 
@@ -496,6 +527,8 @@ struct FolderPicker: View {
                 ProgressView()
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Palette.background)
         .searchable(text: $filter)
         .navigationTitle(listing.map { ($0.path as NSString).lastPathComponent } ?? "Folders")
         .inlineNavigationTitle()

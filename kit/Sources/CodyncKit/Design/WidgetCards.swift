@@ -3,7 +3,7 @@ import SwiftUI
 /// Shared by the widget extension and its in-app gallery so previews use the
 /// same typography, spacing and progress rendering as the installed widget.
 public struct ProviderWidgetCard: View {
-    public enum Layout { case small, medium }
+    public enum Layout { case small, medium, large }
     let provider: UsageProvider
     let layout: Layout
     let date: Date
@@ -23,7 +23,7 @@ public struct ProviderWidgetCard: View {
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                if layout == .medium {
+                if layout != .small {
                     Text("Usage")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.secondary)
@@ -47,7 +47,17 @@ public struct ProviderWidgetCard: View {
                     .font(.system(size: 9)).foregroundStyle(Palette.secondary)
                     .lineLimit(1)
             } else {
-                ForEach(provider.windows.prefix(2)) { window in
+                if layout == .large, let top = provider.tightest {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(Int(top.percent.rounded()))%")
+                            .font(.system(size: 36, weight: .semibold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(top.percent >= 90 ? Palette.danger : Palette.text)
+                        Text("\(top.title) · highest usage").font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+                ForEach(provider.windows.prefix(layout == .large ? 4 : 2)) { window in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline) {
                             Text(window.title)
@@ -66,6 +76,7 @@ public struct ProviderWidgetCard: View {
                                 .lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
+                    .padding(.bottom, layout == .large ? 2 : 0)
                 }
             }
         }
@@ -76,7 +87,7 @@ public struct ProviderWidgetCard: View {
     }
 
     private var accessibleUsage: String {
-        let windows = layout == .small ? provider.tightest.map { [$0] } ?? [] : Array(provider.windows.prefix(2))
+        let windows = layout == .small ? provider.tightest.map { [$0] } ?? [] : Array(provider.windows.prefix(layout == .large ? 4 : 2))
         return windows.map { window in
             "\(window.title), \(Int(window.percent.rounded())) percent" +
                 (window.resetsShort(now: date).map { ", \($0)" } ?? "")
@@ -135,11 +146,13 @@ public extension Usage {
 public struct BotsWidgetCard: View {
     let bots: [Bot]
     let wide: Bool
+    let large: Bool
     let links: [String: URL]
 
-    public init(bots: [Bot], wide: Bool, links: [String: URL] = [:]) {
+    public init(bots: [Bot], wide: Bool, large: Bool = false, links: [String: URL] = [:]) {
         self.bots = bots.filter { !$0.hidden }
         self.wide = wide
+        self.large = large
         self.links = links
     }
 
@@ -163,22 +176,21 @@ public struct BotsWidgetCard: View {
                 Image(systemName: "bubble.left.and.bubble.right")
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary)
             }
-            if wide {
+            if large {
+                HStack {
+                    summary
+                    Spacer()
+                    Text("\(bots.count) total · \(working) working")
+                        .font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                }
+                Divider()
+                botRows(limit: 6)
+                Spacer(minLength: 0)
+            } else if wide {
                 HStack(alignment: .center, spacing: 16) {
                     summary.frame(width: 76, alignment: .leading)
                     Rectangle().fill(Palette.border).frame(width: 1)
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(ordered.prefix(3)) { bot in
-                            if let link = links[bot.id] {
-                                Link(destination: link) { row(bot) }
-                            } else { row(bot) }
-                        }
-                        if bots.isEmpty {
-                            Text("Create your first bot in Codync.")
-                                .font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    botRows(limit: 3)
                 }
             } else {
                 Spacer(minLength: 0)
@@ -196,6 +208,21 @@ public struct BotsWidgetCard: View {
         }
         .foregroundStyle(Palette.text)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func botRows(limit: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(ordered.prefix(limit)) { bot in
+                if let link = links[bot.id] {
+                    Link(destination: link) { row(bot) }
+                } else { row(bot) }
+            }
+            if bots.isEmpty {
+                Text("Create your first bot in Codync.")
+                    .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var summary: some View {

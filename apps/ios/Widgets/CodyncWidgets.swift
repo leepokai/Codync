@@ -58,8 +58,8 @@ struct BotsWidget: Widget {
                 .containerBackground(Palette.surface, for: .widget)
         }
         .configurationDisplayName("Bots")
-        .description("Which bots need you, which are working, and what they said last.")
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular, .accessoryInline])
+        .description("Bots that need you, running tasks, and their current activity.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }
 
@@ -74,16 +74,6 @@ struct BotsWidgetView: View {
             return rank($0) != rank($1) ? rank($0) < rank($1) : $0.lastAt > $1.lastAt
         }
     }
-    private var needing: Int { ordered.filter(\.needsInput).count }
-    private var working: Int { ordered.filter { $0.isWorking && !$0.needsInput }.count }
-
-    /// The one line that sums up the roster.
-    private var headline: (count: Int, label: String, needs: Bool) {
-        if needing > 0 { return (needing, needing == 1 ? "needs you" : "need you", true) }
-        if working > 0 { return (working, "working", false) }
-        return (ordered.count, ordered.count == 1 ? "bot, all quiet" : "bots, all quiet", false)
-    }
-
     var body: some View {
         if !entry.paired {
             switch family {
@@ -101,21 +91,13 @@ struct BotsWidgetView: View {
         } else {
             switch family {
             case .accessoryInline:
-                Text(needing > 0 ? "\(needing) bot\(needing == 1 ? "" : "s") need\(needing == 1 ? "s" : "") you" : working > 0 ? "\(working) working" : ordered.isEmpty ? "No bots yet" : "Bots all quiet")
+                AccessoryWidgetCard(kind: .bots, family: .inline, bots: entry.bots).widgetAccentable()
             case .accessoryCircular:
-                VStack(spacing: 0) {
-                    Text("\(headline.count)").font(.system(size: 24, weight: .semibold, design: .rounded))
-                    Text(needing > 0 ? "need" : working > 0 ? "busy" : "bots").font(.system(size: 10, weight: .medium))
-                }
-                .widgetAccentable()
+                AccessoryWidgetCard(kind: .bots, family: .circular, bots: entry.bots).widgetAccentable()
             case .accessoryRectangular:
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(headline.count) \(headline.label)").font(.headline).widgetAccentable()
-                    ForEach(ordered.prefix(2)) { bot in
-                        Text("\(bot.name) · \(line(bot))").font(.caption2).lineLimit(1)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                AccessoryWidgetCard(kind: .bots, family: .rectangular, bots: entry.bots).widgetAccentable()
+            case .systemLarge:
+                BotsWidgetCard(bots: entry.bots, wide: true, large: true, links: entry.links)
             case .systemMedium:
                 BotsWidgetCard(bots: entry.bots, wide: true, links: entry.links)
             default:
@@ -125,11 +107,6 @@ struct BotsWidgetView: View {
         }
     }
 
-    private func line(_ bot: Bot) -> String {
-        if bot.needsInput { return bot.activity.isEmpty ? "Needs your approval" : bot.activity }
-        if bot.isWorking { return bot.activity.isEmpty ? "Working…" : bot.activity }
-        return bot.lastMessage ?? "Idle"
-    }
 }
 
 private struct EmptyWidget: View {
@@ -237,22 +214,11 @@ struct UsageWidgetView: View {
         if let top = tightest {
             switch family {
             case .accessoryInline:
-                Text("\(top.provider) \(percent(top.window)) · \(top.window.label)")
+                AccessoryWidgetCard(kind: .usage, family: .inline, usage: entry.usage).widgetAccentable()
             case .accessoryCircular:
-                Gauge(value: min(top.window.percent, 100), in: 0...100) {
-                    Text(top.provider.prefix(2))
-                } currentValueLabel: {
-                    Text("\(Int(top.window.percent.rounded()))")
-                }
-                .gaugeStyle(.accessoryCircularCapacity)
+                AccessoryWidgetCard(kind: .usage, family: .circular, usage: entry.usage).widgetAccentable()
             case .accessoryRectangular:
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(top.provider) \(top.window.label) \(percent(top.window))").font(.headline).widgetAccentable()
-                    Text(rest.prefix(2).map { "\($0.window.label) \(percent($0.window))" }.joined(separator: " · "))
-                        .font(.caption2).lineLimit(1)
-                    resetLine(top.window).font(.caption2)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                AccessoryWidgetCard(kind: .usage, family: .rectangular, usage: entry.usage).widgetAccentable()
             case .systemMedium:
                 HStack(alignment: .top, spacing: 18) {
                     hero(top).frame(width: 118, alignment: .leading)
@@ -362,7 +328,7 @@ struct ProviderUsageWidget: Widget {
         }
         .configurationDisplayName("Provider usage")
         .description("Session and weekly limits in a compact, easy-to-read card.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
@@ -375,7 +341,7 @@ struct ProviderUsageView: View {
     var body: some View {
         Group {
             if let provider, !provider.windows.isEmpty {
-                ProviderWidgetCard(provider: provider, layout: family == .systemSmall ? .small : .medium, date: entry.date)
+                ProviderWidgetCard(provider: provider, layout: family == .systemSmall ? .small : family == .systemLarge ? .large : .medium, date: entry.date)
             } else {
                 EmptyWidget(text: "Open Codync to connect a computer and check \(entry.provider.rawValue.capitalized) usage.")
             }
@@ -390,79 +356,55 @@ struct ProviderUsageView: View {
 struct BotLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BotActivityAttributes.self) { context in
-            LockScreenView(context: context)
-                .activityBackgroundTint(Palette.background)
+            BotActivityCard(name: context.attributes.name, shape: context.attributes.avatarShape,
+                            color: context.attributes.avatarColor, state: presentation(context))
+                .activityBackgroundTint(Palette.surface)
                 .widgetURL(context.attributes.link ?? URL(string: "codync://computers"))
         } dynamicIsland: { context in
-            let s = context.state
+            let state = presentation(context)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    CharacterAvatar(shape: context.attributes.avatarShape, color: context.attributes.avatarColor, size: 36,
-                                    mood: s.status == "needsInput" ? .needsInput : .working)
-                }
-                DynamicIslandExpandedRegion(.center) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(context.attributes.name).font(.headline)
-                        Text(statusText(s)).font(.caption).foregroundStyle(s.status == "needsInput" ? Palette.warning : .secondary).lineLimit(2)
+                    HStack(spacing: 8) {
+                        avatar(context, size: 26)
+                        Text(context.attributes.name).font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white).lineLimit(1)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if let started = s.startedAt, s.status == "working" {
-                        Text(started, style: .timer).font(.caption.monospacedDigit()).frame(width: 52)
+                    BotActivityIndicator(state: state).environment(\.colorScheme, .dark)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        BotActivityDetail(state: state)
+                        if let link = context.attributes.link {
+                            Link(destination: link) {
+                                Label(state.phase == .needsInput ? "Respond in Codync" : "Open conversation", systemImage: "arrow.up.right")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .tint(.white)
+                        }
                     }
+                    .environment(\.colorScheme, .dark)
                 }
             } compactLeading: {
-                CharacterAvatar(shape: context.attributes.avatarShape, color: context.attributes.avatarColor, size: 20)
+                avatar(context, size: 20)
             } compactTrailing: {
-                if s.status == "needsInput" {
-                    Image(systemName: "hand.raised.fill").foregroundStyle(Palette.warning)
-                } else if s.status == "working", let started = s.startedAt {
-                    Text(started, style: .timer).font(.caption2.monospacedDigit()).frame(width: 40)
-                } else {
-                    Image(systemName: "checkmark").foregroundStyle(Palette.text)
-                }
+                BotActivityIndicator(state: state).environment(\.colorScheme, .dark)
             } minimal: {
-                CharacterAvatar(shape: context.attributes.avatarShape, color: context.attributes.avatarColor, size: 20)
+                BotActivityIndicator(state: state, minimal: true)
+                    .environment(\.colorScheme, .dark)
+                    .accessibilityLabel("\(context.attributes.name), \(state.title)")
             }
             .widgetURL(context.attributes.link ?? URL(string: "codync://computers"))
         }
     }
-}
 
-/// Status only: Live Activity pushes never carry free text (spec §6.7).
-private func statusText(_ s: BotActivityAttributes.ContentState) -> String {
-    switch s.status {
-    case "needsInput": "Needs your approval"
-    case "working": "Working…"
-    case "error": "Stopped with an error"
-    default: "Done"
+    private func presentation(_ context: ActivityViewContext<BotActivityAttributes>) -> BotActivityPresentation {
+        .init(status: context.state.status, activity: context.state.activity,
+              startedAt: context.state.startedAt, isStale: context.isStale)
     }
-}
 
-private struct LockScreenView: View {
-    let context: ActivityViewContext<BotActivityAttributes>
-
-    var body: some View {
-        let s = context.state
-        HStack(spacing: 12) {
-            CharacterAvatar(shape: context.attributes.avatarShape, color: context.attributes.avatarColor, size: 44,
-                            mood: s.status == "needsInput" ? .needsInput : s.status == "working" ? .working : .idle)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(context.attributes.name).font(.headline).foregroundStyle(Palette.text)
-                Text(statusText(s))
-                    .font(.subheadline)
-                    .foregroundStyle(s.status == "needsInput" ? Palette.warning : Palette.secondary)
-                    .lineLimit(2)
-            }
-            Spacer()
-            if s.status == "working", let started = s.startedAt {
-                Text(started, style: .timer)
-                    .font(.title3.monospacedDigit())
-                    .foregroundStyle(Palette.accent)
-                    .frame(width: 70, alignment: .trailing)
-            }
-        }
-        .padding(16)
+    private func avatar(_ context: ActivityViewContext<BotActivityAttributes>, size: CGFloat) -> some View {
+        CharacterAvatar(shape: context.attributes.avatarShape, color: context.attributes.avatarColor, size: size)
     }
 }

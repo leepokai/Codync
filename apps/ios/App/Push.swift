@@ -95,6 +95,32 @@ final class LiveActivities {
 
     private var requests: [UUID: Task<Void, Never>] = [:]
 
+    #if DEBUG
+    /// Simulator-only visual verification. No host, relay, or APNs request.
+    func previewIfRequested() async {
+        #if targetEnvironment(simulator)
+        guard let status = ProcessInfo.processInfo.environment["CODYNC_ACTIVITY_PREVIEW"] else { return }
+        for activity in Activity<BotActivityAttributes>.activities where activity.attributes.botId.hasPrefix("codync-design-preview-") {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        guard status != "stop", var bot = Bot.widgetPreview.first else { return }
+        try? await Task.sleep(for: .milliseconds(500))
+        for index in 0..<(status == "multiple" ? 2 : 1) {
+            bot.id = "codync-design-preview-\(index)"
+            bot.name = index == 0 ? "Reviewer" : "Builder"
+            let state = BotActivityAttributes.ContentState(
+                status: status == "multiple" ? (index == 0 ? "needsInput" : "working") : status == "stale" ? "working" : status,
+                activity: status == "needsInput" || status == "multiple" ? "Review the proposed changes." : "Running the test suite.",
+                startedAt: .now - 154)
+            do {
+                _ = try Activity.request(attributes: BotActivityAttributes(bot: bot, computerId: "preview", link: URL(string: "codync://computers")),
+                    content: .init(state: state, staleDate: status == "stale" ? .now - 1 : .now + 900), pushType: nil)
+            } catch { log.error("Simulator activity preview: \(error.localizedDescription)") }
+        }
+        #endif
+    }
+    #endif
+
     func endAll() {
         requests.values.forEach { $0.cancel() }
         requests.removeAll()
@@ -111,6 +137,7 @@ final class LiveActivities {
     }
 
     func start(_ ref: BotReference, bot: Bot, store: BotStore) {
+        guard UserDefaults.standard.object(forKey: "liveActivitiesEnabled") as? Bool ?? true else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled, Self.find(ref) == nil, let client = store.client else { return }
         let attributes = BotActivityAttributes(bot: bot, computerId: ref.computerId, link: store.storage.botURL(ref))
         let id = UUID()
@@ -127,7 +154,7 @@ final class LiveActivities {
         let state = BotActivityAttributes.ContentState(status: "working", activity: "", startedAt: .now)
         do {
             try Task.checkCancellation()
-            let activity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil), pushType: .token)
+            let activity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: .now + 15 * 60), pushType: .token)
             for await token in activity.pushTokenUpdates {
                 guard !Task.isCancelled else { break }
                 guard let ticket = try? await relayTicket(token: token, kind: "liveactivity") else { continue }
@@ -157,7 +184,7 @@ final class LiveActivities {
         if end {
             await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .after(.now + 60))
         } else {
-            await activity.update(.init(state: state, staleDate: nil))
+            await activity.update(.init(state: state, staleDate: .now + 15 * 60))
         }
     }
 }

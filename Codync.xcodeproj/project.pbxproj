@@ -7,48 +7,48 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1260713A6A1C9F0906936B61 /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */; };
-		12F17A2C483BDC0A71D85207 /* HostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A9881C76B67297BE26D8FD /* HostController.swift */; };
-		187068689418B6B25AE7B26A /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B274A0195CB3B2409EA4C194 /* WidgetKit.framework */; };
-		2C1D071F93F790133BCB64DC /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = C3EC157070A9B0A033C7F2A0 /* CodyncUI */; };
-		341AB84FEF28FF194872D861 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = CDE38864BDC425F1240E1C02 /* CodyncKit */; };
-		499113F4AB77E9EFEA72767F /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5DAFE014EAFE809C427A475D /* CodyncUI */; };
-		4ED0D5BD4A99F1B6CED0D45F /* BotListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E57711E223A292872322C5 /* BotListView.swift */; };
-		55D43F0D178B7A63BA4E81F3 /* CodyncWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 04030896973C4041E7FEB319 /* CodyncWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		793C7A0CB5F1B4DFC6E0F9F0 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B79D48C1D6F90D53751B3F /* RootView.swift */; };
-		A16AB6AB165AA0298D6DF5D1 /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45CCA6BBDCF412897AEC105 /* CodyncApp.swift */; };
-		B4C0DD1A52EF28C9E7450C48 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */; };
-		BB58CFE0EF1736939E03E9B2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */; };
-		D04DF39508B9735282CEC8F7 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55AABA9596547D7459B1CC5B /* Push.swift */; };
-		D3664AEF4522B79F15746DF9 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739EC95223CC8F8717C33736 /* PairingView.swift */; };
-		D516001090C5D376361A7198 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D2C705F063CD20F5B3036BD4 /* Assets.xcassets */; };
-		D667C45D828CAD079A2EDD77 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4364B5D2EE15CB00ACF26E5D /* CodyncKit */; };
-		D8E9E7B47361EEE30424455F /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 234AA35A60DF7D3E6D7CA45E /* CodyncKit */; };
-		E343CFBF99787186B873C88C /* CodyncWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6679F051F456F976152EF5B7 /* CodyncWidgets.swift */; };
-		F234C89CAECC7875ACACE185 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = ABF006FDBF6F111F379DC786 /* PrivacyInfo.xcprivacy */; };
-		F35C0BF8543A7D1E06EE2680 /* ChatWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A59E3A7670EAF57F2F4C9B9 /* ChatWindow.swift */; };
-		F40736BCC82C81CCC256E3B3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */; };
-		FEEBCD214CE268A636921FD9 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E47C60032C326157E0386B8 /* SwiftUI.framework */; };
+		03774684DC8344D81AFED53B /* ChatWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A59E3A7670EAF57F2F4C9B9 /* ChatWindow.swift */; };
+		0CCA5DAC7A621F1786E37EA7 /* CodyncWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6679F051F456F976152EF5B7 /* CodyncWidgets.swift */; };
+		24DF3CB466CC877FCB8BAED6 /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = BEE30A9D5C73E5A151F34180 /* CodyncUI */; };
+		25667EBFCCC64B96FDCE95A9 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 59F5D19A417A7A50596902FA /* CodyncKit */; };
+		2CC074683AE086D6C77CC1E8 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B274A0195CB3B2409EA4C194 /* WidgetKit.framework */; };
+		2F0A1C29DBBD1D700C10BE46 /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45CCA6BBDCF412897AEC105 /* CodyncApp.swift */; };
+		31A78A067C217F77FBDEDFD0 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55AABA9596547D7459B1CC5B /* Push.swift */; };
+		48DAAA1384E5B8D0BA27C895 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E47C60032C326157E0386B8 /* SwiftUI.framework */; };
+		513F59BF65DED5379AB950A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D2C705F063CD20F5B3036BD4 /* Assets.xcassets */; };
+		52CF04B855C6AAEC47B75B8F /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 06C9F37C6502131CAF0F145E /* CodyncUI */; };
+		8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */; };
+		93ACC89E84F8907D8DA378F8 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = ABF006FDBF6F111F379DC786 /* PrivacyInfo.xcprivacy */; };
+		B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739EC95223CC8F8717C33736 /* PairingView.swift */; };
+		C937F66F810AA238B73E8363 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */; };
+		CC9F6FB8055C38D5D625F738 /* BotListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E57711E223A292872322C5 /* BotListView.swift */; };
+		D4AB92074A9C0D9C72B4080A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */; };
+		DEF7478AB86DB605F52905F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */; };
+		E430F9317B690366F62164DB /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B79D48C1D6F90D53751B3F /* RootView.swift */; };
+		EBB0417A5FB2CE6D514D21BE /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1285DDFA0390A76ECDAAD6C0 /* CodyncKit */; };
+		F0A26FABD15480810021C86A /* HostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A9881C76B67297BE26D8FD /* HostController.swift */; };
+		F842AE1C5ED96AF9A7F5D16C /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D734BEE7CD3F84677B0218B /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F93D9960F7C20B2E629C1736 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 80868F96B9905FF52DCDFAE2 /* CodyncKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		65AAB675493CB6BE712818A9 /* PBXContainerItemProxy */ = {
+		D40A213F2C1B900F886F95EB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 5B6351DD20AF4506794D6460 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 95A633B0E0FD05A1D35CA468;
-			remoteInfo = CodyncWidgets;
+			remoteGlobalIDString = A27E4E88D6A5B9850734B594;
+			remoteInfo = Widgets;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		AA3D7E40FB2438A6CD2D3DE7 /* Embed Foundation Extensions */ = {
+		265004DE0479E150BA3E6AB7 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				55D43F0D178B7A63BA4E81F3 /* CodyncWidgets.appex in Embed Foundation Extensions */,
+				F842AE1C5ED96AF9A7F5D16C /* Widgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -56,58 +56,58 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		04030896973C4041E7FEB319 /* CodyncWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodyncWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		155F1B6DC4518164BE2C527F /* Codync-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Codync-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		232B2C00B9575BFF7068BB62 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncMacApp.swift; sourceTree = "<group>"; };
 		4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		55AABA9596547D7459B1CC5B /* Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Push.swift; sourceTree = "<group>"; };
+		60422D3CA8FEBCDC5AC465E0 /* iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6679F051F456F976152EF5B7 /* CodyncWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncWidgets.swift; sourceTree = "<group>"; };
+		6D734BEE7CD3F84677B0218B /* Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		739EC95223CC8F8717C33736 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		7A2F5A7F5A648909D8CC5C19 /* kit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = kit; path = kit; sourceTree = SOURCE_ROOT; };
-		84B947AD5A042EA315737BBC /* Codync-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Codync-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		93A9881C76B67297BE26D8FD /* HostController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostController.swift; sourceTree = "<group>"; };
+		967A0E1863D8CAA961B1F7B1 /* Widgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Widgets.entitlements; sourceTree = "<group>"; };
+		991A0FD3EAAD4B446F3BF14E /* macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = macOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A59E3A7670EAF57F2F4C9B9 /* ChatWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWindow.swift; sourceTree = "<group>"; };
 		ABF006FDBF6F111F379DC786 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B274A0195CB3B2409EA4C194 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
-		B41C26950B8F482C4BA51153 /* CodyncWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CodyncWidgets.entitlements; sourceTree = "<group>"; };
 		C5E57711E223A292872322C5 /* BotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotListView.swift; sourceTree = "<group>"; };
 		D2C705F063CD20F5B3036BD4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E1B79D48C1D6F90D53751B3F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		E7AD1923720498095EFAC927 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F0B6AECA1FDDD3064F3D4447 /* iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iOS.entitlements; sourceTree = "<group>"; };
 		F45CCA6BBDCF412897AEC105 /* CodyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncApp.swift; sourceTree = "<group>"; };
-		FB10B307B79B6EA47AD93F4B /* Codync-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Codync-iOS.entitlements"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		23D362028BD4C2D187672C6B /* Frameworks */ = {
+		1AC8A5FB72DF4C3DAEDBA56F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				341AB84FEF28FF194872D861 /* CodyncKit in Frameworks */,
-				499113F4AB77E9EFEA72767F /* CodyncUI in Frameworks */,
+				F93D9960F7C20B2E629C1736 /* CodyncKit in Frameworks */,
+				24DF3CB466CC877FCB8BAED6 /* CodyncUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		BC19FCC84D9B1AF54A43BDB1 /* Frameworks */ = {
+		9C830BBB73D8BC95B4167B13 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D8E9E7B47361EEE30424455F /* CodyncKit in Frameworks */,
-				2C1D071F93F790133BCB64DC /* CodyncUI in Frameworks */,
+				25667EBFCCC64B96FDCE95A9 /* CodyncKit in Frameworks */,
+				2CC074683AE086D6C77CC1E8 /* WidgetKit.framework in Frameworks */,
+				48DAAA1384E5B8D0BA27C895 /* SwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F84176A6E29D7445556D4800 /* Frameworks */ = {
+		B2AF485DB7DA2A4791E60288 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D667C45D828CAD079A2EDD77 /* CodyncKit in Frameworks */,
-				187068689418B6B25AE7B26A /* WidgetKit.framework in Frameworks */,
-				FEEBCD214CE268A636921FD9 /* SwiftUI.framework in Frameworks */,
+				EBB0417A5FB2CE6D514D21BE /* CodyncKit in Frameworks */,
+				52CF04B855C6AAEC47B75B8F /* CodyncUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -156,9 +156,9 @@
 		3EC1FDCCFFFB4BA1A23FDDB0 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				84B947AD5A042EA315737BBC /* Codync-iOS.app */,
-				155F1B6DC4518164BE2C527F /* Codync-macOS.app */,
-				04030896973C4041E7FEB319 /* CodyncWidgets.appex */,
+				60422D3CA8FEBCDC5AC465E0 /* iOS.app */,
+				991A0FD3EAAD4B446F3BF14E /* macOS.app */,
+				6D734BEE7CD3F84677B0218B /* Widgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -166,9 +166,9 @@
 		4D41FDF3805D43BB7A2B1E93 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				B41C26950B8F482C4BA51153 /* CodyncWidgets.entitlements */,
 				E7AD1923720498095EFAC927 /* Info.plist */,
 				ABF006FDBF6F111F379DC786 /* PrivacyInfo.xcprivacy */,
+				967A0E1863D8CAA961B1F7B1 /* Widgets.entitlements */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -241,8 +241,8 @@
 			isa = PBXGroup;
 			children = (
 				D2C705F063CD20F5B3036BD4 /* Assets.xcassets */,
-				FB10B307B79B6EA47AD93F4B /* Codync-iOS.entitlements */,
 				232B2C00B9575BFF7068BB62 /* Info.plist */,
+				F0B6AECA1FDDD3064F3D4447 /* iOS.entitlements */,
 				4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
@@ -259,70 +259,70 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		306ED26C181D06BDE1E6EB55 /* Codync-iOS */ = {
+		72F29E7EBE9A88B16B4E608A /* macOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 300BC84D64F107B41629DDFD /* Build configuration list for PBXNativeTarget "Codync-iOS" */;
+			buildConfigurationList = 7C0003BA8C173EC41757B9B4 /* Build configuration list for PBXNativeTarget "macOS" */;
 			buildPhases = (
-				A9B4AF2EC917CEFCB162B091 /* Sources */,
-				D4DD49FA9E802F4F2DF2B232 /* Resources */,
-				23D362028BD4C2D187672C6B /* Frameworks */,
-				AA3D7E40FB2438A6CD2D3DE7 /* Embed Foundation Extensions */,
+				FD97D0661DD7AA54EB7DE077 /* Sources */,
+				14FEC4FC6C72AC9A2596C04C /* Resources */,
+				1AC8A5FB72DF4C3DAEDBA56F /* Frameworks */,
+				C0A14ED49FC6A533FEABD5B2 /* Embed codync-host */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				3AA5CFC9DFBBAE9D4564C791 /* PBXTargetDependency */,
 			);
-			name = "Codync-iOS";
+			name = macOS;
 			packageProductDependencies = (
-				CDE38864BDC425F1240E1C02 /* CodyncKit */,
-				5DAFE014EAFE809C427A475D /* CodyncUI */,
+				80868F96B9905FF52DCDFAE2 /* CodyncKit */,
+				BEE30A9D5C73E5A151F34180 /* CodyncUI */,
 			);
-			productName = "Codync-iOS";
-			productReference = 84B947AD5A042EA315737BBC /* Codync-iOS.app */;
+			productName = macOS;
+			productReference = 991A0FD3EAAD4B446F3BF14E /* macOS.app */;
 			productType = "com.apple.product-type.application";
 		};
-		95A633B0E0FD05A1D35CA468 /* CodyncWidgets */ = {
+		913BDA9F79CE8C35A9E35830 /* iOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 44E0D659F23143196DD57DE0 /* Build configuration list for PBXNativeTarget "CodyncWidgets" */;
+			buildConfigurationList = 3C74A86E026A9B24540EC0B2 /* Build configuration list for PBXNativeTarget "iOS" */;
 			buildPhases = (
-				EB674074085209A1C457557E /* Sources */,
-				AD74120AC78F1A5E6D6E9CFF /* Resources */,
-				F84176A6E29D7445556D4800 /* Frameworks */,
+				B42F6957E97BFF5E6D8F504B /* Sources */,
+				8C91DA62A73BD91999C1FD70 /* Resources */,
+				B2AF485DB7DA2A4791E60288 /* Frameworks */,
+				265004DE0479E150BA3E6AB7 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				40DF4BEA40A82C095F51AB76 /* PBXTargetDependency */,
+			);
+			name = iOS;
+			packageProductDependencies = (
+				1285DDFA0390A76ECDAAD6C0 /* CodyncKit */,
+				06C9F37C6502131CAF0F145E /* CodyncUI */,
+			);
+			productName = iOS;
+			productReference = 60422D3CA8FEBCDC5AC465E0 /* iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A27E4E88D6A5B9850734B594 /* Widgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 95CAB203C65D7CF3F8C9B90E /* Build configuration list for PBXNativeTarget "Widgets" */;
+			buildPhases = (
+				0F5715AD7C1E63AD16A8F0C3 /* Sources */,
+				E296E7C6EA511439ADB4F915 /* Resources */,
+				9C830BBB73D8BC95B4167B13 /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = CodyncWidgets;
+			name = Widgets;
 			packageProductDependencies = (
-				4364B5D2EE15CB00ACF26E5D /* CodyncKit */,
+				59F5D19A417A7A50596902FA /* CodyncKit */,
 			);
-			productName = CodyncWidgets;
-			productReference = 04030896973C4041E7FEB319 /* CodyncWidgets.appex */;
+			productName = Widgets;
+			productReference = 6D734BEE7CD3F84677B0218B /* Widgets.appex */;
 			productType = "com.apple.product-type.app-extension";
-		};
-		E8A9607522E696738C5CA56E /* Codync-macOS */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 055E41E3751AF5C2889C3938 /* Build configuration list for PBXNativeTarget "Codync-macOS" */;
-			buildPhases = (
-				E5233A2EF3EBD0703A3CD62B /* Sources */,
-				E7B25FBC4C007B3E1A7E8B39 /* Resources */,
-				BC19FCC84D9B1AF54A43BDB1 /* Frameworks */,
-				35A6B7A814D5FF8E400C0EBA /* Embed codync-host */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = "Codync-macOS";
-			packageProductDependencies = (
-				234AA35A60DF7D3E6D7CA45E /* CodyncKit */,
-				C3EC157070A9B0A033C7F2A0 /* CodyncUI */,
-			);
-			productName = "Codync-macOS";
-			productReference = 155F1B6DC4518164BE2C527F /* Codync-macOS.app */;
-			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
@@ -333,15 +333,15 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					306ED26C181D06BDE1E6EB55 = {
+					72F29E7EBE9A88B16B4E608A = {
 						DevelopmentTeam = 7FUM8A8H72;
 						ProvisioningStyle = Automatic;
 					};
-					95A633B0E0FD05A1D35CA468 = {
+					913BDA9F79CE8C35A9E35830 = {
 						DevelopmentTeam = 7FUM8A8H72;
 						ProvisioningStyle = Automatic;
 					};
-					E8A9607522E696738C5CA56E = {
+					A27E4E88D6A5B9850734B594 = {
 						DevelopmentTeam = 7FUM8A8H72;
 						ProvisioningStyle = Automatic;
 					};
@@ -364,43 +364,43 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				306ED26C181D06BDE1E6EB55 /* Codync-iOS */,
-				E8A9607522E696738C5CA56E /* Codync-macOS */,
-				95A633B0E0FD05A1D35CA468 /* CodyncWidgets */,
+				A27E4E88D6A5B9850734B594 /* Widgets */,
+				913BDA9F79CE8C35A9E35830 /* iOS */,
+				72F29E7EBE9A88B16B4E608A /* macOS */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		AD74120AC78F1A5E6D6E9CFF /* Resources */ = {
+		14FEC4FC6C72AC9A2596C04C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F234C89CAECC7875ACACE185 /* PrivacyInfo.xcprivacy in Resources */,
+				D4AB92074A9C0D9C72B4080A /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D4DD49FA9E802F4F2DF2B232 /* Resources */ = {
+		8C91DA62A73BD91999C1FD70 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D516001090C5D376361A7198 /* Assets.xcassets in Resources */,
-				BB58CFE0EF1736939E03E9B2 /* PrivacyInfo.xcprivacy in Resources */,
+				513F59BF65DED5379AB950A1 /* Assets.xcassets in Resources */,
+				C937F66F810AA238B73E8363 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		E7B25FBC4C007B3E1A7E8B39 /* Resources */ = {
+		E296E7C6EA511439ADB4F915 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B4C0DD1A52EF28C9E7450C48 /* Assets.xcassets in Resources */,
+				93ACC89E84F8907D8DA378F8 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		35A6B7A814D5FF8E400C0EBA /* Embed codync-host */ = {
+		C0A14ED49FC6A533FEABD5B2 /* Embed codync-host */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -423,44 +423,44 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A9B4AF2EC917CEFCB162B091 /* Sources */ = {
+		0F5715AD7C1E63AD16A8F0C3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4ED0D5BD4A99F1B6CED0D45F /* BotListView.swift in Sources */,
-				A16AB6AB165AA0298D6DF5D1 /* CodyncApp.swift in Sources */,
-				D3664AEF4522B79F15746DF9 /* PairingView.swift in Sources */,
-				D04DF39508B9735282CEC8F7 /* Push.swift in Sources */,
-				793C7A0CB5F1B4DFC6E0F9F0 /* RootView.swift in Sources */,
-				F40736BCC82C81CCC256E3B3 /* SettingsView.swift in Sources */,
+				0CCA5DAC7A621F1786E37EA7 /* CodyncWidgets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		E5233A2EF3EBD0703A3CD62B /* Sources */ = {
+		B42F6957E97BFF5E6D8F504B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F35C0BF8543A7D1E06EE2680 /* ChatWindow.swift in Sources */,
-				1260713A6A1C9F0906936B61 /* CodyncMacApp.swift in Sources */,
-				12F17A2C483BDC0A71D85207 /* HostController.swift in Sources */,
+				CC9F6FB8055C38D5D625F738 /* BotListView.swift in Sources */,
+				2F0A1C29DBBD1D700C10BE46 /* CodyncApp.swift in Sources */,
+				B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */,
+				31A78A067C217F77FBDEDFD0 /* Push.swift in Sources */,
+				E430F9317B690366F62164DB /* RootView.swift in Sources */,
+				DEF7478AB86DB605F52905F5 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EB674074085209A1C457557E /* Sources */ = {
+		FD97D0661DD7AA54EB7DE077 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E343CFBF99787186B873C88C /* CodyncWidgets.swift in Sources */,
+				03774684DC8344D81AFED53B /* ChatWindow.swift in Sources */,
+				8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */,
+				F0A26FABD15480810021C86A /* HostController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		3AA5CFC9DFBBAE9D4564C791 /* PBXTargetDependency */ = {
+		40DF4BEA40A82C095F51AB76 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 95A633B0E0FD05A1D35CA468 /* CodyncWidgets */;
-			targetProxy = 65AAB675493CB6BE712818A9 /* PBXContainerItemProxy */;
+			target = A27E4E88D6A5B9850734B594 /* Widgets */;
+			targetProxy = D40A213F2C1B900F886F95EB /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -528,10 +528,32 @@
 			};
 			name = Release;
 		};
-		54EA3D52E88009D955D76EA4 /* Debug */ = {
+		57C9A2C8FA6B1E9F990016F9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = apps/widgets/Resources/CodyncWidgets.entitlements;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync;
+				PRODUCT_NAME = Codync;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		6A5CD5AB98E7B897A9E57C49 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = apps/widgets/Resources/Widgets.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = apps/widgets/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Codync;
@@ -547,80 +569,6 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
-		};
-		5EAF02B30FB1CCFAE0E18AAE /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				COMBINE_HIDPI_IMAGES = YES;
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync;
-				PRODUCT_NAME = Codync;
-				SDKROOT = macosx;
-			};
-			name = Debug;
-		};
-		7984345FB6F55041E94F9B88 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "apps/ios/Resources/Codync-iOS.entitlements";
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = apps/ios/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Codync connects to the computer running your bots on your local network.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
-				PRODUCT_NAME = Codync;
-				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		7AECEDF558C927EA14CD5EB5 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				COMBINE_HIDPI_IMAGES = YES;
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync;
-				PRODUCT_NAME = Codync;
-				SDKROOT = macosx;
-			};
-			name = Release;
 		};
 		A8BF4A3388AA1B9ECD65A197 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -692,31 +640,11 @@
 			};
 			name = Debug;
 		};
-		AE9BE3BA396DE6267749F8AF /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = apps/widgets/Resources/CodyncWidgets.entitlements;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = apps/widgets/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
-				PRODUCT_NAME = CodyncWidgets;
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		F1217CDE3A9CDFEC5BE16BD6 /* Debug */ = {
+		AA5DD179E0A7875E9EC22904 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "apps/ios/Resources/Codync-iOS.entitlements";
+				CODE_SIGN_ENTITLEMENTS = apps/ios/Resources/iOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = apps/ios/Resources/Info.plist;
@@ -742,32 +670,104 @@
 			};
 			name = Debug;
 		};
+		D8FAD997F1279E25370608C5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = apps/ios/Resources/iOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = apps/ios/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Codync connects to the computer running your bots on your local network.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
+				PRODUCT_NAME = Codync;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		EB1D26BC053D93E98D308A5C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = apps/widgets/Resources/Widgets.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = apps/widgets/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
+				PRODUCT_NAME = CodyncWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F1C857613730023CBDC70E38 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync;
+				PRODUCT_NAME = Codync;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		055E41E3751AF5C2889C3938 /* Build configuration list for PBXNativeTarget "Codync-macOS" */ = {
+		3C74A86E026A9B24540EC0B2 /* Build configuration list for PBXNativeTarget "iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				5EAF02B30FB1CCFAE0E18AAE /* Debug */,
-				7AECEDF558C927EA14CD5EB5 /* Release */,
+				AA5DD179E0A7875E9EC22904 /* Debug */,
+				D8FAD997F1279E25370608C5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		300BC84D64F107B41629DDFD /* Build configuration list for PBXNativeTarget "Codync-iOS" */ = {
+		7C0003BA8C173EC41757B9B4 /* Build configuration list for PBXNativeTarget "macOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				F1217CDE3A9CDFEC5BE16BD6 /* Debug */,
-				7984345FB6F55041E94F9B88 /* Release */,
+				57C9A2C8FA6B1E9F990016F9 /* Debug */,
+				F1C857613730023CBDC70E38 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		44E0D659F23143196DD57DE0 /* Build configuration list for PBXNativeTarget "CodyncWidgets" */ = {
+		95CAB203C65D7CF3F8C9B90E /* Build configuration list for PBXNativeTarget "Widgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				54EA3D52E88009D955D76EA4 /* Debug */,
-				AE9BE3BA396DE6267749F8AF /* Release */,
+				6A5CD5AB98E7B897A9E57C49 /* Debug */,
+				EB1D26BC053D93E98D308A5C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -791,25 +791,25 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		234AA35A60DF7D3E6D7CA45E /* CodyncKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = CodyncKit;
-		};
-		4364B5D2EE15CB00ACF26E5D /* CodyncKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = CodyncKit;
-		};
-		5DAFE014EAFE809C427A475D /* CodyncUI */ = {
+		06C9F37C6502131CAF0F145E /* CodyncUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CodyncUI;
 		};
-		C3EC157070A9B0A033C7F2A0 /* CodyncUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = CodyncUI;
-		};
-		CDE38864BDC425F1240E1C02 /* CodyncKit */ = {
+		1285DDFA0390A76ECDAAD6C0 /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CodyncKit;
+		};
+		59F5D19A417A7A50596902FA /* CodyncKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodyncKit;
+		};
+		80868F96B9905FF52DCDFAE2 /* CodyncKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodyncKit;
+		};
+		BEE30A9D5C73E5A151F34180 /* CodyncUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodyncUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -35,13 +35,11 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().overlay(Palette.border)
             if showPairing {
                 PairingPanel { showPairing = false }
             } else {
                 content
             }
-            Divider().overlay(Palette.border)
             footer
         }
         .background(Palette.background)
@@ -49,7 +47,10 @@ struct MenuView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            CharacterAvatar(shape: "blob", color: "green", size: 26, mood: host.working > 0 ? .working : .idle)
+            CodyncMark()
+                .frame(width: 30, height: 30)
+                .foregroundStyle(Palette.text)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Codync").font(.headline).foregroundStyle(Palette.text)
                 Text(statusLine).font(.caption).foregroundStyle(Palette.secondary)
@@ -152,7 +153,6 @@ struct MenuView: View {
                 .frame(height: min(CGFloat(host.bots.count) * 46 + 12, 320))
             }
             if !host.usage.providers.isEmpty {
-                Divider().overlay(Palette.border)
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(host.usage.providers) { p in
                         ForEach(p.windows) { w in
@@ -302,5 +302,30 @@ private struct Notice: View {
                 .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 6))
         }
         .padding(12)
+    }
+}
+
+/// The app icon's face drawn as vectors: a 9×9 dot grid lit from the upper left,
+/// eyes as missing dots (same geometry as the app icon, without its black tile).
+private struct CodyncMark: View {
+    private static let cells = 9
+    private static let eyes: Set<[Int]> = [[3, 3], [3, 5], [4, 3], [4, 5]]
+
+    var body: some View {
+        Canvas { context, size in
+            let n = Double(Self.cells)
+            let step = size.width / n
+            for row in 0..<Self.cells {
+                for col in 0..<Self.cells where !Self.eyes.contains([row, col]) {
+                    let u = (Double(col) + 0.5) / n * 2 - 1
+                    let v = (Double(row) + 0.5) / n * 2 - 1
+                    guard hypot(u, v) <= 1.18 else { continue }
+                    let shade = 0.55 + 0.45 * min(1, max(0, 0.7 - 0.3 * u - 0.4 * v))
+                    let r = step * 0.36 * shade
+                    let c = CGPoint(x: (Double(col) + 0.5) * step, y: (Double(row) + 0.5) * step)
+                    context.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)), with: .foreground)
+                }
+            }
+        }
     }
 }

@@ -50,7 +50,7 @@ jobs:
         run: |
           xcodebuild build \
             -project Codync.xcodeproj \
-            -scheme Codync-macOS \
+            -scheme macOS \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -derivedDataPath build/derived \
@@ -96,29 +96,29 @@ jobs:
           cp -R "$RUNNER_TEMP/Codync.app" "$DMG_DIR/"
           ln -s /Applications "$DMG_DIR/Applications"
           hdiutil create -volname "Codync" -srcfolder "$DMG_DIR" \
-            -ov -format UDZO build/Codync-macOS.dmg
+            -ov -format UDZO build/Codync.dmg
 
       - name: Create GitHub Release
         run: |
           # The host workflow may have created this release already (same tag).
           gh release create ${{ github.ref_name }} \
-            build/Codync-macOS.dmg \
+            build/Codync.dmg \
             --title "Codync ${{ github.ref_name }}" \
             --generate-notes \
-          || gh release upload ${{ github.ref_name }} build/Codync-macOS.dmg --clobber
+          || gh release upload ${{ github.ref_name }} build/Codync.dmg --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update Homebrew tap
         run: |
-          SHA=$(shasum -a 256 build/Codync-macOS.dmg | awk '{print $1}')
+          SHA=$(shasum -a 256 build/Codync.dmg | awk '{print $1}')
           git clone https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/leepokai/homebrew-codync.git tap
           cat > tap/Casks/codync.rb << RUBY
           cask "codync" do
             version "${{ env.VERSION }}"
             sha256 "${SHA}"
 
-            url "https://github.com/leepokai/Codync/releases/download/v#{version}/Codync-macOS.dmg"
+            url "https://github.com/leepokai/Codync/releases/download/v#{version}/Codync.dmg"
             name "Codync"
             desc "Message your coding agents (Claude Code, Codex, OpenCode) from your iPhone"
             homepage "https://codync.dev"

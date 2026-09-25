@@ -30,6 +30,7 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 - Ignore everything from Codync 1.x (the Claude Code hooks + CloudKit session monitor): no migration, no compatibility shims, no cleanup of its files or hooks, no keeping old workers or App Store copy alive for it. Don't mention 1.x in code, docs or release notes.
 - Build only the current design; don't reintroduce hooks or CloudKit.
+- Don't carry legacy along. Old names, settings, schemes, files or code paths left from earlier designs get renamed or deleted outright when you meet them, not kept "for compatibility". Put full effort into the new design.
 
 ## Project generation
 
@@ -47,24 +48,18 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 ## Targets
 
-- `Codync-macOS` (`apps/macos/`) — menu bar app + embedded host
-- `Codync-iOS` (`apps/ios/`) — iOS app
-- `CodyncWidgets` (`apps/widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
+- `macOS` (`apps/macos/`) — menu bar app + embedded host
+- `iOS` (`apps/ios/`) — iOS app
+- `Widgets` (`apps/widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
 - `CodyncKit` (`kit/`) — shared Swift package: `CodyncKit` + `CodyncUI` libraries
 - `apps/linux/` — `codync` GTK app (build/test in a container with libgtk-4-dev + libadwaita-1-dev)
 
 ## Layout & naming
 
-```
-apps/{ios,macos,widgets,linux}   one folder per client
-kit/Sources/CodyncKit/           Models/ Client/ Design/   (no CodyncUI, widget-safe)
-kit/Sources/CodyncUI/            Store/ Bots/ Thread/ Marketplace/ Usage/ Resources/, cross-platform glue at root (Platform.swift)
-host/  relay/  web/  packaging/
-```
+Folder layout, file naming and shared terms: [docs/structure.md](docs/structure.md). Follow it when adding or moving files.
 
-- Directories: lowercase for repo-level roles (`apps/`, `kit/`, `host/`); PascalCase inside Swift targets (`Views/`, `Thread/`). Apple app folders are `App/` (entry point, app-wide services), `Views/`, `Resources/` (Info.plist, entitlements, xcprivacy, xcassets).
-- Files follow their language: Swift `UpperCamelCase.swift` named after the file's main type; Rust/TS `snake_case.rs` / `kebab-case.ts`.
-- One main type per file. Small private helpers of that type stay in it; a file of several small siblings takes the plural role (`ChatRows.swift`, `UsageViews.swift`, `Dialogs.swift`).
-- Type suffixes by role: full screen / sheet → `…View`; list item → `…Row`; card → `…Card`; chat bubble → `…Bubble`; window scene → `…Window`; `@Observable` state → `…Store` / `…Controller`; `ButtonStyle` → describes the effect (`PressScale`).
-- One word per concept across Swift, Rust host and Linux: **bot** (the persona you message), **agent** (the harness it runs, `Backend` in code), **thread** (the endless chat; not conversation/session), **session** (the ACP session only), **trace** (full conversation sheet), **marketplace** for UI / **market** for its data, **computer** (a paired host, user-facing) vs **host** (code).
-- Linux mirrors the Swift feature names in its module names (`thread`, `editor`, `trace`, `settings`) when a file is split; don't invent new terms there.
+## Keeping this file short
+
+- CLAUDE.md holds only rules an agent needs on every task. Reference material (file structure, naming tables, API details, audits, how-tos) goes in `docs/` as its own file, with a one-line pointer here.
+- When a section here grows past a few lines of reference detail, move it to `docs/` and leave the pointer.
+- Keep `docs/` current: update the doc in the same change that makes it stale.

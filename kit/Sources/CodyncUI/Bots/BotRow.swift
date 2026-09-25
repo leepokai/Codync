@@ -7,10 +7,21 @@ public struct BotRow: View {
 
     public init(bot: Bot) { self.bot = bot }
 
+    // A Mac sidebar row is denser than a phone row (Grok Bot's desktop sidebar).
+    #if os(macOS)
+    private let avatar: CGFloat = 36
+    private let rowPadding: CGFloat = 4
+    private let lineSpacing: CGFloat = 1
+    #else
+    private let avatar: CGFloat = 46
+    private let rowPadding: CGFloat = 10
+    private let lineSpacing: CGFloat = 4
+    #endif
+
     public var body: some View {
-        HStack(spacing: 14) {
-            AvatarWithStatus(bot: bot, size: 46)
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 12) {
+            AvatarWithStatus(bot: bot, size: avatar)
+            VStack(alignment: .leading, spacing: lineSpacing) {
                 HStack(alignment: .firstTextBaseline) {
                     if bot.pinned {
                         Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Palette.tertiary)
@@ -38,7 +49,7 @@ public struct BotRow: View {
                 }
             }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, rowPadding)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }

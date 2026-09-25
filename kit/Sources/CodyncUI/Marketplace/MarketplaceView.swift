@@ -123,17 +123,34 @@ public struct MarketplaceView: View {
                     .font(.footnote)
                     .foregroundStyle(Palette.tertiary)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, close == nil ? 24 : 44)
             .padding(.vertical, 20)
             .frame(maxWidth: 980)
             .frame(maxWidth: .infinity)
         }
         .background(Palette.background)
-        .navigationTitle("Marketplace")
+        .overlay(alignment: .topTrailing) {
+            if let close {
+                Button("Close", systemImage: "xmark", action: close)
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Palette.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.cancelAction)
+                    .help("Close")
+                    .padding(8)
+            }
+        }
+        .navigationTitle(close == nil ? "Marketplace" : "")
         #if os(iOS)
         .toolbar(close == nil ? .automatic : .hidden, for: .navigationBar)
+        #else
+        // The page draws its own title and close button; no empty bar above it.
+        .toolbar(close == nil ? .automatic : .hidden, for: .windowToolbar)
         #endif
-        .navigationDestination(isPresented: $showInstalled) { InstalledView() }
+        .navigationDestination(isPresented: $showInstalled) { InstalledView(ownsHeader: close != nil) }
         .task {
             await model.refreshPlugins()
         }
@@ -171,8 +188,7 @@ public struct MarketplaceView: View {
     private var header: some View {
         HStack(alignment: .center) {
             Text("Marketplace")
-                .font(.system(size: 30, weight: .bold))
-                .tracking(-0.4)
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(Palette.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -194,23 +210,8 @@ public struct MarketplaceView: View {
                 }
                 .buttonStyle(.plain)
             }
-            if let close {
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Palette.secondary)
-                        .frame(width: 36, height: 36)
-                        .background(Palette.bubbleAgent, in: Circle())
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-                .accessibilityLabel("Close")
-                .padding(.leading, 12)
-            }
         }
-        .padding(.top, 8)
+        .padding(.top, close == nil ? 8 : 28)
     }
 
     private var searchField: some View {
@@ -228,8 +229,8 @@ public struct MarketplaceView: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 46)
+        .padding(.horizontal, 14)
+        .frame(height: 38)
         .background(Palette.bubbleAgent, in: Capsule())
     }
 
@@ -256,17 +257,48 @@ public struct MarketplaceView: View {
 // MARK: - Installed
 
 private struct InstalledView: View {
+    /// In the Marketplace sheet the bar is hidden, so the page draws its own back button.
+    let ownsHeader: Bool
     @Environment(BotStore.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var removing: Removal?
+
+    private struct Removal: Identifiable {
+        let id: String
+        let name: String
+        let isSkill: Bool
+    }
 
     var body: some View {
-        List {
+        Form {
+            if ownsHeader {
+                Section {
+                    HStack(spacing: 6) {
+                        Button("Back", systemImage: "chevron.left") { dismiss() }
+                            .labelStyle(.iconOnly)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Palette.text)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            .keyboardShortcut(.cancelAction)
+                            .help("Back to Marketplace")
+                        Text("Installed").font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
+                    }
+                    .padding(.leading, -12)
+                }
+                .listRowBackground(Color.clear)
+            }
+            if model.installedConnectors.isEmpty && model.installedSkills.isEmpty {
+                ContentUnavailableView("Nothing installed", systemImage: "shippingbox", description: Text("Connectors and skills you add show up here."))
+            }
             if !model.installedConnectors.isEmpty {
                 Section("Connectors") {
                     ForEach(model.installedConnectors) { c in
                         InstalledRow(title: c.name, subtitle: c.command ?? c.url ?? c.description) {
-                            ServiceLogo(website: nil, name: c.name, registryName: c.registryName, size: 34)
+                            ServiceLogo(website: nil, name: c.name, registryName: c.registryName, size: 32)
                         } remove: {
-                            Task { try? await model.removeConnector(c.id) }
+                            removing = Removal(id: c.id, name: c.name, isSkill: false)
                         }
                     }
                 }
@@ -275,18 +307,30 @@ private struct InstalledView: View {
                 Section("Skills") {
                     ForEach(model.installedSkills) { s in
                         InstalledRow(title: s.name, subtitle: s.description) {
-                            SkillGlyph().frame(width: 34, height: 34)
+                            SkillGlyph().frame(width: 32, height: 32)
                         } remove: {
-                            Task { try? await model.removeSkill(s.id) }
+                            removing = Removal(id: s.id, name: s.name, isSkill: true)
                         }
                     }
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Palette.background)
+        .formStyle(.grouped)
         .navigationTitle("Installed")
         .inlineNavigationTitle()
+        .confirmationDialog("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { r in
+            Button("Remove", role: .destructive) {
+                Task {
+                    do {
+                        if r.isSkill { try await model.removeSkill(r.id) } else { try await model.removeConnector(r.id) }
+                    } catch {
+                        model.lastError = error.localizedDescription
+                    }
+                }
+            }
+        } message: { r in
+            Text(r.isSkill ? "Bots stop using this skill." : "Bots lose this connector, and the keys saved for it are deleted.")
+        }
     }
 }
 
@@ -300,16 +344,19 @@ private struct InstalledRow<Icon: View>: View {
         HStack(spacing: 12) {
             icon
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium)).foregroundStyle(Palette.text)
-                Text(subtitle).font(.caption).foregroundStyle(Palette.secondary).lineLimit(2)
+                Text(title).foregroundStyle(Palette.text).lineLimit(1)
+                Text(subtitle).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1)
             }
-            Spacer()
-            Button("Remove", role: .destructive, action: remove)
-                .buttonStyle(.plain)
-                .font(.subheadline)
-                .foregroundStyle(Palette.danger)
+            Spacer(minLength: 12)
+            Button("Remove \(title)", systemImage: "trash", role: .destructive, action: remove)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(Palette.secondary)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .help("Remove")
         }
-        .padding(.vertical, 4)
+        .help(subtitle)
     }
 }
 
@@ -321,7 +368,7 @@ private struct MarketSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.title3.weight(.semibold)).foregroundStyle(Palette.text).padding(.leading, 4)
+            Text(title).font(.headline).foregroundStyle(Palette.text).padding(.leading, 4)
             content
         }
     }
@@ -775,7 +822,22 @@ public struct AgentIcon: View {
             }
         }
         .frame(width: size, height: size)
-        .foregroundStyle(Palette.text)
+        .foregroundStyle(tint)
+    }
+
+    /// Registry logos are one-color; paint the ones with a known brand color in it.
+    private var tint: AnyShapeStyle {
+        switch registry {
+        case "claude-acp": AnyShapeStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+        case "gemini": AnyShapeStyle(LinearGradient(colors: [Color(red: 0.28, green: 0.59, blue: 0.89), Color(red: 0.57, green: 0.47, blue: 0.78), Color(red: 0.79, green: 0.40, blue: 0.45)], startPoint: .bottomLeading, endPoint: .topTrailing))
+        case "antigravity-acp": AnyShapeStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
+        case "mistral-vibe": AnyShapeStyle(Color(red: 0.98, green: 0.32, blue: 0.06))
+        case "qwen-code": AnyShapeStyle(Color(red: 0.38, green: 0.36, blue: 0.93))
+        case "amp-acp": AnyShapeStyle(Color(red: 0.95, green: 0.31, blue: 0.25))
+        case "kiro": AnyShapeStyle(Color(red: 0.56, green: 0.27, blue: 1.0))
+        case "cortex-code": AnyShapeStyle(Color(red: 0.16, green: 0.71, blue: 0.91))
+        default: AnyShapeStyle(Palette.text)
+        }
     }
 
     private static func exists(_ name: String) -> Bool {

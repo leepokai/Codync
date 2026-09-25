@@ -20,7 +20,7 @@ settings:
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
-  Codync-macOS:
+  macOS:
     type: application
     platform: macOS
     sources:
@@ -75,7 +75,7 @@ targets:
           if [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ] && [ "$CODE_SIGNING_ALLOWED" != "NO" ]; then
             codesign --force --options runtime --timestamp=none --sign "$EXPANDED_CODE_SIGN_IDENTITY" "$DEST"
           fi
-  Codync-iOS:
+  iOS:
     type: application
     platform: iOS
     sources:
@@ -85,7 +85,7 @@ targets:
         product: CodyncKit
       - package: CodyncKit
         product: CodyncUI
-      - target: CodyncWidgets
+      - target: Widgets
         embed: true
     settings:
       base:
@@ -93,7 +93,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.ios
         INFOPLIST_FILE: apps/ios/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: YES
-        CODE_SIGN_ENTITLEMENTS: apps/ios/Resources/Codync-iOS.entitlements
+        CODE_SIGN_ENTITLEMENTS: apps/ios/Resources/iOS.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_CFBundleDisplayName: Codync
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
@@ -107,7 +107,7 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-  CodyncWidgets:
+  Widgets:
     type: app-extension
     platform: iOS
     sources:
@@ -123,7 +123,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.ios.LiveActivity
         INFOPLIST_FILE: apps/widgets/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: YES
-        CODE_SIGN_ENTITLEMENTS: apps/widgets/Resources/CodyncWidgets.entitlements
+        CODE_SIGN_ENTITLEMENTS: apps/widgets/Resources/Widgets.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: Codync
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES

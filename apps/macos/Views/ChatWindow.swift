@@ -32,6 +32,10 @@ private struct ChatSplitView: View {
     @State private var composing = false
     @State private var columns: NavigationSplitViewVisibility = .all
     @State private var showPlugins = false
+    /// Sheets hang from the window's title bar; sized from it so they never run past its bottom edge.
+    @State private var windowSize = CGSize(width: 1100, height: 760)
+
+    private var sheetHeight: CGFloat { max(420, windowSize.height - 76) }
 
     var body: some View {
         @Bindable var model = model
@@ -100,14 +104,16 @@ private struct ChatSplitView: View {
         }
         .sheet(item: $editing) { request in
             NavigationStack { BotEditorView(draft: request.draft) }
-                .frame(minWidth: 520, minHeight: 640)
+                .frame(width: 520, height: min(680, sheetHeight))
         }
         .sheet(isPresented: $showPlugins) {
             NavigationStack {
                 MarketplaceView { showPlugins = false }
             }
-            .frame(minWidth: 820, idealWidth: 920, minHeight: 700)
+            .frame(width: min(920, windowSize.width - 80), height: sheetHeight)
         }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { windowSize = $0 }
+        .hiddenWindowTitle()
         .deleteBotConfirmation($confirmDelete)
         .storeErrorAlert(model)
         .onChange(of: model.selection) { _, id in if id != nil { composing = false } }
@@ -124,5 +130,12 @@ private struct ChatSplitView: View {
             }
         }
         #endif
+    }
+}
+
+private extension View {
+    /// The toolbar shows icons only, no "Codync" title next to them.
+    @ViewBuilder func hiddenWindowTitle() -> some View {
+        if #available(macOS 15.0, *) { toolbar(removing: .title) } else { self }
     }
 }

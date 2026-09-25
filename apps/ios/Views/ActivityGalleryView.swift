@@ -1,5 +1,6 @@
 import ActivityKit
 import CodyncKit
+import CodyncUI
 import SwiftUI
 
 struct ActivityGalleryView: View {
@@ -27,6 +28,7 @@ struct ActivityGalleryView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle("Show Live Activities", isOn: $enabled)
+                        .toggleStyle(.codync)
                         .font(.subheadline.weight(.medium))
                     Text("Starts when you send a task from this iPhone. Follow its progress, then open the conversation when your bot needs you.")
                         .font(.footnote).foregroundStyle(Palette.secondary)
@@ -45,16 +47,11 @@ struct ActivityGalleryView: View {
                         Spacer()
                         Text("Sample task").font(.caption).foregroundStyle(Palette.secondary)
                     }
-                    Picker("Presentation", selection: $form) {
-                        ForEach(BotActivityPreview.Form.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }.pickerStyle(.menu)
-                    Picker("Task state", selection: $phase) {
-                        Text("Working").tag(BotActivityPresentation.Phase.working)
-                        Text("Needs you").tag(BotActivityPresentation.Phase.needsInput)
-                        Text("Done").tag(BotActivityPresentation.Phase.completed)
-                        Text("Error").tag(BotActivityPresentation.Phase.failed)
-                        Text("Update delayed").tag(BotActivityPresentation.Phase.stale)
-                    }.pickerStyle(.menu)
+                    ChoicePicker(selection: $form, options: BotActivityPreview.Form.allCases.map { ($0, $0.rawValue) })
+                    ChoicePicker(selection: $phase, options: [
+                        (.working, "Working"), (.needsInput, "Needs you"), (.completed, "Done"),
+                        (.failed, "Error"), (.stale, "Update delayed"),
+                    ])
                     if let bot = Bot.widgetPreview.first {
                         BotActivityPreview(bot: bot, state: state, form: form)
                             .frame(maxWidth: .infinity, minHeight: 90)
@@ -97,10 +94,7 @@ struct LockWidgetGalleryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Picker("Widget", selection: $kind) {
-                    Text("Bots").tag("bots")
-                    Text("Usage limits").tag("usage")
-                }.pickerStyle(.menu)
+                ChoicePicker(selection: $kind, options: [("bots", "Bots"), ("usage", "Usage limits")])
                 Text("Sample data").font(.caption).foregroundStyle(Palette.secondary)
                 ForEach(AccessoryWidgetCard.Family.allCases, id: \.self) { family in
                     VStack(alignment: .leading, spacing: 10) {

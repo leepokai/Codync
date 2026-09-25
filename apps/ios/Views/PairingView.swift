@@ -56,9 +56,7 @@ struct PairingView: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity, minHeight: 50)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accentFill)
-                    .foregroundStyle(Palette.onAccent)
+                    .buttonStyle(.primary)
                     .disabled(!DataScannerViewController.isSupported)
 
                     HStack {
@@ -73,7 +71,6 @@ struct PairingView: View {
                     }
                     .padding(12)
                     .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.border))
 
                     if let error {
                         Text(error).font(.footnote).foregroundStyle(Palette.danger)
@@ -146,7 +143,6 @@ private struct Step: View {
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
                 }
             }
         }

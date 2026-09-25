@@ -302,15 +302,12 @@ private struct ChatSplitView: View {
             sidebarWidth = min(sidebarWidth, max(260, $0.width - 420))
         }
         .hiddenWindowTitle()
-        .confirmationDialog("Start a new session?", isPresented: Binding(
+        .codyncDialog("Start a new session?", isPresented: Binding(
             get: { newSessionBot != nil },
             set: { if !$0 { newSessionBot = nil } }
-        ), titleVisibility: .visible) {
-            if let bot = newSessionBot {
-                Button("New session") { model.newSession(bot.id); newSessionBot = nil }
-            }
-        } message: {
-            Text("The conversation stays here, but the agent starts with a fresh context.")
+        ), message: "The conversation stays here, but the agent starts with a fresh context.") {
+            guard let bot = newSessionBot else { return [] }
+            return [DialogAction("New session") { model.newSession(bot.id); newSessionBot = nil }]
         }
         .deleteBotConfirmation($confirmDelete)
         .storeErrorAlert(model)
@@ -403,7 +400,6 @@ extension ChatSplitView {
         .padding(.horizontal, 9)
         .frame(height: 28)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 0.5))
         .padding(.horizontal, 12)
         .padding(.top, 4)
         .padding(.bottom, 8)
@@ -421,8 +417,7 @@ extension ChatSplitView {
         .frame(width: 28, height: 28)
         .background(Palette.bubbleUser, in: Circle())
         .clipShape(Circle())
-        .overlay(Circle().strokeBorder(Palette.text.opacity(0.08), lineWidth: 0.5))
-        .overlay { if account.isBusy { ProgressView().controlSize(.small) } }
+        .overlay { if account.isBusy { Spinner(size: 14) } }
         .accessibilityHidden(true)
     }
 
@@ -443,7 +438,6 @@ extension ChatSplitView {
                         .font(.system(size: 14, weight: .regular))
                         .frame(width: 30, height: 30)
                         .background(Palette.text.opacity(0.025), in: Circle())
-                        .overlay(Circle().strokeBorder(Palette.text.opacity(0.1), lineWidth: 0.5))
                     Text("Marketplace")
                     Spacer(minLength: 0)
                 }
@@ -625,7 +619,6 @@ private struct SidebarAccountPanel: View {
         menuContent
         .padding(7)
         .background(Color(light: 0xFAFAFA, dark: 0x1B1B1B), in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Palette.text.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Account menu")
@@ -765,7 +758,6 @@ private struct DesktopActionMenu: View {
         }
         .padding(7)
         .background(Color(light: 0xFAFAFA, dark: 0x1B1B1B), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.text.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Conversation actions")
@@ -787,33 +779,5 @@ private struct DesktopActionMenu: View {
         guard items.indices.contains(index) else { return }
         onDismiss()
         items[index].action()
-    }
-}
-
-/// Intercepts only secondary clicks; primary clicks, scrolling and dragging pass through.
-private struct SecondaryClickCapture: NSViewRepresentable {
-    let onClick: (CGPoint) -> Void
-
-    func makeNSView(context: Context) -> CaptureView { CaptureView(onClick: onClick) }
-    func updateNSView(_ view: CaptureView, context: Context) { view.onClick = onClick }
-
-    final class CaptureView: NSView {
-        var onClick: (CGPoint) -> Void
-        override var isFlipped: Bool { true }
-
-        init(onClick: @escaping (CGPoint) -> Void) {
-            self.onClick = onClick
-            super.init(frame: .zero)
-        }
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = NSApp.currentEvent,
-                  event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
-            else { return nil }
-            return super.hitTest(point)
-        }
-        override func rightMouseDown(with event: NSEvent) { onClick(convert(event.locationInWindow, from: nil)) }
-        override func mouseDown(with event: NSEvent) { onClick(convert(event.locationInWindow, from: nil)) }
     }
 }

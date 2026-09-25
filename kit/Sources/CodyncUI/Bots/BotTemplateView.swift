@@ -43,7 +43,6 @@ struct BotTemplateView: View {
                     .padding(16)
             }
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.border))
             HStack {
                 Text("Includes the working folder and agent configuration.")
                     .font(.caption).foregroundStyle(Palette.secondary)

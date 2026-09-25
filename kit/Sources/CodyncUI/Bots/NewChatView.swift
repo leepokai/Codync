@@ -61,7 +61,6 @@ public struct NewChatView: View {
             .frame(maxHeight: 460)
             .fixedSize(horizontal: false, vertical: true)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Palette.border))
             .shadow(color: .black.opacity(0.08), radius: 16, y: 6)
             .frame(maxWidth: 620, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -165,6 +164,5 @@ private struct KeyCap: View {
             .foregroundStyle(Palette.secondary)
             .frame(minWidth: 18, minHeight: 18)
             .background(Palette.background, in: RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Palette.border))
     }
 }

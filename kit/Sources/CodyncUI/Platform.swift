@@ -34,14 +34,6 @@ extension View {
         autocorrectionDisabled()
         #endif
     }
-
-    @ViewBuilder func groupedList() -> some View {
-        #if os(iOS)
-        listStyle(.insetGrouped)
-        #else
-        listStyle(.inset)
-        #endif
-    }
 }
 
 extension View {
@@ -56,12 +48,11 @@ extension View {
 }
 
 extension View {
-    /// The message box: Liquid Glass on iPhone; on the Mac a white box with a
-    /// hairline border and a soft shadow (as in Grok Bot's desktop app).
+    /// The message box: Liquid Glass on iPhone; on the Mac a filled box with a
+    /// soft shadow (as in Grok Bot's desktop app).
     @ViewBuilder func composerSurface(in shape: some Shape) -> some View {
         #if os(macOS)
         background(Palette.bubbleUser, in: shape)
-            .overlay(shape.stroke(Palette.border))
             .shadow(color: .black.opacity(0.06), radius: 10, y: 2)
         #else
         glass(in: shape)

@@ -24,8 +24,8 @@ struct AccountSwitcherView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Form {
-            Section("Accounts") {
+        CardForm {
+            CardSection("Accounts") {
                 if account.accounts.isEmpty {
                     Label("Local pairing", systemImage: "person.crop.circle")
                         .foregroundStyle(Palette.secondary)
@@ -46,7 +46,9 @@ struct AccountSwitcherView: View {
                                     .accessibilityLabel("Current account")
                             }
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .disabled(account.isBusy)
                 }
                 if !account.isSignedIn || account.supportsMultipleAccounts {
@@ -54,48 +56,56 @@ struct AccountSwitcherView: View {
                         Task { await account.signIn() }
                     } label: {
                         Label(account.isSignedIn ? "Add Google account" : "Continue with Google", systemImage: "person.crop.circle.badge.plus")
+                            .foregroundStyle(Palette.text)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .disabled(account.isBusy || !account.isConfigured)
                 }
             }
 
-            Section {
+            CardSection(footer: "Computer connections are saved separately for each account on this iPhone. Pair a computer to see its bots.") {
                 NavigationLink {
                     SettingsView()
                 } label: {
-                    Label("Computers & settings", systemImage: "desktopcomputer")
+                    HStack {
+                        Label("Computers & settings", systemImage: "desktopcomputer").foregroundStyle(Palette.text)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
+                    }
+                    .contentShape(Rectangle())
                 }
-            } footer: {
-                Text("Computer connections are saved separately for each account on this iPhone. Pair a computer to see its bots.")
+                .buttonStyle(.plain)
             }
 
             if account.isSignedIn {
-                Section {
-                    Button("Sign out of this account", role: .destructive) {
+                CardSection(footer: account.supportsMultipleAccounts ? nil : "Sign out to use a different Google account.") {
+                    Button {
                         Task { await account.signOut() }
+                    } label: {
+                        Text("Sign out of this account")
+                            .foregroundStyle(Palette.danger)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .disabled(account.isBusy)
-                } footer: {
-                    if !account.supportsMultipleAccounts {
-                        Text("Sign out to use a different Google account.")
-                    }
                 }
             }
 
             if !account.isConfigured {
-                Section {
+                CardSection {
                     Text("Account sign-in isn't configured in this build. Local pairing is available.")
                         .foregroundStyle(Palette.secondary)
                 }
             }
             if let message = account.errorMessage {
-                Section {
+                CardSection {
                     Text(message).foregroundStyle(Palette.danger)
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Palette.background)
         .navigationTitle("Accounts")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

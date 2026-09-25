@@ -169,10 +169,9 @@ public struct ThreadView: View {
         .sheet(item: $editing) { request in
             NavigationStack { BotEditorView(draft: request.draft) }
         }
-        .confirmationDialog("Start a new session?", isPresented: $confirmNewSession, titleVisibility: .visible) {
-            Button("New session") { model.newSession(botId) }
-        } message: {
-            Text("The conversation stays here, but the agent starts with a fresh context.")
+        .codyncDialog("Start a new session?", isPresented: $confirmNewSession,
+                      message: "The conversation stays here, but the agent starts with a fresh context.") {
+            [DialogAction("New session") { model.newSession(botId) }]
         }
         .deleteBotConfirmation($confirmDelete) { dismiss() }
     }
@@ -283,7 +282,6 @@ public struct ThreadView: View {
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 164)
                                 .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8))
-                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 0.5))
                                 Text(model.hostName)
                                     .font(.caption)
                                     .foregroundStyle(Palette.tertiary)
@@ -334,10 +332,10 @@ public struct ThreadView: View {
     #endif
 
     private var menu: some View {
-        Menu {
-            Button("Full conversation", systemImage: "list.bullet.rectangle") { showTrace = true }
+        DropdownMenu {
+            var items = [MenuItem("Full conversation", icon: "list.bullet.rectangle") { showTrace = true }]
             if let bot {
-                Button("Edit profile", systemImage: "pencil") {
+                items.append(MenuItem("Edit profile", icon: "pencil") {
                     #if os(macOS)
                         editingDetails = true
                         showSettings = true
@@ -345,15 +343,16 @@ public struct ThreadView: View {
                     #else
                         editing = EditorRequest(BotDraft(bot))
                     #endif
-                }
-                Button(bot.pinned ? "Unpin" : "Pin", systemImage: "pin") { model.setPinned(bot, !bot.pinned) }
+                })
+                items.append(MenuItem(bot.pinned ? "Unpin" : "Pin", icon: "pin") { model.setPinned(bot, !bot.pinned) })
             }
-            Button("New session", systemImage: "arrow.counterclockwise") { confirmNewSession = true }
-            Divider()
-            Button("Delete bot", systemImage: "trash", role: .destructive) { confirmDelete = bot }
+            items.append(MenuItem("New session", icon: "arrow.counterclockwise") { confirmNewSession = true })
+            items.append(MenuItem("Delete bot", icon: "trash", destructive: true, divider: true) { confirmDelete = bot })
+            return items
         } label: {
             Image(systemName: "ellipsis.circle")
         }
+        .accessibilityLabel("More")
     }
 
     private var canSend: Bool {

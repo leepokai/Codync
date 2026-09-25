@@ -12,91 +12,75 @@ struct SettingsView: View {
     @State private var confirmForget: Pairing?
 
     var body: some View {
-        Form {
-            Section {
+        CardForm {
+            CardSection("Computers on this iPhone", footer: "Each bot runs on its own computer. Tap a computer to view its bots.") {
                 ForEach(model.computers, id: \.token) { computer in
-                    ComputerRow(computer: computer, active: computer.token == model.pairing?.token)
-                        .contentShape(Rectangle())
-                        .onTapGesture { if computer.token != model.pairing?.token { model.pair(computer) } }
-                        .swipeActions {
-                            Button("Remove", systemImage: "trash", role: .destructive) { confirmForget = computer }
-                        }
-                        .contextMenu {
-                            Menu("Color", systemImage: "paintpalette") {
-                                ForEach(AvatarPalette.colors) { swatch in
-                                    Button { model.setColor(computer, swatch.id) } label: {
-                                        // Menus drop SwiftUI tints; an original-mode UIImage keeps the swatch colored.
-                                        Label {
-                                            Text(swatch.label)
-                                        } icon: {
-                                            Image(uiImage: UIImage(systemName: computer.color == swatch.id ? "checkmark.circle.fill" : "circle.fill")!
-                                                .withTintColor(UIColor(swatch.color), renderingMode: .alwaysOriginal))
-                                        }
-                                    }
-                                }
-                            }
-                            Button("Remove", systemImage: "trash", role: .destructive) { confirmForget = computer }
-                        }
+                    ComputerRow(computer: computer, active: computer.token == model.pairing?.token) { confirmForget = computer }
                 }
                 Button {
                     addingComputer = true
                 } label: {
                     Label("Add a computer", systemImage: "plus")
                         .foregroundStyle(Palette.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-            } header: {
-                Text("Computers on this iPhone")
-            } footer: {
-                Text("Each bot runs on its own computer. Tap a computer to view its bots.")
+                .buttonStyle(.plain)
             }
 
-            Section {
+            CardSection {
                 NavigationLink {
                     MarketplaceView()
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Marketplace")
-                        Text("Agents, connectors and skills for your bots").font(.subheadline).foregroundStyle(Palette.secondary)
+                    LinkRow {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Marketplace")
+                            Text("Agents, connectors and skills for your bots").font(.subheadline).foregroundStyle(Palette.secondary)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
             }
 
-            Section {
+            CardSection {
                 NavigationLink {
                     WidgetGalleryView()
                 } label: {
-                    Label("Widgets", systemImage: "square.grid.2x2")
+                    LinkRow { Label("Widgets", systemImage: "square.grid.2x2") }
                 }
+                .buttonStyle(.plain)
                 NavigationLink { ActivityGalleryView() } label: {
-                    Label("Live Activity & Dynamic Island", systemImage: "waveform")
+                    LinkRow { Label("Live Activity & Dynamic Island", systemImage: "waveform") }
                 }
+                .buttonStyle(.plain)
                 notificationsRow
             }
 
             if !model.hiddenBots.isEmpty {
-                Section("Hidden bots") {
+                CardSection("Hidden bots") {
                     ForEach(model.hiddenBots) { bot in
                         HStack {
                             CharacterAvatar(bot: bot, size: 28, animated: false)
                             Text(bot.name)
                             Spacer()
-                            Button("Unhide", systemImage: "eye") { model.setHidden(bot, false) }.labelStyle(.iconOnly)
+                            Button("Unhide", systemImage: "eye") { model.setHidden(bot, false) }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Palette.text)
                         }
                     }
                 }
             }
 
-            Section {
+            CardSection {
                 if let hello = model.hello {
-                    LabeledContent("Host version", value: hello.version)
+                    ValueRow("Host version", value: hello.version)
                 }
-                LabeledContent("App version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                ValueRow("App version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
                 Link("Source code", destination: URL(string: "https://github.com/leepokai/Codync")!)
                     .foregroundStyle(Palette.text)
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Palette.background)
         .navigationTitle("Computers & settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -107,13 +91,13 @@ struct SettingsView: View {
         .sheet(isPresented: $addingComputer) {
             PairingView(introductory: false) { addingComputer = false }
         }
-        .confirmationDialog("Remove \(confirmForget?.name ?? "computer")?", isPresented: Binding(get: { confirmForget != nil }, set: { if !$0 { confirmForget = nil } }), titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
+        .codyncDialog("Remove \(confirmForget?.name ?? "computer")?",
+                      isPresented: Binding(get: { confirmForget != nil }, set: { if !$0 { confirmForget = nil } }),
+                      message: "Its bots and conversations stay on that computer. You can pair again any time.") {
+            [DialogAction("Remove", destructive: true) {
                 if let c = confirmForget { model.forget(c) }
                 if model.pairing == nil { dismiss() }
-            }
-        } message: {
-            Text("Its bots and conversations stay on that computer. You can pair again any time.")
+            }]
         }
         .task {
             let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
@@ -127,7 +111,7 @@ struct SettingsView: View {
 
     @ViewBuilder private var notificationsRow: some View {
         if notificationsAllowed == true {
-            LabeledContent("Notifications", value: "On")
+            ValueRow("Notifications", value: "On")
         } else {
             Button {
                 if notificationsAllowed == false {
@@ -136,9 +120,10 @@ struct SettingsView: View {
                     Task { notificationsAllowed = await PushRegistrar.shared.requestAuthorization() }
                 }
             } label: {
-                LabeledContent("Notifications", value: notificationsAllowed == false ? "Off in Settings" : "Turn on")
-                    .foregroundStyle(Palette.text)
+                ValueRow("Notifications", value: notificationsAllowed == false ? "Off in Settings" : "Turn on")
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
     }
 }
@@ -146,7 +131,9 @@ struct SettingsView: View {
 private struct ComputerRow: View {
     let computer: Pairing
     let active: Bool
+    let onRemove: () -> Void
     @Environment(BotStore.self) private var model
+    @State private var coloring = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -159,7 +146,7 @@ private struct ComputerRow: View {
             if !active || model.screen != nil {
                 Button("Screen", systemImage: "display") { openScreen() }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.plain)
                     .foregroundStyle(Palette.text)
             }
             if active {
@@ -167,6 +154,30 @@ private struct ComputerRow: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { if !active { model.pair(computer) } }
+        .contextActions {
+            [
+                MenuItem("Color", icon: "paintpalette") {
+                    // ponytail: waits for the menu popover to close before opening the swatches; one popover at a time.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(350))
+                        coloring = true
+                    }
+                },
+                MenuItem("Remove", icon: "trash", destructive: true, divider: true, action: onRemove),
+            ]
+        }
+        .background {
+            Color.clear.popover(isPresented: $coloring, arrowEdge: .bottom) {
+                SwatchPanel(selected: computer.color) { id in
+                    coloring = false
+                    model.setColor(computer, id)
+                }
+                .presentationCompactAdaptation(.popover)
+                .presentationBackground(Palette.bubbleAgent)
+            }
+        }
     }
 
     /// Only the active computer is connected: switch to this one first, then open its screen.
@@ -188,5 +199,45 @@ private struct ComputerRow: View {
         case .offline: "Offline"
         case .unpaired: "Not paired"
         }
+    }
+}
+
+/// A navigation row label with a trailing chevron.
+private struct LinkRow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack {
+            content.foregroundStyle(Palette.text)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+/// The computer color choices: a grid of colored dots, the current one checked.
+private struct SwatchPanel: View {
+    let selected: String?
+    let pick: (String) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(36), spacing: 10), count: 6), spacing: 10) {
+            ForEach(AvatarPalette.colors) { swatch in
+                Button { pick(swatch.id) } label: {
+                    Circle().fill(swatch.color)
+                        .frame(width: 32, height: 32)
+                        .overlay {
+                            if selected == swatch.id {
+                                Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(swatch.label)
+                .accessibilityAddTraits(selected == swatch.id ? .isSelected : [])
+            }
+        }
+        .padding(14)
     }
 }

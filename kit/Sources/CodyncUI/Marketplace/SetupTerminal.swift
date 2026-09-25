@@ -58,7 +58,7 @@ struct SetupTerminalView: View {
             }
             Spacer(minLength: 0)
             if session.exitCode != nil {
-                Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+                Button("Done") { dismiss() }.buttonStyle(.primary)
             }
         }
         .font(.footnote)

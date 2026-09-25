@@ -17,8 +17,8 @@ struct UserBubble: View {
                 .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 16))
                 .padding(.vertical, InterfaceMetrics.value(mac: 8, mobile: 10))
                 .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
+                .contextActions {
+                    [MenuItem("Copy", icon: "doc.on.doc") { Pasteboard.copy(entry.data.text) }]
                 }
             status
         }
@@ -38,6 +38,7 @@ struct UserBubble: View {
                 Button("Resend", systemImage: "arrow.clockwise") { model.retry(entry) }.labelStyle(.iconOnly).help("Resend")
                 Button("Delete", systemImage: "trash") { model.discard(entry) }.labelStyle(.iconOnly).help("Delete")
             }
+            .buttonStyle(.plain)
             .font(.caption2.bold())
         case "cancelled":
             Text("Not sent — stopped").font(.caption2).foregroundStyle(Palette.tertiary)
@@ -61,9 +62,11 @@ struct AgentBubble: View {
                 .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 16))
                 .padding(.vertical, InterfaceMetrics.value(mac: 8, mobile: 10))
                 .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .contextMenu {
-                    Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(entry.data.text) }
-                    Button("Show what it did", systemImage: "list.bullet.rectangle", action: openTrace)
+                .contextActions {
+                    [
+                        MenuItem("Copy", icon: "doc.on.doc") { Pasteboard.copy(entry.data.text) },
+                        MenuItem("Show what it did", icon: "list.bullet.rectangle", action: openTrace),
+                    ]
                 }
             #if os(macOS)
                 Text(entry.date, style: .time)

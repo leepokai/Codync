@@ -10,50 +10,34 @@ struct BotListView: View {
 
     var body: some View {
         let roster = model.roster
-        List {
-            Section {
+        ScrollView {
+            LazyVStack(spacing: 0) {
                 ConnectionBanner()
-            }
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .padding(.vertical, 4)
 
-            if roster.isEmpty {
-                EmptyRoster { editing = EditorRequest(BotDraft()) }
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-            }
-
-            ForEach(roster) { bot in
-                // A plain button instead of a NavigationLink: same push, no chevron.
-                Button { model.selection = bot.id } label: {
-                    BotRow(bot: bot)
+                if roster.isEmpty {
+                    EmptyRoster { editing = EditorRequest(BotDraft()) }
                 }
-                .buttonStyle(.plain)
-                .listRowBackground(Palette.background)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                .swipeActions(edge: .leading) {
-                    Button(bot.pinned ? "Unpin" : "Pin", systemImage: bot.pinned ? "pin.slash" : "pin") {
-                        model.setPinned(bot, !bot.pinned)
+
+                ForEach(roster) { bot in
+                    // A plain button instead of a NavigationLink: same push, no chevron.
+                    Button { model.selection = bot.id } label: {
+                        BotRow(bot: bot)
                     }
-                    .tint(Palette.accentDim)
-                }
-                .swipeActions(edge: .trailing) {
-                    Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = bot }
-                    Button("Hide", systemImage: "eye.slash") { model.setHidden(bot, true) }
-                }
-                .contextMenu {
-                    Button(bot.pinned ? "Unpin" : "Pin", systemImage: "pin") { model.setPinned(bot, !bot.pinned) }
-                    Button("Edit profile", systemImage: "pencil") { editing = EditorRequest(BotDraft(bot)) }
-                    Button("Mark as read", systemImage: "checkmark.message") { model.markRead(bot.id) }
-                    Button("Hide from list", systemImage: "eye.slash") { model.setHidden(bot, true) }
-                    Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = bot }
+                    .buttonStyle(.plain)
+                    .contextActions {
+                        [
+                            MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { model.setPinned(bot, !bot.pinned) },
+                            MenuItem("Edit profile", icon: "pencil") { editing = EditorRequest(BotDraft(bot)) },
+                            MenuItem("Mark as read", icon: "checkmark.message") { model.markRead(bot.id) },
+                            MenuItem("Hide from list", icon: "eye.slash") { model.setHidden(bot, true) },
+                            MenuItem("Delete", icon: "trash", destructive: true, divider: true) { confirmDelete = bot },
+                        ]
+                    }
                 }
             }
+            .padding(.horizontal, 16)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .background(Palette.background)
         .navigationTitle(model.hostName)
         .navigationBarTitleDisplayMode(.inline)
@@ -104,9 +88,7 @@ private struct EmptyRoster: View {
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
             Button("Create your first bot", action: create)
-                .buttonStyle(.borderedProminent)
-                .tint(Palette.accentFill)
-                .foregroundStyle(Palette.onAccent)
+                .buttonStyle(.primary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)

@@ -459,7 +459,9 @@ impl Actor {
             all.iter().filter(|c| self.cfg.connectors.contains(&c.id)).filter_map(|c| c.acp(http_ok)).collect();
         match std::env::current_exe() {
             Ok(exe) => {
-                for name in [Some("team"), self.cfg.computer.then_some("computer")].into_iter().flatten() {
+                let composio = crate::composio::enabled_for(&self.hub.store, &self.cfg.connectors);
+                let builtin = [Some("team"), self.cfg.computer.then_some("computer"), composio.then_some("composio")];
+                for name in builtin.into_iter().flatten() {
                     servers.push(json!({
                         "name": name, "command": exe,
                         "args": ["mcp", name, "--bot", self.cfg.id, "--port", self.hub.port.to_string()],

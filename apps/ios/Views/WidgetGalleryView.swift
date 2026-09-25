@@ -63,20 +63,15 @@ struct WidgetGalleryView: View {
                         Text("Sample data").font(.caption2).foregroundStyle(Palette.secondary)
                     }
                     if typeSize.isAccessibilitySize {
-                        kindPicker.pickerStyle(.menu)
-                        if kind == "usage" { providerPicker.pickerStyle(.menu) }
+                        ChoicePicker(selection: $kind, options: Self.kinds)
+                        if kind == "usage" { ChoicePicker(selection: $providerID, options: Self.providers) }
                     } else {
-                        kindPicker.pickerStyle(.segmented)
+                        SegmentedChoice(selection: $kind, options: Self.kinds)
                         if kind == "usage" {
-                            providerPicker.pickerStyle(.segmented)
+                            SegmentedChoice(selection: $providerID, options: Self.providers)
                         }
                     }
-                    Picker("Size", selection: $size) {
-                        Text("Small").tag("small")
-                        Text("Medium").tag("medium")
-                        Text("Large").tag("large")
-                    }
-                    .pickerStyle(.menu)
+                    ChoicePicker(selection: $size, options: [("small", "Small"), ("medium", "Medium"), ("large", "Large")])
                     VStack(spacing: 18) {
                         preview(wide: size != "small")
                             .frame(width: size == "small" ? 158 : nil, height: size == "large" ? 338 : 158)
@@ -118,19 +113,8 @@ struct WidgetGalleryView: View {
         .onChange(of: scenePhase) { _, phase in if phase == .active { checkWidgets() } }
     }
 
-    private var kindPicker: some View {
-        Picker("Widget", selection: $kind) {
-            Text("Provider usage").tag("usage")
-            Text("Bots").tag("bots")
-        }
-    }
-
-    private var providerPicker: some View {
-        Picker("Provider", selection: $providerID) {
-            Text("Claude").tag("claude")
-            Text("Codex").tag("codex")
-        }
-    }
+    private static let kinds: [(id: String, label: String)] = [("usage", "Provider usage"), ("bots", "Bots")]
+    private static let providers: [(id: String, label: String)] = [("claude", "Claude"), ("codex", "Codex")]
 
     private var previewDescription: some View {
         VStack(alignment: .leading, spacing: 6) {

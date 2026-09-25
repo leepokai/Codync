@@ -86,8 +86,8 @@ struct MemoryCard: View {
             .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .task(id: botId) { await load() }
-        .confirmationDialog("Forget everything this bot remembers?", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Forget everything", role: .destructive) { clear() }
+        .codyncDialog("Forget everything this bot remembers?", isPresented: $confirmClear) {
+            [DialogAction("Forget everything", destructive: true) { clear() }]
         }
     }
 

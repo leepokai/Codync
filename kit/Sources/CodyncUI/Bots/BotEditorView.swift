@@ -30,7 +30,7 @@ public struct BotEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if saving {
-                        ProgressView()
+                        Spinner()
                     } else {
                         Button(isNew ? "Create" : "Save", systemImage: "checkmark") { save() }
                             .labelStyle(.iconOnly)
@@ -148,8 +148,9 @@ struct BotSettingsForm: View {
                             .foregroundStyle(Palette.secondary)
                     }
                     OptionRow("Agent") {
-                        PillMenu(title: model.backendName(draft.backend), selection: $draft.backend,
-                                 options: (model.hello?.backends ?? []).map { ($0.id, $0.available ? $0.name : "\($0.name) (not installed)") } + [("custom", "Custom command")])
+                        ChoicePicker(selection: $draft.backend,
+                                 options: (model.hello?.backends ?? []).map { ($0.id, $0.available ? $0.name : "\($0.name) (not installed)") } + [("custom", "Custom command")],
+                                 fill: Palette.background)
                     }
                     if let b = model.hello?.backends.first(where: { $0.id == draft.backend }), !b.available {
                         Text(b.installHint).font(.caption).foregroundStyle(Palette.warning)
@@ -181,8 +182,8 @@ struct BotSettingsForm: View {
                         .help(draft.cwd)
                     }
                     OptionRow("Permissions") {
-                        PillMenu(title: draft.permission == "auto" ? "Automatic" : "Ask me", selection: $draft.permission,
-                                 options: [("ask", "Ask me"), ("auto", "Approve automatically")])
+                        ChoicePicker(selection: $draft.permission, options: [("ask", "Ask me"), ("auto", "Approve automatically")],
+                                 fill: Palette.background)
                     }
                     Toggle(isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 })) {
                         VStack(alignment: .leading, spacing: 3) {
@@ -336,77 +337,7 @@ private struct PluginToggles: View {
     }
 }
 
-/// A value shown in a pill with a chevron; tapping opens our own list of choices.
-private struct PillMenu: View {
-    let title: String
-    @Binding var selection: String
-    let options: [(id: String, label: String)]
-    @State private var open = false
-
-    var body: some View {
-        Button { open.toggle() } label: {
-            HStack(spacing: 6) {
-                Text(title).lineLimit(1)
-                Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
-            }
-            .foregroundStyle(Palette.text)
-            .pill()
-        }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .popover(isPresented: $open, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(options, id: \.id) { option in
-                    ChoiceRow(label: option.label, selected: option.id == selection) {
-                        selection = option.id
-                        open = false
-                    }
-                }
-            }
-            .padding(6)
-            .frame(minWidth: 200)
-            .fixedSize()
-            .presentationCompactAdaptation(.popover)
-            .presentationBackground(Palette.bubbleAgent)
-        }
-    }
-}
-
-private struct ChoiceRow: View {
-    let label: String
-    let selected: Bool
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Text(label).foregroundStyle(Palette.text).lineLimit(1)
-                Spacer(minLength: 16)
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Palette.text)
-                    .opacity(selected ? 1 : 0)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, InterfaceMetrics.value(mac: 6, mobile: 10))
-            .background(hovering ? Palette.text.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { h in withAnimation(Motion.hover) { hovering = h } }
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
 extension View {
-    /// The value pill used in the options card.
-    func pill() -> some View {
-        padding(.horizontal, InterfaceMetrics.value(mac: 9, mobile: 12))
-            .padding(.vertical, InterfaceMetrics.value(mac: 5, mobile: 7))
-            .background(Palette.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
     /// A rounded input box.
     func fieldBox() -> some View {
         textFieldStyle(.plain)
@@ -495,41 +426,56 @@ struct FolderPicker: View {
     @State private var filter = ""
 
     var body: some View {
-        List {
-            if let listing {
-                Section {
-                    Button {
-                        onPick(listing.path)
-                    } label: {
-                        Label("Use “\((listing.path as NSString).lastPathComponent)”", systemImage: "checkmark.circle.fill")
-                            .font(.headline)
-                    }
-                } footer: {
-                    Text(listing.path).font(.caption.monospaced())
-                }
-                Section {
-                    ForEach(listing.dirs.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }) { dir in
-                        NavigationLink {
-                            FolderPicker(path: dir.path, onPick: onPick)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: InterfaceMetrics.value(mac: 14, mobile: 22)) {
+                SearchField(text: $filter)
+                if let listing {
+                    CardSection(footer: listing.path) {
+                        Button {
+                            onPick(listing.path)
                         } label: {
-                            Label {
-                                Text(dir.name)
-                            } icon: {
-                                Image(systemName: dir.isGit ? "arrow.triangle.branch" : "folder")
-                                    .foregroundStyle(dir.isGit ? Palette.accent : Palette.secondary)
+                            Label("Use “\((listing.path as NSString).lastPathComponent)”", systemImage: "checkmark.circle.fill")
+                                .font(.headline)
+                                .foregroundStyle(Palette.accent)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    let dirs = listing.dirs.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+                    if !dirs.isEmpty {
+                        CardSection {
+                            ForEach(dirs) { dir in
+                                NavigationLink {
+                                    FolderPicker(path: dir.path, onPick: onPick)
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: dir.isGit ? "arrow.triangle.branch" : "folder")
+                                            .foregroundStyle(dir.isGit ? Palette.accent : Palette.secondary)
+                                            .frame(width: 20)
+                                        Text(dir.name).foregroundStyle(Palette.text).lineLimit(1)
+                                        Spacer(minLength: 8)
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(Palette.tertiary)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
+                } else if let error {
+                    Text(error).foregroundStyle(Palette.danger)
+                } else {
+                    Spinner(size: 20).frame(maxWidth: .infinity)
                 }
-            } else if let error {
-                Text(error).foregroundStyle(Palette.danger)
-            } else {
-                ProgressView()
             }
+            .font(InterfaceMetrics.body)
+            .padding(InterfaceMetrics.value(mac: 14, mobile: 20))
         }
-        .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.interactively)
         .background(Palette.background)
-        .searchable(text: $filter)
         .navigationTitle(listing.map { ($0.path as NSString).lastPathComponent } ?? "Folders")
         .inlineNavigationTitle()
         .task {

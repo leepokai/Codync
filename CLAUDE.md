@@ -25,7 +25,11 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 - Push: iOS registers its APNs token with `relay/` → gets an AES-GCM ticket → gives it to the host. Only two alert kinds: *needs you* and *done*, suppressed while the iOS app is connected.
 - Usage: local only — `claude -p /usage --no-session-persistence`, the Claude status line (`codync-host statusline`, wrapping any existing one), Claude ACP `usage_update` rate-limit meta, Codex rollout files. Never call provider APIs with agent credentials.
 - macOS app is thin: embeds `codync-host` in `Contents/MacOS` (Xcode post-build script runs cargo), installs it as a launchd agent via `codync-host install`; menu bar shows status/pairing/usage and opens the native chat window (NavigationSplitView over `CodyncUI`). Not sandboxed, not Mac App Store (the host must spawn CLIs).
-- Do **not** reintroduce Claude Code hooks or CloudKit — both were removed in 2.0.
+
+## Codync 1.x does not exist for us
+
+- Ignore everything from Codync 1.x (the Claude Code hooks + CloudKit session monitor): no migration, no compatibility shims, no cleanup of its files or hooks, no keeping old workers or App Store copy alive for it. Don't mention 1.x in code, docs or release notes.
+- Build only the current design; don't reintroduce hooks or CloudKit.
 
 ## Project generation
 
@@ -38,8 +42,7 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 ## Versioning
 
-- **Major version** defines phone ↔ host compatibility: 2.x iOS works with 2.x host/macOS
-- 2.x is NOT compatible with 1.x (1.x was the hooks + CloudKit monitor)
+- **Major version** defines phone ↔ host compatibility: an iOS app works with hosts/Mac apps of the same major
 - Minor/patch bumps are always backward compatible within the same major; the iOS decoder is lenient (`Bot.init(from:)`) so small host additions don't break older apps
 
 ## Targets

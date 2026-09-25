@@ -3,5 +3,5 @@
   "keywords": "claude code,codex,cursor,程式,ai,agent,bot,遠端,開發者,核准",
   "promotionalText": "從 iPhone 指派工作給 Claude Code、Codex、Cursor 等程式 AI。每個 agent 都是可以傳訊息的 bot，隨時核准動作，完成時通知你。",
   "supportUrl": "https://github.com/leepokai/Codync/issues",
-  "whatsNew": "Codync 2.0 是全新的 app：為電腦上的每個程式 agent 建立常駐 bot、從手機核准動作、原生 Mac 視窗與 Linux app。它取代了 1.x 的工作階段監控，Mac app 也請一併更新到 2.0。"
+  "whatsNew": "Codync 2.0：為電腦上的每個程式 agent 建立常駐 bot、從手機核准動作、原生 Mac 視窗與 Linux app。"
 }

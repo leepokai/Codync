@@ -57,7 +57,7 @@ Install [Tailscale](https://tailscale.com) on the computer and the phone to reac
 
 | Command | |
 |---|---|
-| `codync-host install` / `uninstall` | background service (launchd on macOS, systemd `--user` on Linux); also removes Codync 1.x Claude hooks |
+| `codync-host install` / `uninstall` | background service (launchd on macOS, systemd `--user` on Linux) |
 | `codync-host pair [--json]` | pairing QR code / link |
 | `codync-host status` | installed? running? |
 | `codync-host serve [--port 19222]` | run in the foreground |
@@ -90,7 +90,7 @@ cd relay && npm test             # relay tickets
 
 ## Versioning
 
-The major version is the phone ↔ host protocol: 2.x apps work with 2.x hosts. Codync 2 replaces the 1.x hook/CloudKit monitor entirely.
+The major version is the phone ↔ host protocol: apps work with hosts of the same major version.
 
 ## License
 

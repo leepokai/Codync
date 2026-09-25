@@ -161,13 +161,6 @@ async fn main() -> Result<()> {
         Sub::Install { port } => {
             open_store()?;
             if let Some(home) = dirs::home_dir() {
-                match service::remove_legacy_hooks(&home.join(".claude/settings.json")) {
-                    Ok(0) => {}
-                    Ok(n) => println!(
-                        "Removed {n} Codync 1.x hook(s) from ~/.claude/settings.json (backup saved next to it)."
-                    ),
-                    Err(e) => eprintln!("Couldn't clean up Codync 1.x hooks: {e}"),
-                }
                 match service::ensure_statusline(&home.join(".claude/settings.json")) {
                     Ok(true) => println!(
                         "Claude Code's status line now also reports usage limits to Codync (your own status line still shows)."

@@ -16,8 +16,7 @@ openssl rand -base64 32 | npx wrangler secret put TICKET_KEY
 npm run deploy
 ```
 
-It deploys as `codync-relay` (the 1.x `codync-push` worker keeps serving old
-installs). The iOS app points at `SharedStore.relayURL` in `CodyncKit`.
+It deploys as `codync-relay`. The iOS app points at `SharedStore.relayURL` in `CodyncKit`.
 Rotating `TICKET_KEY` invalidates every ticket; phones re-register on launch.
 
 ## Test

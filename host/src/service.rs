@@ -1,6 +1,6 @@
 //! Platform glue: data dir, background service install (launchd / systemd),
 //! keeping the machine awake during turns, pairing addresses, and the Claude
-//! Code settings we touch (1.x hook cleanup, status line).
+//! Code status line we route through the host.
 //!
 //! Everything here is blocking (`std::fs`, `std::process`): async callers go
 //! through `spawn_blocking`.
@@ -235,37 +235,6 @@ fn write_settings(settings: &Path, v: &Value) -> Result<()> {
         .with_context(|| format!("writing {}", settings.display()))
 }
 
-/// Codync 1.x installed `~/.codync/notify.sh` as Claude Code hooks. 2.x drives
-/// agents over ACP instead, so those hooks are dead weight; remove only them.
-/// Returns how many hook commands were removed.
-pub fn remove_legacy_hooks(settings: &Path) -> Result<usize> {
-    let Some(mut v) = read_settings(settings)? else { return Ok(0) };
-    let Some(root) = v.as_object_mut() else { return Ok(0) };
-    let mut removed = 0;
-    if let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) {
-        for groups in hooks.values_mut() {
-            let Some(groups) = groups.as_array_mut() else { continue };
-            for g in groups.iter_mut() {
-                if let Some(list) = g.get_mut("hooks").and_then(Value::as_array_mut) {
-                    let before = list.len();
-                    list.retain(|h| !h["command"].as_str().is_some_and(|c| c.ends_with(".codync/notify.sh")));
-                    removed += before - list.len();
-                }
-            }
-            groups.retain(|g| g["hooks"].as_array().is_none_or(|l| !l.is_empty()));
-        }
-        hooks.retain(|_, groups| groups.as_array().is_none_or(|g| !g.is_empty()));
-        if hooks.is_empty() {
-            root.remove("hooks");
-        }
-    }
-    if removed > 0 {
-        std::fs::copy(settings, settings.with_extension("json.codync-backup")).context("backing up Claude settings")?;
-        write_settings(settings, &v)?;
-    }
-    Ok(removed)
-}
-
 /// Routes Claude Code's status line through `codync-host statusline` so usage
 /// limits reach the host locally. An existing status line keeps working: it is
 /// wrapped (`codync-host statusline -- <original>`) and restored on uninstall.
@@ -331,26 +300,6 @@ mod tests {
             u,
             "codync://pair?name=Kevin%27s%20Mac&token=t0k&urls=http%3A%2F%2F100.1.2.3%3A19222%2Chttp%3A%2F%2Fa%3A1"
         );
-    }
-
-    #[test]
-    fn removes_only_codync_hooks() {
-        let f = temp_settings(
-            r#"{"model":"x","hooks":{"Stop":[{"hooks":[{"type":"command","command":"/Users/a/.codync/notify.sh"},{"type":"command","command":"say hi"}]}],"Notification":[{"hooks":[{"type":"command","command":"/Users/a/.codync/notify.sh"}]}]}}"#,
-        );
-        assert_eq!(remove_legacy_hooks(&f).unwrap(), 2);
-        let v = read(&f);
-        assert_eq!(v["hooks"]["Stop"][0]["hooks"].as_array().unwrap().len(), 1);
-        assert!(v["hooks"].get("Notification").is_none());
-        assert_eq!(v["model"], "x");
-        assert!(f.with_extension("json.codync-backup").exists());
-    }
-
-    #[test]
-    fn missing_or_non_object_settings_are_left_alone() {
-        let dir = std::env::temp_dir().join(format!("codync-none-{}", uuid::Uuid::new_v4()));
-        assert_eq!(remove_legacy_hooks(&dir.join("settings.json")).unwrap(), 0);
-        assert_eq!(remove_legacy_hooks(&temp_settings("[1, 2]")).unwrap(), 0);
     }
 
     #[test]

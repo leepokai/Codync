@@ -72,7 +72,7 @@ final class HostController {
         connect()
     }
 
-    /// `codync-host install` also removes Codync 1.x Claude hooks.
+    /// `codync-host install` also routes Claude Code's status line through the host.
     func install() {
         guard let bin = binaryURL else { return }
         state = .starting

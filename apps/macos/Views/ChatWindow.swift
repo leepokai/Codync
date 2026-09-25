@@ -6,28 +6,82 @@ import SwiftUI
 /// (Grok Bot's desktop layout), sharing its views with the iPhone app.
 struct ChatWindow: View {
     @Environment(HostController.self) private var host
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var showsChat: Bool { host.state == .running || !host.accounts.computers.isEmpty }
 
     var body: some View {
-        Group {
-            if host.state == .running || !host.accounts.computers.isEmpty {
+        ZStack {
+            if showsChat {
                 ChatSplitView().id(host.contextID)
+                    .transition(.opacity)
             } else {
-                ContentUnavailableView(
-                    "Codync host isn't running",
-                    systemImage: "desktopcomputer.trianglebadge.exclamationmark",
-                    description: Text("Open Codync from the menu bar to install or restart it.")
+                EmptyState(
+                    icon: "desktopcomputer.trianglebadge.exclamationmark",
+                    title: "Codync host isn't running",
+                    message: "Open Codync from the menu bar to install or restart it."
                 )
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
         }
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: showsChat)
         .frame(minWidth: 760, minHeight: 500)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.background)
         .tint(Palette.accent)
         .ignoresSafeArea(.container, edges: .top)
         // Approving a device: the code the device shows must match (spec §4.2 B).
-        // It closes when the request is decided or put off (both change `currentApproval`).
-        .sheet(item: Binding(get: { host.currentApproval }, set: { _ in })) {
-            ApprovalSheet(approval: $0)
+        // It closes when the request is decided or put off (both change `currentApproval`);
+        // closing it puts the request off.
+        .codyncSheet(isPresented: Binding(
+            get: { host.currentApproval != nil },
+            set: { if !$0, let approval = host.currentApproval { host.deferApproval(approval) } }
+        )) {
+            CurrentApprovalSheet()
         }
+    }
+}
+
+/// The request being decided, swapped in place when the next one comes up; keeps the last
+/// one on screen while the card animates away.
+private struct CurrentApprovalSheet: View {
+    @Environment(HostController.self) private var host
+    @State private var last: Approval?
+
+    var body: some View {
+        if let approval = host.currentApproval ?? last {
+            ApprovalSheet(approval: approval)
+                .id(approval.id)
+                .onAppear { last = approval }
+        }
+    }
+}
+
+/// A quiet placeholder for an empty screen: icon, title, a line of help and an optional action.
+struct EmptyState: View {
+    let icon: String
+    let title: String
+    let message: String
+    var action: (title: String, run: () -> Void)?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(Palette.tertiary)
+                .accessibilityHidden(true)
+            Text(title).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(Palette.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            if let action {
+                Button(action.title, action: action.run).buttonStyle(.primary).padding(.top, 4)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -96,10 +150,7 @@ private struct ChatSplitView: View {
             VStack(spacing: 0) {
                 HStack {
                     Spacer()
-                    Button("New chat", systemImage: "plus", action: compose)
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.plain)
-                        .help("New chat (⌘N)")
+                    IconButton("New chat", systemImage: "plus", action: compose)
                         .keyboardShortcut("n")
                         .disabled(onlineStores.isEmpty)
                 }
@@ -206,12 +257,7 @@ private struct ChatSplitView: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 420)
                         Button("New Bot", action: compose)
-                            .buttonStyle(.plain)
-                            .font(.body.weight(.semibold))
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 9)
-                            .background(Palette.accentFill, in: Capsule())
-                            .foregroundStyle(Palette.onAccent)
+                            .buttonStyle(.primary)
                             .disabled(onlineStores.isEmpty)
                     }
                     .padding(32)
@@ -283,14 +329,16 @@ private struct ChatSplitView: View {
             }
         }
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: showAccount)
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: contextBot?.bot.id)
         .ignoresSafeArea(.container, edges: .top)
-        .sheet(item: $editing) { target in
-            NavigationStack { BotEditorView(draft: target.request.draft) }
+        .codyncSheet(item: $editing) { target in
+            BotEditorView(draft: target.request.draft)
                 .environment(target.store)
                 .frame(width: 520, height: min(680, sheetHeight))
         }
-        .sheet(isPresented: Binding(get: { marketplace != nil }, set: { if !$0 { marketplace = nil } })) {
+        .codyncSheet(isPresented: Binding(get: { marketplace != nil }, set: { if !$0 { marketplace = nil } })) {
             if let store = marketplace.flatMap(accounts.store(for:)) {
+                // MarketplaceView pushes its Installed page with navigationDestination, which needs a stack.
                 NavigationStack {
                     MarketplaceView { marketplace = nil }
                 }
@@ -298,32 +346,12 @@ private struct ChatSplitView: View {
                 .frame(width: min(920, windowSize.width - 80), height: sheetHeight)
             }
         }
-        .sheet(isPresented: $showComputers) {
-            ComputersView { showComputers = false }
+        .codyncSheet(isPresented: $showComputers) {
+            ComputersView()
                 .frame(width: 620, height: sheetHeight)
         }
-        .sheet(isPresented: $showUsage) {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Text("Usage").font(.title2.bold())
-                    Spacer()
-                    Button("Done") { showUsage = false }.keyboardShortcut(.cancelAction)
-                }
-                let withUsage = stores.filter { !$0.usage.providers.isEmpty }
-                if withUsage.isEmpty {
-                    Text("No usage information yet.").foregroundStyle(Palette.secondary)
-                } else {
-                    ForEach(withUsage, id: \.computer.id) { store in
-                        if stores.count > 1 {
-                            Label { Text(store.hostName) } icon: { ComputerBadge(store.computer, size: 16) }
-                                .font(.headline)
-                        }
-                        UsageStrip(usage: store.usage)
-                    }
-                }
-            }
-            .padding(24)
-            .frame(width: 520)
+        .codyncSheet(isPresented: $showUsage) {
+            UsageSheet().frame(width: 520)
         }
         .background {
             collapseButton.hidden()
@@ -447,8 +475,10 @@ extension ChatSplitView {
                 Button("Clear search", systemImage: "xmark.circle.fill") { search = "" }
                     .labelStyle(.iconOnly).buttonStyle(.plain)
                     .foregroundStyle(Palette.secondary)
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: search.isEmpty)
         .font(.system(size: 13))
         .padding(.horizontal, 9)
         .frame(height: 28)
@@ -669,6 +699,34 @@ extension ChatSplitView {
     }
 }
 
+/// Usage per computer, read live from the stores.
+private struct UsageSheet: View {
+    @Environment(HostController.self) private var host
+
+    var body: some View {
+        let stores = host.accounts.computers.compactMap { host.accounts.store(for: $0.id) }
+        let withUsage = stores.filter { !$0.usage.providers.isEmpty }
+        VStack(alignment: .leading, spacing: 0) {
+            ModalHeader("Usage")
+            VStack(alignment: .leading, spacing: 20) {
+                if withUsage.isEmpty {
+                    Text("No usage information yet.").foregroundStyle(Palette.secondary)
+                } else {
+                    ForEach(withUsage, id: \.computer.id) { store in
+                        if stores.count > 1 {
+                            Label { Text(store.hostName) } icon: { ComputerBadge(store.computer, size: 16) }
+                                .font(.headline)
+                        }
+                        UsageStrip(usage: store.usage)
+                    }
+                }
+            }
+            .padding([.horizontal, .bottom], 24)
+            .padding(.top, 4)
+        }
+    }
+}
+
 extension View {
     @ViewBuilder fileprivate func hiddenWindowTitle() -> some View {
         if #available(macOS 15.0, *) { toolbar(removing: .title) } else { self }
@@ -694,6 +752,7 @@ private struct SidebarAccountPanel: View {
     @State private var page = "main"
     @State private var highlighted = 0
     @FocusState private var menuFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private struct Item {
         let title: String
@@ -796,8 +855,10 @@ private struct SidebarAccountPanel: View {
     }
 
     private func navigate(_ destination: String) {
-        page = destination
-        highlighted = 0
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
+            page = destination
+            highlighted = 0
+        }
         menuFocused = true
     }
 

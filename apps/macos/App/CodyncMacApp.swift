@@ -18,10 +18,10 @@ struct CodyncMacApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuView()
-                .environment(host)
-                .environment(account)
                 .frame(width: 340)
                 .modalHost()
+                .environment(host)
+                .environment(account)
         } label: {
             // The Codync mark; a dot joins it when a bot needs you.
             Image(host.needsAttention ? "MenuBarIconAlert" : "MenuBarIcon")
@@ -55,6 +55,7 @@ struct MenuView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var showPairing = false
     @State private var showSettings = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -73,7 +74,10 @@ struct MenuView: View {
             footer
         }
         .background(Palette.background)
-        .animation(Motion.layout, value: showPairing)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: showPairing)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: host.state)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: host.approvals.map(\.id))
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: host.roster.isEmpty)
     }
 
     // MARK: header
@@ -258,6 +262,7 @@ private extension View {
 /// One line when all is well; it only grows to say what's missing.
 private struct RemoteScreenSection: View {
     @Environment(HostController.self) private var host
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let screen = host.screen ?? ScreenState()
@@ -302,7 +307,8 @@ private struct RemoteScreenSection: View {
                 Text(error).font(.caption).foregroundStyle(Palette.danger).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .animation(Motion.layout, value: screen)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: screen)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: host.screenError)
     }
 
     private func subtitle(_ screen: ScreenState) -> String {
@@ -440,6 +446,7 @@ struct PairingPanel: View {
     let store: BotStore
     @State private var info: PairingInfo?
     @State private var error: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 12) {
@@ -487,6 +494,8 @@ struct PairingPanel: View {
         }
         .frame(maxWidth: .infinity)
         .padding(16)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: info?.pairingUrl)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: error)
         .task(id: store.computer.id) { await load() }
     }
 

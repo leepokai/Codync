@@ -51,15 +51,23 @@ struct ApprovalSheet: View {
     @Environment(HostController.self) private var host
     @State private var busy = false
     @State private var error: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var request: AccessRequest { approval.request }
 
     var body: some View {
+        VStack(spacing: 0) {
+            // Closing puts the request off (the sheet's binding defers it).
+            ModalHeader("Access request")
+            content
+        }
+        .frame(width: 420)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: request.code)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: error)
+    }
+
+    private var content: some View {
         VStack(spacing: 16) {
-            HStack {
-                Spacer()
-                IconButton("Decide later", systemImage: "xmark") { host.deferApproval(approval) }
-            }
             Image(systemName: request.platform == "macos" ? "laptopcomputer" : "iphone")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(Palette.secondary)
@@ -91,6 +99,7 @@ struct ApprovalSheet: View {
             }
             if let error {
                 Text(error).font(.caption).foregroundStyle(Palette.danger).multilineTextAlignment(.center)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
             HStack(spacing: 12) {
                 Button("Deny") { decide(false) }
@@ -101,8 +110,7 @@ struct ApprovalSheet: View {
                     .disabled(busy || request.code == nil)
             }
         }
-        .padding(24)
-        .frame(width: 420)
+        .padding([.horizontal, .bottom], 24)
     }
 
     private func decide(_ approve: Bool) {
@@ -129,19 +137,14 @@ struct ApprovalSheet: View {
 /// Computers this Mac manages (itself and SSH), with their account, relay and authorized devices;
 /// SSH profiles; and the account's other computers.
 struct ComputersView: View {
-    let close: () -> Void
     @Environment(HostController.self) private var host
     @Environment(AccountSession.self) private var account
     @State private var editingSSH: SSHProfile?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Computers & devices").font(.title2.bold())
-                Spacer()
-                Button("Done", action: close).keyboardShortcut(.cancelAction)
-            }
-            .padding(20)
+            ModalHeader("Computers & devices")
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     ForEach(host.managedStores, id: \.computer.id) { store in
@@ -151,12 +154,17 @@ struct ComputersView: View {
                     accountSection
                 }
                 .padding(.horizontal, 20)
+                .padding(.top, 4)
                 .padding(.bottom, 20)
             }
         }
         .background(Palette.background)
-        .sheet(item: $editingSSH) { profile in
-            SSHProfileEditor(profile: profile, isNew: !host.ssh.profiles.contains { $0.id == profile.id }) { editingSSH = nil }
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: host.ssh.profiles.map(\.id))
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: host.accounts.computers.map(\.id))
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: host.accounts.cloudComputers.map(\.id))
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: account.isSignedIn)
+        .codyncSheet(item: $editingSSH) { profile in
+            SSHProfileEditor(profile: profile, isNew: !host.ssh.profiles.contains { $0.id == profile.id })
         }
     }
 
@@ -234,6 +242,7 @@ private struct AccountComputerRow: View {
     let computer: CloudComputer
     @Environment(HostController.self) private var host
     @State private var busy = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let ticket = host.accounts.pendingAccess[computer.id]
@@ -255,7 +264,9 @@ private struct AccountComputerRow: View {
                             }
                         }
                     }
+                    .buttonStyle(.secondary)
                     .disabled(busy)
+                    .transition(.opacity)
                 }
             }
             if let ticket {
@@ -267,16 +278,15 @@ private struct AccountComputerRow: View {
                         .font(.callout).foregroundStyle(Palette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    Button("Cancel request", systemImage: "xmark.circle") {
+                    IconButton("Cancel request", systemImage: "xmark.circle") {
                         Task { await host.accounts.cancelAccess(computer.id) }
                     }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .help("Cancel request")
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .card()
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: ticket?.code)
     }
 }
 
@@ -291,6 +301,7 @@ private struct ManagedComputerCard: View {
     @State private var showPairing = false
     @State private var confirmRevoke: AuthorizedDevice?
     @State private var confirmUnclaim = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var cloud: CloudStatus? { store.cloud }
 
@@ -306,8 +317,12 @@ private struct ManagedComputerCard: View {
                 Spacer()
                 IconButton("Pair iPhone", systemImage: "qrcode", selected: showPairing) { showPairing.toggle() }
                     .disabled(store.connection != .online)
-                    .popover(isPresented: $showPairing, arrowEdge: .bottom) {
-                        PairingPanel(store: store).frame(width: 300)
+                    .codyncSheet(isPresented: $showPairing) {
+                        VStack(spacing: 0) {
+                            ModalHeader("Pair iPhone with \(store.hostName)")
+                            PairingPanel(store: store)
+                        }
+                        .frame(width: 340)
                     }
             }
 
@@ -328,13 +343,15 @@ private struct ManagedComputerCard: View {
                     if devices.isEmpty {
                         Text("None yet. Pair an iPhone, or approve one from your account.").font(.caption).foregroundStyle(Palette.secondary)
                     }
-                    ForEach(devices) { device in deviceRow(device) }
+                    ForEach(devices) { device in deviceRow(device).transition(.opacity.combined(with: .move(edge: .top))) }
                 } else {
                     Spinner()
                 }
             }
         }
         .card()
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: devices?.map(\.key))
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: cloud?.owner == nil)
         .task(id: "\(store.computer.id)/\(store.connection == .online)/\(store.accessRequests.count)") { await loadDevices() }
         .codyncDialog("Revoke \(confirmRevoke?.name ?? "device")?", isPresented: Binding(
             get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }
@@ -367,6 +384,7 @@ private struct ManagedComputerCard: View {
                     .font(.callout)
                 Spacer()
                 Button("Remove from account") { confirmUnclaim = true }
+                    .buttonStyle(.secondary)
                     .disabled(busy || store.connection != .online)
             } else {
                 Image(systemName: "person.crop.circle.badge.plus").foregroundStyle(Palette.secondary).accessibilityHidden(true)
@@ -374,6 +392,7 @@ private struct ManagedComputerCard: View {
                 Spacer()
                 if account.isSignedIn {
                     Button(busy ? "Adding…" : "Add to account") { run { await host.claim(store) } }
+                        .buttonStyle(.secondary)
                         .disabled(busy || store.connection != .online)
                 }
             }
@@ -426,6 +445,7 @@ private struct SSHRow: View {
     let profile: SSHProfile
     let edit: () -> Void
     @Environment(HostController.self) private var host
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let status = host.ssh.status(of: profile.id)
@@ -454,11 +474,11 @@ private struct SSHRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(fingerprints, id: \.self) { Text($0).font(.caption.monospaced()).textSelection(.enabled) }
                     HStack {
-                        Button("Trust and connect") { host.ssh.trustHostKey(profile.id) }
-                        Button("Cancel") { host.ssh.disconnect(profile.id) }
+                        Button("Trust and connect") { host.ssh.trustHostKey(profile.id) }.buttonStyle(.primary)
+                        Button("Cancel") { host.ssh.disconnect(profile.id) }.buttonStyle(.secondary)
                     }
-                    .controlSize(.small)
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if status == .notInstalled {
                 HStack(spacing: 6) {
@@ -473,9 +493,11 @@ private struct SSHRow: View {
                         NSPasteboard.general.setString(SSH.installCommand, forType: .string)
                     }
                 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .card()
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: status)
     }
 
     private func line(_ status: SSHComputers.Status) -> String {
@@ -503,26 +525,41 @@ private struct SSHRow: View {
 private struct SSHProfileEditor: View {
     @State var profile: SSHProfile
     let isNew: Bool
-    let close: () -> Void
     @Environment(HostController.self) private var host
+    @Environment(\.dismissModal) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var port = ""
     @State private var remotePort = ""
     @State private var user = ""
     @State private var chooseKey = false
     @State private var problem: String?
 
-    init(profile: SSHProfile, isNew: Bool, close: @escaping () -> Void) {
+    init(profile: SSHProfile, isNew: Bool) {
         _profile = State(initialValue: profile)
         self.isNew = isNew
-        self.close = close
         _port = State(initialValue: profile.port.map(String.init) ?? "")
         _remotePort = State(initialValue: String(profile.remotePort))
         _user = State(initialValue: profile.user ?? "")
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader(isNew ? "Add SSH computer" : "Edit SSH computer") {
+                IconButton(isNew ? "Add" : "Save", systemImage: "checkmark", action: save)
+                    .keyboardShortcut(.defaultAction)
+            }
+            form
+        }
+        .frame(width: 460)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: problem)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: profile.identityFile)
+        .fileImporter(isPresented: $chooseKey, allowedContentTypes: [.item]) { result in
+            if case let .success(url) = result { profile.identityFile = url.path }
+        }
+    }
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(isNew ? "Add SSH computer" : "Edit SSH computer").font(.title3.bold())
             CardSection {
                 SSHField("Name", text: $profile.name, prompt: "Optional")
                 SSHField("Host", text: $profile.host, prompt: "SSH alias or hostname")
@@ -536,6 +573,7 @@ private struct SSHProfileEditor: View {
                     IconButton("Choose key file", systemImage: "key") { chooseKey = true }
                     if profile.identityFile != nil {
                         IconButton("Use ssh-agent", systemImage: "xmark.circle") { profile.identityFile = nil }
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)))
                     }
                 }
                 SSHField("Codync port", text: $remotePort, prompt: "")
@@ -545,18 +583,11 @@ private struct SSHProfileEditor: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let problem {
                 Text(problem).font(.caption).foregroundStyle(Palette.danger)
-            }
-            HStack {
-                Spacer()
-                Button("Cancel", action: close).buttonStyle(.secondary).keyboardShortcut(.cancelAction)
-                Button(isNew ? "Add" : "Save", action: save).buttonStyle(.primary).keyboardShortcut(.defaultAction)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(20)
-        .frame(width: 460)
-        .fileImporter(isPresented: $chooseKey, allowedContentTypes: [.item]) { result in
-            if case let .success(url) = result { profile.identityFile = url.path }
-        }
+        .padding([.horizontal, .bottom], 20)
+        .padding(.top, 4)
     }
 
     private func save() {
@@ -588,7 +619,7 @@ private struct SSHProfileEditor: View {
             return
         }
         if isNew { host.ssh.add(p) } else { host.ssh.update(p) }
-        close()
+        dismiss()
     }
 }
 
@@ -597,7 +628,6 @@ private extension View {
         padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
     }
 }
 

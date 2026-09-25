@@ -172,6 +172,12 @@ public extension View {
         return modifier(CodyncSheet(isPresented: shown, sheet: { item.wrappedValue.map(content) }))
     }
 
+    /// Presents a full-window layer the content draws itself (menus, dialogs), fading in and out.
+    /// `close` animates it away.
+    func codyncOverlay<Layer: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping (_ close: @escaping () -> Void) -> Layer) -> some View {
+        modifier(CodyncOverlay(isPresented: isPresented, layer: content))
+    }
+
     /// Mac: the window root that hosts every `.codyncSheet` below it, so modals cover the
     /// whole window rather than the column that opened them.
     @ViewBuilder func modalHost() -> some View {
@@ -196,6 +202,44 @@ private struct CodyncSheet<Sheet: View>: ViewModifier {
             }
             // Our own slide replaces the system one.
             .transaction(value: isPresented) { $0.disablesAnimations = true }
+    }
+}
+
+private struct CodyncOverlay<Layer: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let layer: (_ close: @escaping () -> Void) -> Layer
+
+    func body(content: Content) -> some View {
+        content
+            .fullScreenCover(isPresented: $isPresented) {
+                FadeLayer(close: { isPresented = false }, layer: layer)
+                    .presentationBackground(.clear)
+            }
+            .transaction(value: isPresented) { $0.disablesAnimations = true }
+    }
+}
+
+private struct FadeLayer<Layer: View>: View {
+    let close: () -> Void
+    let layer: (_ close: @escaping () -> Void) -> Layer
+    @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        layer(animateClose)
+            .opacity(shown ? 1 : 0)
+            .scaleEffect(shown ? 1 : 0.98)
+            .onAppear { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { shown = true } }
+    }
+
+    private func animateClose() {
+        withAnimation(Motion.reduced(Motion.fade, reduceMotion)) {
+            shown = false
+        } completion: {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { close() }
+        }
     }
 }
 
@@ -288,20 +332,24 @@ public extension View {
 #else
 @MainActor @Observable
 final class ModalHost {
+    enum Chrome { case card, bare }
+
     struct Entry: Identifiable {
         let id: UUID
+        var chrome: Chrome
         var content: AnyView
         var shown = false
     }
 
     var entries: [Entry] = []
 
-    func present(_ id: UUID, _ content: AnyView) {
+    func present(_ id: UUID, chrome: Chrome, _ content: AnyView) {
         if let index = entries.firstIndex(where: { $0.id == id }) {
             entries[index].content = content
+            if !entries[index].shown { withAnimation(Motion.layout) { entries[index].shown = true } }
             return
         }
-        entries.append(Entry(id: id, content: content))
+        entries.append(Entry(id: id, chrome: chrome, content: content))
         withAnimation(Motion.layout) {
             if let index = entries.firstIndex(where: { $0.id == id }) { entries[index].shown = true }
         }
@@ -330,7 +378,10 @@ private struct ModalHostModifier: ViewModifier {
             .overlay {
                 ZStack {
                     ForEach(host.entries) { entry in
-                        ModalCard(shown: entry.shown) { entry.content }
+                        switch entry.chrome {
+                        case .card: ModalCard(shown: entry.shown) { entry.content }
+                        case .bare: entry.content.opacity(entry.shown ? 1 : 0).scaleEffect(entry.shown ? 1 : 0.98)
+                        }
                     }
                 }
             }
@@ -361,9 +412,11 @@ private struct ModalCard<Content: View>: View {
     }
 }
 
-private struct CodyncSheet<Sheet: View>: ViewModifier {
+/// Hands a presentation to the window's `ModalHost`, carrying the stores the content reads.
+private struct HostedPresentation<Layer: View>: ViewModifier {
     @Binding var isPresented: Bool
-    let sheet: () -> Sheet
+    let chrome: ModalHost.Chrome
+    let layer: (_ close: @escaping () -> Void) -> Layer
     @Environment(\.modalHost) private var host
     @Environment(BotStore.self) private var store: BotStore?
     @Environment(AccountStore.self) private var accounts: AccountStore?
@@ -379,15 +432,34 @@ private struct CodyncSheet<Sheet: View>: ViewModifier {
         guard let host else { return }
         guard isPresented else { return host.close(id) }
         let binding = $isPresented
-        // ponytail: the card's content is captured when it opens; state it reads through
+        let close = { binding.wrappedValue = false }
+        // ponytail: the content is captured when it opens; state it reads through
         // stores and bindings stays live, plain values passed in don't refresh.
-        host.present(id, AnyView(
-            sheet()
+        host.present(id, chrome: chrome, AnyView(
+            layer(close)
                 .environment(store)
                 .environment(accounts)
                 .environment(\.modalHost, host)
                 .environment(\.dismissModal, DismissModalAction { binding.wrappedValue = false })
         ))
+    }
+}
+
+private struct CodyncSheet<Sheet: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let sheet: () -> Sheet
+
+    func body(content: Content) -> some View {
+        content.modifier(HostedPresentation(isPresented: $isPresented, chrome: .card) { _ in sheet() })
+    }
+}
+
+private struct CodyncOverlay<Layer: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let layer: (_ close: @escaping () -> Void) -> Layer
+
+    func body(content: Content) -> some View {
+        content.modifier(HostedPresentation(isPresented: $isPresented, chrome: .bare, layer: layer))
     }
 }
 

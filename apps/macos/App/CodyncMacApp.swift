@@ -21,6 +21,7 @@ struct CodyncMacApp: App {
                 .environment(host)
                 .environment(account)
                 .frame(width: 340)
+                .modalHost()
         } label: {
             // The Codync mark; a dot joins it when a bot needs you.
             Image(host.needsAttention ? "MenuBarIconAlert" : "MenuBarIcon")
@@ -40,6 +41,7 @@ struct CodyncMacApp: App {
 
         Window("Codync", id: "chat") {
             ChatWindow()
+                .modalHost()
                 .environment(host)
                 .environment(account)
         }

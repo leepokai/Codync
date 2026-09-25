@@ -204,13 +204,9 @@ private struct MenuRow: View {
 }
 
 public extension View {
-    /// Shows a Codync menu anchored to this view while `isPresented` is true.
+    /// Shows a Codync menu under (or above) this view while `isPresented` is true.
     func codyncMenu(isPresented: Binding<Bool>, items: @escaping () -> [MenuItem]) -> some View {
-        popover(isPresented: isPresented, arrowEdge: .bottom) {
-            MenuPanel(items: items()) { isPresented.wrappedValue = false }
-                .presentationCompactAdaptation(.popover)
-                .presentationBackground(Palette.bubbleAgent)
-        }
+        modifier(AnchoredMenu(isPresented: isPresented, point: nil, items: items))
     }
 
     /// Long-press (iPhone) or right-click (Mac) opens a Codync menu: the replacement for `contextMenu`.
@@ -222,20 +218,66 @@ public extension View {
 private struct ContextActions: ViewModifier {
     let items: () -> [MenuItem]
     @State private var open = false
+    @State private var point: CGPoint?
 
     func body(content: Content) -> some View {
         content
             #if os(macOS)
-            .overlay { SecondaryClickCapture { _ in open = true } }
+            .overlay { SecondaryClickCapture { point = $0; open = true } }
             #else
-            .onLongPressGesture(minimumDuration: 0.35) { open = true }
+            .onLongPressGesture(minimumDuration: 0.35) { point = nil; open = true }
             #endif
-            .codyncMenu(isPresented: $open, items: items)
+            .modifier(AnchoredMenu(isPresented: $open, point: point, items: items))
             .accessibilityActions {
                 ForEach(items()) { item in
                     Button(item.title, action: item.action)
                 }
             }
+    }
+}
+
+/// Presents `MenuPanel` next to the view (or at `point` inside it, for right-clicks).
+private struct AnchoredMenu: ViewModifier {
+    @Binding var isPresented: Bool
+    let point: CGPoint?
+    let items: () -> [MenuItem]
+    @State private var frame: CGRect = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+            .codyncOverlay(isPresented: $isPresented) { close in
+                let anchor = point.map { CGRect(x: frame.minX + $0.x, y: frame.minY + $0.y, width: 0, height: 0) } ?? frame
+                AnchoredPanel(anchor: anchor, close: close) {
+                    MenuPanel(items: items(), dismiss: close)
+                }
+            }
+    }
+}
+
+/// Places a floating panel beside `anchor` (global coordinates), flipping to stay on screen;
+/// a tap anywhere else closes it.
+struct AnchoredPanel<Panel: View>: View {
+    let anchor: CGRect
+    let close: () -> Void
+    @ViewBuilder let panel: () -> Panel
+
+    var body: some View {
+        GeometryReader { geo in
+            let space = geo.frame(in: .global)
+            let a = anchor.offsetBy(dx: -space.minX, dy: -space.minY)
+            let below = a.maxY < space.height * 0.62
+            let leading = a.midX < space.width * 0.6
+            ZStack(alignment: Alignment(horizontal: leading ? .leading : .trailing, vertical: below ? .top : .bottom)) {
+                Color.clear.contentShape(Rectangle()).onTapGesture(perform: close)
+                panel()
+                    .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
+                    .offset(x: leading ? max(8, a.minX) : -max(8, space.width - a.maxX),
+                            y: below ? a.maxY + 6 : -(space.height - a.minY + 6))
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -536,21 +578,9 @@ private struct CodyncDialog: ViewModifier {
     let actions: () -> [DialogAction]
 
     func body(content: Content) -> some View {
-        #if os(iOS)
-        content.fullScreenCover(isPresented: $isPresented) {
-            DialogCard(title: title, message: message, cancel: cancel, actions: actions()) { isPresented = false }
-                .presentationBackground(.clear)
+        content.codyncOverlay(isPresented: $isPresented) { close in
+            DialogCard(title: title, message: message, cancel: cancel, actions: actions(), dismiss: close)
         }
-        .transaction { $0.disablesAnimations = true }
-        #else
-        content.overlay {
-            if isPresented {
-                DialogCard(title: title, message: message, cancel: cancel, actions: actions()) { isPresented = false }
-                    .transition(.opacity)
-            }
-        }
-        .animation(Motion.fade, value: isPresented)
-        #endif
     }
 }
 
@@ -560,11 +590,10 @@ private struct DialogCard: View {
     let cancel: String?
     let actions: [DialogAction]
     let dismiss: () -> Void
-    @State private var shown = false
 
     var body: some View {
         ZStack {
-            Color.black.opacity(shown ? 0.35 : 0).ignoresSafeArea()
+            Color.black.opacity(0.35).ignoresSafeArea()
                 .onTapGesture { if cancel != nil { dismiss() } }
             VStack(spacing: 14) {
                 VStack(spacing: 6) {
@@ -596,10 +625,7 @@ private struct DialogCard: View {
             .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: .black.opacity(0.25), radius: 24, y: 10)
             .padding(24)
-            .scaleEffect(shown ? 1 : 0.96)
-            .opacity(shown ? 1 : 0)
         }
-        .onAppear { withAnimation(Motion.layout) { shown = true } }
         .accessibilityAddTraits(.isModal)
     }
 }

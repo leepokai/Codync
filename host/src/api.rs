@@ -102,6 +102,7 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             "name": crate::service::host_name(),
             "version": env!("CARGO_PKG_VERSION"),
             "os": std::env::consts::OS,
+            "device": tokio::task::spawn_blocking(crate::service::device).await?,
             "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
             "backends": backends::list(),
             "rev": hub.store.current_rev(),

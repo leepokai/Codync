@@ -23,6 +23,19 @@ struct SettingsView: View {
                             Button("Remove", systemImage: "trash", role: .destructive) { confirmForget = computer }
                         }
                         .contextMenu {
+                            Menu("Color", systemImage: "paintpalette") {
+                                ForEach(AvatarPalette.colors) { swatch in
+                                    Button { model.setColor(computer, swatch.id) } label: {
+                                        // Menus drop SwiftUI tints; an original-mode UIImage keeps the swatch colored.
+                                        Label {
+                                            Text(swatch.label)
+                                        } icon: {
+                                            Image(uiImage: UIImage(systemName: computer.color == swatch.id ? "checkmark.circle.fill" : "circle.fill")!
+                                                .withTintColor(UIColor(swatch.color), renderingMode: .alwaysOriginal))
+                                        }
+                                    }
+                                }
+                            }
                             Button("Remove", systemImage: "trash", role: .destructive) { confirmForget = computer }
                         }
                 }
@@ -136,7 +149,7 @@ private struct ComputerRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ComputerBadge(name: computer.name, size: 40)
+            ComputerBadge(computer, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(computer.name).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
                 Text(status).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(1)

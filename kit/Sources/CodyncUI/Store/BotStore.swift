@@ -122,6 +122,18 @@ public final class BotStore {
         if let next = computers.first { pair(next) } else { unpair() }
     }
 
+    public func setColor(_ p: Pairing, _ color: String) {
+        updateComputer(p.token) { $0.color = color }
+    }
+
+    private func updateComputer(_ token: String, _ change: (inout Pairing) -> Void) {
+        computers = computers.map { var c = $0; if c.token == token { change(&c) }; return c }
+        if pairing?.token == token { change(&pairing!) }
+        guard persistsPairing else { return }
+        SharedStore.computers = computers
+        if SharedStore.pairing?.token == token, var p = SharedStore.pairing { change(&p); SharedStore.pairing = p }
+    }
+
     public func unpair() {
         streamTask?.cancel()
         pairing = nil
@@ -178,6 +190,9 @@ public final class BotStore {
                 if hello == nil || hello?.hostId != hostId {
                     let h = try await client.hello()
                     hello = h
+                    if let device = h.device, self.pairing?.device != device, let token = self.pairing?.token {
+                        updateComputer(token) { $0.device = device }
+                    }
                     // Host upgraded since the cache was written: its data may carry new fields.
                     if let stamp = cacheStamp, stamp != "\(Self.appBuild)/\(h.version)" {
                         rev = 0

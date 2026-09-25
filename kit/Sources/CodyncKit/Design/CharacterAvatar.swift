@@ -208,26 +208,3 @@ public struct AvatarWithStatus: View {
             }
     }
 }
-
-/// A computer's round monogram: the profile button and the rows that switch computers.
-public struct ComputerBadge: View {
-    let name: String
-    let size: CGFloat
-
-    public init(name: String, size: CGFloat = 36) {
-        self.name = name
-        self.size = size
-    }
-
-    public var body: some View {
-        Circle()
-            .fill(LinearGradient(colors: [Color(hex: 0x5A5A5A), Color(hex: 0x2E2E2E)], startPoint: .top, endPoint: .bottom))
-            .overlay(
-                Text(name.first.map { String($0).uppercased() } ?? "?")
-                    .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-            )
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
-    }
-}

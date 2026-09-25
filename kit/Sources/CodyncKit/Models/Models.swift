@@ -182,6 +182,8 @@ public struct Hello: Codable, Sendable {
     public var name: String
     public var version: String
     public var os: String
+    /// laptop · macmini · macstudio · imac · macpro · desktop · linux (missing from older hosts).
+    public var device: String?
     public var home: String?
     public var backends: [Backend]
     public var rev: Int64

@@ -77,7 +77,10 @@ private struct ChatSplitView: View {
             }
         } detail: {
             if composing {
+                // The To: row takes the title bar's place instead of sitting under an empty one.
                 NewChatView { composing = false }
+                    .ignoresSafeArea(.container, edges: .top)
+                    .toolbarBackground(.hidden, for: .windowToolbar)
             } else if let id = model.selection, model.bots[id] != nil {
                 NavigationStack { ThreadView(botId: id) }
                     .id(id)

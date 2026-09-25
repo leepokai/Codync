@@ -5,6 +5,10 @@ public struct Pairing: Codable, Hashable, Sendable {
     public var name: String
     public var token: String
     public var urls: [String]
+    /// What the computer is (`Device` on the host), learned from `hello`; picks its icon.
+    public var device: String?
+    /// The badge color the user picked on this phone (an `AvatarPalette` id).
+    public var color: String?
 
     public init(name: String, token: String, urls: [String]) {
         self.name = name

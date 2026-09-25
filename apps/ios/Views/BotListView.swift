@@ -63,7 +63,7 @@ struct BotListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { model.showProfile = true } label: {
-                    ComputerBadge(name: model.pairing?.name ?? model.hostName, size: 36)
+                    ComputerBadge(model.pairing, size: 36)
                 }
                 .accessibilityLabel("Profile and computers")
             }

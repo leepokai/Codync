@@ -203,6 +203,43 @@ pub fn host_name() -> String {
     n.trim_end_matches(".local").to_owned()
 }
 
+/// What the computer is, so phones can draw the right icon (Linux gets its penguin).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Device {
+    Laptop,
+    MacMini,
+    MacStudio,
+    IMac,
+    MacPro,
+    Desktop,
+    Linux,
+}
+
+/// Detected once; on macOS from `system_profiler`'s model name.
+pub fn device() -> Device {
+    static DEVICE: std::sync::OnceLock<Device> = std::sync::OnceLock::new();
+    *DEVICE.get_or_init(|| {
+        if !cfg!(target_os = "macos") {
+            return Device::Linux;
+        }
+        let out = Command::new("system_profiler").args(["SPHardwareDataType", "-json"]).output();
+        let json: Value = out.ok().and_then(|o| serde_json::from_slice(&o.stdout).ok()).unwrap_or_default();
+        mac_device(json["SPHardwareDataType"][0]["machine_name"].as_str().unwrap_or_default())
+    })
+}
+
+fn mac_device(machine_name: &str) -> Device {
+    match machine_name {
+        n if n.starts_with("MacBook") => Device::Laptop,
+        "Mac mini" => Device::MacMini,
+        "Mac Studio" => Device::MacStudio,
+        "iMac" | "iMac Pro" => Device::IMac,
+        "Mac Pro" => Device::MacPro,
+        _ => Device::Desktop,
+    }
+}
+
 /// RFC 3986 percent-encoding of everything but unreserved characters.
 fn pct(s: &str) -> String {
     use std::fmt::Write as _;
@@ -291,6 +328,17 @@ mod tests {
 
     fn read(f: &Path) -> Value {
         serde_json::from_str(&std::fs::read_to_string(f).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn mac_models_map_to_devices() {
+        assert_eq!(mac_device("MacBook Pro"), Device::Laptop);
+        assert_eq!(mac_device("MacBook Air"), Device::Laptop);
+        assert_eq!(mac_device("Mac mini"), Device::MacMini);
+        assert_eq!(mac_device("Mac Studio"), Device::MacStudio);
+        assert_eq!(mac_device("iMac"), Device::IMac);
+        assert_eq!(mac_device(""), Device::Desktop);
+        assert_eq!(serde_json::to_value(Device::MacMini).unwrap(), "macmini");
     }
 
     #[test]

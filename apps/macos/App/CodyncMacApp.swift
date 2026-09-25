@@ -52,6 +52,7 @@ struct MenuView: View {
     @Environment(HostController.self) private var host
     @Environment(\.openWindow) private var openWindow
     @State private var showPairing = false
+    @State private var showSettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -142,14 +143,12 @@ struct MenuView: View {
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Install host") { host.install() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accentFill)
-                    .foregroundStyle(Palette.onAccent)
+                    .buttonStyle(.primary)
             }
             .tile()
         case .starting:
             HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
+                Spinner(size: 12)
                 Text("Connecting…").font(.caption).foregroundStyle(Palette.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -161,7 +160,7 @@ struct MenuView: View {
                     Button("Restart host") { host.restart() }
                     Button("Open log") { NSWorkspace.shared.open(host.logURL) }
                 }
-                .controlSize(.small)
+                .buttonStyle(.secondary)
             }
             .tile()
         case .running:
@@ -227,21 +226,16 @@ struct MenuView: View {
                 Text("v\(version)").font(.caption2.monospacedDigit()).foregroundStyle(Palette.tertiary).padding(.leading, 6)
             }
             Spacer()
-            Menu {
-                Toggle("Open at login", isOn: Binding(get: { host.launchAtLogin }, set: { host.setLaunchAtLogin($0) }))
-                Divider()
-                Button("Restart host") { host.restart() }
-                Button("Open log") { NSWorkspace.shared.open(host.logURL) }
-                Divider()
-                Button("Uninstall host service") { host.uninstall() }
-            } label: {
-                Image(systemName: "gearshape")
-            }
-            .menuStyle(.button)
-            .buttonStyle(IconButtonStyle())
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Settings")
+            // The DropdownMenu shape, but kept on IconButton so the gear hovers like its neighbours.
+            IconButton("Settings", systemImage: "gearshape", selected: showSettings) { showSettings.toggle() }
+                .codyncMenu(isPresented: $showSettings) {
+                    [
+                        MenuItem("Open at login", selected: host.launchAtLogin) { host.setLaunchAtLogin(!host.launchAtLogin) },
+                        MenuItem("Restart host", divider: true) { host.restart() },
+                        MenuItem("Open log") { NSWorkspace.shared.open(host.logURL) },
+                        MenuItem("Uninstall host service", divider: true) { host.uninstall() },
+                    ]
+                }
             IconButton("Quit Codync", systemImage: "power") { NSApp.terminate(nil) }
         }
         .padding(.horizontal, 10)
@@ -281,12 +275,10 @@ private struct RemoteScreenSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
-                Toggle("Remote screen", isOn: Binding(get: { screen.enabled }, set: { host.setRemoteScreen($0) }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    // Grey, not blue: a white track would hide the white knob.
-                    .tint(Palette.secondary)
+                Toggle(isOn: Binding(get: { screen.enabled }, set: { host.setRemoteScreen($0) })) { EmptyView() }
+                    .toggleStyle(.codync)
+                    .fixedSize()
+                    .accessibilityLabel("Remote screen")
             }
             if screen.enabled {
                 if host.screenAgentNeedsApproval {
@@ -488,7 +480,7 @@ struct PairingPanel: View {
                 Text(error).font(.caption).foregroundStyle(Palette.danger).multilineTextAlignment(.center)
                 IconButton("Try again", systemImage: "arrow.clockwise") { Task { await load() } }
             } else {
-                ProgressView()
+                Spinner(size: 20)
             }
         }
         .frame(maxWidth: .infinity)
@@ -536,7 +528,7 @@ private struct ApprovalLine: View {
                 Text(approval.store.hostName).font(.caption).foregroundStyle(Palette.secondary)
             }
             Spacer()
-            Button("Review", action: review).controlSize(.small)
+            Button("Review", action: review).buttonStyle(.secondary)
         }
     }
 }

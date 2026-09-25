@@ -428,8 +428,23 @@ pub fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Result<Va
     Ok(c.public())
 }
 
+/// Installed MCP servers, then the apps connected through Composio.
 pub fn list_connectors(store: &crate::store::Store) -> Value {
-    json!({"items": connectors(store).iter().map(Connector::public).collect::<Vec<_>>()})
+    let mut items: Vec<Value> = connectors(store).iter().map(Connector::public).collect();
+    items.extend(crate::composio::connections(store).iter().filter(|c| c.active()).map(|c| {
+        json!({
+            "id": format!("{}{}", crate::composio::PREFIX, c.toolkit),
+            "name": c.name,
+            "description": format!("{} through Composio", c.name),
+            "registryName": null,
+            "kind": "composio",
+            "command": null,
+            "url": null,
+            "keys": [],
+            "logo": c.logo,
+        })
+    }));
+    json!({"items": items})
 }
 
 pub fn remove_connector(store: &crate::store::Store, id: &str) -> Result<()> {

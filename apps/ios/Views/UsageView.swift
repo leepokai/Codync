@@ -18,11 +18,18 @@ struct UsageView: View {
                     ))
                 }
                 if model.usage.providers.isEmpty {
-                    ContentUnavailableView("No usage yet", systemImage: "chart.bar",
-                                           description: Text("Your computer reads the limits from Claude Code and Codex."))
-                        .padding(.top, 60)
+                    VStack(spacing: 8) {
+                        Image(systemName: "chart.bar").font(.system(size: 40)).foregroundStyle(Palette.tertiary)
+                        Text("No usage yet").font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+                        Text("Your computer reads the limits from Claude Code and Codex.")
+                            .font(.subheadline).foregroundStyle(Palette.secondary)
+                    }
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 60)
                 }
                 Button("Widgets & setup") { widgetHelp = true }
+                    .buttonStyle(.plain)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Palette.secondary)
                     .padding(.top, 4)
@@ -63,6 +70,7 @@ private struct ProviderCard: View {
                     withAnimation(.snappy) { collapsed.toggle() }
                 }
                 .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
                 .rotationEffect(.degrees(collapsed ? 180 : 0))
                 .foregroundStyle(Palette.tertiary)
             }

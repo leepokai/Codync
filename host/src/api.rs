@@ -168,6 +168,26 @@ fn str_arg<'a>(b: &'a Value, k: &str) -> Result<&'a str> {
 pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<Value> {
     crate::devices::permit(caller, method)?;
     Ok(match method {
+        "composioCall" => {
+            json!({"result": crate::composio::call(&hub.store, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?})
+        }
+        "composioStatus" => crate::composio::status(&hub.store),
+        "setComposioKey" => crate::composio::set_key(&hub.store, b["key"].as_str().unwrap_or_default()).await?,
+        "composioToolkits" => {
+            crate::composio::toolkits(
+                &hub.store,
+                b["search"].as_str().unwrap_or_default(),
+                b["cursor"].as_str().unwrap_or_default(),
+            )
+            .await?
+        }
+        "composioConnect" => crate::composio::connect(&hub.store, str_arg(&b, "toolkit")?).await?,
+        "composioConnectFields" => {
+            let fields = b["fields"].as_object().ok_or_else(|| anyhow!("`fields` is required"))?;
+            crate::composio::connect_with_fields(&hub.store, str_arg(&b, "toolkit")?, str_arg(&b, "mode")?, fields)
+                .await?
+        }
+        "composioConnection" => crate::composio::connection(&hub.store, str_arg(&b, "id")?).await?,
         "teamCall" => crate::team::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?,
         "hello" => {
             let port = hub.port;
@@ -365,7 +385,11 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
             json!({"connector": c})
         }
         "removeConnector" => {
-            market::remove_connector(&hub.store, str_arg(&b, "id")?)?;
+            let id = str_arg(&b, "id")?;
+            match id.strip_prefix(crate::composio::PREFIX) {
+                Some(toolkit) => crate::composio::disconnect(&hub.store, toolkit).await?,
+                None => market::remove_connector(&hub.store, id)?,
+            }
             json!({})
         }
         "skills" => market::list_skills(&hub.store),

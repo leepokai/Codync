@@ -55,7 +55,6 @@ public struct MarkdownText: View {
                     .padding(10)
             }
             .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
         }
     }
 

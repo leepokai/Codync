@@ -7,6 +7,7 @@ mod backends;
 mod bot;
 mod channel;
 mod cloud;
+mod composio;
 mod context;
 mod crypto;
 mod devices;
@@ -184,6 +185,13 @@ enum McpServer {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
     },
+    /// Tools of the apps connected through Composio.
+    Composio {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
     /// See and operate this computer's desktop.
     Computer {
         #[arg(long)]
@@ -331,6 +339,7 @@ async fn main() -> Result<()> {
         }
         Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port, mcp::Server::Computer).await,
         Sub::Mcp { server: McpServer::Team { bot, port } } => mcp::serve(bot, port, mcp::Server::Team).await,
+        Sub::Mcp { server: McpServer::Composio { bot, port } } => mcp::serve(bot, port, mcp::Server::Composio).await,
         Sub::Tui { url, token, port } => {
             tui::run(url.unwrap_or_else(|| format!("http://127.0.0.1:{port}")), token).await
         }

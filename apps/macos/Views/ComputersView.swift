@@ -318,7 +318,7 @@ private struct ManagedComputerCard: View {
                     Text(cloudLine).font(.caption).foregroundStyle(cloud?.lastError == nil ? Palette.secondary : Palette.warning)
                 }
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.codync)
             .disabled(busy || store.connection != .online)
 
             accountLine

@@ -39,7 +39,7 @@ struct PermissionCard: View {
                 .foregroundStyle(Palette.tertiary)
 
             if hasDetail {
-                DisclosureGroup(isExpanded: $expanded) {
+                Disclosure(isExpanded: $expanded) {
                     VStack(alignment: .leading, spacing: 8) {
                         if let command = d.command, !command.isEmpty {
                             CodeBox(text: command)
@@ -105,7 +105,6 @@ struct PermissionCard: View {
             }
         }
         .background(Palette.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Palette.border))
         .padding(.top, 4)
     }
 

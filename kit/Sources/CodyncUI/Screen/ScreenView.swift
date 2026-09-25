@@ -110,9 +110,9 @@ public struct ScreenView: View {
                     IconButton("Fit screen", "arrow.down.right.and.arrow.up.left") { resetToken += 1 }
                 }
                 if let displays = screen?.displays, displays.count > 1 {
-                    Menu {
-                        ForEach(displays) { d in
-                            Button(d.name, systemImage: d.id == display?.id ? "checkmark" : "display") {
+                    DropdownMenu {
+                        displays.map { d in
+                            MenuItem(d.name, icon: "display", selected: d.id == display?.id) {
                                 display = d
                                 session?.switchDisplay(d)
                                 resetToken += 1
@@ -130,15 +130,20 @@ public struct ScreenView: View {
     }
 
     private var clipboardMenu: some View {
-        Menu {
-            Button("Send my clipboard", systemImage: "arrow.up.doc.on.clipboard") {
-                if let text = UIPasteboard.general.string { session?.pushClipboard(text) }
+        // MenuItem has no disabled state: unavailable actions are left out instead.
+        DropdownMenu {
+            var items: [MenuItem] = []
+            if UIPasteboard.general.hasStrings {
+                items.append(MenuItem("Send my clipboard", icon: "arrow.up.doc.on.clipboard") {
+                    if let text = UIPasteboard.general.string { session?.pushClipboard(text) }
+                })
             }
-            .disabled(!UIPasteboard.general.hasStrings)
-            Button("Copy from computer", systemImage: "arrow.down.doc.on.clipboard") {
-                if let text = session?.takeRemoteClipboard() { UIPasteboard.general.string = text }
+            if session?.remoteClipboard != nil {
+                items.append(MenuItem("Copy from computer", icon: "arrow.down.doc.on.clipboard") {
+                    if let text = session?.takeRemoteClipboard() { UIPasteboard.general.string = text }
+                })
             }
-            .disabled(session?.remoteClipboard == nil)
+            return items
         } label: {
             IconLabel("Clipboard", session?.remoteClipboard == nil ? "doc.on.clipboard" : "doc.on.clipboard.fill")
         }
@@ -188,13 +193,13 @@ private struct Overlay: View {
             if let icon {
                 Image(systemName: icon).font(.largeTitle).foregroundStyle(.secondary)
             } else {
-                ProgressView()
+                Spinner(size: 22)
             }
             Text(text).font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
             if let retry {
                 Button("Try again", systemImage: "arrow.clockwise", action: retry)
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
             }
         }
         .padding(32)

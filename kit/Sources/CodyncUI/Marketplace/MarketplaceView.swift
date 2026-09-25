@@ -202,7 +202,6 @@ public struct MarketplaceView: View {
                         HStack(spacing: -8) {
                             ForEach(model.installedConnectors.prefix(3)) { c in
                                 ServiceLogo(website: nil, name: c.name, registryName: c.registryName, size: 26)
-                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Palette.background, lineWidth: 2))
                             }
                         }
                         Text("\(installedCount) installed").foregroundStyle(Palette.secondary).lineLimit(1).fixedSize()
@@ -268,10 +267,9 @@ private struct InstalledView: View {
     }
 
     var body: some View {
-        Form {
+        CardForm {
             if ownsHeader {
-                Section {
-                    HStack(spacing: 6) {
+                HStack(spacing: 6) {
                         Button("Back", systemImage: "chevron.left") { dismiss() }
                             .labelStyle(.iconOnly)
                             .font(.system(size: 15, weight: .semibold))
@@ -282,16 +280,14 @@ private struct InstalledView: View {
                             .keyboardShortcut(.cancelAction)
                             .help("Back to Marketplace")
                         Text("Installed").font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
-                    }
-                    .padding(.leading, -12)
                 }
-                .listRowBackground(Color.clear)
+                .padding(.leading, -12)
             }
             if model.installedConnectors.isEmpty && model.installedSkills.isEmpty {
                 ContentUnavailableView("Nothing installed", systemImage: "shippingbox", description: Text("Connectors and skills you add show up here."))
             }
             if !model.installedConnectors.isEmpty {
-                Section("Connectors") {
+                CardSection("Connectors") {
                     ForEach(model.installedConnectors) { c in
                         InstalledRow(title: c.name, subtitle: c.command ?? c.url ?? c.description) {
                             ServiceLogo(website: nil, name: c.name, registryName: c.registryName, size: 32)
@@ -302,7 +298,7 @@ private struct InstalledView: View {
                 }
             }
             if !model.installedSkills.isEmpty {
-                Section("Skills") {
+                CardSection("Skills") {
                     ForEach(model.installedSkills) { s in
                         InstalledRow(title: s.name, subtitle: s.description) {
                             SkillGlyph().frame(width: 32, height: 32)
@@ -313,11 +309,15 @@ private struct InstalledView: View {
                 }
             }
         }
-        .formStyle(.grouped)
         .navigationTitle("Installed")
         .inlineNavigationTitle()
-        .confirmationDialog("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing) { r in
-            Button("Remove", role: .destructive) {
+        .codyncDialog(
+            "Remove \(removing?.name ?? "")?",
+            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+            message: removing.map { $0.isSkill ? "Bots stop using this skill." : "Bots lose this connector, and the keys saved for it are deleted." }
+        ) {
+            guard let r = removing else { return [] }
+            return [DialogAction("Remove", destructive: true) {
                 Task {
                     do {
                         if r.isSkill { try await model.removeSkill(r.id) } else { try await model.removeConnector(r.id) }
@@ -325,9 +325,7 @@ private struct InstalledView: View {
                         model.lastError = error.localizedDescription
                     }
                 }
-            }
-        } message: { r in
-            Text(r.isSkill ? "Bots stop using this skill." : "Bots lose this connector, and the keys saved for it are deleted.")
+            }]
         }
     }
 }
@@ -348,7 +346,7 @@ private struct InstalledRow<Icon: View>: View {
             Spacer(minLength: 12)
             Button("Remove \(title)", systemImage: "trash", role: .destructive, action: remove)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .foregroundStyle(Palette.secondary)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
@@ -411,8 +409,7 @@ private struct AgentCard: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
             .padding(.horizontal, 10)
-            .background(hovering ? Palette.bubbleAgent.opacity(0.6) : Palette.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Palette.border))
+            .background(Palette.bubbleAgent.opacity(hovering ? 0.8 : 0.45), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(PressScale())
@@ -441,8 +438,8 @@ private struct AgentSheet: View {
     private var signedIn: Bool? { auth?.signedIn ?? backend.signedIn }
 
     var body: some View {
-        Form {
-            Section {
+        CardForm {
+            CardSection {
                 HStack(spacing: 14) {
                     AgentIcon(registry: backend.registry, size: 30)
                         .frame(width: 52, height: 52)
@@ -457,7 +454,7 @@ private struct AgentSheet: View {
                 .padding(.vertical, 4)
             }
             if curated {
-                Section {
+                CardSection {
                     SetupStepRow(
                         number: 1,
                         title: "Install",
@@ -471,10 +468,9 @@ private struct AgentSheet: View {
             }
             signInSection
             if let error {
-                Section { Text(error).foregroundStyle(Palette.danger).textSelection(.enabled) }
+                CardSection { Text(error).foregroundStyle(Palette.danger).textSelection(.enabled) }
             }
         }
-        .formStyle(.grouped)
         .navigationTitle(backend.name)
         .inlineNavigationTitle()
         .navigationDestination(item: $route) { route in
@@ -497,8 +493,10 @@ private struct AgentSheet: View {
         }
     }
 
-    @ViewBuilder private var signInSection: some View {
-        Section {
+    private var signInSection: some View {
+        CardSection(footer: signedIn != true && auth?.methods.contains(where: { $0.kind == .agent }) == true
+            ? "Browser sign-ins open on \(model.hostName) itself. Away from it? Use Remote screen to finish there."
+            : nil) {
             HStack(spacing: 0) {
                 SetupStepRow(number: curated ? 2 : 1, title: "Sign in", detail: statusText, done: signedIn == true, action: nil)
                 if checking {
@@ -544,10 +542,6 @@ private struct AgentSheet: View {
                         }
                     }
                 }
-            }
-        } footer: {
-            if signedIn != true, auth?.methods.contains(where: { $0.kind == .agent }) == true {
-                Text("Browser sign-ins open on \(model.hostName) itself. Away from it? Use Remote screen to finish there.")
             }
         }
     }
@@ -634,25 +628,24 @@ private struct AgentKeysForm: View {
     private var vars: [AuthMethod.Var] { method.vars ?? [] }
 
     var body: some View {
-        Form {
-            Section {
-                ForEach(vars, id: \.name) { v in
-                    VStack(alignment: .leading, spacing: 4) {
-                        let prompt = Text(saved.contains(v.name) ? "Saved (type to replace)" : v.name)
-                        Group {
-                            if v.secret {
-                                SecureField(v.label, text: binding(v.name), prompt: prompt)
-                            } else {
-                                TextField(v.label, text: binding(v.name), prompt: prompt)
+        CardForm {
+            VStack(alignment: .leading, spacing: 6) {
+                CardSection(method.name) {
+                    ForEach(vars, id: \.name) { v in
+                        VStack(alignment: .leading, spacing: 4) {
+                            let prompt = Text(saved.contains(v.name) ? "Saved (type to replace)" : v.name)
+                            Group {
+                                if v.secret {
+                                    SecureField(v.label, text: binding(v.name), prompt: prompt)
+                                } else {
+                                    TextField(v.label, text: binding(v.name), prompt: prompt)
+                                }
                             }
+                            .plainTextInput()
+                            Text(v.label + (v.optional ? " (optional)" : "")).font(.caption).foregroundStyle(Palette.secondary)
                         }
-                        .plainTextInput()
-                        Text(v.label + (v.optional ? " (optional)" : "")).font(.caption).foregroundStyle(Palette.secondary)
                     }
                 }
-            } header: {
-                Text(method.name)
-            } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     if let d = method.description { Text(d) }
                     Text("Saved on \(model.hostName) only and given to \(backend.name) when it starts.")
@@ -660,25 +653,30 @@ private struct AgentKeysForm: View {
                         Link("Get a key", destination: url)
                     }
                 }
+                .font(.caption)
+                .foregroundStyle(Palette.tertiary)
+                .padding(.horizontal, 4)
             }
             if !saved.isEmpty {
-                Section {
+                CardSection {
                     Button("Remove saved keys", role: .destructive) {
                         save(Dictionary(uniqueKeysWithValues: vars.map { ($0.name, "") }))
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.danger)
                 }
             }
             if let error {
-                Section { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
-        .formStyle(.grouped)
+        .textFieldStyle(.plain)
         .navigationTitle(backend.name)
         .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 if saving {
-                    ProgressView()
+                    Spinner()
                 } else {
                     Button("Save") { save(values.filter { !$0.value.isEmpty }) }
                         .disabled(vars.contains { !$0.optional && (values[$0.name] ?? "").isEmpty && !saved.contains($0.name) })
@@ -860,7 +858,6 @@ private struct ServiceLogo: View {
         }
         .frame(width: size, height: size)
         .clipShape(shape)
-        .overlay(shape.stroke(Palette.border.opacity(0.6)))
     }
 }
 
@@ -889,8 +886,8 @@ private struct InstallConnectorSheet: View {
     }
 
     var body: some View {
-        Form {
-            Section {
+        CardForm {
+            CardSection {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(item.title).font(.title3.weight(.semibold))
                     if let d = item.description { Text(d).foregroundStyle(Palette.secondary) }
@@ -901,18 +898,14 @@ private struct InstallConnectorSheet: View {
                 .padding(.vertical, 4)
             }
             if item.options.count > 1 {
-                Section("Runs") {
-                    Picker("Runs", selection: $optionId) {
-                        ForEach(item.options) { o in
-                            Text(o.kind == "remote" ? "Hosted by \(item.title)" : "On \(model.hostName) (\(o.kind))").tag(o.id)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.inline)
+                CardSection("Runs") {
+                    ChoiceList(selection: $optionId, options: item.options.map { o in
+                        (id: o.id, label: o.kind == "remote" ? "Hosted by \(item.title)" : "On \(model.hostName) (\(o.kind))", detail: nil)
+                    })
                 }
             }
             if let option {
-                Section {
+                CardSection("Setup", footer: "Keys are saved on \(model.hostName) only.") {
                     if option.inputs.isEmpty {
                         Text(option.kind == "remote"
                             ? "No keys needed here. If the service asks you to sign in, the agent shows how the first time it's used."
@@ -934,17 +927,13 @@ private struct InstallConnectorSheet: View {
                             }
                         }
                     }
-                } header: {
-                    Text("Setup")
-                } footer: {
-                    Text("Keys are saved on \(model.hostName) only.")
                 }
             }
             if let error {
-                Section { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
-        .formStyle(.grouped)
+        .textFieldStyle(.plain)
         .navigationTitle("Add connector")
         .inlineNavigationTitle()
         .onAppear { optionId = item.options.first?.id ?? "" }
@@ -954,7 +943,7 @@ private struct InstallConnectorSheet: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 if saving {
-                    ProgressView()
+                    Spinner()
                 } else {
                     Button("Add") { install() }
                         .disabled(option?.inputs.contains { $0.required && (values[$0.name] ?? "").isEmpty } ?? true)
@@ -995,37 +984,27 @@ private struct CustomConnectorSheet: View {
     @State private var error: String?
 
     var body: some View {
-        Form {
-            Section {
+        CardForm {
+            CardSection(footer: remote ? "A remote MCP server (streamable HTTP)." : "Runs on \(model.hostName) in the bot's project folder.") {
                 TextField("Name", text: $name)
-                Picker("Type", selection: $remote) {
-                    Text("Command").tag(false)
-                    Text("URL").tag(true)
-                }
-                .pickerStyle(.segmented)
+                SegmentedChoice(selection: $remote, options: [(id: false, label: "Command"), (id: true, label: "URL")])
                 TextField(remote ? "https://example.com/mcp" : "npx -y @scope/server", text: $target)
                     .font(.callout.monospaced())
                     .plainTextInput()
-            } footer: {
-                Text(remote ? "A remote MCP server (streamable HTTP)." : "Runs on \(model.hostName) in the bot's project folder.")
             }
             if !remote {
-                Section {
+                CardSection("Environment", footer: "One KEY=value per line. Saved on \(model.hostName) only.") {
                     TextField("API_KEY=…", text: $envText, axis: .vertical)
                         .lineLimit(2...6)
                         .font(.callout.monospaced())
                         .plainTextInput()
-                } header: {
-                    Text("Environment")
-                } footer: {
-                    Text("One KEY=value per line. Saved on \(model.hostName) only.")
                 }
             }
             if let error {
-                Section { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
-        .formStyle(.grouped)
+        .textFieldStyle(.plain)
         .navigationTitle("Custom connector")
         .inlineNavigationTitle()
         .toolbar {
@@ -1034,7 +1013,7 @@ private struct CustomConnectorSheet: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 if saving {
-                    ProgressView()
+                    Spinner()
                 } else {
                     Button("Add") { save() }
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || target.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1073,22 +1052,20 @@ private struct NewSkillSheet: View {
     @State private var error: String?
 
     var body: some View {
-        Form {
-            Section {
+        CardForm {
+            CardSection(footer: "The bot sees the name and when to use it, and reads the instructions only when a task fits.") {
                 TextField("Name", text: $name)
                 TextField("When to use it", text: $summary, axis: .vertical).lineLimit(2...4)
-            } footer: {
-                Text("The bot sees the name and when to use it, and reads the instructions only when a task fits.")
             }
-            Section("Instructions") {
+            CardSection("Instructions") {
                 TextField("Step by step, in plain words…", text: $instructions, axis: .vertical)
                     .lineLimit(6...20)
             }
             if let error {
-                Section { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(error).foregroundStyle(Palette.danger) }
             }
         }
-        .formStyle(.grouped)
+        .textFieldStyle(.plain)
         .navigationTitle("New skill")
         .inlineNavigationTitle()
         .toolbar {
@@ -1097,7 +1074,7 @@ private struct NewSkillSheet: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 if saving {
-                    ProgressView()
+                    Spinner()
                 } else {
                     Button("Save") {
                         saving = true

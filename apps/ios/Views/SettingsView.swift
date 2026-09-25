@@ -16,15 +16,16 @@ struct SettingsView: View {
     @State private var access: AccessTarget?
 
     var body: some View {
-        Form {
-            Section {
+        CardForm {
+            CardSection("Computers", footer: app.account.isSignedIn
+                        ? "Computers in your account need your OK on the computer before this iPhone can use them."
+                        : "Each bot runs on its own computer. Sign in to see the computers in your account.") {
                 ForEach(accounts.computers) { computer in
                     if let store = accounts.store(for: computer.id) {
-                        ComputerRow(store: store, inAccount: cloudComputer(computer.id))
-                            .swipeActions {
-                                Button("Remove", systemImage: "trash", role: .destructive) { confirmForget = computer }
-                            }
-                            .contextMenu { menu(for: computer, store: store) }
+                        ComputerRow(store: store, inAccount: cloudComputer(computer.id),
+                                    openScreen: { openScreen(store) },
+                                    revoke: cloudComputer(computer.id).flatMap { c in c.access == "granted" ? { confirmRevoke = c } : nil },
+                                    remove: { confirmForget = computer })
                     }
                 }
                 ForEach(accountOnly) { computer in
@@ -37,43 +38,47 @@ struct SettingsView: View {
                 } label: {
                     Label("Pair a computer", systemImage: "qrcode.viewfinder")
                         .foregroundStyle(Palette.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-            } header: {
-                Text("Computers")
-            } footer: {
-                Text(app.account.isSignedIn
-                     ? "Computers in your account need your OK on the computer before this iPhone can use them."
-                     : "Each bot runs on its own computer. Sign in to see the computers in your account.")
+                .buttonStyle(.plain)
             }
 
-            Section {
-                ForEach(onlineStores, id: \.computer.id) { store in
-                    Button {
-                        closeSheets()
-                        app.marketplace = store.computer.id
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(onlineStores.count > 1 ? "Marketplace on \(store.hostName)" : "Marketplace").foregroundStyle(Palette.text)
-                            Text("Agents, connectors and skills for your bots").font(.subheadline).foregroundStyle(Palette.secondary)
+            if !onlineStores.isEmpty {
+                CardSection {
+                    ForEach(onlineStores, id: \.computer.id) { store in
+                        Button {
+                            closeSheets()
+                            app.marketplace = store.computer.id
+                        } label: {
+                            LinkRow {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(onlineStores.count > 1 ? "Marketplace on \(store.hostName)" : "Marketplace")
+                                    Text("Agents, connectors and skills for your bots").font(.subheadline).foregroundStyle(Palette.secondary)
+                                }
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
 
-            Section {
+            CardSection {
                 NavigationLink {
                     WidgetGalleryView()
                 } label: {
-                    Label("Widgets", systemImage: "square.grid.2x2")
+                    LinkRow { Label("Widgets", systemImage: "square.grid.2x2") }
                 }
+                .buttonStyle(.plain)
                 NavigationLink { ActivityGalleryView() } label: {
-                    Label("Live Activity & Dynamic Island", systemImage: "waveform")
+                    LinkRow { Label("Live Activity & Dynamic Island", systemImage: "waveform") }
                 }
+                .buttonStyle(.plain)
                 notificationsRow
             }
 
             if !hiddenBots.isEmpty {
-                Section("Hidden bots") {
+                CardSection("Hidden bots") {
                     ForEach(hiddenBots) { item in
                         let store = item.store, bot = item.bot
                         HStack {
@@ -83,20 +88,21 @@ struct SettingsView: View {
                                 Text(store.hostName).font(.caption).foregroundStyle(Palette.tertiary)
                             }
                             Spacer()
-                            Button("Unhide", systemImage: "eye") { store.setHidden(bot, false) }.labelStyle(.iconOnly)
+                            Button("Unhide", systemImage: "eye") { store.setHidden(bot, false) }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Palette.text)
                         }
                     }
                 }
             }
 
-            Section {
-                LabeledContent("App version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+            CardSection {
+                ValueRow("App version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
                 Link("Source code", destination: URL(string: "https://github.com/leepokai/Codync")!)
                     .foregroundStyle(Palette.text)
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Palette.background)
         .navigationTitle("Computers & settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -112,19 +118,19 @@ struct SettingsView: View {
         .sheet(item: $access) { target in
             NavigationStack { AccessRequestView(computer: target.computer, pending: accounts.pendingAccess[target.id] != nil) }
         }
-        .confirmationDialog("Remove \(confirmForget?.name ?? "computer")?", isPresented: Binding(get: { confirmForget != nil }, set: { if !$0 { confirmForget = nil } }), titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
+        .codyncDialog("Remove \(confirmForget?.name ?? "computer")?",
+                      isPresented: Binding(get: { confirmForget != nil }, set: { if !$0 { confirmForget = nil } }),
+                      message: "Its bots and conversations stay on that computer. You can pair again any time.") {
+            [DialogAction("Remove", destructive: true) {
                 if let c = confirmForget { accounts.forget(c.id) }
-            }
-        } message: {
-            Text("Its bots and conversations stay on that computer. You can pair again any time.")
+            }]
         }
-        .confirmationDialog("Revoke this iPhone's access to \(confirmRevoke?.name ?? "the computer")?", isPresented: Binding(get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }), titleVisibility: .visible) {
-            Button("Revoke", role: .destructive) {
+        .codyncDialog("Revoke this iPhone's access to \(confirmRevoke?.name ?? "the computer")?",
+                      isPresented: Binding(get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }),
+                      message: "You can ask for access again; the computer will show a new code to confirm.") {
+            [DialogAction("Revoke", destructive: true) {
                 if let c = confirmRevoke { Task { await app.revokeAccess(c.computerId) } }
-            }
-        } message: {
-            Text("You can ask for access again; the computer will show a new code to confirm.")
+            }]
         }
         .task {
             let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
@@ -166,29 +172,6 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder private func menu(for computer: Computer, store: BotStore) -> some View {
-        Menu("Color", systemImage: "paintpalette") {
-            ForEach(AvatarPalette.colors) { swatch in
-                Button { accounts.setColor(computer.id, swatch.id) } label: {
-                    // Menus drop SwiftUI tints; an original-mode UIImage keeps the swatch colored.
-                    Label {
-                        Text(swatch.label)
-                    } icon: {
-                        Image(uiImage: UIImage(systemName: computer.color == swatch.id ? "checkmark.circle.fill" : "circle.fill")!
-                            .withTintColor(UIColor(swatch.color), renderingMode: .alwaysOriginal))
-                    }
-                }
-            }
-        }
-        if store.screen != nil, store.connection == .online {
-            Button("Screen", systemImage: "display") { openScreen(store) }
-        }
-        if let cloud = cloudComputer(computer.id), cloud.access == "granted" {
-            Button("Revoke this iPhone's access", systemImage: "lock.slash", role: .destructive) { confirmRevoke = cloud }
-        }
-        Button("Remove", systemImage: "trash", role: .destructive) { confirmForget = computer }
-    }
-
     /// This screen is a sheet of its own or inside Accounts; the marketplace and screen open over the app.
     private func closeSheets() {
         app.showComputers = false
@@ -206,7 +189,7 @@ struct SettingsView: View {
 
     @ViewBuilder private var notificationsRow: some View {
         if notificationsAllowed == true {
-            LabeledContent("Notifications", value: "On")
+            ValueRow("Notifications", value: "On")
         } else {
             Button {
                 if notificationsAllowed == false {
@@ -215,9 +198,10 @@ struct SettingsView: View {
                     Task { notificationsAllowed = await PushRegistrar.shared.requestAuthorization() }
                 }
             } label: {
-                LabeledContent("Notifications", value: notificationsAllowed == false ? "Off in Settings" : "Turn on")
-                    .foregroundStyle(Palette.text)
+                ValueRow("Notifications", value: notificationsAllowed == false ? "Off in Settings" : "Turn on")
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
     }
 }
@@ -226,6 +210,12 @@ struct SettingsView: View {
 private struct ComputerRow: View {
     let store: BotStore
     let inAccount: CloudComputer?
+    let openScreen: () -> Void
+    /// Set when this iPhone's access to the computer can be revoked.
+    let revoke: (() -> Void)?
+    let remove: () -> Void
+    @Environment(AccountStore.self) private var accounts
+    @State private var coloring = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -240,6 +230,12 @@ private struct ComputerRow: View {
                 .foregroundStyle(store.isOffline ? Palette.warning : Palette.secondary)
             }
             Spacer()
+            if store.screen != nil, store.connection == .online {
+                Button("Screen", systemImage: "display", action: openScreen)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Palette.text)
+            }
             if inAccount != nil {
                 Image(systemName: "person.crop.circle.badge.checkmark")
                     .foregroundStyle(Palette.tertiary)
@@ -247,6 +243,36 @@ private struct ComputerRow: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .contextActions {
+            var items = [
+                MenuItem("Color", icon: "paintpalette") {
+                    // ponytail: waits for the menu popover to close before opening the swatches; one popover at a time.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(350))
+                        coloring = true
+                    }
+                },
+            ]
+            if store.screen != nil, store.connection == .online {
+                items.append(MenuItem("Screen", icon: "display", action: openScreen))
+            }
+            if let revoke {
+                items.append(MenuItem("Revoke this iPhone's access", icon: "lock.slash", destructive: true, divider: true, action: revoke))
+            }
+            items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: revoke == nil, action: remove))
+            return items
+        }
+        .background {
+            Color.clear.popover(isPresented: $coloring, arrowEdge: .bottom) {
+                SwatchPanel(selected: store.computer.color) { id in
+                    coloring = false
+                    accounts.setColor(store.computer.id, id)
+                }
+                .presentationCompactAdaptation(.popover)
+                .presentationBackground(Palette.bubbleAgent)
+            }
+        }
     }
 
     private var detail: String {
@@ -278,11 +304,11 @@ private struct AccountComputerRow: View {
             }
             Spacer()
             if ticket != nil {
-                Button("Code", action: ask).buttonStyle(.bordered)
+                Button("Code", action: ask).buttonStyle(.secondary)
             } else if computer.access == "granted" {
-                Button("Revoke", role: .destructive, action: revoke).buttonStyle(.bordered)
+                Button("Revoke", role: .destructive, action: revoke).buttonStyle(.secondary)
             } else {
-                Button("Ask for access", action: ask).buttonStyle(.bordered)
+                Button("Ask for access", action: ask).buttonStyle(.secondary)
             }
         }
         .padding(.vertical, 2)
@@ -296,5 +322,45 @@ private struct AccountComputerRow: View {
         case "pending": "\(online) · A request is waiting"
         default: "\(online) · In your account"
         }
+    }
+}
+
+/// A navigation row label with a trailing chevron.
+private struct LinkRow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack {
+            content.foregroundStyle(Palette.text)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+/// The computer color choices: a grid of colored dots, the current one checked.
+private struct SwatchPanel: View {
+    let selected: String?
+    let pick: (String) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(36), spacing: 10), count: 6), spacing: 10) {
+            ForEach(AvatarPalette.colors) { swatch in
+                Button { pick(swatch.id) } label: {
+                    Circle().fill(swatch.color)
+                        .frame(width: 32, height: 32)
+                        .overlay {
+                            if selected == swatch.id {
+                                Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(swatch.label)
+                .accessibilityAddTraits(selected == swatch.id ? .isSelected : [])
+            }
+        }
+        .padding(14)
     }
 }

@@ -17,33 +17,30 @@ struct BotListView: View {
 
     var body: some View {
         let roster = accounts.roster
-        List {
-            // One banner per computer that isn't reachable; the others keep working.
-            ForEach(accounts.computers) { computer in
-                if let store = accounts.store(for: computer.id), store.connection != .online {
-                    ConnectionBanner()
-                        .environment(store)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                // One banner per computer that isn't reachable; the others keep working.
+                ForEach(accounts.computers) { computer in
+                    if let store = accounts.store(for: computer.id), store.connection != .online {
+                        ConnectionBanner()
+                            .environment(store)
+                            .padding(.vertical, 4)
+                    }
+                }
+
+                if roster.isEmpty {
+                    EmptyRoster(canCreate: !onlineStores.isEmpty, hasComputer: !accounts.computers.isEmpty,
+                                create: newBot, showComputers: { app.showComputers = true })
+                }
+
+                ForEach(roster) { item in
+                    if let store = accounts.store(for: item.ref.computerId) {
+                        row(item, store: store)
+                    }
                 }
             }
-
-            if roster.isEmpty {
-                EmptyRoster(canCreate: !onlineStores.isEmpty, hasComputer: !accounts.computers.isEmpty,
-                            create: newBot, showComputers: { app.showComputers = true })
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-            }
-
-            ForEach(roster) { item in
-                if let store = accounts.store(for: item.ref.computerId) {
-                    row(item, store: store)
-                }
-            }
+            .padding(.horizontal, 16)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .background(Palette.background)
         .navigationTitle("Bots")
         .navigationBarTitleDisplayMode(.inline)
@@ -111,25 +108,14 @@ struct BotListView: View {
             .environment(store)
         }
         .buttonStyle(.plain)
-        .listRowBackground(Palette.background)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-        .swipeActions(edge: .leading) {
-            Button(bot.pinned ? "Unpin" : "Pin", systemImage: bot.pinned ? "pin.slash" : "pin") {
-                store.setPinned(bot, !bot.pinned)
-            }
-            .tint(Palette.accentDim)
-        }
-        .swipeActions(edge: .trailing) {
-            Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = item }
-            Button("Hide", systemImage: "eye.slash") { store.setHidden(bot, true) }
-        }
-        .contextMenu {
-            Button(bot.pinned ? "Unpin" : "Pin", systemImage: "pin") { store.setPinned(bot, !bot.pinned) }
-            Button("Edit profile", systemImage: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) }
-            Button("Mark as read", systemImage: "checkmark.message") { store.markRead(bot.id) }
-            Button("Hide from list", systemImage: "eye.slash") { store.setHidden(bot, true) }
-            Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = item }
+        .contextActions {
+            [
+                MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) },
+                MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
+                MenuItem("Mark as read", icon: "checkmark.message") { store.markRead(bot.id) },
+                MenuItem("Hide from list", icon: "eye.slash") { store.setHidden(bot, true) },
+                MenuItem("Delete", icon: "trash", destructive: true, divider: true) { confirmDelete = item },
+            ]
         }
     }
 
@@ -199,14 +185,10 @@ private struct EmptyRoster: View {
                 .multilineTextAlignment(.center)
             if canCreate {
                 Button("Create your first bot", action: create)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accentFill)
-                    .foregroundStyle(Palette.onAccent)
+                    .buttonStyle(.primary)
             } else if !hasComputer {
                 Button("Computers", action: showComputers)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accentFill)
-                    .foregroundStyle(Palette.onAccent)
+                    .buttonStyle(.primary)
             }
         }
         .frame(maxWidth: .infinity)

@@ -13,22 +13,28 @@ public struct TraceView: View {
     public var body: some View {
         let turns = Dictionary(grouping: model.thread(botId), by: \.turn)
             .sorted { $0.key < $1.key }
-        List {
-            if turns.isEmpty {
-                Text("Nothing yet.").foregroundStyle(Palette.tertiary)
-            }
-            ForEach(turns, id: \.key) { turn, entries in
-                Section {
-                    ForEach(entries) { TraceRow(entry: $0) }
-                } header: {
-                    Text(entries.first { $0.kind == "user" }?.data.text ?? "Turn \(turn)")
-                        .lineLimit(1)
-                        .textCase(nil)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: InterfaceMetrics.value(mac: 14, mobile: 22)) {
+                if turns.isEmpty {
+                    Text("Nothing yet.").foregroundStyle(Palette.tertiary)
+                }
+                ForEach(turns, id: \.key) { turn, entries in
+                    VStack(alignment: .leading, spacing: 6) {
+                        // CardSection's own title wraps; a turn header stays on one line.
+                        Text(entries.first { $0.kind == "user" }?.data.text ?? "Turn \(turn)")
+                            .lineLimit(1)
+                            .font(InterfaceMetrics.secondary)
+                            .foregroundStyle(Palette.secondary)
+                            .padding(.leading, 4)
+                        CardSection {
+                            ForEach(entries) { TraceRow(entry: $0) }
+                        }
+                    }
                 }
             }
+            .padding(InterfaceMetrics.value(mac: 14, mobile: 20))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .groupedList()
-        .scrollContentBackground(.hidden)
         .background(Palette.background)
         .navigationTitle("Full conversation")
         .inlineNavigationTitle()
@@ -43,6 +49,7 @@ public struct TraceView: View {
 
 private struct TraceRow: View {
     let entry: Entry
+    @State private var expanded = false
 
     var body: some View {
         let d = entry.data
@@ -56,7 +63,7 @@ private struct TraceRow: View {
                 MarkdownText(d.text ?? "")
             }
         case "thought":
-            DisclosureGroup {
+            Disclosure(isExpanded: $expanded) {
                 Text(d.text ?? "").font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
             } label: {
                 Label { Text("Thinking") } icon: {
@@ -90,6 +97,7 @@ private struct TraceRow: View {
 
 struct ToolRow: View {
     let data: EntryData
+    @State private var expanded = false
 
     private var icon: String {
         switch data.toolKind {
@@ -111,7 +119,7 @@ struct ToolRow: View {
 
     var body: some View {
         if hasBody {
-            DisclosureGroup {
+            Disclosure(isExpanded: $expanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(data.diffs ?? [], id: \.self) { DiffView(diff: $0) }
                     if let out = data.output, !out.isEmpty { CodeBox(text: out) }

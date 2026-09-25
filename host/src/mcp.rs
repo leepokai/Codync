@@ -13,6 +13,7 @@ const PROTOCOL_VERSION: &str = "2025-06-18";
 pub enum Server {
     Computer,
     Team,
+    Composio,
 }
 
 const INSTRUCTIONS: &str = "Operate this computer's desktop like a person would. Start with `screenshot` \
@@ -106,6 +107,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     let (name, instructions, available_tools) = match server {
         Server::Computer => ("codync-computer", INSTRUCTIONS, tools()),
         Server::Team => ("codync-team", crate::team::INSTRUCTIONS, crate::team::tools()),
+        Server::Composio => ("codync-composio", crate::composio::INSTRUCTIONS, crate::composio::tools()),
     };
     while let Some(line) = lines.next_line().await? {
         let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
@@ -147,6 +149,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
     let (method, timeout) = match server {
         Server::Computer => ("computerCall", Duration::from_secs(60)),
         Server::Team => ("teamCall", crate::team::ASK_TIMEOUT + Duration::from_secs(30)),
+        Server::Composio => ("composioCall", Duration::from_secs(120)),
     };
     let res = crate::http()
         .post(format!("http://127.0.0.1:{port}/api/{method}"))
@@ -163,6 +166,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
                     return match server {
                         Server::Computer => json!({"content": v["content"]}),
                         Server::Team => json!({"content": [{"type": "text", "text": v.to_string()}]}),
+                        Server::Composio => json!({"content": [{"type": "text", "text": v["result"].to_string()}]}),
                     };
                 }
                 Ok(v) => v["error"].as_str().unwrap_or("the Codync host refused the call").to_owned(),

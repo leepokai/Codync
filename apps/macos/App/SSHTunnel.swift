@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 import Observation
 import OSLog
+import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "ssh")
 
@@ -227,6 +228,31 @@ enum ProcessRunner {
     }
 }
 
+/// ssh's stderr, read as it arrives. Left unread, the pipe fills at 64 KB and ssh blocks mid-write,
+/// freezing the tunnel for good; each connection the far side refuses adds a line.
+final class StderrTail: Sendable {
+    let pipe = Pipe()
+    /// The newest output (bounded) and whether ssh closed it.
+    private let state = OSAllocatedUnfairLock(initialState: (text: "", done: false))
+
+    init() {
+        pipe.fileHandleForReading.readabilityHandler = { [state] handle in
+            let data = handle.availableData
+            if data.isEmpty { handle.readabilityHandler = nil }
+            let chunk = String(decoding: data, as: UTF8.self)
+            state.withLock { $0 = (String(($0.text + chunk).suffix(4096)), data.isEmpty) }
+        }
+    }
+
+    /// ssh's last line, once it exited (waits briefly for the pipe to reach its end).
+    func lastLine() async -> String {
+        for _ in 0..<40 where !state.withLock({ $0.done }) {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        return state.withLock { $0.text }.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
+    }
+}
+
 /// What `codync-host info --json` prints.
 private struct RemoteInfo: Decodable {
     var name: String
@@ -290,8 +316,11 @@ final class SSHComputers {
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private var backoff: [UUID: Double] = [:]
     private var connectedAt: [UUID: Date] = [:]
+    /// Where `.ssh/known_hosts` and `.codync/ssh_known_hosts` live; tests point it elsewhere.
+    private let home: String
 
-    init() {
+    init(home: String = SSH.home) {
+        self.home = home
         profiles = UserDefaults.standard.data(forKey: Self.defaultsKey)
             .flatMap { try? JSONDecoder().decode([SSHProfile].self, from: $0) } ?? []
     }
@@ -344,7 +373,7 @@ final class SSHComputers {
     func trustHostKey(_ id: UUID) {
         guard case let .confirmHostKey(_, _, lines) = status(of: id) else { return }
         do {
-            let dir = URL(filePath: SSH.home).appending(path: ".codync")
+            let dir = URL(filePath: home).appending(path: ".codync")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let file = dir.appending(path: "ssh_known_hosts")
             if !FileManager.default.fileExists(atPath: file.path) {
@@ -421,7 +450,7 @@ final class SSHComputers {
         }
 
         status[id] = .connecting("Signing in…")
-        let result = await ProcessRunner.run(SSH.ssh, SSH.infoArguments(profile, home: SSH.home))
+        let result = await ProcessRunner.run(SSH.ssh, SSH.infoArguments(profile, home: home))
         guard !Task.isCancelled else { return .stop(.idle) }
         if result.status == 255 {
             if !resolved.usesProxy {
@@ -454,9 +483,9 @@ final class SSHComputers {
             guard let port = Self.freeLocalPort() else { return .retry("No free local port for the tunnel.") }
             status[id] = .connecting("Opening the tunnel…")
             let process: Process
-            let errPipe = Pipe()
+            let stderr = StderrTail()
             do {
-                process = try startTunnel(profile, localPort: port, stderr: errPipe)
+                process = try startTunnel(profile, localPort: port, stderr: stderr.pipe)
             } catch {
                 return .stop(.failed("Couldn't start ssh: \(error.localizedDescription)"))
             }
@@ -474,12 +503,10 @@ final class SSHComputers {
                 return .stop(.idle)
             }
             guard let health else {
-                // Only read ssh's message once it exited: reading a live pipe would block.
                 if process.isRunning {
                     process.terminate()
                 } else {
-                    let err = String(decoding: errPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-                    lastProblem = err.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
+                    lastProblem = await stderr.lastLine()
                 }
                 continue
             }
@@ -495,7 +522,7 @@ final class SSHComputers {
                 lastProblem = "Another program answered on the tunnel's local port."
                 continue
             }
-            watch(process, id: id, stderr: errPipe)
+            watch(process, id: id, stderr: stderr)
             tunnels[id] = process
             connectedAt[id] = .now
             status[id] = .connected(localPort: port)
@@ -509,7 +536,7 @@ final class SSHComputers {
 
     private func recordedKeys(_ name: String) async -> Set<String> {
         var keys = Set<String>()
-        for file in SSH.knownHostsFiles(home: SSH.home) where FileManager.default.fileExists(atPath: file) {
+        for file in SSH.knownHostsFiles(home: home) where FileManager.default.fileExists(atPath: file) {
             let found = await ProcessRunner.run(SSH.keygen, ["-F", name, "-f", file])
             if found.status == 0 { keys.formUnion(SSH.hostKeys(found.text)) }
         }
@@ -519,7 +546,7 @@ final class SSHComputers {
     private func startTunnel(_ profile: SSHProfile, localPort: Int, stderr: Pipe) throws -> Process {
         let process = Process()
         process.executableURL = SSH.ssh
-        process.arguments = SSH.tunnelArguments(profile, localPort: localPort, home: SSH.home)
+        process.arguments = SSH.tunnelArguments(profile, localPort: localPort, home: home)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = stderr
@@ -528,17 +555,18 @@ final class SSHComputers {
     }
 
     /// A tunnel that drops is reopened with backoff (reset once it stayed up a minute).
-    private func watch(_ process: Process, id: UUID, stderr: Pipe) {
-        let handle = stderr.fileHandleForReading
-        process.terminationHandler = { [weak self] _ in
-            let detail = String(decoding: handle.readDataToEndOfFile(), as: UTF8.self)
-                .split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
-            Task { @MainActor [weak self] in self?.tunnelEnded(id, detail: detail) }
+    private func watch(_ process: Process, id: UUID, stderr: StderrTail) {
+        process.terminationHandler = { [weak self] ended in
+            Task { @MainActor [weak self] in
+                let detail = await stderr.lastLine()
+                self?.tunnelEnded(id, process: ended, detail: detail)
+            }
         }
     }
 
-    private func tunnelEnded(_ id: UUID, detail: String) {
-        guard tunnels[id] != nil else { return }
+    private func tunnelEnded(_ id: UUID, process: Process, detail: String) {
+        // Only the current tunnel: a replaced or disconnected one ends without effect.
+        guard tunnels[id] === process else { return }
         log.info("ssh tunnel ended: \(detail, privacy: .public)")
         if let since = connectedAt[id], Date.now.timeIntervalSince(since) >= 60 { backoff[id] = nil }
         stopTunnel(id)

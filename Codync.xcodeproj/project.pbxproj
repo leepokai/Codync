@@ -8,16 +8,26 @@
 
 /* Begin PBXBuildFile section */
 		03774684DC8344D81AFED53B /* ChatWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A59E3A7670EAF57F2F4C9B9 /* ChatWindow.swift */; };
+		1C2F108FE28961E13EF9AF61 /* ViewingBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F16B11B2920E9D05621AFE7 /* ViewingBadge.swift */; };
 		24DF3CB466CC877FCB8BAED6 /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = BEE30A9D5C73E5A151F34180 /* CodyncUI */; };
 		25667EBFCCC64B96FDCE95A9 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 59F5D19A417A7A50596902FA /* CodyncKit */; };
+		25FCB36A2661833502357807 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A657FB98BBE0D73807B263 /* Session.swift */; };
 		2CC074683AE086D6C77CC1E8 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B274A0195CB3B2409EA4C194 /* WidgetKit.framework */; };
+		2D724C1001CF872BAFCAE7EA /* IconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3831394C093AF3A4E504BC5 /* IconButton.swift */; };
 		2F0A1C29DBBD1D700C10BE46 /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45CCA6BBDCF412897AEC105 /* CodyncApp.swift */; };
 		31A78A067C217F77FBDEDFD0 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55AABA9596547D7459B1CC5B /* Push.swift */; };
+		484455D97513F09142D21D0D /* Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE4D28E8291EEB43E17B11FA /* Capture.swift */; };
 		48DAAA1384E5B8D0BA27C895 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E47C60032C326157E0386B8 /* SwiftUI.framework */; };
+		498C81B8C82557C85F912238 /* HostLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CAC64DDC41D4A222A12DDE /* HostLink.swift */; };
 		513F59BF65DED5379AB950A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D2C705F063CD20F5B3036BD4 /* Assets.xcassets */; };
 		52CF04B855C6AAEC47B75B8F /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 06C9F37C6502131CAF0F145E /* CodyncUI */; };
+		5F9AE9B8E7FF66F194162BDC /* ScreenHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB932B6C1849B8DF7CF7C2E3 /* ScreenHelper.swift */; };
 		826FEDA23997E436D632E579 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4CFB70DD8757C90695CDA211 /* PrivacyInfo.xcprivacy */; };
 		8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */; };
+		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
+		ACCB28F3DB9C89108B7911E3 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842DA106CA15E3810C3C9461 /* Input.swift */; };
+		AFC0CD8BD1FA61F810C96057 /* com.pokai.Codync.screen.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 895BB6C2EB8986266EB4159A /* com.pokai.Codync.screen.plist */; };
+		B55C0D49B47C628C367BD92A /* AXTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97876A72710A37EB86A082C1 /* AXTree.swift */; };
 		B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739EC95223CC8F8717C33736 /* PairingView.swift */; };
 		C937F66F810AA238B73E8363 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */; };
 		CC9F6FB8055C38D5D625F738 /* BotListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E57711E223A292872322C5 /* BotListView.swift */; };
@@ -25,6 +35,7 @@
 		DEF7478AB86DB605F52905F5 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */; };
 		E430F9317B690366F62164DB /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B79D48C1D6F90D53751B3F /* RootView.swift */; };
 		EBB0417A5FB2CE6D514D21BE /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1285DDFA0390A76ECDAAD6C0 /* CodyncKit */; };
+		EC14C7513A8D2999D97D5ABA /* Screen.app in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 741B706007BA1B91CB853699 /* Screen.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		ED143C01BF7AD4953101D160 /* UsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47BCE8E2AFA6CA829DBC489A /* UsageView.swift */; };
 		F0A26FABD15480810021C86A /* HostController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A9881C76B67297BE26D8FD /* HostController.swift */; };
 		F191B13B972C72CB4253B449 /* CodyncWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00F135A0B168269BD6C2A199 /* CodyncWidgets.swift */; };
@@ -33,6 +44,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		2E0B0CAFDFEF730B8269AE49 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5B6351DD20AF4506794D6460 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 907F1F4A709111FC7178EAE9;
+			remoteInfo = Screen;
+		};
 		D40A213F2C1B900F886F95EB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 5B6351DD20AF4506794D6460 /* Project object */;
@@ -54,11 +72,33 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A39B341E188CE8DB0A29ACC0 /* Embed Dependencies */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LoginItems;
+			dstSubfolderSpec = 1;
+			files = (
+				EC14C7513A8D2999D97D5ABA /* Screen.app in Embed Dependencies */,
+			);
+			name = "Embed Dependencies";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F03A20C030394F9A65472B30 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LaunchAgents;
+			dstSubfolderSpec = 1;
+			files = (
+				AFC0CD8BD1FA61F810C96057 /* com.pokai.Codync.screen.plist in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		00F135A0B168269BD6C2A199 /* CodyncWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncWidgets.swift; sourceTree = "<group>"; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		1F16B11B2920E9D05621AFE7 /* ViewingBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewingBadge.swift; sourceTree = "<group>"; };
 		22F1B304BD18E48C91FC73E3 /* Widgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Widgets.entitlements; sourceTree = "<group>"; };
 		232B2C00B9575BFF7068BB62 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncMacApp.swift; sourceTree = "<group>"; };
@@ -69,14 +109,23 @@
 		60422D3CA8FEBCDC5AC465E0 /* iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6D734BEE7CD3F84677B0218B /* Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		739EC95223CC8F8717C33736 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		741B706007BA1B91CB853699 /* Screen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Screen.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74BB0269490A0689868F05F7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		75CAC64DDC41D4A222A12DDE /* HostLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostLink.swift; sourceTree = "<group>"; };
 		7A2F5A7F5A648909D8CC5C19 /* kit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = kit; path = kit; sourceTree = SOURCE_ROOT; };
+		842DA106CA15E3810C3C9461 /* Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Input.swift; sourceTree = "<group>"; };
+		895BB6C2EB8986266EB4159A /* com.pokai.Codync.screen.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.pokai.Codync.screen.plist; sourceTree = "<group>"; };
 		93A9881C76B67297BE26D8FD /* HostController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostController.swift; sourceTree = "<group>"; };
+		97876A72710A37EB86A082C1 /* AXTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXTree.swift; sourceTree = "<group>"; };
 		991A0FD3EAAD4B446F3BF14E /* macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = macOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A59E3A7670EAF57F2F4C9B9 /* ChatWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWindow.swift; sourceTree = "<group>"; };
+		AB932B6C1849B8DF7CF7C2E3 /* ScreenHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenHelper.swift; sourceTree = "<group>"; };
 		B274A0195CB3B2409EA4C194 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		C5E57711E223A292872322C5 /* BotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotListView.swift; sourceTree = "<group>"; };
+		CE4D28E8291EEB43E17B11FA /* Capture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capture.swift; sourceTree = "<group>"; };
+		D0A657FB98BBE0D73807B263 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		D2C705F063CD20F5B3036BD4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D3831394C093AF3A4E504BC5 /* IconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconButton.swift; sourceTree = "<group>"; };
 		DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E1B79D48C1D6F90D53751B3F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -91,6 +140,14 @@
 			files = (
 				F93D9960F7C20B2E629C1736 /* CodyncKit in Frameworks */,
 				24DF3CB466CC877FCB8BAED6 /* CodyncUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9BF4C7DD5C26BAD44BD453BF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -142,6 +199,7 @@
 			children = (
 				B297A6ACE16EAA751102BC05 /* ios */,
 				C0244F098744E616AB7FA840 /* macos */,
+				E6BF4F999DB656FB8CB90885 /* screen */,
 			);
 			path = apps;
 			sourceTree = "<group>";
@@ -160,6 +218,7 @@
 			children = (
 				60422D3CA8FEBCDC5AC465E0 /* iOS.app */,
 				991A0FD3EAAD4B446F3BF14E /* macOS.app */,
+				741B706007BA1B91CB853699 /* Screen.app */,
 				6D734BEE7CD3F84677B0218B /* Widgets.appex */,
 			);
 			name = Products;
@@ -188,8 +247,17 @@
 			isa = PBXGroup;
 			children = (
 				9A59E3A7670EAF57F2F4C9B9 /* ChatWindow.swift */,
+				D3831394C093AF3A4E504BC5 /* IconButton.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		9D23811123D1C6A69D61B9CE /* LaunchAgents */ = {
+			isa = PBXGroup;
+			children = (
+				895BB6C2EB8986266EB4159A /* com.pokai.Codync.screen.plist */,
+			);
+			path = LaunchAgents;
 			sourceTree = "<group>";
 		};
 		AD54741A2330C502CD3BB628 /* Packages */ = {
@@ -224,6 +292,7 @@
 			isa = PBXGroup;
 			children = (
 				BDFF077DDD37FEC8B83F2AED /* App */,
+				9D23811123D1C6A69D61B9CE /* LaunchAgents */,
 				FBD5ECB1F12422DB8CC87897 /* Resources */,
 				81605AFE04C3CF723841CD87 /* Views */,
 			);
@@ -251,6 +320,20 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		E6BF4F999DB656FB8CB90885 /* screen */ = {
+			isa = PBXGroup;
+			children = (
+				97876A72710A37EB86A082C1 /* AXTree.swift */,
+				CE4D28E8291EEB43E17B11FA /* Capture.swift */,
+				75CAC64DDC41D4A222A12DDE /* HostLink.swift */,
+				842DA106CA15E3810C3C9461 /* Input.swift */,
+				AB932B6C1849B8DF7CF7C2E3 /* ScreenHelper.swift */,
+				D0A657FB98BBE0D73807B263 /* Session.swift */,
+				1F16B11B2920E9D05621AFE7 /* ViewingBadge.swift */,
+			);
+			path = screen;
+			sourceTree = "<group>";
+		};
 		FBD5ECB1F12422DB8CC87897 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -268,12 +351,15 @@
 			buildPhases = (
 				FD97D0661DD7AA54EB7DE077 /* Sources */,
 				14FEC4FC6C72AC9A2596C04C /* Resources */,
+				F03A20C030394F9A65472B30 /* CopyFiles */,
 				1AC8A5FB72DF4C3DAEDBA56F /* Frameworks */,
+				A39B341E188CE8DB0A29ACC0 /* Embed Dependencies */,
 				C0A14ED49FC6A533FEABD5B2 /* Embed codync-host */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				403D98EE1C95EF3BA01D41CB /* PBXTargetDependency */,
 			);
 			name = macOS;
 			packageProductDependencies = (
@@ -282,6 +368,25 @@
 			);
 			productName = macOS;
 			productReference = 991A0FD3EAAD4B446F3BF14E /* macOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		907F1F4A709111FC7178EAE9 /* Screen */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EC3A304F5821443C1DD50876 /* Build configuration list for PBXNativeTarget "Screen" */;
+			buildPhases = (
+				34C567D8C7B2C02F5D48CA29 /* Sources */,
+				9BF4C7DD5C26BAD44BD453BF /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Screen;
+			packageProductDependencies = (
+				2D9748E611692583AFC5A152 /* WebRTC */,
+			);
+			productName = Screen;
+			productReference = 741B706007BA1B91CB853699 /* Screen.app */;
 			productType = "com.apple.product-type.application";
 		};
 		913BDA9F79CE8C35A9E35830 /* iOS */ = {
@@ -340,6 +445,10 @@
 						DevelopmentTeam = 7FUM8A8H72;
 						ProvisioningStyle = Automatic;
 					};
+					907F1F4A709111FC7178EAE9 = {
+						DevelopmentTeam = 7FUM8A8H72;
+						ProvisioningStyle = Automatic;
+					};
 					913BDA9F79CE8C35A9E35830 = {
 						DevelopmentTeam = 7FUM8A8H72;
 						ProvisioningStyle = Automatic;
@@ -361,12 +470,14 @@
 			mainGroup = C9B7D3953422AE726DDC6347;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				979123F21565A4068586B502 /* XCRemoteSwiftPackageReference "WebRTC" */,
 				0E2B25AB265C8FA83E7E1560 /* XCLocalSwiftPackageReference "kit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				907F1F4A709111FC7178EAE9 /* Screen */,
 				A27E4E88D6A5B9850734B594 /* Widgets */,
 				913BDA9F79CE8C35A9E35830 /* iOS */,
 				72F29E7EBE9A88B16B4E608A /* macOS */,
@@ -434,6 +545,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		34C567D8C7B2C02F5D48CA29 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B55C0D49B47C628C367BD92A /* AXTree.swift in Sources */,
+				484455D97513F09142D21D0D /* Capture.swift in Sources */,
+				498C81B8C82557C85F912238 /* HostLink.swift in Sources */,
+				ACCB28F3DB9C89108B7911E3 /* Input.swift in Sources */,
+				5F9AE9B8E7FF66F194162BDC /* ScreenHelper.swift in Sources */,
+				25FCB36A2661833502357807 /* Session.swift in Sources */,
+				1C2F108FE28961E13EF9AF61 /* ViewingBadge.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B42F6957E97BFF5E6D8F504B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -455,12 +580,18 @@
 				03774684DC8344D81AFED53B /* ChatWindow.swift in Sources */,
 				8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */,
 				F0A26FABD15480810021C86A /* HostController.swift in Sources */,
+				2D724C1001CF872BAFCAE7EA /* IconButton.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		403D98EE1C95EF3BA01D41CB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 907F1F4A709111FC7178EAE9 /* Screen */;
+			targetProxy = 2E0B0CAFDFEF730B8269AE49 /* PBXContainerItemProxy */;
+		};
 		40DF4BEA40A82C095F51AB76 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = A27E4E88D6A5B9850734B594 /* Widgets */;
@@ -521,7 +652,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -554,6 +685,28 @@
 			};
 			name = Debug;
 		};
+		6377E0B7DC2015DD92AB6550 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Codync Screen";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.screen;
+				PRODUCT_NAME = CodyncScreen;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
 		6A5CD5AB98E7B897A9E57C49 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -573,6 +726,28 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		8BF1ED628DCBF23F16CFD028 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Codync Screen";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.screen;
+				PRODUCT_NAME = CodyncScreen;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
 		};
 		A8BF4A3388AA1B9ECD65A197 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -632,7 +807,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -662,7 +837,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -692,7 +867,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -776,6 +951,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		EC3A304F5821443C1DD50876 /* Build configuration list for PBXNativeTarget "Screen" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6377E0B7DC2015DD92AB6550 /* Debug */,
+				8BF1ED628DCBF23F16CFD028 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		F977CF173B7D60769B393751 /* Build configuration list for PBXProject "Codync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -794,6 +978,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		979123F21565A4068586B502 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stasel/WebRTC";
+			requirement = {
+				kind = exactVersion;
+				version = 153.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		06C9F37C6502131CAF0F145E /* CodyncUI */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -802,6 +997,11 @@
 		1285DDFA0390A76ECDAAD6C0 /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CodyncKit;
+		};
+		2D9748E611692583AFC5A152 /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 979123F21565A4068586B502 /* XCRemoteSwiftPackageReference "WebRTC" */;
+			productName = WebRTC;
 		};
 		59F5D19A417A7A50596902FA /* CodyncKit */ = {
 			isa = XCSwiftPackageProductDependency;

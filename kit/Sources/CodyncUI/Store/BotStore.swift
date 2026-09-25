@@ -7,6 +7,13 @@ private let log = Logger(subsystem: "com.pokai.Codync", category: "BotStore")
 
 /// Single source of truth for a Codync client (iPhone app, Mac window): mirrors
 /// the host's bots and transcripts via one SSE stream (catch-up since `rev`, then live).
+/// Opens the screen viewer, optionally watching a bot that's using the computer.
+public struct ScreenRequest: Identifiable, Hashable, Sendable {
+    public var watching: String?
+    public var id: String { watching ?? "computer" }
+    public init(watching: String? = nil) { self.watching = watching }
+}
+
 @MainActor
 @Observable
 public final class BotStore {
@@ -26,6 +33,8 @@ public final class BotStore {
     public private(set) var bots: [String: Bot] = [:]
     public private(set) var entries: [String: [Entry]] = [:]
     public private(set) var usage = SharedStore.usage ?? Usage()
+    /// The computer's remote screen (`nil`: the host predates it).
+    public private(set) var screen: ScreenState?
     /// Installed on the computer, for the Plugins screen and bot settings.
     public private(set) var installedConnectors: [InstalledConnector] = []
     public private(set) var installedSkills: [InstalledSkill] = []
@@ -38,6 +47,8 @@ public final class BotStore {
     public var showProfile = false
     /// The Plugins screen on its own; `codync://plugins` opens it.
     public var showPlugins = false
+    /// The remote screen viewer (iPhone); `codync://screen` opens it.
+    public var screenRequest: ScreenRequest?
 
     // Platform hooks (push registration, Live Activities, widgets).
     public var onPaired: (@MainActor (BotStore) -> Void)?
@@ -150,6 +161,7 @@ public final class BotStore {
         rev = 0
         hostId = nil
         historyComplete = []
+        screen = nil
         saveCache()
     }
 
@@ -193,6 +205,11 @@ public final class BotStore {
                     if let device = h.device, self.pairing?.device != device, let token = self.pairing?.token {
                         updateComputer(token) { $0.device = device }
                     }
+                    // Addresses the host gained since pairing (say, Tailscale installed later) join the list.
+                    if let urls = h.urls, let token = self.pairing?.token,
+                       let known = self.pairing?.urls, !Set(urls).isSubset(of: Set(known)) {
+                        updateComputer(token) { p in p.urls += urls.filter { !p.urls.contains($0) } }
+                    }
                     // Host upgraded since the cache was written: its data may carry new fields.
                     if let stamp = cacheStamp, stamp != "\(Self.appBuild)/\(h.version)" {
                         rev = 0
@@ -223,13 +240,14 @@ public final class BotStore {
 
     private func apply(_ event: HostEvent) {
         switch event {
-        case let .hello(id, hostRev, newUsage):
+        case let .hello(id, hostRev, newUsage, newScreen):
             if let hostId, hostId != id {
                 // Different host database: start over.
                 resetMirror()
             }
             hostId = id
             setUsage(newUsage)
+            screen = newScreen
             if hostRev < rev { rev = 0 }
         case let .bot(bot):
             bots[bot.id] = bot
@@ -244,6 +262,8 @@ public final class BotStore {
             bump(e.rev)
         case let .usage(u):
             setUsage(u)
+        case let .screen(s):
+            screen = s
         case .resync:
             restartStream()
         case let .undecodable(type):
@@ -333,6 +353,18 @@ public final class BotStore {
 
     public func stop(_ botId: String) { perform { try await $0.stop(botId) } }
     public func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
+
+    // MARK: remote screen
+
+    /// Takes control from bots (they can still look) or hands it back.
+    public func screenTakeover(_ on: Bool) {
+        perform { [weak self] in self?.screen = try await $0.screenTakeover(on) }
+    }
+
+    /// Only the computer itself may turn remote screen on (the Mac menu).
+    public func setScreenEnabled(_ on: Bool) async throws {
+        screen = try await require().setScreenEnabled(on)
+    }
 
     public func respond(_ entry: Entry, option: String?) {
         perform { try await $0.respondPermission(entryId: entry.id, optionId: option) }

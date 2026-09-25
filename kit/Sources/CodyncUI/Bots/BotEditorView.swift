@@ -170,6 +170,19 @@ struct BotSettingsForm: View {
                     }
                     .toggleStyle(.switch)
                     .tint(Palette.switchOn)
+                    if model.screen != nil {
+                        Toggle(isOn: Binding(get: { draft.computer ?? false }, set: { draft.computer = $0 })) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Use the computer").foregroundStyle(Palette.text)
+                                Text(model.screen?.enabled == true
+                                    ? "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone."
+                                    : "Let this bot see the screen and use the mouse and keyboard. Turn on Remote screen in Codync's menu on the computer first.")
+                                    .font(.subheadline).foregroundStyle(Palette.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                        .tint(Palette.switchOn)
+                    }
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 20)

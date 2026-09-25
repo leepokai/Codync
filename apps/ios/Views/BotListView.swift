@@ -66,6 +66,12 @@ struct BotListView: View {
             }
             // Grok-style bare top bar: no visible title, just the two buttons.
             ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+            if model.screen != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Screen", systemImage: "display") { model.screenRequest = ScreenRequest() }
+                        .disabled(model.connection != .online)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("New bot", systemImage: "plus") {
                     editing = EditorRequest(BotDraft())

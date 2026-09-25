@@ -7,7 +7,7 @@ use crate::hub::Hub;
 use crate::store::{BotConfig, EntryKind};
 use crate::{backends, market, usage};
 use anyhow::{Context, Result, anyhow, bail};
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -17,6 +17,7 @@ use futures::{Stream, StreamExt, stream};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -76,6 +77,7 @@ async fn statusline(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(body):
 async fn command(
     State(hub): State<Arc<Hub>>,
     Path(method): Path<String>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     body: Option<Json<Value>>,
 ) -> Result<Json<Value>, ApiError> {
@@ -83,6 +85,13 @@ async fn command(
         return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid token".into()));
     }
     let body = body.map_or(Value::Null, |b| b.0);
+    // Letting phones see and control the screen is decided at the computer, never remotely.
+    if method == "setScreenEnabled" && !peer.ip().is_loopback() {
+        return Err(ApiError(
+            StatusCode::FORBIDDEN,
+            "Remote screen can only be turned on at the computer itself.".into(),
+        ));
+    }
     match dispatch(&hub, &method, body).await {
         Ok(v) => Ok(Json(v)),
         Err(e) if e.is::<UnknownMethod>() => Err(ApiError(StatusCode::NOT_FOUND, e.to_string())),
@@ -97,16 +106,22 @@ fn str_arg<'a>(b: &'a Value, k: &str) -> Result<&'a str> {
 
 pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
     Ok(match method {
-        "hello" => json!({
-            "hostId": hub.host_id,
-            "name": crate::service::host_name(),
-            "version": env!("CARGO_PKG_VERSION"),
-            "os": std::env::consts::OS,
-            "device": tokio::task::spawn_blocking(crate::service::device).await?,
-            "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
-            "backends": backends::list(),
-            "rev": hub.store.current_rev(),
-        }),
+        "hello" => {
+            let port = hub.port;
+            json!({
+                "hostId": hub.host_id,
+                "name": crate::service::host_name(),
+                "version": env!("CARGO_PKG_VERSION"),
+                "os": std::env::consts::OS,
+                "device": tokio::task::spawn_blocking(crate::service::device).await?,
+                "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
+                "backends": backends::list(),
+                "rev": hub.store.current_rev(),
+                "screen": hub.screen.state(),
+                // Shells out to `tailscale`: keep it off the async workers.
+                "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
+            })
+        }
         "sync" => {
             let since = b["since"].as_i64().unwrap_or(0);
             json!({
@@ -254,6 +269,28 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             market::remove_skill(&hub.store, str_arg(&b, "id")?)?;
             json!({})
         }
+        "screenStatus" => hub.screen.state(),
+        "screenOffer" => {
+            let display = b["display"].as_u64().and_then(|d| u32::try_from(d).ok());
+            hub.screen.offer(str_arg(&b, "sdp")?, b["session"].as_str(), display).await?
+        }
+        "screenClose" => {
+            hub.screen.close(str_arg(&b, "session")?).await?;
+            json!({})
+        }
+        "screenTakeover" => {
+            hub.screen.takeover(b["on"].as_bool().unwrap_or(false));
+            hub.screen.state()
+        }
+        "setScreenEnabled" => {
+            hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;
+            hub.screen.state()
+        }
+        "computerCall" => {
+            let tool: crate::screen::ComputerTool =
+                serde_json::from_value(b.clone()).context("invalid computer tool call")?;
+            json!({"content": crate::screen::computer(hub, str_arg(&b, "botId")?, tool).await?})
+        }
         _ => return Err(UnknownMethod.into()),
     })
 }
@@ -333,7 +370,13 @@ async fn events(
         catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
     }
     catch_up.sort_by_key(|v| v["rev"].as_i64().unwrap_or(0));
-    let hello = json!({"type": "hello", "hostId": hub.host_id, "rev": hub.store.current_rev(), "usage": hub.usage.locked().clone()});
+    let hello = json!({
+        "type": "hello",
+        "hostId": hub.host_id,
+        "rev": hub.store.current_rev(),
+        "usage": hub.usage.locked().clone(),
+        "screen": hub.screen.state(),
+    });
     catch_up.insert(0, hello);
 
     let guard = Arc::new((q.client.as_deref() == Some("ios")).then(|| IosClientGuard::new(hub.clone())));

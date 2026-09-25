@@ -11,6 +11,8 @@ struct PairingView: View {
     @State private var scanning = false
     @State private var pasted = ""
     @State private var error: String?
+    @State private var tailscaleOn = Tailscale.isConnected
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
@@ -37,6 +39,7 @@ struct PairingView: View {
                     Step(n: nil, title: "", detail: "Linux:", code: "brew install leepokai/codync/codync-host\ncodync-host install")
                     Step(n: 2, title: "Show the pairing code", detail: "On a Mac, click Codync in the menu bar → Pair iPhone. Or run:", code: "codync-host pair")
                     Step(n: 3, title: "Scan it", detail: "Use the button below, or point the Camera app at the code.", code: nil)
+                    TailscaleStep(connected: tailscaleOn)
                 }
 
                 VStack(spacing: 12) {
@@ -89,6 +92,8 @@ struct PairingView: View {
                     .padding(16)
             }
         }
+        // Coming back from the Tailscale app: show whether it's connected now.
+        .onChange(of: scenePhase) { _, phase in if phase == .active { tailscaleOn = Tailscale.isConnected } }
         .sheet(isPresented: $scanning) {
             QRScanner { code in
                 scanning = false
@@ -136,6 +141,37 @@ private struct Step: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
+                }
+            }
+        }
+    }
+}
+
+/// Optional step: Tailscale is what lets the phone reach the computer off the home Wi-Fi.
+private struct TailscaleStep: View {
+    let connected: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("04")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .frame(width: 24, alignment: .leading)
+                .padding(.top, 2)
+                .foregroundStyle(Palette.tertiary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Away from home (optional)").font(.headline).foregroundStyle(Palette.text)
+                Text("Without it, Codync works on the same Wi-Fi as your computer. Install Tailscale on this iPhone and on the computer, and sign in to both with the same account.")
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.secondary)
+                if connected {
+                    Label("Tailscale is on", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Palette.added)
+                } else {
+                    Link(destination: Tailscale.downloadURL) {
+                        Label("Get Tailscale", systemImage: "arrow.down.circle")
+                            .font(.subheadline.weight(.medium))
+                    }
                 }
             }
         }

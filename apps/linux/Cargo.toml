@@ -1,6 +1,6 @@
 [package]
 name = "codync-gtk"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 description = "Codync for Linux: message your coding-agent bots (GTK 4 + libadwaita)"
 license = "MIT"

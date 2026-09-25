@@ -30,6 +30,12 @@ public struct BotRow: View {
                         .font(.body.weight(.semibold))
                         .foregroundStyle(Palette.text)
                         .lineLimit(1)
+                    if model.screen?.agentBot == bot.id {
+                        Image(systemName: "cursorarrow.motionlines")
+                            .font(.caption)
+                            .foregroundStyle(Palette.accent)
+                            .accessibilityLabel("Using the computer")
+                    }
                     Spacer(minLength: 8)
                     Text(RelativeTime.day(Date(milliseconds: bot.lastAt)))
                         .font(.subheadline)
@@ -102,6 +108,9 @@ public struct ConnectionBanner: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(model.hostName) is offline").font(.footnote.weight(.semibold)).foregroundStyle(Palette.text)
                     Text(reason).font(.footnote).foregroundStyle(Palette.secondary)
+                    #if os(iOS)
+                    if reason == HostError.unreachable.localizedDescription { tailscaleHint }
+                    #endif
                 }
                 Spacer()
                 Button("Retry", systemImage: "arrow.clockwise") { model.restartStream() }
@@ -110,6 +119,20 @@ public struct ConnectionBanner: View {
             }
             .padding(10)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    /// Away from home the phone needs Tailscale: say whether it's off here or not set up at all.
+    @ViewBuilder private var tailscaleHint: some View {
+        if model.pairing?.urls.contains(where: Tailscale.isAddress) == true {
+            if !Tailscale.isConnected {
+                Text("Tailscale is off on this iPhone. Turn it on to reach \(model.hostName) away from home.")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Palette.warning)
+            }
+        } else {
+            Link("Away from home? Set up Tailscale", destination: Tailscale.downloadURL)
+                .font(.footnote.weight(.medium))
         }
     }
 }

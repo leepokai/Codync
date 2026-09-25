@@ -38,5 +38,9 @@ struct RootView: View {
         }
         .background(Palette.background)
         .storeErrorAlert(model)
+        .fullScreenCover(item: Bindable(model).screenRequest) { request in
+            ScreenView(watching: request.watching)
+                .environment(model)
+        }
     }
 }

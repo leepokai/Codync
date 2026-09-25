@@ -70,6 +70,18 @@ public struct ThreadView: View {
         .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .principal) { header }
+            #if os(iOS)
+            if model.screen?.agentBot == botId {
+                ToolbarItem(placement: .primaryAction) {
+                    // The bot is operating the computer: watch it live (and take over from there).
+                    Button("Watch the screen", systemImage: "cursorarrow.motionlines") {
+                        model.screenRequest = ScreenRequest(watching: botId)
+                    }
+                    .symbolEffect(.pulse, options: .repeating)
+                    .tint(Palette.accent)
+                }
+            }
+            #endif
             ToolbarItem(placement: .primaryAction) { menu }
             #if os(macOS)
             ToolbarItem(placement: .primaryAction) {

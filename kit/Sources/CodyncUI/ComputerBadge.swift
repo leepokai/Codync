@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// A computer's round badge showing what it is (laptop, Mac mini, Linux…), in the color picked for it:
+/// A computer's icon showing what it is (laptop, Mac mini, Linux…), in the color picked for it:
 /// the profile button and the rows that switch computers.
 public struct ComputerBadge: View {
     let computer: Pairing?
@@ -13,11 +13,8 @@ public struct ComputerBadge: View {
     }
 
     public var body: some View {
-        let top = computer?.color.map(AvatarPalette.color) ?? Color(hex: 0x5A5A5A)
-        Circle()
-            .fill(top)
-            .overlay(Circle().fill(LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .top, endPoint: .bottom)))
-            .overlay { icon.foregroundStyle(.white) }
+        icon
+            .foregroundStyle(computer?.color.map(AvatarPalette.color) ?? Palette.text)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
@@ -25,8 +22,8 @@ public struct ComputerBadge: View {
     @ViewBuilder private var icon: some View {
         switch computer?.device {
         // SF Symbols has no penguin.
-        case "linux": Image("computer-linux", bundle: .module).resizable().scaledToFit().frame(width: size * 0.5)
-        case let device: Image(systemName: Self.symbol(device)).font(.system(size: size * 0.4, weight: .medium))
+        case "linux": Image("computer-linux", bundle: .module).resizable().scaledToFit().frame(width: size * 0.55)
+        case let device: Image(systemName: Self.symbol(device)).font(.system(size: size * 0.5, weight: .medium))
         }
     }
 

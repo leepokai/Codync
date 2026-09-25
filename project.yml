@@ -9,9 +9,12 @@ options:
 packages:
   CodyncKit:
     path: kit
+  WebRTC:
+    url: https://github.com/stasel/WebRTC
+    exactVersion: 153.0.0
 settings:
   base:
-    MARKETING_VERSION: 2.0.0
+    MARKETING_VERSION: 2.1.0
     CURRENT_PROJECT_VERSION: 17
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
@@ -24,12 +27,26 @@ targets:
     type: application
     platform: macOS
     sources:
-      - apps/macos
+      - path: apps/macos
+        excludes:
+          - LaunchAgents
+      # Registered with SMAppService.agent when Remote screen is turned on.
+      - path: apps/macos/LaunchAgents/com.pokai.Codync.screen.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
     dependencies:
       - package: CodyncKit
         product: CodyncKit
       - package: CodyncKit
         product: CodyncUI
+      - target: Screen
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Library/LoginItems
     settings:
       base:
         PRODUCT_NAME: Codync
@@ -75,6 +92,26 @@ targets:
           if [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ] && [ "$CODE_SIGNING_ALLOWED" != "NO" ]; then
             codesign --force --options runtime --timestamp=none --sign "$EXPANDED_CODE_SIGN_IDENTITY" "$DEST"
           fi
+  # Screen capture, input and WebRTC for Remote screen. A separate signed bundle so
+  # macOS's Screen Recording / Accessibility grants belong to it (see host/src/screen.rs).
+  Screen:
+    type: application
+    platform: macOS
+    sources:
+      - apps/screen
+    dependencies:
+      - package: WebRTC
+    settings:
+      base:
+        PRODUCT_NAME: CodyncScreen
+        PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.screen
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Codync Screen
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        SKIP_INSTALL: YES
   iOS:
     type: application
     platform: iOS
@@ -106,7 +143,8 @@ targets:
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
         INFOPLIST_KEY_NSCameraUsageDescription: Scan the pairing code shown on your computer.
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Codync connects to the computer running your bots on your local network.
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        # Portrait everywhere except the screen viewer (AppDelegate + OrientationLock).
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   Widgets:

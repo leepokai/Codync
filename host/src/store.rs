@@ -82,6 +82,9 @@ pub struct BotConfig {
     /// Skill ids the bot is told about; see `market`.
     #[serde(default)]
     pub skills: Vec<String>,
+    /// The bot gets the built-in `computer` MCP server (see `screen`).
+    #[serde(default)]
+    pub computer: bool,
     #[serde(default)]
     pub created_at: i64,
 }
@@ -463,6 +466,7 @@ mod tests {
             notify: None,
             connectors: vec![],
             skills: vec![],
+            computer: false,
             created_at: 0,
         };
         s.save_bot(&cfg).unwrap();

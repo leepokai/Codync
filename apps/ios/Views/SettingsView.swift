@@ -146,11 +146,28 @@ private struct ComputerRow: View {
                 Text(status).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(1)
             }
             Spacer()
+            if !active || model.screen != nil {
+                Button("Screen", systemImage: "display") { openScreen() }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Palette.text)
+            }
             if active {
                 Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             }
         }
         .padding(.vertical, 2)
+    }
+
+    /// Only the active computer is connected: switch to this one first, then open its screen.
+    private func openScreen() {
+        if !active { model.pair(computer) }
+        model.showProfile = false
+        Task {
+            // Let the sheet finish closing before covering the screen.
+            try? await Task.sleep(for: .milliseconds(450))
+            model.screenRequest = ScreenRequest()
+        }
     }
 
     private var status: String {

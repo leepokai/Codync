@@ -6,10 +6,13 @@ mod backends;
 mod bot;
 mod hub;
 mod market;
+mod mcp;
 mod push;
 mod registry;
+mod screen;
 mod service;
 mod store;
+mod tui;
 mod usage;
 
 use anyhow::{Context, Result};
@@ -90,6 +93,34 @@ enum Sub {
     },
     /// Rotate the pairing token (unpairs every phone).
     ResetToken,
+    /// Message your bots from this terminal.
+    Tui {
+        /// Host to connect to (default: this computer).
+        #[arg(long)]
+        url: Option<String>,
+        /// Token for `--url` (default: this computer's `~/.codync/token`).
+        #[arg(long, env = "CODYNC_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Built-in MCP servers that bots are started with (stdio).
+    #[command(hide = true)]
+    Mcp {
+        #[command(subcommand)]
+        server: McpServer,
+    },
+}
+
+#[derive(Subcommand)]
+enum McpServer {
+    /// See and operate this computer's desktop.
+    Computer {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
 }
 
 /// Host identity + auth token live in the database; the token is mirrored to
@@ -208,6 +239,10 @@ async fn main() -> Result<()> {
             println!("Token rotated. Restart the host and pair your phone again.");
             Ok(())
         }
+        Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port).await,
+        Sub::Tui { url, token, port } => {
+            tui::run(url.unwrap_or_else(|| format!("http://127.0.0.1:{port}")), token).await
+        }
     }
 }
 
@@ -236,10 +271,15 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     hub.start()?;
     tokio::spawn(registry::refresh_loop());
     tokio::spawn(usage::poll(hub.clone()));
+    tokio::spawn(screen::serve_helpers(hub.screen.clone()));
+    #[cfg(target_os = "linux")]
+    tokio::spawn(screen::supervise_linux_helper(hub.screen.clone()));
     let listener =
         tokio::net::TcpListener::bind((bind, port)).await.with_context(|| format!("binding {bind}:{port}"))?;
     tracing::info!(version = env!("CARGO_PKG_VERSION"), bind, port, "codync-host listening");
-    axum::serve(listener, api::router(hub.clone())).with_graceful_shutdown(shutdown_signal()).await?;
+    // Peer addresses: some settings may only be changed from this computer.
+    let app = api::router(hub.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
     // launchd/systemd stop us with SIGTERM: stop every agent instead of orphaning it.
     hub.shutdown().await;
     tracing::info!("codync-host stopped");

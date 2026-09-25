@@ -2,6 +2,7 @@
 
 use crate::LockExt;
 use crate::bot::{self, BotHandle, Cmd};
+use crate::screen::Screen;
 use crate::store::{BotConfig, BotRow, Entry, EntryKind, Store};
 use crate::usage::Usage;
 use crate::{push, service};
@@ -47,11 +48,13 @@ pub struct Hub {
     keep_awake: Mutex<service::KeepAwake>,
     /// botId -> Live Activity push tickets.
     pub activities: Mutex<HashMap<String, Vec<String>>>,
+    pub screen: Arc<Screen>,
 }
 
 impl Hub {
     pub fn new(store: Store, host_id: String, token: String, port: u16) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
+        let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
         Arc::new(Self {
             store,
             host_id,
@@ -65,6 +68,7 @@ impl Hub {
             usage: Mutex::default(),
             keep_awake: Mutex::default(),
             activities: Mutex::default(),
+            screen,
         })
     }
 

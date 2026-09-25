@@ -46,11 +46,12 @@ public enum HostError: LocalizedError, Sendable {
 }
 
 public enum HostEvent: Sendable {
-    case hello(hostId: String, rev: Int64, usage: Usage)
+    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?)
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
     case usage(Usage)
+    case screen(ScreenState)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -157,12 +158,14 @@ public struct HostClient: Sendable {
         struct StubWrap: Decodable { var bot: BotStub }
         struct EntryWrap: Decodable { var entry: Entry }
         struct UsageWrap: Decodable { var usage: Usage }
+        struct ScreenWrap: Decodable { var screen: ScreenState }
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
         case "hello":
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
-            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage)
+            let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
+            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen)
         case "bot":
             if let stub = try? d.decode(StubWrap.self, from: data), stub.bot.deleted == true {
                 return .botDeleted(id: stub.bot.id, rev: stub.bot.rev)
@@ -172,6 +175,8 @@ public struct HostClient: Sendable {
             return (try? d.decode(EntryWrap.self, from: data)).map { .entry($0.entry) } ?? .undecodable(type: "entry")
         case "usage":
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
+        case "screen":
+            return (try? d.decode(ScreenWrap.self, from: data)).map { .screen($0.screen) }
         case "resync":
             return .resync
         default:
@@ -254,4 +259,34 @@ public extension HostClient {
         struct Body: Encodable { var path: String? }
         return try await call("listDirs", Body(path: path))
     }
+
+    // MARK: remote screen
+
+    func screenStatus() async throws -> ScreenState { try await call("screenStatus") }
+
+    /// Sends a WebRTC offer (with all its ICE candidates); returns the session id and the answer.
+    /// Passing `session` restarts ICE on an existing session.
+    func screenOffer(sdp: String, session: String?, display: UInt32?) async throws -> ScreenAnswer {
+        struct Body: Encodable { var sdp: String; var session: String?; var display: UInt32? }
+        return try await call("screenOffer", Body(sdp: sdp, session: session, display: display), timeout: 30)
+    }
+
+    func screenClose(session: String) async throws {
+        let _: Empty = try await call("screenClose", ["session": session])
+    }
+
+    /// Takes control from bots (they can still look) or hands it back.
+    func screenTakeover(_ on: Bool) async throws -> ScreenState {
+        try await call("screenTakeover", ["on": on])
+    }
+
+    /// Only accepted from the computer itself.
+    func setScreenEnabled(_ on: Bool) async throws -> ScreenState {
+        try await call("setScreenEnabled", ["enabled": on])
+    }
+}
+
+public struct ScreenAnswer: Codable, Sendable {
+    public var session: String
+    public var sdp: String
 }

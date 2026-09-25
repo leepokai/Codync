@@ -31,6 +31,8 @@ struct CodyncApp: App {
                         model.selection = nil
                         tab = .bots
                         model.showProfile = true
+                    } else if url.host() == "screen" {
+                        model.screenRequest = ScreenRequest()
                     }
                 }
                 .onChange(of: scenePhase, initial: true) { _, phase in
@@ -43,6 +45,10 @@ struct CodyncApp: App {
                         model.pair(p)
                     }
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { tab = .usage }
+                    if ProcessInfo.processInfo.environment["CODYNC_OPEN_SCREEN"] != nil {
+                        try? await Task.sleep(for: .seconds(2))
+                        model.screenRequest = ScreenRequest()
+                    }
                 }
                 #endif
         }
@@ -72,6 +78,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    /// Portrait, except while the screen viewer is open.
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        OrientationLock.mask
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {

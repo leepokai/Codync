@@ -301,6 +301,12 @@ pub fn editor(ui: &App, bot: Option<Value>) {
         .active(d.borrow()["notify"].as_bool().unwrap_or(true))
         .build();
     perms.add(&notify);
+    let computer = adw::SwitchRow::builder()
+        .title("Use the computer")
+        .subtitle("Let this bot see the screen and use the mouse and keyboard (needs Remote screen in Settings).")
+        .active(d.borrow()["computer"].as_bool().unwrap_or(false))
+        .build();
+    perms.add(&computer);
     page.add(&perms);
 
     view.set_content(Some(&page));
@@ -316,6 +322,7 @@ pub fn editor(ui: &App, bot: Option<Value>) {
             .into();
         body["permission"] = if auto.is_active() { "auto" } else { "ask" }.into();
         body["notify"] = notify.is_active().into();
+        body["computer"] = computer.is_active().into();
         let m = model.text().trim().to_owned();
         body["model"] = if m.is_empty() { Value::Null } else { m.into() };
         body["command"] = if body["backend"] == "custom" {
@@ -609,6 +616,58 @@ pub fn bot_menu(ui: &App) -> gtk::Popover {
 
 // MARK: settings & pairing
 
+/// Remote screen: see and control this computer from the iPhone, and let bots use it.
+/// Only this computer can turn it on (the host checks the request comes from itself).
+fn remote_screen_group() -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder()
+        .title("Remote screen")
+        .description("See and control this computer from your iPhone, and let bots use it. The first time, your desktop asks you to allow screen sharing.")
+        .build();
+    let row = adw::SwitchRow::builder().title("Allow remote screen").build();
+    let status = adw::ActionRow::builder().title("Status").build();
+    status.set_visible(false);
+    group.add(&row);
+    group.add(&status);
+    let show = {
+        let status = status.clone();
+        move |v: &Value| {
+            let text = if v["enabled"] != true {
+                None
+            } else if v["connected"] != true {
+                Some("Waiting for screen sharing approval…")
+            } else if v["input"] != true {
+                Some("Viewing only: control wasn't allowed")
+            } else {
+                Some("Ready")
+            };
+            status.set_visible(text.is_some());
+            status.set_subtitle(text.unwrap_or_default());
+        }
+    };
+    {
+        let row = row.clone();
+        let show = show.clone();
+        client::call("screenStatus", client::empty(), move |r| {
+            if let Ok(v) = r {
+                row.set_active(v["enabled"] == true);
+                show(&v);
+            } else {
+                // A host from before Remote screen.
+                row.set_sensitive(false);
+            }
+        });
+    }
+    row.connect_active_notify(move |row| {
+        let show = show.clone();
+        client::call("setScreenEnabled", json!({"enabled": row.is_active()}), move |r| {
+            if let Ok(v) = r {
+                show(&v);
+            }
+        });
+    });
+    group
+}
+
 pub fn settings(ui: &App) {
     let (dialog, view, _) = header_dialog("Settings", 520, 720);
     let page = adw::PreferencesPage::new();
@@ -665,6 +724,8 @@ pub fn settings(ui: &App) {
             copy.connect_clicked(move |b| b.clipboard().set_text(&url));
         }
     });
+
+    page.add(&remote_screen_group());
 
     let st = ui.state.borrow();
     let agents = adw::PreferencesGroup::builder()

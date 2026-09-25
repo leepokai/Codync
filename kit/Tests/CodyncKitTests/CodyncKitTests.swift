@@ -7,7 +7,7 @@ import Testing
     let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
     let events = lines.compactMap { HostClient.parseEvent(Data($0.dropFirst(5).utf8)) }
     #expect(events.count == 6)
-    guard case let .hello(hostId, rev, usage) = events[0] else { Issue.record("hello"); return }
+    guard case let .hello(hostId, rev, usage, _) = events[0] else { Issue.record("hello"); return }
     #expect(hostId == "h1" && rev == 42 && usage.providers.first?.windows.first?.percent == 8)
     guard case let .bot(bot) = events[1] else { Issue.record("bot"); return }
     #expect(bot.name == "Rex" && bot.command == nil && !bot.isWorking)
@@ -32,6 +32,49 @@ import Testing
     #expect(RelativeTime.short(now.addingTimeInterval(-30), now: now) == "now")
     #expect(RelativeTime.short(now.addingTimeInterval(-600), now: now) == "10m")
     #expect(RelativeTime.short(now.addingTimeInterval(-7200), now: now) == "2h")
+}
+
+@Test func parsesScreenEvents() throws {
+    let e = HostClient.parseEvent(Data(#"{"type":"screen","screen":{"enabled":true,"connected":true,"capture":true,"displays":[{"id":1,"name":"Built-in","width":1512,"height":982,"main":true}],"agentBot":"b1"}}"#.utf8))
+    guard case let .screen(s) = e else { Issue.record("screen"); return }
+    #expect(s.available && s.agentBot == "b1" && s.mainDisplay?.width == 1512 && !s.userControl)
+}
+
+@Test func screenViewportMapsAndZooms() {
+    // A 16:10 display in a wider landscape phone view: letterboxed left and right.
+    var v = ScreenViewport(display: CGSize(width: 1600, height: 1000), view: CGSize(width: 800, height: 400))
+    #expect(v.scale == 0.4)
+    #expect(v.crop == nil)
+    #expect(v.toDisplay(CGPoint(x: 400, y: 200)) == CGPoint(x: 800, y: 500))
+    #expect(v.frame(of: v.displayBounds) == CGRect(x: 80, y: 0, width: 640, height: 400))
+
+    // Pinch keeps the point under the fingers still.
+    let anchor = CGPoint(x: 600, y: 100)
+    let before = v.toDisplay(anchor)
+    v.zoom(by: 2, at: anchor)
+    let after = v.toDisplay(anchor)
+    #expect(abs(before.x - after.x) < 0.001 && abs(before.y - after.y) < 0.001)
+    let crop = v.crop!
+    #expect(v.displayBounds.contains(crop))
+    #expect(abs(crop.width / crop.height - 2) < 0.001)
+
+    // Panning never leaves the display.
+    v.pan(by: CGPoint(x: 10_000, y: 10_000))
+    #expect(v.visible.minX == 0 && v.visible.minY == 0)
+
+    // The cursor pulls the view along.
+    v.follow(CGPoint(x: 1590, y: 990))
+    #expect(v.visible.maxX == 1600 && v.visible.maxY == 1000)
+
+    v.zoom(by: 1000, at: .zero)
+    #expect(v.zoom == v.maxZoom && v.scale == 4)
+}
+
+@Test func tailscaleAddresses() {
+    #expect(Tailscale.isAddress("http://100.101.2.3:19222"))
+    #expect(Tailscale.isAddress("http://mac.tail1234.ts.net:19222"))
+    #expect(!Tailscale.isAddress("http://100.200.2.3:19222"))
+    #expect(!Tailscale.isAddress("http://192.168.1.5:19222"))
 }
 
 @Test func parsesClaudeResetText() throws {

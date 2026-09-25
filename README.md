@@ -2,7 +2,7 @@
 
 **Your coding agents, as teammates you can message.**
 
-Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, Pi, OpenCode, Grok Build, Gemini, Copilot and ~40 more — into persistent *bots* you delegate to from your iPhone, Mac or Linux desktop, the way you'd message a colleague. Pick who, say what, put the phone away. You get a notification when a bot finishes or needs your approval.
+Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, Pi, OpenCode, Grok Build, Gemini, Copilot and ~40 more — into persistent *bots* you delegate to from your iPhone, Mac, Linux desktop or any terminal, the way you'd message a colleague. Pick who, say what, put the phone away. You get a notification when a bot finishes or needs your approval.
 
 > Why bots? On a phone, "find the right working session, then pick an environment" is too slow. With bots you already know who to hand the intent to: open the chat, type, done.
 
@@ -58,6 +58,7 @@ Install [Tailscale](https://tailscale.com) on the computer and the phone to reac
 | Command | |
 |---|---|
 | `codync-host install` / `uninstall` | background service (launchd on macOS, systemd `--user` on Linux) |
+| `codync-host tui [--url … --token …]` | message your bots from a terminal (this computer by default; SSH-friendly) |
 | `codync-host pair [--json]` | pairing QR code / link |
 | `codync-host status` | installed? running? |
 | `codync-host serve [--port 19222]` | run in the foreground |

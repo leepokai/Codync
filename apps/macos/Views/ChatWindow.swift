@@ -32,6 +32,8 @@ private struct ChatSplitView: View {
     @State private var composing = false
     @State private var columns: NavigationSplitViewVisibility = .all
     @State private var showPlugins = false
+    @AppStorage("sidebarCompact") private var compact = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Sheets hang from the window's title bar; sized from it so they never run past its bottom edge.
     @State private var windowSize = CGSize(width: 1100, height: 760)
 
@@ -41,40 +43,50 @@ private struct ChatSplitView: View {
         @Bindable var model = model
         NavigationSplitView(columnVisibility: $columns) {
             List(selection: $model.selection) {
-                ConnectionBanner()
-                if !model.usage.providers.isEmpty {
-                    UsageStrip(usage: model.usage)
-                        .listRowSeparator(.hidden)
+                if compact {
+                    ForEach(model.roster) { bot in
+                        AvatarWithStatus(bot: bot, size: 40)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                            .help(bot.name)
+                            .accessibilityLabel(bot.name)
+                            .tag(bot.id)
+                            .contextMenu { botMenu(bot) }
+                    }
+                } else {
+                    ConnectionBanner()
+                    if !model.usage.providers.isEmpty {
+                        UsageStrip(usage: model.usage)
+                            .listRowSeparator(.hidden)
+                    }
+                    ForEach(model.roster) { bot in
+                        BotRow(bot: bot)
+                            .tag(bot.id)
+                            .contextMenu { botMenu(bot) }
+                    }
                 }
-                ForEach(model.roster) { bot in
-                    BotRow(bot: bot)
-                        .tag(bot.id)
-                        .contextMenu {
-                            Button(bot.pinned ? "Unpin" : "Pin") { model.setPinned(bot, !bot.pinned) }
-                            Button("Edit Profile…") { editing = EditorRequest(BotDraft(bot)) }
-                            Button("Mark as Read") { model.markRead(bot.id) }
-                            Button("Hide from List") { model.setHidden(bot, true) }
-                            Divider()
-                            Button("Delete…", role: .destructive) { confirmDelete = bot }
-                        }
-                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if compact { railActions }
             }
             .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 420)
+            .background(SidebarWidth(compact: compact, animated: !reduceMotion))
             .navigationTitle(model.hostName)
             .toolbar {
-                ToolbarItem {
-                    Button("Marketplace", systemImage: "square.grid.2x2") { showPlugins = true }
-                        .help("Marketplace: agents, connectors and skills")
-                }
-                ToolbarItem {
-                    Button("New Message", systemImage: "square.and.pencil") {
-                        model.selection = nil
-                        composing = true
+                if !compact {
+                    ToolbarItem {
+                        Button("Marketplace", systemImage: "square.grid.2x2") { showPlugins = true }
+                            .help("Marketplace: agents, connectors and skills")
                     }
-                        .keyboardShortcut("n")
-                        .disabled(model.connection != .online)
+                    ToolbarItem {
+                        Button("New Message", systemImage: "square.and.pencil", action: compose)
+                            .keyboardShortcut("n")
+                            .disabled(model.connection != .online)
+                    }
+                    ToolbarItem { collapseButton }
                 }
             }
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             if composing {
                 // The To: row takes the title bar's place instead of sitting under an empty one.
@@ -84,6 +96,7 @@ private struct ChatSplitView: View {
             } else if let id = model.selection, model.bots[id] != nil {
                 NavigationStack { ThreadView(botId: id) }
                     .id(id)
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
             } else {
                 VStack(spacing: 14) {
                     HStack(spacing: -10) {
@@ -119,7 +132,16 @@ private struct ChatSplitView: View {
         .hiddenWindowTitle()
         .deleteBotConfirmation($confirmDelete)
         .storeErrorAlert(model)
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: model.selection)
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: composing)
         .onChange(of: model.selection) { _, id in if id != nil { composing = false } }
+        // Dragging the divider shut lands on the rail, not on nothing.
+        .onChange(of: columns) { _, visibility in
+            if visibility == .detailOnly {
+                compact = true
+                columns = .all
+            }
+        }
         #if DEBUG
         .onAppear {
             // Screenshot/UI checks: CODYNC_DEBUG_OPEN=compose | plugins | <bot name>
@@ -133,6 +155,102 @@ private struct ChatSplitView: View {
             }
         }
         #endif
+    }
+}
+
+private extension ChatSplitView {
+    func compose() {
+        model.selection = nil
+        composing = true
+    }
+
+    var collapseButton: some View {
+        Button(compact ? "Expand Sidebar" : "Collapse Sidebar", systemImage: "sidebar.left") {
+            withAnimation(Motion.reduced(Motion.morph, reduceMotion)) { compact.toggle() }
+        }
+        .keyboardShortcut("s", modifiers: [.control, .command])
+        .help(compact ? "Expand sidebar" : "Collapse sidebar")
+    }
+
+    /// Rail footer: what the toolbar holds when the sidebar is wide.
+    var railActions: some View {
+        VStack(spacing: 6) {
+            Button("New Message", systemImage: "plus", action: compose)
+                .disabled(model.connection != .online)
+                .help("New message")
+            Button("Marketplace", systemImage: "square.grid.2x2") { showPlugins = true }
+                .help("Marketplace: agents, connectors and skills")
+            collapseButton
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(IconButtonStyle(size: 34))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder func botMenu(_ bot: Bot) -> some View {
+        Button(bot.pinned ? "Unpin" : "Pin") { model.setPinned(bot, !bot.pinned) }
+        Button("Edit Profile…") { editing = EditorRequest(BotDraft(bot)) }
+        Button("Mark as Read") { model.markRead(bot.id) }
+        Button("Hide from List") { model.setHidden(bot, true) }
+        Divider()
+        Button("Delete…", role: .destructive) { confirmDelete = bot }
+    }
+}
+
+/// Collapsed = an avatar rail (Grok Bot), never a hidden sidebar. SwiftUI applies
+/// `navigationSplitViewColumnWidth` only once, so the rail resizes the AppKit split item directly.
+private struct SidebarWidth: NSViewRepresentable {
+    let compact: Bool
+    let animated: Bool
+
+    final class Coordinator {
+        var applied = false
+        var glide: Task<Void, Never>?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let compact = compact
+        // Only on a toggle, so a width the user dragged to stays put.
+        guard compact != context.coordinator.applied else { return }
+        context.coordinator.applied = compact
+        // The view joins the window's split view only after the first layout pass.
+        DispatchQueue.main.async {
+            var ancestor = view.superview
+            while let current = ancestor, !(current is NSSplitView) { ancestor = current.superview }
+            guard let split = ancestor as? NSSplitView,
+                  let controller = split.delegate as? NSSplitViewController,
+                  let item = controller.splitViewItems.first else { return }
+            let width: CGFloat = compact ? 76 : 300
+            item.canCollapse = false
+            let from = item.viewController.view.frame.width
+            // Let the divider travel the whole way; the final limits apply once it lands.
+            item.minimumThickness = min(from, width, compact ? 76 : 260)
+            item.maximumThickness = max(from, width, compact ? 76 : 420)
+            let land = {
+                item.minimumThickness = compact ? 76 : 260
+                item.maximumThickness = compact ? 76 : 420
+                split.setPosition(width, ofDividerAt: 0)
+            }
+            context.coordinator.glide?.cancel()
+            guard animated, abs(from - width) > 1 else { return land() }
+            context.coordinator.glide = Task { @MainActor in
+                let start = ContinuousClock.now
+                let duration = Duration.milliseconds(260)  // Grok's rail cluster: width .26s cubic-bezier(.22,1,.36,1)
+                var t = 0.0
+                while t < 1 {
+                    try? await Task.sleep(for: .milliseconds(8))
+                    if Task.isCancelled { return }
+                    t = min(1, (ContinuousClock.now - start) / duration)
+                    split.setPosition(from + (width - from) * Motion.morphCurve.value(at: t), ofDividerAt: 0)
+                }
+                land()
+            }
+        }
     }
 }
 

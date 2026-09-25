@@ -166,7 +166,7 @@ impl Actor {
                 let cfg = *cfg;
                 let restart =
                     cfg.backend != self.cfg.backend || cfg.command != self.cfg.command || cfg.cwd != self.cfg.cwd;
-                self.tools_changed |= cfg.connectors != self.cfg.connectors;
+                self.tools_changed |= cfg.connectors != self.cfg.connectors || cfg.computer != self.cfg.computer;
                 // New skills are announced with the next prompt.
                 if cfg.skills != self.cfg.skills && self.session_id.is_some() {
                     self.session_fresh = true;
@@ -293,12 +293,23 @@ impl Actor {
         Ok(())
     }
 
-    /// ACP `mcpServers` for this bot's connectors.
+    /// ACP `mcpServers` for this bot's connectors, plus the built-in `computer` server.
     fn mcp_servers(&self, http_ok: bool) -> Value {
         let all = crate::market::connectors(&self.hub.store);
-        Value::Array(
-            all.iter().filter(|c| self.cfg.connectors.contains(&c.id)).filter_map(|c| c.acp(http_ok)).collect(),
-        )
+        let mut servers: Vec<Value> =
+            all.iter().filter(|c| self.cfg.connectors.contains(&c.id)).filter_map(|c| c.acp(http_ok)).collect();
+        if self.cfg.computer {
+            match std::env::current_exe() {
+                Ok(exe) => servers.push(json!({
+                    "name": "computer",
+                    "command": exe,
+                    "args": ["mcp", "computer", "--bot", self.cfg.id, "--port", self.hub.port.to_string()],
+                    "env": [],
+                })),
+                Err(error) => tracing::warn!(%error, "can't locate codync-host for the computer MCP server"),
+            }
+        }
+        Value::Array(servers)
     }
 
     async fn ensure_session(&mut self) -> Result<()> {

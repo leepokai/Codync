@@ -29,11 +29,16 @@ final class HostController {
     private(set) var pairInfo: PairingInfo?
     private(set) var version: String?
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    /// Codync Screen (capture + input for Remote screen), a launchd agent inside this app.
+    private let screenAgent = SMAppService.agent(plistName: "com.pokai.Codync.screen.plist")
+    private(set) var screenAgentNeedsApproval = false
+    private(set) var screenError: String?
 
     private var streamTask: Task<Void, Never>?
 
     var bots: [Bot] { store?.roster ?? [] }
     var usage: Usage { store?.usage ?? Usage() }
+    var screen: ScreenState? { store?.screen }
     var needsAttention: Bool { bots.contains(where: \.needsInput) }
     var working: Int { bots.filter(\.isWorking).count }
 
@@ -118,6 +123,34 @@ final class HostController {
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
+    /// Remote screen: starts/stops Codync Screen and tells the host (which only accepts this from the Mac itself).
+    func setRemoteScreen(_ on: Bool) {
+        Task {
+            do {
+                if on { try screenAgent.register() } else { try await screenAgent.unregister() }
+                try await store?.setScreenEnabled(on)
+                screenError = nil
+            } catch {
+                screenError = error.localizedDescription
+            }
+            screenAgentNeedsApproval = screenAgent.status == .requiresApproval
+        }
+    }
+
+    func openLoginItemsSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
+    /// Keeps Codync Screen registered while the host has Remote screen on (e.g. after the app moved).
+    private func syncScreenAgent() {
+        guard screen?.enabled == true, screenAgent.status != .enabled else {
+            screenAgentNeedsApproval = false
+            return
+        }
+        try? screenAgent.register()
+        screenAgentNeedsApproval = screenAgent.status == .requiresApproval
+    }
+
     func stop(_ bot: Bot) {
         Task { try? await client()?.stop(bot.id) }
     }
@@ -147,6 +180,7 @@ final class HostController {
                         self.store = store
                     }
                     self.state = .running
+                    self.syncScreenAgent()
                 } else {
                     failures += 1
                     if failures > 5 { self.state = .failed("The host isn't responding. See the log for details.") }

@@ -410,7 +410,7 @@ private struct AgentCard: View {
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(PressScale())
-        .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }
+        .onHover { h in withAnimation(Motion.hover) { hovering = h } }
         .help("New bot with \(backend.name)")
     }
 }
@@ -455,7 +455,7 @@ private struct MarketRow<Icon: View>: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(hovering ? Palette.bubbleAgent.opacity(0.6) : .clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }
+        .onHover { h in withAnimation(Motion.hover) { hovering = h } }
     }
 }
 
@@ -539,15 +539,6 @@ private struct TileIcon: View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(Palette.bubbleAgent)
             .overlay(Image(systemName: systemName).font(.system(size: 18, weight: .medium)).foregroundStyle(Palette.text))
-    }
-}
-
-/// Slight shrink while pressed.
-struct PressScale: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 

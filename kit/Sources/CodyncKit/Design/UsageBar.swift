@@ -45,6 +45,10 @@ public extension UsageProvider {
         }
     }
 
+    /// ACP registry id of the provider's agent, for its logo (`AgentIcon`).
+    /// Claude and Codex run through ACP adapters (`claude-acp`, `codex-acp`); others by their own id.
+    var registry: String { ["claude", "codex"].contains(id) ? "\(id)-acp" : id }
+
     /// The character that stands for this provider.
     var mascotShape: String { id == "codex" ? "hex" : "blob" }
 

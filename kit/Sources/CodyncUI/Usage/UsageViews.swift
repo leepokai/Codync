@@ -13,13 +13,14 @@ public struct UsageStrip: View {
                 ForEach(usage.providers) { p in
                     ForEach(p.windows.prefix(2)) { w in
                         HStack(spacing: 6) {
+                            AgentIcon(registry: p.registry, size: 14)
                             Gauge(value: min(w.percent, 100), in: 0...100) { EmptyView() }
                                 .gaugeStyle(.accessoryCircularCapacity)
                                 .scaleEffect(0.42)
                                 .frame(width: 22, height: 22)
                                 .tint(Palette.usageTint(w.percent))
                             VStack(alignment: .leading, spacing: 0) {
-                                Text("\(p.name) \(w.label)").font(.caption2).foregroundStyle(Palette.tertiary)
+                                Text(w.title).font(.caption2).foregroundStyle(Palette.tertiary)
                                 Text("\(Int(w.percent.rounded()))%").font(.caption.bold().monospacedDigit()).foregroundStyle(Palette.text)
                             }
                         }

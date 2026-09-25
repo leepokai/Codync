@@ -147,8 +147,8 @@ private struct PickRow<Icon: View, Label: View>: View {
             .background(hovering ? Palette.bubbleAgent : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .buttonStyle(PressScale())
+        .onHover { h in withAnimation(Motion.hover) { hovering = h } }
     }
 }
 

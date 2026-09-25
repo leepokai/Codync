@@ -44,7 +44,7 @@ private struct ProviderCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                ProviderMascot(provider, size: 40)
+                AgentIcon(registry: provider.registry, size: 28)
                     .frame(width: 52, height: 52)
                     .background(provider.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 Text(provider.name).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)

@@ -10,7 +10,8 @@ worker's `TICKET_KEY`, and it only reaches the one device it was issued for.
 ```bash
 npm install
 npx wrangler secret put APNS_TEAM_ID       # Apple Developer team ID
-npx wrangler secret put APNS_KEY_ID        # e.g. the ID in AuthKey_XXXXXXXXXX.p8
+npx wrangler secret put APNS_KEY_ID        # an APNs Auth Key (Keys → Apple Push Notifications service),
+                                           # not an App Store Connect API key — both are AuthKey_*.p8
 npx wrangler secret put APNS_SIGNING_KEY   # contents of the .p8 file
 openssl rand -base64 32 | npx wrangler secret put TICKET_KEY
 npm run deploy

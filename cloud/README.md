@@ -45,11 +45,11 @@ Env: `CODYNC_HOST_BIN` (default `../host/target/debug/codync-host`), `CODYNC_E2E
 Staging (the integration stage runs this; production needs the owner):
 
 ```bash
-npx wrangler d1 create codync-staging          # put database_id into [env.staging]
-npx wrangler d1 migrations apply codync-staging --env staging --remote
-npx wrangler secret put CLERK_SECRET_KEY --env staging
-npx wrangler secret put CLERK_WEBHOOK_SECRET --env staging
-npx wrangler deploy --env staging               # → https://staging-api.codync.dev
+npx wrangler d1 create codync-dev          # put database_id into [env.dev]
+npx wrangler d1 migrations apply codync-dev --env dev --remote
+npx wrangler secret put CLERK_SECRET_KEY --env dev
+npx wrangler secret put CLERK_WEBHOOK_SECRET --env dev
+npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 ```
 
 | Name | Kind | Purpose |

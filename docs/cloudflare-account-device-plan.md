@@ -325,7 +325,7 @@ WebRTC 優先直連，必要時使用 TURN；憑證需短效且受裝置授權�
 - 完成 claim、grant、傳輸安全、撤權 lease 與 host identity 的協定細節。
 - 核對 Clerk 原生 iOS 配置、Cloudflare D1 一致性與 migration 能力。
 - 核對 iOS 上架所需的登入選項、帳號刪除流程；若需 Apple 登入則列入 P1。
-- 決定 staging／production 環境、API domain、秘密輪替與資料保存政策。
+- 決定 dev／main（production）環境、API domain、秘密輪替與資料保存政策。
 
 完成條件：沒有「雲端已撤權但有效連線可無限使用」或「知道 host ID 就能認領」的空白設計。
 
@@ -394,7 +394,7 @@ Worker 執行 typecheck 與具 D1 binding 的整合測試；Rust 執行 auth／�
 
 ## 16. 部署、監控、成本與回滾
 
-- local、staging、production 使用不同 Clerk instance／D1／Worker secrets；release 不含測試 key 或 staging API URL。
+- local、dev、main（production） 使用不同 Clerk instance／D1／Worker secrets；release 不含測試 key 或 dev API URL。
 - 部署順序：相容的雲端 API → 新 host → 新手機 → 關閉舊配對／ticket 路徑。每步設定最低協定版本與遙測指標。
 - D1 schema 使用先擴充再移除；migration 前做可還原備份並演練還原。回滾不能把已撤銷 grant 恢復為有效。
 - 初期採帳號 allowlist 與功能旗標。關閉雲端功能時保留本機工作能力，但不得靜默恢復舊的不安全遠端權限。

@@ -14,7 +14,7 @@ The footer displays **Account**, never the Mac user's local name.
    requests allowed redirect URLs.
 5. Copy only the **publishable key** into
    `apps/macos/Resources/AccountConfig.plist` (`clerkPublishableKey`), next to
-   `cloudURL`, the Codync cloud the app talks to (staging for now). A development
+   `cloudURL`, the Codync cloud the app talks to (dev for now). A development
    launch can override them with `CODYNC_CLERK_PUBLISHABLE_KEY` and `CODYNC_CLOUD_URL`.
 
 The checked-in public configuration uses the Codync development instance

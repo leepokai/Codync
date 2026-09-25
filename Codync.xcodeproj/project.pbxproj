@@ -18,7 +18,6 @@
 		2F0A1C29DBBD1D700C10BE46 /* CodyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F45CCA6BBDCF412897AEC105 /* CodyncApp.swift */; };
 		31A78A067C217F77FBDEDFD0 /* Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55AABA9596547D7459B1CC5B /* Push.swift */; };
 		331338197BF906B069159B11 /* SSHTunnel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4EBC39B2AC89EAA4F5033F /* SSHTunnel.swift */; };
-		44FDF4571F4536E3215679E8 /* AccountConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3454B60AEA40B1DCFA5E54AE /* AccountConfig.plist */; };
 		484455D97513F09142D21D0D /* Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE4D28E8291EEB43E17B11FA /* Capture.swift */; };
 		48DAAA1384E5B8D0BA27C895 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E47C60032C326157E0386B8 /* SwiftUI.framework */; };
 		498C81B8C82557C85F912238 /* HostLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CAC64DDC41D4A222A12DDE /* HostLink.swift */; };
@@ -35,7 +34,6 @@
 		8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */; };
 		9593C1951D727D36D6B8C0E9 /* ComputerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C143ED8FF93F6BBD82F942 /* ComputerStatus.swift */; };
 		9D0736B9670D57132AFBB34E /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C60BD13E7283ECB7A1AE4D3 /* NotificationService.swift */; };
-		9FE9864DA43399578A892992 /* AccountConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = D5252F097812608BF90F7647 /* AccountConfig.plist */; };
 		A12D125989D2EA1AC5308218 /* WidgetGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8563C243AB130DFA063CAD /* WidgetGalleryView.swift */; };
 		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
 		ACCB28F3DB9C89108B7911E3 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842DA106CA15E3810C3C9461 /* Input.swift */; };
@@ -130,7 +128,6 @@
 		22F1B304BD18E48C91FC73E3 /* Widgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Widgets.entitlements; sourceTree = "<group>"; };
 		232B2C00B9575BFF7068BB62 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncMacApp.swift; sourceTree = "<group>"; };
-		3454B60AEA40B1DCFA5E54AE /* AccountConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = AccountConfig.plist; sourceTree = "<group>"; };
 		3A4EBC39B2AC89EAA4F5033F /* SSHTunnel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTunnel.swift; sourceTree = "<group>"; };
 		47BCE8E2AFA6CA829DBC489A /* UsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageView.swift; sourceTree = "<group>"; };
 		4CFB70DD8757C90695CDA211 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -163,7 +160,6 @@
 		D0A657FB98BBE0D73807B263 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		D2C705F063CD20F5B3036BD4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D3831394C093AF3A4E504BC5 /* IconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconButton.swift; sourceTree = "<group>"; };
-		D5252F097812608BF90F7647 /* AccountConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = AccountConfig.plist; sourceTree = "<group>"; };
 		DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E1B79D48C1D6F90D53751B3F /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		E4B8EAB09016D328195FE2AD /* AccountSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSession.swift; sourceTree = "<group>"; };
@@ -389,7 +385,6 @@
 		E5F3C27CC2117EB5AF702188 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				3454B60AEA40B1DCFA5E54AE /* AccountConfig.plist */,
 				D2C705F063CD20F5B3036BD4 /* Assets.xcassets */,
 				232B2C00B9575BFF7068BB62 /* Info.plist */,
 				F0B6AECA1FDDD3064F3D4447 /* iOS.entitlements */,
@@ -415,7 +410,6 @@
 		FBD5ECB1F12422DB8CC87897 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				D5252F097812608BF90F7647 /* AccountConfig.plist */,
 				E8B808BC2A9AA0ECD666A454 /* Assets.xcassets */,
 			);
 			path = Resources;
@@ -433,6 +427,7 @@
 				F03A20C030394F9A65472B30 /* CopyFiles */,
 				1AC8A5FB72DF4C3DAEDBA56F /* Frameworks */,
 				A39B341E188CE8DB0A29ACC0 /* Embed Dependencies */,
+				7471650ADCC84E2BBDF4E47C /* Codync environment */,
 				C0A14ED49FC6A533FEABD5B2 /* Embed codync-host */,
 			);
 			buildRules = (
@@ -477,6 +472,7 @@
 				8C91DA62A73BD91999C1FD70 /* Resources */,
 				B2AF485DB7DA2A4791E60288 /* Frameworks */,
 				265004DE0479E150BA3E6AB7 /* Embed Foundation Extensions */,
+				9900BE8858E71975C4052787 /* Codync environment */,
 			);
 			buildRules = (
 			);
@@ -597,7 +593,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9FE9864DA43399578A892992 /* AccountConfig.plist in Resources */,
 				D4AB92074A9C0D9C72B4080A /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -606,7 +601,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				44FDF4571F4536E3215679E8 /* AccountConfig.plist in Resources */,
 				513F59BF65DED5379AB950A1 /* Assets.xcassets in Resources */,
 				C937F66F810AA238B73E8363 /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -623,6 +617,46 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		7471650ADCC84E2BBDF4E47C /* Codync environment */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Codync environment";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Debug builds use dev (dev-api.codync.dev), Release builds use main (api.codync.dev).\ncp \"$SRCROOT/apps/shared/Config/$CODYNC_ENV.plist\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AccountConfig.plist\"\n";
+			showEnvVarsInLog = 0;
+		};
+		9900BE8858E71975C4052787 /* Codync environment */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Codync environment";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Debug builds use dev (dev-api.codync.dev), Release builds use main (api.codync.dev).\ncp \"$SRCROOT/apps/shared/Config/$CODYNC_ENV.plist\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AccountConfig.plist\"\n";
+			showEnvVarsInLog = 0;
+		};
 		C0A14ED49FC6A533FEABD5B2 /* Embed codync-host */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -766,6 +800,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
+				CODYNC_ENV = main;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 17;
 				DEAD_CODE_STRIPPING = YES;
@@ -935,6 +970,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
+				CODYNC_ENV = dev;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 17;
 				DEAD_CODE_STRIPPING = YES;

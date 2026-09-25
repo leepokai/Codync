@@ -7,7 +7,9 @@ compatibility_flags = ["nodejs_compat"]
 tag = "v1"
 new_sqlite_classes = ["ComputerRelay"]
 
-# production (deploying needs the owner's go-ahead)
+# main: production at api.codync.dev (Clerk production instance)
+routes = [{ pattern = "api.codync.dev", custom_domain = true }]
+
 [vars]
 CLERK_ISSUER = "<production Clerk Frontend API URL>"
 
@@ -30,19 +32,20 @@ simple = { limit = 10, period = 60 }
 [triggers]
 crons = ["*/15 * * * *"]
 
-[env.staging]
-name = "codync-cloud-staging"
-routes = [{ pattern = "staging-api.codync.dev", custom_domain = true }]
+# dev: the deployed test environment at dev-api.codync.dev (Clerk development instance).
+[env.dev]
+name = "codync-cloud-dev"
+routes = [{ pattern = "dev-api.codync.dev", custom_domain = true }]
 vars = { CLERK_ISSUER = "https://sunny-mollusk-8651.clerk.accounts.dev" }
-d1_databases = [{ binding = "DB", database_name = "codync-staging", database_id = "8956a285-8c88-4a5b-a05c-5f79be324448", migrations_dir = "migrations" }]
+d1_databases = [{ binding = "DB", database_name = "codync-dev", database_id = "0c03c398-3cec-4f06-a76e-998176ca19ae", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
 ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1002", simple = { limit = 10, period = 60 } }]
 triggers = { crons = ["*/15 * * * *"] }
 
-# wrangler dev / e2e: local D1; CLERK_JWT_KEY is injected by the test (--var).
-[env.dev]
-name = "codync-cloud-dev"
+# local: wrangler dev / e2e with a local D1; CLERK_JWT_KEY is injected by the test (--var).
+[env.local]
+name = "codync-cloud-local"
 vars = { CLERK_ISSUER = "https://clerk.test.local" }
-d1_databases = [{ binding = "DB", database_name = "codync-dev", database_id = "dev", migrations_dir = "migrations" }]
+d1_databases = [{ binding = "DB", database_name = "codync-local", database_id = "local", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
 ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1003", simple = { limit = 10, period = 60 } }]

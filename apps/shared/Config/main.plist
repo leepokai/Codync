@@ -2,9 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Filled in when the production Clerk instance and api.codync.dev go live; empty keeps accounts and the cloud off. -->
 	<key>clerkPublishableKey</key>
-	<string>pk_test_c3VubnktbW9sbHVzay04NjUxLmNsZXJrLmFjY291bnRzLmRldiQ</string>
+	<string></string>
 	<key>cloudURL</key>
-	<string>https://staging-api.codync.dev</string>
+	<string></string>
 </dict>
 </plist>

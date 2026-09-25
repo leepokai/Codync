@@ -6,8 +6,9 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --env dev",
-    "deploy:staging": "wrangler deploy --env staging",
+    "dev": "wrangler dev --env local",
+    "deploy:dev": "wrangler deploy --env dev",
+    "deploy:main": "wrangler deploy",
     "typecheck": "tsc && tsc -p test/e2e",
     "test": "vitest run",
     "e2e": "node --experimental-strip-types --no-warnings test/e2e/relay.e2e.ts"

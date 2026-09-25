@@ -221,13 +221,13 @@ Codync-Sig: v=1,kid=<b64url pub>,ts=<ms>,nonce=<b64url 16 random bytes>,sig=<b64
 ```
 codync-sig-v1
 <METHOD 大寫>
-<authority：小寫的 Host header 值，含非預設 port，例如 codync-cloud-staging.x.workers.dev 或 127.0.0.1:8787>
+<authority：小寫的 Host header 值，含非預設 port，例如 codync-cloud-dev.x.workers.dev 或 127.0.0.1:8787>
 <path + query，與實際送出的 request-target 逐字相同>
 <ts>
 <nonce>
 <b64url(SHA-256(body bytes))>   ← 無 body（GET、WS）用空字串的 hash
 ```
-驗證：`|now - ts| ≤ 300_000`；`(kid, nonce)` 在 10 分鐘內未出現過（HTTP：D1 `sig_nonces`；relay：DO 的 `nonces` 表）；Ed25519 驗證（Worker 用 WebCrypto `Ed25519`）。Worker 以 `new URL(request.url).host`（小寫）比對 authority，所以 staging 簽的 header 在 production 無效。失敗 → `401 {"error":{"code":"badSignature"}}`。向量：`requestSig`。
+驗證：`|now - ts| ≤ 300_000`；`(kid, nonce)` 在 10 分鐘內未出現過（HTTP：D1 `sig_nonces`；relay：DO 的 `nonces` 表）；Ed25519 驗證（Worker 用 WebCrypto `Ed25519`）。Worker 以 `new URL(request.url).host`（小寫）比對 authority，所以 dev 簽的 header 在 production 無效。失敗 → `401 {"error":{"code":"badSignature"}}`。向量：`requestSig`。
 
 ---
 
@@ -489,9 +489,9 @@ class_name = "ComputerRelay"
 [triggers]
 crons = ["*/15 * * * *"]
 
-[env.staging]
+[env.dev]
 vars = { CLERK_ISSUER = "https://sunny-mollusk-8651.clerk.accounts.dev" }
-d1_databases = [{ binding = "DB", database_name = "codync-staging", database_id = "<由 wrangler d1 create 取得>", migrations_dir = "migrations" }]
+d1_databases = [{ binding = "DB", database_name = "codync-dev", database_id = "<由 wrangler d1 create 取得>", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
 triggers = { crons = ["*/15 * * * *"] }
 
@@ -500,7 +500,7 @@ vars = { CLERK_ISSUER = "https://clerk.test.local" }
 d1_databases = [{ binding = "DB", database_name = "codync-dev", database_id = "dev", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
 ```
-Worker 名稱：production `codync-cloud`，staging `codync-cloud-staging`。
+Worker 名稱：production `codync-cloud`，dev `codync-cloud-dev`。
 
 ### 8.2 D1 schema（`migrations/0001_init.sql`）
 
@@ -999,7 +999,7 @@ public struct RosterItem: Identifiable, Sendable { public var ref: BotReference;
 ### 11.1 共通
 
 - `apps/shared/AccountSession.swift`：新增 `func sessionToken() async throws -> String`（ClerkKit 1.5.6 的 session token API，以實際 SDK 名稱為準）。
-- 設定檔：`ClerkConfig.plist` 改名為 `AccountConfig.plist`，keys `clerkPublishableKey`、`cloudURL`（目前填 staging URL）；env `CODYNC_CLOUD_URL` 可覆寫。兩個 App 都要。
+- 設定檔：`ClerkConfig.plist` 改名為 `AccountConfig.plist`，keys `clerkPublishableKey`、`cloudURL`（目前填 dev URL）；env `CODYNC_CLOUD_URL` 可覆寫。兩個 App 都要。
 - `project.yml`：`MARKETING_VERSION: 3.0.0`；iOS、Widgets、NotificationService 加 `keychain-access-groups: [$(AppIdentifierPrefix)com.pokai.Codync]`，Info.plist 加 `CodyncKeychainGroup`；新增 `NotificationService` app-extension target（`apps/ios/NotificationService/`，bundle id `com.pokai.Codync.ios.NotificationService`，依賴 CodyncKit，embed 進 iOS App）；macOS **不加** entitlements（§3.2）；改完執行 `xcodegen generate`。
 - `.github/workflows/release-macos.yml`：配合 `AccountConfig.plist` 改名。
 
@@ -1082,19 +1082,29 @@ public struct RosterItem: Identifiable, Sendable { public var ref: BotReference;
 
 ---
 
-## 14. 部署（staging 可由實作者執行；production 需 owner 確認）
+## 14. 部署（dev 可由實作者執行；production 需 owner 確認）
+
+### 14.0 環境：main 與 dev
+
+| 環境 | Cloud Worker | D1 | Clerk | App build |
+|---|---|---|---|---|
+| **dev** | `codync-cloud-dev` → `https://dev-api.codync.dev`（`wrangler deploy --env dev`） | `codync-dev` | development instance `sunny-mollusk-8651` | Debug（`CODYNC_ENV=dev`） |
+| **main** | `codync-cloud` → `https://api.codync.dev`（`wrangler deploy`） | `codync` | production instance（待建立，網域 `codync.dev`） | Release（`CODYNC_ENV=main`） |
+| local | `wrangler dev --env local`（e2e） | 本機 `codync-local` | 測試 RSA key（`CLERK_JWT_KEY`） | — |
+
+`apps/shared/Config/<env>.plist` 在 build 時複製成 App 內的 `AccountConfig.plist`；`main.plist` 在 production 上線前留空，Release build 的帳號與雲端功能因此關閉。Host 的雲端 URL 由 Mac App 的 Cloud 開關以 `setCloud` 寫入（或 `CODYNC_CLOUD_URL`）。
 
 ### 14.1 Staging
 
 ```bash
 cd cloud && npm ci
-npx wrangler d1 create codync-staging          # 將 database_id 填入 [env.staging]
-npx wrangler d1 migrations apply codync-staging --env staging --remote
-npx wrangler secret put CLERK_SECRET_KEY --env staging      # owner 輸入 sk_test_…
-npx wrangler secret put CLERK_WEBHOOK_SECRET --env staging  # owner 輸入 whsec_…
-npx wrangler deploy --env staging               # → https://staging-api.codync.dev（custom domain；production 用 api.codync.dev）
+npx wrangler d1 create codync-dev          # 將 database_id 填入 [env.dev]
+npx wrangler d1 migrations apply codync-dev --env dev --remote
+npx wrangler secret put CLERK_SECRET_KEY --env dev      # owner 輸入 sk_test_…
+npx wrangler secret put CLERK_WEBHOOK_SECRET --env dev  # owner 輸入 whsec_…
+npx wrangler deploy --env dev               # → https://dev-api.codync.dev（custom domain；production 用 api.codync.dev）
 ```
-Host 測 staging：`codync-host cloud --url https://staging-api.codync.dev`（或 env `CODYNC_CLOUD_URL`）。Apple：`AccountConfig.plist` 的 `cloudURL`。
+Host 測 dev：`codync-host cloud --url https://dev-api.codync.dev`（或 env `CODYNC_CLOUD_URL`）。Apple：`AccountConfig.plist` 的 `cloudURL`。
 
 ### 14.2 Secrets 與 vars
 
@@ -1104,12 +1114,12 @@ Host 測 staging：`codync-host cloud --url https://staging-api.codync.dev`（�
 | `CLERK_WEBHOOK_SECRET` | secret（owner 輸入） | Svix 簽章 |
 | `CLERK_ISSUER` | var | Clerk Frontend API URL |
 | `CLERK_AUTHORIZED_PARTIES` | var（選填） | 逗號分隔 |
-| `CLERK_JWT_KEY` | var（只給 dev/e2e） | networkless 驗證用的公鑰 PEM；staging／production 不設 |
+| `CLERK_JWT_KEY` | var（只給 dev/e2e） | networkless 驗證用的公鑰 PEM；dev／production 不設 |
 
 ### 14.3 Owner 手動步驟
 
-0. 允許實作者建立 staging 資源：`wrangler login` 已登入的 Cloudflare 帳號（或提供 `CLOUDFLARE_API_TOKEN`，權限 Workers Scripts:Edit、D1:Edit、Durable Objects）。
-1. Clerk Dashboard（staging = `sunny-mollusk-8651`）：確認 iOS native app（`com.pokai.Codync.ios`）已註冊並允許 `com.pokai.Codync.ios://callback`；**Sessions → Customize session token** 加入 `{"email": "{{user.primary_email_address}}"}`；**Webhooks** 新增 `https://staging-api.codync.dev/v1/webhooks/clerk`，訂閱 `user.deleted`，複製 signing secret。
+0. 允許實作者建立 dev 資源：`wrangler login` 已登入的 Cloudflare 帳號（或提供 `CLOUDFLARE_API_TOKEN`，權限 Workers Scripts:Edit、D1:Edit、Durable Objects）。
+1. Clerk Dashboard（dev = `sunny-mollusk-8651`）：確認 iOS native app（`com.pokai.Codync.ios`）已註冊並允許 `com.pokai.Codync.ios://callback`；**Sessions → Customize session token** 加入 `{"email": "{{user.primary_email_address}}"}`；**Webhooks** 新增 `https://dev-api.codync.dev/v1/webhooks/clerk`，訂閱 `user.deleted`，複製 signing secret。
 2. 輸入上面兩個 secrets。
 3. Production：另建 Clerk production instance、`wrangler d1 create codync`、填 `wrangler.toml` 頂層、secrets 不加 `--env`、`npx wrangler deploy`；把 production URL 填入 `host/src/cloud.rs` 的 `DEFAULT_CLOUD_URL` 與 Release 版 `AccountConfig.plist`。
 4. Apple Developer：新增 `com.pokai.Codync.ios.NotificationService` App ID 與 keychain access group 後，讓 Xcode 自動簽章更新 provisioning profiles。

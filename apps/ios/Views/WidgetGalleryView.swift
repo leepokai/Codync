@@ -10,6 +10,7 @@ struct WidgetGalleryView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var kind = "usage"
     @State private var providerID = "claude"
+    @State private var size = "medium"
     @State private var hasWidget: Bool?
     @State private var widgetCheckFailed = false
 
@@ -25,7 +26,7 @@ struct WidgetGalleryView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Codync, at a glance.")
                             .font(.title3.weight(.semibold)).tracking(-0.4)
-                        Text("Your bots and usage, right on your Home Screen.")
+                        Text("Your bots and usage, on every surface.")
                             .font(.footnote).foregroundStyle(Palette.secondary)
                     }
                 }
@@ -70,23 +71,32 @@ struct WidgetGalleryView: View {
                             providerPicker.pickerStyle(.segmented)
                         }
                     }
+                    Picker("Size", selection: $size) {
+                        Text("Small").tag("small")
+                        Text("Medium").tag("medium")
+                        Text("Large").tag("large")
+                    }
+                    .pickerStyle(.menu)
                     VStack(spacing: 18) {
-                        preview(wide: true)
-                            .frame(height: 158)
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .center, spacing: 18) {
-                                preview(wide: false).frame(width: 158, height: 158)
-                                previewDescription.frame(minWidth: 100)
-                            }
-                            VStack(alignment: .leading, spacing: 12) {
-                                preview(wide: false).frame(width: 158, height: 158)
-                                previewDescription
-                            }
-                        }
+                        preview(wide: size != "small")
+                            .frame(width: size == "small" ? 158 : nil, height: size == "large" ? 338 : 158)
+                        previewDescription
                     }
                     .padding(14)
                     .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 26))
                 }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionLabel("More ways to stay up to date")
+                    NavigationLink { LockWidgetGalleryView() } label: {
+                        Label("Lock Screen widgets", systemImage: "lock.rectangle")
+                    }
+                    NavigationLink { ActivityGalleryView() } label: {
+                        Label("Live Activity & Dynamic Island", systemImage: "waveform")
+                    }
+                }
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 guide(number: "01", title: "Add the widget", icon: "plus.square.on.square",
                       detail: "Touch and hold your Home Screen. Tap Edit, then Add Widget. Search for Codync and choose Bots or Provider usage.")
@@ -124,8 +134,8 @@ struct WidgetGalleryView: View {
 
     private var previewDescription: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Small & medium").font(.subheadline.weight(.medium))
-            Text(kind == "usage" ? "Small shows the tightest limit. Medium shows both windows." : "See who needs you and who's still working.")
+            Text("\(size.capitalized) widget").font(.subheadline.weight(.medium))
+            Text(kind == "usage" ? "Small shows the tightest limit. Medium shows two windows. Large adds a summary and up to four limits." : "See who needs you and who's still working. Large shows up to six bots.")
                 .font(.caption).foregroundStyle(Palette.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -134,15 +144,15 @@ struct WidgetGalleryView: View {
     @ViewBuilder private func preview(wide: Bool) -> some View {
         Group {
             if kind == "usage", let provider {
-                ProviderWidgetCard(provider: provider, layout: wide ? .medium : .small)
+                ProviderWidgetCard(provider: provider, layout: size == "large" ? .large : wide ? .medium : .small)
             } else {
-                BotsWidgetCard(bots: Bot.widgetPreview, wide: wide)
+                BotsWidgetCard(bots: Bot.widgetPreview, wide: wide, large: size == "large")
             }
         }
         .padding(14)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: 22))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(wide ? "Medium widget preview" : "Small widget preview")
+        .accessibilityLabel("\(size.capitalized) widget preview")
     }
 
     private func sectionLabel(_ title: String) -> some View {

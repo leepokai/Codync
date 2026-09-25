@@ -39,12 +39,13 @@ public struct CharacterAvatar: View {
     }
 }
 
-/// Grid geometry shared by the dotted body: 13 columns, the eyes are the dots
-/// in columns 4 and 8 of rows 4-6 (shifted one column while glancing).
-private enum Grid {
-    static let cells = 13
-    static let eyeColumns = [4, 8]
-    static let eyeRows = [4, 5, 6]
+/// Keep the halftone at every size. Small icons use fewer, larger dots so the
+/// gaps and hollow eyes survive rasterization in widgets and the Dynamic Island.
+private struct Grid {
+    let cells: Int
+    init(size: CGFloat) { cells = size < 18 ? 7 : size < 28 ? 9 : 13 }
+    var eyeColumns: [Int] { cells == 7 ? [2, 4] : cells == 9 ? [3, 6] : [4, 8] }
+    var eyeRows: [Int] { cells == 13 ? [4, 5, 6] : cells == 9 ? [3, 4] : [2, 3] }
 }
 
 private struct DottedBody: View {
@@ -55,28 +56,18 @@ private struct DottedBody: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let step = size / CGFloat(Grid.cells)
-        let dots = Self.grid(shape: shape, size: size, step: step)
+        let grid = Grid(size: size)
+        let step = size / CGFloat(grid.cells)
+        let dots = Self.grid(shape: shape, size: size, step: step, cells: grid.cells)
         let still = mood == .idle || reduceMotion
         TimelineView(.animation(paused: still)) { timeline in
             let t = still ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3600)
             // Glance: whole-cell steps left / center / right, like a small display.
             let glance = mood == .working ? Int((sin(t * 2 * .pi / 3.2) * 1.4).rounded()) : 0
             let blinking = !still && (t / 4.7).truncatingRemainder(dividingBy: 1) < 0.035
-            let eyeRows = blinking ? [Grid.eyeRows[2]] : Grid.eyeRows
-            let eyeCols = Grid.eyeColumns.map { $0 + glance }
+            let eyeRows = blinking ? Array(grid.eyeRows.suffix(1)) : grid.eyeRows
+            let eyeCols = grid.eyeColumns.map { $0 + glance }
             Canvas { ctx, _ in
-                // Below ~24pt the dots stop reading: a solid body with the same hollow eyes.
-                if size < 24 {
-                    ctx.fill(CharacterShape(kind: shape).path(in: CGRect(x: 0, y: 0, width: size, height: size)), with: .color(color))
-                    ctx.blendMode = .clear
-                    for c in eyeCols {
-                        for r in eyeRows {
-                            ctx.fill(Path(CGRect(x: CGFloat(c) * step, y: CGFloat(r) * step, width: step, height: step)), with: .color(.black))
-                        }
-                    }
-                    return
-                }
                 let half = size / 2
                 let yaw = mood == .working ? t * 1.4 : -0.7
                 let lx = sin(yaw) * 0.8, ly = 0.55, lz = cos(yaw) * 0.5 + 0.6  // never fully behind
@@ -93,7 +84,8 @@ private struct DottedBody: View {
                     }
                     let r = step * 0.42 * (0.55 + 0.45 * shade)
                     let dot = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
-                    ctx.fill(dot, with: .color(Palette.text.opacity(0.2 + 0.4 * min(1, shade / 0.7))))
+                    let ink = grid.cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * min(1, shade / 0.7)
+                    ctx.fill(dot, with: .color(Palette.text.opacity(ink)))
                     if shade > 0.6 {
                         ctx.fill(dot, with: .color(color.opacity((shade - 0.6) / 0.4)))
                     }
@@ -109,11 +101,11 @@ private struct DottedBody: View {
     }
 
     /// Square-grid dot centers that fall inside the silhouette.
-    static func grid(shape: String, size: CGFloat, step: CGFloat) -> [Dot] {
+    static func grid(shape: String, size: CGFloat, step: CGFloat, cells: Int) -> [Dot] {
         let path = CharacterShape(kind: shape).path(in: CGRect(x: 0, y: 0, width: size, height: size))
         var out: [Dot] = []
-        for row in 0..<Grid.cells {
-            for col in 0..<Grid.cells {
+        for row in 0..<cells {
+            for col in 0..<cells {
                 let p = CGPoint(x: (CGFloat(col) + 0.5) * step, y: (CGFloat(row) + 0.5) * step)
                 if path.contains(p) { out.append(Dot(row: row, col: col, center: p)) }
             }

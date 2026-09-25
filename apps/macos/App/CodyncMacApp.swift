@@ -233,7 +233,6 @@ private extension View {
         self.padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
     }
 }
 
@@ -247,10 +246,9 @@ private struct RemoteScreenSection: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: "display")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(screen.enabled ? Palette.onAccent : Palette.text)
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(screen.enabled ? Palette.text : Palette.secondary)
                     .frame(width: 30, height: 30)
-                    .background(screen.enabled ? Palette.accentFill : Palette.bubbleUser, in: Circle())
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Remote screen").font(.callout.weight(.medium)).foregroundStyle(Palette.text)
@@ -336,7 +334,7 @@ private struct UsageBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                AgentIcon(registry: provider.registry, size: 15)
+                CharacterAvatar(shape: provider.mascotShape, tint: provider.widgetTint, size: 15)
                 Text(provider.name).font(.caption.weight(.semibold)).foregroundStyle(Palette.text)
                 Spacer()
                 Text("updated \(RelativeTime.short(Date(milliseconds: provider.updatedAt)))")

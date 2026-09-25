@@ -67,6 +67,9 @@ struct SettingsView: View {
                 } label: {
                     Label("Widgets", systemImage: "square.grid.2x2")
                 }
+                NavigationLink { ActivityGalleryView() } label: {
+                    Label("Live Activity & Dynamic Island", systemImage: "waveform")
+                }
                 notificationsRow
             }
 

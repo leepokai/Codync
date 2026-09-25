@@ -66,6 +66,7 @@ struct CodyncApp: App {
                         model.pair(p)
                     }
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { tab = .usage }
+                    await LiveActivities.shared.previewIfRequested()
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_SCREEN"] != nil {
                         try? await Task.sleep(for: .seconds(2))
                         model.screenRequest = ScreenRequest()

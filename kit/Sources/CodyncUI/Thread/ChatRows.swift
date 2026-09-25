@@ -128,7 +128,7 @@ struct WorkingIndicator: View {
         HStack(alignment: .center, spacing: 10) {
             Button(action: openTrace) {
                 HStack(spacing: 8) {
-                    ThinkingOrb(size: 16, color: bot.needsInput ? Palette.warning : Palette.secondary)
+                    ThinkingOrb(state: bot.needsInput ? .listening : .working, size: 16, color: bot.needsInput ? Palette.warning : Palette.secondary)
                     Text(bot.activity.isEmpty ? "Working…" : bot.activity)
                         .font(.subheadline)
                         .foregroundStyle(bot.needsInput ? Palette.warning : Palette.secondary)

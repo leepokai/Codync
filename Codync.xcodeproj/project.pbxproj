@@ -31,6 +31,7 @@
 		A12D125989D2EA1AC5308218 /* WidgetGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8563C243AB130DFA063CAD /* WidgetGalleryView.swift */; };
 		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
 		ACCB28F3DB9C89108B7911E3 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842DA106CA15E3810C3C9461 /* Input.swift */; };
+		AD4428FB4374EC7B1B89F1FD /* ActivityGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B6C42CD9B7CED28A1EE536C /* ActivityGalleryView.swift */; };
 		AFC0CD8BD1FA61F810C96057 /* com.pokai.Codync.screen.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 895BB6C2EB8986266EB4159A /* com.pokai.Codync.screen.plist */; };
 		B55C0D49B47C628C367BD92A /* AXTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97876A72710A37EB86A082C1 /* AXTree.swift */; };
 		B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739EC95223CC8F8717C33736 /* PairingView.swift */; };
@@ -108,6 +109,7 @@
 		00F135A0B168269BD6C2A199 /* CodyncWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncWidgets.swift; sourceTree = "<group>"; };
 		0E8563C243AB130DFA063CAD /* WidgetGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetGalleryView.swift; sourceTree = "<group>"; };
 		19D41F16A62FEF37BE0AD1FC /* ClerkConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = ClerkConfig.plist; sourceTree = "<group>"; };
+		1B6C42CD9B7CED28A1EE536C /* ActivityGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityGalleryView.swift; sourceTree = "<group>"; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		1F16B11B2920E9D05621AFE7 /* ViewingBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewingBadge.swift; sourceTree = "<group>"; };
 		22F1B304BD18E48C91FC73E3 /* Widgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Widgets.entitlements; sourceTree = "<group>"; };
@@ -194,6 +196,7 @@
 			isa = PBXGroup;
 			children = (
 				AFE4E0839DCD380109300DF1 /* AccountSwitcherView.swift */,
+				1B6C42CD9B7CED28A1EE536C /* ActivityGalleryView.swift */,
 				C5E57711E223A292872322C5 /* BotListView.swift */,
 				739EC95223CC8F8717C33736 /* PairingView.swift */,
 				E1B79D48C1D6F90D53751B3F /* RootView.swift */,
@@ -602,6 +605,7 @@
 			files = (
 				FF6CF0FBF496B5B50F09E063 /* AccountSession.swift in Sources */,
 				28DE92C4209739829F6AD1A1 /* AccountSwitcherView.swift in Sources */,
+				AD4428FB4374EC7B1B89F1FD /* ActivityGalleryView.swift in Sources */,
 				CC9F6FB8055C38D5D625F738 /* BotListView.swift in Sources */,
 				2F0A1C29DBBD1D700C10BE46 /* CodyncApp.swift in Sources */,
 				B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */,

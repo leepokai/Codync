@@ -502,7 +502,7 @@ private struct AgentSheet: View {
             HStack(spacing: 0) {
                 SetupStepRow(number: curated ? 2 : 1, title: "Sign in", detail: statusText, done: signedIn == true, action: nil)
                 if checking {
-                    ThinkingOrb(size: 16, color: Palette.secondary)
+                    ThinkingOrb(state: .connecting, size: 16, color: Palette.secondary)
                 } else {
                     Button("Check again", systemImage: "arrow.clockwise") { Task { await check() } }
                         .labelStyle(.iconOnly)

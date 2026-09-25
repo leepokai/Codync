@@ -74,7 +74,11 @@ public struct BotRow: View {
     /// Live activity while working, otherwise the last message (Grok Bot row behavior).
     @ViewBuilder private var preview: some View {
         if bot.needsInput {
-            Label(bot.activity.isEmpty ? "Needs your approval" : bot.activity, systemImage: "hand.raised.fill")
+            Label {
+                Text(bot.activity.isEmpty ? "Needs your approval" : bot.activity)
+            } icon: {
+                ThinkingOrb(state: .listening, size: 16, color: Palette.warning)
+            }
                 .font(InterfaceMetrics.secondary)
                 .foregroundStyle(Palette.warning)
                 .lineLimit(1)
@@ -110,7 +114,11 @@ public struct ConnectionBanner: View {
         case .online, .unpaired:
             EmptyView()
         case .connecting:
-            Label("Connecting to \(model.hostName)…", systemImage: "antenna.radiowaves.left.and.right")
+            Label {
+                Text("Connecting to \(model.hostName)…")
+            } icon: {
+                ThinkingOrb(state: .connecting, size: 18, color: Palette.secondary)
+            }
                 .font(.footnote)
                 .foregroundStyle(Palette.secondary)
         case let .offline(reason):

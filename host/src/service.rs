@@ -254,8 +254,33 @@ fn pct(s: &str) -> String {
     out
 }
 
-pub fn pairing_url(name: &str, token: &str, urls: &[String]) -> String {
-    format!("codync://pair?name={}&token={}&urls={}", pct(name), pct(token), pct(&urls.join(",")))
+/// What the pairing QR carries (spec §4.1): public keys and a one-time code, no secrets
+/// that outlive the code.
+pub struct PairingQr<'a> {
+    pub name: &'a str,
+    pub computer_id: &'a str,
+    pub sign_key: &'a str,
+    pub box_key: &'a str,
+    pub code: &'a str,
+    pub urls: &'a [String],
+    pub cloud: Option<&'a str>,
+}
+
+pub fn pairing_url(q: &PairingQr) -> String {
+    let mut url = format!(
+        "codync://pair?v=3&name={}&id={}&sk={}&bk={}&code={}&urls={}",
+        pct(q.name),
+        q.computer_id,
+        q.sign_key,
+        q.box_key,
+        q.code,
+        pct(&q.urls.join(","))
+    );
+    if let Some(cloud) = q.cloud {
+        url.push_str("&cloud=");
+        url.push_str(&pct(cloud));
+    }
+    url
 }
 
 fn read_settings(settings: &Path) -> Result<Option<Value>> {
@@ -343,11 +368,22 @@ mod tests {
 
     #[test]
     fn pairing_url_is_escaped() {
-        let u = pairing_url("Kevin's Mac", "t0k", &["http://100.1.2.3:19222".into(), "http://a:1".into()]);
+        let urls = ["http://100.1.2.3:19222".to_owned(), "http://a:1".to_owned()];
+        let mut q = PairingQr {
+            name: "Kevin's Mac",
+            computer_id: "cid",
+            sign_key: "sk",
+            box_key: "bk",
+            code: "c0de",
+            urls: &urls,
+            cloud: None,
+        };
         assert_eq!(
-            u,
-            "codync://pair?name=Kevin%27s%20Mac&token=t0k&urls=http%3A%2F%2F100.1.2.3%3A19222%2Chttp%3A%2F%2Fa%3A1"
+            pairing_url(&q),
+            "codync://pair?v=3&name=Kevin%27s%20Mac&id=cid&sk=sk&bk=bk&code=c0de&urls=http%3A%2F%2F100.1.2.3%3A19222%2Chttp%3A%2F%2Fa%3A1"
         );
+        q.cloud = Some("https://cloud.example");
+        assert!(pairing_url(&q).ends_with("&cloud=https%3A%2F%2Fcloud.example"));
     }
 
     #[test]

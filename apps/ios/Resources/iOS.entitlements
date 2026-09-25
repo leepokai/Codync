@@ -8,5 +8,9 @@
 	<array>
 		<string>group.com.pokai.Codync</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.pokai.Codync</string>
+	</array>
 </dict>
 </plist>

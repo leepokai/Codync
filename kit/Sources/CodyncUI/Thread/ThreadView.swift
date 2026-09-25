@@ -357,7 +357,8 @@ public struct ThreadView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.connection == .online
+        // Offline computers still take messages when the relay can hold them for it.
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (model.connection == .online || model.canQueue)
     }
 
     private func submit() {

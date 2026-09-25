@@ -4,10 +4,10 @@ import SwiftUI
 /// A computer's icon showing what it is (laptop, Mac mini, Linux…), in the color picked for it:
 /// the profile button and the rows that switch computers.
 public struct ComputerBadge: View {
-    let computer: Pairing?
+    let computer: Computer?
     let size: CGFloat
 
-    public init(_ computer: Pairing?, size: CGFloat = 36) {
+    public init(_ computer: Computer?, size: CGFloat = 36) {
         self.computer = computer
         self.size = size
     }

@@ -113,37 +113,33 @@ public struct ConnectionBanner: View {
             Label("Connecting to \(model.hostName)…", systemImage: "antenna.radiowaves.left.and.right")
                 .font(.footnote)
                 .foregroundStyle(Palette.secondary)
+        case let .computerOffline(lastSeen):
+            let seen = lastSeen.map { " Last seen \(RelativeTime.day($0))." } ?? ""
+            banner(icon: "moon.zzz", title: "\(model.hostName) is offline",
+                   detail: (model.canQueue ? "Messages wait and go out when it's back online." : "It's asleep or turned off.") + seen,
+                   retry: false)
         case let .offline(reason):
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "wifi.exclamationmark").foregroundStyle(Palette.warning)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(model.hostName) is offline").font(.footnote.weight(.semibold)).foregroundStyle(Palette.text)
-                    Text(reason).font(.footnote).foregroundStyle(Palette.secondary)
-                    #if os(iOS)
-                    if reason == HostError.unreachable.localizedDescription { tailscaleHint }
-                    #endif
-                }
-                Spacer()
+            banner(icon: "wifi.exclamationmark", title: "Can't reach \(model.hostName)", detail: reason, retry: true)
+        case let .unauthorized(reason):
+            banner(icon: "lock.slash", title: "No access to \(model.hostName)", detail: reason, retry: false)
+        }
+    }
+
+    private func banner(icon: String, title: String, detail: String, retry: Bool) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon).foregroundStyle(Palette.warning)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.footnote.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(detail).font(.footnote).foregroundStyle(Palette.secondary)
+            }
+            Spacer()
+            if retry {
                 Button("Retry", systemImage: "arrow.clockwise") { model.restartStream() }
                     .labelStyle(.iconOnly)
                     .help("Retry")
             }
-            .padding(10)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
         }
-    }
-
-    /// Away from home the phone needs Tailscale: say whether it's off here or not set up at all.
-    @ViewBuilder private var tailscaleHint: some View {
-        if model.pairing?.urls.contains(where: Tailscale.isAddress) == true {
-            if !Tailscale.isConnected {
-                Text("Tailscale is off on this iPhone. Turn it on to reach \(model.hostName) away from home.")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Palette.warning)
-            }
-        } else {
-            Link("Away from home? Set up Tailscale", destination: Tailscale.downloadURL)
-                .font(.footnote.weight(.medium))
-        }
+        .padding(10)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 10))
     }
 }

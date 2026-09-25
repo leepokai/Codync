@@ -6,8 +6,11 @@
 // one device — without ever learning the raw token or holding a shared secret.
 //
 //   POST /register { token, env: "sandbox" | "production", kind: "alert" | "liveactivity" } -> { ticket }
-//   POST /push     { ticket, alert?: { title, body }, threadId?, category?, data?,
+//   POST /push     { ticket, alert?: { title, body }, threadId?, category?, data?, mutableContent?,
 //                    liveActivity?: { event: "update" | "end", contentState } }
+//
+// `mutableContent: true` sets `mutable-content: 1` so the Notification Service Extension can replace the
+// generic alert with the host's end-to-end encrypted title/body (`data.sealed`).
 
 import { ApnsClient, Notification, PushType, Priority } from "@fivesheepco/cloudflare-apns2";
 
@@ -96,13 +99,26 @@ async function register(req: Request, env: Env): Promise<Response> {
   return json({ ticket: await sealTicket(env, { t: body.token, e, k }) });
 }
 
-interface PushBody {
+export interface PushBody {
   ticket?: string;
   alert?: { title?: string; body?: string };
   threadId?: string;
   category?: string;
   data?: Record<string, unknown>;
+  mutableContent?: boolean;
   liveActivity?: { event?: "update" | "end"; contentState?: Record<string, unknown> };
+}
+
+/** The `aps` dictionary for an alert push. */
+export function alertAps(body: PushBody & { alert: NonNullable<PushBody["alert"]> }): Record<string, unknown> {
+  const aps: Record<string, unknown> = {
+    alert: { title: (body.alert.title ?? "Codync").slice(0, 120), body: (body.alert.body ?? "").slice(0, 400) },
+    sound: "default",
+    "thread-id": body.threadId,
+    category: body.category,
+  };
+  if (body.mutableContent === true) aps["mutable-content"] = 1;
+  return aps;
 }
 
 async function push(req: Request, env: Env): Promise<Response> {
@@ -117,12 +133,7 @@ async function push(req: Request, env: Env): Promise<Response> {
         new Notification(t.t, {
           type: PushType.alert,
           priority: Priority.immediate,
-          aps: {
-            alert: { title: (body.alert.title ?? "Codync").slice(0, 120), body: (body.alert.body ?? "").slice(0, 400) },
-            sound: "default",
-            "thread-id": body.threadId,
-            category: body.category,
-          },
+          aps: alertAps({ ...body, alert: body.alert }),
           data: body.data ?? {},
         }),
       );

@@ -1,21 +1,20 @@
 import CodyncKit
 import CodyncUI
 import SwiftUI
-
-enum AppTab: Hashable { case bots, usage }
+import WidgetKit
 
 struct RootView: View {
-    @Environment(BotStore.self) private var model
-    @Binding var tab: AppTab
+    @Environment(AppStore.self) private var app
+    @Environment(AccountStore.self) private var accounts
 
     /// The open bot, as a NavigationStack path.
-    private var path: Binding<[String]> {
-        Binding(get: { model.selection.map { [$0] } ?? [] }, set: { model.selection = $0.last })
+    private var path: Binding<[BotReference]> {
+        Binding(get: { accounts.selection.map { [$0] } ?? [] }, set: { accounts.selection = $0.last })
     }
 
     var body: some View {
         Group {
-            if model.pairing == nil {
+            if accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
                 NavigationStack {
                     PairingView()
                         .toolbar {
@@ -23,29 +22,130 @@ struct RootView: View {
                         }
                 }
             } else {
-                TabView(selection: $tab) {
+                TabView(selection: Bindable(app).tab) {
                     Tab("Bots", systemImage: "bubble.left.and.bubble.right.fill", value: .bots) {
                         NavigationStack(path: path) {
                             BotListView()
-                                .navigationDestination(for: String.self) { botId in
-                                    ThreadView(botId: botId)
+                                .navigationDestination(for: BotReference.self) { ref in
+                                    ChatScreen(ref: ref)
                                         .toolbar(.hidden, for: .tabBar)
                                 }
                         }
                     }
                     Tab("Usage", systemImage: "chart.bar.fill", value: .usage) {
-                        NavigationStack { UsageView() }
+                        NavigationStack { UsageTab() }
                     }
                 }
                 // Opening a bot (notification, widget, link) always lands on the Bots tab.
-                .onChange(of: model.selection) { _, id in if id != nil { tab = .bots } }
+                .onChange(of: accounts.selection) { _, ref in if ref != nil { app.tab = .bots } }
             }
         }
         .background(Palette.background)
-        .storeErrorAlert(model)
-        .fullScreenCover(item: Bindable(model).screenRequest) { request in
-            ScreenView(watching: request.watching)
-                .environment(model)
+        .alert("Something went wrong", isPresented: errorShown) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .fullScreenCover(item: screenTarget) { target in
+            if let store = accounts.store(for: target.computerId) {
+                ScreenView(watching: target.request.watching)
+                    .environment(store)
+            }
+        }
+        .sheet(isPresented: Bindable(app).showComputers) {
+            NavigationStack { SettingsView() }
+        }
+        .sheet(isPresented: Binding(get: { app.marketplace != nil }, set: { if !$0 { app.marketplace = nil } })) {
+            if let store = app.marketplace.flatMap(accounts.store(for:)) {
+                NavigationStack {
+                    MarketplaceView { app.marketplace = nil }
+                }
+                .environment(store)
+            }
+        }
+    }
+
+    // MARK: one place for every computer's errors and screen requests
+
+    private var errorMessage: String? {
+        accounts.lastError ?? accounts.computers.lazy.compactMap { accounts.store(for: $0.id)?.lastError }.first
+    }
+
+    private var errorShown: Binding<Bool> {
+        Binding(get: { errorMessage != nil }, set: { shown in
+            guard !shown else { return }
+            accounts.lastError = nil
+            for computer in accounts.computers { accounts.store(for: computer.id)?.lastError = nil }
+        })
+    }
+
+    private struct ScreenTarget: Identifiable {
+        let computerId: ComputerID
+        let request: ScreenRequest
+        var id: String { "\(computerId)/\(request.id)" }
+    }
+
+    /// Any computer's "open the screen" request (thread toolbar, computers list, `codync://screen`).
+    private var screenTarget: Binding<ScreenTarget?> {
+        Binding(get: {
+            accounts.computers.lazy.compactMap { c in
+                accounts.store(for: c.id)?.screenRequest.map { ScreenTarget(computerId: c.id, request: $0) }
+            }.first
+        }, set: { target in
+            guard target == nil else { return }
+            for computer in accounts.computers { accounts.store(for: computer.id)?.screenRequest = nil }
+        })
+    }
+}
+
+/// A conversation, talking to the computer the bot lives on.
+private struct ChatScreen: View {
+    let ref: BotReference
+    @Environment(AccountStore.self) private var accounts
+
+    var body: some View {
+        if let store = accounts.store(for: ref.computerId) {
+            ThreadView(botId: ref.botId)
+                .environment(store)
+        } else {
+            ContentUnavailableView("This computer was removed", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
+        }
+    }
+}
+
+/// Usage for one computer at a time: the last active one, which the Usage widget shows too.
+private struct UsageTab: View {
+    @Environment(AppStore.self) private var app
+    @Environment(AccountStore.self) private var accounts
+    /// Picked here; also becomes the computer the Usage widget shows.
+    @State private var picked: ComputerID?
+
+    var body: some View {
+        if let store = picked.flatMap(accounts.store(for:)) ?? app.currentStore {
+            UsageView()
+                .environment(store)
+                .toolbar {
+                    if accounts.computers.count > 1 {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Menu {
+                                Picker("Computer", selection: Binding(get: { store.computer.id }, set: { id in
+                                    picked = id
+                                    accounts.storage.lastComputerId = id
+                                    WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage")
+                                })) {
+                                    ForEach(accounts.computers) { Text($0.name).tag($0.id) }
+                                }
+                            } label: {
+                                ComputerBadge(store.computer, size: 28)
+                            }
+                            .accessibilityLabel("Computer: \(store.computer.name)")
+                        }
+                    }
+                }
+                .id(store.computer.id)
+        } else {
+            ContentUnavailableView("No computer yet", systemImage: "chart.bar",
+                                   description: Text("Usage shows up once a computer is connected."))
         }
     }
 }

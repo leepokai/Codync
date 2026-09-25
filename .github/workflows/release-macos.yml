@@ -68,6 +68,8 @@ jobs:
       - name: Sign app with Developer ID
         run: |
           APP_PATH=$(find build/derived -name "Codync.app" -path "*/Release/*" | head -1)
+          # Sign-in and the cloud relay read their settings from here.
+          test -f "$APP_PATH/Contents/Resources/AccountConfig.plist" || { echo "AccountConfig.plist missing"; exit 1; }
           # Nested helper first (the bundled Rust host), then the app itself.
           codesign --force --options runtime --timestamp \
             --sign "Developer ID Application" "$APP_PATH/Contents/MacOS/codync-host"

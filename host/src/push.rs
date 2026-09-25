@@ -5,6 +5,7 @@
 //! none are sent while the phone app is connected (it's in the foreground).
 
 use crate::LockExt;
+use crate::crypto;
 use crate::hub::{BotStatus, Hub, Runtime};
 use crate::store::BotConfig;
 use serde::Serialize;
@@ -12,6 +13,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
+use x25519_dalek::StaticSecret;
 
 /// The two alert kinds (wire values double as the APNs category).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
@@ -21,11 +23,8 @@ pub enum AlertKind {
     NeedsInput,
 }
 
-/// `(bot id, Some(kind))` for alerts, `(bot id, None)` for Live Activity updates.
-type ThrottleKey = (String, Option<AlertKind>);
-
-/// Throttle key → last send.
-static LAST_SENT: LazyLock<Mutex<HashMap<ThrottleKey, Instant>>> = LazyLock::new(Mutex::default);
+/// (bot id, kind) → last alert.
+static LAST_SENT: LazyLock<Mutex<HashMap<(String, AlertKind), Instant>>> = LazyLock::new(Mutex::default);
 /// Tickets the relay reported as dead (app uninstalled / token rotated); purged on the next push.
 static GONE: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -37,7 +36,7 @@ fn relay_url(hub: &Hub) -> Option<String> {
 }
 
 /// True when `key` was sent less than `min_gap` ago; otherwise records now.
-fn throttled(key: ThrottleKey, min_gap: Duration) -> bool {
+fn throttled(key: (String, AlertKind), min_gap: Duration) -> bool {
     let mut last = LAST_SENT.locked();
     if last.get(&key).is_some_and(|t| t.elapsed() < min_gap) {
         return true;
@@ -65,44 +64,56 @@ pub fn notify(hub: &Hub, bot: &BotConfig, title: &str, body: &str, kind: AlertKi
     if bot.notify == Some(false) || bot.hidden || hub.ios_connected() {
         return;
     }
-    if throttled((bot.id.clone(), Some(kind)), Duration::from_secs(5)) {
+    if throttled((bot.id.clone(), kind), Duration::from_secs(5)) {
         return;
     }
     let Some(relay) = relay_url(hub) else { return };
     for t in std::mem::take(&mut *GONE.locked()) {
-        if let Err(error) = hub.store.remove_device(&t) {
+        if let Err(error) = hub.store.remove_push_ticket(&t) {
             tracing::warn!(%error, "couldn't forget a dead push ticket");
         }
     }
-    for ticket in hub.store.devices() {
+    // The relay and APNs only see a generic line; the real one is sealed to each device (§6.7).
+    let generic = match kind {
+        AlertKind::NeedsInput => "Needs you",
+        AlertKind::Done => "Done",
+    };
+    let secret = json!({"title": title, "body": crate::acp::truncate(body, 140)}).to_string();
+    let computer_id = hub.identity.computer_id();
+    for t in hub.store.push_tickets() {
+        let mut data = json!({"botId": bot.id, "computerId": computer_id, "ctx": t.ctx});
+        if let Some(key) = t.push_key.as_deref().and_then(|k| crypto::unb64_n::<32>(k).ok()) {
+            let eph = StaticSecret::from(crypto::random::<32>());
+            match crypto::seal_push(&hub.identity.cid_raw(), &key, secret.as_bytes(), &eph) {
+                Ok(sealed) => data["sealed"] = sealed.into(),
+                Err(error) => tracing::warn!(error = format!("{error:#}"), "couldn't seal a notification"),
+            }
+        }
         post(
             format!("{relay}/push"),
             json!({
-                "ticket": ticket,
-                "alert": {"title": title, "body": crate::acp::truncate(body, 140)},
+                "ticket": t.ticket,
+                "alert": {"title": "Codync", "body": generic},
+                "mutableContent": true,
                 "threadId": bot.id,
                 "category": kind,
-                "data": {"botId": bot.id},
+                "data": data,
             }),
         );
     }
 }
 
-/// Throttled Live Activity content updates for bots the phone is watching.
+/// Live Activity status updates for bots a phone is watching. Only the status enum and
+/// start time travel: no free text leaves the computer this way.
 pub fn live_activity_update(hub: &Hub, bot_id: &str, rt: &Runtime) {
-    let tickets = hub.activities.locked().get(bot_id).cloned().unwrap_or_default();
+    let tickets = hub.store.activity_tickets(bot_id);
     if tickets.is_empty() {
-        return;
-    }
-    // Status changes always go out; activity-line churn at most every 8 s.
-    let urgent = rt.status != BotStatus::Working;
-    if !urgent && throttled((bot_id.to_owned(), None), Duration::from_secs(8)) {
         return;
     }
     let Some(relay) = relay_url(hub) else { return };
     #[allow(clippy::cast_precision_loss)] // epoch milliseconds fit an f64 mantissa until year 287,396
     let started_at = rt.started_at.map(|ms| ms as f64 / 1000.0 - SWIFT_REFERENCE_EPOCH);
-    let state = json!({"status": rt.status, "activity": rt.activity, "startedAt": started_at});
+    let state = json!({"status": rt.status, "activity": "", "startedAt": started_at});
     for ticket in tickets {
         post(
             format!("{relay}/push"),
@@ -112,7 +123,7 @@ pub fn live_activity_update(hub: &Hub, bot_id: &str, rt: &Runtime) {
 }
 
 pub fn live_activity_end(hub: &Hub, bot_id: &str) {
-    let tickets = hub.activities.locked().remove(bot_id).unwrap_or_default();
+    let tickets = hub.store.take_activity_tickets(bot_id);
     let Some(relay) = relay_url(hub) else { return };
     let state = json!({"status": BotStatus::Idle, "activity": "", "startedAt": null});
     for ticket in tickets {

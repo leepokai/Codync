@@ -20,6 +20,7 @@ struct AccountSwitcherButton: View {
 }
 
 struct AccountSwitcherView: View {
+    @Environment(AppStore.self) private var app
     @Environment(AccountSession.self) private var account
     @Environment(\.dismiss) private var dismiss
 
@@ -66,25 +67,24 @@ struct AccountSwitcherView: View {
                     Label("Computers & settings", systemImage: "desktopcomputer")
                 }
             } footer: {
-                Text("Computer connections are saved separately for each account on this iPhone. Pair a computer to see its bots.")
+                Text("Computers are kept separately for each account on this iPhone. Signed in, you also see the computers added to your account.")
             }
 
             if account.isSignedIn {
                 Section {
                     Button("Sign out of this account", role: .destructive) {
-                        Task { await account.signOut() }
+                        Task { await app.signOut() }
                     }
                     .disabled(account.isBusy)
                 } footer: {
-                    if !account.supportsMultipleAccounts {
-                        Text("Sign out to use a different Google account.")
-                    }
+                    Text("Signing out removes this account's computers and keys from this iPhone."
+                         + (account.supportsMultipleAccounts ? "" : " Sign out to use a different Google account."))
                 }
             }
 
             if !account.isConfigured {
                 Section {
-                    Text("Account sign-in isn't configured in this build. Local pairing is available.")
+                    Text("Account sign-in isn't configured in this build. Pairing with a code works without it.")
                         .foregroundStyle(Palette.secondary)
                 }
             }

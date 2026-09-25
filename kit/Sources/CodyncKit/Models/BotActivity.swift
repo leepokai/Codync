@@ -8,6 +8,7 @@ public struct BotActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable, Sendable {
         /// idle | working | needsInput | error
         public var status: String
+        /// Always empty: pushes never carry free text (§6.7). Kept so the content state shape stays stable.
         public var activity: String
         public var startedAt: Date?
 
@@ -19,13 +20,15 @@ public struct BotActivityAttributes: ActivityAttributes {
     }
 
     public var link: URL?
+    public var computerId: ComputerID
     public var botId: String
     public var name: String
     public var avatarShape: String
     public var avatarColor: String
 
-    public init(bot: Bot, link: URL? = nil) {
+    public init(bot: Bot, computerId: ComputerID, link: URL? = nil) {
         self.link = link
+        self.computerId = computerId
         botId = bot.id
         name = bot.name
         avatarShape = bot.avatarShape

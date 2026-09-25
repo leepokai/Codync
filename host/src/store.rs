@@ -175,6 +175,96 @@ fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<Bo
     }
 }
 
+/// Current schema version (kv `schema`).
+const SCHEMA: i64 = 3;
+
+/// 3: authorized devices (keys, not push tickets) with their push and Live Activity
+/// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
+fn migrate(c: &Connection) -> Result<()> {
+    let version: i64 =
+        c.query_row("SELECT CAST(v AS INTEGER) FROM kv WHERE k = 'schema'", [], |r| r.get(0)).optional()?.unwrap_or(0);
+    if version >= SCHEMA {
+        return Ok(());
+    }
+    c.execute_batch(
+        "BEGIN;
+         DROP TABLE IF EXISTS devices;
+         CREATE TABLE devices(
+            key TEXT PRIMARY KEY, name TEXT NOT NULL, platform TEXT NOT NULL,
+            source TEXT NOT NULL, grant_id TEXT, scopes TEXT NOT NULL,
+            lease_until INTEGER, created_at INTEGER NOT NULL, last_seen_at INTEGER);
+         CREATE TABLE IF NOT EXISTS push_tickets(
+            ticket TEXT PRIMARY KEY, device_key TEXT NOT NULL, push_key TEXT, ctx TEXT, name TEXT,
+            created_at INTEGER NOT NULL);
+         CREATE TABLE IF NOT EXISTS activity_tickets(
+            ticket TEXT PRIMARY KEY, bot_id TEXT NOT NULL, device_key TEXT NOT NULL, created_at INTEGER NOT NULL);
+         INSERT INTO kv(k, v) VALUES('schema', '3') ON CONFLICT(k) DO UPDATE SET v = '3';
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
+/// Where an authorized device came from (wire values `local` / `account`).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DeviceSource {
+    /// Paired with the QR code shown on this computer.
+    Local,
+    /// Approved here for a signed-in account; kept alive by a lease the cloud renews.
+    Account,
+}
+
+/// What a device may do (wire values `control` / `screen`).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Scope {
+    Control,
+    Screen,
+}
+
+/// One row of the authorized-device table (spec §4.3).
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Device {
+    pub key: String,
+    pub name: String,
+    pub platform: String,
+    pub source: DeviceSource,
+    #[serde(skip)]
+    pub grant_id: Option<String>,
+    pub scopes: Vec<Scope>,
+    pub lease_until: Option<i64>,
+    pub created_at: i64,
+    pub last_seen_at: Option<i64>,
+}
+
+/// A push ticket with the device's push key (§6.7) and account context.
+pub struct PushTicket {
+    pub ticket: String,
+    pub push_key: Option<String>,
+    pub ctx: Option<String>,
+}
+
+const DEVICE_COLS: &str = "key, name, platform, source, grant_id, scopes, lease_until, created_at, last_seen_at";
+
+fn row_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
+    let source: String = r.get(3)?;
+    let scopes: String = r.get(5)?;
+    Ok(Device {
+        key: r.get(0)?,
+        name: r.get(1)?,
+        platform: r.get(2)?,
+        // Unknown values grant nothing: an unreadable source is an account device (leased),
+        // unreadable scopes are none.
+        source: serde_json::from_value(Value::String(source)).unwrap_or(DeviceSource::Account),
+        grant_id: r.get(4)?,
+        scopes: serde_json::from_str(&scopes).unwrap_or_default(),
+        lease_until: r.get(6)?,
+        created_at: r.get(7)?,
+        last_seen_at: r.get(8)?,
+    })
+}
+
 const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, updated_at";
 const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
 
@@ -193,9 +283,9 @@ impl Store {
                 rev INTEGER NOT NULL, kind TEXT NOT NULL, turn INTEGER NOT NULL, data TEXT NOT NULL,
                 created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
              CREATE INDEX IF NOT EXISTS entries_rev ON entries(rev);
-             CREATE INDEX IF NOT EXISTS entries_bot ON entries(bot_id, seq);
-             CREATE TABLE IF NOT EXISTS devices(ticket TEXT PRIMARY KEY, name TEXT, created_at INTEGER NOT NULL);",
+             CREATE INDEX IF NOT EXISTS entries_bot ON entries(bot_id, seq);",
         )?;
+        migrate(&c)?;
         Ok(Self { db: Mutex::new(c) })
     }
 
@@ -413,27 +503,120 @@ impl Store {
 
     // MARK: devices
 
-    pub fn add_device(&self, ticket: &str, name: &str) -> Result<()> {
+    pub fn device(&self, key: &str) -> Option<Device> {
+        let c = self.db.locked();
+        let row = c.query_row(&format!("SELECT {DEVICE_COLS} FROM devices WHERE key = ?1"), [key], row_device);
+        logged("device", row.optional()).flatten()
+    }
+
+    pub fn devices(&self) -> Result<Vec<Device>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!("SELECT {DEVICE_COLS} FROM devices ORDER BY created_at"))?;
+        Ok(st.query_map([], row_device)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Adds (or, for a key paired again, refreshes) an authorized device.
+    pub fn put_device(&self, d: &Device) -> Result<()> {
         let c = self.db.locked();
         c.execute(
-            "INSERT INTO devices(ticket, name, created_at) VALUES(?1, ?2, ?3)
-             ON CONFLICT(ticket) DO UPDATE SET name = ?2",
-            params![ticket, name, now_ms()],
+            "INSERT INTO devices(key, name, platform, source, grant_id, scopes, lease_until, created_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(key) DO UPDATE SET name = ?2, platform = ?3, source = ?4, grant_id = ?5,
+               scopes = ?6, lease_until = ?7",
+            params![
+                d.key,
+                d.name,
+                d.platform,
+                serde_json::to_value(d.source)?.as_str(),
+                d.grant_id,
+                serde_json::to_string(&d.scopes)?,
+                d.lease_until,
+                d.created_at
+            ],
         )?;
         Ok(())
     }
 
-    pub fn remove_device(&self, ticket: &str) -> Result<()> {
-        self.db.locked().execute("DELETE FROM devices WHERE ticket = ?1", [ticket])?;
+    /// Removes a device with its push and Live Activity tickets; false when it wasn't there.
+    pub fn remove_device(&self, key: &str) -> Result<bool> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        let n = tx.execute("DELETE FROM devices WHERE key = ?1", [key])?;
+        tx.execute("DELETE FROM push_tickets WHERE device_key = ?1", [key])?;
+        tx.execute("DELETE FROM activity_tickets WHERE device_key = ?1", [key])?;
+        tx.commit()?;
+        Ok(n > 0)
+    }
+
+    /// Extends an account device's lease (the cloud still lists its grant).
+    pub fn set_lease(&self, key: &str, until: i64) -> Result<()> {
+        let c = self.db.locked();
+        c.execute("UPDATE devices SET lease_until = ?2 WHERE key = ?1", params![key, until])?;
         Ok(())
     }
 
-    pub fn devices(&self) -> Vec<String> {
+    pub fn touch_device(&self, key: &str) -> Result<()> {
         let c = self.db.locked();
-        let tickets = c
-            .prepare("SELECT ticket FROM devices")
-            .and_then(|mut st| st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>());
-        logged("devices", tickets).unwrap_or_default()
+        c.execute("UPDATE devices SET last_seen_at = ?2 WHERE key = ?1", params![key, now_ms()])?;
+        Ok(())
+    }
+
+    pub fn add_push_ticket(
+        &self,
+        ticket: &str,
+        device_key: &str,
+        push_key: Option<&str>,
+        ctx: Option<&str>,
+        name: &str,
+    ) -> Result<()> {
+        let c = self.db.locked();
+        c.execute(
+            "INSERT INTO push_tickets(ticket, device_key, push_key, ctx, name, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(ticket) DO UPDATE SET device_key = ?2, push_key = ?3, ctx = ?4, name = ?5",
+            params![ticket, device_key, push_key, ctx, name, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_push_ticket(&self, ticket: &str) -> Result<()> {
+        self.db.locked().execute("DELETE FROM push_tickets WHERE ticket = ?1", [ticket])?;
+        Ok(())
+    }
+
+    pub fn push_tickets(&self) -> Vec<PushTicket> {
+        let c = self.db.locked();
+        let rows = c.prepare("SELECT ticket, push_key, ctx FROM push_tickets").and_then(|mut st| {
+            st.query_map([], |r| Ok(PushTicket { ticket: r.get(0)?, push_key: r.get(1)?, ctx: r.get(2)? }))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        });
+        logged("push tickets", rows).unwrap_or_default()
+    }
+
+    pub fn add_activity_ticket(&self, ticket: &str, bot_id: &str, device_key: &str) -> Result<()> {
+        let c = self.db.locked();
+        c.execute(
+            "INSERT INTO activity_tickets(ticket, bot_id, device_key, created_at) VALUES(?1, ?2, ?3, ?4)
+             ON CONFLICT(ticket) DO UPDATE SET bot_id = ?2, device_key = ?3",
+            params![ticket, bot_id, device_key, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn activity_tickets(&self, bot_id: &str) -> Vec<String> {
+        let c = self.db.locked();
+        let rows = c
+            .prepare("SELECT ticket FROM activity_tickets WHERE bot_id = ?1")
+            .and_then(|mut st| st.query_map([bot_id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>());
+        logged("activity tickets", rows).unwrap_or_default()
+    }
+
+    /// Forgets a bot's Live Activity tickets (its activity ended); returns them.
+    pub fn take_activity_tickets(&self, bot_id: &str) -> Vec<String> {
+        let tickets = self.activity_tickets(bot_id);
+        if let Err(error) = self.db.locked().execute("DELETE FROM activity_tickets WHERE bot_id = ?1", [bot_id]) {
+            tracing::warn!(%error, bot = bot_id, "couldn't forget Live Activity tickets");
+        }
+        tickets
     }
 }
 
@@ -495,6 +678,60 @@ mod tests {
         assert_eq!(s.expire_pending().unwrap(), 2);
         assert_eq!(s.entry(&q.id).unwrap().data["status"], "failed");
         assert_eq!(s.expire_pending().unwrap(), 0, "idempotent");
+    }
+
+    #[test]
+    fn removing_a_device_drops_its_tickets() {
+        let s = temp_store();
+        let d = Device {
+            key: "dk1".into(),
+            name: "Phone".into(),
+            platform: "ios".into(),
+            source: DeviceSource::Local,
+            grant_id: None,
+            scopes: vec![Scope::Control, Scope::Screen],
+            lease_until: None,
+            created_at: 1,
+            last_seen_at: None,
+        };
+        s.put_device(&d).unwrap();
+        s.put_device(&Device { key: "dk2".into(), ..d.clone() }).unwrap();
+        s.add_push_ticket("t1", "dk1", Some("pk"), Some("local"), "Phone").unwrap();
+        s.add_push_ticket("t2", "dk2", None, None, "Phone").unwrap();
+        s.add_activity_ticket("a1", "b1", "dk1").unwrap();
+        s.add_activity_ticket("a2", "b1", "dk2").unwrap();
+        let got = s.device("dk1").unwrap();
+        assert_eq!((got.source, got.scopes), (DeviceSource::Local, vec![Scope::Control, Scope::Screen]));
+
+        assert!(s.remove_device("dk1").unwrap());
+        assert!(!s.remove_device("dk1").unwrap());
+        assert!(s.device("dk1").is_none());
+        assert_eq!(s.push_tickets().iter().map(|t| t.ticket.as_str()).collect::<Vec<_>>(), ["t2"]);
+        assert_eq!(s.activity_tickets("b1"), ["a2"]);
+        assert_eq!(s.take_activity_tickets("b1"), ["a2"]);
+        assert!(s.activity_tickets("b1").is_empty());
+    }
+
+    #[test]
+    fn schema_3_replaces_the_old_ticket_table() {
+        let dir = std::env::temp_dir().join(format!("codync-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("t.db");
+        {
+            let c = Connection::open(&db).unwrap();
+            c.execute_batch(
+                "CREATE TABLE kv(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+                 CREATE TABLE devices(ticket TEXT PRIMARY KEY, name TEXT, created_at INTEGER NOT NULL);
+                 INSERT INTO devices VALUES('old', 'iPhone', 1);",
+            )
+            .unwrap();
+        }
+        let s = Store::open(&db).unwrap();
+        assert!(s.devices().unwrap().is_empty());
+        assert_eq!(s.kv_get("schema").as_deref(), Some("3"));
+        drop(s);
+        let s = Store::open(&db).unwrap();
+        assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
     }
 
     #[test]

@@ -1,0 +1,30 @@
+{
+  "name": "codync-cloud",
+  "version": "3.0.0",
+  "description": "Codync cloud: accounts, computers and the end-to-end encrypted relay (Cloudflare Worker + Durable Object)",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env dev",
+    "deploy:staging": "wrangler deploy --env staging",
+    "typecheck": "tsc && tsc -p test/e2e",
+    "test": "vitest run",
+    "e2e": "node --experimental-strip-types --no-warnings test/e2e/relay.e2e.ts"
+  },
+  "dependencies": {
+    "@clerk/backend": "^3.20.1",
+    "svix": "^2.5.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260925.1",
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@types/node": "^26.6.2",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.140.0",
+    "vitest": "~4.1.11",
+    "@cloudflare/vitest-pool-workers": "^0.22.0"
+  }
+}

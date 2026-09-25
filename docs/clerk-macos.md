@@ -13,8 +13,9 @@ The footer displays **Account**, never the Mac user's local name.
 4. Allow the native callback `com.pokai.Codync://callback` where Clerk's dashboard
    requests allowed redirect URLs.
 5. Copy only the **publishable key** into
-   `apps/macos/Resources/ClerkConfig.plist` (`publishableKey`). A development
-   launch can override it with `CODYNC_CLERK_PUBLISHABLE_KEY`.
+   `apps/macos/Resources/AccountConfig.plist` (`clerkPublishableKey`), next to
+   `cloudURL`, the Codync cloud the app talks to (staging for now). A development
+   launch can override them with `CODYNC_CLERK_PUBLISHABLE_KEY` and `CODYNC_CLOUD_URL`.
 
 The checked-in public configuration uses the Codync development instance
 `sunny-mollusk-8651.clerk.accounts.dev`. Native API is enabled, the Apple app
@@ -34,8 +35,10 @@ network failures leave the user in the custom account menu with a retryable
 error. Log out calls Clerk's sign-out API.
 
 The custom account menu displays the authenticated email and avatar when
-available. A Clerk session does not replace the local host pairing token,
-authorize remote host access, upload conversations, or migrate local data.
+available. `AccountSession.sessionToken()` hands the session JWT to the Codync
+cloud client. A Clerk session never authorizes a computer by itself: each
+computer approves each device after comparing a 6-digit code
+([remote-relay-spec.md](remote-relay-spec.md) §4.2). Conversations are not uploaded.
 
 ## Verification
 
@@ -61,7 +64,7 @@ Its top-left button opens Accounts; Computers & settings is a separate destinati
 inside that sheet. The iOS native application must be registered in the same Clerk
 instance with bundle ID `com.pokai.Codync.ios` and its own callback
 `com.pokai.Codync.ios://callback`. The iOS public configuration is in
-`apps/ios/Resources/ClerkConfig.plist`. The repository configuration does not prove
+`apps/ios/Resources/AccountConfig.plist`. The repository configuration does not prove
 that the corresponding Clerk Dashboard registration has been completed.
 
 To retain several accounts at once, enable multi-session support in the Clerk
@@ -70,13 +73,36 @@ it lists active SDK sessions and switches with `auth.setActive(sessionId:)`; wit
 single-session enabled, it asks the user to sign out before using another account.
 Signing out passes the current session ID, rather than signing out all accounts.
 
-Pairings and caches are partitioned by the Clerk user ID on this iPhone. Local
-pairings keep their original storage namespace and are not automatically claimed
-by a newly signed-in user. Each BotStore captures a fixed storage context, and is
-retired when changing accounts. This is client-side separation, not server-side
-ownership enforcement. Cloudflare device discovery, per-device grants, account-aware
-push revocation and Keychain migration remain work in the architecture plan.
+Computers, device keys and caches are partitioned by the Clerk user ID on this
+iPhone (`SharedStore.Context`). Computers paired with a code while signed out stay
+in the local context and are not claimed by a newly signed-in user. Each account
+context gets its own `AccountStore`, retired when changing accounts; signing out
+erases that account's computers, device and push keys and caches from the iPhone.
+Signed in, the Computers screen also lists the account's computers from the cloud;
+asking one for access shows the 6-digit code to compare on the computer.
 
 Verify with two real Google accounts: add both, switch, cancel OAuth, restart,
 check each account's pairings, sign out just one, and verify the other remains.
 A simulator build verifies compilation, not the Dashboard settings or OAuth flow.
+
+## Mac: computers, approvals and SSH
+
+The Mac keeps one `AccountStore` per account context too (`HostController`). This Mac's
+host and SSH computers are attached over loopback and follow into whichever account is
+active; the account's other computers are reached over the encrypted channel with the
+Mac's own device key. Log out erases the account's keys and caches, as on iPhone.
+
+**Computers & devices** (account menu) shows, for this Mac and each SSH computer:
+*Reach from anywhere* (`setCloud`, using the app's `cloudURL` when the host has none),
+*Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and
+*Remove from account* (`unclaim`), a pairing QR, and the authorized devices with revoke.
+A device asking for access raises the menu bar dot and opens the approval sheet with the
+6-digit code; Approve stays disabled until the device revealed its code.
+
+SSH computers use the system OpenSSH (`apps/macos/App/SSHTunnel.swift`): `ssh -G` to
+resolve the target, `ssh-keygen -F` against `~/.ssh/known_hosts` and
+`~/.codync/ssh_known_hosts`, a fingerprint confirmation on first contact (no proxy),
+`codync-host info --json` for the identity and loopback token, then
+`ssh -N -L 127.0.0.1:<free port>:127.0.0.1:<remote port>` with keepalive and backoff.
+A changed host key or a different computer ID blocks the connection. Debug builds run
+`SSH.selfCheck()` at launch (argv, `ssh -G` parsing, validation).

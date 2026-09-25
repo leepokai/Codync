@@ -9,8 +9,8 @@ struct ChatWindow: View {
 
     var body: some View {
         Group {
-            if let store = host.store {
-                ChatSplitView().environment(store)
+            if host.state == .running || !host.accounts.computers.isEmpty {
+                ChatSplitView().id(host.contextID)
             } else {
                 ContentUnavailableView(
                     "Codync host isn't running",
@@ -23,21 +23,42 @@ struct ChatWindow: View {
         .background(Palette.background)
         .tint(Palette.accent)
         .ignoresSafeArea(.container, edges: .top)
+        // Approving a device: the code the device shows must match (spec §4.2 B).
+        // It closes when the request is decided or put off (both change `currentApproval`).
+        .sheet(item: Binding(get: { host.currentApproval }, set: { _ in })) {
+            ApprovalSheet(approval: $0)
+        }
     }
 }
 
+/// A bot together with the store of the computer it lives on.
+@MainActor
+private struct BotTarget {
+    let bot: Bot
+    let store: BotStore
+}
+
+private struct EditTarget: Identifiable {
+    let request: EditorRequest
+    let store: BotStore
+    var id: UUID { request.id }
+}
+
 private struct ChatSplitView: View {
-    @Environment(BotStore.self) private var model
+    @Environment(HostController.self) private var host
     @Environment(AccountSession.self) private var account
-    @State private var editing: EditorRequest?
-    @State private var confirmDelete: Bot?
-    @State private var contextBot: Bot?
+    @State private var editing: EditTarget?
+    @State private var confirmDelete: BotTarget?
+    @State private var contextBot: BotTarget?
     @State private var contextPoint = CGPoint.zero
-    @State private var newSessionBot: Bot?
+    @State private var newSessionBot: BotTarget?
     @State private var composing = false
-    @State private var previousSelection: String?
-    @State private var hoveredBot: String?
-    @State private var showPlugins = false
+    /// The computer a new chat goes to.
+    @State private var composeComputer: ComputerID?
+    @State private var previousSelection: BotReference?
+    @State private var hoveredBot: BotReference?
+    @State private var marketplace: ComputerID?
+    @State private var showComputers = false
     @State private var search = ""
     @State private var showUsage = false
     @State private var showAccount = false
@@ -53,6 +74,23 @@ private struct ChatSplitView: View {
 
     private var sheetHeight: CGFloat { max(420, windowSize.height - 76) }
 
+    private var accounts: AccountStore { host.accounts }
+    /// Every computer with a store, in the account's order.
+    private var stores: [BotStore] { accounts.computers.compactMap { accounts.store(for: $0.id) } }
+    private var onlineStores: [BotStore] { stores.filter { $0.connection == .online } }
+    private var selectedStore: BotStore? { accounts.selection.flatMap { accounts.store(for: $0.computerId) } }
+    private var composeStore: BotStore? { composeComputer.flatMap { accounts.store(for: $0) } }
+    private var showsComputers: Bool { stores.count > 1 && !compact }
+
+    private func ref(_ bot: Bot, _ store: BotStore) -> BotReference {
+        BotReference(accountId: accounts.accountId, computerId: store.computer.id, botId: bot.id)
+    }
+
+    /// Kit views (new chat, bot editor) select a new bot on their own store; that becomes the account's selection.
+    private var storeSelection: BotReference? {
+        stores.lazy.compactMap { store in store.selection.map { BotReference(accountId: accounts.accountId, computerId: store.computer.id, botId: $0) } }.first
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -63,7 +101,7 @@ private struct ChatSplitView: View {
                         .buttonStyle(.plain)
                         .help("New chat (⌘N)")
                         .keyboardShortcut("n")
-                        .disabled(model.connection != .online)
+                        .disabled(onlineStores.isEmpty)
                 }
                 .padding(.leading, compact ? 0 : 80)
                 .padding(.trailing, 18)
@@ -73,63 +111,40 @@ private struct ChatSplitView: View {
                 .accessibilityHidden(compact)
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        ForEach(filteredBots) { bot in
-                            Button {
-                                model.selection = bot.id
-                            } label: {
-                                BotRow(bot: bot, compact: compact)
-                                    .padding(.horizontal, compact ? 0 : 8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(
-                                    model.selection == bot.id
-                                        ? Palette.bubbleUser : hoveredBot == bot.id ? Palette.bubbleAgent : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 10)
-                                )
-                                .contentShape(Rectangle())
+                        ForEach(stores, id: \.computer.id) { store in
+                            let bots = filteredBots(store)
+                            if showsComputers && !(bots.isEmpty && !search.isEmpty) {
+                                ComputerHeader(store: store, ssh: host.isSSH(store.computer.id))
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(bot.name)
-                            .accessibilityAddTraits(model.selection == bot.id ? .isSelected : [])
-                            .help(bot.name)
-                            .onHover { hoveredBot = $0 ? bot.id : nil }
-                            .overlay {
-                                GeometryReader { geometry in
-                                    SecondaryClickCapture { point in
-                                        let frame = geometry.frame(in: .named("chat-window"))
-                                        contextPoint = CGPoint(x: frame.minX + point.x, y: frame.minY + point.y)
-                                        contextBot = bot
-                                    }
-                                }
-                            }
-                            .accessibilityAction(named: "Conversation actions") {
-                                contextPoint = CGPoint(x: compact ? 64 : sidebarWidth - 24, y: 100)
-                                contextBot = bot
-                            }
+                            ForEach(bots) { bot in row(bot, store) }
                         }
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 4)
                 }
                 .onMoveCommand { direction in
-                    guard direction == .up || direction == .down, !filteredBots.isEmpty else { return }
-                    let current = filteredBots.firstIndex { $0.id == model.selection } ?? -1
-                    let next = direction == .down ? min(current + 1, filteredBots.count - 1) : max(current - 1, 0)
-                    model.selection = filteredBots[next].id
+                    let refs = stores.flatMap { store in filteredBots(store).map { ref($0, store) } }
+                    guard direction == .up || direction == .down, !refs.isEmpty else { return }
+                    let current = refs.firstIndex { $0 == accounts.selection } ?? -1
+                    let next = direction == .down ? min(current + 1, refs.count - 1) : max(current - 1, 0)
+                    accounts.selection = refs[next]
                 }
                 .scrollContentBackground(.hidden)
                 .background(Palette.surface)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !compact {
-                        VStack(spacing: 0) {
+                        VStack(spacing: 4) {
                             searchField
-                            ConnectionBanner().padding(.horizontal, 12)
+                            ForEach(stores, id: \.computer.id) { store in
+                                ConnectionBanner().environment(store).padding(.horizontal, 12)
+                            }
                         }
                         .frame(width: sidebarWidth)
                         .transition(.opacity)
                     }
                 }
                 .overlay {
-                    if filteredBots.isEmpty && !compact {
+                    if stores.allSatisfy({ filteredBots($0).isEmpty }) && !compact {
                         VStack(spacing: 8) {
                             Text(search.isEmpty ? "No bots yet" : "No matching bots")
                                 .font(.system(size: 13, weight: .medium))
@@ -160,17 +175,23 @@ private struct ChatSplitView: View {
             .clipped()
             sidebarDivider
             Group {
-                if composing {
-                    // The To: row takes the title bar's place instead of sitting under an empty one.
-                    NewChatView {
-                        composing = false
-                        if model.selection == nil { model.selection = previousSelection }
+                if composing, let store = composeStore {
+                    VStack(spacing: 0) {
+                        if onlineStores.count > 1 { computerPicker }
+                        // The To: row takes the title bar's place instead of sitting under an empty one.
+                        NewChatView {
+                            composing = false
+                            if accounts.selection == nil { accounts.selection = previousSelection }
+                        }
+                        .environment(store)
+                        .id(store.computer.id)
                     }
                     .ignoresSafeArea(.container, edges: .top)
 
-                } else if let id = model.selection, model.bots[id] != nil {
-                    ThreadView(botId: id)
-                        .id(id)
+                } else if let ref = accounts.selection, let store = selectedStore, store.bots[ref.botId] != nil {
+                    ThreadView(botId: ref.botId)
+                        .environment(store)
+                        .id(ref)
                         .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 } else {
                     VStack(spacing: 14) {
@@ -191,6 +212,7 @@ private struct ChatSplitView: View {
                             .padding(.vertical, 9)
                             .background(Palette.accentFill, in: Capsule())
                             .foregroundStyle(Palette.onAccent)
+                            .disabled(onlineStores.isEmpty)
                     }
                     .padding(32)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -220,15 +242,17 @@ private struct ChatSplitView: View {
                         onAuthenticate: {
                             dismissAccountMenu()
                             Task {
-                                if account.isSignedIn { await account.signOut() }
+                                if account.isSignedIn { await host.signOut() }
                                 else { await account.signIn() }
                                 if account.errorMessage != nil { showAccount = true }
                             }
                         },
                         compact: compact,
-                        usage: model.usage.providers.flatMap(\.windows).map(\.percent).max(),
+                        usage: stores.flatMap(\.usage.providers).flatMap(\.windows).map(\.percent).max(),
+                        approvals: host.approvals.count,
                         onDismiss: dismissAccountMenu,
                         onUsage: { dismissAccountMenu(); showUsage = true },
+                        onComputers: { dismissAccountMenu(); showComputers = true },
                         onToggleSidebar: {
                             dismissAccountMenu()
                             compact.toggle()
@@ -250,7 +274,7 @@ private struct ChatSplitView: View {
                         .onTapGesture { contextBot = nil }
                         .accessibilityLabel("Dismiss conversation menu")
                         .accessibilityAddTraits(.isButton)
-                    DesktopActionMenu(items: botActions(bot), onDismiss: { contextBot = nil })
+                    DesktopActionMenu(items: botActions(bot.bot, bot.store), onDismiss: { contextBot = nil })
                         .frame(width: 260)
                         .offset(x: min(max(8, contextPoint.x), windowSize.width - 268),
                                 y: min(max(8, contextPoint.y), max(8, windowSize.height - 344)))
@@ -260,15 +284,23 @@ private struct ChatSplitView: View {
         }
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: showAccount)
         .ignoresSafeArea(.container, edges: .top)
-        .sheet(item: $editing) { request in
-            NavigationStack { BotEditorView(draft: request.draft) }
+        .sheet(item: $editing) { target in
+            NavigationStack { BotEditorView(draft: target.request.draft) }
+                .environment(target.store)
                 .frame(width: 520, height: min(680, sheetHeight))
         }
-        .sheet(isPresented: $showPlugins) {
-            NavigationStack {
-                MarketplaceView { showPlugins = false }
+        .sheet(isPresented: Binding(get: { marketplace != nil }, set: { if !$0 { marketplace = nil } })) {
+            if let store = marketplace.flatMap(accounts.store(for:)) {
+                NavigationStack {
+                    MarketplaceView { marketplace = nil }
+                }
+                .environment(store)
+                .frame(width: min(920, windowSize.width - 80), height: sheetHeight)
             }
-            .frame(width: min(920, windowSize.width - 80), height: sheetHeight)
+        }
+        .sheet(isPresented: $showComputers) {
+            ComputersView { showComputers = false }
+                .frame(width: 620, height: sheetHeight)
         }
         .sheet(isPresented: $showUsage) {
             VStack(alignment: .leading, spacing: 20) {
@@ -277,10 +309,17 @@ private struct ChatSplitView: View {
                     Spacer()
                     Button("Done") { showUsage = false }.keyboardShortcut(.cancelAction)
                 }
-                if model.usage.providers.isEmpty {
+                let withUsage = stores.filter { !$0.usage.providers.isEmpty }
+                if withUsage.isEmpty {
                     Text("No usage information yet.").foregroundStyle(Palette.secondary)
                 } else {
-                    UsageStrip(usage: model.usage)
+                    ForEach(withUsage, id: \.computer.id) { store in
+                        if stores.count > 1 {
+                            Label { Text(store.hostName) } icon: { ComputerBadge(store.computer, size: 16) }
+                                .font(.headline)
+                        }
+                        UsageStrip(usage: store.usage)
+                    }
                 }
             }
             .padding(24)
@@ -306,27 +345,47 @@ private struct ChatSplitView: View {
             get: { newSessionBot != nil },
             set: { if !$0 { newSessionBot = nil } }
         ), titleVisibility: .visible) {
-            if let bot = newSessionBot {
-                Button("New session") { model.newSession(bot.id); newSessionBot = nil }
+            if let target = newSessionBot {
+                Button("New session") { target.store.newSession(target.bot.id); newSessionBot = nil }
             }
         } message: {
             Text("The conversation stays here, but the agent starts with a fresh context.")
         }
-        .deleteBotConfirmation($confirmDelete)
-        .storeErrorAlert(model)
-        .animation(Motion.reduced(Motion.fade, reduceMotion), value: model.selection)
+        .confirmationDialog("Delete \(confirmDelete?.bot.name ?? "bot")?", isPresented: Binding(
+            get: { confirmDelete != nil },
+            set: { if !$0 { confirmDelete = nil } }
+        ), titleVisibility: .visible) {
+            if let target = confirmDelete {
+                Button("Delete bot and its conversation", role: .destructive) { target.store.delete(target.bot) }
+            }
+        } message: {
+            Text("Files it changed on your computer stay as they are.")
+        }
+        .alert("Something went wrong", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { clearErrors() } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: accounts.selection)
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: composing)
-        .onChange(of: model.selection) { _, id in if id != nil { composing = false } }
+        .onChange(of: accounts.selection) { _, ref in if ref != nil { composing = false } }
+        .onChange(of: storeSelection) { _, ref in
+            guard let ref else { return }
+            accounts.store(for: ref.computerId)?.selection = nil
+            accounts.selection = ref
+        }
         #if DEBUG
             .onAppear {
-                // Screenshot/UI checks: CODYNC_DEBUG_OPEN=compose | plugins | <bot name>
+                // Screenshot/UI checks: CODYNC_DEBUG_OPEN=compose | plugins | computers | <bot name>
                 let target = ProcessInfo.processInfo.environment["CODYNC_DEBUG_OPEN"]
                 if target == "compose" {
-                    composing = true
+                    compose()
                 } else if target == "plugins" {
-                    showPlugins = true
-                } else if let target, let bot = model.roster.first(where: { $0.name == target }) {
-                    model.selection = bot.id
+                    marketplace = host.store?.computer.id
+                } else if target == "computers" {
+                    showComputers = true
+                } else if let target, let item = accounts.roster.first(where: { $0.bot.name == target }) {
+                    accounts.selection = item.ref
                 }
             }
         #endif
@@ -372,10 +431,10 @@ extension ChatSplitView {
             }
     }
 
-    fileprivate var filteredBots: [Bot] {
+    fileprivate func filteredBots(_ store: BotStore) -> [Bot] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        if compact { return model.roster }
-        return model.roster.filter {
+        if compact { return store.roster }
+        return store.roster.filter {
             query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
                 || ($0.lastMessage?.localizedCaseInsensitiveContains(query) ?? false)
         }
@@ -412,6 +471,70 @@ extension ChatSplitView {
 
     private var localProfileName: String { "Account" }
 
+    private func row(_ bot: Bot, _ store: BotStore) -> some View {
+        let ref = ref(bot, store)
+        return Button {
+            accounts.selection = ref
+        } label: {
+            BotRow(bot: bot, compact: compact)
+                .environment(store)
+                .padding(.horizontal, compact ? 0 : 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    accounts.selection == ref
+                        ? Palette.bubbleUser : hoveredBot == ref ? Palette.bubbleAgent : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 10)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(stores.count > 1 ? "\(bot.name), on \(store.hostName)" : bot.name)
+        .accessibilityAddTraits(accounts.selection == ref ? .isSelected : [])
+        .help(stores.count > 1 ? "\(bot.name) · \(store.hostName)" : bot.name)
+        .onHover { hoveredBot = $0 ? ref : nil }
+        .overlay {
+            GeometryReader { geometry in
+                SecondaryClickCapture { point in
+                    let frame = geometry.frame(in: .named("chat-window"))
+                    contextPoint = CGPoint(x: frame.minX + point.x, y: frame.minY + point.y)
+                    contextBot = BotTarget(bot: bot, store: store)
+                }
+            }
+        }
+        .accessibilityAction(named: "Conversation actions") {
+            contextPoint = CGPoint(x: compact ? 64 : sidebarWidth - 24, y: 100)
+            contextBot = BotTarget(bot: bot, store: store)
+        }
+    }
+
+    /// Which computer a new chat goes to, when more than one is online.
+    fileprivate var computerPicker: some View {
+        HStack(spacing: 8) {
+            Text("On").foregroundStyle(Palette.secondary)
+            Picker("Computer", selection: Binding(get: { composeComputer ?? "" }, set: { composeComputer = $0 })) {
+                ForEach(onlineStores, id: \.computer.id) { store in
+                    Text(store.hostName).tag(store.computer.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+            Spacer()
+        }
+        .font(.callout)
+        .padding(.horizontal, 22)
+        .padding(.top, 12)
+    }
+
+    private var errorMessage: String? {
+        accounts.lastError ?? stores.lazy.compactMap(\.lastError).first
+    }
+
+    private func clearErrors() {
+        accounts.lastError = nil
+        for store in stores { store.lastError = nil }
+    }
+
     private var profileAvatar: some View {
         Group {
             if let url = account.avatarURL {
@@ -436,7 +559,7 @@ extension ChatSplitView {
     fileprivate var sidebarFooter: some View {
         VStack(spacing: 4) {
             Button {
-                showPlugins = true
+                marketplace = (selectedStore ?? host.store ?? onlineStores.first)?.computer.id
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "square.grid.2x2")
@@ -487,8 +610,12 @@ extension ChatSplitView {
     }
 
     fileprivate func compose() {
-        if !composing { previousSelection = model.selection }
-        model.selection = nil
+        // The selected bot's computer if it's online, else this Mac, else any online one.
+        let target = [selectedStore, host.store].compactMap { $0 }.first { $0.connection == .online } ?? onlineStores.first
+        guard let target else { return }
+        if !composing { previousSelection = accounts.selection }
+        composeComputer = target.computer.id
+        accounts.selection = nil
         composing = true
     }
 
@@ -509,18 +636,20 @@ extension ChatSplitView {
     fileprivate var railActions: some View {
         VStack(spacing: 4) {
             Button("New chat", systemImage: "plus", action: compose)
-                .disabled(model.connection != .online)
+                .disabled(onlineStores.isEmpty)
                 .help("New chat")
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle(size: 36))
-            Button("Marketplace", systemImage: "square.grid.2x2") { showPlugins = true }
+            Button("Marketplace", systemImage: "square.grid.2x2") {
+                marketplace = (selectedStore ?? host.store ?? onlineStores.first)?.computer.id
+            }
                 .help("Marketplace")
                 .labelStyle(.iconOnly)
                 .buttonStyle(IconButtonStyle(size: 36))
             Button { showAccount.toggle() } label: {
                 profileAvatar
                     .overlay(alignment: .bottomTrailing) {
-                        Circle().fill(model.connection == .online ? Palette.switchOn : Palette.tertiary)
+                        Circle().fill(host.store?.connection == .online ? Palette.switchOn : Palette.tertiary)
                             .frame(width: 7, height: 7)
                             .overlay(Circle().stroke(Palette.surface, lineWidth: 1.5))
                     }
@@ -539,20 +668,21 @@ extension ChatSplitView {
         .padding(.bottom, 10)
     }
 
-    private func botActions(_ bot: Bot) -> [DesktopActionMenu.Item] {
-        [
+    private func botActions(_ bot: Bot, _ model: BotStore) -> [DesktopActionMenu.Item] {
+        let target = BotTarget(bot: bot, store: model)
+        return [
             .init(title: bot.pinned ? "Unpin" : "Pin", icon: "pin", action: { model.setPinned(bot, !bot.pinned) }),
             .init(title: "Mark as Read", icon: "bell.badge", action: { model.markRead(bot.id) }),
             .init(title: "Edit Profile…", icon: "square.and.pencil", divider: true,
-                  action: { editing = EditorRequest(BotDraft(bot)) }),
+                  action: { editing = EditTarget(request: EditorRequest(BotDraft(bot)), store: model) }),
             .init(title: "Copy conversation ID", icon: "square.on.square", divider: true, action: {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(bot.id, forType: .string)
             }),
-            .init(title: "New session", icon: "arrow.counterclockwise", action: { newSessionBot = bot }),
+            .init(title: "New session", icon: "arrow.counterclockwise", action: { newSessionBot = target }),
             .init(title: "Hide from sidebar", icon: "eye.slash", divider: true,
                   action: { model.setHidden(bot, true) }),
-            .init(title: "Delete", icon: "trash", destructive: true, action: { confirmDelete = bot })
+            .init(title: "Delete", icon: "trash", destructive: true, action: { confirmDelete = target })
         ]
     }
 }
@@ -573,8 +703,10 @@ private struct SidebarAccountPanel: View {
     let onAuthenticate: () -> Void
     let compact: Bool
     let usage: Double?
+    let approvals: Int
     let onDismiss: () -> Void
     let onUsage: () -> Void
+    let onComputers: () -> Void
     let onToggleSidebar: () -> Void
     let onSearch: () -> Void
     @State private var page = "main"
@@ -610,6 +742,8 @@ private struct SidebarAccountPanel: View {
             return [
                 Item(title: "Usage", icon: "gauge.with.dots.needle.33percent",
                      detail: usage.map { "\(Int($0.rounded()))%" }, chevron: true, action: onUsage),
+                Item(title: "Computers & devices", icon: "desktopcomputer",
+                     detail: approvals > 0 ? "\(approvals)" : nil, chevron: true, action: onComputers),
                 Item(title: "Get Codync for mobile", icon: "iphone", action: { open("https://apps.apple.com/app/id6760984418") }),
                 Item(title: "Support", icon: "book.closed", chevron: true, action: { navigate("support") }),
                 Item(title: "Settings", icon: "gearshape", action: { navigate("settings") }),
@@ -655,8 +789,8 @@ private struct SidebarAccountPanel: View {
     }
 
     @ViewBuilder private func menuRow(_ item: Item, index: Int) -> some View {
-        if index == (page == "main" ? 4 : 1) { divider }
-        if page == "main" && index == 5 { accountIdentity }
+        if index == (page == "main" ? 5 : 1) { divider }
+        if page == "main" && index == 6 { accountIdentity }
         AccountPanelRow(title: item.title, icon: item.icon, detail: item.detail,
                         chevron: item.chevron, keyboardFocused: highlighted == index, action: item.action)
             .disabled(item.disabled)

@@ -1,0 +1,41 @@
+name: codync-cloud
+
+on:
+  push:
+    branches: [main, v2]
+    paths: ["cloud/**", "relay/**", "docs/remote-relay-vectors.json", ".github/workflows/cloud.yml"]
+  pull_request:
+    paths: ["cloud/**", "relay/**", "docs/remote-relay-vectors.json"]
+
+jobs:
+  cloud:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cloud/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  relay:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: relay/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

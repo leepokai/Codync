@@ -7,6 +7,8 @@ kit/Sources/CodyncUI/            Store/ Bots/ Thread/ Marketplace/ Usage/ Resour
 host/  cloud/  relay/  web/  packaging/
 ```
 
+Remote access ([spec](remote-relay-spec.md)): host `identity.rs` (keys) · `crypto.rs` (wire crypto) · `devices.rs` (authorized devices, `Caller`) · `channel.rs` (E2E channel, direct or relayed) · `relay.rs` (relay socket) · `cloud.rs` (cloud HTTP client, access requests). Kit `Client/`: `RelayCrypto`, `DeviceIdentity`, `Pairing`, `HostTransport`, `ChannelTransport`, `HostConnector`, `CloudClient`; models `Computer`, `Cloud`; `CodyncUI/Store/AccountStore`. Apps: `apps/shared/ComputerStatus.swift`, iOS `AccessRequestView`, Mac `SSHTunnel` + `ComputersView`. Cloud: `cloud/src/{index,auth,api,relay}.ts`.
+
 - Directories: lowercase for repo-level roles (`apps/`, `kit/`, `host/`); PascalCase inside Swift targets (`Views/`, `Thread/`). Apple app folders are `App/` (entry point, app-wide services), `Views/`, `Resources/` (Info.plist, entitlements, xcprivacy, xcassets).
 - Files follow their language: Swift `UpperCamelCase.swift` named after the file's main type; Rust/TS `snake_case.rs` / `kebab-case.ts`.
 - One main type per file. Small private helpers of that type stay in it; a file of several small siblings takes the plural role (`ChatRows.swift`, `UsageViews.swift`, `Dialogs.swift`).

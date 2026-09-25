@@ -1,0 +1,22 @@
+name: CodyncKit
+
+on:
+  push:
+    branches: [main, v2]
+    paths: ["kit/**", "docs/remote-relay-vectors.json", ".github/workflows/kit.yml"]
+  pull_request:
+    paths: ["kit/**", "docs/remote-relay-vectors.json"]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: swift build
+      - run: swift test

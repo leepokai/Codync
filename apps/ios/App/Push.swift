@@ -28,19 +28,22 @@ private func relayTicket(token: Data, kind: String) async throws -> String {
     return try JSONDecoder().decode(Res.self, from: data).ticket
 }
 
-/// Registers this phone for "needs you" / "done" alerts with the paired host.
+/// Registers this phone for "needs you" / "done" alerts with every computer it's connected to.
+/// Each ticket carries this context's push key so the computer can seal the alert text (spec §6.7).
 @MainActor
 final class PushRegistrar {
     static let shared = PushRegistrar()
 
     private var deviceToken: Data?
-    private weak var model: BotStore?
-    private var registrationTask: Task<Void, Never>?
+    private var stores: [ComputerID: WeakStore] = [:]
+    private var registrations: [ComputerID: Task<Void, Never>] = [:]
+
+    private struct WeakStore { weak var store: BotStore? }
 
     func deactivate() {
-        registrationTask?.cancel()
-        registrationTask = nil
-        model = nil
+        registrations.values.forEach { $0.cancel() }
+        registrations = [:]
+        stores = [:]
     }
 
     func requestAuthorization() async -> Bool {
@@ -51,12 +54,13 @@ final class PushRegistrar {
 
     func didRegister(token: Data) {
         deviceToken = token
-        if let model { syncDevice(with: model) }
+        for entry in stores.values { if let store = entry.store { syncDevice(with: store) } }
     }
 
-    /// Sends our ticket to the host whenever we have both a token and a pairing.
-    func syncDevice(with model: BotStore) {
-        self.model = model
+    /// Sends our ticket to a computer whenever we have both a token and a connection to it.
+    func syncDevice(with store: BotStore) {
+        let id = store.computer.id
+        stores[id] = WeakStore(store: store)
         guard let token = deviceToken else {
             Task {
                 let settings = await UNUserNotificationCenter.current().notificationSettings()
@@ -64,17 +68,19 @@ final class PushRegistrar {
             }
             return
         }
-        registrationTask?.cancel()
-        let pairing = model.storage.orderedPairing
-        registrationTask = Task { [weak model] in
+        registrations[id]?.cancel()
+        let storage = store.storage
+        registrations[id] = Task { [weak store] in
             do {
+                let identity = try DeviceIdentity.load(context: storage)
                 let ticket = try await relayTicket(token: token, kind: "alert")
                 try Task.checkCancellation()
-                guard let model, self.model === model, let pairing,
-                      let client = await HostClient.resolve(pairing) else { return }
-                try Task.checkCancellation()
-                try await client.registerDevice(ticket: ticket, relay: SharedStore.relayURL, name: UIDevice.current.name)
-                log.info("device registered with host")
+                guard let client = store?.client else { return }
+                try await client.registerDevice(ticket: ticket, relay: SharedStore.relayURL, name: UIDevice.current.name,
+                                                pushKey: identity.pushKey, ctx: storage.id)
+                log.info("device registered with a computer")
+            } catch is CancellationError {
+                return
             } catch {
                 log.error("device registration failed: \(error.localizedDescription)")
             }
@@ -100,13 +106,13 @@ final class LiveActivities {
         }
     }
 
-    private nonisolated static func find(_ botId: String) -> Activity<BotActivityAttributes>? {
-        Activity<BotActivityAttributes>.activities.first { $0.attributes.botId == botId }
+    private nonisolated static func find(_ ref: BotReference) -> Activity<BotActivityAttributes>? {
+        Activity<BotActivityAttributes>.activities.first { $0.attributes.botId == ref.botId && $0.attributes.computerId == ref.computerId }
     }
 
-    func start(for bot: Bot, model: BotStore) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled, Self.find(bot.id) == nil, let client = model.client else { return }
-        let attributes = BotActivityAttributes(bot: bot, link: model.storage.botURL(bot.id))
+    func start(_ ref: BotReference, bot: Bot, store: BotStore) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled, Self.find(ref) == nil, let client = store.client else { return }
+        let attributes = BotActivityAttributes(bot: bot, computerId: ref.computerId, link: store.storage.botURL(ref))
         let id = UUID()
         requests[id] = Task.detached { [weak self] in
             await Self.request(attributes: attributes, client: client)
@@ -117,7 +123,8 @@ final class LiveActivities {
     private func finishedRequest(_ id: UUID) { requests[id] = nil }
 
     private nonisolated static func request(attributes: BotActivityAttributes, client: HostClient) async {
-        let state = BotActivityAttributes.ContentState(status: "working", activity: "Starting…", startedAt: .now)
+        // Status only: pushes never carry free text, so local updates don't either.
+        let state = BotActivityAttributes.ContentState(status: "working", activity: "", startedAt: .now)
         do {
             try Task.checkCancellation()
             let activity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil), pushType: .token)
@@ -133,20 +140,20 @@ final class LiveActivities {
         }
     }
 
-    /// Local updates while the app is open; the host pushes them otherwise.
-    func update(bot: Bot) {
-        guard Self.find(bot.id) != nil else { return }
+    /// Local updates while the app is open; the computer pushes them otherwise.
+    func update(_ ref: BotReference, bot: Bot) {
+        guard Self.find(ref) != nil else { return }
         let state = BotActivityAttributes.ContentState(
             status: bot.status,
-            activity: bot.activity,
+            activity: "",
             startedAt: bot.startedAt.map(Date.init(milliseconds:))
         )
-        let botId = bot.id, working = bot.isWorking
-        Task.detached { await Self.apply(botId: botId, state: state, end: !working) }
+        let working = bot.isWorking
+        Task.detached { await Self.apply(ref, state: state, end: !working) }
     }
 
-    private nonisolated static func apply(botId: String, state: BotActivityAttributes.ContentState, end: Bool) async {
-        guard let activity = find(botId) else { return }
+    private nonisolated static func apply(_ ref: BotReference, state: BotActivityAttributes.ContentState, end: Bool) async {
+        guard let activity = find(ref) else { return }
         if end {
             await activity.end(.init(state: state, staleDate: nil), dismissalPolicy: .after(.now + 60))
         } else {

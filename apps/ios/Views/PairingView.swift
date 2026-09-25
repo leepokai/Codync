@@ -5,10 +5,11 @@ import VisionKit
 
 /// First run: explain the model, then pair with a computer running codync-host.
 struct PairingView: View {
-    /// Set when adding another computer from the profile sheet; shows a close button.
+    /// Set when adding another computer from the computers sheet; shows a close button.
     var onDone: (() -> Void)?
-    @Environment(BotStore.self) private var model
+    @Environment(AppStore.self) private var app
     @State private var scanning = false
+    @State private var pairing = false
     @State private var pasted = ""
     @State private var error: String?
     @State private var tailscaleOn = Tailscale.isConnected
@@ -46,14 +47,20 @@ struct PairingView: View {
                     Button {
                         scanning = true
                     } label: {
-                        Label("Scan pairing code", systemImage: "qrcode.viewfinder")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, minHeight: 50)
+                        Group {
+                            if pairing {
+                                ProgressView().tint(Palette.onAccent)
+                            } else {
+                                Label("Scan pairing code", systemImage: "qrcode.viewfinder")
+                            }
+                        }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 50)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Palette.accentFill)
                     .foregroundStyle(Palette.onAccent)
-                    .disabled(!DataScannerViewController.isSupported)
+                    .disabled(!DataScannerViewController.isSupported || pairing)
 
                     HStack {
                         TextField("…or paste a codync://pair link", text: $pasted)
@@ -63,7 +70,7 @@ struct PairingView: View {
                         Button("Pair", systemImage: "arrow.right.circle.fill") { pair(pasted) }
                             .labelStyle(.iconOnly)
                             .font(.title3)
-                            .disabled(pasted.isEmpty)
+                            .disabled(pasted.isEmpty || pairing)
                     }
                     .padding(12)
                     .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
@@ -74,7 +81,7 @@ struct PairingView: View {
                     }
                 }
 
-                Text("Pair this computer with the account currently selected on this iPhone. Your phone connects over Tailscale or local Wi-Fi; your code and chats stay on the computer.")
+                Text("No Tailscale or open ports needed: on the same Wi-Fi your iPhone talks to the computer directly, anywhere else through Codync's relay. Either way it's end-to-end encrypted, and your code and chats stay on the computer.")
                     .font(.footnote)
                     .foregroundStyle(Palette.tertiary)
             }
@@ -104,14 +111,25 @@ struct PairingView: View {
     }
 
     private func pair(_ text: String) {
-        guard let p = Pairing(string: text) else {
-            error = "That isn't a Codync pairing code."
+        let p: Pairing
+        do {
+            p = try Pairing.parse(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        } catch {
+            self.error = error.localizedDescription
             return
         }
         error = nil
-        model.pair(p)
-        onDone?()
-        Task { _ = await PushRegistrar.shared.requestAuthorization() }
+        pairing = true
+        Task {
+            defer { pairing = false }
+            do {
+                _ = try await app.pair(p)
+                pasted = ""
+                onDone?()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -147,20 +165,20 @@ private struct Step: View {
     }
 }
 
-/// Optional step: Tailscale is what lets the phone reach the computer off the home Wi-Fi.
+/// Optional: Tailscale is an alternative way in for people who already use it; the relay doesn't need it.
 private struct TailscaleStep: View {
     let connected: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text("04")
+            Text("")
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .frame(width: 24, alignment: .leading)
                 .padding(.top, 2)
                 .foregroundStyle(Palette.tertiary)
             VStack(alignment: .leading, spacing: 6) {
-                Text("Away from home (optional)").font(.headline).foregroundStyle(Palette.text)
-                Text("Without it, Codync works on the same Wi-Fi as your computer. Install Tailscale on this iPhone and on the computer, and sign in to both with the same account.")
+                Text("Already use Tailscale? (optional)").font(.headline).foregroundStyle(Palette.text)
+                Text("Codync works away from home without it. If Tailscale runs on this iPhone and the computer, Codync connects over it directly instead of the relay.")
                     .font(.subheadline)
                     .foregroundStyle(Palette.secondary)
                 if connected {

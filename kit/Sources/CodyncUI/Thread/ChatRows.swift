@@ -41,6 +41,17 @@ struct UserBubble: View {
             .font(.caption2.bold())
         case "cancelled":
             Text("Not sent — stopped").font(.caption2).foregroundStyle(Palette.tertiary)
+        case "waiting":
+            HStack(spacing: 10) {
+                Text("Waiting for the computer to come online").foregroundStyle(Palette.tertiary)
+                Button("Cancel", systemImage: "xmark.circle") { model.cancelQueued(entry) }
+                    .labelStyle(.iconOnly)
+                    .help("Don't send")
+                    .accessibilityLabel("Don't send")
+            }
+            .font(.caption2)
+        case "delivering":
+            Text("Delivered to the computer").font(.caption2).foregroundStyle(Palette.tertiary)
         default:
             #if os(macOS)
                 Text(entry.date, style: .time).font(.system(size: 10)).foregroundStyle(Palette.tertiary)

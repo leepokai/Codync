@@ -1,11 +1,27 @@
+import AppKit
 import CodyncKit
 import CodyncUI
 import Foundation
 import Observation
 import ServiceManagement
 
-/// Manages the local codync-host: finds the binary, installs the background
-/// service, and owns the BotStore the menu and the chat window share.
+/// A device asking a computer this Mac manages (itself or over SSH) for access.
+@MainActor
+struct Approval: Identifiable {
+    let store: BotStore
+    let request: AccessRequest
+    let id: String
+
+    init(store: BotStore, request: AccessRequest) {
+        self.store = store
+        self.request = request
+        id = "\(store.computer.id)/\(request.requestId)"
+    }
+}
+
+/// Manages the local codync-host (binary, background service) and owns the `AccountStore`
+/// the menu and the chat window share: this Mac over loopback, SSH computers through their
+/// tunnels, and the account's other computers over the encrypted channel.
 @MainActor
 @Observable
 final class HostController {
@@ -22,25 +38,81 @@ final class HostController {
     static let port = devPort ?? 19222
     static let dataDir = ProcessInfo.processInfo.environment["CODYNC_HOME"].map { URL(filePath: $0) }
         ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codync")
+    static let baseURL = URL(string: "http://127.0.0.1:\(port)")!
+
+    let account: AccountSession
+    let ssh = SSHComputers()
+    /// One per account context; switching accounts retires it.
+    private(set) var accounts: AccountStore
+    /// The signed-in account's cloud; nil when signed out or the build has no cloud.
+    private(set) var cloud: CloudClient?
+    private(set) var contextID: String
+    /// This Mac's own host, once it answered.
+    private(set) var local: Computer?
+    private var localToken: String?
 
     private(set) var state: State = .starting
-    /// Live mirror of the host (same store the iPhone uses), once it's reachable.
-    private(set) var store: BotStore?
-    private(set) var pairInfo: PairingInfo?
-    private(set) var version: String?
     var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     /// Codync Screen (capture + input for Remote screen), a launchd agent inside this app.
     private let screenAgent = SMAppService.agent(plistName: "com.pokai.Codync.screen.plist")
     private(set) var screenAgentNeedsApproval = false
     private(set) var screenError: String?
+    /// Approvals closed with "later"; they come back when the request changes (e.g. its code arrives).
+    private var deferred: Set<String> = []
 
     private var streamTask: Task<Void, Never>?
 
-    var bots: [Bot] { store?.roster ?? [] }
+    init(account: AccountSession) {
+        #if DEBUG
+        SSH.selfCheck()
+        #endif
+        self.account = account
+        let storage = SharedStore.Context(accountID: account.userID)
+        SharedStore.activeAccountID = account.userID
+        contextID = storage.id
+        (accounts, cloud) = Self.makeAccounts(storage, session: account)
+        ssh.onAttach = { [weak self] attachment in
+            self?.accounts.attach(attachment.computer, route: .loopback(baseURL: attachment.baseURL, token: attachment.token))
+        }
+        ssh.onDetach = { [weak self] id in self?.accounts.detach(id) }
+        // ssh children outlive the app unless stopped.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.ssh.disconnectAll() }
+        }
+    }
+
+    /// The Mac's own host store.
+    var store: BotStore? { local.flatMap { accounts.store(for: $0.id) } }
+
+    /// Computers this Mac manages over loopback (itself and SSH tunnels): they take approvals, pairing and claims.
+    var managedStores: [BotStore] {
+        accounts.computers.compactMap { accounts.store(for: $0.id) }.filter(\.isLoopback)
+    }
+
+    var approvals: [Approval] {
+        managedStores.flatMap { store in store.accessRequests.map { Approval(store: store, request: $0) } }
+    }
+
+    /// The approval to show now: the first one not put off, or put off before its code arrived.
+    var currentApproval: Approval? {
+        approvals.first { !deferred.contains(deferKey($0)) }
+    }
+
+    func deferApproval(_ approval: Approval) { deferred.insert(deferKey(approval)) }
+
+    /// Brings every waiting request back (the menu's Review).
+    func reviewApprovals() { deferred = [] }
+
+    private func deferKey(_ a: Approval) -> String { "\(a.id)/\(a.request.code ?? "")" }
+
+    var roster: [RosterItem] { accounts.roster }
     var usage: Usage { store?.usage ?? Usage() }
     var screen: ScreenState? { store?.screen }
-    var needsAttention: Bool { bots.contains(where: \.needsInput) }
-    var working: Int { bots.filter(\.isWorking).count }
+    var version: String? { store?.hello?.version }
+    var needsAttention: Bool { roster.contains(where: \.bot.needsInput) || !approvals.isEmpty }
+    var working: Int { roster.filter(\.bot.isWorking).count }
+
+    func isSSH(_ id: ComputerID) -> Bool { ssh.attachments.values.contains { $0.computer.id == id } }
 
     /// Bundled next to the app executable, else a Homebrew / cargo install.
     var binaryURL: URL? {
@@ -63,6 +135,7 @@ final class HostController {
 
     func start() {
         refresh()
+        ssh.connectAll()
     }
 
     func refresh() {
@@ -106,14 +179,11 @@ final class HostController {
         streamTask?.cancel()
         Task {
             _ = await Self.run(bin, ["uninstall"])
-            store = nil
+            if let local { accounts.detach(local.id) }
+            local = nil
+            localToken = nil
             state = .notInstalled
         }
-    }
-
-    func loadPairing() {
-        guard let client = client() else { return }
-        Task { pairInfo = try? await client.pairing() }
     }
 
     func setLaunchAtLogin(_ on: Bool) {
@@ -151,13 +221,108 @@ final class HostController {
         screenAgentNeedsApproval = screenAgent.status == .requiresApproval
     }
 
-    func stop(_ bot: Bot) {
-        Task { try? await client()?.stop(bot.id) }
+    func stop(_ item: RosterItem) {
+        accounts.store(for: item.ref.computerId)?.stop(item.bot.id)
     }
 
-    private func client() -> HostClient? {
-        guard let token = try? String(contentsOf: tokenURL, encoding: .utf8) else { return nil }
-        return HostClient(baseURL: URL(string: "http://127.0.0.1:\(Self.port)")!, token: token.trimmingCharacters(in: .whitespacesAndNewlines))
+    // MARK: account
+
+    func switchAccount(to userID: String?) {
+        let storage = SharedStore.Context(accountID: userID)
+        guard storage.id != contextID else { return }
+        accounts.retire()
+        SharedStore.activeAccountID = userID
+        contextID = storage.id
+        deferred = []
+        (accounts, cloud) = Self.makeAccounts(storage, session: account)
+        // This Mac and the SSH tunnels belong to the Mac, not to an account: they follow into the new context.
+        if let local, let localToken { accounts.attach(local, route: .loopback(baseURL: Self.baseURL, token: localToken)) }
+        for attachment in ssh.attachments.values {
+            accounts.attach(attachment.computer, route: .loopback(baseURL: attachment.baseURL, token: attachment.token))
+        }
+    }
+
+    /// Signing out forgets the account on this Mac: its device keys, computers and caches (spec §3.2).
+    func signOut() async {
+        guard let userID = account.userID else { return }
+        await account.signOut()
+        guard account.userID != userID, !account.accounts.contains(where: { $0.id == userID }) else { return }
+        switchAccount(to: account.userID)
+        SharedStore.Context(accountID: userID).erase()
+    }
+
+    /// §4.2 A: makes a computer this Mac manages part of the signed-in account. Its relay is turned on first,
+    /// since joining the account is about reaching it from anywhere.
+    func claim(_ store: BotStore) async {
+        guard let cloud, let userID = account.userID, let client = store.client else {
+            accounts.lastError = "Sign in first."
+            return
+        }
+        do {
+            if store.cloud?.enabled != true { _ = try await enableCloud(client, store: store) }
+            let challenge = try await cloud.createClaim()
+            let signed = try await client.claimSign(claimId: challenge.claimId, nonce: challenge.nonce, userId: userID)
+            _ = try await cloud.completeClaim(challenge.claimId, signed: signed)
+            await accounts.refreshCloud()
+        } catch {
+            accounts.lastError = error.localizedDescription
+        }
+    }
+
+    func unclaim(_ store: BotStore) async {
+        do {
+            try await store.client?.unclaim()
+            await accounts.refreshCloud()
+        } catch {
+            accounts.lastError = error.localizedDescription
+        }
+    }
+
+    func setCloud(_ store: BotStore, enabled: Bool) async {
+        guard let client = store.client else { return }
+        do {
+            _ = enabled ? try await enableCloud(client, store: store) : try await client.setCloud(enabled: false)
+        } catch {
+            accounts.lastError = error.localizedDescription
+        }
+    }
+
+    /// A host without a cloud URL of its own gets this app's.
+    private func enableCloud(_ client: HostClient, store: BotStore) async throws -> CloudStatus {
+        let url = store.cloud?.url == nil ? account.cloudURL : nil
+        guard store.cloud?.url != nil || url != nil else {
+            throw CloudError(status: 400, code: "badRequest", message: "This build of Codync has no cloud to connect to.")
+        }
+        return try await client.setCloud(enabled: true, url: url)
+    }
+
+    func decide(_ approval: Approval, approve: Bool) async throws {
+        guard let client = approval.store.client else { throw HostError.unreachable }
+        try await client.decideAccessRequest(approval.request.requestId, approve: approve)
+    }
+
+    private static func makeAccounts(_ storage: SharedStore.Context, session: AccountSession) -> (AccountStore, CloudClient?) {
+        let identity = storage.accountID == nil ? nil : try? DeviceIdentity.load(context: storage)
+        let cloud = session.cloudClient(for: storage.accountID, identity: identity)
+        let accounts = AccountStore(storage: storage, clientKind: "mac", cloud: cloud)
+        if let cloud {
+            // Signed in: make this Mac known to the account, then list its computers.
+            Task { [weak accounts] in
+                do {
+                    try await cloud.registerDevice(name: Host.current().localizedName ?? "Mac", platform: "macos")
+                } catch {
+                    accounts?.lastError = error.localizedDescription
+                }
+                await accounts?.refreshCloud()
+            }
+        }
+        return (accounts, cloud)
+    }
+
+    // MARK: local host
+
+    private func readToken() -> String? {
+        (try? String(contentsOf: tokenURL, encoding: .utf8)).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 
     /// Watches the host's health; the BotStore handles the event stream itself.
@@ -167,18 +332,8 @@ final class HostController {
             var failures = 0
             while !Task.isCancelled {
                 guard let self else { return }
-                if let client = self.client(), await client.healthy(timeout: 2) {
+                if await self.attachLocal() {
                     failures = 0
-                    if self.store == nil || self.store?.pairing?.token != client.token {
-                        self.version = (try? await client.hello())?.version
-                        let store = BotStore(
-                            pairing: Pairing(name: Host.current().localizedName ?? "This Mac", token: client.token, urls: [client.baseURL.absoluteString]),
-                            clientKind: "mac",
-                            persistsPairing: false
-                        )
-                        store.restartStream()
-                        self.store = store
-                    }
                     self.state = .running
                     self.syncScreenAgent()
                 } else {
@@ -191,20 +346,33 @@ final class HostController {
         }
     }
 
-    nonisolated static func run(_ bin: URL, _ args: [String]) async -> (status: Int32, output: String) {
-        await withCheckedContinuation { cont in
-            let p = Process()
-            p.executableURL = bin
-            p.arguments = args
-            // The host rebuilds PATH from the login shell itself (backends::hydrate_path).
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            p.standardError = pipe
-            p.terminationHandler = { proc in
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                cont.resume(returning: (proc.terminationStatus, String(decoding: data, as: UTF8.self)))
-            }
-            do { try p.run() } catch { cont.resume(returning: (-1, error.localizedDescription)) }
+    /// Attaches the local host once it answers, and again when its token or identity changed.
+    private func attachLocal() async -> Bool {
+        guard let token = readToken(), let health = await HostHealth.fetch(Self.baseURL), let id = health.computerId else {
+            return false
         }
+        if local?.id == id, localToken == token, store != nil { return true }
+        guard let hello = try? await HostClient(baseURL: Self.baseURL, token: token).hello(),
+              hello.computerId == id, let signKey = hello.signKey else { return false }
+        let computer = Computer(id: id, name: hello.name, signKey: signKey, boxKey: hello.boxKey, urls: hello.urls ?? [],
+                                cloud: hello.cloud.flatMap(URL.init(string:)), device: hello.device,
+                                color: store?.computer.color)
+        if let old = local, old.id != id { accounts.detach(old.id) }
+        local = computer
+        localToken = token
+        accounts.attach(computer, route: .loopback(baseURL: Self.baseURL, token: token))
+        return true
+    }
+
+    nonisolated static func run(_ bin: URL, _ args: [String]) async -> (status: Int32, output: String) {
+        // The host rebuilds PATH from the login shell itself (backends::hydrate_path).
+        let result = await ProcessRunner.run(bin, args)
+        return (result.status, (result.text + result.stderr).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
+extension BotStore {
+    var isLoopback: Bool {
+        if case .loopback = route { true } else { false }
     }
 }

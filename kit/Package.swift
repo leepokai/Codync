@@ -27,5 +27,6 @@ let package = Package(
             resources: [.process("Resources")]
         ),
         .testTarget(name: "CodyncKitTests", dependencies: ["CodyncKit"], resources: [.copy("Fixtures")]),
+        .testTarget(name: "CodyncUITests", dependencies: ["CodyncUI", "CodyncKit"]),
     ]
 )

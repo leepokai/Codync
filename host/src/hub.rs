@@ -2,6 +2,8 @@
 
 use crate::LockExt;
 use crate::bot::{self, BotHandle, Cmd};
+use crate::devices::Pairing;
+use crate::identity::Identity;
 use crate::screen::Screen;
 use crate::store::{BotConfig, BotRow, Entry, EntryKind, Store};
 use crate::usage::Usage;
@@ -10,10 +12,10 @@ use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 /// What a bot is doing right now (wire values: `idle` / `working` / `needsInput` / `error`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -36,6 +38,8 @@ pub struct Runtime {
 pub struct Hub {
     pub store: Store,
     pub host_id: String,
+    pub identity: Identity,
+    /// Loopback-only bearer token for this computer's own apps and helpers.
     pub token: String,
     pub port: u16,
     pub events: broadcast::Sender<Value>,
@@ -46,20 +50,29 @@ pub struct Hub {
     pub ios_clients: AtomicUsize,
     pub usage: Mutex<Usage>,
     keep_awake: Mutex<service::KeepAwake>,
-    /// botId -> Live Activity push tickets.
-    pub activities: Mutex<HashMap<String, Vec<String>>>,
+    /// Generation of the authorized-device table and pairing offers: bumped on every
+    /// change so open channels re-check their device (and the ACL is republished).
+    pub auth: watch::Sender<u64>,
+    pub pairing: Mutex<Pairing>,
+    /// Device key -> open channels that have exchanged at least one frame.
+    pub connected: Mutex<HashMap<String, usize>>,
+    /// The cloud's `/v1/host/state` was applied on the current relay connection;
+    /// account devices are refused until then (§4.3).
+    pub cloud_synced: AtomicBool,
+    pub cloud: crate::cloud::Cloud,
     pub screen: Arc<Screen>,
     /// Setup terminals (installs, sign-ins).
     pub terms: Arc<crate::term::Terms>,
 }
 
 impl Hub {
-    pub fn new(store: Store, host_id: String, token: String, port: u16) -> Arc<Self> {
+    pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
         Arc::new(Self {
             store,
             host_id,
+            identity,
             token,
             port,
             events,
@@ -69,7 +82,11 @@ impl Hub {
             ios_clients: AtomicUsize::new(0),
             usage: Mutex::default(),
             keep_awake: Mutex::default(),
-            activities: Mutex::default(),
+            auth: watch::Sender::new(0),
+            pairing: Mutex::default(),
+            connected: Mutex::default(),
+            cloud_synced: AtomicBool::new(false),
+            cloud: crate::cloud::Cloud::default(),
             screen,
             terms: Arc::default(),
         })
@@ -226,6 +243,8 @@ impl Hub {
         if before.status != after.status || before.activity != after.activity {
             self.emit_bot(id);
             self.update_keep_awake();
+        }
+        if before.status != after.status {
             push::live_activity_update(self, id, &after);
         }
     }
@@ -282,6 +301,23 @@ impl Hub {
     pub fn set_usage(&self, usage: Usage) {
         let _ = self.events.send(json!({"type": "usage", "usage": usage}));
         *self.usage.locked() = usage;
+    }
+
+    // MARK: devices
+
+    /// Tells open channels (and the ACL publisher) that devices or pairing offers changed.
+    pub fn auth_changed(&self) {
+        self.auth.send_modify(|g| *g += 1);
+    }
+
+    /// Removes an authorized device: its tickets go with it and its open channels close.
+    pub fn revoke_device(&self, key: &str) -> Result<bool> {
+        let removed = self.store.remove_device(key)?;
+        if removed {
+            tracing::info!(device = key, "device revoked");
+            self.auth_changed();
+        }
+        Ok(removed)
     }
 
     pub fn ios_connected(&self) -> bool {

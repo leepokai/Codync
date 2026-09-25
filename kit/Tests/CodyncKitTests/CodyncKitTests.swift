@@ -19,14 +19,6 @@ import Testing
     #expect(id == "b2")
 }
 
-@Test func parsesPairingURL() throws {
-    let p = try #require(Pairing(string: "codync://pair?name=Kevin%27s%20Mac&token=t0k&urls=http%3A%2F%2F100.1.2.3%3A19222%2Chttp%3A%2F%2Fa%3A1"))
-    #expect(p.name == "Kevin's Mac")
-    #expect(p.token == "t0k")
-    #expect(p.urls == ["http://100.1.2.3:19222", "http://a:1"])
-    #expect(Pairing(string: "codync://pair?token=") == nil)
-}
-
 @Test func relativeTime() {
     let now = Date(timeIntervalSince1970: 1_000_000)
     #expect(RelativeTime.short(now.addingTimeInterval(-30), now: now) == "now")

@@ -1,0 +1,47 @@
+name = "codync-cloud"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ComputerRelay"]
+
+# production (deploying needs the owner's go-ahead)
+[vars]
+CLERK_ISSUER = "<production Clerk Frontend API URL>"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "codync"
+database_id = "<production id>"
+migrations_dir = "migrations"
+
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "ComputerRelay"
+
+# New computers per IP (POST /v1/host/register).
+[[ratelimits]]
+name = "REGISTER_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[env.staging]
+name = "codync-cloud-staging"
+vars = { CLERK_ISSUER = "https://sunny-mollusk-8651.clerk.accounts.dev" }
+d1_databases = [{ binding = "DB", database_name = "codync-staging", database_id = "8956a285-8c88-4a5b-a05c-5f79be324448", migrations_dir = "migrations" }]
+durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
+ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1002", simple = { limit = 10, period = 60 } }]
+triggers = { crons = ["*/15 * * * *"] }
+
+# wrangler dev / e2e: local D1; CLERK_JWT_KEY is injected by the test (--var).
+[env.dev]
+name = "codync-cloud-dev"
+vars = { CLERK_ISSUER = "https://clerk.test.local" }
+d1_databases = [{ binding = "DB", database_name = "codync-dev", database_id = "dev", migrations_dir = "migrations" }]
+durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
+ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1003", simple = { limit = 10, period = 60 } }]

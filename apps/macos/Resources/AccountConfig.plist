@@ -2,7 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>publishableKey</key>
+	<key>clerkPublishableKey</key>
 	<string>pk_test_c3VubnktbW9sbHVzay04NjUxLmNsZXJrLmFjY291bnRzLmRldiQ</string>
+	<key>cloudURL</key>
+	<string>https://codync-cloud-staging.kevin2005ha.workers.dev</string>
 </dict>
 </plist>

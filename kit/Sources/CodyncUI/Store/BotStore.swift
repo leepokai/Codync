@@ -5,8 +5,6 @@ import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "BotStore")
 
-/// Single source of truth for a Codync client (iPhone app, Mac window): mirrors
-/// the host's bots and transcripts via one SSE stream (catch-up since `rev`, then live).
 /// Opens the screen viewer, optionally watching a bot that's using the computer.
 public struct ScreenRequest: Identifiable, Hashable, Sendable {
     public var watching: String?
@@ -14,6 +12,9 @@ public struct ScreenRequest: Identifiable, Hashable, Sendable {
     public init(watching: String? = nil) { self.watching = watching }
 }
 
+/// One computer's mirror (bots, transcripts) for a client (iPhone app, Mac window), kept by one
+/// events stream (catch-up since `rev`, then live) over loopback or the encrypted channel.
+/// `AccountStore` holds one per computer.
 @MainActor
 @Observable
 public final class BotStore {
@@ -21,13 +22,26 @@ public final class BotStore {
         case unpaired
         case connecting
         case online
+        /// The relay says the computer isn't connected; messages can wait in its mailbox.
+        case computerOffline(lastSeen: Date?)
+        /// Can't reach the computer at all (no direct route, no relay).
         case offline(String)
+        /// Revoked, lease expired, or the computer's identity changed.
+        case unauthorized(String)
     }
 
-    public private(set) var pairing: Pairing?
-    /// Computers this phone knows, most recently used first (the active one leads).
-    public private(set) var computers: [Pairing] = []
-    public private(set) var connection: Connection = .unpaired
+    /// How this store reaches its computer.
+    public enum Route: Sendable, Hashable {
+        /// The Mac's own host, or one through an SSH tunnel.
+        case loopback(baseURL: URL, token: String)
+        /// The end-to-end encrypted channel (direct or relay), with this context's device key.
+        case channel
+    }
+
+    public private(set) var computer: Computer
+    public let route: Route
+    public private(set) var connection: Connection = .connecting
+    public private(set) var hostRoute: HostRoute?
     public private(set) var client: HostClient?
     public private(set) var hello: Hello?
     public private(set) var bots: [String: Bot] = [:]
@@ -35,6 +49,10 @@ public final class BotStore {
     public private(set) var usage: Usage
     /// The computer's remote screen (`nil`: the host predates it).
     public private(set) var screen: ScreenState?
+    /// Devices asking this computer for access (loopback only: the Mac approves them).
+    public private(set) var accessRequests: [AccessRequest] = []
+    /// The host's cloud connection (loopback only).
+    public private(set) var cloud: CloudStatus?
     /// Installed on the computer, for the Plugins screen and bot settings.
     public private(set) var installedConnectors: [InstalledConnector] = []
     public private(set) var installedSkills: [InstalledSkill] = []
@@ -51,49 +69,67 @@ public final class BotStore {
     public var screenRequest: ScreenRequest?
 
     // Platform hooks (push registration, Live Activities, widgets).
-    public var onPaired: (@MainActor (BotStore) -> Void)?
+    /// Each time the channel (or loopback) becomes ready.
+    public var onConnected: (@MainActor (BotStore) -> Void)?
     public var onBotUpdated: (@MainActor (Bot) -> Void)?
-    public var onUsageChanged: (@MainActor (Usage) -> Void)?
+    public var onUsageChanged: (@MainActor (ComputerID, Usage) -> Void)?
     public var onSent: (@MainActor (Bot) -> Void)?
+    /// The computer's addresses or keys changed (merged from its `hello`); persist it.
+    var onComputerChanged: (@MainActor (Computer) -> Void)?
 
     /// `ios` clients suppress pushes while connected; others don't.
     private let clientKind: String
-    /// Whether pairing lives in the shared App Group (iPhone) or is supplied each launch (Mac).
-    private let persistsPairing: Bool
     public let storage: SharedStore.Context
+    private let makeTransport: @MainActor () async throws -> any HostTransport
+    private var transport: (any HostTransport)?
     private var retired = false
 
     private var rev: Int64 = 0
     private var hostId: String?
     private var streamTask: Task<Void, Never>?
+    private var eventsTask: Task<Void, Never>?
     private var isActive = true
     private var saveTask: Task<Void, Never>?
     private var rewound = false
 
-    public init(pairing: Pairing?, clientKind: String, persistsPairing: Bool, storage: SharedStore.Context? = nil) {
-        let storage = storage ?? (persistsPairing ? SharedStore.activeContext : SharedStore.Context(accountID: nil))
-        self.storage = storage
-        usage = storage.usage ?? Usage()
-        self.pairing = pairing
+    /// `.channel` loads this context's `DeviceIdentity` itself.
+    public convenience init(computer: Computer, route: Route, clientKind: String, storage: SharedStore.Context) {
+        let make: @MainActor () async throws -> any HostTransport = switch route {
+        case let .loopback(baseURL, token):
+            { LoopbackTransport(baseURL: baseURL, token: token) }
+        case .channel:
+            { try await HostConnector.connect(computer, identity: try DeviceIdentity.load(context: storage)) }
+        }
+        self.init(computer: computer, route: route, clientKind: clientKind, storage: storage, transport: make)
+    }
+
+    init(computer: Computer, route: Route, clientKind: String, storage: SharedStore.Context,
+         transport: @escaping @MainActor () async throws -> any HostTransport) {
+        self.computer = computer
+        self.route = route
         self.clientKind = clientKind
-        self.persistsPairing = persistsPairing
-        computers = persistsPairing ? storage.computers : pairing.map { [$0] } ?? []
+        self.storage = storage
+        makeTransport = transport
+        usage = storage.usage[computer.id] ?? Usage()
         loadCache()
-        connection = pairing == nil ? .unpaired : .connecting
     }
 
     // MARK: derived
 
-    private var orderedPairing: Pairing? {
-        guard persistsPairing else { return pairing }
-        return storage.orderedPairing ?? pairing
-    }
-
+    /// Offline in any way: the computer is off, unreachable, or refuses this device.
     public var isOffline: Bool {
-        if case .offline = connection { true } else { false }
+        switch connection {
+        case .computerOffline, .offline, .unauthorized: true
+        default: false
+        }
     }
 
-    public var hostName: String { hello?.name ?? pairing?.name ?? "Computer" }
+    /// Offline, but sends can wait in the relay mailbox until the computer is back.
+    public var canQueue: Bool {
+        if case .computerOffline = connection { computer.boxKey != nil && transport is any RemoteTransport } else { false }
+    }
+
+    public var hostName: String { hello?.name ?? computer.name }
 
     /// Roster order: pinned first (manual order not tracked yet), then most recent activity.
     public var roster: [Bot] {
@@ -112,58 +148,17 @@ public final class BotStore {
 
     public func thread(_ botId: String) -> [Entry] { entries[botId] ?? [] }
 
-    // MARK: pairing
-
-    public func pair(_ p: Pairing) {
-        guard !retired else { return }
-        let changedHost = pairing?.token != p.token
-        pairing = p
-        if persistsPairing {
-            storage.pairing = p
-            storage.preferredURL = nil
-        }
-        // Re-pairing the same computer (new token after a reset) replaces its old entry.
-        computers = [p] + computers.filter { $0.token != p.token && $0.name != p.name }
-        if persistsPairing { storage.computers = computers }
-        if changedHost { resetMirror() }
-        connection = .connecting
-        restartStream()
-        onPaired?(self)
-    }
-
-    /// Forgets a computer; forgetting the active one switches to the next, if any.
-    public func forget(_ p: Pairing) {
-        computers.removeAll { $0.token == p.token }
-        if persistsPairing { storage.computers = computers }
-        guard p.token == pairing?.token else { return }
-        if let next = computers.first { pair(next) } else { unpair() }
-    }
-
-    public func setColor(_ p: Pairing, _ color: String) {
-        updateComputer(p.token) { $0.color = color }
-    }
-
-    private func updateComputer(_ token: String, _ change: (inout Pairing) -> Void) {
-        computers = computers.map { var c = $0; if c.token == token { change(&c) }; return c }
-        if pairing?.token == token { change(&pairing!) }
-        guard persistsPairing else { return }
-        storage.computers = computers
-        if storage.pairing?.token == token, var p = storage.pairing { change(&p); storage.pairing = p }
-    }
-
-    public func unpair() {
-        streamTask?.cancel()
-        pairing = nil
-        client = nil
-        hello = nil
-        if persistsPairing { storage.pairing = nil }
-        resetMirror()
-        connection = .unpaired
+    func updateComputer(_ change: (inout Computer) -> Void) {
+        var c = computer
+        change(&c)
+        guard c != computer else { return }
+        computer = c
+        onComputerChanged?(c)
     }
 
     private func resetMirror() {
         bots = [:]
-        entries = [:]
+        entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") } }.filter { !$0.value.isEmpty }
         rev = 0
         hostId = nil
         historyComplete = []
@@ -173,16 +168,17 @@ public final class BotStore {
 
     // MARK: lifecycle
 
-    /// Permanently detach a store when the client changes accounts. Existing
-    /// async callbacks retain this old store and its fixed storage namespace.
+    /// Permanently detach a store (account switch, computer removed). Late async
+    /// callbacks still hold it, but it writes nothing and calls no hooks anymore.
     public func retire() {
         setActive(false)
         retired = true
         saveTask?.cancel()
-        onPaired = nil
+        onConnected = nil
         onBotUpdated = nil
         onUsageChanged = nil
         onSent = nil
+        onComputerChanged = nil
         client = nil
         selection = nil
         screenRequest = nil
@@ -197,51 +193,141 @@ public final class BotStore {
             restartStream()
         } else {
             // Disconnect so the host knows we're gone and sends pushes instead.
-            streamTask?.cancel()
-            streamTask = nil
+            stopTransport()
             saveCache()
         }
     }
 
     public func restartStream() {
-        streamTask?.cancel()
-        guard pairing != nil, isActive, !retired else { return }
+        guard isActive, !retired else { return }
+        stopTransport()
         if connection != .online { connection = .connecting }
         streamTask = Task { [weak self] in await self?.runStream() }
     }
 
+    private func stopTransport() {
+        streamTask?.cancel()
+        streamTask = nil
+        eventsTask?.cancel()
+        eventsTask = nil
+        if let remote = transport as? any RemoteTransport {
+            Task { await remote.shutdown() }
+        }
+        transport = nil
+    }
+
     private func runStream() async {
         var backoff: Double = 1
-        while !Task.isCancelled {
-            guard let pairing = orderedPairing else { return }
-            guard let client = await HostClient.resolve(pairing) else {
+        var transport: any HostTransport
+        while true {
+            do {
+                transport = try await makeTransport()
+                break
+            } catch HostError.unauthorized(let message) {
+                if !Task.isCancelled, !retired { connection = .unauthorized(message) }
+                return
+            } catch {
                 guard !Task.isCancelled, !retired else { return }
-                connection = .offline(HostError.unreachable.localizedDescription)
+                connection = .offline(error.localizedDescription)
                 try? await Task.sleep(for: .seconds(backoff))
-                backoff = min(backoff * 2, 20)
-                continue
+                backoff = min(backoff * 2, 30)
+                guard !Task.isCancelled else { return }
             }
+        }
+        guard !Task.isCancelled, !retired else {
+            if let remote = transport as? any RemoteTransport { await remote.shutdown() }
+            return
+        }
+        self.transport = transport
+        let client = HostClient(transport: transport)
+        self.client = client
+        if let remote = transport as? any RemoteTransport { watch(remote) }
+        for await state in transport.states() {
             guard !Task.isCancelled, !retired else { return }
-            self.client = client
-            if persistsPairing { storage.preferredURL = client.baseURL.absoluteString }
+            switch state {
+            case let .ready(route):
+                hostRoute = route
+                if eventsTask == nil {
+                    if connection != .online { connection = .connecting }
+                    eventsTask = Task { [weak self] in await self?.runEvents(client) }
+                    // Mailbox outcomes that happened while this app wasn't listening (§10.2).
+                    if let remote = transport as? any RemoteTransport {
+                        Task { [weak self] in await self?.reconcileQueued(remote) }
+                    }
+                }
+                onConnected?(self)
+            case .connecting:
+                stopEvents()
+                connection = .connecting
+            case let .hostOffline(lastSeen):
+                stopEvents()
+                connection = .computerOffline(lastSeen: lastSeen)
+                if let remote = transport as? any RemoteTransport {
+                    Task { [weak self] in await self?.reconcileQueued(remote) }
+                }
+            case let .unauthorized(message):
+                stopEvents()
+                connection = .unauthorized(message)
+            case let .failed(message):
+                stopEvents()
+                connection = .offline(message)
+            }
+        }
+    }
+
+    private func stopEvents() {
+        eventsTask?.cancel()
+        eventsTask = nil
+        hostRoute = nil
+    }
+
+    /// The channel's side streams: merged computer info and mailbox outcomes.
+    private func watch(_ remote: any RemoteTransport) {
+        let updates = remote.computerUpdates()
+        let mailbox = remote.mailboxEvents()
+        Task { [weak self] in
+            for await computer in updates {
+                guard let self, !self.retired else { return }
+                // The color is picked on this device; the transport's copy may be older.
+                self.updateComputer { current in
+                    let color = current.color
+                    current = computer
+                    current.color = color
+                }
+            }
+        }
+        Task { [weak self] in
+            for await event in mailbox {
+                guard let self, !self.retired else { return }
+                self.applyMailbox(event)
+            }
+        }
+    }
+
+    /// Events (catch-up since `rev`, then live) for as long as the link stays ready.
+    private func runEvents(_ client: HostClient) async {
+        var backoff: Double = 1
+        while !Task.isCancelled {
             do {
                 if hello == nil || hello?.hostId != hostId {
                     let h = try await client.hello()
                     guard !Task.isCancelled, !retired else { return }
                     hello = h
-                    if let device = h.device, self.pairing?.device != device, let token = self.pairing?.token {
-                        updateComputer(token) { $0.device = device }
-                    }
-                    // Addresses the host gained since pairing (say, Tailscale installed later) join the list.
-                    if let urls = h.urls, let token = self.pairing?.token,
-                       let known = self.pairing?.urls, !Set(urls).isSubset(of: Set(known)) {
-                        updateComputer(token) { p in p.urls += urls.filter { !p.urls.contains($0) } }
+                    if case .loopback = route {
+                        updateComputer { c in
+                            c.name = h.name
+                            if let device = h.device { c.device = device }
+                        }
                     }
                     // Host upgraded since the cache was written: its data may carry new fields.
                     if let stamp = cacheStamp, stamp != "\(Self.appBuild)/\(h.version)" {
                         rev = 0
                         cacheStamp = nil
                     }
+                }
+                if case .loopback = route {
+                    accessRequests = (try? await client.accessRequests()) ?? accessRequests
+                    cloud = (try? await client.cloudStatus()) ?? cloud
                 }
                 for try await event in client.events(since: rev, client: clientKind) {
                     guard !Task.isCancelled, !retired else { return }
@@ -252,14 +338,20 @@ public final class BotStore {
             } catch is CancellationError {
                 return
             } catch {
-                if Task.isCancelled { return }
+                if Task.isCancelled || retired { return }
                 log.info("stream ended: \(error.localizedDescription)")
-                if case HostError.http(401, _) = error {
-                    connection = .offline(error.localizedDescription)
+                if case let HostError.unauthorized(message) = error {
+                    connection = .unauthorized(message)
                     return
                 }
-                // A dropped or timed-out stream means the computer went away; say so plainly.
-                connection = .offline(error is URLError ? HostError.unreachable.localizedDescription : error.localizedDescription)
+                // On the channel the link state speaks for itself; loopback has no other signal.
+                if case .loopback = route {
+                    if case HostError.http(401, _) = error {
+                        connection = .offline(error.localizedDescription)
+                        return
+                    }
+                    connection = .offline(error.localizedDescription)
+                }
             }
             try? await Task.sleep(for: .seconds(backoff))
             backoff = min(backoff * 2, 20)
@@ -292,18 +384,29 @@ public final class BotStore {
             setUsage(u)
         case let .screen(s):
             screen = s
+        case let .accessRequests(requests):
+            accessRequests = requests
+        case let .cloud(status):
+            cloud = status
         case .resync:
-            restartStream()
+            restartEvents()
         case let .undecodable(type):
             // Never skip past data we couldn't read: rewind once and fetch everything again.
             log.error("undecodable \(type) event")
             if !rewound {
                 rewound = true
                 rev = 0
-                restartStream()
+                restartEvents()
             }
         }
         scheduleSave()
+    }
+
+    /// Resubscribes from the current `rev` on the same link.
+    private func restartEvents() {
+        guard let client, eventsTask != nil else { return }
+        eventsTask?.cancel()
+        eventsTask = Task { [weak self] in await self?.runEvents(client) }
     }
 
     private func bump(_ r: Int64) { rev = max(rev, r) }
@@ -330,9 +433,10 @@ public final class BotStore {
     }
 
     private func setUsage(_ u: Usage) {
-        guard u != usage else { return }
+        guard u != usage, !retired else { return }
         usage = u
-        onUsageChanged?(u)
+        storage.usage[computer.id] = u
+        onUsageChanged?(computer.id, u)
     }
 
     // MARK: actions
@@ -343,18 +447,30 @@ public final class BotStore {
     }
 
     public func send(_ text: String, to botId: String) {
+        send(text, to: botId, nonce: UUID().uuidString)
+    }
+
+    private func send(_ text: String, to botId: String, nonce: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let nonce = UUID().uuidString
+        guard !trimmed.isEmpty, !retired else { return }
         let local = Entry(
             id: "local-\(nonce)", seq: Int64.max, botId: botId, rev: 0, kind: "user",
             turn: 0, data: EntryData(text: trimmed, status: "sending", clientNonce: nonce),
             createdAt: Int64(Date.now.timeIntervalSince1970 * 1000), updatedAt: 0
         )
         upsert(local)
+        storage.lastComputerId = computer.id
+        if canQueue, let remote = transport as? any RemoteTransport {
+            enqueue(remote, text: trimmed, botId: botId, nonce: nonce)
+            return
+        }
+        deliver(trimmed, botId: botId, nonce: nonce)
+    }
+
+    private func deliver(_ text: String, botId: String, nonce: String) {
         Task {
             do {
-                let e = try await require().send(botId: botId, text: trimmed, clientNonce: nonce)
+                let e = try await require().send(botId: botId, text: text, clientNonce: nonce)
                 upsert(e)
                 if let bot = bots[botId] { onSent?(bot) }
             } catch {
@@ -363,10 +479,78 @@ public final class BotStore {
         }
     }
 
+    /// The computer is offline: the message waits, sealed for it, in the relay mailbox.
+    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, nonce: String) {
+        markLocal(nonce: nonce, botId: botId, status: "waiting")
+        saveCache()
+        Task {
+            do {
+                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce)
+                if let bot = bots[botId] { onSent?(bot) }
+            } catch MailboxError.hostOnline {
+                // It came back meanwhile: send it the normal way once the link is up.
+                markLocal(nonce: nonce, botId: botId, status: "sending")
+                try? await Task.sleep(for: .seconds(2))
+                deliver(text, botId: botId, nonce: nonce)
+            } catch {
+                lastError = error.localizedDescription
+                markLocal(nonce: nonce, botId: botId, status: "failed")
+            }
+            saveCache()
+        }
+    }
+
+    /// Takes a waiting message back out of the mailbox, unless the computer already has it.
+    public func cancelQueued(_ entry: Entry) {
+        guard let nonce = entry.data.clientNonce, let remote = transport as? any RemoteTransport else { return }
+        Task {
+            switch await remote.cancelQueued(clientNonce: nonce) {
+            case .cancelled:
+                discard(entry)
+            case .delivering:
+                markLocal(nonce: nonce, botId: entry.botId, status: "delivering")
+            case .unknown:
+                lastError = "Couldn't take the message back. It may have been delivered already."
+            }
+            saveCache()
+        }
+    }
+
+    private func applyMailbox(_ event: MailboxEvent) {
+        guard let entry = entries.values.lazy.flatMap({ $0 }).first(where: { $0.id == "local-\(event.nonce)" }) else { return }
+        switch event {
+        // The events stream's own copy replaces it (matched by clientNonce).
+        case .delivered: markLocal(nonce: event.nonce, botId: entry.botId, status: "delivering")
+        case .failed, .expired: markLocal(nonce: event.nonce, botId: entry.botId, status: "failed")
+        }
+        saveCache()
+    }
+
+    /// Messages the relay no longer holds were delivered, refused or expired while we were away.
+    /// "Failed" is safe even if one was delivered: the events catch-up replaces it by clientNonce,
+    /// and a resend reuses that nonce, so the computer never runs it twice.
+    private func reconcileQueued(_ remote: any RemoteTransport) async {
+        let waiting = entries.values.flatMap { $0 }.filter { $0.data.status == "waiting" }
+        guard !waiting.isEmpty else { return }
+        let held = Dictionary(await remote.listQueued().map { ($0.nonce, $0.state) }, uniquingKeysWith: { a, _ in a })
+        guard !retired else { return }
+        for e in waiting {
+            guard let nonce = e.data.clientNonce else { continue }
+            switch held[nonce] {
+            case "queued": break
+            case .some: markLocal(nonce: nonce, botId: e.botId, status: "delivering")
+            case nil: markLocal(nonce: nonce, botId: e.botId, status: "failed")
+            }
+        }
+        saveCache()
+    }
+
     public func retry(_ entry: Entry) {
         guard let text = entry.data.text else { return }
         entries[entry.botId]?.removeAll { $0.id == entry.id }
-        send(text, to: entry.botId)
+        // The same clientNonce: if the computer got it after all, it won't run twice (the host
+        // skips a nonce it has). Every seal still takes a fresh ephemeral key (§6.4).
+        send(text, to: entry.botId, nonce: entry.data.clientNonce ?? UUID().uuidString)
     }
 
     public func discard(_ entry: Entry) {
@@ -526,14 +710,13 @@ public final class BotStore {
     private static let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
     private var cacheStamp: String?
 
+    /// Per app, context and computer (`SharedStore.Context.erase()` removes a context's files).
     private var cacheURL: URL {
-        let computer = SharedStore.Context.digest(pairing?.token ?? "unpaired")
-        return URL.cachesDirectory.appending(path: "codync-mirror-\(Bundle.main.bundleIdentifier ?? "app")-\(storage.id)-\(computer).json")
+        URL.cachesDirectory.appending(path: "codync-mirror-\(Bundle.main.bundleIdentifier ?? "app")-\(storage.id)-\(computer.id).json")
     }
 
     private func loadCache() {
-        guard pairing != nil,
-              let data = try? Data(contentsOf: cacheURL),
+        guard let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(Cache.self, from: data),
               cache.stamp?.hasPrefix(Self.appBuild + "/") == true else { return }
         cacheStamp = cache.stamp
@@ -554,8 +737,12 @@ public final class BotStore {
 
     public func saveCache() {
         guard !retired else { return }
-        // Keep the newest 200 entries per bot; older ones page in from the host.
-        let kept = entries.values.flatMap { $0.filter { !$0.id.hasPrefix("local-") }.suffix(200) }
+        // Keep the newest 200 entries per bot; older ones page in from the host. Messages waiting
+        // in the mailbox stay too, so they can still be seen and cancelled after a relaunch.
+        let kept = entries.values.flatMap { list in
+            list.filter { !$0.id.hasPrefix("local-") }.suffix(200)
+                + list.filter { $0.id.hasPrefix("local-") && ["waiting", "delivering"].contains($0.data.status) }
+        }
         let cache = Cache(stamp: "\(Self.appBuild)/\(hello?.version ?? "")", hostId: hostId, rev: rev, bots: Array(bots.values), entries: kept)
         if let data = try? JSONEncoder().encode(cache) {
             try? data.write(to: cacheURL, options: .atomic)

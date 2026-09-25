@@ -1,50 +1,5 @@
 import Foundation
 
-/// What `codync-host pair` encodes: `codync://pair?name=…&token=…&urls=a,b`.
-public struct Pairing: Codable, Hashable, Sendable {
-    public var name: String
-    public var token: String
-    public var urls: [String]
-    /// What the computer is (`Device` on the host), learned from `hello`; picks its icon.
-    public var device: String?
-    /// The badge color the user picked on this phone (an `AvatarPalette` id).
-    public var color: String?
-
-    public init(name: String, token: String, urls: [String]) {
-        self.name = name
-        self.token = token
-        self.urls = urls
-    }
-
-    public init?(url: URL) {
-        guard url.scheme == "codync", url.host() == "pair",
-              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
-        let q = Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
-        guard let token = q["token"], !token.isEmpty else { return nil }
-        let urls = (q["urls"] ?? "").split(separator: ",").map(String.init).filter { URL(string: $0) != nil }
-        guard !urls.isEmpty else { return nil }
-        self.init(name: q["name"].flatMap { $0.isEmpty ? nil : $0 } ?? "My computer", token: token, urls: urls)
-    }
-
-    public init?(string: String) {
-        guard let url = URL(string: string.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
-        self.init(url: url)
-    }
-}
-
-public enum HostError: LocalizedError, Sendable {
-    case http(Int, String)
-    case unreachable
-
-    public var errorDescription: String? {
-        switch self {
-        case .http(401, _): "This phone isn't paired with the host anymore. Pair again."
-        case let .http(_, message): message
-        case .unreachable: "Can't reach your computer. Is it on, awake, and on Tailscale or the same Wi-Fi?"
-        }
-    }
-}
-
 public enum HostEvent: Sendable {
     case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?)
     case bot(Bot)
@@ -52,6 +7,10 @@ public enum HostEvent: Sendable {
     case entry(Entry)
     case usage(Usage)
     case screen(ScreenState)
+    /// Loopback only: devices asking this computer for access.
+    case accessRequests([AccessRequest])
+    /// Loopback only: the host's cloud connection.
+    case cloud(CloudStatus)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -68,69 +27,33 @@ public struct Empty: Codable, Sendable {
 }
 
 public struct HostClient: Sendable {
-    public let baseURL: URL
-    public let token: String
+    public let transport: any HostTransport
 
+    public init(transport: any HostTransport) {
+        self.transport = transport
+    }
+
+    /// Loopback: the Mac's own host, or one reached through an SSH tunnel.
     public init(baseURL: URL, token: String) {
-        self.baseURL = baseURL
-        self.token = token
+        self.init(transport: LoopbackTransport(baseURL: baseURL, token: token))
     }
 
     static let decoder = JSONDecoder()
     static let encoder = JSONEncoder()
 
-    private var session: URLSession { .shared }
-
     public func call<T: Decodable>(_ method: String, _ body: some Encodable = Empty(), timeout: TimeInterval = 20) async throws -> T {
-        var req = URLRequest(url: baseURL.appending(path: "api/\(method)"), timeoutInterval: timeout)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try Self.encoder.encode(body)
-        let (data, response) = try await session.data(for: req)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else {
-            let message = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ?? "Host error \(status)"
-            throw HostError.http(status, message)
-        }
+        let data = try await transport.call(method, body: try Self.encoder.encode(body), timeout: timeout)
         return try Self.decoder.decode(T.self, from: data)
     }
 
-    public func healthy(timeout: TimeInterval = 4) async -> Bool {
-        var req = URLRequest(url: baseURL.appending(path: "health"), timeoutInterval: timeout)
-        req.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let (_, response) = try? await session.data(for: req) else { return false }
-        return (response as? HTTPURLResponse)?.statusCode == 200
-    }
-
-    /// First address (in the pairing's preference order) that answers `/health`.
-    public static func resolve(_ pairing: Pairing) async -> HostClient? {
-        let candidates = pairing.urls.compactMap(URL.init(string:)).map { HostClient(baseURL: $0, token: pairing.token) }
-        return await withTaskGroup(of: (Int, Bool).self) { group in
-            for (i, c) in candidates.enumerated() {
-                group.addTask { (i, await c.healthy()) }
-            }
-            var ok: [Int] = []
-            for await (i, healthy) in group where healthy {
-                ok.append(i)
-                // The best-ranked address won; no need to wait for slower ones.
-                if i == 0 { break }
-            }
-            group.cancelAll()
-            return ok.min().map { candidates[$0] }
-        }
-    }
-
-    /// Server-sent events: catch-up since `since`, then live updates.
+    /// Catch-up since `since`, then live updates.
     public func events(since: Int64, client: String) -> AsyncThrowingStream<HostEvent, Error> {
-        var comps = URLComponents(url: baseURL.appending(path: "events"), resolvingAgainstBaseURL: false)!
-        comps.queryItems = [.init(name: "since", value: String(since)), .init(name: "client", value: client)]
-        return sse(comps.url!, parse: Self.parseEvent)
+        map(transport.stream(.events(since: since, client: client)), Self.parseEvent)
     }
 
     /// A setup terminal's output: everything so far, then live, finishing after `.exit`.
     public func termOutput(_ term: String) -> AsyncThrowingStream<TermEvent, Error> {
-        sse(baseURL.appending(path: "term/\(term)")) { data in
+        map(transport.stream(.term(term))) { data in
             struct Raw: Decodable { var type: String; var data: String?; var code: Int? }
             guard let raw = try? Self.decoder.decode(Raw.self, from: data) else { return nil }
             switch raw.type {
@@ -141,26 +64,12 @@ public struct HostClient: Sendable {
         }
     }
 
-    private func sse<T: Sendable>(_ url: URL, parse: @escaping @Sendable (Data) -> T?) -> AsyncThrowingStream<T, Error> {
-        // Idle timeout, not a total one: the host pings every 15 s, so silence this long means it's
-        // gone (shut down, asleep, off the network) even if the socket never closed.
-        var req = URLRequest(url: url, timeoutInterval: 45)
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        let session = self.session
-        let request = req
-        return AsyncThrowingStream { continuation in
+    private func map<T: Sendable>(_ source: AsyncThrowingStream<Data, Error>, _ parse: @escaping @Sendable (Data) -> T?) -> AsyncThrowingStream<T, Error> {
+        AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let (bytes, response) = try await session.bytes(for: request)
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    guard status == 200 else { throw HostError.http(status, "Host error \(status)") }
-                    for try await line in bytes.lines {
-                        guard line.hasPrefix("data:") else { continue }
-                        let payload = Data(line.dropFirst(5).utf8)
-                        if let event = parse(payload) {
-                            continuation.yield(event)
-                        }
+                    for try await data in source {
+                        if let event = parse(data) { continuation.yield(event) }
                     }
                     continuation.finish()
                 } catch {
@@ -182,6 +91,8 @@ public struct HostClient: Sendable {
         struct EntryWrap: Decodable { var entry: Entry }
         struct UsageWrap: Decodable { var usage: Usage }
         struct ScreenWrap: Decodable { var screen: ScreenState }
+        struct RequestsWrap: Decodable { var requests: [AccessRequest] }
+        struct CloudWrap: Decodable { var cloud: CloudStatus }
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
@@ -200,6 +111,10 @@ public struct HostClient: Sendable {
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
         case "screen":
             return (try? d.decode(ScreenWrap.self, from: data)).map { .screen($0.screen) }
+        case "accessRequests":
+            return (try? d.decode(RequestsWrap.self, from: data)).map { .accessRequests($0.requests) }
+        case "cloud":
+            return (try? d.decode(CloudWrap.self, from: data)).map { .cloud($0.cloud) }
         case "resync":
             return .resync
         default:
@@ -263,8 +178,10 @@ public extension HostClient {
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))
     }
 
-    func registerDevice(ticket: String, relay: String, name: String) async throws {
-        let _: Empty = try await call("registerDevice", ["ticket": ticket, "relay": relay, "name": name])
+    /// Push tickets are bound to this device's key; `pushKey` lets the host seal notification text (§6.7).
+    func registerDevice(ticket: String, relay: String, name: String, pushKey: String?, ctx: String) async throws {
+        struct Body: Encodable { var ticket: String; var relay: String; var name: String; var pushKey: String?; var ctx: String }
+        let _: Empty = try await call("registerDevice", Body(ticket: ticket, relay: relay, name: name, pushKey: pushKey, ctx: ctx))
     }
 
     func registerActivity(botId: String, ticket: String) async throws {
@@ -343,4 +260,49 @@ public extension HostClient {
 public struct ScreenAnswer: Codable, Sendable {
     public var session: String
     public var sdp: String
+}
+
+// MARK: - Loopback-only: this computer's devices and account (Mac)
+
+public extension HostClient {
+    /// The host signs a claim so the cloud can make this computer part of `userId`'s account (§4.2 A).
+    func claimSign(claimId: String, nonce: String, userId: String) async throws -> ClaimSignature {
+        try await call("claimSign", ["claimId": claimId, "nonce": nonce, "userId": userId])
+    }
+
+    func accessRequests() async throws -> [AccessRequest] {
+        struct Res: Decodable { var requests: [AccessRequest] }
+        let res: Res = try await call("accessRequests")
+        return res.requests
+    }
+
+    func decideAccessRequest(_ id: String, approve: Bool) async throws {
+        struct Body: Encodable { var requestId: String; var approve: Bool }
+        let _: Empty = try await call("decideAccessRequest", Body(requestId: id, approve: approve), timeout: 30)
+    }
+
+    func devices() async throws -> [AuthorizedDevice] {
+        struct Res: Decodable { var devices: [AuthorizedDevice] }
+        let res: Res = try await call("devices")
+        return res.devices
+    }
+
+    func revokeDevice(_ key: String) async throws {
+        let _: Empty = try await call("revokeDevice", ["key": key])
+    }
+
+    func cloudStatus() async throws -> CloudStatus { try await call("cloudStatus") }
+
+    func setCloud(enabled: Bool) async throws -> CloudStatus {
+        try await call("setCloud", ["enabled": enabled], timeout: 30)
+    }
+
+    func setCloud(enabled: Bool, url: URL?) async throws -> CloudStatus {
+        struct Body: Encodable { var enabled: Bool; var url: String? }
+        return try await call("setCloud", Body(enabled: enabled, url: url?.absoluteString), timeout: 30)
+    }
+
+    func unclaim() async throws {
+        let _: Empty = try await call("unclaim", timeout: 30)
+    }
 }

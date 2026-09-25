@@ -23,6 +23,6 @@ Rotating `TICKET_KEY` invalidates every ticket; phones re-register on launch.
 ## Test
 
 ```bash
-npm test        # ticket seal/open round trip
+npm test        # ticket seal/open round trip, `mutableContent` → `mutable-content: 1`
 npm run typecheck
 ```

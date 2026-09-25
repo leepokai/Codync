@@ -228,8 +228,15 @@ public struct Hello: Codable, Sendable {
     public var rev: Int64
     /// Missing from hosts that predate remote screen.
     public var screen: ScreenState?
-    /// The host's current addresses, so pairings pick up Tailscale set up after pairing.
+    /// The host's current direct addresses.
     public var urls: [String]?
+    /// Channel identity (§9.4); missing only on loopback to an older host.
+    public var computerId: ComputerID?
+    public var signKey: String?
+    public var boxKey: String?
+    public var `protocol`: Int?
+    /// The cloud relay the host uses; nil = cloud off.
+    public var cloud: String?
 }
 
 /// The computer's remote screen: whether phones can view/control it, and who's in control.
@@ -285,9 +292,12 @@ public struct SyncResponse: Codable, Sendable {
     public var usage: Usage
 }
 
+/// A fresh pairing code to show as a QR on this computer (loopback `pairing`).
 public struct PairingInfo: Codable, Sendable {
     public var pairingUrl: String
     public var urls: [String]
+    public var svg: String?
+    public var expiresAt: Int64?
 }
 
 public struct DirListing: Codable, Sendable {

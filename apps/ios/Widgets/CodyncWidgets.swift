@@ -16,27 +16,47 @@ struct CodyncWidgets: WidgetBundle {
 
 // MARK: - Bots at a glance
 
+/// A bot on one of the account's computers; bot IDs are only unique per computer.
+struct WidgetBot: Identifiable {
+    let bot: Bot
+    let link: URL?
+    let id: String
+
+    init(_ snapshot: BotSnapshot, storage: SharedStore.Context?) {
+        bot = snapshot.bot
+        link = storage?.botURL(BotReference(accountId: storage?.accountID, computerId: snapshot.computerId, botId: snapshot.bot.id))
+        id = "\(snapshot.computerId)/\(snapshot.bot.id)"
+    }
+}
+
 struct BotsEntry: TimelineEntry {
     let date: Date
-    let bots: [Bot]
+    let bots: [WidgetBot]
     let paired: Bool
-    var links: [String: URL] = [:]
+
+    /// The app's snapshot of every computer's bots in the selected account.
+    static func current(preview: Bool = false) -> BotsEntry {
+        let storage = SharedStore.activeContext
+        let bots = storage.bots.map { WidgetBot($0, storage: storage) }
+        if bots.isEmpty && preview { return .sample }
+        return BotsEntry(date: .now, bots: bots, paired: !storage.computers.isEmpty)
+    }
+
+    static var sample: BotsEntry {
+        BotsEntry(date: .now, bots: Bot.samples.map { WidgetBot(BotSnapshot(computerId: "sample", bot: $0), storage: nil) }, paired: true)
+    }
 }
 
 struct BotsTimeline: TimelineProvider {
-    func placeholder(in context: Context) -> BotsEntry { BotsEntry(date: .now, bots: Bot.samples, paired: true) }
+    func placeholder(in context: Context) -> BotsEntry { .sample }
 
     func getSnapshot(in context: Context, completion: @escaping (BotsEntry) -> Void) {
-        let bots = SharedStore.bots
-        completion(BotsEntry(date: .now, bots: bots.isEmpty && context.isPreview ? Bot.samples : bots, paired: true))
+        completion(.current(preview: context.isPreview))
     }
 
     /// The app writes the roster and reloads this widget when a bot's state changes.
     func getTimeline(in context: Context, completion: @escaping (Timeline<BotsEntry>) -> Void) {
-        let storage = SharedStore.activeContext
-        let entry = BotsEntry(date: .now, bots: storage.bots, paired: storage.pairing != nil,
-                              links: Dictionary(storage.bots.map { ($0.id, storage.botURL($0.id)) }, uniquingKeysWith: { a, _ in a }))
-        completion(Timeline(entries: [entry], policy: .never))
+        completion(Timeline(entries: [.current()], policy: .never))
     }
 }
 
@@ -56,21 +76,23 @@ struct BotsWidgetView: View {
     let entry: BotsEntry
     @Environment(\.widgetFamily) private var family
 
+    private var bots: [Bot] { entry.bots.map(\.bot) }
+
     /// Needs you first, then working, then most recent.
-    private var ordered: [Bot] {
-        entry.bots.filter { !$0.hidden }.sorted {
+    private var ordered: [WidgetBot] {
+        entry.bots.filter { !$0.bot.hidden }.sorted { a, b in
             let rank = { (b: Bot) in b.needsInput ? 0 : b.isWorking ? 1 : 2 }
-            return rank($0) != rank($1) ? rank($0) < rank($1) : $0.lastAt > $1.lastAt
+            return rank(a.bot) != rank(b.bot) ? rank(a.bot) < rank(b.bot) : a.bot.lastAt > b.bot.lastAt
         }
     }
-    private var needing: Int { entry.bots.filter(\.needsInput).count }
-    private var working: Int { entry.bots.filter { $0.isWorking && !$0.needsInput }.count }
+    private var needing: Int { bots.filter(\.needsInput).count }
+    private var working: Int { bots.filter { $0.isWorking && !$0.needsInput }.count }
 
     /// The one line that sums up the roster.
     private var headline: (count: Int, label: String, needs: Bool) {
         if needing > 0 { return (needing, needing == 1 ? "needs you" : "need you", true) }
         if working > 0 { return (working, "working", false) }
-        return (entry.bots.count, entry.bots.count == 1 ? "bot, all quiet" : "bots, all quiet", false)
+        return (bots.count, bots.count == 1 ? "bot, all quiet" : "bots, all quiet", false)
     }
 
     var body: some View {
@@ -89,8 +111,8 @@ struct BotsWidgetView: View {
             case .accessoryRectangular:
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(headline.count) \(headline.label)").font(.headline).widgetAccentable()
-                    ForEach(ordered.prefix(2)) { bot in
-                        Text("\(bot.name) · \(line(bot))").font(.caption2).lineLimit(1)
+                    ForEach(ordered.prefix(2)) { item in
+                        Text("\(item.bot.name) · \(line(item.bot))").font(.caption2).lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -98,8 +120,8 @@ struct BotsWidgetView: View {
                 HStack(alignment: .top, spacing: 16) {
                     summary.frame(width: 104, alignment: .leading)
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(ordered.prefix(3)) { bot in
-                            Link(destination: entry.links[bot.id] ?? URL(string: "codync://computers")!) { BotLine(bot: bot, detail: line(bot)) }
+                        ForEach(ordered.prefix(3)) { item in
+                            Link(destination: item.link ?? URL(string: "codync://computers")!) { BotLine(bot: item.bot, detail: line(item.bot)) }
                         }
                         Spacer(minLength: 0)
                     }
@@ -107,15 +129,15 @@ struct BotsWidgetView: View {
             default:
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: -6) {
-                        ForEach(ordered.prefix(3)) { bot in
-                            CharacterAvatar(bot: bot, size: 30, animated: false)
+                        ForEach(ordered.prefix(3)) { item in
+                            CharacterAvatar(bot: item.bot, size: 30, animated: false)
                         }
                     }
                     Spacer(minLength: 6)
                     summary
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .widgetURL(ordered.first.flatMap { entry.links[$0.id] })
+                .widgetURL(ordered.first?.link)
             }
         }
     }
@@ -127,7 +149,7 @@ struct BotsWidgetView: View {
                 .foregroundStyle(headline.needs ? Palette.warning : Palette.text)
                 .contentTransition(.numericText())
             Text(headline.label).font(.subheadline).foregroundStyle(Palette.secondary)
-            if family == .systemSmall, let first = ordered.first, first.isWorking {
+            if family == .systemSmall, let first = ordered.first?.bot, first.isWorking {
                 Text(first.name).font(.caption).foregroundStyle(Palette.tertiary).lineLimit(1).padding(.top, 2)
             }
         }
@@ -200,7 +222,7 @@ struct UsageTimeline: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: UsageIntent, in context: Context) async -> UsageEntry {
-        UsageEntry(date: .now, usage: SharedStore.usage ?? .sample)
+        UsageEntry(date: .now, usage: Self.cached ?? .sample)
     }
 
     /// Refreshes every 30 minutes, or right after the next limit resets if that's sooner.
@@ -210,19 +232,31 @@ struct UsageTimeline: AppIntentTimelineProvider {
 
     static func timeline() async -> Timeline<UsageEntry> {
         let fetched = await fetch()
-        let usage = fetched ?? SharedStore.usage ?? Usage()
+        let usage = fetched ?? cached ?? Usage()
         let nextReset = usage.providers.flatMap(\.windows).compactMap(\.resetDate).filter { $0 > .now }.min()
         var next = Date.now + (fetched == nil ? 5 * 60 : 30 * 60)
         if let nextReset, nextReset + 1 < next { next = max(nextReset + 1, .now + 5 * 60) }
         return Timeline(entries: [UsageEntry(date: .now, usage: usage)], policy: .after(next))
     }
 
-    /// Asks the paired host directly (works over Tailscale), falling back to the app's cache.
-    /// `refresh` makes the host re-read the limits first instead of answering from its cache.
+    /// The last active computer's usage, as the app last saw it.
+    static var cached: Usage? {
+        let storage = SharedStore.activeContext
+        return storage.lastComputerId.flatMap { storage.usage[$0] }
+    }
+
+    /// Asks the last active computer directly or through the relay, one call, then disconnects;
+    /// nil falls back to the app's cache. `refresh` makes the host re-read the limits first.
     static func fetch(refresh: Bool = false) async -> Usage? {
-        guard let pairing = SharedStore.orderedPairing, let client = await HostClient.resolve(pairing),
-              let usage = try? await client.usage(refresh: refresh) else { return nil }
-        SharedStore.usage = usage
+        let storage = SharedStore.activeContext
+        // Keys exist once a computer is saved; the widget never creates them.
+        guard let id = storage.lastComputerId, let computer = storage.computers.first(where: { $0.id == id }),
+              let identity = try? DeviceIdentity.load(context: storage),
+              let transport = try? await HostConnector.connect(computer, identity: identity) else { return nil }
+        let usage = try? await HostClient(transport: transport).usage(refresh: refresh)
+        await transport.shutdown()
+        guard let usage else { return nil }
+        storage.usage[id] = usage
         return usage
     }
 }
@@ -299,7 +333,7 @@ struct UsageWidgetView: View {
         } else if family == .accessoryInline || family == .accessoryCircular || family == .accessoryRectangular {
             Text("No usage yet")
         } else {
-            EmptyWidget(text: SharedStore.pairing == nil ? "Open Codync to pair with your computer." : "No usage reported yet.")
+            EmptyWidget(text: SharedStore.activeContext.computers.isEmpty ? "Open Codync to pair with your computer." : "No usage reported yet.")
         }
     }
 
@@ -369,7 +403,7 @@ struct ProviderUsageTimeline: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: ProviderUsageIntent, in context: Context) async -> ProviderUsageEntry {
-        let usage = SharedStore.usage.flatMap { $0.providers.isEmpty ? nil : $0 } ?? .preview
+        let usage = UsageTimeline.cached.flatMap { $0.providers.isEmpty ? nil : $0 } ?? .preview
         return ProviderUsageEntry(date: .now, usage: usage, provider: configuration.provider)
     }
 
@@ -449,7 +483,7 @@ struct ProviderUsageView: View {
                     }
                 }
             } else {
-                EmptyWidget(text: SharedStore.pairing == nil ? "Open Codync to pair with your computer."
+                EmptyWidget(text: SharedStore.activeContext.computers.isEmpty ? "Open Codync to pair with your computer."
                     : "No \(entry.provider.rawValue.capitalized) usage reported yet.")
             }
         }
@@ -531,10 +565,11 @@ struct BotLiveActivity: Widget {
     }
 }
 
+/// Status only: Live Activity pushes never carry free text (spec §6.7).
 private func statusText(_ s: BotActivityAttributes.ContentState) -> String {
     switch s.status {
-    case "needsInput": s.activity.isEmpty ? "Needs your approval" : s.activity
-    case "working": s.activity.isEmpty ? "Working…" : s.activity
+    case "needsInput": "Needs your approval"
+    case "working": "Working…"
     case "error": "Stopped with an error"
     default: "Done"
     }

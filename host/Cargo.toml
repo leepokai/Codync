@@ -1,6 +1,6 @@
 [package]
 name = "codync-host"
-version = "2.1.0"
+version = "3.0.0"
 edition = "2024"
 # let-chains (`if let … && let …`) need 1.88.
 rust-version = "1.88"
@@ -10,13 +10,17 @@ repository = "https://github.com/leepokai/Codync"
 
 [dependencies]
 anyhow = "1.0.104"
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["ws"] }
 base64 = "0.23.1"
+chacha20poly1305 = "0.11.0"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 dirs = "7.0.0"
+ed25519-dalek = "3.0.0"
 futures = "0.3.34"
 gethostname = "1.1.0"
+getrandom = "0.4"
+hkdf = "0.13.0"
 if-addrs = "0.15.0"
 pty-process = { version = "0.5.3", features = ["async"] }
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
@@ -28,10 +32,12 @@ serde_json = { version = "1.0.151", features = ["preserve_order"] }
 sha2 = "0.11.0"
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 unicode-width = "0.2"
 uuid = { version = "1.26.1", features = ["v4"] }
+x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 
 # rust-skills lint-* rules: all default groups plus pedantic, with the
 # library-oriented pedantic lints turned off for this binary crate.
@@ -62,3 +68,4 @@ undocumented_unsafe_blocks = "warn"
 lto = "thin"
 codegen-units = 1
 strip = true
+

@@ -1,12 +1,16 @@
-//! HTTP API: `POST /api/<method>` commands + `GET /events` SSE.
-//! Auth: `Authorization: Bearer <token>` (or `?token=` for SSE).
+//! HTTP API: `POST /api/<method>` commands + `GET /events` SSE for this computer's own
+//! apps and helpers (loopback + `Authorization: Bearer <token>`), and `GET /channel`, the
+//! direct end-to-end encrypted channel phones use (see `channel`).
 
 use crate::LockExt;
 use crate::bot::Cmd;
+use crate::devices::{Caller, Forbidden};
 use crate::hub::Hub;
-use crate::store::{BotConfig, EntryKind};
-use crate::{backends, market, usage};
+use crate::store::{BotConfig, DeviceSource, EntryKind};
+use crate::{backends, crypto, market, usage};
 use anyhow::{Context, Result, anyhow, bail};
+use axum::body::Bytes;
+use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -17,7 +21,7 @@ use futures::{Stream, StreamExt, stream};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::convert::Infallible;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -33,14 +37,27 @@ pub fn router(hub: Arc<Hub>) -> Router {
         .route("/api/{method}", post(command))
         .route("/term/{id}", get(term_stream))
         .route("/ingest/statusline", post(statusline))
+        .route("/channel", get(channel))
         .with_state(hub)
 }
 
-fn authorized(hub: &Hub, headers: &HeaderMap, query_token: Option<&str>) -> bool {
-    let header = headers.get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "));
-    let given = header.or(query_token).unwrap_or_default();
-    // Constant-time compare.
-    given.len() == hub.token.len() && given.bytes().zip(hub.token.bytes()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
+/// Loopback, also as an IPv4-mapped IPv6 address (`::ffff:127.0.0.1` under `--bind ::`).
+fn is_loopback(ip: IpAddr) -> bool {
+    ip.to_canonical().is_loopback()
+}
+
+/// The bearer token only works from this computer; phones use the E2E channel.
+fn authorized(hub: &Hub, headers: &HeaderMap, peer: SocketAddr) -> bool {
+    let given = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or_default();
+    is_loopback(peer.ip()) && crypto::ct_eq(given.as_bytes(), hub.token.as_bytes())
+}
+
+fn unauthorized() -> ApiError {
+    ApiError(StatusCode::UNAUTHORIZED, "invalid token".into())
 }
 
 struct ApiError(StatusCode, String);
@@ -57,6 +74,20 @@ impl std::fmt::Display for UnknownMethod {
 
 impl std::error::Error for UnknownMethod {}
 
+/// HTTP status and message for a failed call; channels send the same pair in `err`.
+pub fn error_status(e: &anyhow::Error) -> (StatusCode, String) {
+    if e.is::<UnknownMethod>() {
+        (StatusCode::NOT_FOUND, e.to_string())
+    } else if e.is::<Forbidden>() {
+        (StatusCode::FORBIDDEN, e.to_string())
+    } else if e.is::<crate::cloud::Conflict>() {
+        (StatusCode::CONFLICT, e.to_string())
+    } else {
+        // `{:#}` keeps the context chain ("starting `npx …`: No such file or directory").
+        (StatusCode::BAD_REQUEST, format!("{e:#}"))
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (self.0, Json(json!({"error": self.1}))).into_response()
@@ -64,13 +95,26 @@ impl IntoResponse for ApiError {
 }
 
 async fn health(State(hub): State<Arc<Hub>>) -> Json<Value> {
-    Json(json!({"ok": true, "hostId": hub.host_id, "version": env!("CARGO_PKG_VERSION")}))
+    Json(json!({
+        "ok": true,
+        "hostId": hub.host_id,
+        "computerId": hub.identity.computer_id(),
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
 }
 
-async fn statusline(State(hub): State<Arc<Hub>>, headers: HeaderMap, Json(body): Json<Value>) -> StatusCode {
-    if !authorized(&hub, &headers, None) {
+async fn statusline(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> StatusCode {
+    if !authorized(&hub, &headers, peer) {
         return StatusCode::UNAUTHORIZED;
     }
+    let Ok(body) = serde_json::from_slice::<Value>(&body) else {
+        return StatusCode::BAD_REQUEST;
+    };
     usage::ingest_statusline(&hub, &body);
     StatusCode::NO_CONTENT
 }
@@ -80,37 +124,59 @@ async fn command(
     Path(method): Path<String>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    body: Option<Json<Value>>,
+    body: Bytes,
 ) -> Result<Json<Value>, ApiError> {
-    if !authorized(&hub, &headers, None) {
-        return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid token".into()));
+    // The token is checked before the body is even looked at.
+    if !authorized(&hub, &headers, peer) {
+        return Err(unauthorized());
     }
-    let body = body.map_or(Value::Null, |b| b.0);
-    // Letting phones see and control the screen is decided at the computer, never remotely.
-    if method == "setScreenEnabled" && !peer.ip().is_loopback() {
-        return Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "Remote screen can only be turned on at the computer itself.".into(),
-        ));
+    let body = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).map_err(|e| ApiError(StatusCode::BAD_REQUEST, format!("invalid JSON: {e}")))?
+    };
+    dispatch(&hub, &Caller::Local, &method, body).await.map(Json).map_err(|e| {
+        let (status, message) = error_status(&e);
+        ApiError(status, message)
+    })
+}
+
+#[derive(Deserialize)]
+struct ChannelQuery {
+    v: Option<u32>,
+}
+
+/// `GET /channel?v=1`: the direct E2E channel. No bearer token: the handshake authenticates.
+async fn channel(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Query(q): Query<ChannelQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if q.v != Some(1) {
+        return (StatusCode::UPGRADE_REQUIRED, Json(json!({"error": {"code": "upgradeRequired"}}))).into_response();
     }
-    match dispatch(&hub, &method, body).await {
-        Ok(v) => Ok(Json(v)),
-        Err(e) if e.is::<UnknownMethod>() => Err(ApiError(StatusCode::NOT_FOUND, e.to_string())),
-        // `{:#}` keeps the context chain ("starting `npx …`: No such file or directory").
-        Err(e) => Err(ApiError(StatusCode::BAD_REQUEST, format!("{e:#}"))),
-    }
+    ws.max_message_size(crate::channel::MAX_WS_MESSAGE)
+        .on_upgrade(move |socket| crate::channel::serve_direct(hub, socket, peer.ip()))
 }
 
 fn str_arg<'a>(b: &'a Value, k: &str) -> Result<&'a str> {
     b[k].as_str().ok_or_else(|| anyhow!("`{k}` is required"))
 }
 
-pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
+/// Runs one API method for `caller` (permissions per spec §6.6).
+pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<Value> {
+    crate::devices::permit(caller, method)?;
     Ok(match method {
         "hello" => {
             let port = hub.port;
             json!({
                 "hostId": hub.host_id,
+                "computerId": hub.identity.computer_id(),
+                "signKey": hub.identity.sign_pub_b64(),
+                "boxKey": hub.identity.box_pub_b64(),
+                "protocol": 1,
+                "cloud": crate::cloud::url(&hub.store),
                 "name": crate::service::host_name(),
                 "version": env!("CARGO_PKG_VERSION"),
                 "os": std::env::consts::OS,
@@ -197,17 +263,16 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             if let Some(relay) = b["relay"].as_str().filter(|r| r.starts_with("https://")) {
                 hub.store.kv_set("relay_url", relay.trim_end_matches('/'))?;
             }
-            hub.store.add_device(ticket, b["name"].as_str().unwrap_or("iPhone"))?;
+            let push_key = b["pushKey"].as_str();
+            if let Some(k) = push_key {
+                crypto::unb64_n::<32>(k).context("`pushKey` must be a 32-byte X25519 key")?;
+            }
+            let name = b["name"].as_str().unwrap_or("iPhone");
+            hub.store.add_push_ticket(ticket, caller.device_key(), push_key, b["ctx"].as_str(), name)?;
             json!({})
         }
         "registerActivity" => {
-            let bot = str_arg(&b, "botId")?.to_owned();
-            let ticket = str_arg(&b, "ticket")?.to_owned();
-            let mut map = hub.activities.locked();
-            let list = map.entry(bot).or_default();
-            if !list.contains(&ticket) {
-                list.push(ticket);
-            }
+            hub.store.add_activity_ticket(str_arg(&b, "ticket")?, str_arg(&b, "botId")?, caller.device_key())?;
             json!({})
         }
         "refreshBackends" => {
@@ -225,18 +290,46 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             let path = b["path"].as_str().map(std::path::PathBuf::from);
             tokio::task::spawn_blocking(move || list_dirs(path)).await??
         }
-        "pairing" => {
-            let port = hub.port;
-            // Shells out to `tailscale`: keep it off the async workers.
-            let urls = tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?;
-            let url = crate::service::pairing_url(&crate::service::host_name(), &hub.token, &urls);
-            let svg = qrcode::QrCode::new(url.as_bytes())?
-                .render::<qrcode::render::svg::Color>()
-                .quiet_zone(false)
-                .min_dimensions(200, 200)
-                .build();
-            json!({"pairingUrl": url, "urls": urls, "svg": svg})
+        "pairing" => pairing(hub).await?,
+        "devices" => {
+            let connected = hub.connected.locked().clone();
+            let devices: Vec<Value> = hub
+                .store
+                .devices()?
+                .into_iter()
+                .map(|d| {
+                    let mut v = serde_json::to_value(&d).expect("Device is plain data and always serializes");
+                    v["connected"] = connected.contains_key(&d.key).into();
+                    v
+                })
+                .collect();
+            json!({"devices": devices})
         }
+        "revokeDevice" => {
+            let key = str_arg(&b, "key")?;
+            let device = hub.store.device(key).ok_or_else(|| anyhow!("unknown device"))?;
+            hub.revoke_device(key)?;
+            if let Some(grant) = device.grant_id.filter(|_| device.source == DeviceSource::Account) {
+                tokio::spawn(crate::cloud::revoke_grant(hub.clone(), grant));
+            }
+            json!({})
+        }
+        "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
+        "decideAccessRequest" => {
+            let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
+            crate::cloud::decide(hub, str_arg(&b, "requestId")?, approve).await?;
+            json!({})
+        }
+        "unclaim" => {
+            crate::cloud::unclaim(hub).await?;
+            json!({})
+        }
+        "cloudStatus" => serde_json::to_value(hub.cloud.status())?,
+        "setCloud" => {
+            let enabled = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
+            serde_json::to_value(crate::cloud::set_cloud(hub, enabled, b["url"].as_str())?)?
+        }
+        "claimSign" => claim_sign(hub, &b).await?,
         "marketConnectors" => market::browse_connectors(&hub.store, b["search"].as_str().unwrap_or_default()).await?,
         "marketSkills" => market::browse_skills(&hub.store).await?,
         "connectors" => market::list_connectors(&hub.store),
@@ -357,22 +450,9 @@ fn term_size(b: &Value) -> (u16, u16) {
     (dim("cols", 80), dim("rows", 24))
 }
 
-#[derive(Deserialize)]
-struct TokenQuery {
-    token: Option<String>,
-}
-
 /// A setup terminal's output: everything so far, then live, ending after `exit`.
-async fn term_stream(
-    State(hub): State<Arc<Hub>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Query(q): Query<TokenQuery>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
-    if !authorized(&hub, &headers, q.token.as_deref()) {
-        return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid token".into()));
-    }
-    let term = hub.terms.get(&id).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "that terminal is gone".into()))?;
+pub fn term_events(hub: &Hub, id: &str) -> Option<impl Stream<Item = Value> + Send + use<>> {
+    let term = hub.terms.get(id)?;
     let (head, rx) = term.attach();
     let done = head.iter().any(|v| v["type"] == "exit");
     let live = BroadcastStream::new(rx).filter_map(|msg| async move { msg.ok() }).scan(done, |done, v| {
@@ -382,14 +462,27 @@ async fn term_stream(
         });
         async move { out }
     });
-    let events = stream::iter(head).chain(live).map(|v| Ok(Event::default().data(v.to_string())));
+    Some(stream::iter(head).chain(live))
+}
+
+async fn term_stream(
+    State(hub): State<Arc<Hub>>,
+    Path(id): Path<String>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    if !authorized(&hub, &headers, peer) {
+        return Err(unauthorized());
+    }
+    let events =
+        term_events(&hub, &id).ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "that terminal is gone".into()))?;
+    let events = events.map(|v| Ok(Event::default().data(v.to_string())));
     Ok(Sse::new(events).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
 #[derive(Deserialize)]
 struct EventsQuery {
     since: Option<i64>,
-    token: Option<String>,
     client: Option<String>,
 }
 
@@ -409,50 +502,133 @@ impl Drop for IosClientGuard {
     }
 }
 
-/// Subscribes first, then sends a catch-up (everything after `since`, in rev
-/// order), then live events. Duplicates are fine: clients upsert by id/rev.
-async fn events(
-    State(hub): State<Arc<Hub>>,
-    headers: HeaderMap,
-    Query(q): Query<EventsQuery>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
-    if !authorized(&hub, &headers, q.token.as_deref()) {
-        return Err(ApiError(StatusCode::UNAUTHORIZED, "invalid token".into()));
-    }
+/// Event types only this computer's own apps receive.
+const LOCAL_EVENTS: &[&str] = &["accessRequests", "cloud"];
+
+/// Subscribes first, then yields a catch-up (everything after `since`, in rev order),
+/// then live events. Duplicates are fine: clients upsert by id/rev. Shared by SSE and channels.
+pub fn events_stream(
+    hub: &Arc<Hub>,
+    since: i64,
+    client: Option<&str>,
+    caller: &Caller,
+) -> Result<impl Stream<Item = Value> + Send + use<>> {
     let live = BroadcastStream::new(hub.events.subscribe());
-    let since = q.since.unwrap_or(0);
     let mut catch_up: Vec<Value> = vec![];
-    for bot in hub.bots_json(since).map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? {
+    for bot in hub.bots_json(since)? {
         catch_up.push(json!({"type": "bot", "rev": bot["rev"], "bot": bot}));
     }
-    let entries = hub
-        .store
-        .entries_since(since, CATCH_UP_PER_BOT)
-        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
-    for e in entries {
+    for e in hub.store.entries_since(since, CATCH_UP_PER_BOT)? {
         catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": e}));
     }
     catch_up.sort_by_key(|v| v["rev"].as_i64().unwrap_or(0));
     let hello = json!({
         "type": "hello",
         "hostId": hub.host_id,
+        "computerId": hub.identity.computer_id(),
         "rev": hub.store.current_rev(),
         "usage": hub.usage.locked().clone(),
         "screen": hub.screen.state(),
     });
     catch_up.insert(0, hello);
 
-    let guard = Arc::new((q.client.as_deref() == Some("ios")).then(|| IosClientGuard::new(hub.clone())));
-    let head = stream::iter(catch_up.into_iter().map(|v| Ok(Event::default().data(v.to_string()))));
+    let local = matches!(caller, Caller::Local);
+    let guard = Arc::new((client == Some("ios")).then(|| IosClientGuard::new(hub.clone())));
     let tail = live.filter_map(move |msg| {
         let _keep = guard.clone();
         async move {
             match msg {
-                Ok(v) => Some(Ok(Event::default().data(v.to_string()))),
+                Ok(v) if !local && v["type"].as_str().is_some_and(|t| LOCAL_EVENTS.contains(&t)) => None,
+                Ok(v) => Some(v),
                 // Lagged: tell the client to resync from its last rev.
-                Err(_) => Some(Ok(Event::default().data(json!({"type": "resync"}).to_string()))),
+                Err(_) => Some(json!({"type": "resync"})),
             }
         }
     });
-    Ok(Sse::new(head.chain(tail)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
+    Ok(stream::iter(catch_up).chain(tail))
+}
+
+async fn events(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(q): Query<EventsQuery>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    if !authorized(&hub, &headers, peer) {
+        return Err(unauthorized());
+    }
+    let events = events_stream(&hub, q.since.unwrap_or(0), q.client.as_deref(), &Caller::Local)
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
+    let events = events.map(|v| Ok(Event::default().data(v.to_string())));
+    Ok(Sse::new(events).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
+}
+
+/// A new one-time pairing code and the QR that carries it (§4.1).
+async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
+    let port = hub.port;
+    // Shells out to `tailscale`: keep it off the async workers.
+    let urls = tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?;
+    let cloud = crate::cloud::url(&hub.store);
+    if urls.is_empty() && cloud.is_none() {
+        bail!("No network address a phone could reach, and the Codync cloud is off.");
+    }
+    let issued = hub.pairing.locked().issue();
+    hub.auth_changed();
+    let url = crate::service::pairing_url(&crate::service::PairingQr {
+        name: &crate::service::host_name(),
+        computer_id: &hub.identity.computer_id(),
+        sign_key: &hub.identity.sign_pub_b64(),
+        box_key: &hub.identity.box_pub_b64(),
+        code: &issued.code,
+        urls: &urls,
+        cloud: cloud.as_deref(),
+    });
+    let svg = qrcode::QrCode::new(url.as_bytes())?
+        .render::<qrcode::render::svg::Color>()
+        .quiet_zone(false)
+        .min_dimensions(200, 200)
+        .build();
+    Ok(json!({"pairingUrl": url, "urls": urls, "svg": svg, "expiresAt": issued.expires_at}))
+}
+
+/// Signs this computer into an account claim (§4.2 A) for the signed-in Mac app to complete.
+async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
+    let field = |k: &str| -> Result<&str> {
+        let v = str_arg(b, k)?;
+        // Fields are newline-separated in the signed string: a newline would forge another field.
+        if v.is_empty() || v.contains('\n') {
+            bail!("`{k}` is invalid");
+        }
+        Ok(v)
+    };
+    let (claim_id, nonce, user_id) = (field("claimId")?, field("nonce")?, field("userId")?);
+    let computer_id = hub.identity.computer_id();
+    let box_key = hub.identity.box_pub_b64();
+    let input = crypto::claim_input(claim_id, nonce, user_id, &computer_id, &box_key);
+    Ok(json!({
+        "computerId": computer_id,
+        "signKey": hub.identity.sign_pub_b64(),
+        "boxKey": box_key,
+        "name": crate::service::host_name(),
+        "platform": std::env::consts::OS,
+        "device": tokio::task::spawn_blocking(crate::service::device).await?,
+        "version": env!("CARGO_PKG_VERSION"),
+        "sig": crypto::b64(&hub.identity.sign(input.as_bytes())),
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_loopback_counts_as_this_computer() {
+        let ip = |s: &str| s.parse::<IpAddr>().expect("test addresses are valid");
+        assert!(is_loopback(ip("127.0.0.1")));
+        assert!(is_loopback(ip("::1")));
+        assert!(is_loopback(ip("::ffff:127.0.0.1")), "IPv4 loopback seen through `--bind ::`");
+        assert!(!is_loopback(ip("192.168.1.20")));
+        assert!(!is_loopback(ip("::ffff:192.168.1.20")));
+        assert!(!is_loopback(ip("100.101.102.103")));
+    }
 }

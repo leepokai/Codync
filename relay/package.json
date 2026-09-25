@@ -6,7 +6,7 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "typecheck": "tsc",
-    "test": "node --experimental-strip-types --no-warnings test/ticket.test.ts"
+    "test": "node --experimental-strip-types --no-warnings test/ticket.test.ts && node --experimental-strip-types --no-warnings test/push.test.ts"
   },
   "dependencies": {
     "@fivesheepco/cloudflare-apns2": "^13.0.0"

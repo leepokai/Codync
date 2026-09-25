@@ -5,9 +5,15 @@ import SwiftUI
 
 @main
 struct CodyncMacApp: App {
-    @State private var host = HostController()
-    @State private var account = AccountSession()
+    @State private var host: HostController
+    @State private var account: AccountSession
     @Environment(\.openWindow) private var openWindow
+
+    init() {
+        let account = AccountSession()
+        _account = State(initialValue: account)
+        _host = State(initialValue: HostController(account: account))
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -21,6 +27,13 @@ struct CodyncMacApp: App {
                 .task {
                     host.start()
                     openWindow(id: "chat")
+                }
+                .onChange(of: account.userID) { _, userID in host.switchAccount(to: userID) }
+                // A device asking for access: bring up the window that holds the approval sheet.
+                .onChange(of: host.currentApproval?.id) { _, id in
+                    guard id != nil else { return }
+                    openWindow(id: "chat")
+                    NSApp.activate()
                 }
         }
         .menuBarExtraStyle(.window)
@@ -44,8 +57,8 @@ struct MenuView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             VStack(spacing: 8) {
-                if showPairing {
-                    PairingPanel()
+                if showPairing, let store = host.store {
+                    PairingPanel(store: store)
                         .tile()
                         // Grows out of the QR button that opened it, and goes back into it.
                         .transition(.scale(0.97, anchor: .topTrailing).combined(with: .opacity))
@@ -86,7 +99,6 @@ struct MenuView: View {
                 }
                 IconButton("Pair iPhone", systemImage: "qrcode", selected: showPairing) {
                     showPairing.toggle()
-                    if showPairing { host.loadPairing() }
                 }
             }
         }
@@ -103,7 +115,9 @@ struct MenuView: View {
         case .starting: ("Connecting…", nil)
         case .failed: ("Host problem", Palette.danger)
         case .running:
-            if host.needsAttention {
+            if !host.approvals.isEmpty {
+                ("A device asks for access", Palette.warning)
+            } else if host.needsAttention {
                 ("A bot needs you", Palette.warning)
             } else if host.working > 0 {
                 ("\(host.working) bot\(host.working == 1 ? "" : "s") working", Palette.accent)
@@ -151,6 +165,14 @@ struct MenuView: View {
             }
             .tile()
         case .running:
+            if let approval = host.approvals.first {
+                ApprovalLine(approval: approval) {
+                    host.reviewApprovals()
+                    openWindow(id: "chat")
+                    NSApp.activate()
+                }
+                .tile()
+            }
             bots
             if host.screen != nil {
                 RemoteScreenSection().tile()
@@ -165,7 +187,7 @@ struct MenuView: View {
     }
 
     @ViewBuilder private var bots: some View {
-        if host.bots.isEmpty {
+        if host.roster.isEmpty {
             HStack(spacing: 12) {
                 CharacterAvatar(shape: "cloud", color: "gray", size: 32)
                 VStack(alignment: .leading, spacing: 2) {
@@ -178,11 +200,11 @@ struct MenuView: View {
         } else {
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(host.bots) { bot in
-                        BotLine(bot: bot) { host.stop(bot) }
+                    ForEach(host.roster) { item in
+                        BotLine(bot: item.bot, computer: host.accounts.computers.count > 1 ? item.computer : nil) { host.stop(item) }
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                host.store?.selection = bot.id
+                                host.accounts.selection = item.ref
                                 openWindow(id: "chat")
                                 NSApp.activate()
                             }
@@ -191,7 +213,7 @@ struct MenuView: View {
                 .padding(4)
             }
             // ScrollView has no intrinsic height inside a MenuBarExtra window.
-            .frame(height: min(CGFloat(host.bots.count) * 46 + 8, 320))
+            .frame(height: min(CGFloat(host.roster.count) * 46 + 8, 320))
             .tile(padding: 0)
         }
     }
@@ -297,7 +319,7 @@ private struct RemoteScreenSection: View {
         if !screen.connected { return "Starting Codync Screen…" }
         if !screen.capture || !screen.input { return "Needs permission" }
         if screen.viewers > 0 { return screen.viewers == 1 ? "Your iPhone is viewing" : "\(screen.viewers) viewers" }
-        if let bot = screen.agentBot, let name = host.bots.first(where: { $0.id == bot })?.name { return "\(name) is using it" }
+        if let bot = screen.agentBot, let name = host.store?.bots[bot]?.name { return "\(name) is using it" }
         let display = screen.displays.first(where: \.main)?.name ?? screen.displays.first?.name
         return display.map { "Ready · \($0)" } ?? "Ready"
     }
@@ -385,6 +407,8 @@ private struct ThinBar: View {
 
 private struct BotLine: View {
     let bot: Bot
+    /// Shown when bots from more than one computer are listed.
+    let computer: Computer?
     let stop: () -> Void
     @State private var hovering = false
 
@@ -392,7 +416,13 @@ private struct BotLine: View {
         HStack(spacing: 10) {
             AvatarWithStatus(bot: bot, size: 30)
             VStack(alignment: .leading, spacing: 1) {
-                Text(bot.name).font(.callout.weight(.medium)).foregroundStyle(Palette.text)
+                HStack(spacing: 4) {
+                    Text(bot.name).font(.callout.weight(.medium)).foregroundStyle(Palette.text)
+                    if let computer {
+                        ComputerBadge(computer, size: 13)
+                        Text(computer.name).font(.caption2).foregroundStyle(Palette.tertiary).lineLimit(1)
+                    }
+                }
                 Text(bot.isWorking ? (bot.activity.isEmpty ? "Working…" : bot.activity) : (bot.lastMessage ?? bot.folderName))
                     .font(.caption)
                     .foregroundStyle(bot.needsInput ? Palette.warning : bot.isWorking ? Palette.accent : Palette.secondary)
@@ -413,12 +443,15 @@ private struct BotLine: View {
     }
 }
 
-private struct PairingPanel: View {
-    @Environment(HostController.self) private var host
+/// A one-time pairing QR (v3) from a computer this Mac manages: its keys, a code, and how to reach it.
+struct PairingPanel: View {
+    let store: BotStore
+    @State private var info: PairingInfo?
+    @State private var error: String?
 
     var body: some View {
         VStack(spacing: 12) {
-            if let info = host.pairInfo {
+            if let info {
                 if let image = qr(info.pairingUrl) {
                     Image(nsImage: image)
                         .interpolation(.none)
@@ -426,27 +459,56 @@ private struct PairingPanel: View {
                         .frame(width: 200, height: 200)
                         .padding(10)
                         .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                        .accessibilityLabel("Pairing code for \(store.hostName)")
                 }
-                Text("Scan with the Codync app or the iPhone Camera.")
+                Text("Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.")
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
-                if info.urls.isEmpty {
-                    Text("No network address found. Connect this Mac to Wi-Fi or Tailscale.")
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                if store.cloud?.enabled != true {
+                    Text(info.urls.isEmpty
+                        ? "No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on."
+                        : "“Reach from anywhere” is off, so the iPhone only reaches \(store.hostName) on the same network.")
                         .font(.caption)
                         .foregroundStyle(Palette.warning)
-                } else if !info.urls.contains(where: Tailscale.isAddress) {
-                    TailscaleTip()
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                IconButton("Copy pairing link", systemImage: "doc.on.doc") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(info.pairingUrl, forType: .string)
+                HStack(spacing: 4) {
+                    if let expires = info.expiresAt {
+                        Text("Works once, until \(Date(milliseconds: expires).formatted(date: .omitted, time: .shortened))")
+                            .font(.caption2).foregroundStyle(Palette.tertiary)
+                    }
+                    IconButton("New code", systemImage: "arrow.clockwise") { Task { await load() } }
+                    IconButton("Copy pairing link", systemImage: "doc.on.doc") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(info.pairingUrl, forType: .string)
+                    }
                 }
+            } else if let error {
+                Text(error).font(.caption).foregroundStyle(Palette.danger).multilineTextAlignment(.center)
+                IconButton("Try again", systemImage: "arrow.clockwise") { Task { await load() } }
             } else {
                 ProgressView()
             }
         }
         .frame(maxWidth: .infinity)
         .padding(16)
+        .task(id: store.computer.id) { await load() }
+    }
+
+    private func load() async {
+        guard let client = store.client else {
+            error = "\(store.hostName) isn't connected."
+            return
+        }
+        do {
+            info = try await client.pairing()
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func qr(_ string: String) -> NSImage? {
@@ -461,24 +523,22 @@ private struct PairingPanel: View {
     }
 }
 
-/// Without Tailscale the iPhone only reaches this Mac on the same Wi-Fi.
-private struct TailscaleTip: View {
-    private static let app = URL(fileURLWithPath: "/Applications/Tailscale.app")
-    private let installed = FileManager.default.fileExists(atPath: app.path)
+/// A pending access request in the menu; the decision happens in the approval sheet.
+private struct ApprovalLine: View {
+    let approval: Approval
+    let review: () -> Void
 
     var body: some View {
-        VStack(spacing: 6) {
-            Text(installed
-                ? "Tailscale isn't connected. Open it and sign in to reach your bots away from home."
-                : "Install Tailscale on this Mac and your iPhone to reach your bots away from home.")
-                .font(.caption)
-                .foregroundStyle(Palette.tertiary)
-                .multilineTextAlignment(.center)
-            if installed {
-                Button("Open Tailscale") { NSWorkspace.shared.open(Self.app) }.controlSize(.small)
-            } else {
-                Link("Get Tailscale", destination: Tailscale.downloadURL).font(.caption)
+        HStack(spacing: 10) {
+            Image(systemName: "person.badge.key")
+                .foregroundStyle(Palette.warning)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(approval.request.deviceName) asks for access").font(.callout.weight(.medium)).foregroundStyle(Palette.text)
+                Text(approval.store.hostName).font(.caption).foregroundStyle(Palette.secondary)
             }
+            Spacer()
+            Button("Review", action: review).controlSize(.small)
         }
     }
 }

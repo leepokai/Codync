@@ -89,7 +89,7 @@ public struct ScreenView: View {
 
     private var topBar: some View {
         HStack(spacing: 8) {
-            IconButton("Close", "xmark") { dismiss() }
+            OverlayButton("Close", "xmark") { dismiss() }
             if let agent, !interactive {
                 Label("\(agent.name) is using the computer", systemImage: "cursorarrow.motionlines")
                     .font(.caption.weight(.medium))
@@ -100,14 +100,14 @@ public struct ScreenView: View {
             Spacer()
             if session != nil {
                 if interactive {
-                    IconButton(keyboard ? "Hide keyboard" : "Keyboard", keyboard ? "keyboard.chevron.compact.down" : "keyboard") { keyboard.toggle() }
-                    IconButton(mode == .trackpad ? "Touch mode: trackpad" : "Touch mode: direct", mode == .trackpad ? "rectangle.and.hand.point.up.left" : "hand.point.up.left") {
+                    OverlayButton(keyboard ? "Hide keyboard" : "Keyboard", keyboard ? "keyboard.chevron.compact.down" : "keyboard") { keyboard.toggle() }
+                    OverlayButton(mode == .trackpad ? "Touch mode: trackpad" : "Touch mode: direct", mode == .trackpad ? "rectangle.and.hand.point.up.left" : "hand.point.up.left") {
                         mode = mode == .trackpad ? .direct : .trackpad
                     }
                     clipboardMenu
                 }
                 if zoomed {
-                    IconButton("Fit screen", "arrow.down.right.and.arrow.up.left") { resetToken += 1 }
+                    OverlayButton("Fit screen", "arrow.down.right.and.arrow.up.left") { resetToken += 1 }
                 }
                 if let displays = screen?.displays, displays.count > 1 {
                     DropdownMenu {
@@ -120,7 +120,7 @@ public struct ScreenView: View {
                         }
                     } label: { IconLabel("Displays", "display.2") }
                 }
-                IconButton(interactive ? "Hand back to bots" : "Take over", interactive ? "hand.raised.slash" : "hand.raised") {
+                OverlayButton(interactive ? "Hand back to bots" : "Take over", interactive ? "hand.raised.slash" : "hand.raised") {
                     setInteractive(!interactive)
                 }
             }
@@ -207,7 +207,7 @@ private struct Overlay: View {
     }
 }
 
-private struct IconButton: View {
+private struct OverlayButton: View {
     let label: String
     let icon: String
     let action: () -> Void

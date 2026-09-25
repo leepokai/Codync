@@ -33,3 +33,16 @@ import Testing
     #expect(RelativeTime.short(now.addingTimeInterval(-600), now: now) == "10m")
     #expect(RelativeTime.short(now.addingTimeInterval(-7200), now: now) == "2h")
 }
+
+@Test func parsesClaudeResetText() throws {
+    let taipei = try #require(TimeZone(identifier: "Asia/Taipei"))
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = taipei
+    let now = try #require(cal.date(from: DateComponents(year: 2026, month: 9, day: 25, hour: 17, minute: 20)))
+    let at = { (m: Int, d: Int, h: Int, min: Int, y: Int) in cal.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min)) }
+    #expect(UsageWindow.parseReset("Sep 25 at 7:30pm (Asia/Taipei)", now: now) == at(9, 25, 19, 30, 2026))
+    #expect(UsageWindow.parseReset("Sep 26 at 12pm (Asia/Taipei)", now: now) == at(9, 26, 12, 0, 2026))
+    #expect(UsageWindow.parseReset("Jan 2 at 12am (Asia/Taipei)", now: now) == at(1, 2, 0, 0, 2027))
+    #expect(UsageWindow.parseReset("5am (Asia/Taipei)", now: now) == at(9, 26, 5, 0, 2026))
+    #expect(UsageWindow.parseReset("soon") == nil)
+}

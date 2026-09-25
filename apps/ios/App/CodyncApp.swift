@@ -9,10 +9,11 @@ struct CodyncApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppStore.shared
     @Environment(\.scenePhase) private var scenePhase
+    @State private var tab = AppTab.bots
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootView(tab: $tab)
                 .environment(model)
                 .tint(Palette.accent)
                 .onOpenURL { url in
@@ -22,9 +23,13 @@ struct CodyncApp: App {
                         model.selection = url.lastPathComponent
                     } else if url.host() == "plugins" {
                         model.selection = nil
+                        tab = .bots
                         model.showPlugins = true
+                    } else if url.host() == "usage" {
+                        tab = .usage
                     } else if url.host() == "computers" {
                         model.selection = nil
+                        tab = .bots
                         model.showProfile = true
                     }
                 }
@@ -37,6 +42,7 @@ struct CodyncApp: App {
                     if let s = ProcessInfo.processInfo.environment["CODYNC_PAIR_URL"], let p = Pairing(string: s) {
                         model.pair(p)
                     }
+                    if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { tab = .usage }
                 }
                 #endif
         }

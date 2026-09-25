@@ -156,7 +156,34 @@ public struct UsageWindow: Codable, Hashable, Sendable, Identifiable {
     public var resetsAt: Int64?
     /// Human text when only that is known ("Sep 26 at 12pm (Asia/Taipei)").
     public var resetsText: String?
-    public var resetDate: Date? { resetsAt.map(Date.init(milliseconds:)) }
+    public var resetDate: Date? { resetsAt.map(Date.init(milliseconds:)) ?? resetsText.flatMap { Self.parseReset($0) } }
+
+    /// Claude Code's text: "Sep 26 at 12pm (Asia/Taipei)", "Sep 25 at 7:30pm (Asia/Taipei)", or just "7:30pm (…)".
+    /// The year isn't given: the next such date from `now`.
+    static func parseReset(_ text: String, now: Date = .now) -> Date? {
+        guard let match = text.firstMatch(of: /^(?:(\w{3} \d{1,2}) at )?(\d{1,2})(?::(\d{2}))?(am|pm)(?: \(([^)]+)\))?$/) else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = match.5.flatMap { TimeZone(identifier: String($0)) } ?? .current
+        guard let hour12 = Int(match.2) else { return nil }
+        var parts = cal.dateComponents([.year, .month, .day], from: now)
+        if let day = match.1 {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "MMM d"
+            guard let md = f.date(from: String(day)) else { return nil }
+            let c = Calendar(identifier: .gregorian).dateComponents([.month, .day], from: md)
+            parts.month = c.month
+            parts.day = c.day
+        }
+        parts.hour = hour12 % 12 + (match.4 == "pm" ? 12 : 0)
+        parts.minute = match.3.flatMap { Int($0) } ?? 0
+        guard var date = cal.date(from: parts) else { return nil }
+        // Past by more than a day: it means next year (or tomorrow, for a bare time).
+        if date < now - 86_400 || (match.1 == nil && date < now) {
+            date = cal.date(byAdding: match.1 == nil ? .day : .year, value: 1, to: date) ?? date
+        }
+        return date
+    }
 
     /// "resets in 3h 20m" / "resets Sep 26 at 12pm", or nil.
     public var resetDescription: String? {

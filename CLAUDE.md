@@ -50,7 +50,7 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 - `macOS` (`apps/macos/`) — menu bar app + embedded host
 - `iOS` (`apps/ios/`) — iOS app
-- `Widgets` (`apps/widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
+- `Widgets` (`apps/ios/Widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
 - `CodyncKit` (`kit/`) — shared Swift package: `CodyncKit` + `CodyncUI` libraries
 - `apps/linux/` — `codync` GTK app (build/test in a container with libgtk-4-dev + libadwaita-1-dev)
 

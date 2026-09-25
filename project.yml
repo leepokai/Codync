@@ -79,7 +79,9 @@ targets:
     type: application
     platform: iOS
     sources:
-      - apps/ios
+      - path: apps/ios
+        excludes:
+          - Widgets
     dependencies:
       - package: CodyncKit
         product: CodyncKit
@@ -111,7 +113,7 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - apps/widgets
+      - apps/ios/Widgets
     dependencies:
       - package: CodyncKit
         product: CodyncKit
@@ -121,9 +123,9 @@ targets:
       base:
         PRODUCT_NAME: CodyncWidgets
         PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.ios.LiveActivity
-        INFOPLIST_FILE: apps/widgets/Resources/Info.plist
+        INFOPLIST_FILE: apps/ios/Widgets/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: YES
-        CODE_SIGN_ENTITLEMENTS: apps/widgets/Resources/Widgets.entitlements
+        CODE_SIGN_ENTITLEMENTS: apps/ios/Widgets/Resources/Widgets.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: Codync
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES

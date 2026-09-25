@@ -48,7 +48,7 @@ Checked against the `apple-design` skill (emilkowalski/skills), plus the iOS/mac
 - `MarketplaceView.swift:71`: "Couldn't load connectors." has no Retry button.
 - `MarketplaceView.swift:461`: favicons come from `google.com/s2/favicons`, which sends each connector's domain to Google. That conflicts with the "no cloud" promise. Fix: bundle the logos or fetch them through the host.
 
-## iOS (apps/ios, apps/widgets)
+## iOS (apps/ios, including Widgets)
 
 - **Medium** `apps/ios/Views/BotListView.swift:71`: the title is hidden, and the only sign of the current computer is a one-letter monogram. This fails "Where am I?" when several computers are paired. Fix: show the host name in the principal toolbar slot.
 - **Medium** `apps/ios/Views/SettingsView.swift:87`: the sheet has no `navigationTitle`.

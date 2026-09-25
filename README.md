@@ -73,7 +73,7 @@ Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). **The token is ful
 | `host/` | `codync-host` — Rust daemon: ACP client, SQLite transcript, HTTP/SSE API, push, usage |
 | `kit/` | Swift package: `CodyncKit` (wire models, host client, theme, avatars) and `CodyncUI` (store + chat screens shared by iPhone and Mac) |
 | `apps/ios/` | iOS app: pairing, roster, push, Live Activity glue |
-| `apps/widgets/` | Usage widget + bot Live Activity |
+| `apps/ios/Widgets/` | Bots, usage and per-provider usage widgets + bot Live Activity |
 | `apps/macos/` | Menu bar + native chat window; installs/monitors the host |
 | `apps/linux/` | Native Linux app (GTK 4 + libadwaita, Rust) |
 | `relay/` | Cloudflare Worker APNs relay with encrypted per-device tickets |

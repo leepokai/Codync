@@ -13,8 +13,12 @@ public struct CharacterAvatar: View {
     let mood: Mood
 
     public init(shape: String, color: String, size: CGFloat = 40, mood: Mood = .idle) {
+        self.init(shape: shape, tint: AvatarPalette.color(color), size: size, mood: mood)
+    }
+
+    public init(shape: String, tint: Color, size: CGFloat = 40, mood: Mood = .idle) {
         self.shape = shape
-        self.color = AvatarPalette.color(color)
+        self.color = tint
         self.size = size
         self.mood = mood
     }

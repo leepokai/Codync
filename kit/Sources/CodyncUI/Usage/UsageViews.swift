@@ -1,38 +1,6 @@
 import CodyncKit
 import SwiftUI
 
-public struct UsageCard: View {
-    let provider: UsageProvider
-
-    public init(provider: UsageProvider) { self.provider = provider }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(provider.name).font(.subheadline.bold())
-                Spacer()
-                Text("updated \(RelativeTime.short(Date(milliseconds: provider.updatedAt)))")
-                    .font(.caption2)
-                    .foregroundStyle(Palette.tertiary)
-            }
-            ForEach(provider.windows) { w in
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(w.label).font(.caption)
-                        Spacer()
-                        Text("\(Int(w.percent.rounded()))%").font(.caption.monospacedDigit().bold())
-                        if let reset = w.resetDescription {
-                            Text("· \(reset)").font(.caption2).foregroundStyle(Palette.tertiary)
-                        }
-                    }
-                    UsageBar(percent: w.percent)
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
 /// Compact usage chips at the top of the roster.
 public struct UsageStrip: View {
     let usage: Usage

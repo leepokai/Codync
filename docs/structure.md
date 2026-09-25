@@ -1,7 +1,7 @@
 # Layout & naming
 
 ```
-apps/{ios,macos,widgets,linux}   one folder per client
+apps/{ios,macos,linux}   one folder per client (iOS widgets in apps/ios/Widgets)
 kit/Sources/CodyncKit/           Models/ Client/ Design/   (no CodyncUI, widget-safe)
 kit/Sources/CodyncUI/            Store/ Bots/ Thread/ Marketplace/ Usage/ Resources/, cross-platform glue at root (Platform.swift)
 host/  relay/  web/  packaging/

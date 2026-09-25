@@ -9,6 +9,7 @@ struct CodyncWidgets: WidgetBundle {
     var body: some Widget {
         BotsWidget()
         UsageWidget()
+        ProviderUsageWidget()
         BotLiveActivity()
     }
 }
@@ -201,7 +202,11 @@ struct UsageTimeline: AppIntentTimelineProvider {
 
     /// Refreshes every 30 minutes, or right after the next limit resets if that's sooner.
     func timeline(for configuration: UsageIntent, in context: Context) async -> Timeline<UsageEntry> {
-        let fetched = await Self.fetch()
+        await Self.timeline()
+    }
+
+    static func timeline() async -> Timeline<UsageEntry> {
+        let fetched = await fetch()
         let usage = fetched ?? SharedStore.usage ?? Usage()
         let nextReset = usage.providers.flatMap(\.windows).compactMap(\.resetDate).filter { $0 > .now }.min()
         var next = Date.now + (fetched == nil ? 5 * 60 : 30 * 60)
@@ -210,9 +215,10 @@ struct UsageTimeline: AppIntentTimelineProvider {
     }
 
     /// Asks the paired host directly (works over Tailscale), falling back to the app's cache.
-    static func fetch() async -> Usage? {
+    /// `refresh` makes the host re-read the limits first instead of answering from its cache.
+    static func fetch(refresh: Bool = false) async -> Usage? {
         guard let pairing = SharedStore.orderedPairing, let client = await HostClient.resolve(pairing),
-              let usage = try? await client.usage() else { return nil }
+              let usage = try? await client.usage(refresh: refresh) else { return nil }
         SharedStore.usage = usage
         return usage
     }
@@ -328,6 +334,151 @@ struct UsageWidgetView: View {
             Text(text)
         } else {
             Text(" ")
+        }
+    }
+}
+
+// MARK: - One provider
+
+enum UsageProviderChoice: String, AppEnum {
+    case claude, codex
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Provider"
+    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [.claude: "Claude", .codex: "Codex"]
+}
+
+struct ProviderUsageIntent: WidgetConfigurationIntent {
+    static let title: LocalizedStringResource = "Provider usage"
+
+    @Parameter(title: "Provider", default: .claude)
+    var provider: UsageProviderChoice
+}
+
+struct ProviderUsageEntry: TimelineEntry {
+    let date: Date
+    let usage: Usage
+    let provider: UsageProviderChoice
+}
+
+struct ProviderUsageTimeline: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> ProviderUsageEntry {
+        ProviderUsageEntry(date: .now, usage: .preview, provider: .claude)
+    }
+
+    func snapshot(for configuration: ProviderUsageIntent, in context: Context) async -> ProviderUsageEntry {
+        let usage = SharedStore.usage.flatMap { $0.providers.isEmpty ? nil : $0 } ?? .preview
+        return ProviderUsageEntry(date: .now, usage: usage, provider: configuration.provider)
+    }
+
+    func timeline(for configuration: ProviderUsageIntent, in context: Context) async -> Timeline<ProviderUsageEntry> {
+        let shared = await UsageTimeline.timeline()
+        return Timeline(entries: shared.entries.map { ProviderUsageEntry(date: $0.date, usage: $0.usage, provider: configuration.provider) },
+                        policy: shared.policy)
+    }
+}
+
+/// The widget's refresh button: asks the host to re-read the limits; WidgetKit
+/// reloads the widget when this returns.
+struct RefreshUsageIntent: AppIntent {
+    static let title: LocalizedStringResource = "Refresh usage"
+
+    func perform() async throws -> some IntentResult {
+        _ = await UsageTimeline.fetch(refresh: true)
+        return .result()
+    }
+}
+
+extension Usage {
+    static let preview: Usage = {
+        let json = """
+        {"providers":[{"id":"claude","name":"Claude","source":"claude","updatedAt":0,"windows":[
+          {"id":"five_hour","label":"5-hour","percent":16},{"id":"seven_day","label":"Weekly","percent":59}]},
+         {"id":"codex","name":"Codex","source":"sessions","updatedAt":0,"windows":[
+          {"id":"primary","label":"5-hour","percent":8},{"id":"secondary","label":"Weekly","percent":70}]}]}
+        """
+        return (try? JSONDecoder().decode(Usage.self, from: Data(json.utf8))) ?? Usage()
+    }()
+}
+
+struct ProviderUsageWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "CodyncProviderUsage", intent: ProviderUsageIntent.self, provider: ProviderUsageTimeline()) { entry in
+            ProviderUsageView(entry: entry)
+        }
+        .configurationDisplayName("Provider usage")
+        .description("One provider's session and weekly limits, with its character.")
+        .supportedFamilies([.systemMedium])
+    }
+}
+
+/// A provider card: its character and name on the left, the two main limits on the right.
+struct ProviderUsageView: View {
+    let entry: ProviderUsageEntry
+
+    private var provider: UsageProvider? { entry.usage.providers.first { $0.id == entry.provider.rawValue } }
+
+    var body: some View {
+        let tint = provider?.tint ?? Palette.accent
+        Group {
+            if let provider {
+                HStack(spacing: 18) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ProviderMascot(provider, size: 52)
+                        Spacer(minLength: 4)
+                        Text(provider.name).font(.system(.title3, design: .serif, weight: .bold)).foregroundStyle(Palette.text)
+                        Text("Usage").font(.subheadline).foregroundStyle(Palette.secondary)
+                    }
+                    .frame(width: 80, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(provider.windows.prefix(2)) { window(provider, $0) }
+                        Spacer(minLength: 0)
+                        HStack {
+                            Text("updated \(Date(milliseconds: provider.updatedAt).formatted(date: .omitted, time: .shortened))")
+                            Spacer()
+                            Button(intent: RefreshUsageIntent()) {
+                                Image(systemName: "arrow.clockwise").font(.subheadline.weight(.semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Refresh")
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(Palette.secondary)
+                    }
+                }
+            } else {
+                EmptyWidget(text: SharedStore.pairing == nil ? "Open Codync to pair with your computer."
+                    : "No \(entry.provider.rawValue.capitalized) usage reported yet.")
+            }
+        }
+        .containerBackground(for: .widget) {
+            LinearGradient(colors: [tint.opacity(0.16), tint.opacity(0.03), tint.opacity(0.12)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .background(Palette.background)
+        }
+        .widgetURL(URL(string: "codync://usage"))
+    }
+
+    private func window(_ provider: UsageProvider, _ w: UsageWindow) -> some View {
+        let color = w.percent >= 90 ? Palette.danger : provider.tint
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(w.title).font(.system(.subheadline, design: .serif, weight: .bold)).foregroundStyle(Palette.text)
+                Text([w.span, w.resetsShort(now: entry.date)].compactMap(\.self).joined(separator: " · "))
+                    .font(.caption2)
+                    .foregroundStyle(Palette.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(Text("\(Int(w.percent.rounded()))").font(.system(.title3, design: .serif, weight: .bold)))\(Text("%").font(.system(.caption, design: .serif, weight: .bold)))")
+                    .foregroundStyle(color)
+                    .monospacedDigit()
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Palette.text.opacity(0.1))
+                    Capsule().fill(color).frame(width: geo.size.width * min(1, max(0.03, w.percent / 100)))
+                }
+            }
+            .frame(height: 7)
         }
     }
 }

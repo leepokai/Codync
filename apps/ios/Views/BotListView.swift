@@ -13,9 +13,6 @@ struct BotListView: View {
         List {
             Section {
                 ConnectionBanner()
-                if !model.usage.providers.isEmpty {
-                    UsageStrip(usage: model.usage)
-                }
             }
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
@@ -76,10 +73,7 @@ struct BotListView: View {
                 .disabled(model.connection != .online)
             }
         }
-        .refreshable {
-            model.restartStream()
-            await model.refreshUsage()
-        }
+        .refreshable { model.restartStream() }
         .sheet(item: $editing) { request in
             NavigationStack { BotEditorView(draft: request.draft) }
         }

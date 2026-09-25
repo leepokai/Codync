@@ -4,7 +4,7 @@ import SwiftUI
 import UserNotifications
 
 /// The profile sheet behind the top-left button: which computer you're talking
-/// to (and switching between them), usage, notifications, hidden bots.
+/// to (and switching between them), notifications, hidden bots.
 struct SettingsView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -61,15 +61,6 @@ struct SettingsView: View {
             }
 
             Section {
-                NavigationLink {
-                    UsageDetail()
-                } label: {
-                    LabeledContent("Usage") {
-                        if let top = model.usage.providers.flatMap(\.windows).map(\.percent).max() {
-                            Text("\(Int(top.rounded()))%").monospacedDigit()
-                        }
-                    }
-                }
                 notificationsRow
             }
 
@@ -170,27 +161,5 @@ private struct ComputerRow: View {
         case .offline: "Offline"
         case .unpaired: "Not paired"
         }
-    }
-}
-
-private struct UsageDetail: View {
-    @Environment(BotStore.self) private var model
-
-    var body: some View {
-        Form {
-            Section {
-                ForEach(model.usage.providers) { UsageCard(provider: $0) }
-                if model.usage.providers.isEmpty {
-                    Text("No usage reported yet.").foregroundStyle(Palette.secondary)
-                }
-            } footer: {
-                Text("Read on your computer from Claude Code and Codex. Add the Codync widget to your Home or Lock Screen to keep an eye on them.")
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(Palette.background)
-        .navigationTitle("Usage")
-        .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await model.refreshUsage() }
     }
 }

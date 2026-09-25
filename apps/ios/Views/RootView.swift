@@ -49,11 +49,7 @@ struct RootView: View {
             // device-level milestone across account changes and unpairing.
             if !empty { onboardingCompleted = true }
         }
-        .alert("Something went wrong", isPresented: errorShown) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
+        .codyncDialog("Something went wrong", isPresented: errorShown, message: errorMessage, cancel: "OK") { [] }
         .fullScreenCover(item: screenTarget) { target in
             if let store = accounts.store(for: target.computerId) {
                 ScreenView(watching: target.request.watching)
@@ -135,13 +131,13 @@ private struct UsageTab: View {
                 .toolbar {
                     if accounts.computers.count > 1 {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Menu {
-                                Picker("Computer", selection: Binding(get: { store.computer.id }, set: { id in
-                                    picked = id
-                                    accounts.storage.lastComputerId = id
-                                    WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage")
-                                })) {
-                                    ForEach(accounts.computers) { Text($0.name).tag($0.id) }
+                            DropdownMenu {
+                                accounts.computers.map { computer in
+                                    MenuItem(computer.name, selected: computer.id == store.computer.id) {
+                                        picked = computer.id
+                                        accounts.storage.lastComputerId = computer.id
+                                        WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage")
+                                    }
                                 }
                             } label: {
                                 ComputerBadge(store.computer, size: 28)

@@ -348,21 +348,15 @@ private struct ChatSplitView: View {
             guard let target = newSessionBot else { return [] }
             return [DialogAction("New session") { target.store.newSession(target.bot.id); newSessionBot = nil }]
         }
-        .confirmationDialog("Delete \(confirmDelete?.bot.name ?? "bot")?", isPresented: Binding(
+        .codyncDialog("Delete \(confirmDelete?.bot.name ?? "bot")?", isPresented: Binding(
             get: { confirmDelete != nil },
             set: { if !$0 { confirmDelete = nil } }
-        ), titleVisibility: .visible) {
-            if let target = confirmDelete {
-                Button("Delete bot and its conversation", role: .destructive) { target.store.delete(target.bot) }
-            }
-        } message: {
-            Text("Files it changed on your computer stay as they are.")
+        ), message: "Files it changed on your computer stay as they are.") {
+            guard let target = confirmDelete else { return [] }
+            return [DialogAction("Delete bot and its conversation", destructive: true) { target.store.delete(target.bot) }]
         }
-        .alert("Something went wrong", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { clearErrors() } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
+        .codyncDialog("Something went wrong", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { clearErrors() } }),
+                      message: errorMessage, cancel: "OK") { [] }
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: accounts.selection)
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: composing)
         .onChange(of: accounts.selection) { _, ref in if ref != nil { composing = false } }
@@ -507,14 +501,8 @@ extension ChatSplitView {
     fileprivate var computerPicker: some View {
         HStack(spacing: 8) {
             Text("On").foregroundStyle(Palette.secondary)
-            Picker("Computer", selection: Binding(get: { composeComputer ?? "" }, set: { composeComputer = $0 })) {
-                ForEach(onlineStores, id: \.computer.id) { store in
-                    Text(store.hostName).tag(store.computer.id)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
+            ChoicePicker(selection: Binding(get: { composeComputer ?? "" }, set: { composeComputer = $0 }),
+                         options: onlineStores.map { ($0.computer.id, $0.hostName) })
             Spacer()
         }
         .font(.callout)

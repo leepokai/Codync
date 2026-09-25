@@ -83,14 +83,13 @@ struct BotListView: View {
             }
             .presentationDetents([.medium])
         }
-        .confirmationDialog("Delete \(confirmDelete?.bot.name ?? "bot")?",
-                            isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
-                            titleVisibility: .visible) {
-            Button("Delete bot and its conversation", role: .destructive) {
-                if let item = confirmDelete { accounts.store(for: item.ref.computerId)?.delete(item.bot) }
-            }
-        } message: {
-            Text("Files it changed on your computer stay as they are.")
+        .codyncDialog("Delete \(confirmDelete?.bot.name ?? "bot")?",
+                      isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
+                      message: "Files it changed on your computer stay as they are.") {
+            let item = confirmDelete
+            return [DialogAction("Delete bot and its conversation", destructive: true) {
+                if let item { accounts.store(for: item.ref.computerId)?.delete(item.bot) }
+            }]
         }
     }
 

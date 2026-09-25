@@ -84,7 +84,7 @@ struct ApprovalSheet: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                ProgressView().controlSize(.small)
+                Spinner()
                 Text("Waiting for \(request.deviceName) to show its code…")
                     .font(.callout)
                     .foregroundStyle(Palette.secondary)
@@ -93,14 +93,13 @@ struct ApprovalSheet: View {
                 Text(error).font(.caption).foregroundStyle(Palette.danger).multilineTextAlignment(.center)
             }
             HStack(spacing: 12) {
-                Button("Deny", role: .destructive) { decide(false) }
+                Button("Deny") { decide(false) }
+                    .buttonStyle(.secondary)
                     .disabled(busy)
                 Button("Approve") { decide(true) }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accentFill)
+                    .buttonStyle(.primary)
                     .disabled(busy || request.code == nil)
             }
-            .controlSize(.large)
         }
         .padding(24)
         .frame(width: 420)
@@ -272,7 +271,7 @@ private struct AccountComputerRow: View {
                         Task { await host.accounts.cancelAccess(computer.id) }
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.plain)
                     .help("Cancel request")
                 }
             }
@@ -331,30 +330,26 @@ private struct ManagedComputerCard: View {
                     }
                     ForEach(devices) { device in deviceRow(device) }
                 } else {
-                    ProgressView().controlSize(.small)
+                    Spinner()
                 }
             }
         }
         .card()
         .task(id: "\(store.computer.id)/\(store.connection == .online)/\(store.accessRequests.count)") { await loadDevices() }
-        .confirmationDialog("Revoke \(confirmRevoke?.name ?? "device")?", isPresented: Binding(
+        .codyncDialog("Revoke \(confirmRevoke?.name ?? "device")?", isPresented: Binding(
             get: { confirmRevoke != nil }, set: { if !$0 { confirmRevoke = nil } }
-        ), titleVisibility: .visible) {
-            if let device = confirmRevoke {
-                Button("Revoke access", role: .destructive) {
-                    run {
-                        do { try await store.client?.revokeDevice(device.key) } catch { host.accounts.lastError = error.localizedDescription }
-                        await loadDevices()
-                    }
+        ), message: "It disconnects right away and has to pair or ask again.") {
+            guard let device = confirmRevoke else { return [] }
+            return [DialogAction("Revoke access", destructive: true) {
+                run {
+                    do { try await store.client?.revokeDevice(device.key) } catch { host.accounts.lastError = error.localizedDescription }
+                    await loadDevices()
                 }
-            }
-        } message: {
-            Text("It disconnects right away and has to pair or ask again.")
+            }]
         }
-        .confirmationDialog("Remove \(store.hostName) from the account?", isPresented: $confirmUnclaim, titleVisibility: .visible) {
-            Button("Remove from account", role: .destructive) { run { await host.unclaim(store) } }
-        } message: {
-            Text("Devices that were approved through the account lose access. Devices paired with a QR code keep it.")
+        .codyncDialog("Remove \(store.hostName) from the account?", isPresented: $confirmUnclaim,
+                      message: "Devices that were approved through the account lose access. Devices paired with a QR code keep it.") {
+            [DialogAction("Remove from account", destructive: true) { run { await host.unclaim(store) } }]
         }
     }
 
@@ -528,11 +523,11 @@ private struct SSHProfileEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(isNew ? "Add SSH computer" : "Edit SSH computer").font(.title3.bold())
-            Form {
-                TextField("Name", text: $profile.name, prompt: Text("Optional"))
-                TextField("Host", text: $profile.host, prompt: Text("SSH alias or hostname"))
-                TextField("User", text: $user, prompt: Text("From SSH config"))
-                TextField("SSH port", text: $port, prompt: Text("From SSH config"))
+            CardSection {
+                SSHField("Name", text: $profile.name, prompt: "Optional")
+                SSHField("Host", text: $profile.host, prompt: "SSH alias or hostname")
+                SSHField("User", text: $user, prompt: "From SSH config")
+                SSHField("SSH port", text: $port, prompt: "From SSH config")
                 HStack {
                     Text("Key")
                     Spacer()
@@ -543,9 +538,8 @@ private struct SSHProfileEditor: View {
                         IconButton("Use ssh-agent", systemImage: "xmark.circle") { profile.identityFile = nil }
                     }
                 }
-                TextField("Codync port", text: $remotePort)
+                SSHField("Codync port", text: $remotePort, prompt: "")
             }
-            .formStyle(.grouped)
             Text("Codync opens an SSH tunnel to codync-host on that computer's loopback. It uses your SSH config and ssh-agent; agent forwarding stays off.")
                 .font(.caption).foregroundStyle(Palette.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -554,8 +548,8 @@ private struct SSHProfileEditor: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel", action: close).keyboardShortcut(.cancelAction)
-                Button(isNew ? "Add" : "Save", action: save).keyboardShortcut(.defaultAction)
+                Button("Cancel", action: close).buttonStyle(.secondary).keyboardShortcut(.cancelAction)
+                Button(isNew ? "Add" : "Save", action: save).buttonStyle(.primary).keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
@@ -604,5 +598,29 @@ private extension View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border, lineWidth: 0.5))
+    }
+}
+
+/// A labelled text field row in the SSH card.
+private struct SSHField: View {
+    let label: String
+    @Binding var text: String
+    let prompt: String
+
+    init(_ label: String, text: Binding<String>, prompt: String) {
+        self.label = label
+        _text = text
+        self.prompt = prompt
+    }
+
+    var body: some View {
+        HStack {
+            Text(label).foregroundStyle(Palette.text)
+            Spacer(minLength: 12)
+            TextField(label, text: $text, prompt: Text(prompt))
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.trailing)
+                .labelsHidden()
+        }
     }
 }

@@ -45,7 +45,7 @@ struct AccessRequestView: View {
                         .multilineTextAlignment(.center)
                 }
                 HStack(spacing: 8) {
-                    ProgressView()
+                    Spinner()
                     Text("Waiting for approval…").foregroundStyle(Palette.secondary)
                     Button("Cancel request", systemImage: "xmark.circle.fill") {
                         Task {
@@ -63,7 +63,7 @@ struct AccessRequestView: View {
                     .foregroundStyle(Palette.danger)
                     .multilineTextAlignment(.center)
                 Button("Try again") { self.error = nil }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.secondary)
             } else if sawTicket {
                 Text(accounts.lastError ?? "\(computer.name) didn't approve this request.")
                     .foregroundStyle(Palette.secondary)
@@ -72,10 +72,10 @@ struct AccessRequestView: View {
                     accounts.lastError = nil
                     sawTicket = false
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.secondary)
             } else {
                 VStack(spacing: 10) {
-                    ProgressView()
+                    Spinner()
                     Text(computer.isOnline ? "Asking \(computer.name)…" : "\(computer.name) is offline. Turn it on to continue.")
                         .font(.subheadline)
                         .foregroundStyle(Palette.secondary)

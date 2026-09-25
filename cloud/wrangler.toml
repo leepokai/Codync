@@ -32,6 +32,7 @@ crons = ["*/15 * * * *"]
 
 [env.staging]
 name = "codync-cloud-staging"
+routes = [{ pattern = "staging-api.codync.dev", custom_domain = true }]
 vars = { CLERK_ISSUER = "https://sunny-mollusk-8651.clerk.accounts.dev" }
 d1_databases = [{ binding = "DB", database_name = "codync-staging", database_id = "8956a285-8c88-4a5b-a05c-5f79be324448", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]

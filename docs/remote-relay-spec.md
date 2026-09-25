@@ -1092,9 +1092,9 @@ npx wrangler d1 create codync-staging          # 將 database_id 填入 [env.sta
 npx wrangler d1 migrations apply codync-staging --env staging --remote
 npx wrangler secret put CLERK_SECRET_KEY --env staging      # owner 輸入 sk_test_…
 npx wrangler secret put CLERK_WEBHOOK_SECRET --env staging  # owner 輸入 whsec_…
-npx wrangler deploy --env staging               # → https://codync-cloud-staging.<account subdomain>.workers.dev
+npx wrangler deploy --env staging               # → https://staging-api.codync.dev（custom domain；production 用 api.codync.dev）
 ```
-Host 測 staging：`codync-host cloud --url https://codync-cloud-staging.<sub>.workers.dev`（或 env `CODYNC_CLOUD_URL`）。Apple：`AccountConfig.plist` 的 `cloudURL`。
+Host 測 staging：`codync-host cloud --url https://staging-api.codync.dev`（或 env `CODYNC_CLOUD_URL`）。Apple：`AccountConfig.plist` 的 `cloudURL`。
 
 ### 14.2 Secrets 與 vars
 
@@ -1109,7 +1109,7 @@ Host 測 staging：`codync-host cloud --url https://codync-cloud-staging.<sub>.w
 ### 14.3 Owner 手動步驟
 
 0. 允許實作者建立 staging 資源：`wrangler login` 已登入的 Cloudflare 帳號（或提供 `CLOUDFLARE_API_TOKEN`，權限 Workers Scripts:Edit、D1:Edit、Durable Objects）。
-1. Clerk Dashboard（staging = `sunny-mollusk-8651`）：確認 iOS native app（`com.pokai.Codync.ios`）已註冊並允許 `com.pokai.Codync.ios://callback`；**Sessions → Customize session token** 加入 `{"email": "{{user.primary_email_address}}"}`；**Webhooks** 新增 `https://codync-cloud-staging.<sub>.workers.dev/v1/webhooks/clerk`，訂閱 `user.deleted`，複製 signing secret。
+1. Clerk Dashboard（staging = `sunny-mollusk-8651`）：確認 iOS native app（`com.pokai.Codync.ios`）已註冊並允許 `com.pokai.Codync.ios://callback`；**Sessions → Customize session token** 加入 `{"email": "{{user.primary_email_address}}"}`；**Webhooks** 新增 `https://staging-api.codync.dev/v1/webhooks/clerk`，訂閱 `user.deleted`，複製 signing secret。
 2. 輸入上面兩個 secrets。
 3. Production：另建 Clerk production instance、`wrangler d1 create codync`、填 `wrangler.toml` 頂層、secrets 不加 `--env`、`npx wrangler deploy`；把 production URL 填入 `host/src/cloud.rs` 的 `DEFAULT_CLOUD_URL` 與 Release 版 `AccountConfig.plist`。
 4. Apple Developer：新增 `com.pokai.Codync.ios.NotificationService` App ID 與 keychain access group 後，讓 Xcode 自動簽章更新 provisioning profiles。

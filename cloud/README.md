@@ -49,7 +49,7 @@ npx wrangler d1 create codync-staging          # put database_id into [env.stagi
 npx wrangler d1 migrations apply codync-staging --env staging --remote
 npx wrangler secret put CLERK_SECRET_KEY --env staging
 npx wrangler secret put CLERK_WEBHOOK_SECRET --env staging
-npx wrangler deploy --env staging               # → https://codync-cloud-staging.<subdomain>.workers.dev
+npx wrangler deploy --env staging               # → https://staging-api.codync.dev
 ```
 
 | Name | Kind | Purpose |

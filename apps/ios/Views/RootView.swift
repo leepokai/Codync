@@ -34,9 +34,9 @@ struct RootView: View {
             if !empty { onboardingCompleted = true }
         }
         .codyncDialog("Something went wrong", isPresented: errorShown, message: errorMessage, cancel: "OK") { [] }
-        .codyncOverlay(isPresented: Binding(get: { screenTarget.wrappedValue != nil }, set: { if !$0 { screenTarget.wrappedValue = nil } })) { _ in
+        .codyncOverlay(isPresented: Binding(get: { screenTarget.wrappedValue != nil }, set: { if !$0 { screenTarget.wrappedValue = nil } })) { close in
             if let target = screenTarget.wrappedValue, let store = accounts.store(for: target.computerId) {
-                ScreenView(watching: target.request.watching)
+                ScreenView(watching: target.request.watching, close: close)
                     .environment(store)
                     .id(target.id)
             }

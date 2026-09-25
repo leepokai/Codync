@@ -227,6 +227,7 @@ private struct FadeLayer<Layer: View>: View {
 
     var body: some View {
         layer(animateClose)
+            .environment(\.dismissModal, DismissModalAction { animateClose() })
             .opacity(shown ? 1 : 0)
             .scaleEffect(shown ? 1 : 0.98)
             .onAppear { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { shown = true } }

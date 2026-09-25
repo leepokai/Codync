@@ -338,11 +338,8 @@ private struct ChatSplitView: View {
         }
         .codyncSheet(isPresented: Binding(get: { marketplace != nil }, set: { if !$0 { marketplace = nil } })) {
             if let store = marketplace.flatMap(accounts.store(for:)) {
-                // MarketplaceView pushes its Installed page with navigationDestination, which needs a stack.
-                NavigationStack {
-                    MarketplaceView { marketplace = nil }
-                }
-                .environment(store)
+                MarketplaceView { marketplace = nil }
+                    .environment(store)
                 .frame(width: min(920, windowSize.width - 80), height: sheetHeight)
             }
         }

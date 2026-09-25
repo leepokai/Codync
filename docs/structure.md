@@ -1,10 +1,10 @@
 # Layout & naming
 
 ```
-apps/{ios,macos,linux}   one folder per client (iOS widgets in apps/ios/Widgets)
+apps/{ios,macos,linux}   one folder per client (iOS widgets in apps/ios/Widgets, push decryption in apps/ios/NotificationService)
 kit/Sources/CodyncKit/           Models/ Client/ Design/   (no CodyncUI, widget-safe)
 kit/Sources/CodyncUI/            Store/ Bots/ Thread/ Marketplace/ Usage/ Resources/, cross-platform glue at root (Platform.swift)
-host/  relay/  web/  packaging/
+host/  cloud/  relay/  web/  packaging/
 ```
 
 - Directories: lowercase for repo-level roles (`apps/`, `kit/`, `host/`); PascalCase inside Swift targets (`Views/`, `Thread/`). Apple app folders are `App/` (entry point, app-wide services), `Views/`, `Resources/` (Info.plist, entitlements, xcprivacy, xcassets).

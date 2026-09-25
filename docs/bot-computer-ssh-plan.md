@@ -1,7 +1,7 @@
 # Bot、computer、帳號切換與 SSH 遠端執行計畫
 
 日期：2026-09-25  
-狀態：規劃；補充 [Cloudflare 帳號與裝置管理計畫](cloudflare-account-device-plan.md)。
+狀態：規劃；補充 [Cloudflare 帳號與裝置管理計畫](cloudflare-account-device-plan.md)。實作細節（SSH tunnel、多 computer store、中繼）以 [遠端連線實作規格](remote-relay-spec.md) 為準。
 
 ## 1. 產品目標
 

@@ -3,6 +3,14 @@
 日期：2026-09-25  
 狀態：規劃文件；尚未實作或部署。文中的時間、容量與保留期限是建議產品設定，不是服務商限制。
 
+> **2026-09-25 更新：實作以 [遠端連線實作規格](remote-relay-spec.md) 為準。** 與本文不同之處：
+> - Cloudflare 中繼（Workers + 每台電腦一個 Durable Object）是第一版的**主要**離家連線路徑；LAN／Tailscale 直連是替代，Tailscale 不是必要條件。
+> - 中繼**端對端加密**：直連與中繼共用同一套 E2E channel（Ed25519 + X25519 + HKDF-SHA256 + ChaCha20-Poly1305），Worker／DO 只看得到密文與路由 metadata。
+> - Host 是授權權威：本機 QR 配對與帳號 grant 都寫進 host 的已授權裝置表，host 簽署 ACL 發佈到 DO；無帳號的本機模式也能用中繼。
+> - 電腦離線時，DO 保存手機→電腦的加密 mailbox（24 小時、可取消、依序投遞）。
+> - Computer ID 由 host 公鑰推導；D1 表名、API 路徑與欄位以規格 §8 為準（`computers`、`/v1/computers`…）。
+> - 共用 pairing token 只接受 loopback；手機一律以逐裝置金鑰連線。
+
 ## 1. 目標與核心決策
 
 讓使用者在 Mac 和 iPhone 登入同一個 Codync 帳號後，能找到自己的電腦、完成首次授權、管理已授權裝置，並在之後擴充訂閱與免 Tailscale 的遠端連線。
@@ -13,9 +21,9 @@
 - **Cloudflare Workers + D1**：帳號與電腦的歸屬、裝置授權、撤權、必要的管理資料。
 - **電腦上的 codync-host + SQLite**：bots、threads、entries、專案設定、agent 執行與實際操作權限。
 - **既有 Cloudflare 推播 relay**：APNs 通知與 Live Activities，逐步補上帳號與裝置授權。
-- **後續 Durable Objects + WebSocket**：協調及中繼手機與 host 的連線。
+- **Durable Objects + WebSocket**：每台 host 一個，端對端加密中繼、presence 與離線 mailbox（第一版即實作）。
 
-第一版先完成帳號與裝置管理，直連仍使用 Tailscale／受保護的本機網路連線。聊天、程式碼與本機 SQLite 不會整份複製到 D1。
+第一版同時完成帳號、裝置管理與 Cloudflare 中繼；LAN／Tailscale 直連為替代路徑。聊天、程式碼與本機 SQLite 不會整份複製到 D1。
 
 保留不登入的本機模式。登入是使用雲端管理功能的必要條件，不是本機 agent 執行的必要條件。
 
@@ -67,7 +75,7 @@ SQLite 是資料庫引擎；本機 SQLite 存在使用者電腦，D1 的資料�
 
 雲端目錄的價值：新手機即使還沒連到 Mac，也能知道帳號擁有哪些電腦，並啟動授權流程。電腦離線時仍能顯示清單，但無法讀取最新 bots、聊天或執行新指令。
 
-既有推播內容可能經 Cloudflare 與 Apple 處理；未來聊天中繼也會處理傳輸內容。「不持久化聊天」不等於「內容從不經過雲端」，也不等於端對端加密。
+推播的標題與內文由 host 以裝置的 push key 加密，Cloudflare（`relay/`）與 APNs 只看到通用文字與 ID（規格 §6.7）。聊天中繼採端對端加密：Cloudflare 只經手密文與路由 metadata（computer／裝置公鑰、時間、大小），見 [規格](remote-relay-spec.md) §15。
 
 ## 4. 服務配置與範圍
 
@@ -77,7 +85,7 @@ SQLite 是資料庫引擎；本機 SQLite 存在使用者電腦，D1 的資料�
 | Workers，新增 `codync-api` | 帳號 API、claim、授權、撤權、webhook | 第一版 |
 | D1 | 管理資料與事件去重 | 第一版 |
 | 現有 `codync-relay` Worker | APNs 與 Live Activities | 延用並升級 |
-| Durable Objects | 每台 host 的連線協調、WebSocket 中繼、即時撤權通知 | 第二階段 |
+| Durable Objects | 每台 host 的 E2E 中繼、presence、離線 mailbox、即時撤權 | 第一版 |
 | R2 | 使用者明確選擇的附件／備份 | 有實際需求再導入 |
 | Queues | 推播與 webhook 的背景處理、重試 | 量體或可靠性需要時導入 |
 | Workers KV | 非關鍵設定快取 | 非必要；不作為授權與撤權權威來源 |
@@ -173,7 +181,7 @@ Worker 驗證 Clerk token 的簽章、issuer、到期與適用的 audience／aut
 
 ### 7.3 明確的撤權時效
 
-第一版採短 lease，建議 grant 最長 15 分鐘。host 有網路時每 30 秒檢查授權版本，目標在 60 秒內中止被撤權連線；第二階段改為中繼即時通知並保留輪詢／到期後備機制。
+帳號型 grant 採 15 分鐘 lease，由 host 拉取授權狀態時延長。撤權時 Worker 立即通知 DO 封鎖該裝置並提醒 host 拉取狀態；另有每 5 分鐘輪詢與 lease 到期作後備。
 
 雲端不可達時，不允許無限延長帳號型遠端存取。lease 到期後停止該裝置的讀寫與 screen control，即使 SSE／WebSocket 已建立也要檢查到期並關閉。host 上原有本機任務可繼續執行。
 
@@ -186,9 +194,9 @@ Worker 驗證 Clerk token 的簽章、issuer、到期與適用的 audience／aut
 - Clerk publishable key 可存在 App；Clerk secret、APNs key、雲端簽章私鑰只放 Worker secrets。
 - iOS／macOS 的裝置私鑰與 grant 放 Keychain；widget 使用必要的 Keychain access group，不將 token 放 App Group UserDefaults。
 - host 私鑰使用 OS 安全儲存或受限制權限的檔案；Linux 至少使用專屬使用者與 `0600`。
-- 第一版優先 Tailscale 的加密連線；一般 LAN 需有已驗證的 TLS／配對信任機制才啟用新帳號型遠端權限，不能直接把長效 token 暴露在普通 HTTP。
+- 所有遠端連線（LAN、Tailscale、中繼）都走同一套 E2E channel；長效 token 只接受 loopback。
 - 不在 URL query、一般 log、分析事件或 crash report 中記錄憑證。現有 query token 相容入口需列入退場範圍。
-- 若未來需要中繼無法讀取內容，另做端對端加密設計與審查，不能把 TLS 描述成端對端加密。
+- 中繼的端對端加密設計見 [規格](remote-relay-spec.md) §3、§6；不能把 TLS 描述成端對端加密。
 
 ## 8. D1 資料模型
 
@@ -268,7 +276,7 @@ API 使用 `/v1`，錯誤固定為 `{ error: { code, message }, requestId }`。�
 | 手機切換網路 | 重新驗證連線，沿用 host `rev` 補事件；送訊息用既有 nonce 去重 |
 | 撤權時有正在執行的工作 | 阻止後續存取；工作是否停止由獨立 stop／本機控制決定 |
 
-第一版不在雲端替離線 host 排隊執行命令。手機保留未送出內容時，要清楚標示，恢復後依冪等鍵送出；permission 回覆等時效性操作不得盲目重播。
+電腦離線時，手機的新訊息以加密 mailbox 暫存在 DO（24 小時、可取消），電腦上線後依序送出並以 `clientNonce` 去重；只有 `send` 可入 mailbox，permission 回覆等時效性操作不得盲目重播。
 
 ## 12. 第二階段：免 Tailscale 的遠端連線
 
@@ -284,7 +292,7 @@ API 使用 `/v1`，錯誤固定為 `{ error: { code, message }, requestId }`。�
 
 WebRTC 優先直連，必要時使用 TURN；憑證需短效且受裝置授權約束。Cloudflare 是否承接 TURN、其容量和費用，在該階段核對官方文件後決定。
 
-只做傳輸層 TLS 的中繼可接觸明文。若選擇端對端加密，需要另外定義首次信任、換機、key rotation、撤權與復原，不在本計畫第一版順帶承諾。
+中繼採端對端加密；首次信任（QR 或 SAS 比對）、換機、key rotation、撤權與復原定義於 [規格](remote-relay-spec.md)。
 
 ## 13. 儲存庫實作位置
 
@@ -402,7 +410,7 @@ Worker 執行 typecheck 與具 D1 binding 的整合測試；Rust 執行 auth／�
 | 雲端失聯可用多久 | 帳號型 grant 最長 15 分鐘；本機使用不受影響 | P2 |
 | 重新登入是否恢復舊批准 | 同一 installation 金鑰可重新驗證；已撤銷裝置需重新批准 | P2 |
 | 是否雲端保存聊天 | 第一版不保存 | 若進 P4 同步 |
-| 中繼是否端對端加密 | 未承諾；單獨設計 | P3 前 |
+| 中繼是否端對端加密 | **已定案：是**（見規格） | — |
 | 付款方式／方案 | 尚未選定 | P4 前 |
 | 團隊共享／多 owner | 第一版不做；每台 host 一個 owner | 後續獨立需求 |
 

@@ -33,6 +33,7 @@ const LOCAL_ONLY: &[&str] = &[
     "setScreenEnabled",
     "pairing",
     "computerCall",
+    "teamCall",
     "claimSign",
     "unclaim",
     "devices",

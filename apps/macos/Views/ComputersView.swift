@@ -267,6 +267,13 @@ private struct AccountComputerRow: View {
                     Text("Approve on \(computer.name) only if it shows this code.")
                         .font(.callout).foregroundStyle(Palette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Cancel request", systemImage: "xmark.circle") {
+                        Task { await host.accounts.cancelAccess(computer.id) }
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("Cancel request")
                 }
             }
         }

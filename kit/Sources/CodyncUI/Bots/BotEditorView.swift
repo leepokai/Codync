@@ -222,6 +222,9 @@ struct BotSettingsForm: View {
                     items: model.installedSkills.map { ($0.id, $0.name, $0.description) },
                     selection: Binding(get: { draft.skills ?? [] }, set: { draft.skills = $0 })
                 )
+                if let id = draft.id {
+                    MemoryCard(botId: id)
+                }
 
                 Text(draft.permission == "auto"
                     ? "Tool requests are approved automatically. Your agent's own settings (like Claude Code's permission rules) still apply."

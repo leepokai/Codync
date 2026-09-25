@@ -318,7 +318,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 
 | 類別 | 方法 | 允許的 caller |
 |---|---|---|
-| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud` | `Caller::Local`（loopback + token） |
+| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `teamCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud` | `Caller::Local`（loopback + token） |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
 | screen scope | `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
 | control scope | 其餘所有既有方法（`hello`, `sync`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
@@ -1116,6 +1116,26 @@ Host 測 staging：`codync-host cloud --url https://codync-cloud-staging.<sub>.w
 5. `relay/` 的 `mutableContent` 變更需重新部署推播 Worker（`cd relay && npx wrangler deploy`，現有 production；需 owner 確認）。
 
 ---
+
+## 實作差異（已接受）
+
+實作與上文不同、經確認保留的行為：
+
+- **Close code**：host 送出 `reject` 後自行挑選 WebSocket close code（`RejectCode::close_code`），不照 §表格逐一對應。
+- **`cloud_synced`**：relay 斷線時不清除；帳號裝置的 lease 最長 15 分鐘內自然失效。
+- **Access request**：host 無法完成的請求（例如缺 key、狀態不一致）自動 deny，不留在 pending。
+- **Grant 撤銷**：失敗的撤銷記在 kv `grant_revokes`，之後重試。
+- **`Identity::sign_request`** 多一個 `authority` 參數（小寫 Host header，含非預設 port），簽名涵蓋它。
+- **DO admission**：規格未列的情況也可能回 `403` / `429`。
+- **vitest**：`compatibilityDate` 固定 `2026-08-22`。
+- **Kit relay 升級**：遇 `403` 重試最多 3 次。
+- **SAS nonce**：host 每小時最多 5 個（kv `sas_nonces`）；每把 device key 同時只允許一個尚未 reveal 的請求。
+- **直連 `reject`**：明文的直連 `reject` 不結束連線競速：仍會嘗試 relay，已存的 computer 持續重試。
+- **Mailbox 重試**：沿用同一個 `clientNonce`，但每次重新 seal。
+- **ACL**：列表中 `grant` 為 null 的已封鎖 dk 會被解除封鎖；被封鎖的 dk 仍可開 pairing socket。
+- **帳號裝置 mailbox**：第一次拉取 state 之前收到的 item 先保留、不 ack。
+- **SSH forward**：以 `lsof` 確認本機 listener 屬於我們啟動的 `ssh`。
+- **取消 access request**：iOS SAS sheet 與 Mac computers 視窗都有取消按鈕（`DELETE /v1/access-requests/{id}`）。
 
 ## 15. 風險與未決
 

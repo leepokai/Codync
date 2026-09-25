@@ -236,11 +236,29 @@ public extension HostClient {
     }
 
     /// Starts (or rejoins) installing or signing in to `backend` in a terminal on the computer.
-    func agentSetup(backend: String, step: SetupStep, cols: Int, rows: Int) async throws -> String {
-        struct Body: Encodable { var backend: String; var step: SetupStep; var cols: Int; var rows: Int }
+    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command.
+    func agentSetup(backend: String, step: SetupStep, method: String?, cols: Int, rows: Int) async throws -> String {
+        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var cols: Int; var rows: Int }
         struct Res: Decodable { var term: String }
-        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, cols: cols, rows: rows))
+        // The first sign-in through a registry build can download it.
+        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, cols: cols, rows: rows), timeout: 300)
         return res.term
+    }
+
+    /// Starts the agent to see whether it's signed in and how it can be (first run may download it).
+    func agentAuth(_ backend: String) async throws -> AgentAuth {
+        try await call("agentAuth", ["backend": backend], timeout: 300)
+    }
+
+    /// Lets the agent sign itself in; returns once it's done (or gave up).
+    func agentAuthenticate(_ backend: String, method: String) async throws -> AgentAuth {
+        try await call("agentAuthenticate", ["backend": backend, "method": method], timeout: 660)
+    }
+
+    /// Saves keys for the agent on the computer (empty values remove them).
+    func setAgentEnv(_ backend: String, vars: [String: String]) async throws -> AgentAuth {
+        struct Body: Encodable { var backend: String; var vars: [String: String] }
+        return try await call("setAgentEnv", Body(backend: backend, vars: vars), timeout: 300)
     }
 
     func termInput(_ term: String, _ bytes: Data) async throws {

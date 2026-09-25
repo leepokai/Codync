@@ -27,7 +27,7 @@ pub struct Harness {
     pub setup: &'static str,
     /// How Codync installs the CLI for you (in a setup terminal).
     pub install: Option<Install>,
-    /// Shell command that signs in, run in a setup terminal.
+    /// Shell command that signs in, run in a setup terminal (`{bin}` = the CLI).
     pub login: &'static str,
     /// How to tell whether it's signed in without starting it.
     pub signed_in: Option<SignInCheck>,
@@ -67,6 +67,10 @@ fn claude_signed_in(_: bool, out: &str) -> bool {
     serde_json::from_str::<Value>(out).is_ok_and(|v| v["loggedIn"] == true)
 }
 
+fn qoder_signed_in(_: bool, out: &str) -> bool {
+    serde_json::from_str::<Value>(out).is_ok_and(|v| v["logged_in"] == true)
+}
+
 fn says_logged_in(_: bool, out: &str) -> bool {
     let out = out.to_lowercase();
     out.contains("logged in") && !out.contains("not logged in")
@@ -79,9 +83,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["claude"],
         local: None,
         registry: Some("claude-acp"),
-        setup: "Install Claude Code and run `claude` once to sign in.",
+        setup: "Install Claude Code and run `claude auth login`.",
         install: Some(Install::Script("curl -fsSL https://claude.ai/install.sh | bash")),
-        login: "claude auth login",
+        login: "{bin} auth login",
         signed_in: Some(SignInCheck { args: "auth status", ok: claude_signed_in }),
     },
     Harness {
@@ -90,20 +94,20 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["codex"],
         local: None,
         registry: Some("codex-acp"),
-        setup: "Install Codex CLI and run `codex login`.",
-        install: Some(Install::Npm("@openai/codex")),
-        login: "codex login --device-auth",
+        setup: "Install Codex CLI and run `codex login --device-auth`.",
+        install: Some(Install::Script("curl -fsSL https://chatgpt.com/codex/install.sh | sh")),
+        login: "{bin} login --device-auth",
         signed_in: Some(SignInCheck { args: "login status", ok: exit_ok }),
     },
     Harness {
         id: "cursor",
         name: "Cursor",
-        bins: &["cursor-agent"],
+        bins: &["cursor-agent", "agent"],
         local: Some("{bin} acp"),
         registry: Some("cursor"),
         setup: "Install Cursor CLI (curl https://cursor.com/install -fsS | bash) and run `cursor-agent login`.",
         install: Some(Install::Script("curl https://cursor.com/install -fsS | bash")),
-        login: "cursor-agent login",
+        login: "NO_OPEN_BROWSER=1 {bin} login",
         signed_in: Some(SignInCheck { args: "status", ok: says_logged_in }),
     },
     Harness {
@@ -112,9 +116,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["pi"],
         local: None,
         registry: Some("pi-acp"),
-        setup: "Install pi (npm install -g @mariozechner/pi-coding-agent) and sign in with `pi`.",
-        install: Some(Install::Npm("@mariozechner/pi-coding-agent")),
-        login: "pi",
+        setup: "Install pi (npm install -g @earendil-works/pi-coding-agent), run `pi` and type /login.",
+        install: Some(Install::Npm("@earendil-works/pi-coding-agent")),
+        login: "{bin}",
         signed_in: None,
     },
     Harness {
@@ -125,7 +129,7 @@ pub const HARNESSES: &[Harness] = &[
         registry: Some("opencode"),
         setup: "Install OpenCode (curl -fsSL https://opencode.ai/install | bash) and run `opencode auth login`.",
         install: Some(Install::Script("curl -fsSL https://opencode.ai/install | bash")),
-        login: "opencode auth login",
+        login: "{bin} auth login",
         signed_in: None,
     },
     Harness {
@@ -134,9 +138,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["grok"],
         local: Some("{bin} agent stdio"),
         registry: Some("grok-build"),
-        setup: "Install Grok Build (curl -fsSL https://x.ai/cli/install.sh | bash) and run `grok` once to sign in.",
-        install: Some(Install::Script("curl -fsSL https://x.ai/cli/install.sh | bash")),
-        login: "grok",
+        setup: "Install Grok Build (curl -fsSL https://x.ai/cli/install.sh | bash) and run `grok login --device-auth`.",
+        install: Some(Install::Npm("@xai-official/grok")),
+        login: "{bin} login --device-auth",
         signed_in: None,
     },
     Harness {
@@ -145,9 +149,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["gemini"],
         local: Some("{bin} --acp"),
         registry: Some("gemini"),
-        setup: "Install Gemini CLI (npm install -g @google/gemini-cli) and run `gemini` once to sign in.",
+        setup: "Install Gemini CLI (npm install -g @google/gemini-cli) and run `gemini` to sign in with Google.",
         install: Some(Install::Npm("@google/gemini-cli")),
-        login: "gemini",
+        login: "NO_BROWSER=true {bin}",
         signed_in: None,
     },
     Harness {
@@ -156,9 +160,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["copilot"],
         local: Some("{bin} --acp --stdio"),
         registry: Some("github-copilot-cli"),
-        setup: "Install Copilot CLI (npm install -g @github/copilot) and run `copilot` to sign in.",
+        setup: "Install Copilot CLI (npm install -g @github/copilot) and run `copilot login`.",
         install: Some(Install::Npm("@github/copilot")),
-        login: "copilot",
+        login: "{bin} login --device-code",
         signed_in: None,
     },
     Harness {
@@ -167,9 +171,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["qwen"],
         local: Some("{bin} --acp"),
         registry: Some("qwen-code"),
-        setup: "Install Qwen Code (npm install -g @qwen-code/qwen-code) and sign in with `qwen`.",
+        setup: "Install Qwen Code (npm install -g @qwen-code/qwen-code), run `qwen` and type /auth.",
         install: Some(Install::Npm("@qwen-code/qwen-code")),
-        login: "qwen",
+        login: "{bin}",
         signed_in: None,
     },
     Harness {
@@ -179,19 +183,21 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("goose"),
         setup: "Install goose and run `goose configure`.",
-        install: None,
-        login: "goose configure",
+        install: Some(Install::Script(
+            "curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash",
+        )),
+        login: "{bin} configure",
         signed_in: None,
     },
     Harness {
         id: "kimi",
-        name: "Kimi CLI",
+        name: "Kimi Code",
         bins: &["kimi"],
         local: Some("{bin} acp"),
         registry: Some("kimi"),
-        setup: "Install Kimi CLI and sign in with `kimi`.",
-        install: None,
-        login: "kimi",
+        setup: "Install Kimi Code (curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash) and run `kimi login`.",
+        install: Some(Install::Script("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash")),
+        login: "{bin} login",
         signed_in: None,
     },
     Harness {
@@ -201,8 +207,8 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} exec --output-format acp-daemon"),
         registry: Some("factory-droid"),
         setup: "Install Droid (curl -fsSL https://app.factory.ai/cli | sh) and sign in with `droid`.",
-        install: Some(Install::Script("curl -fsSL https://app.factory.ai/cli | sh")),
-        login: "droid",
+        install: Some(Install::Npm("droid")),
+        login: "{bin}",
         signed_in: None,
     },
     Harness {
@@ -211,9 +217,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["amp"],
         local: None,
         registry: Some("amp-acp"),
-        setup: "Install Amp and sign in with `amp login`.",
-        install: None,
-        login: "amp login",
+        setup: "Install Amp (curl -fsSL https://ampcode.com/install.sh | bash) and run `amp login`.",
+        install: Some(Install::Script("curl -fsSL https://ampcode.com/install.sh | bash")),
+        login: "{bin} login",
         signed_in: None,
     },
     Harness {
@@ -222,10 +228,10 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["kilo"],
         local: Some("{bin} acp"),
         registry: Some("kilo"),
-        setup: "Install Kilo CLI (npm install -g @kilocode/cli) and sign in.",
+        setup: "Install Kilo CLI (npm install -g @kilocode/cli) and run `kilo auth login`.",
         install: Some(Install::Npm("@kilocode/cli")),
-        login: "kilo",
-        signed_in: None,
+        login: "{bin} auth login",
+        signed_in: Some(SignInCheck { args: "profile --json", ok: exit_ok }),
     },
     Harness {
         id: "cline",
@@ -233,9 +239,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["cline"],
         local: Some("{bin} --acp"),
         registry: Some("cline"),
-        setup: "Install Cline CLI (npm install -g cline) and sign in.",
+        setup: "Install Cline CLI (npm install -g cline) and run `cline auth`.",
         install: Some(Install::Npm("cline")),
-        login: "cline",
+        login: "{bin} auth",
         signed_in: None,
     },
     Harness {
@@ -246,8 +252,8 @@ pub const HARNESSES: &[Harness] = &[
         registry: Some("auggie"),
         setup: "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.",
         install: Some(Install::Npm("@augmentcode/auggie")),
-        login: "auggie login",
-        signed_in: None,
+        login: "{bin} login",
+        signed_in: Some(SignInCheck { args: "account status", ok: exit_ok }),
     },
     Harness {
         id: "vibe",
@@ -255,9 +261,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["vibe-acp", "vibe"],
         local: None,
         registry: Some("mistral-vibe"),
-        setup: "Install Mistral Vibe and run `vibe` once to sign in.",
-        install: None,
-        login: "vibe",
+        setup: "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.",
+        install: Some(Install::Script("curl -LsSf https://mistral.ai/vibe/install.sh | bash")),
+        login: "vibe --setup",
         signed_in: None,
     },
     Harness {
@@ -268,7 +274,7 @@ pub const HARNESSES: &[Harness] = &[
         registry: None,
         setup: "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.",
         install: Some(Install::Script("curl -fsSL https://cli.kiro.dev/install | bash")),
-        login: "kiro-cli login",
+        login: "{bin} login",
         signed_in: None,
     },
     Harness {
@@ -277,9 +283,9 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["devin"],
         local: Some("{bin} acp"),
         registry: Some("devin"),
-        setup: "Install the Devin CLI and sign in.",
-        install: None,
-        login: "devin",
+        setup: "Install the Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash) and run `devin auth login`.",
+        install: Some(Install::Script("curl -fsSL https://cli.devin.ai/install.sh | bash")),
+        login: "{bin} auth login",
         signed_in: None,
     },
     Harness {
@@ -288,9 +294,75 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["qodercli"],
         local: Some("{bin} --acp"),
         registry: Some("qoder"),
-        setup: "Install Qoder CLI and sign in.",
-        install: None,
-        login: "qodercli",
+        setup: "Install Qoder CLI (npm install -g @qoder-ai/qodercli) and run `qodercli login`.",
+        install: Some(Install::Npm("@qoder-ai/qodercli")),
+        login: "{bin} login",
+        signed_in: Some(SignInCheck { args: "status -o json", ok: qoder_signed_in }),
+    },
+    Harness {
+        id: "codebuddy",
+        name: "CodeBuddy Code",
+        bins: &["codebuddy", "cbc"],
+        local: Some("{bin} --acp"),
+        registry: Some("codebuddy-code"),
+        setup: "Install CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) and sign in with `codebuddy`.",
+        install: Some(Install::Npm("@tencent-ai/codebuddy-code")),
+        login: "{bin}",
+        signed_in: None,
+    },
+    Harness {
+        id: "minimax",
+        name: "MiniMax Code",
+        bins: &["mcode"],
+        local: Some("{bin} acp"),
+        registry: Some("minimax-code"),
+        setup: "Install MiniMax Code (npm install -g @minimax-ai/code) and run `mcode login`.",
+        install: Some(Install::Npm("@minimax-ai/code")),
+        login: "{bin} login",
+        signed_in: None,
+    },
+    Harness {
+        id: "junie",
+        name: "Junie",
+        bins: &["junie"],
+        local: Some("{bin} --acp=true"),
+        registry: Some("junie"),
+        setup: "Install Junie (curl -fsSL https://junie.jetbrains.com/install.sh | bash) and sign in with `junie`.",
+        install: Some(Install::Script("curl -fsSL https://junie.jetbrains.com/install.sh | bash")),
+        login: "{bin}",
+        signed_in: None,
+    },
+    Harness {
+        id: "antigravity",
+        name: "Google Antigravity",
+        bins: &["agy"],
+        local: None,
+        registry: Some("antigravity-acp"),
+        setup: "Install the Antigravity CLI (curl -fsSL https://antigravity.google/cli/install.sh | bash) and sign in with `agy`.",
+        install: Some(Install::Script("curl -fsSL https://antigravity.google/cli/install.sh | bash")),
+        login: "{bin}",
+        signed_in: None,
+    },
+    Harness {
+        id: "cortex",
+        name: "Cortex Code",
+        bins: &["cortex"],
+        local: Some("{bin} acp serve"),
+        registry: Some("cortex-code"),
+        setup: "Install Cortex Code (curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh) and set up a connection with `cortex`.",
+        install: Some(Install::Script("curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh")),
+        login: "{bin}",
+        signed_in: None,
+    },
+    Harness {
+        id: "poolside",
+        name: "Poolside",
+        bins: &["pool"],
+        local: Some("{bin} acp"),
+        registry: Some("poolside"),
+        setup: "Install Poolside (curl -fsSL https://downloads.poolside.ai/pool/install.sh | sh) and run `pool login`.",
+        install: Some(Install::Script("curl -fsSL https://downloads.poolside.ai/pool/install.sh | sh")),
+        login: "{bin} login",
         signed_in: None,
     },
 ];
@@ -539,16 +611,8 @@ pub fn is_known(id: &str) -> bool {
 /// Ways to start this backend, best first. Local CLIs can be too old to speak
 /// ACP, so the registry build is kept as a fallback.
 pub async fn launch_candidates(id: &str, progress: impl Fn(&str)) -> anyhow::Result<Vec<registry::Cmd>> {
-    let mut out = vec![];
+    let mut out: Vec<registry::Cmd> = local_candidate(id).into_iter().collect();
     let h = harness(id);
-    if let Some(h) = h
-        && let Some(template) = h.local
-        && let Some(path) = h.bins.iter().find_map(|b| which(b))
-    {
-        let program = shell_quote(&path.to_string_lossy());
-        let args = template.strip_prefix("{bin}").unwrap_or(template).trim().to_owned();
-        out.push(registry::Cmd { program, args });
-    }
     let reg_id = h.map_or(Some(id), |h| h.registry);
     if let Some(agent) = reg_id.and_then(registry::agent) {
         match registry::command(&agent, &progress).await {
@@ -562,6 +626,44 @@ pub async fn launch_candidates(id: &str, progress: impl Fn(&str)) -> anyhow::Res
         anyhow::bail!("{} isn't set up on this computer. {hint}", h.map_or(id, |h| h.name));
     }
     Ok(out)
+}
+
+/// The registry build that *is* the harness's CLI (same npm package), so it can
+/// sign in without the CLI installed. Adapters (claude-acp…) don't count.
+fn registry_cli(h: &Harness) -> Option<Value> {
+    let Some(Install::Npm(pkg)) = h.install else { return None };
+    let agent = registry::agent(h.registry?)?;
+    let npx = agent["distribution"]["npx"]["package"].as_str()?;
+    (npx == pkg || npx.strip_prefix(pkg).is_some_and(|v| v.starts_with('@'))).then_some(agent)
+}
+
+/// Codync's own sign-in command for `id` can run now.
+pub fn login_available(id: &str) -> bool {
+    harness(id)
+        .is_some_and(|h| h.bins.iter().any(|b| on_path(b)) || !h.login.contains("{bin}") || registry_cli(h).is_some())
+}
+
+/// Codync's own sign-in command for `id`, with `{bin}` resolved.
+pub async fn login_command(id: &str) -> anyhow::Result<String> {
+    let h = harness(id).ok_or_else(|| anyhow::anyhow!("no sign-in command for {id}"))?;
+    let bin = match h.bins.iter().find_map(|b| which(b)) {
+        Some(p) => shell_quote(&p.to_string_lossy()),
+        None => match registry_cli(h) {
+            Some(agent) => registry::command(&agent, |_| {}).await?.program,
+            None if !h.login.contains("{bin}") => String::new(),
+            None => anyhow::bail!("Install {} first.", h.name),
+        },
+    };
+    Ok(h.login.replace("{bin}", &bin))
+}
+
+/// The installed CLI's own ACP mode, if it has one and it's installed.
+pub fn local_candidate(id: &str) -> Option<registry::Cmd> {
+    let h = harness(id)?;
+    let template = h.local?;
+    let path = h.bins.iter().find_map(|b| which(b))?;
+    let args = template.strip_prefix("{bin}").unwrap_or(template).trim().to_owned();
+    Some(registry::Cmd { program: shell_quote(&path.to_string_lossy()), args })
 }
 
 fn shell_quote(s: &str) -> String {

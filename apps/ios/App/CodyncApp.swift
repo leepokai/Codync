@@ -10,6 +10,7 @@ struct CodyncApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var app = AppStore.shared
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("onboardingCompleted") private var onboardingCompleted = false
 
     var body: some Scene {
         WindowGroup {
@@ -19,11 +20,15 @@ struct CodyncApp: App {
                 .environment(app.accounts)
                 .environment(app.account)
                 .tint(Palette.accent)
-                .sheet(isPresented: Bindable(app.account).showSwitcher) {
+                .sheet(isPresented: Binding(
+                    get: { onboardingCompleted && app.account.showSwitcher },
+                    set: { app.account.showSwitcher = $0 }
+                )) {
                     NavigationStack { AccountSwitcherView() }
                         .environment(app)
                         .environment(app.accounts)
                         .environment(app.account)
+                        .tint(Palette.accent)
                 }
                 .onChange(of: app.account.userID, initial: true) { _, userID in
                     app.switchAccount(to: userID)
@@ -157,10 +162,13 @@ final class AppStore {
             PushRegistrar.shared.syncDevice(with: store)
             store.onUsageChanged = { _, _ in WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage") }
         }
-        accounts.onBotUpdated = { [weak accounts] ref, bot in
-            guard let accounts else { return }
-            LiveActivities.shared.update(ref, bot: bot)
-            BotsWidgetFeed.update(accounts.roster, storage: storage)
+        accounts.onBotUpdated = { ref, bot in LiveActivities.shared.update(ref, bot: bot) }
+        accounts.onRosterChanged = { roster in
+            BotsWidgetFeed.update(roster, storage: storage)
+            if roster.isEmpty {
+                LiveActivities.shared.endAll()
+                WidgetCenter.shared.reloadAllTimelines()
+            }
         }
         accounts.onSent = { [weak accounts] ref, bot in
             guard let store = accounts?.store(for: ref.computerId) else { return }
@@ -238,15 +246,36 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 /// something the widget shows changes (who is working / needs you / unread).
 @MainActor
 enum BotsWidgetFeed {
-    private static var shown = ""
+    private struct Snapshot: Equatable {
+        let computerId: ComputerID
+        let id: String
+        let name: String
+        let shape: String
+        let color: String
+        let status: String
+        let activity: String
+        let message: String?
+        let lastAt: Int64
 
-    static func reset() { shown = "" }
+        init(_ bot: Bot, computerId: ComputerID) {
+            self.computerId = computerId
+            id = bot.id; name = bot.name; shape = bot.avatarShape; color = bot.avatarColor
+            status = bot.status; activity = bot.activity; message = bot.lastMessage; lastAt = bot.lastAt
+        }
+    }
+    private static var shown: [Snapshot]?
+    private static var scope: String?
+
+    static func reset() { shown = nil; scope = nil }
 
     static func update(_ roster: [RosterItem], storage: SharedStore.Context) {
+        guard storage.id == SharedStore.activeContext.id else { return }
         storage.bots = roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) }
-        let signature = roster.map { "\($0.ref.computerId)/\($0.bot.id):\($0.bot.status):\($0.bot.unread)" }.joined(separator: ",")
-        guard signature != shown else { return }
+        let currentScope = storage.id
+        let signature = roster.filter { !$0.bot.hidden }.map { Snapshot($0.bot, computerId: $0.ref.computerId) }
+        guard signature != shown || scope != currentScope else { return }
         shown = signature
+        scope = currentScope
         WidgetCenter.shared.reloadTimelines(ofKind: "CodyncBots")
     }
 }

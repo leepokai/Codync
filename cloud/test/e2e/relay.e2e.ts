@@ -5,7 +5,7 @@
 // relay → chat through the relay → mailbox while the host is down → account claim + SAS access request →
 // cloud revocation → injected grant ignored → direct /channel and loopback-only bearer token.
 
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, execFile, spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
@@ -65,13 +65,16 @@ async function stop(child: ChildProcess) {
   if (child.exitCode === null && !child.signalCode) child.kill("SIGKILL");
 }
 
-function d1(sql: string): Json[] {
-  const r = spawnSync(WRANGLER, ["d1", "execute", "codync-dev", "--local", "--env", "dev", "--persist-to", persist, "--json", "--command", sql], {
-    cwd: CLOUD_DIR,
-    encoding: "utf8",
-  });
-  if (r.status !== 0) throw new Error(`d1 failed: ${r.stderr}`);
-  return (JSON.parse(r.stdout) as { results: Json[] }[])[0]?.results ?? [];
+/// Async on purpose: a blocking spawn stalls the event loop past wrangler's keep-alive timeout, and
+/// the next `fetch` then reuses a socket the server already closed (ECONNRESET).
+function d1(sql: string): Promise<Json[]> {
+  const args = ["d1", "execute", "codync-dev", "--local", "--env", "dev", "--persist-to", persist, "--json", "--command", sql];
+  return new Promise((resolve, reject) =>
+    execFile(WRANGLER, args, { cwd: CLOUD_DIR, encoding: "utf8" }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(`d1 failed: ${stderr}`));
+      resolve((JSON.parse(stdout) as { results: Json[] }[])[0]?.results ?? []);
+    }),
+  );
 }
 
 // ---- Clerk test tokens ----
@@ -133,7 +136,7 @@ const refused = (wire: Wire) => wire.opened.then(
   () => true,
 );
 
-const computerOnline = (id: string) => d1(`SELECT online FROM computers WHERE id = '${id}'`)[0]?.online === 1 || undefined;
+const computerOnline = async (id: string) => (await d1(`SELECT online FROM computers WHERE id = '${id}'`))[0]?.online === 1 || undefined;
 
 // ---- scenario ----
 
@@ -153,7 +156,7 @@ async function main() {
   const health = await (await fetch(`http://127.0.0.1:${hostPort}/health`)).json();
   const computerId = health.computerId as string;
   check(/^[A-Za-z0-9_-]{22}$/.test(computerId), "host reports a computerId");
-  await waitFor("computer row", () => d1(`SELECT id FROM computers WHERE id = '${computerId}'`).length > 0 || undefined);
+  await waitFor("computer row", async () => (await d1(`SELECT id FROM computers WHERE id = '${computerId}'`)).length > 0 || undefined);
   await waitFor("DO presence online", () => computerOnline(computerId), 20_000);
   check(true, "D1 row exists and the DO marked it online");
 
@@ -250,8 +253,8 @@ async function main() {
   const phone3 = new FakePhone();
   await cloud("POST", "/v1/devices", { token, key: phone3.key, body: { name: "Intruder", platform: "ios" } });
   const r3 = await cloud("POST", `/v1/computers/${computerId}/access-requests`, { token, key: phone3.key, body: { commit: ref.b64url(ref.random(32)) } });
-  const dev3 = d1(`SELECT id FROM devices WHERE sign_pub = '${phone3.dk}'`)[0].id;
-  d1(`INSERT INTO grants(id, computer_id, device_id, scopes, status, created_at) VALUES ('grt_injected', '${computerId}', '${dev3}', '["control","screen"]', 'active', ${Date.now()})`);
+  const dev3 = (await d1(`SELECT id FROM devices WHERE sign_pub = '${phone3.dk}'`))[0].id;
+  await d1(`INSERT INTO grants(id, computer_id, device_id, scopes, status, created_at) VALUES ('grt_injected', '${computerId}', '${dev3}', '["control","screen"]', 'active', ${Date.now()})`);
   await cloud("DELETE", `/v1/access-requests/${r3.body.requestId}`, { token }); // → cloud.changed → state pull
   await new Promise((r) => setTimeout(r, 2000));
   const devices = (await loopback("devices")).devices as Json[];

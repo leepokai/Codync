@@ -7,18 +7,21 @@ mod backends;
 mod bot;
 mod channel;
 mod cloud;
+mod context;
 mod crypto;
 mod devices;
 mod hub;
 mod identity;
 mod market;
 mod mcp;
+mod memory;
 mod push;
 mod registry;
 mod relay;
 mod screen;
 mod service;
 mod store;
+mod team;
 mod term;
 mod tui;
 mod usage;
@@ -174,6 +177,13 @@ enum AccessAction {
 
 #[derive(Subcommand)]
 enum McpServer {
+    /// Discover and ask the user's other bots for help.
+    Team {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
     /// See and operate this computer's desktop.
     Computer {
         #[arg(long)]
@@ -319,7 +329,8 @@ async fn main() -> Result<()> {
             println!("Token rotated. Restart the host so local helpers pick it up.");
             Ok(())
         }
-        Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port).await,
+        Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port, mcp::Server::Computer).await,
+        Sub::Mcp { server: McpServer::Team { bot, port } } => mcp::serve(bot, port, mcp::Server::Team).await,
         Sub::Tui { url, token, port } => {
             tui::run(url.unwrap_or_else(|| format!("http://127.0.0.1:{port}")), token).await
         }

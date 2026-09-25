@@ -5,6 +5,7 @@ import VisionKit
 
 /// First run: explain the model, then pair with a computer running codync-host.
 struct PairingView: View {
+    var introductory = true
     /// Set when adding another computer from the computers sheet; shows a close button.
     var onDone: (() -> Void)?
     @Environment(AppStore.self) private var app
@@ -18,22 +19,27 @@ struct PairingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack(spacing: -10) {
-                    CharacterAvatar(shape: "blob", color: "blue", size: 64, mood: .working)
-                    CharacterAvatar(shape: "squircle", color: "orange", size: 64)
-                    CharacterAvatar(shape: "teardrop", color: "violet", size: 64, mood: .working)
+                if introductory {
+                    HStack(spacing: -10) {
+                        CharacterAvatar(shape: "blob", color: "blue", size: 64, mood: .working)
+                        CharacterAvatar(shape: "squircle", color: "orange", size: 64)
+                        CharacterAvatar(shape: "teardrop", color: "violet", size: 64, mood: .working)
+                    }
+                    .padding(.top, 40)
                 }
-                .padding(.top, 40)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Your coding agents,\nas teammates.")
+                    Text(introductory ? "Your coding agents,\nas teammates." : "Connect a computer")
                         .font(.system(size: 34, weight: .semibold))
                         .tracking(-0.6)
                         .foregroundStyle(Palette.text)
-                    Text("Give each agent a name, a job and a project. Then just message the right one — it works on your computer while your phone is in your pocket.")
+                    Text(introductory
+                         ? "Give each agent a name, a job and a project. Then just message the right one — it works on your computer while your phone is in your pocket."
+                         : "Pair a Mac or Linux computer to see its bots in this account.")
                         .font(.body)
                         .foregroundStyle(Palette.secondary)
                 }
+                .padding(.top, !introductory && onDone != nil ? 48 : 0)
 
                 VStack(alignment: .leading, spacing: 14) {
                     Step(n: 1, title: "Install Codync on your computer", detail: "Mac — then open Codync in the menu bar and click Install host:", code: "brew install --cask leepokai/codync/codync")

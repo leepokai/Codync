@@ -421,17 +421,24 @@ private struct AgentCard: View {
     }
 }
 
-/// Getting an agent ready on the computer: install it, then sign in. Both run
-/// in a terminal on that computer. Bots are made from New chat, not here.
+/// Getting an agent ready on the computer: install it, then sign in. Sign-in
+/// options come from the agent itself (ACP), plus Codync's own command for
+/// CLIs it knows. Bots are made from New chat, not here.
 private struct AgentSheet: View {
     let initial: Backend
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var running: SetupStep?
+    @State private var route: SetupRoute?
+    @State private var auth: AgentAuth?
+    @State private var checking = false
+    @State private var authenticating: String?
+    @State private var error: String?
 
     /// Live: an install or sign-in updates the host's list.
     private var backend: Backend { model.hello?.backends.first { $0.id == initial.id } ?? initial }
     private var installed: Bool { backend.installed == true }
+    private var curated: Bool { backend.curated == true }
+    private var signedIn: Bool? { auth?.signedIn ?? backend.signedIn }
 
     var body: some View {
         Form {
@@ -449,7 +456,7 @@ private struct AgentSheet: View {
                 }
                 .padding(.vertical, 4)
             }
-            if backend.curated == true {
+            if curated {
                 Section {
                     SetupStepRow(
                         number: 1,
@@ -458,43 +465,243 @@ private struct AgentSheet: View {
                             ? "Installed on \(model.hostName)."
                             : backend.canInstall == true ? "Runs the official installer on \(model.hostName)." : backend.installHint,
                         done: installed,
-                        action: installed || backend.canInstall != true ? nil : ("Install", { running = .install })
+                        action: installed || backend.canInstall != true ? nil : ("Install", { route = .install })
                     )
-                    SetupStepRow(
-                        number: 2,
-                        title: "Sign in",
-                        detail: signInDetail,
-                        done: backend.signedIn == true,
-                        // Some CLIs drop the current sign-in as soon as a new one starts.
-                        action: installed && backend.signedIn != true ? ("Sign in", { running = .login }) : nil
-                    )
-                } footer: {
-                    Text("Each step runs in a terminal on \(model.hostName). Sign-in links open on this device.")
                 }
-            } else {
-                Section {
-                    Text("Codync downloads \(backend.name) the first time a bot uses it. If it needs an account, the bot tells you how to sign in.")
-                        .foregroundStyle(Palette.secondary)
-                }
+            }
+            signInSection
+            if let error {
+                Section { Text(error).foregroundStyle(Palette.danger).textSelection(.enabled) }
             }
         }
         .formStyle(.grouped)
         .navigationTitle(backend.name)
         .inlineNavigationTitle()
-        .navigationDestination(item: $running) { step in SetupTerminalView(backend: backend, step: step) }
+        .navigationDestination(item: $route) { route in
+            switch route {
+            case .install: SetupTerminalView(backend: backend, step: .install)
+            case .terminal(let method): SetupTerminalView(backend: backend, step: .login, method: method)
+            case .keys(let method): AgentKeysForm(backend: backend, method: method, saved: auth?.savedEnv ?? []) { auth = $0 }
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
             }
         }
+        // A known "signed in" needs no agent start; everything else asks the agent.
+        .task { if backend.signedIn != true { await check() } }
+        .onChange(of: route) { old, new in
+            // Back from a terminal or key form: see what changed.
+            if new == nil, old != nil { Task { await check() } }
+        }
     }
 
-    private var signInDetail: String {
-        guard installed else { return "After it's installed." }
-        switch backend.signedIn {
+    @ViewBuilder private var signInSection: some View {
+        Section {
+            HStack(spacing: 0) {
+                SetupStepRow(number: curated ? 2 : 1, title: "Sign in", detail: statusText, done: signedIn == true, action: nil)
+                if checking {
+                    ThinkingOrb(size: 16, color: Palette.secondary)
+                } else {
+                    Button("Check again", systemImage: "arrow.clockwise") { Task { await check() } }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Palette.secondary)
+                        .help("Check again")
+                }
+            }
+            if signedIn != true, let detail = auth?.detail, !detail.isEmpty {
+                Text(detail).font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
+            }
+            // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
+            if signedIn != true, !checking {
+                if auth?.login == true {
+                    optionRow("Sign in", detail: "In a terminal on \(model.hostName). Links open here.", icon: "terminal") {
+                        route = .terminal(nil)
+                    }
+                }
+                ForEach(auth?.methods ?? []) { m in
+                    switch m.kind {
+                    case .terminal?:
+                        optionRow(m.name, detail: m.description ?? "In a terminal on \(model.hostName).", icon: "terminal") {
+                            route = .terminal(m)
+                        }
+                    case .envVar?:
+                        optionRow(m.name, detail: m.description ?? "Saved on \(model.hostName) only.", icon: "key") {
+                            route = .keys(m)
+                        }
+                    case .agent?, nil:
+                        optionRow(
+                            m.name,
+                            detail: authenticating == m.id
+                                ? "Finish signing in in the browser on \(model.hostName)…"
+                                : m.description ?? "Opens a browser on \(model.hostName).",
+                            icon: "safari",
+                            busy: authenticating == m.id
+                        ) {
+                            Task { await authenticate(m) }
+                        }
+                    }
+                }
+            }
+        } footer: {
+            if signedIn != true, auth?.methods.contains(where: { $0.kind == .agent }) == true {
+                Text("Browser sign-ins open on \(model.hostName) itself. Away from it? Use Remote screen to finish there.")
+            }
+        }
+    }
+
+    private var statusText: String {
+        if checking { return auth == nil ? "Checking with \(backend.name)… The first check can download it." : "Checking…" }
+        switch signedIn {
         case true?: return "Signed in."
         case false?: return "Not signed in yet."
-        case nil: return "Skip this if you've already signed in on \(model.hostName)."
+        case nil: return "Couldn't tell. Skip this if you've already signed in on \(model.hostName)."
+        }
+    }
+
+    private func optionRow(_ title: String, detail: String, icon: String, busy: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.body)
+                    .foregroundStyle(Palette.secondary)
+                    .frame(width: 26)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.body.weight(.medium)).foregroundStyle(Palette.text)
+                    Text(detail).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(3)
+                }
+                Spacer(minLength: 8)
+                if busy {
+                    ThinkingOrb(size: 16, color: Palette.secondary)
+                } else {
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(authenticating != nil)
+    }
+
+    private func check() async {
+        guard let client = model.client, !checking else { return }
+        checking = true
+        defer { checking = false }
+        do {
+            auth = try await client.agentAuth(backend.id)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+        await model.refreshBackends()
+    }
+
+    private func authenticate(_ m: AuthMethod) async {
+        guard let client = model.client else { return }
+        authenticating = m.id
+        defer { authenticating = nil }
+        do {
+            auth = try await client.agentAuthenticate(backend.id, method: m.id)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+        await model.refreshBackends()
+    }
+}
+
+private enum SetupRoute: Hashable {
+    case install
+    case terminal(AuthMethod?)
+    case keys(AuthMethod)
+}
+
+/// Keys an agent reads from its environment, kept on the computer.
+private struct AgentKeysForm: View {
+    let backend: Backend
+    let method: AuthMethod
+    let saved: [String]
+    let done: (AgentAuth) -> Void
+    @Environment(BotStore.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var values: [String: String] = [:]
+    @State private var saving = false
+    @State private var error: String?
+
+    private var vars: [AuthMethod.Var] { method.vars ?? [] }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(vars, id: \.name) { v in
+                    VStack(alignment: .leading, spacing: 4) {
+                        let prompt = Text(saved.contains(v.name) ? "Saved (type to replace)" : v.name)
+                        Group {
+                            if v.secret {
+                                SecureField(v.label, text: binding(v.name), prompt: prompt)
+                            } else {
+                                TextField(v.label, text: binding(v.name), prompt: prompt)
+                            }
+                        }
+                        .plainTextInput()
+                        Text(v.label + (v.optional ? " (optional)" : "")).font(.caption).foregroundStyle(Palette.secondary)
+                    }
+                }
+            } header: {
+                Text(method.name)
+            } footer: {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let d = method.description { Text(d) }
+                    Text("Saved on \(model.hostName) only and given to \(backend.name) when it starts.")
+                    if let link = method.link, let url = URL(string: link) {
+                        Link("Get a key", destination: url)
+                    }
+                }
+            }
+            if !saved.isEmpty {
+                Section {
+                    Button("Remove saved keys", role: .destructive) {
+                        save(Dictionary(uniqueKeysWithValues: vars.map { ($0.name, "") }))
+                    }
+                }
+            }
+            if let error {
+                Section { Text(error).foregroundStyle(Palette.danger) }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle(backend.name)
+        .inlineNavigationTitle()
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                if saving {
+                    ProgressView()
+                } else {
+                    Button("Save") { save(values.filter { !$0.value.isEmpty }) }
+                        .disabled(vars.contains { !$0.optional && (values[$0.name] ?? "").isEmpty && !saved.contains($0.name) })
+                }
+            }
+        }
+    }
+
+    private func binding(_ name: String) -> Binding<String> {
+        Binding(get: { values[name] ?? "" }, set: { values[name] = $0 })
+    }
+
+    private func save(_ vars: [String: String]) {
+        guard let client = model.client else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                done(try await client.setAgentEnv(backend.id, vars: vars))
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

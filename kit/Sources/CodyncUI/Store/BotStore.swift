@@ -74,6 +74,8 @@ public final class BotStore {
     public var onBotUpdated: (@MainActor (Bot) -> Void)?
     public var onUsageChanged: (@MainActor (ComputerID, Usage) -> Void)?
     public var onSent: (@MainActor (Bot) -> Void)?
+    /// A bot appeared, changed or went away.
+    var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
 
@@ -159,6 +161,8 @@ public final class BotStore {
     private func resetMirror() {
         bots = [:]
         entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") } }.filter { !$0.value.isEmpty }
+        selection = nil
+        onRosterChanged?()
         rev = 0
         hostId = nil
         historyComplete = []
@@ -178,6 +182,7 @@ public final class BotStore {
         onBotUpdated = nil
         onUsageChanged = nil
         onSent = nil
+        onRosterChanged = nil
         onComputerChanged = nil
         client = nil
         selection = nil
@@ -373,10 +378,13 @@ public final class BotStore {
             bots[bot.id] = bot
             bump(bot.rev)
             onBotUpdated?(bot)
+            onRosterChanged?()
         case let .botDeleted(id, r):
             bots[id] = nil
             entries[id] = nil
             bump(r)
+            if selection == id { selection = nil }
+            onRosterChanged?()
         case let .entry(e):
             upsert(e)
             bump(e.rev)
@@ -674,8 +682,8 @@ public final class BotStore {
     }
 
     public func refreshUsage() async {
-        guard let client else { return }
-        if let u = try? await client.usage(refresh: true) { setUsage(u) }
+        guard !retired, let client else { return }
+        if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }
     }
 
     public func loadOlder(_ botId: String) async {

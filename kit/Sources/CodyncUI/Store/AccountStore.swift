@@ -33,6 +33,8 @@ public final class AccountStore {
     public var onBotUpdated: (@MainActor (BotReference, Bot) -> Void)?
     public var onConnected: (@MainActor (BotStore) -> Void)?
     public var onSent: (@MainActor (BotReference, Bot) -> Void)?
+    /// The combined roster changed: a bot came, changed or went, or a computer did.
+    public var onRosterChanged: (@MainActor ([RosterItem]) -> Void)?
 
     private let clientKind: String
     private let cloud: CloudClient?
@@ -158,6 +160,18 @@ public final class AccountStore {
         return ticket
     }
 
+    /// Withdraws a pending access request; the computer drops it from its approval list.
+    public func cancelAccess(_ id: ComputerID) async {
+        guard let ticket = pendingAccess[id] else { return }
+        accessPolls.removeValue(forKey: id)?.cancel()
+        pendingAccess[id] = nil
+        do {
+            try await cloud?.cancelAccess(ticket.requestId)
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     private func awaitApproval(_ ticket: AccessTicket, target: CloudComputer, cloud: CloudClient) async {
         while !Task.isCancelled, !retired {
             try? await Task.sleep(for: .seconds(2))
@@ -201,6 +215,7 @@ public final class AccountStore {
         onBotUpdated = nil
         onConnected = nil
         onSent = nil
+        onRosterChanged = nil
         selection = nil
     }
 
@@ -223,6 +238,7 @@ public final class AccountStore {
             self.onConnected?(store)
         }
         store.onComputerChanged = { [weak self] computer in self?.computerChanged(computer) }
+        store.onRosterChanged = { [weak self] in self?.rosterChanged() }
         stores[id] = store
         if isActive { store.setActive(true) }
     }
@@ -255,5 +271,11 @@ public final class AccountStore {
 
     private func refreshList() {
         computers = attached + saved.filter { c in !attached.contains { $0.id == c.id } }
+        rosterChanged()
+    }
+
+    private func rosterChanged() {
+        guard !retired else { return }
+        onRosterChanged?(roster)
     }
 }

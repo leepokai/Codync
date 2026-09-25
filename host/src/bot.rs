@@ -5,9 +5,16 @@
 //! agent message of each turn, permission cards and notices. Narration between
 //! tool calls, thoughts, tool calls and plans are trace entries shown in the
 //! "full conversation" sheet, and surface live as the roster activity line.
+//!
+//! Context (from Grok Bot too): the bot's instructions and memory are a frozen
+//! snapshot per session and compaction epoch (`context`), finished exchanges feed
+//! its memory keeper (`memory`), messages sent while it works are folded into
+//! its next turn, and a turn cut off by a host restart is resumed.
 
 use crate::acp::{self, Acp, Incoming};
+use crate::context::{self, Identity, Snapshot};
 use crate::hub::{BotStatus, Hub};
+use crate::memory;
 use crate::push::{self, AlertKind};
 use crate::store::{BotConfig, EntryKind, Permission, now_ms};
 use anyhow::{Result, anyhow, bail};
@@ -29,11 +36,18 @@ pub enum NoticeStyle {
 
 pub enum Cmd {
     Send { entry_id: String, text: String },
+    Ask(crate::team::Ask),
+    CancelAsk { id: String },
     Stop,
     Permission { entry_id: String, option_id: Option<String> },
     NewSession,
     Reconfigure(Box<BotConfig>),
     Shutdown,
+}
+
+enum Queued {
+    User { entry_id: String, text: String },
+    Ask(crate::team::Ask),
 }
 
 pub struct BotHandle {
@@ -45,14 +59,27 @@ pub struct BotHandle {
 pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
     let (tx, rx) = mpsc::unbounded_channel();
     let session_id = hub.store.bot(&cfg.id).ok().flatten().and_then(|b| b.session_id);
+    // A turn the previous host process never finished (crash, update, restart), unless
+    // it's stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
+    let interrupted = hub
+        .store
+        .kv_get(&inflight_key(&cfg.id))
+        .and_then(|v| v.parse::<i64>().ok())
+        .is_some_and(|started| now_ms() - started < STALE_RESUME_MS);
+    let keeper = memory::spawn_keeper(hub.clone(), cfg.id.clone());
     let actor = Actor {
         hub,
         cfg,
         conn: None,
         session_id,
         session_fresh: false,
+        applied_system: None,
+        keeper,
+        turn_text: None,
+        announce: None,
         turn: None,
         queue: VecDeque::new(),
+        active_ask: None,
         seg: Seg::None,
         tools: HashMap::new(),
         plan_entry: None,
@@ -62,16 +89,18 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         exit_tail: None,
         tools_changed: false,
     };
-    let task = tokio::spawn(actor.run(rx));
+    let task = tokio::spawn(actor.run(rx, interrupted));
     BotHandle { tx, task }
 }
 
-struct Conn {
-    acp: Arc<Acp>,
-    rx: mpsc::UnboundedReceiver<Incoming>,
+pub(crate) struct Conn {
+    pub(crate) acp: Arc<Acp>,
+    pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     can_load: bool,
     /// The agent can reach remote (HTTP) MCP servers itself.
     mcp_http: bool,
+    /// Claude's adapter: takes `_meta.systemPrompt` and `_meta.claudeCode.options`.
+    pub(crate) claude: bool,
     /// Sessions already created or loaded in this process.
     loaded: HashSet<String>,
 }
@@ -94,8 +123,16 @@ struct Actor {
     session_id: Option<String>,
     /// True until the first prompt of a new ACP session has been sent.
     session_fresh: bool,
+    /// (session, instructions) last handed to Claude as its system prompt by this process.
+    applied_system: Option<(String, String)>,
+    keeper: mpsc::UnboundedSender<memory::Exchange>,
+    /// The user's words for this turn (None for a hidden turn); feeds memory.
+    turn_text: Option<String>,
+    /// A profile update this turn carried, recorded once the agent got it.
+    announce: Option<(Snapshot, Identity)>,
     turn: Option<i64>,
-    queue: VecDeque<(String, String)>,
+    queue: VecDeque<Queued>,
+    active_ask: Option<crate::team::Ask>,
     seg: Seg,
     tools: HashMap<String, String>,
     plan_entry: Option<String>,
@@ -113,9 +150,13 @@ struct Actor {
 type Done = Result<Value>;
 
 impl Actor {
-    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>) {
+    /// `interrupted`: the previous host process stopped mid-turn; resume it first.
+    async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>, interrupted: bool) {
         let (done_tx, mut done_rx) = mpsc::unbounded_channel::<Done>();
         let mut flush_tick = tokio::time::interval(Duration::from_millis(300));
+        if interrupted {
+            self.resume_interrupted(&done_tx).await;
+        }
         loop {
             tokio::select! {
                 cmd = rx.recv() => {
@@ -134,6 +175,8 @@ impl Actor {
                 _ = flush_tick.tick() => self.flush(false),
             }
         }
+        self.hub.team.cancel_from(&self.cfg.id);
+        self.complete_ask(Err(anyhow!("recipient shut down")));
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
         }
@@ -148,9 +191,27 @@ impl Actor {
     async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
         match cmd {
             Cmd::Send { entry_id, text } => {
-                self.queue.push_back((entry_id, text));
+                self.queue.push_back(Queued::User { entry_id, text });
                 if self.turn.is_none() {
                     self.next_in_queue(done_tx).await;
+                }
+            }
+            Cmd::Ask(ask) => {
+                self.queue.push_back(Queued::Ask(ask));
+                if self.turn.is_none() {
+                    self.next_in_queue(done_tx).await;
+                }
+            }
+            Cmd::CancelAsk { id } => {
+                self.queue.retain(|q| !matches!(q, Queued::Ask(a) if a.id == id));
+                if self.active_ask.as_ref().is_some_and(|a| a.id == id) {
+                    self.hub.team.cancel_from(&self.cfg.id);
+                    self.stop_requested = true;
+                    // The request has expired. Kill only its process so a harness
+                    // ignoring cooperative cancellation cannot block the queue.
+                    if let Some(c) = self.conn.take() {
+                        c.acp.kill().await;
+                    }
                 }
             }
             Cmd::Stop => self.stop().await,
@@ -160,6 +221,10 @@ impl Actor {
                     self.stop().await;
                 }
                 self.forget_session();
+                // Like Grok Bot's clearConversation: the half-written episode goes too; memory stays.
+                if let Err(error) = memory::set_pending_episode(&self.hub.store, &self.cfg.id, &[]) {
+                    tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't clear the pending episode");
+                }
                 self.notice("New session — the agent starts with a fresh context.", NoticeStyle::Divider);
             }
             Cmd::Reconfigure(cfg) => {
@@ -167,16 +232,20 @@ impl Actor {
                 let restart =
                     cfg.backend != self.cfg.backend || cfg.command != self.cfg.command || cfg.cwd != self.cfg.cwd;
                 self.tools_changed |= cfg.connectors != self.cfg.connectors || cfg.computer != self.cfg.computer;
-                // New skills are announced with the next prompt.
-                if cfg.skills != self.cfg.skills && self.session_id.is_some() {
-                    self.session_fresh = true;
-                }
+                // Name, description and skill changes reach the agent as a profile update
+                // on the next message (see `context`).
                 self.cfg = cfg;
                 if restart {
                     if let Some(c) = self.conn.take() {
                         c.acp.kill().await;
                     }
-                    self.forget_session();
+                    if self.session_id.is_some() {
+                        self.forget_session();
+                        self.notice(
+                            "The agent, command or folder changed — the agent starts with a fresh context.",
+                            NoticeStyle::Divider,
+                        );
+                    }
                     // A running prompt now fails; finish_turn reports it.
                 }
             }
@@ -186,8 +255,10 @@ impl Actor {
     }
 
     async fn stop(&mut self) {
+        self.hub.team.cancel_from(&self.cfg.id);
         // Queued messages are dropped too: Stop means "stop everything".
-        for (entry_id, _) in self.queue.drain(..) {
+        for queued in self.queue.drain(..) {
+            let Queued::User { entry_id, .. } = queued else { continue };
             if let Some(mut e) = self.hub.store.entry(&entry_id) {
                 e.data["status"] = "cancelled".into();
                 self.hub.set_entry(&entry_id, &e.data);
@@ -207,46 +278,140 @@ impl Actor {
     }
 
     async fn next_in_queue(&mut self, done_tx: &mpsc::UnboundedSender<Done>) {
-        while self.turn.is_none() {
-            let Some((entry_id, text)) = self.queue.pop_front() else { return };
-            if let Err(e) = self.start_turn(&entry_id, &text, done_tx).await {
-                let mut msg = format!("Couldn't start the agent: {e}");
-                if e.to_string().to_lowercase().contains("auth")
-                    && let Some(h) = crate::backends::harness(&self.cfg.backend)
-                {
-                    msg = format!("{0} needs you to sign in. Open {0} in Marketplace to sign in.", h.name);
+        while self.turn.is_none() && !self.queue.is_empty() {
+            if matches!(self.queue.front(), Some(Queued::Ask(_))) {
+                let Some(Queued::Ask(ask)) = self.queue.pop_front() else { unreachable!("front is an ask") };
+                if ask.reply.is_closed() {
+                    continue;
                 }
-                self.notice(&msg, NoticeStyle::Error);
-                self.turn = None;
-                self.hub.set_runtime(&self.id(), |r| {
-                    r.status = BotStatus::Error;
-                    r.activity = "Couldn't start".into();
-                    r.started_at = None;
-                });
+                let ids = [ask.entry_id.clone()];
+                let prompt = ask.prompt.clone();
+                self.active_ask = Some(ask);
+                let result = self.start_turn(&ids, &prompt, false, done_tx).await;
+                // Another bot's words are not facts learned from the user.
+                self.turn_text = None;
+                if let Err(e) = result {
+                    self.start_failed(&e);
+                }
+                continue;
+            }
+            // Messages sent while the agent worked go out together as its next turn
+            // without crossing a bot request: each ask gets its own reply.
+            let mut batch = Vec::new();
+            while matches!(self.queue.front(), Some(Queued::User { .. })) {
+                if let Some(Queued::User { entry_id, text }) = self.queue.pop_front() {
+                    batch.push((entry_id, text));
+                }
+            }
+            let ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
+            let text = batch.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n\n");
+            if let Err(e) = self.start_turn(&ids, &text, false, done_tx).await {
+                self.start_failed(&e);
             }
         }
     }
 
-    async fn start_turn(&mut self, entry_id: &str, text: &str, done_tx: &mpsc::UnboundedSender<Done>) -> Result<()> {
-        let turn = self.hub.store.entry(entry_id).map_or(0, |e| e.turn);
-        if let Some(mut e) = self.hub.store.entry(entry_id) {
-            e.data["status"] = "sent".into();
-            self.hub.set_entry(entry_id, &e.data);
+    fn start_failed(&mut self, e: &anyhow::Error) {
+        self.complete_ask(Err(anyhow!("couldn't start recipient: {e:#}")));
+        let mut msg = format!("Couldn't start the agent: {e}");
+        if e.to_string().to_lowercase().contains("auth")
+            && let Some(h) = crate::backends::harness(&self.cfg.backend)
+        {
+            msg = format!("{0} needs you to sign in. Open {0} in Marketplace to sign in.", h.name);
+        }
+        self.notice(&msg, NoticeStyle::Error);
+        self.turn = None;
+        self.set_inflight(false);
+        self.hub.set_runtime(&self.id(), |r| {
+            r.status = BotStatus::Error;
+            r.activity = "Couldn't start".into();
+            r.started_at = None;
+        });
+        self.hub.team.cancel_from(&self.cfg.id);
+    }
+
+    fn complete_ask(&mut self, result: Result<String>) {
+        if let Some(ask) = self.active_ask.take() {
+            let _ = ask.reply.send(result);
+        }
+    }
+
+    /// Grok Bot's upgrade resume: the previous host process stopped mid-turn, so
+    /// the agent is told, in the same session, to finish without redoing steps.
+    async fn resume_interrupted(&mut self, done_tx: &mpsc::UnboundedSender<Done>) {
+        self.set_inflight(false);
+        if self.session_id.is_none() {
+            return;
+        }
+        if let Err(e) = self.start_turn(&[], RESUME_PROMPT, true, done_tx).await {
+            self.start_failed(&e);
+        }
+    }
+
+    /// Marks a turn as running across host restarts (see [`Self::resume_interrupted`]).
+    fn set_inflight(&self, on: bool) {
+        let value = if on { now_ms().to_string() } else { String::new() };
+        if let Err(error) = self.hub.store.kv_set(&inflight_key(&self.cfg.id), &value) {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
+        }
+    }
+
+    /// This session's frozen instructions (reads memory files when re-rendering).
+    async fn snapshot(&self, session: &str) -> Result<Snapshot> {
+        let (hub, cfg, session) = (self.hub.clone(), self.cfg.clone(), session.to_owned());
+        tokio::task::spawn_blocking(move || context::resolve(&hub.store, &cfg, &session)).await?
+    }
+
+    /// Starts a turn for the given user entries (none for a hidden turn).
+    async fn start_turn(
+        &mut self,
+        entry_ids: &[String],
+        text: &str,
+        hidden: bool,
+        done_tx: &mpsc::UnboundedSender<Done>,
+    ) -> Result<()> {
+        let turn = entry_ids
+            .last()
+            .and_then(|id| self.hub.store.entry(id))
+            .map_or_else(|| self.hub.store.max_turn(&self.cfg.id), |e| e.turn);
+        for id in entry_ids {
+            if let Some(mut e) = self.hub.store.entry(id) {
+                e.data["status"] = "sent".into();
+                self.hub.set_entry(id, &e.data);
+            }
         }
         self.turn = Some(turn);
+        self.turn_text = (!hidden).then(|| text.to_owned());
+        self.announce = None;
         self.stop_requested = false;
+        self.hub.team.start_turn(&self.cfg.id);
         self.exit_tail = None;
         self.seg = Seg::None;
         self.tools.clear();
         self.plan_entry = None;
         self.last_text = None;
+        // A delegated turn has no live waiter after a host restart. Its persisted
+        // notices are marked interrupted instead of silently repeating work.
+        self.set_inflight(self.active_ask.is_none());
         self.hub.set_runtime(&self.id(), |r| {
             r.status = BotStatus::Working;
-            r.activity = "Starting…".into();
+            r.activity = if hidden { "Picking up where it left off…" } else { "Starting…" }.into();
             r.started_at = Some(now_ms());
         });
 
         self.ensure_session().await?;
+        if hidden && self.session_fresh {
+            // The interrupted session couldn't be resumed, so there is nothing to continue.
+            self.turn = None;
+            self.set_inflight(false);
+            self.hub.team.cancel_from(&self.cfg.id);
+            self.hub.set_runtime(&self.id(), |r| {
+                r.status = BotStatus::Idle;
+                r.activity = String::new();
+                r.started_at = None;
+            });
+            return Ok(());
+        }
         // Session-start chatter (banners, command lists) isn't part of the reply.
         // Some adapters (pi-acp) send it on a timer right after session/new.
         if self.session_fresh {
@@ -259,31 +424,25 @@ impl Actor {
                 }
             }
         }
-        let conn = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?;
+        let claude = self.conn.as_ref().is_some_and(|c| c.claude);
+        let sid = self.session_id.clone().ok_or_else(|| anyhow!("no session"))?;
+        let snapshot = self.snapshot(&sid).await?;
         let mut prompt = text.to_owned();
         if self.session_fresh {
             self.session_fresh = false;
-            let mut profile = format!(
-                "You are \"{}\", a persistent agent the user delegates work to from their phone.",
-                self.cfg.name
-            );
-            if !self.cfg.description.trim().is_empty() {
-                profile.push_str(" Standing instructions:\n");
-                profile.push_str(self.cfg.description.trim());
+            // Claude already has the instructions as its system prompt.
+            if !claude {
+                prompt = format!("<bot-profile>\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
             }
-            if let Some(skills) = crate::market::skills_brief(&self.hub.store, &self.cfg.skills) {
-                profile.push('\n');
-                profile.push_str(&skills);
-            }
-            profile.push_str(
-                "\nKeep your final reply short and phone-friendly: say what you did and what needs the user.",
-            );
-            prompt = format!("<bot-profile>\n{profile}\n</bot-profile>\n\n{text}");
+        }
+        if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
+            prompt = format!("{prompt}\n\n{update}");
+            self.announce = Some((snapshot, identity));
         }
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
-        let acp = conn.acp.clone();
+        let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
         let params = json!({
-            "sessionId": self.session_id,
+            "sessionId": sid,
             "prompt": [{"type": "text", "text": prompt}],
         });
         let done_tx = done_tx.clone();
@@ -293,21 +452,22 @@ impl Actor {
         Ok(())
     }
 
-    /// ACP `mcpServers` for this bot's connectors, plus the built-in `computer` server.
+    /// ACP connectors, team collaboration, and optional computer control.
     fn mcp_servers(&self, http_ok: bool) -> Value {
         let all = crate::market::connectors(&self.hub.store);
         let mut servers: Vec<Value> =
             all.iter().filter(|c| self.cfg.connectors.contains(&c.id)).filter_map(|c| c.acp(http_ok)).collect();
-        if self.cfg.computer {
-            match std::env::current_exe() {
-                Ok(exe) => servers.push(json!({
-                    "name": "computer",
-                    "command": exe,
-                    "args": ["mcp", "computer", "--bot", self.cfg.id, "--port", self.hub.port.to_string()],
-                    "env": [],
-                })),
-                Err(error) => tracing::warn!(%error, "can't locate codync-host for the computer MCP server"),
+        match std::env::current_exe() {
+            Ok(exe) => {
+                for name in [Some("team"), self.cfg.computer.then_some("computer")].into_iter().flatten() {
+                    servers.push(json!({
+                        "name": name, "command": exe,
+                        "args": ["mcp", name, "--bot", self.cfg.id, "--port", self.hub.port.to_string()],
+                        "env": [],
+                    }));
+                }
             }
+            Err(error) => tracing::warn!(%error, "can't locate codync-host for built-in MCP servers"),
         }
         Value::Array(servers)
     }
@@ -320,21 +480,12 @@ impl Actor {
             }
         }
         if self.conn.is_none() {
-            let candidates = match self.cfg.command.as_deref().map(str::trim) {
-                Some(c) if !c.is_empty() => vec![c.to_owned()],
-                _ => {
-                    let hub = self.hub.clone();
-                    let id = self.cfg.id.clone();
-                    crate::backends::launch_candidates(&self.cfg.backend, move |msg: &str| {
-                        let msg = msg.to_owned();
-                        hub.set_runtime(&id, |r| r.activity = msg);
-                    })
-                    .await?
-                    .iter()
-                    .map(crate::registry::Cmd::acp)
-                    .collect()
-                }
-            };
+            let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
+            let candidates = launch_commands(&self.cfg, move |msg: &str| {
+                let msg = msg.to_owned();
+                hub.set_runtime(&id, |r| r.activity = msg);
+            })
+            .await?;
             self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
             // Keys saved from an "environment variable" sign-in.
             let env = crate::auth::env(&self.hub.store, &self.cfg.backend);
@@ -359,9 +510,20 @@ impl Actor {
             }
         }
         let servers = self.mcp_servers(self.conn.as_ref().is_some_and(|c| c.mcp_http));
+        let claude = self.conn.as_ref().is_some_and(|c| c.claude);
+        // Claude gets the frozen instructions as its system prompt. When a compaction
+        // re-rendered them, loading the session again swaps the prompt in (the adapter
+        // rebuilds its query and resumes the same conversation).
+        let snapshot = match (&self.session_id, claude) {
+            (Some(sid), true) => Some(self.snapshot(sid).await?),
+            _ => None,
+        };
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         if let Some(sid) = self.session_id.clone() {
-            if conn.loaded.contains(&sid) {
+            let prompt_current = snapshot
+                .as_ref()
+                .is_none_or(|s| self.applied_system.as_ref().is_some_and(|(a, t)| *a == sid && *t == s.system));
+            if conn.loaded.contains(&sid) && prompt_current {
                 return Ok(());
             }
             if !conn.can_load {
@@ -373,10 +535,11 @@ impl Actor {
                 return Box::pin(self.ensure_session()).await;
             }
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
-            let res = conn
-                .acp
-                .request("session/load", json!({"sessionId": sid, "cwd": self.cfg.cwd, "mcpServers": servers}))
-                .await;
+            let mut params = json!({"sessionId": sid, "cwd": self.cfg.cwd, "mcpServers": servers});
+            if let Some(s) = &snapshot {
+                params["_meta"] = system_meta(&s.system);
+            }
+            let res = conn.acp.request("session/load", params).await;
             // The agent replays history as session/update before answering; drop it.
             while let Ok(inc) = conn.rx.try_recv() {
                 if let Incoming::Request { id, .. } = inc {
@@ -385,7 +548,10 @@ impl Actor {
             }
             match res {
                 Ok(_) => {
-                    conn.loaded.insert(sid);
+                    conn.loaded.insert(sid.clone());
+                    if let Some(s) = snapshot {
+                        self.applied_system = Some((sid, s.system));
+                    }
                     return Ok(());
                 }
                 Err(e) => {
@@ -394,8 +560,16 @@ impl Actor {
                 }
             }
         }
+        let system = {
+            let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
+            tokio::task::spawn_blocking(move || context::render(&hub.store, &cfg)).await?
+        };
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
-        let res = conn.acp.request("session/new", json!({"cwd": self.cfg.cwd, "mcpServers": servers})).await?;
+        let mut params = json!({"cwd": self.cfg.cwd, "mcpServers": servers});
+        if claude {
+            params["_meta"] = system_meta(&system);
+        }
+        let res = conn.acp.request("session/new", params).await?;
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone());
         if let Some(model) = self.cfg.model.clone().filter(|m| !m.is_empty()) {
@@ -417,6 +591,10 @@ impl Actor {
         self.session_id = Some(sid.clone());
         self.session_fresh = true;
         self.hub.store.set_session(&self.cfg.id, Some(&sid))?;
+        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone())?;
+        if claude {
+            self.applied_system = Some((sid, system));
+        }
         Ok(())
     }
 
@@ -469,13 +647,38 @@ impl Actor {
             _ => {}
         }
         let failed = done.is_err() && !self.stop_requested;
+        let delegated = self.active_ask.is_some();
+        let reply = if stopped {
+            Err(anyhow!("recipient was stopped; partial work may have happened"))
+        } else if stop_reason != "end_turn" {
+            Err(anyhow!("recipient did not finish ({stop_reason}); partial work may have happened"))
+        } else {
+            final_text
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| anyhow!("recipient finished without a text reply"))
+        };
+        self.complete_ask(reply);
         self.turn = None;
+        self.set_inflight(false);
+        // The message reached the agent: the profile update it carried is now known to it.
+        if let (Ok(_), Some((snapshot, identity))) = (&done, self.announce.take())
+            && let Err(error) = context::mark_announced(&self.hub.store, &self.cfg.id, &snapshot, identity)
+        {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the profile update");
+        }
+        if let (Some(user), Some(agent), "end_turn") = (self.turn_text.take(), &final_text, stop_reason.as_str())
+            && memory::is_memorable(&user)
+        {
+            let _ = self.keeper.send(memory::Exchange { user, agent: agent.clone(), at: now_ms() });
+        }
         self.hub.set_runtime(&self.id(), |r| {
             r.status = if failed { BotStatus::Error } else { BotStatus::Idle };
             r.activity = String::new();
             r.started_at = None;
         });
-        if !self.stop_requested {
+        self.hub.team.cancel_from(&self.cfg.id);
+        if !self.stop_requested && !delegated {
             let body =
                 final_text.unwrap_or_else(|| if failed { "The agent failed.".into() } else { "Finished.".into() });
             push::notify(&self.hub, &self.cfg, &self.cfg.name, &body, AlertKind::Done);
@@ -566,6 +769,19 @@ impl Actor {
                 self.hub.set_entry(&entry_id, &e.data);
                 if status == "in_progress" {
                     self.set_activity(&title);
+                }
+            }
+            // The agent summarized its context: the next turn gets freshly rendered
+            // instructions and memory (see `context`).
+            "compaction_update" if u["status"] == "completed" => {
+                let Some(sid) = &self.session_id else { return };
+                let id = u["compactionId"].as_str().unwrap_or_default();
+                match context::bump_epoch(&self.hub.store, &self.cfg.id, sid, id) {
+                    Ok(true) => self.notice("Earlier context was summarized to make room.", NoticeStyle::Info),
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the compaction");
+                    }
                 }
             }
             "usage_update" => {
@@ -741,8 +957,36 @@ impl Actor {
     }
 }
 
+/// Told to a bot whose turn the previous host process cut off (Grok Bot's upgrade resume).
+const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted you mid-task. You've been resumed with your full conversation intact. Continue exactly where you left off and finish what you were doing. If your previous step already completed an action, do NOT repeat it — just carry on from there.]";
+
+/// An interrupted turn older than this isn't resumed.
+const STALE_RESUME_MS: i64 = 60 * 60 * 1000;
+
+fn inflight_key(bot_id: &str) -> String {
+    format!("turn.inflight.{bot_id}")
+}
+
+/// Claude's `_meta`: the bot's instructions appended to Claude Code's own system prompt.
+fn system_meta(system: &str) -> Value {
+    json!({"systemPrompt": {"append": system}})
+}
+
+/// Shell commands that may start the bot's agent over ACP, best first.
+/// `progress` receives short status lines ("Downloading Cursor…").
+pub(crate) async fn launch_commands(cfg: &BotConfig, progress: impl Fn(&str)) -> Result<Vec<String>> {
+    Ok(match cfg.command.as_deref().map(str::trim) {
+        Some(c) if !c.is_empty() => vec![c.to_owned()],
+        _ => crate::backends::launch_candidates(&cfg.backend, progress)
+            .await?
+            .iter()
+            .map(crate::registry::Cmd::acp)
+            .collect(),
+    })
+}
+
 /// Spawns an ACP agent and completes the `initialize` handshake.
-async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget: Duration) -> Result<Conn> {
+pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget: Duration) -> Result<Conn> {
     let (acp, rx) = Acp::spawn(command, cwd, env)?;
     let init = tokio::time::timeout(
         budget,
@@ -750,7 +994,12 @@ async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget:
             "initialize",
             json!({
                 "protocolVersion": 1,
-                "clientCapabilities": {"fs": {"readTextFile": false, "writeTextFile": false}, "terminal": false},
+                // `session.compaction`: tell us when the agent summarizes its context.
+                "clientCapabilities": {
+                    "fs": {"readTextFile": false, "writeTextFile": false},
+                    "terminal": false,
+                    "session": {"compaction": {}},
+                },
                 "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
             }),
         ),
@@ -769,7 +1018,8 @@ async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget:
     };
     let can_load = init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false);
     let mcp_http = init["agentCapabilities"]["mcpCapabilities"]["http"].as_bool().unwrap_or(false);
-    Ok(Conn { acp, rx, can_load, mcp_http, loaded: HashSet::new() })
+    let claude = init["agentCapabilities"]["_meta"]["claudeCode"].is_object();
+    Ok(Conn { acp, rx, can_load, mcp_http, claude, loaded: HashSet::new() })
 }
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {

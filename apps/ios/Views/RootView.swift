@@ -6,6 +6,7 @@ import WidgetKit
 struct RootView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountStore.self) private var accounts
+    @AppStorage("onboardingCompleted") private var onboardingCompleted = false
 
     /// The open bot, as a NavigationStack path.
     private var path: Binding<[BotReference]> {
@@ -16,9 +17,11 @@ struct RootView: View {
         Group {
             if accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
                 NavigationStack {
-                    PairingView()
+                    PairingView(introductory: !onboardingCompleted)
                         .toolbar {
-                            ToolbarItem(placement: .topBarLeading) { AccountSwitcherButton() }
+                            if onboardingCompleted {
+                                ToolbarItem(placement: .topBarLeading) { AccountSwitcherButton() }
+                            }
                         }
                 }
             } else {
@@ -41,6 +44,11 @@ struct RootView: View {
             }
         }
         .background(Palette.background)
+        .onChange(of: accounts.computers.isEmpty, initial: true) { _, empty in
+            // Existing installations have already completed setup. Keep this
+            // device-level milestone across account changes and unpairing.
+            if !empty { onboardingCompleted = true }
+        }
         .alert("Something went wrong", isPresented: errorShown) {
             Button("OK", role: .cancel) {}
         } message: {

@@ -106,3 +106,17 @@ resolve the target, `ssh-keygen -F` against `~/.ssh/known_hosts` and
 `ssh -N -L 127.0.0.1:<free port>:127.0.0.1:<remote port>` with keepalive and backoff.
 A changed host key or a different computer ID blocks the connection. Debug builds run
 `SSH.selfCheck()` at launch (argv, `ssh -G` parsing, validation).
+
+## Local verification on 2026-09-25
+
+- iOS Simulator build succeeded with normal simulator signing. Do not use
+  `CODE_SIGNING_ALLOWED=NO` for a Clerk runtime smoke test: an unsigned simulator
+  installation failed Keychain initialization with OSStatus -34018.
+- The app launches, the top-left Accounts sheet opens, and its Computers & settings
+  destination navigates successfully in iPhone 17 Pro / iOS 26.5 Simulator.
+- `swift test --package-path kit` passed. Account storage separation and rejecting
+  another account's or computer's widget link are now covered by
+  `PairingStorageTests` (per-context computers, usage and deep links).
+- Real Google login, two-account switching, and Clerk Dashboard configuration still
+  need end-to-end verification with test accounts. No cloud ownership implementation
+  or Cloudflare deployment was performed in this change.

@@ -211,6 +211,43 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
     public var canInstall: Bool?
 }
 
+/// How an agent can be signed in, from asking the agent itself.
+public struct AgentAuth: Decodable, Sendable {
+    public var signedIn: Bool?
+    /// The agent's own words when it wants signing in (can hold a pairing code).
+    public var detail: String?
+    public var methods: [AuthMethod]
+    /// Keys saved on the computer for this agent (names only).
+    public var savedEnv: [String]?
+    /// Codync's own sign-in command is available.
+    public var login: Bool?
+}
+
+public struct AuthMethod: Decodable, Sendable, Identifiable, Hashable {
+    public enum Kind: String, Decodable, Sendable {
+        /// Runs in a setup terminal.
+        case terminal
+        /// The agent signs itself in (usually a browser on the computer).
+        case agent
+        /// Keys typed here, kept on the computer.
+        case envVar
+    }
+
+    public struct Var: Decodable, Sendable, Hashable {
+        public var name: String
+        public var label: String
+        public var secret: Bool
+        public var optional: Bool
+    }
+
+    public var id: String
+    public var name: String
+    public var description: String?
+    public var kind: Kind?
+    public var vars: [Var]?
+    public var link: String?
+}
+
 /// What a setup terminal on the computer runs.
 public enum SetupStep: String, Codable, Sendable {
     case install, login

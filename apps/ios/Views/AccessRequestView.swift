@@ -47,6 +47,15 @@ struct AccessRequestView: View {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text("Waiting for approval…").foregroundStyle(Palette.secondary)
+                    Button("Cancel request", systemImage: "xmark.circle.fill") {
+                        Task {
+                            await accounts.cancelAccess(computer.computerId)
+                            dismiss()
+                        }
+                    }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(Palette.tertiary)
+                    .help("Cancel request")
                 }
                 .font(.subheadline)
             } else if let error {

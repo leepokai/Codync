@@ -61,6 +61,11 @@ struct SettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    WidgetGalleryView()
+                } label: {
+                    Label("Widgets", systemImage: "square.grid.2x2")
+                }
                 notificationsRow
             }
 
@@ -99,7 +104,7 @@ struct SettingsView: View {
         .refreshable { await accounts.refreshCloud() }
         .task { await accounts.refreshCloud() }
         .sheet(isPresented: $addingComputer) {
-            PairingView { addingComputer = false }
+            PairingView(introductory: false) { addingComputer = false }
         }
         .sheet(item: $access) { target in
             NavigationStack { AccessRequestView(computer: target.computer, pending: accounts.pendingAccess[target.id] != nil) }

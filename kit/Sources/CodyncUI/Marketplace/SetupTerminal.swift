@@ -12,6 +12,8 @@ import AppKit
 struct SetupTerminalView: View {
     let backend: Backend
     let step: SetupStep
+    /// A terminal sign-in method the agent offered; nil runs Codync's own command.
+    var method: AuthMethod?
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -25,7 +27,7 @@ struct SetupTerminalView: View {
             footer
         }
         .background(Palette.background)
-        .navigationTitle(step == .install ? "Install \(backend.name)" : "Sign in to \(backend.name)")
+        .navigationTitle(step == .install ? "Install \(backend.name)" : method?.name ?? "Sign in to \(backend.name)")
         .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -34,7 +36,7 @@ struct SetupTerminalView: View {
         }
         .task {
             guard let client = model.client else { return }
-            await session.run(client, backend: backend.id, step: step)
+            await session.run(client, backend: backend.id, step: step, method: method?.id)
             await model.refreshBackends()
         }
         .onDisappear { session.close() }
@@ -84,11 +86,11 @@ final class TermSession {
         (keyStream, keys) = AsyncStream.makeStream()
     }
 
-    func run(_ client: HostClient, backend: String, step: SetupStep) async {
+    func run(_ client: HostClient, backend: String, step: SetupStep, method: String?) async {
         self.client = client
         let term: String
         do {
-            term = try await client.agentSetup(backend: backend, step: step, cols: size.cols, rows: size.rows)
+            term = try await client.agentSetup(backend: backend, step: step, method: method, cols: size.cols, rows: size.rows)
         } catch {
             self.error = error.localizedDescription
             return

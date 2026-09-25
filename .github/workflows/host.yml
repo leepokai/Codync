@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, v2]
     paths: ["host/**", "linux/**", ".github/workflows/host.yml"]
-    tags: ["host-v*"]
+    tags: ["v*"]  # one version tag ships the Mac app, the host and the Linux app
   pull_request:
     paths: ["host/**", "linux/**"]
 
@@ -53,9 +53,9 @@ jobs:
       - run: cargo clippy -- -D warnings
       - run: cargo test
       - name: Package
-        if: startsWith(github.ref, 'refs/tags/host-v')
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          VERSION=${GITHUB_REF_NAME#host-v}
+          VERSION=${GITHUB_REF_NAME#v}
           NAME=codync-linux-$VERSION-${{ matrix.target }}
           cargo build --release
           mkdir -p $NAME/share/applications $NAME/share/icons/hicolor/scalable/apps $NAME/bin
@@ -64,12 +64,12 @@ jobs:
           cp data/com.pokai.Codync.svg $NAME/share/icons/hicolor/scalable/apps/
           tar czf ../$NAME.tar.gz $NAME
       - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/host-v')
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: codync-linux-*.tar.gz
 
   release:
-    if: startsWith(github.ref, 'refs/tags/host-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: test
     strategy:
       matrix:
@@ -91,7 +91,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
       - name: Package
         run: |
-          VERSION=${GITHUB_REF_NAME#host-v}
+          VERSION=${GITHUB_REF_NAME#v}
           NAME=codync-host-$VERSION-${{ matrix.target }}
           mkdir $NAME
           cp host/target/${{ matrix.target }}/release/codync-host $NAME/
@@ -103,3 +103,31 @@ jobs:
           files: |
             codync-host-*.tar.gz
             codync-host-*.tar.gz.sha256
+
+  homebrew:
+    # Keeps `brew install leepokai/codync/codync-host` (Linux, headless Macs) in step with releases.
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update the tap's formula
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          gh release download "$GITHUB_REF_NAME" --pattern 'codync-host-*.sha256' --dir sums
+          sha() { cut -d' ' -f1 "sums/codync-host-$VERSION-$1.tar.gz.sha256"; }
+          sed -e "s/^  version .*/  version \"$VERSION\"/" \
+              -e "0,/REPLACE_WITH_SHA256/s//$(sha aarch64-apple-darwin)/" \
+              -e "0,/REPLACE_WITH_SHA256/s//$(sha x86_64-apple-darwin)/" \
+              -e "0,/REPLACE_WITH_SHA256/s//$(sha aarch64-unknown-linux-gnu)/" \
+              -e "0,/REPLACE_WITH_SHA256/s//$(sha x86_64-unknown-linux-gnu)/" \
+              packaging/homebrew/codync-host.rb > codync-host.rb
+          git clone https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/leepokai/homebrew-codync.git tap
+          mkdir -p tap/Formula && cp codync-host.rb tap/Formula/
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "codync-host $VERSION" || exit 0
+          git push

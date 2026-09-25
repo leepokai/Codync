@@ -220,11 +220,24 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
         std::fs::write(&archive, &bytes)?;
         extract(&archive, &dir2, &cmd)?;
         std::fs::write(dir2.join(".installed"), "")?;
+        remove_other_versions(&dir2);
         Ok(())
     })
     .await?
     .with_context(|| format!("installing {id}"))?;
     Ok(dir)
+}
+
+/// Registry builds update often; keep only the version just installed.
+fn remove_other_versions(installed: &Path) {
+    let Some(parent) = installed.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(parent) else { return };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p != installed && p.is_dir() {
+            let _ = std::fs::remove_dir_all(p);
+        }
+    }
 }
 
 /// Blocking: unpacks `archive` into `dir` and makes `cmd` executable.
@@ -281,6 +294,17 @@ mod tests {
         if crate::backends::on_path("npx") {
             assert_eq!(command(&a, |_| {}).await.unwrap(), "K=v npx -y @s/x@1.0.0 --acp 'a b'");
         }
+    }
+
+    #[test]
+    fn keeps_only_the_installed_version() {
+        let root = std::env::temp_dir().join(format!("codync-ver-{}", uuid::Uuid::new_v4()));
+        for v in ["1.0.0", "1.1.0"] {
+            std::fs::create_dir_all(root.join(v)).unwrap();
+        }
+        remove_other_versions(&root.join("1.1.0"));
+        assert!(!root.join("1.0.0").exists());
+        assert!(root.join("1.1.0").exists());
     }
 
     #[test]

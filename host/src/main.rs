@@ -217,7 +217,19 @@ async fn main() -> Result<()> {
     }
 }
 
+/// launchd appends to `host.log` forever. The service already holds it open as
+/// stdout (append mode), so truncate in place rather than rotating.
+fn cap_log() {
+    let log = service::data_dir().join("host.log");
+    if std::fs::metadata(&log).is_ok_and(|m| m.len() > 10 * 1024 * 1024)
+        && let Ok(f) = std::fs::OpenOptions::new().write(true).open(&log)
+    {
+        let _ = f.set_len(0);
+    }
+}
+
 async fn serve(bind: &str, port: u16) -> Result<()> {
+    cap_log();
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "codync_host=info".into()),

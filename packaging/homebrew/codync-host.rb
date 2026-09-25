@@ -1,13 +1,13 @@
-# Homebrew formula for the leepokai/homebrew-codync tap.
-# After tagging `host-vX.Y.Z`, update `version` and the four sha256 values from the
-# release's *.sha256 files, then copy this file to Formula/codync-host.rb in the tap.
+# Homebrew formula template for the leepokai/homebrew-codync tap.
+# The `homebrew` job in .github/workflows/host.yml fills in the version and the four
+# sha256 values (in this order: mac arm, mac intel, linux arm, linux intel) on every `v*` tag.
 class CodyncHost < Formula
   desc "Runs your coding-agent bots (Claude Code, Codex, OpenCode…) for the Codync app"
   homepage "https://github.com/leepokai/Codync"
   version "2.0.0"
   license "MIT"
 
-  base = "https://github.com/leepokai/Codync/releases/download/host-v#{version}/codync-host-#{version}"
+  base = "https://github.com/leepokai/Codync/releases/download/v#{version}/codync-host-#{version}"
 
   on_macos do
     on_arm do

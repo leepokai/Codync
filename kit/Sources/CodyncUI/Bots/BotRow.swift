@@ -142,9 +142,7 @@ public struct ConnectionBanner: View {
             }
             Spacer()
             if retry {
-                Button("Retry", systemImage: "arrow.clockwise") { model.restartStream() }
-                    .labelStyle(.iconOnly)
-                    .help("Retry")
+                IconButton("Retry", systemImage: "arrow.clockwise") { model.restartStream() }
             }
         }
         .padding(10)

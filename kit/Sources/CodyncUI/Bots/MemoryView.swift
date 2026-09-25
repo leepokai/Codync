@@ -98,7 +98,7 @@ struct MemoryCard: View {
     }
 
     private func forget(_ fact: MemoryFact) {
-        facts.removeAll { $0.id == fact.id }
+        withAnimation(Motion.layout) { facts.removeAll { $0.id == fact.id } }
         Task {
             try? await model.client?.forgetMemory(botId: botId, id: fact.id)
             await load()
@@ -106,7 +106,7 @@ struct MemoryCard: View {
     }
 
     private func clear() {
-        facts = []
+        withAnimation(Motion.layout) { facts = [] }
         Task {
             try? await model.client?.clearMemory(botId: botId)
             await load()

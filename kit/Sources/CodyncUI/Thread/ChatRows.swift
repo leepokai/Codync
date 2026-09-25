@@ -50,6 +50,7 @@ struct UserBubble: View {
                     .help("Don't send")
                     .accessibilityLabel("Don't send")
             }
+            .buttonStyle(.plain)
             .font(.caption2)
         case "delivering":
             Text("Delivered to the computer").font(.caption2).foregroundStyle(Palette.tertiary)

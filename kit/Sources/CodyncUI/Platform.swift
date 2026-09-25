@@ -19,14 +19,6 @@ enum Pasteboard {
 }
 
 extension View {
-    func inlineNavigationTitle() -> some View {
-        #if os(iOS)
-        navigationBarTitleDisplayMode(.inline)
-        #else
-        self
-        #endif
-    }
-
     func plainTextInput() -> some View {
         #if os(iOS)
         textInputAutocapitalization(.never).autocorrectionDisabled()

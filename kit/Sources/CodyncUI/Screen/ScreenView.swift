@@ -8,8 +8,11 @@ import UIKit
 public struct ScreenView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The bot being watched, when opened from its chat.
     private let watching: String?
+    /// Animated close from the presenting layer (`.codyncOverlay`'s `close`); falls back to `dismiss`.
+    private let close: (() -> Void)?
 
     @State private var session: ScreenSession?
     @State private var display: ScreenDisplay?
@@ -21,8 +24,9 @@ public struct ScreenView: View {
     @State private var resetToken = 0
     @State private var tookOver = false
 
-    public init(watching: String? = nil) {
+    public init(watching: String? = nil, close: (() -> Void)? = nil) {
         self.watching = watching
+        self.close = close
     }
 
     private var screen: ScreenState? { model.screen }
@@ -43,7 +47,10 @@ public struct ScreenView: View {
         }
         .overlay(alignment: .top) { topBar }
         .safeAreaInset(edge: .bottom) {
-            if keyboard && interactive { ModifierBar(armed: $armed) { session?.send(["type": "key", "key": $0, "modifiers": armed]); armed = [] } }
+            if keyboard && interactive {
+                ModifierBar(armed: $armed) { session?.send(["type": "key", "key": $0, "modifiers": armed]); armed = [] }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
@@ -89,25 +96,26 @@ public struct ScreenView: View {
 
     private var topBar: some View {
         HStack(spacing: 8) {
-            OverlayButton("Close", "xmark") { dismiss() }
+            OverlayButton("Close", "xmark") { if let close { close() } else { dismiss() } }
             if let agent, !interactive {
                 Label("\(agent.name) is using the computer", systemImage: "cursorarrow.motionlines")
                     .font(.caption.weight(.medium))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.opacity)
             }
             Spacer()
             if session != nil {
                 if interactive {
-                    OverlayButton(keyboard ? "Hide keyboard" : "Keyboard", keyboard ? "keyboard.chevron.compact.down" : "keyboard") { keyboard.toggle() }
+                    OverlayButton(keyboard ? "Hide keyboard" : "Keyboard", keyboard ? "keyboard.chevron.compact.down" : "keyboard") { animate { keyboard.toggle() } }
                     OverlayButton(mode == .trackpad ? "Touch mode: trackpad" : "Touch mode: direct", mode == .trackpad ? "rectangle.and.hand.point.up.left" : "hand.point.up.left") {
-                        mode = mode == .trackpad ? .direct : .trackpad
+                        animate { mode = mode == .trackpad ? .direct : .trackpad }
                     }
                     clipboardMenu
                 }
                 if zoomed {
-                    OverlayButton("Fit screen", "arrow.down.right.and.arrow.up.left") { resetToken += 1 }
+                    OverlayButton("Fit screen", "arrow.down.right.and.arrow.up.left") { animate { resetToken += 1 } }
                 }
                 if let displays = screen?.displays, displays.count > 1 {
                     DropdownMenu {
@@ -121,12 +129,17 @@ public struct ScreenView: View {
                     } label: { IconLabel("Displays", "display.2") }
                 }
                 OverlayButton(interactive ? "Hand back to bots" : "Take over", interactive ? "hand.raised.slash" : "hand.raised") {
-                    setInteractive(!interactive)
+                    animate { setInteractive(!interactive) }
                 }
             }
         }
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: zoomed)
         .padding(.horizontal, 12)
         .padding(.top, 6)
+    }
+
+    private func animate(_ change: () -> Void) {
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion), change)
     }
 
     private var clipboardMenu: some View {
@@ -220,6 +233,7 @@ private struct OverlayButton: View {
 
     var body: some View {
         Button(action: action) { IconLabel(label, icon) }
+            .buttonStyle(PressScale())
     }
 }
 
@@ -256,22 +270,26 @@ private struct ModifierBar: View {
                 ForEach(Self.modifiers, id: \.0) { name, icon in
                     let on = armed.contains(name)
                     Button {
-                        if on { armed.removeAll { $0 == name } } else { armed.append(name) }
+                        withAnimation(Motion.hover) {
+                            if on { armed.removeAll { $0 == name } } else { armed.append(name) }
+                        }
                     } label: {
                         Image(systemName: icon).frame(width: 40, height: 34)
                             .background(on ? Color.white : Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                             .foregroundStyle(on ? Color.black : Color.white)
                     }
+                    .buttonStyle(PressScale())
                     .accessibilityLabel(name)
                     .accessibilityAddTraits(on ? .isSelected : [])
                 }
-                Divider().frame(height: 24).overlay(.white.opacity(0.3))
+                Rectangle().fill(.white.opacity(0.3)).frame(width: 0.5, height: 24)
                 ForEach(Self.keys, id: \.0) { name, icon in
                     Button { press(name) } label: {
                         Image(systemName: icon).frame(width: 40, height: 34)
                             .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                             .foregroundStyle(.white)
                     }
+                    .buttonStyle(PressScale())
                     .accessibilityLabel(name)
                 }
             }

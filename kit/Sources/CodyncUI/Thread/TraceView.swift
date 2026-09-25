@@ -8,23 +8,24 @@ public struct TraceView: View {
 
     public init(botId: String) { self.botId = botId }
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
 
     public var body: some View {
         let turns = Dictionary(grouping: model.thread(botId), by: \.turn)
             .sorted { $0.key < $1.key }
-        ScrollView {
+        VStack(spacing: 0) {
+            ModalHeader("Full conversation")
+            ScrollView {
             LazyVStack(alignment: .leading, spacing: InterfaceMetrics.value(mac: 14, mobile: 22)) {
                 if turns.isEmpty {
                     Text("Nothing yet.").foregroundStyle(Palette.tertiary)
                 }
                 ForEach(turns, id: \.key) { turn, entries in
-                    VStack(alignment: .leading, spacing: 6) {
-                        // CardSection's own title wraps; a turn header stays on one line.
+                    VStack(alignment: .leading, spacing: 8) {
+                        // A plain one-line turn header (CardSection's own title wraps).
                         Text(entries.first { $0.kind == "user" }?.data.text ?? "Turn \(turn)")
                             .lineLimit(1)
-                            .font(InterfaceMetrics.secondary)
-                            .foregroundStyle(Palette.secondary)
+                            .font(InterfaceMetrics.secondary.weight(.semibold))
+                            .foregroundStyle(Palette.text)
                             .padding(.leading, 4)
                         CardSection {
                             ForEach(entries) { TraceRow(entry: $0) }
@@ -34,16 +35,10 @@ public struct TraceView: View {
             }
             .padding(InterfaceMetrics.value(mac: 14, mobile: 20))
             .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .defaultScrollAnchor(.bottom)
         }
         .background(Palette.background)
-        .navigationTitle("Full conversation")
-        .inlineNavigationTitle()
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done", systemImage: "checkmark") { dismiss() }.labelStyle(.iconOnly).help("Done")
-            }
-        }
-        .defaultScrollAnchor(.bottom)
     }
 }
 
@@ -55,7 +50,7 @@ private struct TraceRow: View {
         let d = entry.data
         switch entry.kind {
         case "user":
-            Label { Text(d.text ?? "").foregroundStyle(Palette.text) } icon: { Image(systemName: "person.fill") }
+            Label { Text(d.text ?? "").foregroundStyle(Palette.text) } icon: { Image(systemName: "person.fill").foregroundStyle(Palette.secondary) }
                 .font(.subheadline)
         case "agent":
             VStack(alignment: .leading, spacing: 4) {

@@ -27,16 +27,13 @@ public struct NewChatView: View {
                     .textFieldStyle(.plain)
                     .focused($toFocused)
                     .onSubmit { if let first = matches.first { pick(first) } else { create() } }
-                Button("Close", systemImage: "xmark", action: close)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Palette.secondary)
+                IconButton("Close", systemImage: "xmark", action: close)
                     .keyboardShortcut(.cancelAction)
             }
             .font(.title3)
             .padding(.horizontal, 22)
             .padding(.vertical, 16)
-            Divider().overlay(Palette.border)
+            Rectangle().fill(Palette.border).frame(height: 0.5)
 
             ScrollView {
                 VStack(spacing: 2) {

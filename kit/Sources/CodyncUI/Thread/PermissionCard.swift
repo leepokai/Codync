@@ -92,7 +92,7 @@ struct PermissionCard: View {
         let options = ordered
         return VStack(spacing: 0) {
             ForEach(Array(options.enumerated()), id: \.element.id) { i, o in
-                if i > 0 { Divider().overlay(Palette.border) }
+                if i > 0 { Rectangle().fill(Palette.border).frame(height: 0.5) }
                 Button { respond(o.optionId) } label: {
                     Text(label(o))
                         .font(.body.weight(o.kind == "allow_once" ? .semibold : .regular))

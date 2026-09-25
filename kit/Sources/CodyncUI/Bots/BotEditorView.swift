@@ -8,10 +8,10 @@ public struct EditorRequest: Identifiable {
     public init(_ draft: BotDraft) { self.draft = draft }
 }
 
-/// Create or edit a bot in a sheet (iPhone): the settings form plus Cancel / Save.
+/// Create or edit a bot in a modal (iPhone): the settings form plus Close / Save.
 public struct BotEditorView: View {
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissModal) private var dismiss
     @State var draft: BotDraft
 
     public init(draft: BotDraft) { _draft = State(initialValue: draft) }
@@ -21,25 +21,19 @@ public struct BotEditorView: View {
     private var isNew: Bool { draft.id == nil }
 
     public var body: some View {
-        BotSettingsForm(draft: $draft, error: error)
-            .navigationTitle(isNew ? "New bot" : "Settings")
-            .inlineNavigationTitle()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly).help("Cancel")
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    if saving {
-                        Spinner()
-                    } else {
-                        Button(isNew ? "Create" : "Save", systemImage: "checkmark") { save() }
-                            .labelStyle(.iconOnly)
-                            .help(isNew ? "Create" : "Save")
-                            .disabled(!draft.isValid)
-                    }
+        VStack(spacing: 0) {
+            ModalHeader(isNew ? "New bot" : "Settings") {
+                if saving {
+                    Spinner()
+                } else {
+                    IconButton(isNew ? "Create" : "Save", systemImage: "checkmark") { save() }
+                        .disabled(!draft.isValid)
                 }
             }
-            .onAppear { if isNew { model.fillDefaults(&draft) } }
+            BotSettingsForm(draft: $draft, error: error)
+        }
+        .background(Palette.background)
+        .onAppear { if isNew { model.fillDefaults(&draft) } }
     }
 
     private func save() {
@@ -100,6 +94,7 @@ struct BotSettingsForm: View {
     @Environment(BotStore.self) private var model
     @State private var pickingFolder = false
     @State private var pickingAvatar = false
+    @State private var avatarFrame: CGRect = .zero
 
     var body: some View {
         ScrollView {
@@ -114,10 +109,13 @@ struct BotSettingsForm: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Edit Bot avatar")
                     .help("Edit Bot avatar")
-                    .popover(isPresented: $pickingAvatar) {
-                        AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
-                            .padding(14)
-                            .frame(width: 300)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { avatarFrame = $0 }
+                    .codyncOverlay(isPresented: $pickingAvatar) { close in
+                        AnchoredPanel(anchor: avatarFrame, close: close) {
+                            AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
+                                .padding(14)
+                                .frame(width: 300)
+                        }
                     }
                     #else
                     CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 96)
@@ -244,20 +242,13 @@ struct BotSettingsForm: View {
         .scrollDismissesKeyboard(.interactively)
         .background(Palette.background)
         .task { await model.refreshPlugins() }
-        .sheet(isPresented: $pickingFolder) {
-            NavigationStack {
-                FolderPicker(path: draft.cwd.isEmpty ? model.hello?.home : draft.cwd) {
-                    draft.cwd = $0
-                    pickingFolder = false
-                }
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel", systemImage: "xmark") { pickingFolder = false }.labelStyle(.iconOnly).help("Cancel")
-                    }
-                }
+        .codyncSheet(isPresented: $pickingFolder) {
+            FolderPicker(start: draft.cwd.isEmpty ? model.hello?.home : draft.cwd) {
+                draft.cwd = $0
+                pickingFolder = false
             }
             #if os(macOS)
-            .frame(minWidth: 460, minHeight: 520)
+            .frame(width: 460, height: 520)
             #endif
         }
     }
@@ -390,7 +381,7 @@ struct AvatarPicker: View {
                         CharacterAvatar(shape: s, color: color, size: 36)
                             .padding(4)
                             .background(Circle().strokeBorder(s == shape ? Palette.accent : .clear, lineWidth: 2))
-                            .onTapGesture { shape = s }
+                            .onTapGesture { withAnimation(Motion.hover) { shape = s } }
                             .accessibilityLabel("\(s) shape")
                             .accessibilityAddTraits(s == shape ? .isSelected : [])
                     }
@@ -405,7 +396,7 @@ struct AvatarPicker: View {
                             .frame(width: 26, height: 26)
                             .padding(4)
                             .background(Circle().strokeBorder(c.id == color ? Palette.accent : .clear, lineWidth: 2))
-                            .onTapGesture { color = c.id }
+                            .onTapGesture { withAnimation(Motion.hover) { color = c.id } }
                             .accessibilityLabel(c.label)
                             .accessibilityAddTraits(c.id == color ? .isSelected : [])
                     }
@@ -416,10 +407,60 @@ struct AvatarPicker: View {
     }
 }
 
-/// Browses folders on the host.
+/// Browses folders on the host, drilling down in place.
 struct FolderPicker: View {
+    let start: String?
+    let onPick: (String) -> Void
+    /// The folders opened so far; the last one is shown.
+    @State private var stack: [String?]
+    @State private var forward = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(start: String?, onPick: @escaping (String) -> Void) {
+        self.start = start
+        self.onPick = onPick
+        _stack = State(initialValue: [start])
+    }
+
+    var body: some View {
+        let current = stack.last ?? nil
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                if stack.count > 1 {
+                    BackButton { go(forward: false) { stack.removeLast() } }
+                        .padding(.leading, InterfaceMetrics.value(mac: 10, mobile: 12))
+                        .transition(.opacity)
+                }
+                ModalHeader(current.map { ($0 as NSString).lastPathComponent } ?? "Folders")
+            }
+            ZStack {
+                FolderLevel(path: current, onPick: onPick) { path in go(forward: true) { stack.append(path) } }
+                    .id(stack.count)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: forward ? .trailing : .leading),
+                        removal: .move(edge: forward ? .leading : .trailing)
+                    ).combined(with: .opacity))
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .clipped()
+        }
+        .background(Palette.background)
+    }
+
+    /// Sets the slide direction first, so the leaving level takes it too, then moves.
+    private func go(forward: Bool, _ change: @escaping () -> Void) {
+        self.forward = forward
+        Task { @MainActor in
+            withAnimation(Motion.reduced(Motion.layout, reduceMotion), change)
+        }
+    }
+}
+
+/// One folder's subfolders.
+private struct FolderLevel: View {
     let path: String?
     let onPick: (String) -> Void
+    let open: (String) -> Void
     @Environment(BotStore.self) private var model
     @State private var listing: DirListing?
     @State private var error: String?
@@ -440,14 +481,14 @@ struct FolderPicker: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressScale())
                     }
                     let dirs = listing.dirs.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
                     if !dirs.isEmpty {
                         CardSection {
                             ForEach(dirs) { dir in
-                                NavigationLink {
-                                    FolderPicker(path: dir.path, onPick: onPick)
+                                Button {
+                                    open(dir.path)
                                 } label: {
                                     HStack(spacing: 10) {
                                         Image(systemName: dir.isGit ? "arrow.triangle.branch" : "folder")
@@ -461,7 +502,7 @@ struct FolderPicker: View {
                                     }
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(PressScale())
                             }
                         }
                     }
@@ -476,8 +517,6 @@ struct FolderPicker: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Palette.background)
-        .navigationTitle(listing.map { ($0.path as NSString).lastPathComponent } ?? "Folders")
-        .inlineNavigationTitle()
         .task {
             do { listing = try await model.listDirs(path) } catch { self.error = error.localizedDescription }
         }

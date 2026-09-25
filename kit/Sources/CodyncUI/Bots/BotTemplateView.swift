@@ -3,7 +3,7 @@ import SwiftUI
 
 /// A portable settings snapshot, with no conversation identity or runtime state.
 struct BotTemplateView: View {
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var copied = false
     private let template: BotDraft
     private let encoded: String?
@@ -20,18 +20,10 @@ struct BotTemplateView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+        ModalHeader("Create template")
         VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Create template").font(.title2.weight(.semibold))
-                    Text(template.name).font(.subheadline).foregroundStyle(Palette.secondary)
-                }
-                Spacer()
-                Button("Close", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.cancelAction)
-            }
+            Text(template.name).font(.subheadline).foregroundStyle(Palette.secondary)
             Text("Copy this bot’s settings to reuse as a template. Conversation history and conversation ID are excluded.")
                 .font(.callout)
                 .foregroundStyle(Palette.secondary)
@@ -49,7 +41,7 @@ struct BotTemplateView: View {
                 Spacer()
                 Button {
                     Pasteboard.copy(encoded)
-                    copied = true
+                    withAnimation(Motion.reduced(Motion.morph, reduceMotion)) { copied = true }
                 } label: {
                     Label(copied ? "Copied" : "Copy template", systemImage: copied ? "checkmark" : "square.on.square")
                         .font(.system(size: 13, weight: .semibold))
@@ -62,7 +54,8 @@ struct BotTemplateView: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(24)
+        .padding([.horizontal, .bottom], 24)
+        }
         .frame(width: 560, height: 540)
         .background(Palette.background)
     }

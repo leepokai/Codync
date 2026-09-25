@@ -6,9 +6,13 @@ import UserNotifications
 /// Every computer this iPhone can use or ask for — paired here and in the account, merged by
 /// computer ID — plus settings for the selected account.
 struct SettingsView: View {
+    /// Pushed inside Accounts rather than opened as its own sheet.
+    var pushed = false
     @Environment(AppStore.self) private var app
     @Environment(AccountStore.self) private var accounts
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissModal) private var dismissModal
+    @Environment(\.openURL) private var openURL
+    @State private var page: Page?
     @State private var notificationsAllowed: Bool?
     @State private var addingComputer = false
     @State private var confirmForget: Computer?
@@ -48,8 +52,8 @@ struct SettingsView: View {
                 CardSection {
                     ForEach(onlineStores, id: \.computer.id) { store in
                         Button {
-                            closeSheets()
-                            app.marketplace = store.computer.id
+                            let id = store.computer.id
+                            closeSheets { app.marketplace = id }
                         } label: {
                             LinkRow {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -64,13 +68,11 @@ struct SettingsView: View {
             }
 
             CardSection {
-                NavigationLink {
-                    WidgetGalleryView()
-                } label: {
+                Button { page = .widgets } label: {
                     LinkRow { Label("Widgets", systemImage: "square.grid.2x2") }
                 }
                 .buttonStyle(.plain)
-                NavigationLink { ActivityGalleryView() } label: {
+                Button { page = .activity } label: {
                     LinkRow { Label("Live Activity & Dynamic Island", systemImage: "waveform") }
                 }
                 .buttonStyle(.plain)
@@ -88,10 +90,9 @@ struct SettingsView: View {
                                 Text(store.hostName).font(.caption).foregroundStyle(Palette.tertiary)
                             }
                             Spacer()
-                            Button("Unhide", systemImage: "eye") { store.setHidden(bot, false) }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.plain)
-                                .foregroundStyle(Palette.text)
+                            IconButton("Unhide", systemImage: "eye") {
+                                withAnimation(Motion.layout) { store.setHidden(bot, false) }
+                            }
                         }
                     }
                 }
@@ -99,24 +100,25 @@ struct SettingsView: View {
 
             CardSection {
                 ValueRow("App version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
-                Link("Source code", destination: URL(string: "https://github.com/leepokai/Codync")!)
+                Button("Source code") { openURL(URL(string: "https://github.com/leepokai/Codync")!) }
+                    .buttonStyle(.plain)
                     .foregroundStyle(Palette.text)
             }
         }
-        .navigationTitle("Computers & settings")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
+        .refreshable { await accounts.refreshCloud() }
+        .page("Computers & settings", pushed: pushed)
+        .navigationDestination(item: $page) { page in
+            switch page {
+            case .widgets: WidgetGalleryView(pushed: true)
+            case .activity: ActivityGalleryView()
             }
         }
-        .refreshable { await accounts.refreshCloud() }
         .task { await accounts.refreshCloud() }
-        .sheet(isPresented: $addingComputer) {
-            PairingView(introductory: false) { addingComputer = false }
+        .codyncSheet(isPresented: $addingComputer) {
+            PairingView(introductory: false, inModal: true)
         }
-        .sheet(item: $access) { target in
-            NavigationStack { AccessRequestView(computer: target.computer, pending: accounts.pendingAccess[target.id] != nil) }
+        .codyncSheet(item: $access) { target in
+            AccessRequestView(computer: target.computer, pending: accounts.pendingAccess[target.id] != nil)
         }
         .codyncDialog("Remove \(confirmForget?.name ?? "computer")?",
                       isPresented: Binding(get: { confirmForget != nil }, set: { if !$0 { confirmForget = nil } }),
@@ -141,6 +143,8 @@ struct SettingsView: View {
             }
         }
     }
+
+    private enum Page: Hashable { case widgets, activity }
 
     private struct AccessTarget: Identifiable {
         let computer: CloudComputer
@@ -172,19 +176,18 @@ struct SettingsView: View {
         }
     }
 
-    /// This screen is a sheet of its own or inside Accounts; the marketplace and screen open over the app.
-    private func closeSheets() {
-        app.showComputers = false
-        app.account.showSwitcher = false
+    /// This screen is a sheet of its own or inside Accounts; the marketplace and screen open over the app,
+    /// once that sheet has slid away.
+    private func closeSheets(then open: @escaping @MainActor () -> Void) {
+        dismissModal()
+        Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            open()
+        }
     }
 
     private func openScreen(_ store: BotStore) {
-        closeSheets()
-        Task {
-            // Let the sheet finish closing before covering the screen.
-            try? await Task.sleep(for: .milliseconds(450))
-            store.screenRequest = ScreenRequest()
-        }
+        closeSheets { store.screenRequest = ScreenRequest() }
     }
 
     @ViewBuilder private var notificationsRow: some View {
@@ -231,10 +234,7 @@ private struct ComputerRow: View {
             }
             Spacer()
             if store.screen != nil, store.connection == .online {
-                Button("Screen", systemImage: "display", action: openScreen)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Palette.text)
+                IconButton("Screen", systemImage: "display", action: openScreen)
             }
             if inAccount != nil {
                 Image(systemName: "person.crop.circle.badge.checkmark")
@@ -247,7 +247,7 @@ private struct ComputerRow: View {
         .contextActions {
             var items = [
                 MenuItem("Color", icon: "paintpalette") {
-                    // ponytail: waits for the menu popover to close before opening the swatches; one popover at a time.
+                    // ponytail: waits for the menu to fade out before opening the swatches; one overlay at a time.
                     Task {
                         try? await Task.sleep(for: .milliseconds(350))
                         coloring = true
@@ -263,15 +263,17 @@ private struct ComputerRow: View {
             items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: revoke == nil, action: remove))
             return items
         }
-        .background {
-            Color.clear.popover(isPresented: $coloring, arrowEdge: .bottom) {
+        .codyncOverlay(isPresented: $coloring) { close in
+            ZStack {
+                Color.black.opacity(0.35).ignoresSafeArea().onTapGesture(perform: close)
                 SwatchPanel(selected: store.computer.color) { id in
-                    coloring = false
+                    close()
                     accounts.setColor(store.computer.id, id)
                 }
-                .presentationCompactAdaptation(.popover)
-                .presentationBackground(Palette.bubbleAgent)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: .black.opacity(0.25), radius: 24, y: 10)
             }
+            .accessibilityAddTraits(.isModal)
         }
     }
 

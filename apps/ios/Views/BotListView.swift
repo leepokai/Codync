@@ -42,29 +42,26 @@ struct BotListView: View {
             .padding(.horizontal, 16)
         }
         .background(Palette.background)
-        .navigationTitle("Bots")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+        // Grok-style bare top bar: no visible title, just the buttons.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            ScreenHeader {
                 AccountSwitcherButton()
-            }
-            // Grok-style bare top bar: no visible title, just the buttons.
-            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Computers", systemImage: "desktopcomputer") { app.showComputers = true }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("New bot", systemImage: "plus", action: newBot)
+            } title: {
+                EmptyView()
+            } trailing: {
+                IconButton("Computers", systemImage: "desktopcomputer") { app.showComputers = true }
+                IconButton("New bot", systemImage: "plus", action: newBot)
                     .disabled(onlineStores.isEmpty)
             }
         }
+        .hidesSystemNavigationBar()
         .refreshable {
             for computer in accounts.computers { accounts.store(for: computer.id)?.restartStream() }
             await accounts.refreshCloud()
         }
-        .sheet(item: $editing) { target in
+        .codyncSheet(item: $editing) { target in
             if let store = accounts.store(for: target.computerId) {
-                NavigationStack { BotEditorView(draft: target.draft) }
+                BotEditorView(draft: target.draft)
                     .environment(store)
                     .onChange(of: store.selection) { _, botId in
                         // A new bot opens its chat, on the computer it was created on.
@@ -74,14 +71,14 @@ struct BotListView: View {
                     }
             }
         }
-        .sheet(isPresented: $pickingComputer) {
-            NavigationStack {
-                ComputerPicker(stores: onlineStores) { store in
-                    pickingComputer = false
+        .codyncSheet(isPresented: $pickingComputer) {
+            ComputerPicker(stores: onlineStores) { store in
+                // Let the picker slide away before the editor slides up.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(450))
                     editing = EditTarget(computerId: store.computer.id, draft: BotDraft())
                 }
             }
-            .presentationDetents([.medium])
         }
         .codyncDialog("Delete \(confirmDelete?.bot.name ?? "bot")?",
                       isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
@@ -139,28 +136,35 @@ private struct EditTarget: Identifiable {
 private struct ComputerPicker: View {
     let stores: [BotStore]
     let pick: (BotStore) -> Void
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissModal) private var dismiss
 
     var body: some View {
-        List(stores, id: \.computer.id) { store in
-            Button { pick(store) } label: {
-                HStack(spacing: 12) {
-                    ComputerBadge(store.computer, size: 36)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(store.hostName).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
-                        Text("\(store.roster.count) bot\(store.roster.count == 1 ? "" : "s")")
-                            .font(.subheadline).foregroundStyle(Palette.secondary)
+        VStack(spacing: 0) {
+            ModalHeader("Run it on")
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(stores, id: \.computer.id) { store in
+                        Button {
+                            dismiss()
+                            pick(store)
+                        } label: {
+                            HStack(spacing: 12) {
+                                ComputerBadge(store.computer, size: 36)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(store.hostName).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                                    Text("\(store.roster.count) bot\(store.roster.count == 1 ? "" : "s")")
+                                        .font(.subheadline).foregroundStyle(Palette.secondary)
+                                }
+                                Spacer()
+                                RouteIcon(route: store.hostRoute).foregroundStyle(Palette.tertiary)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PressScale())
                     }
-                    Spacer()
-                    RouteIcon(route: store.hostRoute).foregroundStyle(Palette.tertiary)
                 }
-            }
-        }
-        .navigationTitle("Run it on")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
             }
         }
     }

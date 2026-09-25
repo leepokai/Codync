@@ -20,10 +20,11 @@ struct CodyncApp: App {
                 .environment(app.accounts)
                 .environment(app.account)
                 .tint(Palette.accent)
-                .sheet(isPresented: Binding(
+                .codyncSheet(isPresented: Binding(
                     get: { onboardingCompleted && app.account.showSwitcher },
                     set: { app.account.showSwitcher = $0 }
                 )) {
+                    // Holds the pushes inside the sheet (Computers & settings, Widgets); no bar shows.
                     NavigationStack { AccountSwitcherView() }
                         .environment(app)
                         .environment(app.accounts)

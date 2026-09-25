@@ -7,6 +7,7 @@ struct RootView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountStore.self) private var accounts
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The open bot, as a NavigationStack path.
     private var path: Binding<[BotReference]> {
@@ -16,31 +17,14 @@ struct RootView: View {
     var body: some View {
         Group {
             if accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
-                NavigationStack {
+                VStack(spacing: 0) {
+                    if onboardingCompleted {
+                        ScreenHeader { AccountSwitcherButton() } title: { EmptyView() } trailing: { EmptyView() }
+                    }
                     PairingView(introductory: !onboardingCompleted)
-                        .toolbar {
-                            if onboardingCompleted {
-                                ToolbarItem(placement: .topBarLeading) { AccountSwitcherButton() }
-                            }
-                        }
                 }
             } else {
-                TabView(selection: Bindable(app).tab) {
-                    Tab("Bots", systemImage: "bubble.left.and.bubble.right.fill", value: .bots) {
-                        NavigationStack(path: path) {
-                            BotListView()
-                                .navigationDestination(for: BotReference.self) { ref in
-                                    ChatScreen(ref: ref)
-                                        .toolbar(.hidden, for: .tabBar)
-                                }
-                        }
-                    }
-                    Tab("Usage", systemImage: "chart.bar.fill", value: .usage) {
-                        NavigationStack { UsageTab() }
-                    }
-                }
-                // Opening a bot (notification, widget, link) always lands on the Bots tab.
-                .onChange(of: accounts.selection) { _, ref in if ref != nil { app.tab = .bots } }
+                tabs
             }
         }
         .background(Palette.background)
@@ -50,23 +34,50 @@ struct RootView: View {
             if !empty { onboardingCompleted = true }
         }
         .codyncDialog("Something went wrong", isPresented: errorShown, message: errorMessage, cancel: "OK") { [] }
-        .fullScreenCover(item: screenTarget) { target in
-            if let store = accounts.store(for: target.computerId) {
+        .codyncOverlay(isPresented: Binding(get: { screenTarget.wrappedValue != nil }, set: { if !$0 { screenTarget.wrappedValue = nil } })) { _ in
+            if let target = screenTarget.wrappedValue, let store = accounts.store(for: target.computerId) {
                 ScreenView(watching: target.request.watching)
+                    .environment(store)
+                    .id(target.id)
+            }
+        }
+        .codyncSheet(isPresented: Bindable(app).showComputers) {
+            // Holds the pushes inside the sheet (Widgets, Live Activity); no bar shows.
+            NavigationStack { SettingsView() }
+        }
+        .codyncSheet(isPresented: Binding(get: { app.marketplace != nil }, set: { if !$0 { app.marketplace = nil } })) {
+            if let store = app.marketplace.flatMap(accounts.store(for:)) {
+                MarketplaceView { app.marketplace = nil }
                     .environment(store)
             }
         }
-        .sheet(isPresented: Bindable(app).showComputers) {
-            NavigationStack { SettingsView() }
+    }
+
+    /// Both tab stacks stay alive (scroll position, open thread); the tab bar hides while a thread is open.
+    private var tabs: some View {
+        ZStack {
+            NavigationStack(path: path) {
+                BotListView()
+                    .navigationDestination(for: BotReference.self) { ref in ChatScreen(ref: ref) }
+            }
+            .tabLayer(app.tab == .bots)
+            UsageTab()
+                .tabLayer(app.tab == .usage)
         }
-        .sheet(isPresented: Binding(get: { app.marketplace != nil }, set: { if !$0 { app.marketplace = nil } })) {
-            if let store = app.marketplace.flatMap(accounts.store(for:)) {
-                NavigationStack {
-                    MarketplaceView { app.marketplace = nil }
-                }
-                .environment(store)
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: app.tab)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if accounts.selection == nil {
+                TabBar(selection: Bindable(app).tab, tabs: [
+                    (id: AppTab.bots, title: "Bots", icon: "bubble.left.and.bubble.right.fill"),
+                    (id: AppTab.usage, title: "Usage", icon: "chart.bar.fill"),
+                ])
+                .padding(.bottom, 4)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: accounts.selection == nil)
+        // Opening a bot (notification, widget, link) always lands on the Bots tab.
+        .onChange(of: accounts.selection) { _, ref in if ref != nil { app.tab = .bots } }
     }
 
     // MARK: one place for every computer's errors and screen requests
@@ -112,7 +123,12 @@ private struct ChatScreen: View {
             ThreadView(botId: ref.botId)
                 .environment(store)
         } else {
-            ContentUnavailableView("This computer was removed", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
+            VStack(spacing: 0) {
+                ScreenHeader { BackButton { accounts.selection = nil } } title: { EmptyView() } trailing: { EmptyView() }
+                EmptyState(title: "This computer was removed", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
+            }
+            .background(Palette.background)
+            .hidesSystemNavigationBar()
         }
     }
 }
@@ -125,31 +141,111 @@ private struct UsageTab: View {
     @State private var picked: ComputerID?
 
     var body: some View {
-        if let store = picked.flatMap(accounts.store(for:)) ?? app.currentStore {
-            UsageView()
-                .environment(store)
-                .toolbar {
-                    if accounts.computers.count > 1 {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            DropdownMenu {
-                                accounts.computers.map { computer in
-                                    MenuItem(computer.name, selected: computer.id == store.computer.id) {
-                                        picked = computer.id
-                                        accounts.storage.lastComputerId = computer.id
-                                        WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage")
-                                    }
-                                }
-                            } label: {
-                                ComputerBadge(store.computer, size: 28)
+        let store = picked.flatMap(accounts.store(for:)) ?? app.currentStore
+        VStack(spacing: 0) {
+            ScreenHeader {
+                EmptyView()
+            } title: {
+                Text("Usage").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+            } trailing: {
+                if let store, accounts.computers.count > 1 {
+                    DropdownMenu {
+                        accounts.computers.map { computer in
+                            MenuItem(computer.name, selected: computer.id == store.computer.id) {
+                                picked = computer.id
+                                accounts.storage.lastComputerId = computer.id
+                                WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage")
                             }
-                            .accessibilityLabel("Computer: \(store.computer.name)")
                         }
+                    } label: {
+                        ComputerBadge(store.computer, size: 28)
                     }
+                    .accessibilityLabel("Computer: \(store.computer.name)")
                 }
-                .id(store.computer.id)
-        } else {
-            ContentUnavailableView("No computer yet", systemImage: "chart.bar",
-                                   description: Text("Usage shows up once a computer is connected."))
+            }
+            if let store {
+                UsageView()
+                    .environment(store)
+                    .id(store.computer.id)
+            } else {
+                EmptyState(title: "No computer yet", systemImage: "chart.bar",
+                           message: "Usage shows up once a computer is connected.")
+            }
         }
+        .background(Palette.background)
+    }
+}
+
+/// A centered icon, title and optional line: what a screen shows when it has nothing yet.
+struct EmptyState: View {
+    let title: String
+    let systemImage: String
+    var message: String?
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: systemImage).font(.system(size: 40)).foregroundStyle(Palette.tertiary)
+            Text(title).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+            if let message {
+                Text(message).font(.subheadline).foregroundStyle(Palette.secondary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// A page's title row inside a modal: the close button on the modal's first page,
+/// a back button once pushed inside it.
+struct PageHeader<Trailing: View>: View {
+    let title: String
+    var pushed = false
+    let trailing: Trailing
+    @Environment(\.dismiss) private var pop
+
+    init(_ title: String, pushed: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.pushed = pushed
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        if pushed {
+            ScreenHeader {
+                BackButton { pop() }
+            } title: {
+                Text(title).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+            } trailing: {
+                trailing
+            }
+        } else {
+            ModalHeader(title) { trailing }
+        }
+    }
+}
+
+extension PageHeader where Trailing == EmptyView {
+    init(_ title: String, pushed: Bool = false) { self.init(title, pushed: pushed) { EmptyView() } }
+}
+
+extension View {
+    /// Tops a screen with its `PageHeader` in place of the system navigation bar.
+    func page(_ title: String, pushed: Bool = false) -> some View {
+        VStack(spacing: 0) {
+            PageHeader(title, pushed: pushed)
+            self
+        }
+        .background(Palette.background)
+        .hidesSystemNavigationBar()
+    }
+}
+
+private extension View {
+    /// One tab's stack in the root ZStack: visible and interactive only while selected.
+    func tabLayer(_ selected: Bool) -> some View {
+        opacity(selected ? 1 : 0)
+            .allowsHitTesting(selected)
+            .accessibilityHidden(!selected)
     }
 }

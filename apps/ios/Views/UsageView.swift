@@ -37,19 +37,11 @@ struct UsageView: View {
             .padding(16)
         }
         .background(Palette.background)
-        .navigationTitle("Usage")
-        .navigationBarTitleDisplayMode(.inline)
         .refreshable { await model.refreshUsage() }
-        .sheet(isPresented: $widgetHelp) {
-            NavigationStack {
-                WidgetGalleryView()
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close", systemImage: "xmark") { widgetHelp = false }.labelStyle(.iconOnly)
-                        }
-                    }
-            }
-            .environment(model)
+        .codyncSheet(isPresented: $widgetHelp) {
+            // Holds the pushes inside the sheet (Lock Screen widgets, Live Activity); no bar shows.
+            NavigationStack { WidgetGalleryView() }
+                .environment(model)
         }
     }
 }
@@ -57,6 +49,7 @@ struct UsageView: View {
 private struct ProviderCard: View {
     let provider: UsageProvider
     @Binding var collapsed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -66,13 +59,10 @@ private struct ProviderCard: View {
                     .background(provider.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Text(provider.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
                 Spacer()
-                Button(collapsed ? "Expand" : "Collapse", systemImage: "chevron.up") {
-                    withAnimation(.snappy) { collapsed.toggle() }
+                IconButton(collapsed ? "Expand" : "Collapse", systemImage: "chevron.up") {
+                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { collapsed.toggle() }
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
                 .rotationEffect(.degrees(collapsed ? 180 : 0))
-                .foregroundStyle(Palette.tertiary)
             }
 
             if let top = provider.tightest {
@@ -93,7 +83,6 @@ private struct ProviderCard: View {
             }
 
             if !collapsed {
-                Divider()
                 VStack(spacing: 8) {
                     ForEach(provider.windows) { w in
                         row(w.label, "\(Int(w.percent.rounded()))%")

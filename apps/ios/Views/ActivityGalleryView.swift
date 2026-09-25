@@ -5,6 +5,7 @@ import SwiftUI
 
 struct ActivityGalleryView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @AppStorage("liveActivitiesEnabled") private var enabled = true
     @State private var allowed = ActivityAuthorizationInfo().areActivitiesEnabled
     @State private var form = BotActivityPreview.Form.lockScreen
@@ -35,8 +36,10 @@ struct ActivityGalleryView: View {
                     if !allowed {
                         Text("Live Activities are turned off in iOS Settings.")
                             .font(.footnote).foregroundStyle(Palette.secondary)
-                        Link("Open iOS Settings", destination: URL(string: UIApplication.openSettingsURLString)!)
+                        Button("Open iOS Settings") { openURL(URL(string: UIApplication.openSettingsURLString)!) }
+                            .buttonStyle(.plain)
                             .font(.footnote.weight(.medium))
+                            .foregroundStyle(Palette.accent)
                     }
                 }
                 .padding(16).background(Palette.surface, in: RoundedRectangle(cornerRadius: 20))
@@ -71,8 +74,7 @@ struct ActivityGalleryView: View {
             .padding(18).frame(maxWidth: 560).frame(maxWidth: .infinity)
         }
         .background(Palette.background)
-        .navigationTitle("Live Activity")
-        .navigationBarTitleDisplayMode(.inline)
+        .page("Live Activity", pushed: true)
         .tint(Palette.accent)
         .onChange(of: enabled) { _, value in if !value { LiveActivities.shared.endAll() } }
         .onChange(of: scenePhase) { _, value in
@@ -116,7 +118,6 @@ struct LockWidgetGalleryView: View {
             .padding(18).frame(maxWidth: 560).frame(maxWidth: .infinity)
         }
         .background(Palette.background)
-        .navigationTitle("Lock Screen widgets")
-        .navigationBarTitleDisplayMode(.inline)
+        .page("Lock Screen widgets", pushed: true)
     }
 }

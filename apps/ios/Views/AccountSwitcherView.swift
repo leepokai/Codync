@@ -14,6 +14,7 @@ struct AccountSwitcherButton: View {
                     .foregroundStyle(Palette.secondary)
             }
         }
+        .buttonStyle(PressScale())
         .accessibilityLabel("Switch account")
         .accessibilityValue(account.email ?? "Local pairing")
     }
@@ -22,7 +23,7 @@ struct AccountSwitcherButton: View {
 struct AccountSwitcherView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountSession.self) private var account
-    @Environment(\.dismiss) private var dismiss
+    @State private var showSettings = false
 
     var body: some View {
         CardForm {
@@ -67,9 +68,7 @@ struct AccountSwitcherView: View {
             }
 
             CardSection(footer: "Computers are kept separately for each account on this iPhone. Signed in, you also see the computers added to your account.") {
-                NavigationLink {
-                    SettingsView()
-                } label: {
+                Button { showSettings = true } label: {
                     HStack {
                         Label("Computers & settings", systemImage: "desktopcomputer").foregroundStyle(Palette.text)
                         Spacer(minLength: 8)
@@ -108,20 +107,19 @@ struct AccountSwitcherView: View {
                 }
             }
         }
-        .navigationTitle("Accounts")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly)
-            }
-            if account.isBusy {
-                ToolbarItem(placement: .topBarTrailing) {
+        .safeAreaInset(edge: .top, spacing: 0) {
+            ModalHeader("Accounts") {
+                if account.isBusy {
                     ThinkingOrb(state: .connecting, size: 20)
                         .accessibilityHidden(false).accessibilityLabel("Signing in")
+                        .transition(.opacity)
                 }
             }
+            .background(Palette.background)
+            .animation(Motion.fade, value: account.isBusy)
         }
+        .hidesSystemNavigationBar()
+        .navigationDestination(isPresented: $showSettings) { SettingsView(pushed: true) }
     }
 }
 

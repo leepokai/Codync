@@ -7,8 +7,9 @@ import SwiftUI
 struct AccessRequestView: View {
     let computer: CloudComputer
     @Environment(AccountStore.self) private var accounts
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissModal) private var dismiss
     @State private var error: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A code was shown: when it goes away without an approval, the request is over (denied or expired).
     @State private var sawTicket: Bool
 
@@ -47,30 +48,29 @@ struct AccessRequestView: View {
                 HStack(spacing: 8) {
                     Spinner()
                     Text("Waiting for approval…").foregroundStyle(Palette.secondary)
-                    Button("Cancel request", systemImage: "xmark.circle.fill") {
+                    IconButton("Cancel request", systemImage: "xmark.circle.fill") {
                         Task {
                             await accounts.cancelAccess(computer.computerId)
                             dismiss()
                         }
                     }
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(Palette.tertiary)
-                    .help("Cancel request")
                 }
                 .font(.subheadline)
             } else if let error {
                 Text(error)
                     .foregroundStyle(Palette.danger)
                     .multilineTextAlignment(.center)
-                Button("Try again") { self.error = nil }
+                Button("Try again") { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = nil } }
                     .buttonStyle(.secondary)
             } else if sawTicket {
                 Text(accounts.lastError ?? "\(computer.name) didn't approve this request.")
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
                 Button("Ask again") {
-                    accounts.lastError = nil
-                    sawTicket = false
+                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
+                        accounts.lastError = nil
+                        sawTicket = false
+                    }
                 }
                 .buttonStyle(.secondary)
             } else {
@@ -88,14 +88,8 @@ struct AccessRequestView: View {
         .padding(24)
         .frame(maxWidth: .infinity)
         .background(Palette.background)
-        .navigationTitle("Access")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                // Closing keeps waiting in the background; the computer shows up once approved.
-                Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
-            }
-        }
+        // Closing keeps waiting in the background; the computer shows up once approved.
+        .safeAreaInset(edge: .top, spacing: 0) { ModalHeader("Access") }
         .onChange(of: ticket?.requestId) { _, id in if id != nil { sawTicket = true } }
         .onChange(of: approved) { _, done in
             guard done else { return }

@@ -5,7 +5,11 @@ import WidgetKit
 
 /// The installed widgets and these previews share their rendering components.
 struct WidgetGalleryView: View {
+    /// Pushed inside Computers & settings rather than opened as its own sheet.
+    var pushed = false
     @Environment(AccountStore.self) private var accounts
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var page: Page?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var kind = "usage"
@@ -38,7 +42,7 @@ struct WidgetGalleryView: View {
                     sectionLabel("Get set up")
                     VStack(spacing: 0) {
                         setupRow("Connect a computer", complete: !accounts.computers.isEmpty)
-                        Divider().padding(.leading, 42)
+                        Rectangle().fill(Palette.border).frame(height: 0.5).padding(.leading, 42)
                         setupRow("Add a Codync widget", complete: hasWidget == true,
                                  status: hasWidget == nil ? (widgetCheckFailed ? "Unable to check" : "Checking") : nil)
                     }
@@ -48,6 +52,7 @@ struct WidgetGalleryView: View {
                             Text("Couldn't check your widgets. You can still add one using the steps below.")
                                 .foregroundStyle(Palette.secondary)
                             Button("Check again") { checkWidgets() }
+                                .buttonStyle(.secondary)
                         }
                         .font(.caption)
                     } else {
@@ -83,12 +88,14 @@ struct WidgetGalleryView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("More ways to stay up to date")
-                    NavigationLink { LockWidgetGalleryView() } label: {
-                        Label("Lock Screen widgets", systemImage: "lock.rectangle")
+                    Button { page = .lockScreen } label: {
+                        Label("Lock Screen widgets", systemImage: "lock.rectangle").foregroundStyle(Palette.accent)
                     }
-                    NavigationLink { ActivityGalleryView() } label: {
-                        Label("Live Activity & Dynamic Island", systemImage: "waveform")
+                    .buttonStyle(PressScale())
+                    Button { page = .activity } label: {
+                        Label("Live Activity & Dynamic Island", systemImage: "waveform").foregroundStyle(Palette.accent)
                     }
+                    .buttonStyle(PressScale())
                 }
                 .font(.subheadline)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -107,11 +114,18 @@ struct WidgetGalleryView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Palette.background)
-        .navigationTitle("Widgets")
-        .navigationBarTitleDisplayMode(.inline)
+        .page("Widgets", pushed: pushed)
+        .navigationDestination(item: $page) { page in
+            switch page {
+            case .lockScreen: LockWidgetGalleryView()
+            case .activity: ActivityGalleryView()
+            }
+        }
         .task { checkWidgets() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { checkWidgets() } }
     }
+
+    private enum Page: Hashable { case lockScreen, activity }
 
     private static let kinds: [(id: String, label: String)] = [("usage", "Provider usage"), ("bots", "Bots")]
     private static let providers: [(id: String, label: String)] = [("claude", "Claude"), ("codex", "Codex")]
@@ -178,12 +192,15 @@ struct WidgetGalleryView: View {
     }
 
     private func checkWidgets() {
-        widgetCheckFailed = false
+        let animation = Motion.reduced(Motion.layout, reduceMotion)
+        withAnimation(animation) { widgetCheckFailed = false }
         WidgetCenter.shared.getCurrentConfigurations { result in
             let installed = (try? result.get())?.contains { $0.kind.hasPrefix("Codync") }
             Task { @MainActor in
-                hasWidget = installed
-                widgetCheckFailed = installed == nil
+                withAnimation(animation) {
+                    hasWidget = installed
+                    widgetCheckFailed = installed == nil
+                }
             }
         }
     }

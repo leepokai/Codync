@@ -6,9 +6,11 @@ import VisionKit
 /// First run: explain the model, then pair with a computer running codync-host.
 struct PairingView: View {
     var introductory = true
-    /// Set when adding another computer from the computers sheet; shows a close button.
-    var onDone: (() -> Void)?
+    /// Adding another computer from the computers sheet: titled, with a close button; closes once paired.
+    var inModal = false
     @Environment(AppStore.self) private var app
+    @Environment(\.dismissModal) private var dismissModal
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scanning = false
     @State private var pairing = false
     @State private var pasted = ""
@@ -39,7 +41,7 @@ struct PairingView: View {
                         .font(.body)
                         .foregroundStyle(Palette.secondary)
                 }
-                .padding(.top, !introductory && onDone != nil ? 48 : 0)
+
 
                 VStack(alignment: .leading, spacing: 14) {
                     Step(n: 1, title: "Install Codync on your computer", detail: "Mac — then open Codync in the menu bar and click Install host:", code: "brew install --cask leepokai/codync/codync")
@@ -71,9 +73,7 @@ struct PairingView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .font(.callout.monospaced())
-                        Button("Pair", systemImage: "arrow.right.circle.fill") { pair(pasted) }
-                            .labelStyle(.iconOnly)
-                            .font(.title3)
+                        IconButton("Pair", systemImage: "arrow.right.circle.fill") { pair(pasted) }
                             .disabled(pasted.isEmpty || pairing)
                     }
                     .padding(12)
@@ -81,6 +81,7 @@ struct PairingView: View {
 
                     if let error {
                         Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                            .transition(.opacity)
                     }
                 }
 
@@ -91,25 +92,13 @@ struct PairingView: View {
             .padding(24)
         }
         .background(Palette.background)
-        .overlay(alignment: .topLeading) {
-            if let onDone {
-                Button("Close", systemImage: "xmark", action: onDone)
-                    .labelStyle(.iconOnly)
-                    .font(.body.weight(.semibold))
-                    .frame(width: 44, height: 44)
-                    .background(Palette.bubbleAgent, in: Circle())
-                    .foregroundStyle(Palette.text)
-                    .padding(16)
-            }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if inModal { ModalHeader("Pair a computer").background(Palette.background) }
         }
         // Coming back from the Tailscale app: show whether it's connected now.
         .onChange(of: scenePhase) { _, phase in if phase == .active { tailscaleOn = Tailscale.isConnected } }
-        .sheet(isPresented: $scanning) {
-            QRScanner { code in
-                scanning = false
-                pair(code)
-            }
-            .ignoresSafeArea()
+        .codyncSheet(isPresented: $scanning) {
+            ScannerSheet { code in pair(code) }
         }
     }
 
@@ -118,21 +107,25 @@ struct PairingView: View {
         do {
             p = try Pairing.parse(text.trimmingCharacters(in: .whitespacesAndNewlines))
         } catch {
-            self.error = error.localizedDescription
+            show(error)
             return
         }
-        error = nil
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { error = nil }
         pairing = true
         Task {
             defer { pairing = false }
             do {
                 _ = try await app.pair(p)
                 pasted = ""
-                onDone?()
+                if inModal { dismissModal() }
             } catch {
-                self.error = error.localizedDescription
+                show(error)
             }
         }
+    }
+
+    private func show(_ error: Error) {
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = error.localizedDescription }
     }
 }
 
@@ -170,6 +163,7 @@ private struct Step: View {
 /// Optional: Tailscale is an alternative way in for people who already use it; the relay doesn't need it.
 private struct TailscaleStep: View {
     let connected: Bool
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -188,12 +182,31 @@ private struct TailscaleStep: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Palette.added)
                 } else {
-                    Link(destination: Tailscale.downloadURL) {
+                    Button { openURL(Tailscale.downloadURL) } label: {
                         Label("Get Tailscale", systemImage: "arrow.down.circle")
                             .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Palette.accent)
                     }
+                    .buttonStyle(PressScale())
                 }
             }
+        }
+    }
+}
+
+/// The camera scanner in a Codync sheet; closes as soon as it reads a pairing code.
+private struct ScannerSheet: View {
+    let onCode: (String) -> Void
+    @Environment(\.dismissModal) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader("Scan pairing code")
+            QRScanner { code in
+                dismiss()
+                onCode(code)
+            }
+            .ignoresSafeArea(edges: .bottom)
         }
     }
 }

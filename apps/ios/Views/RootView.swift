@@ -7,6 +7,7 @@ enum AppTab: Hashable { case bots, usage }
 struct RootView: View {
     @Environment(BotStore.self) private var model
     @Binding var tab: AppTab
+    @AppStorage("onboardingCompleted") private var onboardingCompleted = false
 
     /// The open bot, as a NavigationStack path.
     private var path: Binding<[String]> {
@@ -17,9 +18,11 @@ struct RootView: View {
         Group {
             if model.pairing == nil {
                 NavigationStack {
-                    PairingView()
+                    PairingView(introductory: !onboardingCompleted)
                         .toolbar {
-                            ToolbarItem(placement: .topBarLeading) { AccountSwitcherButton() }
+                            if onboardingCompleted {
+                                ToolbarItem(placement: .topBarLeading) { AccountSwitcherButton() }
+                            }
                         }
                 }
             } else {
@@ -42,6 +45,11 @@ struct RootView: View {
             }
         }
         .background(Palette.background)
+        .onChange(of: model.pairing != nil, initial: true) { _, paired in
+            // Existing installations have already completed setup. Keep this
+            // device-level milestone across account changes and unpairing.
+            if paired { onboardingCompleted = true }
+        }
         .storeErrorAlert(model)
         .fullScreenCover(item: Bindable(model).screenRequest) { request in
             ScreenView(watching: request.watching)

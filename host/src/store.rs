@@ -397,13 +397,27 @@ impl Store {
             let c = self.db.locked();
             let mut st = c.prepare(
                 "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
-                  OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')",
+                  OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
+                  OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
+                      AND json_extract(data, '$.status') IN ('queued', 'sent'))",
             )?;
             st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
         for id in &ids {
             if let Some(mut e) = self.entry(id) {
-                let status = if e.kind == EntryKind::User.as_str() { "failed" } else { "expired" };
+                let status = if e.kind == EntryKind::Notice.as_str() {
+                    let heading = e.data["heading"].as_str().unwrap_or("Bot request");
+                    e.data["text"] = format!(
+                        "{heading}\nInterrupted by host restart. Partial work may have happened; check before retrying."
+                    )
+                    .into();
+                    e.data["style"] = "error".into();
+                    "failed"
+                } else if e.kind == EntryKind::User.as_str() {
+                    "failed"
+                } else {
+                    "expired"
+                };
                 e.data["status"] = status.into();
                 self.update_entry(id, &e.data)?;
             }

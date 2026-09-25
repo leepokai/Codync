@@ -62,6 +62,11 @@ struct SettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    WidgetGalleryView()
+                } label: {
+                    Label("Widgets", systemImage: "square.grid.2x2")
+                }
                 notificationsRow
             }
 
@@ -97,7 +102,7 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $addingComputer) {
-            PairingView { addingComputer = false }
+            PairingView(introductory: false) { addingComputer = false }
         }
         .confirmationDialog("Remove \(confirmForget?.name ?? "computer")?", isPresented: Binding(get: { confirmForget != nil }, set: { if !$0 { confirmForget = nil } }), titleVisibility: .visible) {
             Button("Remove", role: .destructive) {

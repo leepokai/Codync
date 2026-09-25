@@ -51,3 +51,41 @@ import Testing
     signedIn.pairing = nil
     #expect(local.pairing == old)
 }
+
+@Test func widgetCachesFollowTheSelectedComputer() throws {
+    let suite = "CodyncWidgetTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let account = SharedStore.Context(accountID: "user_a", defaults: defaults)
+    let other = SharedStore.Context(accountID: "user_b", defaults: defaults)
+    let first = Pairing(name: "Mac", token: "mac-token", urls: ["https://mac.invalid"])
+    let second = Pairing(name: "Linux", token: "linux-token", urls: ["https://linux.invalid"])
+    account.pairing = first
+    account.usage = .widgetPreview
+    account.bots = Bot.widgetPreview
+    account.preferredURL = first.urls.first
+    other.pairing = first
+    other.usage = .widgetPreview
+    other.bots = Bot.widgetPreview
+
+    // Refreshing the addresses of the same computer preserves its snapshot.
+    var updated = first
+    updated.urls.append("https://mac-backup.invalid")
+    account.pairing = updated
+    #expect(account.usage == .widgetPreview)
+    #expect(account.bots == Bot.widgetPreview)
+
+    account.pairing = second
+    #expect(account.usage == nil)
+    #expect(account.bots.isEmpty)
+    #expect(account.preferredURL == nil)
+    #expect(other.usage == .widgetPreview)
+    #expect(other.bots == Bot.widgetPreview)
+
+    account.usage = .widgetPreview
+    account.bots = Bot.widgetPreview
+    account.pairing = nil
+    #expect(account.usage == nil)
+    #expect(account.bots.isEmpty)
+    #expect(other.pairing == first)
+}

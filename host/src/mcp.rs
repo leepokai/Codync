@@ -1,7 +1,6 @@
-//! `codync-host mcp computer --bot <id>`: the built-in `computer` MCP server
-//! (stdio) handed to bots that have computer use turned on. Each tool call is
-//! forwarded to the running host (`POST /api/computerCall`), which checks the
-//! bot's permission and who's in control, then drives the screen helper.
+//! Built-in stdio MCP servers: `team` discovers and asks other bots; `computer`
+//! operates the desktop when enabled. Calls go through authenticated loopback
+//! HTTP to the running host, which owns delegation and screen control.
 
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -9,6 +8,12 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
+
+#[derive(Clone, Copy)]
+pub enum Server {
+    Computer,
+    Team,
+}
 
 const INSTRUCTIONS: &str = "Operate this computer's desktop like a person would. Start with `screenshot` \
 (or `ui_tree` to find controls precisely), then act; every action returns a fresh screenshot. \
@@ -93,11 +98,15 @@ fn tools() -> Value {
 }
 
 /// Serves MCP on stdio until the agent closes it.
-pub async fn serve(bot: String, port: u16) -> Result<()> {
+pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
     let token = token.trim().to_owned();
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut out = tokio::io::stdout();
+    let (name, instructions, available_tools) = match server {
+        Server::Computer => ("codync-computer", INSTRUCTIONS, tools()),
+        Server::Team => ("codync-team", crate::team::INSTRUCTIONS, crate::team::tools()),
+    };
     while let Some(line) = lines.next_line().await? {
         let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
         let Some(id) = msg.get("id").filter(|id| !id.is_null()).cloned() else {
@@ -108,12 +117,12 @@ pub async fn serve(bot: String, port: u16) -> Result<()> {
             "initialize" => Ok(json!({
                 "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "codync-computer", "version": env!("CARGO_PKG_VERSION")},
-                "instructions": INSTRUCTIONS,
+                "serverInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
+                "instructions": instructions,
             })),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({"tools": tools()})),
-            "tools/call" => Ok(call(port, &token, &bot, params).await),
+            "tools/list" => Ok(json!({"tools": available_tools})),
+            "tools/call" => Ok(call(port, &token, &bot, params, server).await),
             method => Err(json!({"code": -32601, "message": format!("unknown method {method}")})),
         };
         let msg = match reply {
@@ -129,24 +138,33 @@ pub async fn serve(bot: String, port: u16) -> Result<()> {
 }
 
 /// One tool call through the host. Failures are tool errors the agent can read, not protocol errors.
-async fn call(port: u16, token: &str, bot: &str, params: &Value) -> Value {
+async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server) -> Value {
     let body = json!({
         "botId": bot,
         "name": params["name"],
         "arguments": params.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({})),
     });
+    let (method, timeout) = match server {
+        Server::Computer => ("computerCall", Duration::from_secs(60)),
+        Server::Team => ("teamCall", crate::team::ASK_TIMEOUT + Duration::from_secs(30)),
+    };
     let res = crate::http()
-        .post(format!("http://127.0.0.1:{port}/api/computerCall"))
+        .post(format!("http://127.0.0.1:{port}/api/{method}"))
         .bearer_auth(token)
         .json(&body)
-        .timeout(Duration::from_secs(60))
+        .timeout(timeout)
         .send()
         .await;
     let error = match res {
         Ok(r) => {
             let ok = r.status().is_success();
             match r.json::<Value>().await {
-                Ok(v) if ok => return json!({"content": v["content"]}),
+                Ok(v) if ok => {
+                    return match server {
+                        Server::Computer => json!({"content": v["content"]}),
+                        Server::Team => json!({"content": [{"type": "text", "text": v.to_string()}]}),
+                    };
+                }
                 Ok(v) => v["error"].as_str().unwrap_or("the Codync host refused the call").to_owned(),
                 Err(e) => format!("bad response from the Codync host: {e}"),
             }

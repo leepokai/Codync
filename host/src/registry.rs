@@ -98,7 +98,7 @@ pub fn launch_kind(agent: &Value) -> Option<Launch> {
     None
 }
 
-fn shell_quote(s: &str) -> String {
+pub fn shell_quote(s: &str) -> String {
     if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_./=@:+,".contains(c)) {
         s.to_owned()
     } else {
@@ -114,8 +114,9 @@ fn args_of(v: &Value) -> String {
 }
 
 /// `KEY=value ` pairs; keys that aren't plain identifiers are dropped (they'd be shell syntax).
-fn env_prefix(v: &Value) -> String {
-    v["env"]
+/// Goes through `env` so the result still works after `exec`.
+pub fn env_prefix(env: &Value) -> String {
+    let pairs = env
         .as_object()
         .map(|m| {
             m.iter()
@@ -123,7 +124,8 @@ fn env_prefix(v: &Value) -> String {
                 .filter_map(|(k, v)| Some(format!("{k}={} ", shell_quote(v.as_str()?))))
                 .collect::<String>()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if pairs.is_empty() { pairs } else { format!("env {pairs}") }
 }
 
 /// One path component made only of `[A-Za-z0-9._-]` and not `.`/`..`.
@@ -168,14 +170,14 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
                 target["cmd"].as_str().and_then(contained).ok_or_else(|| anyhow!("registry entry has a bad cmd"))?;
             let dir = install_binary(agent, target, cmd, &progress).await?;
             Ok(Cmd {
-                program: format!("{}{}", env_prefix(target), shell_quote(&dir.join(cmd).to_string_lossy())),
+                program: format!("{}{}", env_prefix(&target["env"]), shell_quote(&dir.join(cmd).to_string_lossy())),
                 args: args_of(target),
             })
         }
         Some(Launch::Npx) => Ok(Cmd {
             program: format!(
                 "{}npx -y {}",
-                env_prefix(&d["npx"]),
+                env_prefix(&d["npx"]["env"]),
                 shell_quote(d["npx"]["package"].as_str().unwrap_or_default())
             ),
             args: args_of(&d["npx"]),
@@ -183,7 +185,7 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
         Some(Launch::Uvx) => Ok(Cmd {
             program: format!(
                 "{}uvx {}",
-                env_prefix(&d["uvx"]),
+                env_prefix(&d["uvx"]["env"]),
                 shell_quote(d["uvx"]["package"].as_str().unwrap_or_default())
             ),
             args: args_of(&d["uvx"]),
@@ -313,7 +315,7 @@ mod tests {
     async fn npx_command_is_quoted() {
         let a = json!({"id": "x", "name": "X", "distribution": {"npx": {"package": "@s/x@1.0.0", "args": ["--acp", "a b"], "env": {"K": "v", "BAD;rm": "x"}}}});
         if crate::backends::on_path("npx") {
-            assert_eq!(command(&a, |_| {}).await.unwrap().acp(), "K=v npx -y @s/x@1.0.0 --acp 'a b'");
+            assert_eq!(command(&a, |_| {}).await.unwrap().acp(), "env K=v npx -y @s/x@1.0.0 --acp 'a b'");
         }
     }
 

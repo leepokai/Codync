@@ -12,6 +12,7 @@ struct CodyncApp: App {
     private var model: BotStore { app.model }
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = AppTab.bots
+    @AppStorage("onboardingCompleted") private var onboardingCompleted = false
 
     var body: some Scene {
         WindowGroup {
@@ -20,8 +21,14 @@ struct CodyncApp: App {
                 .environment(model)
                 .environment(app.account)
                 .tint(Palette.accent)
-                .sheet(isPresented: Bindable(app.account).showSwitcher) {
-                    NavigationStack { AccountSwitcherView().environment(app.account).environment(model) }
+                .sheet(isPresented: Binding(
+                    get: { onboardingCompleted && app.account.showSwitcher },
+                    set: { app.account.showSwitcher = $0 }
+                )) {
+                    NavigationStack { AccountSwitcherView() }
+                        .environment(app.account)
+                        .environment(model)
+                        .tint(Palette.accent)
                 }
                 .onChange(of: app.account.userID, initial: true) { _, userID in
                     app.switchAccount(to: userID)
@@ -105,10 +112,13 @@ final class AppStore {
     private static func makeStore(_ storage: SharedStore.Context) -> BotStore {
         let store = BotStore(pairing: storage.pairing, clientKind: "ios", persistsPairing: true, storage: storage)
         store.onPaired = { PushRegistrar.shared.syncDevice(with: $0) }
-        store.onBotUpdated = { [weak store] bot in
-            guard let store else { return }
-            LiveActivities.shared.update(bot: bot)
-            BotsWidgetFeed.update(store.roster)
+        store.onBotUpdated = { bot in LiveActivities.shared.update(bot: bot) }
+        store.onRosterChanged = { roster in
+            BotsWidgetFeed.update(roster, storage: storage)
+            if roster.isEmpty {
+                LiveActivities.shared.endAll()
+                WidgetCenter.shared.reloadAllTimelines()
+            }
         }
         store.onSent = { [weak store] bot in
             guard let store else { return }
@@ -118,6 +128,7 @@ final class AppStore {
             storage.usage = usage
             WidgetCenter.shared.reloadAllTimelines()
         }
+        BotsWidgetFeed.update(store.roster, storage: storage)
         return store
     }
 }
@@ -160,15 +171,34 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 /// something the widget shows changes (who is working / needs you / unread).
 @MainActor
 enum BotsWidgetFeed {
-    private static var shown = ""
+    private struct Snapshot: Equatable {
+        let id: String
+        let name: String
+        let shape: String
+        let color: String
+        let status: String
+        let activity: String
+        let message: String?
+        let lastAt: Int64
 
-    static func reset() { shown = "" }
+        init(_ bot: Bot) {
+            id = bot.id; name = bot.name; shape = bot.avatarShape; color = bot.avatarColor
+            status = bot.status; activity = bot.activity; message = bot.lastMessage; lastAt = bot.lastAt
+        }
+    }
+    private static var shown: [Snapshot]?
+    private static var scope: String?
 
-    static func update(_ roster: [Bot]) {
-        SharedStore.bots = roster
-        let signature = roster.map { "\($0.id):\($0.status):\($0.unread)" }.joined(separator: ",")
-        guard signature != shown else { return }
+    static func reset() { shown = nil; scope = nil }
+
+    static func update(_ roster: [Bot], storage: SharedStore.Context) {
+        guard storage.id == SharedStore.activeContext.id else { return }
+        storage.bots = roster
+        let currentScope = storage.id + ":" + SharedStore.Context.digest(storage.pairing?.token ?? "unpaired")
+        let signature = roster.filter { !$0.hidden }.map(Snapshot.init)
+        guard signature != shown || scope != currentScope else { return }
         shown = signature
+        scope = currentScope
         WidgetCenter.shared.reloadTimelines(ofKind: "CodyncBots")
     }
 }

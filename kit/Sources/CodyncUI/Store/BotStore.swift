@@ -53,6 +53,7 @@ public final class BotStore {
     // Platform hooks (push registration, Live Activities, widgets).
     public var onPaired: (@MainActor (BotStore) -> Void)?
     public var onBotUpdated: (@MainActor (Bot) -> Void)?
+    public var onRosterChanged: (@MainActor ([Bot]) -> Void)?
     public var onUsageChanged: (@MainActor (Usage) -> Void)?
     public var onSent: (@MainActor (Bot) -> Void)?
 
@@ -164,6 +165,9 @@ public final class BotStore {
     private func resetMirror() {
         bots = [:]
         entries = [:]
+        selection = nil
+        setUsage(Usage())
+        onRosterChanged?([])
         rev = 0
         hostId = nil
         historyComplete = []
@@ -181,6 +185,7 @@ public final class BotStore {
         saveTask?.cancel()
         onPaired = nil
         onBotUpdated = nil
+        onRosterChanged = nil
         onUsageChanged = nil
         onSent = nil
         client = nil
@@ -281,10 +286,13 @@ public final class BotStore {
             bots[bot.id] = bot
             bump(bot.rev)
             onBotUpdated?(bot)
+            onRosterChanged?(roster)
         case let .botDeleted(id, r):
             bots[id] = nil
             entries[id] = nil
             bump(r)
+            if selection == id { selection = nil }
+            onRosterChanged?(roster)
         case let .entry(e):
             upsert(e)
             bump(e.rev)
@@ -490,8 +498,11 @@ public final class BotStore {
     }
 
     public func refreshUsage() async {
-        guard let client else { return }
-        if let u = try? await client.usage(refresh: true) { setUsage(u) }
+        guard !retired, let client, let token = pairing?.token else { return }
+        if let u = try? await client.usage(refresh: true),
+           !retired, !Task.isCancelled, pairing?.token == token {
+            setUsage(u)
+        }
     }
 
     public func loadOlder(_ botId: String) async {

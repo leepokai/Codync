@@ -87,7 +87,7 @@ impl Terms {
 
     /// Starts `step` for `backend` (a sign-in `method` the agent advertised, or
     /// Codync's own command for it), or returns the one already running.
-    pub fn start(
+    pub async fn start(
         self: &Arc<Self>,
         backend: &str,
         step: Step,
@@ -107,7 +107,7 @@ impl Terms {
             Step::Login => match method {
                 Some(m) => crate::auth::terminal_command(backend, m)
                     .ok_or_else(|| anyhow!("That sign-in option is gone; check {name} again"))?,
-                None => h.ok_or_else(|| anyhow!("Pick a sign-in option for {name}"))?.login.to_owned(),
+                None => backends::login_command(backend).await?,
             },
         };
         self.spawn((backend.to_owned(), step), &command, cols, rows)

@@ -22,7 +22,7 @@ struct UsageView: View {
                                            description: Text("Your computer reads the limits from Claude Code and Codex."))
                         .padding(.top, 60)
                 }
-                Button("How to add a widget") { widgetHelp = true }
+                Button("Widgets & setup") { widgetHelp = true }
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Palette.secondary)
                     .padding(.top, 4)
@@ -33,7 +33,17 @@ struct UsageView: View {
         .navigationTitle("Usage")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await model.refreshUsage() }
-        .sheet(isPresented: $widgetHelp) { WidgetHelp() }
+        .sheet(isPresented: $widgetHelp) {
+            NavigationStack {
+                WidgetGalleryView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close", systemImage: "xmark") { widgetHelp = false }.labelStyle(.iconOnly)
+                        }
+                    }
+            }
+            .environment(model)
+        }
     }
 }
 
@@ -42,12 +52,12 @@ private struct ProviderCard: View {
     @Binding var collapsed: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                AgentIcon(registry: provider.registry, size: 28)
-                    .frame(width: 52, height: 52)
-                    .background(provider.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                Text(provider.name).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                AgentIcon(registry: provider.registry, size: 22)
+                    .frame(width: 34, height: 34)
+                    .background(provider.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Text(provider.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
                 Spacer()
                 Button(collapsed ? "Expand" : "Collapse", systemImage: "chevron.up") {
                     withAnimation(.snappy) { collapsed.toggle() }
@@ -66,7 +76,7 @@ private struct ProviderCard: View {
                     }
                     .font(.subheadline)
                     .foregroundStyle(Palette.text)
-                    TickBar(percent: top.percent, tint: provider.tint)
+                    UsageTicks(percent: top.percent, tint: provider.widgetTint, height: 15)
                     if let reset = top.resetsShort() {
                         Text(reset).font(.caption.monospacedDigit()).foregroundStyle(Palette.tertiary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -76,7 +86,7 @@ private struct ProviderCard: View {
 
             if !collapsed {
                 Divider()
-                VStack(spacing: 12) {
+                VStack(spacing: 8) {
                     ForEach(provider.windows) { w in
                         row(w.label, "\(Int(w.percent.rounded()))%")
                         if let reset = w.resetsShort() { row("\(w.label) reset", reset.replacingOccurrences(of: "resets ", with: "")) }
@@ -87,8 +97,8 @@ private struct ProviderCard: View {
                 .transition(.opacity)
             }
         }
-        .padding(18)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(14)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private var source: String {
@@ -107,51 +117,6 @@ private struct ProviderCard: View {
             Spacer()
             Text(value).foregroundStyle(Palette.text).monospacedDigit()
         }
-        .font(.body)
-    }
-}
-
-/// Nowdex-style bar: a row of ticks, filled up to the percentage.
-private struct TickBar: View {
-    let percent: Double
-    let tint: Color
-
-    var body: some View {
-        GeometryReader { geo in
-            let count = max(1, Int(geo.size.width / 7))
-            let filled = Int((Double(count) * min(100, percent) / 100).rounded())
-            let color = percent >= 90 ? Palette.danger : tint
-            HStack(spacing: 3) {
-                ForEach(0..<count, id: \.self) { i in
-                    Capsule().fill(i < filled ? color : color.opacity(0.18))
-                }
-            }
-        }
-        .frame(height: 24)
-        .accessibilityElement()
-        .accessibilityLabel("\(Int(percent.rounded())) percent used")
-    }
-}
-
-private struct WidgetHelp: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Label("Touch and hold an empty spot on your Home Screen until the apps jiggle.", systemImage: "hand.tap")
-                Label("Tap Edit, then Add Widget.", systemImage: "plus.square")
-                Label("Search for Codync and pick Provider usage or Usage limits.", systemImage: "magnifyingglass")
-                Label("Touch and hold the widget, then Edit Widget to choose Claude or Codex.", systemImage: "slider.horizontal.3")
-            }
-            .navigationTitle("Add a widget")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
-                }
-            }
-        }
-        .presentationDetents([.medium])
+        .font(.footnote)
     }
 }

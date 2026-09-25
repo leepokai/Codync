@@ -21,12 +21,14 @@
 		48DAAA1384E5B8D0BA27C895 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E47C60032C326157E0386B8 /* SwiftUI.framework */; };
 		498C81B8C82557C85F912238 /* HostLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CAC64DDC41D4A222A12DDE /* HostLink.swift */; };
 		513F59BF65DED5379AB950A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D2C705F063CD20F5B3036BD4 /* Assets.xcassets */; };
+		52AEBEAEADB347DA7E3CDC40 /* WidgetPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744DB8C27E27A424EA8E1549 /* WidgetPreviews.swift */; };
 		52CF04B855C6AAEC47B75B8F /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1285DDFA0390A76ECDAAD6C0 /* CodyncKit */; };
 		5F9AE9B8E7FF66F194162BDC /* ScreenHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB932B6C1849B8DF7CF7C2E3 /* ScreenHelper.swift */; };
 		6A15821964A5EE5AEBB0C420 /* ClerkConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = 19D41F16A62FEF37BE0AD1FC /* ClerkConfig.plist */; };
 		826FEDA23997E436D632E579 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4CFB70DD8757C90695CDA211 /* PrivacyInfo.xcprivacy */; };
 		8AC8D90C21B92480E2809758 /* AccountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B8EAB09016D328195FE2AD /* AccountSession.swift */; };
 		8CD641A45F144BF41D703D2A /* CodyncMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2969919CCC8BC89F277C43A6 /* CodyncMacApp.swift */; };
+		A12D125989D2EA1AC5308218 /* WidgetGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8563C243AB130DFA063CAD /* WidgetGalleryView.swift */; };
 		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
 		ACCB28F3DB9C89108B7911E3 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842DA106CA15E3810C3C9461 /* Input.swift */; };
 		AFC0CD8BD1FA61F810C96057 /* com.pokai.Codync.screen.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 895BB6C2EB8986266EB4159A /* com.pokai.Codync.screen.plist */; };
@@ -104,6 +106,7 @@
 
 /* Begin PBXFileReference section */
 		00F135A0B168269BD6C2A199 /* CodyncWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncWidgets.swift; sourceTree = "<group>"; };
+		0E8563C243AB130DFA063CAD /* WidgetGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetGalleryView.swift; sourceTree = "<group>"; };
 		19D41F16A62FEF37BE0AD1FC /* ClerkConfig.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = ClerkConfig.plist; sourceTree = "<group>"; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		1F16B11B2920E9D05621AFE7 /* ViewingBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewingBadge.swift; sourceTree = "<group>"; };
@@ -118,6 +121,7 @@
 		6D734BEE7CD3F84677B0218B /* Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		739EC95223CC8F8717C33736 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		741B706007BA1B91CB853699 /* Screen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Screen.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		744DB8C27E27A424EA8E1549 /* WidgetPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPreviews.swift; sourceTree = "<group>"; };
 		74BB0269490A0689868F05F7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		75CAC64DDC41D4A222A12DDE /* HostLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostLink.swift; sourceTree = "<group>"; };
 		7A2F5A7F5A648909D8CC5C19 /* kit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = kit; path = kit; sourceTree = SOURCE_ROOT; };
@@ -195,6 +199,7 @@
 				E1B79D48C1D6F90D53751B3F /* RootView.swift */,
 				DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */,
 				47BCE8E2AFA6CA829DBC489A /* UsageView.swift */,
+				0E8563C243AB130DFA063CAD /* WidgetGalleryView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -203,6 +208,7 @@
 			isa = PBXGroup;
 			children = (
 				00F135A0B168269BD6C2A199 /* CodyncWidgets.swift */,
+				744DB8C27E27A424EA8E1549 /* WidgetPreviews.swift */,
 				5CD54037D222223E9929C80F /* Resources */,
 			);
 			path = Widgets;
@@ -572,6 +578,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F191B13B972C72CB4253B449 /* CodyncWidgets.swift in Sources */,
+				52AEBEAEADB347DA7E3CDC40 /* WidgetPreviews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -602,6 +609,7 @@
 				E430F9317B690366F62164DB /* RootView.swift in Sources */,
 				DEF7478AB86DB605F52905F5 /* SettingsView.swift in Sources */,
 				ED143C01BF7AD4953101D160 /* UsageView.swift in Sources */,
+				A12D125989D2EA1AC5308218 /* WidgetGalleryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

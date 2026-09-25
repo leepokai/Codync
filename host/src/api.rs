@@ -107,6 +107,7 @@ fn str_arg<'a>(b: &'a Value, k: &str) -> Result<&'a str> {
 
 pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
     Ok(match method {
+        "teamCall" => crate::team::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?,
         "hello" => {
             let port = hub.port;
             json!({
@@ -183,6 +184,22 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
         }
         "newSession" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::NewSession)?;
+            json!({})
+        }
+        "memory" => {
+            let bot = str_arg(&b, "botId")?.to_owned();
+            tokio::task::spawn_blocking(move || crate::memory::describe(&bot)).await??
+        }
+        "forgetMemory" => {
+            let bot = str_arg(&b, "botId")?.to_owned();
+            let id = str_arg(&b, "id")?.to_owned();
+            let removed =
+                tokio::task::spawn_blocking(move || crate::memory::Memory::for_bot(&bot)?.remove(&id)).await??;
+            json!({"removed": removed})
+        }
+        "clearMemory" => {
+            let bot = str_arg(&b, "botId")?.to_owned();
+            tokio::task::spawn_blocking(move || crate::memory::Memory::for_bot(&bot)?.clear()).await??;
             json!({})
         }
         "respondPermission" => {
@@ -275,7 +292,7 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
             let step: crate::term::Step =
                 serde_json::from_value(b["step"].clone()).context("`step` is install or login")?;
             let (cols, rows) = term_size(&b);
-            json!({"term": hub.terms.start(str_arg(&b, "backend")?, step, b["method"].as_str(), cols, rows)?})
+            json!({"term": hub.terms.start(str_arg(&b, "backend")?, step, b["method"].as_str(), cols, rows).await?})
         }
         "agentAuth" => crate::auth::check(&hub.store, str_arg(&b, "backend")?).await?,
         "agentAuthenticate" => {

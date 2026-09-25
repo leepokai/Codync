@@ -34,6 +34,7 @@ pub struct Runtime {
 }
 
 pub struct Hub {
+    pub team: crate::team::Requests,
     pub store: Store,
     pub host_id: String,
     pub token: String,
@@ -58,6 +59,7 @@ impl Hub {
         let (events, _) = broadcast::channel(1024);
         let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
         Arc::new(Self {
+            team: crate::team::Requests::default(),
             store,
             host_id,
             token,
@@ -176,6 +178,7 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
+        self.team.cancel_bot(id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
         self.runtime.locked().remove(id);

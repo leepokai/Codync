@@ -13,7 +13,7 @@
 use crate::LockExt;
 use crate::acp::{AUTH_REQUIRED, Acp, Incoming, RpcError};
 use crate::backends;
-use crate::registry::Cmd;
+use crate::registry::{Cmd, env_prefix, shell_quote};
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
@@ -100,6 +100,8 @@ pub async fn check(store: &Store, backend: &str) -> Result<Value> {
     CHECKED.locked().insert(backend.to_owned(), status.clone());
     let mut v = serde_json::to_value(&status)?;
     v["savedEnv"] = json!(saved_env(store, backend));
+    // Codync's own sign-in command (phone-friendly device flows where the CLI has one).
+    v["login"] = json!(backends::login_available(backend));
     Ok(v)
 }
 
@@ -130,7 +132,11 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
 type Started = (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>, Value, Cmd);
 
 async fn start(store: &Store, backend: &str) -> Result<Started> {
-    let candidates = backends::launch_candidates(backend, |_| {}).await?;
+    // The installed CLI alone when there is one: resolving the registry build can mean a long download.
+    let candidates = match backends::local_candidate(backend) {
+        Some(local) => vec![local],
+        None => backends::launch_candidates(backend, |_| {}).await?,
+    };
     let env = env(store, backend);
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
@@ -139,7 +145,7 @@ async fn start(store: &Store, backend: &str) -> Result<Started> {
     for (i, cmd) in candidates.into_iter().enumerate() {
         // A first `npx` run downloads the package: give the last candidate time.
         let budget = Duration::from_secs(if i + 1 < count { 20 } else { 180 });
-        let (acp, rx) = match Acp::spawn(&cmd.acp(), &dir.to_string_lossy(), &env) {
+        let (acp, mut rx) = match Acp::spawn(&cmd.acp(), &dir.to_string_lossy(), &env) {
             Ok(v) => v,
             Err(e) => {
                 last = Some(e);
@@ -162,7 +168,19 @@ async fn start(store: &Store, backend: &str) -> Result<Started> {
         );
         match tokio::time::timeout(budget, init).await {
             Ok(Ok(init)) => return Ok((acp, rx, init, cmd)),
-            Ok(Err(e)) => last = Some(e),
+            Ok(Err(e)) => {
+                // Its last stderr line usually says why it quit.
+                let why = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|inc| match inc {
+                    Incoming::Closed { stderr_tail } => {
+                        stderr_tail.lines().rev().find(|l| !l.trim().is_empty()).map(str::to_owned)
+                    }
+                    _ => None,
+                });
+                last = Some(match why {
+                    Some(why) => e.context(why),
+                    None => e,
+                });
+            }
             Err(_) => last = Some(anyhow!("the agent didn't start within {}s", budget.as_secs())),
         }
         acp.kill().await;
@@ -174,35 +192,16 @@ fn text(v: &Value) -> Option<String> {
     v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
-fn shell_quote(s: &str) -> String {
-    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_./=@:+,".contains(c)) {
-        s.to_owned()
-    } else {
-        format!("'{}'", s.replace('\'', "'\\''"))
-    }
-}
-
 fn joined_args(v: &Value) -> String {
     v.as_array()
         .map(|a| a.iter().filter_map(Value::as_str).map(shell_quote).collect::<Vec<_>>().join(" "))
         .unwrap_or_default()
 }
 
-fn env_prefix(v: &Value) -> String {
-    v.as_object()
-        .map(|m| {
-            m.iter()
-                .filter(|(k, _)| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
-                .filter_map(|(k, v)| Some(format!("{k}={} ", shell_quote(v.as_str()?))))
-                .collect::<String>()
-        })
-        .unwrap_or_default()
-}
-
 /// The agent's advertised sign-in methods, in Codync's terms.
 fn methods(backend: &str, init: &Value, cmd: &Cmd) -> Vec<Method> {
     let empty = Map::new();
-    init["authMethods"]
+    let mut out = init["authMethods"]
         .as_array()
         .into_iter()
         .flatten()
@@ -248,7 +247,12 @@ fn methods(backend: &str, init: &Value, cmd: &Cmd) -> Vec<Method> {
             };
             Some(Method { id, name, description: text(&m["description"]), kind })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    // Some agents list a key twice: prose-only ("set Z_AI_API_KEY") and as a real env-var method.
+    let keyed: Vec<String> =
+        out.iter().filter(|m| matches!(m.kind, MethodKind::EnvVar { .. })).map(|m| m.name.clone()).collect();
+    out.retain(|m| !matches!(m.kind, MethodKind::Agent) || !keyed.contains(&m.name));
+    out
 }
 
 /// The terminal command for a method found by the last check.
@@ -308,6 +312,7 @@ mod tests {
             {"id": "d", "name": "Browser"},
             {"id": "e", "name": "Api key", "_meta": {"api-key": {"provider": "openai"}}},
             {"id": "f", "name": "Qwen style", "_meta": {"type": "terminal", "args": ["--auth-type=openai"]}},
+            {"id": "g", "name": "Key"},
         ]});
         let m = methods("x", &init, &cmd());
         let kinds: Vec<_> = m.iter().map(|m| (m.id.as_str(), &m.kind)).collect();

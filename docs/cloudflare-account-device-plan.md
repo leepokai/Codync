@@ -1,7 +1,13 @@
 # Codync 帳號、裝置管理與 Cloudflare 架構計畫
 
 日期：2026-09-25  
-狀態：規劃文件；尚未實作或部署。文中的時間、容量與保留期限是建議產品設定，不是服務商限制。
+狀態：雲端、逐裝置授權與 SSH 為規劃，尚未部署；手機帳號入口與本機資料分區已實作，詳見補充計畫的落地範圍。文中的時間、容量與保留期限是建議產品設定，不是服務商限制。
+
+## 執行分工（2026-09-25 更新）
+
+Cloudflare API、D1、裝置目錄、雲端授權／撤權與中繼由 Claude Code 接續實作。本次 Codex 修改範圍是手機帳號入口、共享 Clerk session wrapper、本機帳號分區與計畫文件；未建立或部署 `cloud/`，也未修改既有 `relay/`。
+
+前後端整合時以已驗證的 Clerk user ID 作帳號關聯；不要把目前手機的配對資料分區誤認為已完成後端 ownership。新增 API 後應接到 `CloudClient`／account store，而非重新複製一套登入流程。
 
 ## 1. 目標與核心決策
 
@@ -39,10 +45,10 @@
 | 現況 | 程式位置 | 對計畫的影響 |
 |---|---|---|
 | Mac 已使用 ClerkKit，支援 Google 登入 | `apps/shared/AccountSession.swift`、`docs/clerk-macos.md` | 延伸現有登入，不另建帳號系統 |
-| iOS 尚未接 Clerk，以掃碼配對進入主畫面 | `apps/ios/App/CodyncApp.swift`、`apps/ios/Views/RootView.swift`、`PairingView.swift` | 新增可略過的登入入口與雲端電腦清單 |
+| iOS 已接 Clerk 帳號入口，電腦仍靠掃碼配對 | `apps/ios/App/CodyncApp.swift`、`apps/ios/Views/RootView.swift`、`PairingView.swift` | 登入入口已建立；雲端電腦清單待實作 |
 | host SQLite 位於 `~/.codync/codync.db` | `host/src/main.rs`、`host/src/store.rs` | 保留本機資料與既有 `rev` 同步機制 |
 | host 使用共用 pairing token，旋轉會使所有舊裝置失效 | `host/src/main.rs`、`host/src/api.rs` | 必須新增逐裝置授權，才能精準撤權 |
-| 手機配對資料序列化到 App Group UserDefaults | `kit/Sources/CodyncKit/Client/SharedStore.swift` | 秘密搬到 Keychain，UserDefaults 僅留顯示資料與參照 |
+| 手機配對資料依帳號分區存入 App Group UserDefaults | `kit/Sources/CodyncKit/Client/SharedStore.swift` | 秘密搬到 Keychain，UserDefaults 僅留顯示資料與參照 |
 | 命令走 HTTP API，事件走 SSE | `host/src/api.rs`、`kit/Sources/CodyncKit/Client/HostClient.swift` | 第一版沿用；後續用 transport 抽象接中繼 |
 | 已有 Cloudflare Worker 轉送 APNs，使用加密 ticket | `relay/src/index.ts`、`relay/wrangler.toml` | 保留相容性；它目前不是裝置目錄或聊天中繼 |
 | Remote screen 使用獨立 helper 與 WebRTC | `apps/screen/`、`kit/Sources/CodyncUI/Screen/` | 影像傳輸與聊天中繼分開 |

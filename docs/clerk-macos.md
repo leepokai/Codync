@@ -80,3 +80,17 @@ push revocation and Keychain migration remain work in the architecture plan.
 Verify with two real Google accounts: add both, switch, cancel OAuth, restart,
 check each account's pairings, sign out just one, and verify the other remains.
 A simulator build verifies compilation, not the Dashboard settings or OAuth flow.
+
+### Local verification on 2026-09-25
+
+- iOS Simulator build succeeded with normal simulator signing. Do not use
+  `CODE_SIGNING_ALLOWED=NO` for a Clerk runtime smoke test: an unsigned simulator
+  installation failed Keychain initialization with OSStatus -34018.
+- The app launches, the top-left Accounts sheet opens, and its Computers & settings
+  destination navigates successfully in iPhone 17 Pro / iOS 26.5 Simulator.
+- `swift test --package-path kit`: 9 tests passed, including account storage
+  separation, legacy pairing preservation, and rejecting another account or
+  computer's old widget link.
+- Real Google login, two-account switching, and Clerk Dashboard configuration still
+  need end-to-end verification with test accounts. No cloud ownership implementation
+  or Cloudflare deployment was performed in this change.

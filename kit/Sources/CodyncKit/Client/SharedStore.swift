@@ -40,7 +40,16 @@ public enum SharedStore {
         }
         public var pairing: Pairing? {
             get { read(Pairing.self, "pairing") }
-            nonmutating set { write(newValue, "pairing") }
+            nonmutating set {
+                // These snapshots describe the selected computer, not the whole
+                // account. Never reuse them after switching or forgetting it.
+                if pairing?.token != newValue?.token {
+                    usage = nil
+                    bots = []
+                    preferredURL = nil
+                }
+                write(newValue, "pairing")
+            }
         }
         public var computers: [Pairing] {
             get { read([Pairing].self, "computers") ?? pairing.map { [$0] } ?? [] }

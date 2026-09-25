@@ -76,6 +76,12 @@ pub struct BotConfig {
     pub hidden: bool,
     #[serde(default)]
     pub notify: Option<bool>,
+    /// Connector ids (MCP servers) handed to the agent; see `market`.
+    #[serde(default)]
+    pub connectors: Vec<String>,
+    /// Skill ids the bot is told about; see `market`.
+    #[serde(default)]
+    pub skills: Vec<String>,
     #[serde(default)]
     pub created_at: i64,
 }
@@ -455,6 +461,8 @@ mod tests {
             pinned: false,
             hidden: false,
             notify: None,
+            connectors: vec![],
+            skills: vec![],
             created_at: 0,
         };
         s.save_bot(&cfg).unwrap();

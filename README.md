@@ -45,7 +45,7 @@ codync                                     # the desktop app (release tarball: b
 codync-host pair                           # QR code in the terminal, or Settings in the app
 ```
 
-Building the Linux app yourself needs `libgtk-4-dev libadwaita-1-dev`: `cargo install --path linux`.
+Building the Linux app yourself needs `libgtk-4-dev libadwaita-1-dev`: `cargo install --path apps/linux`.
 
 Install [Tailscale](https://tailscale.com) on the computer and the phone to reach your bots from anywhere.
 
@@ -71,20 +71,21 @@ Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). **The token is ful
 | Path | |
 |---|---|
 | `host/` | `codync-host` — Rust daemon: ACP client, SQLite transcript, HTTP/SSE API, push, usage |
-| `CodyncKit/` | Swift package: `CodyncKit` (wire models, host client, theme, avatars) and `CodyncUI` (store + chat screens shared by iPhone and Mac) |
-| `Codync-iOS/` | iOS app: pairing, roster, push, Live Activity glue |
-| `CodyncWidgets/` | Usage widget + bot Live Activity |
-| `Codync-macOS/` | Menu bar + native chat window; installs/monitors the host |
-| `linux/` | Native Linux app (GTK 4 + libadwaita, Rust) |
+| `kit/` | Swift package: `CodyncKit` (wire models, host client, theme, avatars) and `CodyncUI` (store + chat screens shared by iPhone and Mac) |
+| `apps/ios/` | iOS app: pairing, roster, push, Live Activity glue |
+| `apps/widgets/` | Usage widget + bot Live Activity |
+| `apps/macos/` | Menu bar + native chat window; installs/monitors the host |
+| `apps/linux/` | Native Linux app (GTK 4 + libadwaita, Rust) |
 | `relay/` | Cloudflare Worker APNs relay with encrypted per-device tickets |
+| `web/` | Website (git submodule) |
 | `packaging/` | Homebrew formula template |
 
 The Xcode project is generated: `xcodegen generate`.
 
 ```bash
 cd host && cargo test            # host
-cd CodyncKit && swift test       # shared Swift
-cd linux && cargo test           # Linux app (needs GTK dev packages)
+cd kit && swift test             # shared Swift
+cd apps/linux && cargo test      # Linux app (needs GTK dev packages)
 cd relay && npm test             # relay tickets
 ```
 

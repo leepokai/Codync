@@ -8,7 +8,7 @@ options:
   createIntermediateGroups: true
 packages:
   CodyncKit:
-    path: CodyncKit
+    path: kit
 settings:
   base:
     MARKETING_VERSION: 2.0.0
@@ -24,7 +24,7 @@ targets:
     type: application
     platform: macOS
     sources:
-      - Codync-macOS
+      - apps/macos
     dependencies:
       - package: CodyncKit
         product: CodyncKit
@@ -79,7 +79,7 @@ targets:
     type: application
     platform: iOS
     sources:
-      - Codync-iOS
+      - apps/ios
     dependencies:
       - package: CodyncKit
         product: CodyncKit
@@ -91,9 +91,9 @@ targets:
       base:
         PRODUCT_NAME: Codync
         PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.ios
-        INFOPLIST_FILE: Codync-iOS/Info.plist
+        INFOPLIST_FILE: apps/ios/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: YES
-        CODE_SIGN_ENTITLEMENTS: Codync-iOS/Codync-iOS.entitlements
+        CODE_SIGN_ENTITLEMENTS: apps/ios/Resources/Codync-iOS.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_CFBundleDisplayName: Codync
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
@@ -111,7 +111,7 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - CodyncWidgets
+      - apps/widgets
     dependencies:
       - package: CodyncKit
         product: CodyncKit
@@ -121,9 +121,9 @@ targets:
       base:
         PRODUCT_NAME: CodyncWidgets
         PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.ios.LiveActivity
-        INFOPLIST_FILE: CodyncWidgets/Info.plist
+        INFOPLIST_FILE: apps/widgets/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: YES
-        CODE_SIGN_ENTITLEMENTS: CodyncWidgets/CodyncWidgets.entitlements
+        CODE_SIGN_ENTITLEMENTS: apps/widgets/Resources/CodyncWidgets.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: Codync
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES

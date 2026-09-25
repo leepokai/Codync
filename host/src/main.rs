@@ -5,6 +5,7 @@ mod api;
 mod backends;
 mod bot;
 mod hub;
+mod market;
 mod push;
 mod registry;
 mod service;

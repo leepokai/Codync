@@ -60,6 +60,7 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         perms: HashMap::new(),
         stop_requested: false,
         exit_tail: None,
+        tools_changed: false,
     };
     let task = tokio::spawn(actor.run(rx));
     BotHandle { tx, task }
@@ -69,6 +70,8 @@ struct Conn {
     acp: Arc<Acp>,
     rx: mpsc::UnboundedReceiver<Incoming>,
     can_load: bool,
+    /// The agent can reach remote (HTTP) MCP servers itself.
+    mcp_http: bool,
     /// Sessions already created or loaded in this process.
     loaded: HashSet<String>,
 }
@@ -102,6 +105,9 @@ struct Actor {
     stop_requested: bool,
     /// Last stderr lines of an agent process that just exited.
     exit_tail: Option<String>,
+    /// Connectors changed: restart the agent before the next turn so the
+    /// session is resumed with the new MCP servers.
+    tools_changed: bool,
 }
 
 type Done = Result<Value>;
@@ -160,6 +166,11 @@ impl Actor {
                 let cfg = *cfg;
                 let restart =
                     cfg.backend != self.cfg.backend || cfg.command != self.cfg.command || cfg.cwd != self.cfg.cwd;
+                self.tools_changed |= cfg.connectors != self.cfg.connectors;
+                // New skills are announced with the next prompt.
+                if cfg.skills != self.cfg.skills && self.session_id.is_some() {
+                    self.session_fresh = true;
+                }
                 self.cfg = cfg;
                 if restart {
                     if let Some(c) = self.conn.take() {
@@ -260,6 +271,10 @@ impl Actor {
                 profile.push_str(" Standing instructions:\n");
                 profile.push_str(self.cfg.description.trim());
             }
+            if let Some(skills) = crate::market::skills_brief(&self.hub.store, &self.cfg.skills) {
+                profile.push('\n');
+                profile.push_str(&skills);
+            }
             profile.push_str(
                 "\nKeep your final reply short and phone-friendly: say what you did and what needs the user.",
             );
@@ -278,7 +293,21 @@ impl Actor {
         Ok(())
     }
 
+    /// ACP `mcpServers` for this bot's connectors.
+    fn mcp_servers(&self, http_ok: bool) -> Value {
+        let all = crate::market::connectors(&self.hub.store);
+        Value::Array(
+            all.iter().filter(|c| self.cfg.connectors.contains(&c.id)).filter_map(|c| c.acp(http_ok)).collect(),
+        )
+    }
+
     async fn ensure_session(&mut self) -> Result<()> {
+        if self.tools_changed && self.turn.is_none() {
+            self.tools_changed = false;
+            if let Some(c) = self.conn.take() {
+                c.acp.kill().await;
+            }
+        }
         if self.conn.is_none() {
             let candidates = match self.cfg.command.as_deref().map(str::trim) {
                 Some(c) if !c.is_empty() => vec![c.to_owned()],
@@ -313,6 +342,7 @@ impl Actor {
                 return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
             }
         }
+        let servers = self.mcp_servers(self.conn.as_ref().is_some_and(|c| c.mcp_http));
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         if let Some(sid) = self.session_id.clone() {
             if conn.loaded.contains(&sid) {
@@ -329,7 +359,7 @@ impl Actor {
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
             let res = conn
                 .acp
-                .request("session/load", json!({"sessionId": sid, "cwd": self.cfg.cwd, "mcpServers": []}))
+                .request("session/load", json!({"sessionId": sid, "cwd": self.cfg.cwd, "mcpServers": servers}))
                 .await;
             // The agent replays history as session/update before answering; drop it.
             while let Ok(inc) = conn.rx.try_recv() {
@@ -349,7 +379,7 @@ impl Actor {
             }
         }
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
-        let res = conn.acp.request("session/new", json!({"cwd": self.cfg.cwd, "mcpServers": []})).await?;
+        let res = conn.acp.request("session/new", json!({"cwd": self.cfg.cwd, "mcpServers": servers})).await?;
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone());
         if let Some(model) = self.cfg.model.clone().filter(|m| !m.is_empty()) {
@@ -722,7 +752,8 @@ async fn start_agent(command: &str, cwd: &str, budget: Duration) -> Result<Conn>
         }
     };
     let can_load = init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false);
-    Ok(Conn { acp, rx, can_load, loaded: HashSet::new() })
+    let mcp_http = init["agentCapabilities"]["mcpCapabilities"]["http"].as_bool().unwrap_or(false);
+    Ok(Conn { acp, rx, can_load, mcp_http, loaded: HashSet::new() })
 }
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {

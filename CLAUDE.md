@@ -14,8 +14,8 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 ## Architecture
 
-- Clients: iOS app, native Mac window (menu bar app), native Linux app (`linux/`, GTK 4 + libadwaita in Rust). All talk to the host API; no web UI.
-- Shared Swift: `CodyncKit` (models, client, theme, avatars) + `CodyncUI` (`BotStore` + chat screens) used by iOS and macOS. Platform specifics go through `BotStore` hooks or `Platform.swift`.
+- Clients: iOS app, native Mac window (menu bar app), native Linux app (`apps/linux/`, GTK 4 + libadwaita in Rust). All talk to the host API; no web UI.
+- Shared Swift (`kit/`): `CodyncKit` (models, client, theme, avatars) + `CodyncUI` (`BotStore` + chat screens) used by iOS and macOS. Platform specifics go through `BotStore` hooks or `Platform.swift`.
 - UI principle: buttons an icon can express are icon-only (with tooltip / accessibility label); text only where an icon would be ambiguous (approval choices).
 - `host/` — **codync-host** (Rust, macOS + Linux). Detects installed harnesses (`backends.rs`: login-shell PATH + known dirs) and the ACP registry (`registry.rs`, cached in `~/.codync/registry.json`, binaries under `~/.codync/agents`). Drives agents over **ACP** (JSON-RPC on stdio, hand-rolled in `acp.rs`, updates kept as `serde_json::Value` so new adapter variants never break parsing). One actor per bot (`bot.rs`) owns the agent process + session and maps `session/update` onto transcript entries.
 - **Thread ≠ session**: a bot is one endless transcript (SQLite `entries`, ordered by `seq`); the ACP session underneath is resumed with `session/load` or replaced by *New session*.
@@ -47,8 +47,24 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 ## Targets
 
-- `Codync-macOS` — menu bar app + embedded host
-- `Codync-iOS` — iOS app
-- `CodyncWidgets` — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
-- `CodyncKit` — shared Swift package: `CodyncKit` + `CodyncUI` libraries
-- `linux/` — `codync` GTK app (build/test in a container with libgtk-4-dev + libadwaita-1-dev)
+- `Codync-macOS` (`apps/macos/`) — menu bar app + embedded host
+- `Codync-iOS` (`apps/ios/`) — iOS app
+- `CodyncWidgets` (`apps/widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
+- `CodyncKit` (`kit/`) — shared Swift package: `CodyncKit` + `CodyncUI` libraries
+- `apps/linux/` — `codync` GTK app (build/test in a container with libgtk-4-dev + libadwaita-1-dev)
+
+## Layout & naming
+
+```
+apps/{ios,macos,widgets,linux}   one folder per client
+kit/Sources/CodyncKit/           Models/ Client/ Design/   (no CodyncUI, widget-safe)
+kit/Sources/CodyncUI/            Store/ Bots/ Thread/ Marketplace/ Usage/ Resources/, cross-platform glue at root (Platform.swift)
+host/  relay/  web/  packaging/
+```
+
+- Directories: lowercase for repo-level roles (`apps/`, `kit/`, `host/`); PascalCase inside Swift targets (`Views/`, `Thread/`). Apple app folders are `App/` (entry point, app-wide services), `Views/`, `Resources/` (Info.plist, entitlements, xcprivacy, xcassets).
+- Files follow their language: Swift `UpperCamelCase.swift` named after the file's main type; Rust/TS `snake_case.rs` / `kebab-case.ts`.
+- One main type per file. Small private helpers of that type stay in it; a file of several small siblings takes the plural role (`ChatRows.swift`, `UsageViews.swift`, `Dialogs.swift`).
+- Type suffixes by role: full screen / sheet → `…View`; list item → `…Row`; card → `…Card`; chat bubble → `…Bubble`; window scene → `…Window`; `@Observable` state → `…Store` / `…Controller`; `ButtonStyle` → describes the effect (`PressScale`).
+- One word per concept across Swift, Rust host and Linux: **bot** (the persona you message), **agent** (the harness it runs, `Backend` in code), **thread** (the endless chat; not conversation/session), **session** (the ACP session only), **trace** (full conversation sheet), **marketplace** for UI / **market** for its data, **computer** (a paired host, user-facing) vs **host** (code).
+- Linux mirrors the Swift feature names in its module names (`thread`, `editor`, `trace`, `settings`) when a file is split; don't invent new terms there.

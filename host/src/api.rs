@@ -5,7 +5,7 @@ use crate::LockExt;
 use crate::bot::Cmd;
 use crate::hub::Hub;
 use crate::store::{BotConfig, EntryKind};
-use crate::{backends, usage};
+use crate::{backends, market, usage};
 use anyhow::{Context, Result, anyhow, bail};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -218,6 +218,40 @@ pub async fn dispatch(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Value> {
                 .min_dimensions(200, 200)
                 .build();
             json!({"pairingUrl": url, "urls": urls, "svg": svg})
+        }
+        "marketConnectors" => market::browse_connectors(&hub.store, b["search"].as_str().unwrap_or_default()).await?,
+        "marketSkills" => market::browse_skills(&hub.store).await?,
+        "connectors" => market::list_connectors(&hub.store),
+        "installConnector" => {
+            let c = if b["registryName"].is_string() {
+                market::install_connector(
+                    &hub.store,
+                    str_arg(&b, "registryName")?,
+                    str_arg(&b, "option")?,
+                    &b["inputs"],
+                )
+                .await?
+            } else {
+                market::add_custom_connector(&hub.store, &b)?
+            };
+            json!({"connector": c})
+        }
+        "removeConnector" => {
+            market::remove_connector(&hub.store, str_arg(&b, "id")?)?;
+            json!({})
+        }
+        "skills" => market::list_skills(&hub.store),
+        "installSkill" => {
+            let s = if b["source"].is_string() {
+                market::install_skill(&hub.store, str_arg(&b, "source")?).await?
+            } else {
+                market::add_custom_skill(&hub.store, &b)?
+            };
+            json!({"skill": s})
+        }
+        "removeSkill" => {
+            market::remove_skill(&hub.store, str_arg(&b, "id")?)?;
+            json!({})
         }
         _ => return Err(UnknownMethod.into()),
     })

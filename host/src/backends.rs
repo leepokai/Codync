@@ -339,6 +339,7 @@ pub fn list() -> Vec<Value> {
                 "description": reg.and_then(|a| a["description"].as_str()).unwrap_or_default(),
                 "installHint": h.setup,
                 "command": h.local.unwrap_or_default(),
+                "registry": h.registry,
                 "curated": true,
             })
         })
@@ -359,6 +360,7 @@ pub fn list() -> Vec<Value> {
             "description": a["description"],
             "installHint": format!("Codync installs it automatically. Sign in to {} on this computer first if it needs an account.", a["name"].as_str().unwrap_or(id)),
             "command": "",
+            "registry": id,
             "curated": false,
         }));
     }

@@ -101,65 +101,73 @@ pub enum Mood {
 /// brightest dots) and two slit eyes. Working swings the light and drifts the
 /// eyes; needing you sends a ripple out from the center. Below 24px the body
 /// stays solid because the dots stop reading.
+/// Same grid as the Apple apps (CharacterAvatar.swift): 13×13 square cells,
+/// eyes are the *missing* dots in columns 4 and 8 of rows 4–6.
+const CELLS: i32 = 13;
+const EYE_COLUMNS: [i32; 2] = [4, 8];
+const EYE_ROWS: [i32; 3] = [4, 5, 6];
+
 pub fn draw(cr: &Context, size: f64, shape: &str, color: &str, ink: (f64, f64, f64), mood: Mood, t: f64) {
     cr.save().ok();
     cr.scale(size / 100.0, size / 100.0);
     let (r, g, b) = rgb(color_of(color));
+    let step = 100.0 / f64::from(CELLS);
+    let animated = mood != Mood::Idle;
+    // Glance: whole-cell steps left / center / right, like a small display.
+    let glance = if mood == Mood::Working { ((t * 2.0 * PI / 3.2).sin() * 1.4).round() as i32 } else { 0 };
+    let blinking = animated && (t / 4.7).fract() < 0.035;
+    let eye_rows: &[i32] = if blinking { &EYE_ROWS[2..] } else { &EYE_ROWS };
+    let is_eye = |col: i32, row: i32| EYE_COLUMNS.iter().any(|c| c + glance == col) && eye_rows.contains(&row);
+
     silhouette(cr, shape);
     if size < 24.0 {
+        // Too few dots to read: a solid body with the same hollow eyes.
         cr.set_source_rgb(r, g, b);
         cr.fill().ok();
-    } else {
-        let step = 100.0 / 16.0;
-        let row_h = step * 0.866;
-        let mut dots = Vec::new();
-        let (mut y, mut row) = (row_h / 2.0, 0);
-        while y < 100.0 {
-            let mut x = if row % 2 == 0 { step / 2.0 } else { step };
-            while x < 100.0 {
-                if cr.in_fill(x, y).unwrap_or(false) {
-                    dots.push((x, y));
-                }
-                x += step;
+        cr.set_operator(gtk::cairo::Operator::Clear);
+        for c in EYE_COLUMNS {
+            for &row in eye_rows {
+                cr.rectangle(f64::from(c + glance) * step, f64::from(row) * step, step, step);
             }
-            y += row_h;
-            row += 1;
+        }
+        cr.fill().ok();
+        cr.set_operator(gtk::cairo::Operator::Over);
+        cr.restore().ok();
+        return;
+    }
+    let mut dots = Vec::new();
+    for row in 0..CELLS {
+        for col in 0..CELLS {
+            let (x, y) = ((f64::from(col) + 0.5) * step, (f64::from(row) + 0.5) * step);
+            if cr.in_fill(x, y).unwrap_or(false) && !is_eye(col, row) {
+                dots.push((x, y));
+            }
+        }
+    }
+    cr.new_path();
+    let yaw = if mood == Mood::Working { t * 1.4 } else { -0.7 };
+    let (lx, ly, lz) = (yaw.sin() * 0.8, 0.55, yaw.cos() * 0.5 + 0.6); // never fully behind
+    let ll = (lx * lx + ly * ly + lz * lz).sqrt();
+    for (x, y) in dots {
+        let (u, v) = ((x - 50.0) / 50.0, (50.0 - y) / 50.0);
+        let z = (1.0 - u * u - v * v).max(0.2).sqrt();
+        let nl = (u * u + v * v + z * z).sqrt();
+        let mut shade = 0.3 + 0.7 * ((u * lx + v * ly + z * lz) / (nl * ll)).max(0.0);
+        if mood == Mood::Needs {
+            shade *= 0.6 + 0.4 * (0.5 + 0.5 * ((u * u + v * v).sqrt() * 9.0 - t * 5.0).sin());
+        }
+        cr.arc(x, y, step * 0.42 * (0.55 + 0.45 * shade), 0.0, 2.0 * PI);
+        cr.set_source_rgba(ink.0, ink.1, ink.2, 0.2 + 0.4 * (shade / 0.7).min(1.0));
+        cr.fill_preserve().ok();
+        if shade > 0.6 {
+            cr.set_source_rgba(r, g, b, (shade - 0.6) / 0.4);
+            cr.fill_preserve().ok();
         }
         cr.new_path();
-        let yaw = if mood == Mood::Working { t * 1.4 } else { -0.7 };
-        let (lx, ly, lz) = (yaw.sin() * 0.8, 0.55, yaw.cos() * 0.5 + 0.6); // never fully behind
-        let ll = (lx * lx + ly * ly + lz * lz).sqrt();
-        for (x, y) in dots {
-            let (u, v) = ((x - 50.0) / 50.0, (50.0 - y) / 50.0);
-            let z = (1.0 - u * u - v * v).max(0.2).sqrt();
-            let nl = (u * u + v * v + z * z).sqrt();
-            let mut shade = 0.3 + 0.7 * ((u * lx + v * ly + z * lz) / (nl * ll)).max(0.0);
-            if mood == Mood::Needs {
-                shade *= 0.6 + 0.4 * (0.5 + 0.5 * ((u * u + v * v).sqrt() * 9.0 - t * 5.0).sin());
-            }
-            cr.arc(x, y, step * 0.38 * (0.3 + 0.7 * shade), 0.0, 2.0 * PI);
-            cr.set_source_rgba(ink.0, ink.1, ink.2, 0.12 + 0.33 * (shade / 0.7).min(1.0));
-            cr.fill_preserve().ok();
-            if shade > 0.7 {
-                cr.set_source_rgba(r, g, b, (shade - 0.7) / 0.3);
-                cr.fill_preserve().ok();
-            }
-            cr.new_path();
-        }
     }
-    let dx = if mood == Mood::Working { (t * 2.0 * PI / 3.2).sin() * 4.0 } else { 0.0 };
-    let phase = (t / 4.7).fract();
-    let blink = if mood != Mood::Idle && phase < 0.04 { ((phase - 0.02).abs() / 0.02).max(0.12) } else { 1.0 };
-    let (w, h) = ((1.4 * 100.0 / size).max(3.8), 12.0 * blink);
-    for side in [-1.0, 1.0] {
-        rounded_rect(cr, 50.0 + side * 10.0 + dx - w / 2.0, 47.0 - h / 2.0, w, h, w.min(h) / 2.0);
-    }
-    cr.set_source_rgb(ink.0, ink.1, ink.2);
-    cr.fill().ok();
     cr.restore().ok();
 }
 
-/// status: "" | "unread" | "needs"
 pub fn widget(shape: &str, color: &str, size: i32, working: bool, status: &str) -> gtk::DrawingArea {
     let area = gtk::DrawingArea::builder().content_width(size).content_height(size).valign(gtk::Align::Center).build();
     let (shape, color, status) = (shape.to_owned(), color.to_owned(), status.to_owned());

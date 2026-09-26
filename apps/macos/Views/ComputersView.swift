@@ -392,7 +392,7 @@ private struct ManagedComputerCard: View {
     }
 
     private var cloudLine: String {
-        guard let cloud, cloud.enabled else { return "Off: only devices on the same network reach it." }
+        guard let cloud, cloud.enabled else { return "Off: only Wi-Fi and Tailscale reach it, nothing goes through Cloudflare." }
         if let error = cloud.lastError { return error }
         return cloud.connected == true ? "Reachable from anywhere through Cloudflare (encrypted)." : "Connecting to Cloudflare…"
     }

@@ -137,6 +137,33 @@ final class HostController {
         refresh()
         ssh.connectAll()
         watchAutoClaim()
+        watchCloudDefault()
+    }
+
+    /// Cloudflare is on by default, so a Mac without Tailscale is reachable away from home; turning it
+    /// off (privacy: Wi-Fi and Tailscale only) is remembered and never undone behind the user's back.
+    private func watchCloudDefault() {
+        let target = withObservationTracking {
+            cloudDefaultTarget
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.watchCloudDefault() }
+        }
+        guard let target, let client = target.client, !enablingCloud else { return }
+        enablingCloud = true
+        Task {
+            do { _ = try await enableCloud(client, store: target) } catch { accounts.lastError = error.localizedDescription }
+            enablingCloud = false
+        }
+    }
+
+    private var enablingCloud = false
+    private static let cloudTurnedOffKey = "cloudTurnedOff"
+
+    private var cloudDefaultTarget: BotStore? {
+        guard account.cloudURL != nil, let store, store.connection == .online,
+              let status = store.cloud, !status.enabled,
+              !UserDefaults.standard.bool(forKey: Self.cloudTurnedOffKey) else { return nil }
+        return store
     }
 
     func refresh() {
@@ -319,6 +346,7 @@ final class HostController {
 
     func setCloud(_ store: BotStore, enabled: Bool) async {
         guard let client = store.client else { return }
+        if store.computer.id == self.store?.computer.id { UserDefaults.standard.set(!enabled, forKey: Self.cloudTurnedOffKey) }
         do {
             _ = enabled ? try await enableCloud(client, store: store) : try await client.setCloud(enabled: false)
         } catch {

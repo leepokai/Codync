@@ -158,6 +158,7 @@ private struct ScanPage: View {
     let os: ComputerOS
     let paired: () -> Void
     @Environment(AppStore.self) private var app
+    @Environment(AccountSession.self) private var account
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
@@ -205,14 +206,18 @@ private struct ScanPage: View {
                         .transition(.opacity)
                 }
 
+                // The other way in: computers on your Google account show up and ask for access themselves.
+                if account.isConfigured && !account.isSignedIn { GoogleSignInButton() }
+
+                // How it connects is never a choice here: every paired computer gets every route.
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("End-to-end encrypted, on Wi-Fi or anywhere else. Your code and chats stay on the computer.",
+                    Label("Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted.",
                           systemImage: "lock.fill")
                     if tailscaleOn {
-                        Label("Tailscale is on, so Codync connects over it directly.", systemImage: "checkmark.circle.fill")
+                        Label("Tailscale is on: Codync connects over it directly.", systemImage: "checkmark.circle.fill")
                     } else {
                         Button { openURL(Tailscale.downloadURL) } label: {
-                            Label("Use Tailscale? Codync connects over it directly.", systemImage: "arrow.up.right")
+                            Label("Use Tailscale? Direct and faster away from home.", systemImage: "arrow.up.right")
                         }
                         .buttonStyle(PressScale())
                     }

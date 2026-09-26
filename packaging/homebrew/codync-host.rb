@@ -7,26 +7,26 @@ class CodyncHost < Formula
   version "2.0.0"
   license "MIT"
 
-  base = "https://github.com/leepokai/Codync/releases/download/v#{version}/codync-host-#{version}"
+  base = "https://github.com/leepokai/Codync/releases/download/v#{version}/codync-host"
 
   on_macos do
     on_arm do
-      url "#{base}-aarch64-apple-darwin.tar.gz"
+      url "#{base}-macos-arm64.tar.gz"
       sha256 "REPLACE_WITH_SHA256"
     end
     on_intel do
-      url "#{base}-x86_64-apple-darwin.tar.gz"
+      url "#{base}-macos-x86_64.tar.gz"
       sha256 "REPLACE_WITH_SHA256"
     end
   end
 
   on_linux do
     on_arm do
-      url "#{base}-aarch64-unknown-linux-gnu.tar.gz"
+      url "#{base}-linux-arm64.tar.gz"
       sha256 "REPLACE_WITH_SHA256"
     end
     on_intel do
-      url "#{base}-x86_64-unknown-linux-gnu.tar.gz"
+      url "#{base}-linux-x86_64.tar.gz"
       sha256 "REPLACE_WITH_SHA256"
     end
   end

@@ -29,7 +29,7 @@ UI patterns (roster, character avatars, approval cards, trace sheet, "needs you 
 
 ## Install
 
-**Mac** — [download Codync-macOS.dmg](https://github.com/leepokai/Codync/releases/latest/download/Codync-macOS.dmg) and drag it to Applications, or:
+**Mac** — [download codync-macos.dmg](https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg) and drag it to Applications, or:
 
 ```bash
 brew install --cask leepokai/codync/codync
@@ -44,7 +44,7 @@ Open Codync in the menu bar → **Install host**. The chat bubble opens the full
 ```bash
 brew install leepokai/codync/codync-host   # or a release tarball
 codync-host install                        # systemd --user service
-codync                                     # the desktop app (release tarball: bin/codync + .desktop file)
+codync                                     # the desktop app (or codync-linux-x86_64.tar.gz / -arm64 from Releases)
 codync-host pair                           # QR code in the terminal, or Settings in the app
 ```
 

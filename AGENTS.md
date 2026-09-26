@@ -19,6 +19,13 @@ Run from the repository root unless a command changes directories:
 - `cd apps/linux && cargo test`: test Linux code; requires GTK 4 and libadwaita development packages.
 - `cd relay && npm ci && npm test && npm run typecheck`: install dependencies and validate the relay.
 
+## Installing a new build: kill the old one first
+
+Whenever you build and install/run a new build, stop the old copies so nothing stale keeps running (old host = old protocol, old app = old UI):
+- **Mac app**: quit every running Codync (including copies from Xcode DerivedData) before opening the new one: `osascript -e 'tell application id "com.pokai.Codync" to quit'; pkill -x Codync`, then `open build/dd/Build/Products/Debug/Codync.app`.
+- **Host**: the launchd agent `com.pokai.codync.host` runs `build/dd/.../Codync.app/Contents/MacOS/codync-host`; after rebuilding, restart it with `launchctl kickstart -k gui/$(id -u)/com.pokai.codync.host`, and kill any other `codync-host` still running from a different path (`pgrep -fl codync-host`). Test hosts you start yourself must be stopped when done.
+- **iPhone**: after `xcrun devicectl device install app …`, relaunch with `xcrun devicectl device process launch --terminate-existing --device <id> com.pokai.Codync.ios` so the old process doesn't linger.
+
 ## Coding Style & Naming Conventions
 
 Use four-space indentation for Swift and Rust. Follow Swift 6 strict concurrency, SwiftUI, and structured `async/await`; avoid unchecked sendability. Rust uses edition 2024, rustfmt, and Clippy; avoid `unwrap()` outside tests.

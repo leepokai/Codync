@@ -37,6 +37,8 @@ struct CodyncApp: App {
                 .onOpenURL { url in app.open(url) }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     app.accounts.setActive(phase == .active)
+                    // Back in the app: a computer may have joined the account meanwhile.
+                    if phase == .active { Task { await app.accounts.refreshCloud() } }
                 }
                 #if DEBUG
                 .task {
@@ -160,6 +162,7 @@ final class AppStore {
         let identity = storage.accountID == nil ? nil : try? DeviceIdentity.load(context: storage)
         let cloud = session.cloudClient(for: storage.accountID, identity: identity)
         let accounts = AccountStore(storage: storage, clientKind: "ios", cloud: cloud)
+        accounts.asksForAccess = true
         accounts.onConnected = { store in
             PushRegistrar.shared.syncDevice(with: store)
             store.onUsageChanged = { _, _ in WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage") }

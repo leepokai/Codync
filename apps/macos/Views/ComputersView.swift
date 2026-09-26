@@ -301,9 +301,11 @@ private struct ManagedComputerCard: View {
     @State private var showPairing = false
     @State private var confirmRevoke: AuthorizedDevice?
     @State private var confirmUnclaim = false
+    @State private var confirmAutoApproval = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var cloud: CloudStatus? { store.cloud }
+    private var autoApproval: Bool { cloud?.approval == .auto }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -337,6 +339,21 @@ private struct ManagedComputerCard: View {
 
             accountLine
 
+            if cloud?.owner != nil {
+                Toggle(isOn: Binding(get: { autoApproval }, set: { on in
+                    if on { confirmAutoApproval = true } else { setApproval(.code) }
+                })) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Skip the 6-digit check")
+                        Text(autoApproval ? "Devices on your account get in on their own." : "Each new device shows a code you approve here.")
+                            .font(.caption).foregroundStyle(autoApproval ? Palette.warning : Palette.secondary)
+                    }
+                }
+                .toggleStyle(.codync)
+                .disabled(busy || store.connection != .online)
+                .transition(.opacity)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 Text("Devices that can use \(store.hostName)").font(.subheadline.weight(.semibold))
                 if let devices {
@@ -364,6 +381,10 @@ private struct ManagedComputerCard: View {
                 }
             }]
         }
+        .codyncDialog("Let account devices in without a code?", isPresented: $confirmAutoApproval,
+                      message: "Any device signed in to your account gets full control of \(store.hostName): its files, terminals and bots, with no check here. If someone gets into your Google account, or Codync's cloud is ever compromised, they could add their own device and you'd have no chance to stop it. Devices paired with a QR code aren't affected.") {
+            [DialogAction("Skip the check", destructive: true) { setApproval(.auto) }]
+        }
         .codyncDialog("Remove \(store.hostName) from the account?", isPresented: $confirmUnclaim,
                       message: "Devices that were approved through the account lose access. Devices paired with a QR code keep it.") {
             [DialogAction("Remove from account", destructive: true) { run { await host.unclaim(store) } }]
@@ -374,6 +395,12 @@ private struct ManagedComputerCard: View {
         guard let cloud, cloud.enabled else { return "Off: only devices on the same network reach it." }
         if let error = cloud.lastError { return error }
         return cloud.connected == true ? "Reachable from anywhere through Cloudflare (encrypted)." : "Connecting to Cloudflare…"
+    }
+
+    private func setApproval(_ approval: AccountApproval) {
+        run {
+            do { _ = try await store.client?.setApproval(approval) } catch { host.accounts.lastError = error.localizedDescription }
+        }
     }
 
     @ViewBuilder private var accountLine: some View {

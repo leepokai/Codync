@@ -342,6 +342,10 @@ public extension HostClient {
         return try await call("setCloud", Body(enabled: enabled, url: url?.absoluteString), timeout: 30)
     }
 
+    func setApproval(_ approval: AccountApproval) async throws -> CloudStatus {
+        try await call("setApproval", ["approval": approval.rawValue])
+    }
+
     func unclaim() async throws {
         let _: Empty = try await call("unclaim", timeout: 30)
     }

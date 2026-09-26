@@ -30,6 +30,9 @@ public final class AccountStore {
     /// Access requests waiting for approval on the computer, with the SAS to show.
     public private(set) var pendingAccess: [ComputerID: AccessTicket] = [:]
     public var lastError: String?
+    /// Signed in, ask every account computer this device can't use yet for access, without a tap.
+    /// Computers set to auto-approve let it straight in; the others show the code to check.
+    public var asksForAccess = false
     public var selection: BotReference? {
         didSet { if let id = selection?.computerId, !retired { storage.lastComputerId = id } }
     }
@@ -50,6 +53,8 @@ public final class AccountStore {
     private var accessPolls: [ComputerID: Task<Void, Never>] = [:]
     private var isActive = true
     private var retired = false
+    /// Asked once per launch: a denied or cancelled request isn't repeated behind the user's back.
+    private var asked: Set<ComputerID> = []
 
     public convenience init(storage: SharedStore.Context, clientKind: String, cloud: CloudClient?) {
         self.init(storage: storage, clientKind: clientKind, cloud: cloud) { computer, route in
@@ -145,6 +150,7 @@ public final class AccountStore {
             let list = try await cloud.computers()
             guard !retired else { return }
             cloudComputers = list
+            if asksForAccess { await askForAccess() }
         } catch {
             lastError = error.localizedDescription
         }
@@ -162,6 +168,21 @@ public final class AccountStore {
         accessPolls[id]?.cancel()
         accessPolls[id] = Task { [weak self] in await self?.awaitApproval(ticket, target: target, cloud: cloud) }
         return ticket
+    }
+
+    private func askForAccess() async {
+        let waiting = cloudComputers.filter { c in
+            c.isOnline && c.access != "granted" && !asked.contains(c.computerId)
+                && pendingAccess[c.computerId] == nil && stores[c.computerId] == nil
+        }
+        for computer in waiting {
+            asked.insert(computer.computerId)
+            do {
+                _ = try await requestAccess(computer.computerId)
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
     }
 
     /// Withdraws a pending access request; the computer drops it from its approval list.

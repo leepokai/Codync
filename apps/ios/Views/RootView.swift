@@ -77,11 +77,14 @@ struct RootView: View {
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: app.tab)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if accounts.selection == nil {
-                TabBar(selection: Bindable(app).tab, tabs: [
-                    (id: AppTab.bots, title: "Bots", icon: "bubble.left.and.bubble.right.fill"),
-                    (id: AppTab.usage, title: "Usage", icon: "chart.bar.fill"),
-                ])
-                .padding(.bottom, 4)
+                VStack(spacing: 8) {
+                    AccessBanners()
+                    TabBar(selection: Bindable(app).tab, tabs: [
+                        (id: AppTab.bots, title: "Bots", icon: "bubble.left.and.bubble.right.fill"),
+                        (id: AppTab.usage, title: "Usage", icon: "chart.bar.fill"),
+                    ])
+                    .padding(.bottom, 4)
+                }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -257,5 +260,38 @@ private extension View {
         opacity(selected ? 1 : 0)
             .allowsHitTesting(selected)
             .accessibilityHidden(!selected)
+    }
+}
+
+/// Account computers this iPhone asked on its own after sign-in: the code to check, until they answer.
+private struct AccessBanners: View {
+    @Environment(AccountStore.self) private var accounts
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(Array(accounts.pendingAccess.values).sorted { $0.requestId < $1.requestId }) { ticket in
+                let name = accounts.cloudComputers.first { $0.computerId == ticket.computerId }?.name ?? "Your computer"
+                HStack(spacing: 12) {
+                    Spinner(size: 16)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Approve on \(name)").font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                        Text("Code \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
+                            .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    IconButton("Cancel request", systemImage: "xmark") {
+                        Task { await accounts.cancelAccess(ticket.computerId) }
+                    }
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 6)
+                .padding(.vertical, 8)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 16)
+        .animation(Motion.layout, value: accounts.pendingAccess.keys.sorted())
+        .accessibilityElement(children: .contain)
     }
 }

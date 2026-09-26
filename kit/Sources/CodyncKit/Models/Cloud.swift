@@ -1,7 +1,7 @@
 import Foundation
 
 // Wire types for the Codync cloud (`/v1`, cloud/src/api.ts), the host's loopback-only
-// account methods (host/src/api.rs) and the relay mailbox. Times are epoch milliseconds.
+// account methods (host/src/api/mod.rs) and the relay mailbox. Times are epoch milliseconds.
 // Decoding is lenient: unknown fields are ignored and anything the server may omit is optional.
 
 /// `GET /v1/me`.
@@ -112,6 +112,20 @@ public struct CloudStatus: Codable, Hashable, Sendable {
     public var connected: Bool?
     public var owner: CloudOwner?
     public var lastError: String?
+    /// Missing from older hosts: they always ask for the code.
+    public var approval: AccountApproval?
+}
+
+/// How devices on the computer's account get in (loopback `setApproval`).
+public enum AccountApproval: String, Codable, Hashable, Sendable {
+    /// Compare the 6-digit code and approve each device at the computer.
+    case code
+    /// Let them in without anyone comparing the code.
+    case auto
+
+    public init(from decoder: any Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .code
+    }
 }
 
 /// `POST /v1/claims`.

@@ -5,6 +5,23 @@ import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Channel")
 
+/// How this device reaches its computers; the user picks it, every channel reads it on each attempt.
+public enum ConnectionRoute: String, CaseIterable, Sendable {
+    /// Direct (Wi-Fi, Tailscale) when it answers within 1.5 s, otherwise the Cloudflare relay.
+    case automatic
+    /// Wi-Fi and Tailscale only: nothing goes through the cloud.
+    case direct
+    /// Always the Cloudflare relay, even at home.
+    case relay
+
+    private static let key = "connectionRoute"
+
+    public static var current: ConnectionRoute {
+        get { UserDefaults(suiteName: SharedStore.appGroup)?.string(forKey: key).flatMap(Self.init(rawValue:)) ?? .automatic }
+        set { UserDefaults(suiteName: SharedStore.appGroup)?.set(newValue.rawValue, forKey: key) }
+    }
+}
+
 /// The end-to-end encrypted channel to one computer (§6, §7): direct WebSocket on the LAN when it
 /// answers within 1.5 s, otherwise the cloud relay. Inner RPC multiplexes calls and streams over
 /// one channel; the relay adds presence and the offline mailbox. Reconnects by itself until `shutdown()`.
@@ -261,7 +278,9 @@ public actor ChannelTransport: RemoteTransport {
     }
 
     private func attempt() async -> Outcome {
-        let directURLs = computer.urls.compactMap(Self.channelURL)
+        let route = ConnectionRoute.current
+        // Relay only still goes direct for a computer that has no relay.
+        let directURLs = route == .relay && computer.cloud != nil ? [] : computer.urls.compactMap(Self.channelURL)
         if !directURLs.isEmpty {
             switch await raceDirect(directURLs) {
             case let .connected(socket, keys): return await serve(socket, route: .direct, keys: keys)
@@ -280,7 +299,7 @@ public actor ChannelTransport: RemoteTransport {
             case .none: break
             }
         }
-        guard let cloud = computer.cloud else { return .retry(HostError.unreachable.localizedDescription) }
+        guard let cloud = computer.cloud, route != .direct else { return .retry(HostError.unreachable.localizedDescription) }
         let socket: any ChannelSocket
         do {
             socket = try await dial(.relay(relayRequest(cloud)))

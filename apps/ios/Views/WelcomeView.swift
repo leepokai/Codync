@@ -41,20 +41,7 @@ struct WelcomeView: View {
                 }
                 .buttonStyle(.primary)
                 // Signed in, the computers on the account show up without scanning a code.
-                if account.isConfigured {
-                    Button { Task { await account.signIn() } } label: {
-                        ZStack {
-                            Label("Continue with Google", systemImage: "person.crop.circle")
-                                .opacity(account.isBusy ? 0 : 1)
-                            if account.isBusy { Spinner(size: 18) }
-                        }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 50)
-                    }
-                    .buttonStyle(.secondary)
-                    .disabled(account.isBusy)
-                    .animation(Motion.fade, value: account.isBusy)
-                }
+                if account.isConfigured { GoogleSignInButton() }
                 if let message = account.errorMessage {
                     Text(message).font(.footnote).foregroundStyle(Palette.danger)
                         .transition(.opacity)

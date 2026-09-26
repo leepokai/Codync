@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import sys
 import threading
+import time
 
 output_lock = threading.Lock()
 cancel = threading.Event()
@@ -67,7 +68,10 @@ def prompt(request):
         room = text.split("New messages in the room (oldest first):\n", 1)[-1].split("\n\n", 1)[0]
         last = room.strip().splitlines()[-1] if "New messages" in text else ""
         reply = "reply: group" if last.startswith("User:") else "(pass)"
-        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
+        # Two chunks, apart: the streamed entry is rewritten before it's final.
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply[:3]}})
+        time.sleep(0.4)
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply[3:]}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
     if cancel.is_set():

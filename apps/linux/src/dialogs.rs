@@ -1,4 +1,4 @@
-//! Bot editor, full-conversation trace, settings/pairing and the bot menu.
+//! Bot and group editors, full-conversation trace, settings/pairing and the bot menu.
 
 use crate::client;
 use crate::ui::{self, App};
@@ -339,6 +339,8 @@ pub fn editor(ui: &App, bot: Option<Value>) {
             "rev",
             "deleted",
             "startedAt",
+            "workingChat",
+            "workingThread",
         ] {
             body.as_object_mut().unwrap().remove(k);
         }
@@ -370,6 +372,231 @@ pub fn editor(ui: &App, bot: Option<Value>) {
         );
     });
     dialog.present(Some(&ui.window));
+}
+
+// MARK: group editor
+
+const MAX_MEMBERS: usize = 6;
+
+/// Create a group chat, or rename one and change who's in it (up to six bots).
+pub fn group_editor(ui: &App, group: Option<Value>) {
+    let is_new = group.is_none();
+    let group_id = group
+        .as_ref()
+        .and_then(|g| g["id"].as_str())
+        .map(str::to_owned);
+    let members: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(
+        group
+            .as_ref()
+            .and_then(|g| g["members"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m.as_str().map(str::to_owned))
+            .collect(),
+    ));
+    let (dialog, view, header) = header_dialog(
+        if is_new {
+            "New group chat"
+        } else {
+            "Group chat"
+        },
+        480,
+        620,
+    );
+    let save = gtk::Button::builder()
+        .icon_name("object-select-symbolic")
+        .tooltip_text(if is_new { "Create" } else { "Save" })
+        .css_classes(["accent-fill", "circular"])
+        .build();
+    header.pack_end(&save);
+
+    let page = adw::PreferencesPage::new();
+    let profile = adw::PreferencesGroup::new();
+    let name = adw::EntryRow::builder()
+        .title("Name")
+        .text(
+            group
+                .as_ref()
+                .and_then(|g| g["name"].as_str())
+                .unwrap_or(""),
+        )
+        .build();
+    profile.add(&name);
+    page.add(&profile);
+
+    let bots_group = adw::PreferencesGroup::builder()
+        .description("Everyone answers in turn unless you @mention someone. Each bot works in its own folder with its own tools.")
+        .build();
+    let st = ui.state.borrow();
+    let mut candidates: Vec<&Value> = st
+        .bots
+        .values()
+        .filter(|b| {
+            b["kind"] != "group"
+                && (b["hidden"] != true
+                    || b["id"]
+                        .as_str()
+                        .is_some_and(|id| members.borrow().iter().any(|m| m == id)))
+        })
+        .collect();
+    candidates.sort_by_key(|b| b["name"].as_str().unwrap_or("").to_lowercase());
+    let mut checks: Vec<(String, String, gtk::CheckButton)> = vec![];
+    for b in candidates {
+        let id = b["id"].as_str().unwrap_or_default().to_owned();
+        let bname = b["name"].as_str().unwrap_or("").to_owned();
+        let check = gtk::CheckButton::builder()
+            .active(members.borrow().contains(&id))
+            .valign(gtk::Align::Center)
+            .build();
+        let row = adw::ActionRow::builder()
+            .title(gtk::glib::markup_escape_text(&bname))
+            .subtitle(gtk::glib::markup_escape_text(&ui::folder(
+                b["cwd"].as_str().unwrap_or(""),
+            )))
+            .activatable_widget(&check)
+            .build();
+        row.add_prefix(&avatar::of(&st.bots, b, 30, false, ""));
+        row.add_suffix(&check);
+        bots_group.add(&row);
+        checks.push((id, bname, check));
+    }
+    drop(st);
+    page.add(&bots_group);
+    let checks = Rc::new(checks);
+    // "Alice, Bob" when no name is typed; at most six; nothing to save without a bot.
+    let sync = {
+        let (members, checks, bots_group, name, save) = (
+            members.clone(),
+            checks.clone(),
+            bots_group.clone(),
+            name.clone(),
+            save.clone(),
+        );
+        move || {
+            let m = members.borrow();
+            bots_group.set_title(&format!("Bots · {} of {MAX_MEMBERS}", m.len()));
+            for (_, _, check) in checks.iter() {
+                check.set_sensitive(check.is_active() || m.len() < MAX_MEMBERS);
+            }
+            let names: Vec<&str> = m
+                .iter()
+                .filter_map(|id| checks.iter().find(|c| c.0 == *id).map(|c| c.1.as_str()))
+                .collect();
+            name.set_title(
+                if names.is_empty() {
+                    "Name".to_owned()
+                } else {
+                    format!("Name · {}", names.join(", "))
+                }
+                .as_str(),
+            );
+            save.set_sensitive(!m.is_empty());
+        }
+    };
+    for (id, _, check) in checks.iter() {
+        let (members, sync, id) = (members.clone(), sync.clone(), id.clone());
+        check.connect_toggled(move |c| {
+            {
+                let mut m = members.borrow_mut();
+                m.retain(|x| *x != id);
+                if c.is_active() {
+                    m.push(id.clone());
+                }
+            }
+            sync();
+        });
+    }
+    sync();
+
+    if let Some(g) = group.as_ref() {
+        let danger = adw::PreferencesGroup::new();
+        let del = gtk::Button::builder()
+            .label("Delete group chat")
+            .css_classes(["destructive-action"])
+            .halign(gtk::Align::Center)
+            .build();
+        let (ui2, dialog2, id, gname) = (
+            ui.clone(),
+            dialog.clone(),
+            g["id"].as_str().unwrap_or_default().to_owned(),
+            g["name"].as_str().unwrap_or("").to_owned(),
+        );
+        del.connect_clicked(move |_| {
+            dialog2.close();
+            confirm_delete(&ui2, &id, &gname, true);
+        });
+        danger.add(&del);
+        page.add(&danger);
+    }
+    view.set_content(Some(&page));
+
+    let (ui2, dialog2) = (ui.clone(), dialog.clone());
+    save.connect_clicked(move |btn| {
+        let m = members.borrow().clone();
+        let typed = name.text().trim().to_owned();
+        let final_name = if typed.is_empty() {
+            m.iter()
+                .filter_map(|id| checks.iter().find(|c| c.0 == *id).map(|c| c.1.clone()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            typed
+        };
+        let (method, body) = match &group_id {
+            Some(id) => (
+                "updateBot",
+                json!({"id": id, "name": final_name, "members": m}),
+            ),
+            None => (
+                "createBot",
+                json!({"id": "", "kind": "group", "name": final_name, "members": m}),
+            ),
+        };
+        btn.set_sensitive(false);
+        let (ui3, dialog3, btn2) = (ui2.clone(), dialog2.clone(), btn.clone());
+        client::call(method, body, move |r| match r {
+            Ok(v) => {
+                let bot = v["bot"].clone();
+                let id = bot["id"].as_str().unwrap_or_default().to_owned();
+                {
+                    let mut st = ui3.state.borrow_mut();
+                    st.bots.insert(id.clone(), bot);
+                    if is_new {
+                        st.current = Some(id);
+                        st.open_thread = None;
+                    }
+                }
+                dialog3.close();
+                ui3.split.set_show_content(true);
+                ui::schedule(&ui3);
+            }
+            Err(e) => {
+                btn2.set_sensitive(true);
+                ui::toast(&ui3, &e);
+            }
+        });
+    });
+    dialog.present(Some(&ui.window));
+}
+
+fn confirm_delete(ui: &App, id: &str, name: &str, group: bool) {
+    let alert = adw::AlertDialog::new(
+        Some(&format!("Delete {name}?")),
+        Some(if group {
+            "The group chat is removed. Its bots stay."
+        } else {
+            "The conversation is removed. Files it changed stay as they are."
+        }),
+    );
+    alert.add_responses(&[("cancel", "Cancel"), ("delete", "Delete")]);
+    alert.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+    let id = id.to_owned();
+    alert.connect_response(None, move |_, r| {
+        if r == "delete" {
+            client::call("deleteBot", json!({"botId": id}), |_| {});
+        }
+    });
+    alert.present(Some(&ui.window));
 }
 
 fn client_seed() -> usize {
@@ -543,6 +770,7 @@ pub fn bot_menu(ui: &App) -> gtk::Popover {
     };
     let Some(bot) = bot else { return pop };
     let id = bot["id"].as_str().unwrap_or_default().to_owned();
+    let group = bot["kind"] == "group";
     let add = |label: &str, destructive: bool, f: Box<dyn Fn()>| {
         let b = gtk::Button::builder()
             .label(label)
@@ -560,11 +788,19 @@ pub fn bot_menu(ui: &App) -> gtk::Popover {
     };
     {
         let (ui2, bot2) = (ui.clone(), bot.clone());
-        add(
-            "Edit profile",
-            false,
-            Box::new(move || editor(&ui2, Some(bot2.clone()))),
-        );
+        if group {
+            add(
+                "Edit group",
+                false,
+                Box::new(move || group_editor(&ui2, Some(bot2.clone()))),
+            );
+        } else {
+            add(
+                "Edit profile",
+                false,
+                Box::new(move || editor(&ui2, Some(bot2.clone()))),
+            );
+        }
     }
     {
         let (id2, pinned) = (id.clone(), bot["pinned"].as_bool().unwrap_or(false));
@@ -576,7 +812,7 @@ pub fn bot_menu(ui: &App) -> gtk::Popover {
             }),
         );
     }
-    {
+    if !group {
         let id2 = id.clone();
         add(
             "New session",
@@ -591,23 +827,13 @@ pub fn bot_menu(ui: &App) -> gtk::Popover {
             bot["name"].as_str().unwrap_or("").to_owned(),
         );
         add(
-            "Delete bot…",
+            if group {
+                "Delete group…"
+            } else {
+                "Delete bot…"
+            },
             true,
-            Box::new(move || {
-                let alert = adw::AlertDialog::new(
-                    Some(&format!("Delete {name}?")),
-                    Some("The conversation is removed. Files it changed stay as they are."),
-                );
-                alert.add_responses(&[("cancel", "Cancel"), ("delete", "Delete")]);
-                alert.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
-                let id3 = id2.clone();
-                alert.connect_response(None, move |_, r| {
-                    if r == "delete" {
-                        client::call("deleteBot", json!({"botId": id3}), |_| {});
-                    }
-                });
-                alert.present(Some(&ui2.window));
-            }),
+            Box::new(move || confirm_delete(&ui2, &id2, &name, group)),
         );
     }
     pop.set_child(Some(&col));
@@ -623,7 +849,9 @@ fn remote_screen_group() -> adw::PreferencesGroup {
         .title("Remote screen")
         .description("See and control this computer from your iPhone, and let bots use it. The first time, your desktop asks you to allow screen sharing.")
         .build();
-    let row = adw::SwitchRow::builder().title("Allow remote screen").build();
+    let row = adw::SwitchRow::builder()
+        .title("Allow remote screen")
+        .build();
     let status = adw::ActionRow::builder().title("Status").build();
     status.set_visible(false);
     group.add(&row);
@@ -659,11 +887,15 @@ fn remote_screen_group() -> adw::PreferencesGroup {
     }
     row.connect_active_notify(move |row| {
         let show = show.clone();
-        client::call("setScreenEnabled", json!({"enabled": row.is_active()}), move |r| {
-            if let Ok(v) = r {
-                show(&v);
-            }
-        });
+        client::call(
+            "setScreenEnabled",
+            json!({"enabled": row.is_active()}),
+            move |r| {
+                if let Ok(v) = r {
+                    show(&v);
+                }
+            },
+        );
     });
     group
 }

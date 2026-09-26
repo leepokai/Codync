@@ -28,10 +28,16 @@ const CSS: &str = r#"
 .composer textview, .composer text { background: transparent; }
 .notice-error { background: alpha(#e0443e, 0.12); border-radius: 12px; padding: 10px 12px; }
 .round { border-radius: 999px; min-width: 38px; min-height: 38px; padding: 0; }
+.reply-btn { opacity: 0; transition: opacity 150ms ease-out; min-width: 28px; min-height: 28px; padding: 0; }
+.reply-host:hover .reply-btn, .reply-btn:focus-visible { opacity: 1; }
+.thread-chip { border-radius: 999px; padding: 3px 10px; background: alpha(currentColor, 0.06); }
+.thread-chip:hover { background: alpha(currentColor, 0.1); }
 "#;
 
 fn main() -> gtk::glib::ExitCode {
-    let app = adw::Application::builder().application_id("com.pokai.Codync").build();
+    let app = adw::Application::builder()
+        .application_id("com.pokai.Codync")
+        .build();
     app.connect_startup(|_| {
         let provider = gtk::CssProvider::new();
         provider.load_from_string(CSS);

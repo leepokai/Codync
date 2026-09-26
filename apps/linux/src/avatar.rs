@@ -2,9 +2,13 @@
 
 use gtk::cairo::Context;
 use gtk::prelude::*;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 
-pub const SHAPES: &[&str] = &["blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop"];
+pub const SHAPES: &[&str] = &[
+    "blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop",
+];
 pub const COLORS: &[(&str, u32)] = &[
     ("black", 0x2B2B2B),
     ("brown", 0x936439),
@@ -20,11 +24,19 @@ pub const COLORS: &[(&str, u32)] = &[
 ];
 
 pub fn rgb(hex: u32) -> (f64, f64, f64) {
-    (((hex >> 16) & 0xFF) as f64 / 255.0, ((hex >> 8) & 0xFF) as f64 / 255.0, (hex & 0xFF) as f64 / 255.0)
+    (
+        ((hex >> 16) & 0xFF) as f64 / 255.0,
+        ((hex >> 8) & 0xFF) as f64 / 255.0,
+        (hex & 0xFF) as f64 / 255.0,
+    )
 }
 
-fn color_of(name: &str) -> u32 {
-    COLORS.iter().find(|(n, _)| *n == name).map(|c| c.1).unwrap_or(0x1084FE)
+pub fn color_of(name: &str) -> u32 {
+    COLORS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|c| c.1)
+        .unwrap_or(0x1084FE)
 }
 
 fn rounded_rect(cr: &Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
@@ -59,7 +71,11 @@ fn silhouette(cr: &Context, shape: &str) {
             for i in 0..6 {
                 let a = i as f64 * PI / 3.0 - PI / 2.0;
                 let (x, y) = (50.0 + a.cos() * 49.0, 50.0 + a.sin() * 49.0);
-                if i == 0 { cr.move_to(x, y) } else { cr.line_to(x, y) }
+                if i == 0 {
+                    cr.move_to(x, y)
+                } else {
+                    cr.line_to(x, y)
+                }
             }
             cr.close_path();
         }
@@ -82,7 +98,11 @@ fn silhouette(cr: &Context, shape: &str) {
                 let a = i as f64 / 64.0 * 2.0 * PI;
                 let r = 46.0 + 3.5 * (a * 3.0 + 0.6).sin();
                 let (x, y) = (50.0 + a.cos() * r, 50.0 + a.sin() * r);
-                if i == 0 { cr.move_to(x, y) } else { cr.line_to(x, y) }
+                if i == 0 {
+                    cr.move_to(x, y)
+                } else {
+                    cr.line_to(x, y)
+                }
             }
             cr.close_path();
         }
@@ -107,17 +127,31 @@ const CELLS: i32 = 13;
 const EYE_COLUMNS: [i32; 2] = [4, 8];
 const EYE_ROWS: [i32; 3] = [4, 5, 6];
 
-pub fn draw(cr: &Context, size: f64, shape: &str, color: &str, ink: (f64, f64, f64), mood: Mood, t: f64) {
+pub fn draw(
+    cr: &Context,
+    size: f64,
+    shape: &str,
+    color: &str,
+    ink: (f64, f64, f64),
+    mood: Mood,
+    t: f64,
+) {
     cr.save().ok();
     cr.scale(size / 100.0, size / 100.0);
     let (r, g, b) = rgb(color_of(color));
     let step = 100.0 / f64::from(CELLS);
     let animated = mood != Mood::Idle;
     // Glance: whole-cell steps left / center / right, like a small display.
-    let glance = if mood == Mood::Working { ((t * 2.0 * PI / 3.2).sin() * 1.4).round() as i32 } else { 0 };
+    let glance = if mood == Mood::Working {
+        ((t * 2.0 * PI / 3.2).sin() * 1.4).round() as i32
+    } else {
+        0
+    };
     let blinking = animated && (t / 4.7).fract() < 0.035;
     let eye_rows: &[i32] = if blinking { &EYE_ROWS[2..] } else { &EYE_ROWS };
-    let is_eye = |col: i32, row: i32| EYE_COLUMNS.iter().any(|c| c + glance == col) && eye_rows.contains(&row);
+    let is_eye = |col: i32, row: i32| {
+        EYE_COLUMNS.iter().any(|c| c + glance == col) && eye_rows.contains(&row)
+    };
 
     silhouette(cr, shape);
     if size < 24.0 {
@@ -127,7 +161,12 @@ pub fn draw(cr: &Context, size: f64, shape: &str, color: &str, ink: (f64, f64, f
         cr.set_operator(gtk::cairo::Operator::Clear);
         for c in EYE_COLUMNS {
             for &row in eye_rows {
-                cr.rectangle(f64::from(c + glance) * step, f64::from(row) * step, step, step);
+                cr.rectangle(
+                    f64::from(c + glance) * step,
+                    f64::from(row) * step,
+                    step,
+                    step,
+                );
             }
         }
         cr.fill().ok();
@@ -168,20 +207,93 @@ pub fn draw(cr: &Context, size: f64, shape: &str, color: &str, ink: (f64, f64, f
     cr.restore().ok();
 }
 
-pub fn widget(shape: &str, color: &str, size: i32, working: bool, status: &str) -> gtk::DrawingArea {
-    let area = gtk::DrawingArea::builder().content_width(size).content_height(size).valign(gtk::Align::Center).build();
-    let (shape, color, status) = (shape.to_owned(), color.to_owned(), status.to_owned());
-    let mood = if status == "needs" { Mood::Needs } else if working { Mood::Working } else { Mood::Idle };
+pub fn widget(
+    shape: &str,
+    color: &str,
+    size: i32,
+    working: bool,
+    status: &str,
+) -> gtk::DrawingArea {
+    many(
+        vec![(shape.to_owned(), color.to_owned())],
+        size,
+        working,
+        status,
+    )
+}
+
+fn look(b: &Value) -> (String, String) {
+    (
+        b["avatarShape"].as_str().unwrap_or("blob").to_owned(),
+        b["avatarColor"].as_str().unwrap_or("blue").to_owned(),
+    )
+}
+
+/// A bot's character, or for a group its first two members overlapped.
+pub fn of(
+    bots: &HashMap<String, Value>,
+    b: &Value,
+    size: i32,
+    working: bool,
+    status: &str,
+) -> gtk::DrawingArea {
+    let parts = if b["kind"] == "group" {
+        b["members"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|m| bots.get(m.as_str()?))
+            .take(2)
+            .map(look)
+            .collect()
+    } else {
+        vec![look(b)]
+    };
+    many(parts, size, working, status)
+}
+
+fn many(parts: Vec<(String, String)>, size: i32, working: bool, status: &str) -> gtk::DrawingArea {
+    let area = gtk::DrawingArea::builder()
+        .content_width(size)
+        .content_height(size)
+        .valign(gtk::Align::Center)
+        .build();
+    let status = status.to_owned();
+    let mood = if status == "needs" {
+        Mood::Needs
+    } else if working {
+        Mood::Working
+    } else {
+        Mood::Idle
+    };
     let start = std::time::Instant::now();
     area.set_draw_func(move |area, cr, w, _| {
         let s = w as f64;
         let fg = area.color();
         let ink = (fg.red() as f64, fg.green() as f64, fg.blue() as f64);
-        draw(cr, s, &shape, &color, ink, mood, start.elapsed().as_secs_f64());
+        let t = start.elapsed().as_secs_f64();
+        match parts.as_slice() {
+            [] => draw(cr, s, "blob", "gray", ink, mood, t),
+            [(shape, color)] => draw(cr, s, shape, color, ink, mood, t),
+            _ => {
+                let sub = s * 0.68;
+                for (i, (shape, color)) in parts.iter().enumerate() {
+                    let o = if i == 0 { 0.0 } else { s - sub };
+                    cr.save().ok();
+                    cr.translate(o, o);
+                    draw(cr, sub, shape, color, ink, mood, t);
+                    cr.restore().ok();
+                }
+            }
+        }
         if !status.is_empty() {
             let d = s * if status == "needs" { 0.36 } else { 0.28 };
             let (cx, cy) = (s - d / 2.0, s - d / 2.0);
-            let (r, g, b) = if status == "needs" { rgb(0xF0A030) } else { ink };
+            let (r, g, b) = if status == "needs" {
+                rgb(0xF0A030)
+            } else {
+                ink
+            };
             cr.arc(cx, cy, d / 2.0, 0.0, 2.0 * PI);
             cr.set_source_rgb(r, g, b);
             cr.fill().ok();

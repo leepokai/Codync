@@ -1,7 +1,7 @@
 //! The rows a conversation is made of: bubbles, notices and approval cards.
 
 use crate::client;
-use crate::ui::{App, State, folder, toast};
+use crate::ui::{self, App, State, ago, folder, toast};
 use crate::{avatar, markup};
 use adw::prelude::*;
 use serde_json::{Value, json};
@@ -240,4 +240,105 @@ pub fn permission_card(ui: &App, st: &State, e: &Value) -> gtk::Widget {
         );
     }
     card.upcast()
+}
+
+/// Who wrote a message in a group: their name in their color.
+pub fn author_label(st: &State, id: Option<&str>) -> gtk::Widget {
+    let bot = id.and_then(|id| st.bots.get(id));
+    let name = bot
+        .and_then(|b| b["name"].as_str())
+        .unwrap_or("A deleted bot");
+    let hex = avatar::color_of(
+        bot.and_then(|b| b["avatarColor"].as_str())
+            .unwrap_or("gray"),
+    );
+    gtk::Label::builder()
+        .use_markup(true)
+        .label(format!(
+            "<span foreground=\"#{hex:06X}\">{}</span>",
+            gtk::glib::markup_escape_text(name)
+        ))
+        .xalign(0.0)
+        .css_classes(["small", "heading"])
+        .margin_start(36)
+        .margin_top(12)
+        .build()
+        .upcast()
+}
+
+/// A main-chat message with a "Reply in thread" button that shows on hover or focus.
+pub fn with_reply(ui: &App, w: &gtk::Widget, end: bool, root: &str) -> gtk::Widget {
+    let host = gtk::Box::builder()
+        .spacing(4)
+        .css_classes(["reply-host"])
+        .build();
+    if end {
+        host.set_halign(gtk::Align::End);
+    }
+    let btn = gtk::Button::builder()
+        .icon_name("mail-reply-sender-symbolic")
+        .tooltip_text("Reply in thread")
+        .css_classes(["flat", "circular", "reply-btn"])
+        .valign(gtk::Align::Center)
+        .build();
+    let (ui2, root) = (ui.clone(), root.to_owned());
+    btn.connect_clicked(move |_| ui::open_thread(&ui2, &root));
+    if end {
+        host.append(&btn);
+        host.append(w);
+    } else {
+        host.append(w);
+        host.append(&btn);
+    }
+    host.upcast()
+}
+
+/// Under a message with a thread (Slack's): who replied, how many, how recently.
+pub fn thread_chip(ui: &App, st: &State, e: &Value, end: bool) -> Option<gtk::Widget> {
+    let t = &e["data"]["thread"];
+    let count = t["count"].as_i64().filter(|c| *c > 0)?;
+    let inner = gtk::Box::builder().spacing(6).build();
+    let faces = gtk::Box::builder().spacing(2).build();
+    for b in t["authors"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|a| st.bots.get(a.as_str()?))
+        .take(3)
+    {
+        faces.append(&avatar::of(&st.bots, b, 18, false, ""));
+    }
+    inner.append(&faces);
+    inner.append(
+        &gtk::Label::builder()
+            .label(if count == 1 {
+                "1 reply".to_owned()
+            } else {
+                format!("{count} replies")
+            })
+            .css_classes(["small", "heading"])
+            .build(),
+    );
+    inner.append(
+        &gtk::Label::builder()
+            .label(ago(t["lastAt"].as_i64().unwrap_or(0)))
+            .css_classes(["small", "muted"])
+            .build(),
+    );
+    inner.append(&gtk::Image::from_icon_name("go-next-symbolic"));
+    let btn = gtk::Button::builder()
+        .child(&inner)
+        .tooltip_text("View thread")
+        .css_classes(["flat", "thread-chip"])
+        .halign(if end {
+            gtk::Align::End
+        } else {
+            gtk::Align::Start
+        })
+        .margin_start(if end { 0 } else { 36 })
+        .margin_top(4)
+        .build();
+    let (ui2, root) = (ui.clone(), e["id"].as_str().unwrap_or_default().to_owned());
+    btn.connect_clicked(move |_| ui::open_thread(&ui2, &root));
+    Some(btn.upcast())
 }

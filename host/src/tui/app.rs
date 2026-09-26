@@ -24,6 +24,7 @@ pub enum After {
     Nothing,
     Hello,
     History(String),
+    Thread,
     Dirs,
     Pairing,
     Backends,
@@ -86,6 +87,12 @@ pub struct Bot {
     pub unread: i64,
     pub last_message: String,
     pub last_at: i64,
+    /// A group chat: several bots and the user, no agent of its own.
+    pub group: bool,
+    pub members: Vec<String>,
+    /// Where the running turn talks: a chat (`None` = its own) and a thread in it.
+    pub working_chat: Option<String>,
+    pub working_thread: Option<String>,
 }
 
 fn strs(v: &Value) -> Vec<String> {
@@ -121,7 +128,16 @@ impl Bot {
             unread: v["unread"].as_i64().unwrap_or(0),
             last_message: s("lastMessage"),
             last_at: v["lastAt"].as_i64().unwrap_or(0),
+            group: v["kind"] == "group",
+            members: strs(&v["members"]),
+            working_chat: v["workingChat"].as_str().map(str::to_owned),
+            working_thread: v["workingThread"].as_str().map(str::to_owned),
         })
+    }
+
+    /// Whether the running turn talks in this chat: its main lane (`None`) or that thread.
+    pub fn works_in(&self, thread: Option<&str>) -> bool {
+        self.working_chat.as_deref().unwrap_or(&self.id) == self.id && self.working_thread.as_deref() == thread
     }
 
     pub fn mark(&self) -> Mark {
@@ -155,6 +171,8 @@ pub struct Entry {
     pub kind: Kind,
     pub data: Value,
     pub created_at: i64,
+    /// The main-chat message whose thread this is in; `None` is the main chat.
+    pub thread_id: Option<String>,
 }
 
 impl Entry {
@@ -178,6 +196,7 @@ impl Entry {
                 kind,
                 data: v["data"].clone(),
                 created_at: v["createdAt"].as_i64().unwrap_or(0),
+                thread_id: v["threadId"].as_str().map(str::to_owned),
             },
         ))
     }
@@ -188,6 +207,11 @@ impl Entry {
 
     pub fn is_final(&self) -> bool {
         self.kind == Kind::Agent && self.data["final"].as_bool().unwrap_or(false)
+    }
+
+    /// What the chat shows as a message: the user's, and each turn's final reply.
+    pub fn is_message(&self) -> bool {
+        self.kind == Kind::User || self.is_final()
     }
 
     pub fn pending(&self) -> bool {
@@ -356,14 +380,16 @@ pub const FILTERS: [(&str, Option<Mark>); 5] = [
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Action {
     NewBot,
+    NewGroup,
     RefreshAgents,
     Pair,
     Usage,
     Keys,
 }
 
-pub const ACTIONS: [(&str, &str, Action); 5] = [
+pub const ACTIONS: [(&str, &str, Action); 6] = [
     ("New bot…", "n", Action::NewBot),
+    ("New group chat…", "m", Action::NewGroup),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Pair a phone…", "P", Action::Pair),
     ("Usage", "U", Action::Usage),
@@ -482,6 +508,23 @@ impl Form {
     }
 }
 
+/// A group's bots: at most this many.
+pub const MAX_MEMBERS: usize = 6;
+
+/// Create a group chat, or rename one and change who's in it.
+pub struct GroupForm {
+    /// The group being edited; `None` creates one.
+    pub group_id: Option<String>,
+    pub name: Editor,
+    /// Picked bot ids, in the order they were picked.
+    pub members: Vec<String>,
+    /// Typing the name (else moving in the bot list).
+    pub on_name: bool,
+    pub cursor: usize,
+    pub error: Option<String>,
+    pub saving: bool,
+}
+
 pub enum Overlay {
     Goto(Goto),
     Help(Editor),
@@ -489,6 +532,7 @@ pub enum Overlay {
     Agents(AgentPicker),
     Folder(FolderPicker),
     Form(Box<Form>),
+    Group(GroupForm),
     Usage,
     Pair(Option<String>),
 }
@@ -502,9 +546,14 @@ pub struct Toast {
 #[derive(Clone)]
 pub enum Click {
     Bot(String),
-    Option { entry: String, option: String },
+    Option {
+        entry: String,
+        option: String,
+    },
     Filter(usize),
     Composer,
+    /// The replies line under a message: opens its thread.
+    Thread(String),
 }
 
 #[derive(Default)]
@@ -551,6 +600,10 @@ pub struct App {
     /// Chat/trace viewport heights from the last draw, for page scrolling.
     pub chat_height: usize,
     pub chat_top: bool,
+    /// The open thread's root entry in the selected chat; `None` shows the main chat.
+    pub thread: Option<String>,
+    /// A main-chat message picked to reply to in its thread (`r`, then j/k and ↵).
+    pub pick: Option<String>,
     pub market: (Vec<Toggle>, Vec<Toggle>),
     reading: HashSet<String>,
     history_busy: HashSet<String>,
@@ -591,6 +644,8 @@ impl App {
             width: Width::Wide,
             chat_height: 20,
             chat_top: false,
+            thread: None,
+            pick: None,
             market: (vec![], vec![]),
             reading: HashSet::new(),
             history_busy: HashSet::new(),
@@ -630,9 +685,37 @@ impl App {
         c
     }
 
+    /// A chat's entries in the lane on screen (main chat, or the open thread's replies), in display order.
+    pub fn lane(&self, bot: &str) -> Vec<&Entry> {
+        let thread = self.thread.as_deref();
+        let mut v: Vec<&Entry> = self
+            .entries
+            .get(bot)
+            .map(|m| m.values().filter(|e| e.thread_id.as_deref() == thread).collect())
+            .unwrap_or_default();
+        // A message sent mid-turn belongs after that turn's reply.
+        v.sort_by_key(|e| (e.turn, e.seq));
+        v
+    }
+
     pub fn pending(&self) -> Option<&Entry> {
         let id = self.selected.as_ref()?;
-        self.entries.get(id)?.values().rev().find(|e| e.pending())
+        self.lane(id).into_iter().rev().find(|e| e.pending())
+    }
+
+    /// Where the composer's draft lives: per chat, and per thread in it.
+    fn draft_key(&self) -> Option<String> {
+        let id = self.selected.as_ref()?;
+        Some(self.thread.as_ref().map_or_else(|| id.clone(), |root| format!("{id}#{root}")))
+    }
+
+    pub fn draft(&self) -> Editor {
+        self.draft_key().and_then(|k| self.drafts.get(&k).cloned()).unwrap_or_default()
+    }
+
+    /// Name of an entry's author (a group reply's bot), as the apps show it.
+    pub fn author_name(&self, id: Option<&str>) -> String {
+        id.and_then(|id| self.bots.get(id)).map_or_else(|| "A deleted bot".into(), |b| b.name.clone())
     }
 
     pub fn latest_turn(&self, bot: &str) -> Option<i64> {
@@ -641,7 +724,12 @@ impl App {
 
     /// Whether every older entry of this bot is loaded.
     pub fn history_complete(&self, id: &str) -> bool {
-        self.history_done.contains(id) || self.entries.get(id).and_then(|m| m.keys().next()).is_none_or(|&s| s <= 1)
+        self.history_done.contains(id) || self.oldest_main(id).is_none_or(|s| s <= 1)
+    }
+
+    /// Paging (`history`) covers the main chat only; thread replies don't count.
+    fn oldest_main(&self, id: &str) -> Option<i64> {
+        self.entries.get(id)?.values().find(|e| e.thread_id.is_none()).map(|e| e.seq)
     }
 
     pub fn chat_visible(&self) -> bool {
@@ -655,6 +743,8 @@ impl App {
     fn select(&mut self, id: &str) {
         if self.selected.as_deref() != Some(id) {
             self.selected = Some(id.to_owned());
+            self.thread = None;
+            self.pick = None;
             self.chat_scroll = 0;
             self.trace_scroll = 0;
             self.trace_turn = None;
@@ -686,6 +776,11 @@ impl App {
                 self.select(&id);
                 self.chat_page = true;
                 self.focus = Focus::Chat;
+                // A card waiting in a thread shows there.
+                let here = self.bots.get(&id).filter(|b| b.working_chat.as_deref().unwrap_or(&b.id) == b.id);
+                if let Some(root) = here.and_then(|b| b.working_thread.clone()) {
+                    self.open_thread(root);
+                }
             }
             None => self.flash(match want {
                 Mark::Need => "No bot needs you",
@@ -735,7 +830,7 @@ impl App {
             self.reading.insert(id.clone());
             self.call("markRead", json!({"botId": id}), After::Nothing);
         }
-        if self.chat_top && self.chat_visible() {
+        if self.chat_top && self.chat_visible() && self.thread.is_none() {
             self.load_history();
         }
     }
@@ -745,7 +840,7 @@ impl App {
         if self.history_busy.contains(&id) || self.history_done.contains(&id) {
             return;
         }
-        let Some(oldest) = self.entries.get(&id).and_then(|m| m.keys().next().copied()) else { return };
+        let Some(oldest) = self.oldest_main(&id) else { return };
         if oldest <= 1 {
             self.history_done.insert(id);
             return;
@@ -786,7 +881,7 @@ impl App {
             Some("hello") if !v["usage"].is_null() => self.usage = v["usage"].clone(),
             Some("usage") => self.usage = v["usage"].clone(),
             Some("bot") => self.upsert_bot(&v["bot"]),
-            Some("entry") if v["entry"]["threadId"].is_null() => {
+            Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"]) {
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
@@ -797,12 +892,13 @@ impl App {
 
     fn upsert_bot(&mut self, v: &Value) {
         let Some(id) = v["id"].as_str() else { return };
-        // Group chats and threads are on the iPhone and Mac apps only for now.
-        if v["deleted"].as_bool().unwrap_or(false) || v["kind"] == "group" {
+        if v["deleted"].as_bool().unwrap_or(false) {
             self.bots.remove(id);
             self.entries.remove(id);
             if self.selected.as_deref() == Some(id) {
                 self.selected = None;
+                self.thread = None;
+                self.pick = None;
                 self.chat_page = false;
                 self.typing = false;
             }
@@ -836,12 +932,17 @@ impl App {
                     After::History(id) => {
                         self.history_busy.remove(&id);
                     }
-                    After::Saved => {
-                        if let Some(Overlay::Form(f)) = self.overlays.last_mut() {
+                    After::Saved => match self.overlays.last_mut() {
+                        Some(Overlay::Form(f)) => {
                             f.saving = false;
                             f.error = Some(e);
                         }
-                    }
+                        Some(Overlay::Group(g)) => {
+                            g.saving = false;
+                            g.error = Some(e);
+                        }
+                        _ => {}
+                    },
                     After::Dirs => {
                         if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
                             p.error = Some(e);
@@ -867,6 +968,13 @@ impl App {
             After::Backends => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Agents refreshed");
+            }
+            After::Thread => {
+                for e in v["entries"].as_array().into_iter().flatten() {
+                    if let Some((bot, e)) = Entry::parse(e) {
+                        self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
+                    }
+                }
             }
             After::History(id) => {
                 self.history_busy.remove(&id);
@@ -905,7 +1013,7 @@ impl App {
                 }
             }
             After::Saved => {
-                let saved = self.overlays.iter().rposition(|o| matches!(o, Overlay::Form(_)));
+                let saved = self.overlays.iter().rposition(|o| matches!(o, Overlay::Form(_) | Overlay::Group(_)));
                 if let Some(i) = saved {
                     self.overlays.truncate(i);
                 }
@@ -954,10 +1062,10 @@ impl App {
         let s = s.replace("\r\n", "\n").replace('\r', "\n");
         if let Some(ed) = self.top_editor() {
             ed.insert(&s);
-        } else if let Some(id) = self.selected.clone() {
+        } else if let Some(key) = self.draft_key() {
             self.typing = true;
             self.focus = Focus::Chat;
-            self.drafts.entry(id).or_default().insert(&s);
+            self.drafts.entry(key).or_default().insert(&s);
         }
     }
 
@@ -967,6 +1075,7 @@ impl App {
             Overlay::Help(e) => Some(e),
             Overlay::Agents(a) => Some(&mut a.query),
             Overlay::Folder(p) => Some(&mut p.query),
+            Overlay::Group(g) if g.on_name => Some(&mut g.name),
             Overlay::Form(f) => match f.current() {
                 Field::Name => Some(&mut f.name),
                 Field::Instructions => Some(&mut f.instructions),
@@ -999,13 +1108,14 @@ impl App {
     }
 
     fn composer_key(&mut self, k: KeyEvent) {
-        let Some(id) = self.selected.clone() else {
+        let (Some(id), Some(key)) = (self.selected.clone(), self.draft_key()) else {
             self.typing = false;
             return;
         };
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let newline = k.modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::ALT);
-        let draft = self.drafts.entry(id.clone()).or_default();
+        let thread = self.thread.clone();
+        let draft = self.drafts.entry(key).or_default();
         match k.code {
             KeyCode::Esc => self.typing = false,
             KeyCode::Enter if newline => draft.insert("\n"),
@@ -1018,7 +1128,11 @@ impl App {
                 draft.clear();
                 self.chat_scroll = 0;
                 let nonce = uuid::Uuid::new_v4().to_string();
-                self.call("send", json!({"botId": id, "text": text, "clientNonce": nonce}), After::Nothing);
+                let mut body = json!({"botId": id, "text": text, "clientNonce": nonce});
+                if let Some(root) = thread {
+                    body["threadId"] = root.into();
+                }
+                self.call("send", body, After::Nothing);
             }
             KeyCode::Char('c') if ctrl => {
                 if draft.text.is_empty() {
@@ -1052,6 +1166,9 @@ impl App {
         let half = page(self.chat_height) / 2;
         let narrow = self.width == Width::Narrow;
         let roster_page = narrow && !self.chat_page;
+        if self.pick.is_some() && self.pick_key(k) {
+            return;
+        }
         match k.code {
             KeyCode::Char('c') if ctrl => self.flash("q quits"),
             KeyCode::Char('d') if ctrl => self.scroll_focused(-half),
@@ -1083,7 +1200,17 @@ impl App {
                 self.answer_kind(c);
             }
             KeyCode::Char('n') => self.new_bot(),
+            KeyCode::Char('m') => self.new_group(),
             KeyCode::Char('i') if !roster_page => self.start_typing(),
+            KeyCode::Char('r') if !roster_page && self.selected.is_some() => {
+                if self.thread.is_some() {
+                    self.start_typing();
+                } else {
+                    self.chat_page = true;
+                    self.focus = Focus::Chat;
+                    self.step_pick(0);
+                }
+            }
             KeyCode::Enter => {
                 if roster_page || self.focus == Focus::Roster {
                     if self.selected.is_some() {
@@ -1099,6 +1226,9 @@ impl App {
                 if self.trace == TraceMode::Full {
                     self.trace = TraceMode::Off;
                     self.focus = Focus::Chat;
+                } else if self.thread.is_some() {
+                    self.thread = None;
+                    self.chat_scroll = 0;
                 } else if narrow && self.chat_page {
                     self.chat_page = false;
                     self.focus = Focus::Roster;
@@ -1174,7 +1304,9 @@ impl App {
                 }
             }
             KeyCode::Char('S') => {
-                if let Some(b) = self.bot() {
+                if self.bot().is_some_and(|b| b.group) {
+                    self.flash("A group has no session of its own");
+                } else if let Some(b) = self.bot() {
                     let c = Confirm {
                         title: format!("Start a new session for {}?", b.name),
                         detail: "The agent forgets this conversation's context.".into(),
@@ -1187,10 +1319,18 @@ impl App {
             }
             KeyCode::Char('x') => {
                 if let Some(b) = self.bot() {
+                    let (detail, note) = if b.group {
+                        ("Its conversation goes away.".into(), "Its bots stay.".into())
+                    } else {
+                        (
+                            "Its conversation and settings go away.".into(),
+                            format!("Files in {} stay where they are.", tilde(&b.cwd, &self.home)),
+                        )
+                    };
                     let c = Confirm {
                         title: format!("Delete {}?", b.name),
-                        detail: "Its conversation and settings go away.".into(),
-                        note: format!("Files in {} stay where they are.", tilde(&b.cwd, &self.home)),
+                        detail,
+                        note,
                         button: "Delete",
                         act: ConfirmAct::Delete(b.id.clone()),
                     };
@@ -1319,11 +1459,53 @@ impl App {
         }
     }
 
+    /// `r`: moves the pick through the main chat's messages (none picked: the newest).
+    fn step_pick(&mut self, d: isize) {
+        let Some(id) = self.selected.clone() else { return };
+        let ids: Vec<String> = self.lane(&id).into_iter().filter(|e| e.is_message()).map(|e| e.id.clone()).collect();
+        if ids.is_empty() {
+            self.pick = None;
+            self.flash("No message to reply to yet");
+            return;
+        }
+        let at = self.pick.as_ref().and_then(|p| ids.iter().position(|x| x == p));
+        let i = at.map_or(ids.len() - 1, |i| i.saturating_add_signed(d).min(ids.len() - 1));
+        self.pick = Some(ids[i].clone());
+    }
+
+    /// Keys while a message is picked. Returns whether the key was used.
+    fn pick_key(&mut self, k: KeyEvent) -> bool {
+        match k.code {
+            KeyCode::Char('j') | KeyCode::Down => self.step_pick(1),
+            KeyCode::Char('k') | KeyCode::Up => self.step_pick(-1),
+            KeyCode::Enter | KeyCode::Char('r') => {
+                if let Some(root) = self.pick.take() {
+                    self.open_thread(root);
+                    self.start_typing();
+                }
+            }
+            KeyCode::Esc => self.pick = None,
+            _ => return false,
+        }
+        true
+    }
+
+    fn open_thread(&mut self, root: String) {
+        let Some(id) = self.selected.clone() else { return };
+        self.pick = None;
+        self.chat_scroll = 0;
+        self.chat_page = true;
+        self.focus = Focus::Chat;
+        if self.trace == TraceMode::Full {
+            self.trace = TraceMode::Off;
+        }
+        self.call("thread", json!({"botId": id, "rootId": root}), After::Thread);
+        self.thread = Some(root);
+    }
+
     fn copy_last(&mut self) {
         let Some(id) = self.selected.clone() else { return };
-        let Some(text) =
-            self.entries.get(&id).and_then(|m| m.values().rev().find(|e| e.is_final()).map(|e| e.text().to_owned()))
-        else {
+        let Some(text) = self.lane(&id).into_iter().rev().find(|e| e.is_final()).map(|e| e.text().to_owned()) else {
             self.flash("No reply to copy");
             return;
         };
@@ -1346,8 +1528,101 @@ impl App {
         self.overlays.push(Overlay::Agents(AgentPicker { query: Editor::default(), cursor: 0 }));
     }
 
+    fn new_group(&mut self) {
+        self.overlays.push(Overlay::Group(GroupForm {
+            group_id: None,
+            name: Editor::default(),
+            members: vec![],
+            on_name: false,
+            cursor: 0,
+            error: None,
+            saving: false,
+        }));
+    }
+
+    /// Bots a group can hold: the roster's agents, plus hidden ones already in it.
+    pub fn group_candidates(&self, members: &[String]) -> Vec<&Bot> {
+        let mut v: Vec<&Bot> = self.roster().into_iter().filter(|b| !b.group).collect();
+        v.extend(self.bots.values().filter(|b| b.hidden && !b.group && members.contains(&b.id)));
+        v
+    }
+
+    /// "Alice, Bob" when no name is typed.
+    pub fn group_default_name(&self, members: &[String]) -> String {
+        let names: Vec<&str> = members.iter().filter_map(|m| self.bots.get(m)).map(|b| b.name.as_str()).collect();
+        names.join(", ")
+    }
+
+    fn group_key(&mut self, mut g: GroupForm, k: KeyEvent) -> Option<Overlay> {
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let n = self.group_candidates(&g.members).len();
+        match k.code {
+            KeyCode::Esc => return None,
+            KeyCode::Enter => self.save_group(&mut g),
+            KeyCode::Char('s') if ctrl => self.save_group(&mut g),
+            KeyCode::Tab | KeyCode::BackTab => g.on_name = !g.on_name,
+            KeyCode::Down if g.on_name => g.on_name = false,
+            KeyCode::Down => g.cursor = (g.cursor + 1).min(n.saturating_sub(1)),
+            KeyCode::Up if g.cursor == 0 => g.on_name = true,
+            KeyCode::Up if !g.on_name => g.cursor -= 1,
+            KeyCode::Char(' ') if !g.on_name => {
+                let id = self.group_candidates(&g.members).get(g.cursor).map(|b| b.id.clone());
+                if let Some(id) = id {
+                    g.error = None;
+                    if let Some(i) = g.members.iter().position(|m| *m == id) {
+                        g.members.remove(i);
+                    } else if g.members.len() < MAX_MEMBERS {
+                        g.members.push(id);
+                    } else {
+                        g.error = Some(format!("A group holds up to {MAX_MEMBERS} bots."));
+                    }
+                }
+            }
+            _ if g.on_name => {
+                g.name.key(k);
+            }
+            _ => {}
+        }
+        Some(Overlay::Group(g))
+    }
+
+    fn save_group(&mut self, g: &mut GroupForm) {
+        if g.saving {
+            return;
+        }
+        if g.members.is_empty() {
+            g.error = Some("Pick at least one bot.".into());
+            return;
+        }
+        let typed = g.name.text.trim();
+        let name = if typed.is_empty() { self.group_default_name(&g.members) } else { typed.to_owned() };
+        let mut body = json!({"name": name, "members": g.members});
+        g.saving = true;
+        g.error = None;
+        if let Some(id) = &g.group_id {
+            body["id"] = id.clone().into();
+            self.call("updateBot", body, After::Saved);
+        } else {
+            body["id"] = "".into();
+            body["kind"] = "group".into();
+            self.call("createBot", body, After::Saved);
+        }
+    }
+
     fn edit_bot(&mut self) {
         let Some(b) = self.bot().cloned() else { return };
+        if b.group {
+            self.overlays.push(Overlay::Group(GroupForm {
+                group_id: Some(b.id.clone()),
+                name: Editor::with(&b.name),
+                members: b.members.clone(),
+                on_name: true,
+                cursor: 0,
+                error: None,
+                saving: false,
+            }));
+            return;
+        }
         let mut f = Form {
             bot_id: Some(b.id.clone()),
             name: Editor::with(&b.name),
@@ -1409,6 +1684,7 @@ impl App {
     fn run_action(&mut self, a: Action) {
         match a {
             Action::NewBot => self.new_bot(),
+            Action::NewGroup => self.new_group(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
             Action::Usage => self.overlays.push(Overlay::Usage),
@@ -1445,6 +1721,7 @@ impl App {
             Overlay::Agents(a) => self.agents_key(a, k),
             Overlay::Folder(p) => self.folder_key(p, k),
             Overlay::Form(f) => self.form_key(f, k),
+            Overlay::Group(g) => self.group_key(g, k),
             o @ (Overlay::Usage | Overlay::Pair(_)) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None
@@ -1781,6 +2058,7 @@ impl App {
                         }
                     }
                     Some(Click::Composer) => self.start_typing(),
+                    Some(Click::Thread(root)) => self.open_thread(root),
                     None => {
                         if self.overlays.is_empty() {
                             if self.hits.trace.contains(at) {
@@ -1937,10 +2215,30 @@ mod tests {
                 {"optionId": "a", "name": "Allow", "kind": "allow_once"},
             ]}),
             created_at: 0,
+            thread_id: None,
         };
         assert!(e.pending());
         let kinds: Vec<String> = e.options().into_iter().map(|o| o.2).collect();
         assert_eq!(kinds, ["allow_once", "reject_once"]);
+    }
+
+    #[test]
+    fn lanes_split_the_chat_from_its_threads() {
+        let g = Bot::parse(&json!({"id": "g", "kind": "group", "members": ["a", "b"], "workingThread": "r"}))
+            .expect("a bot with an id parses");
+        assert!(g.group && g.members == ["a", "b"]);
+        assert!(g.works_in(Some("r")) && !g.works_in(None));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
+        for (seq, thread) in [(1, Value::Null), (2, json!("r")), (3, Value::Null)] {
+            let v = json!({"botId": "g", "id": format!("e{seq}"), "seq": seq, "kind": "user", "threadId": thread});
+            let (bot, e) = Entry::parse(&v).expect("a full entry parses");
+            app.entries.entry(bot).or_default().insert(e.seq, e);
+        }
+        let ids = |app: &App| app.lane("g").iter().map(|e| e.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&app), ["e1", "e3"]);
+        app.thread = Some("r".into());
+        assert_eq!(ids(&app), ["e2"]);
     }
 
     #[test]

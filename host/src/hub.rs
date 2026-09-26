@@ -330,6 +330,12 @@ impl Hub {
         }
         if before.status != after.status {
             push::live_activity_update(self, id, &after);
+            // A group's Live Activity follows its busy member.
+            for lane in [&before.lane, &after.lane].into_iter().flatten().filter(|l| l.chat != id) {
+                if let Ok(Some(group)) = self.store.bot(&lane.chat) {
+                    push::live_activity_update(self, &lane.chat, &self.group_runtime(&group.config));
+                }
+            }
         }
     }
 

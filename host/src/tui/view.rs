@@ -15,8 +15,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
 
 use super::app::{
-    ACTIONS, App, Bot, COLORS, Click, Editor, Entry, FIELDS, FILTERS, Field, Focus, Form, GotoItem, Kind, Mark,
-    Overlay, SHAPES, Status, TraceMode, Width, tilde,
+    ACTIONS, App, Bot, COLORS, Click, Editor, Entry, FIELDS, FILTERS, Field, Focus, Form, GotoItem, GroupForm, Kind,
+    MAX_MEMBERS, Mark, Overlay, SHAPES, Status, TraceMode, Width, tilde,
 };
 use super::md::{self, truncate, width as w};
 
@@ -159,6 +159,10 @@ pub fn glyph(app: &App, m: Mark) -> (&'static str, Style) {
 
 fn avatar(b: &Bot) -> Span<'static> {
     let t = theme();
+    if b.group {
+        // A group: # and how many bots are in it.
+        return Span::styled(format!("#{}", b.members.len().min(9)), t.bold.patch(t.btn));
+    }
     if t.color {
         Span::styled("••", Style::default().fg(t.on_color).bg(bot_color(&b.color)).add_modifier(Modifier::BOLD))
     } else {
@@ -589,7 +593,9 @@ fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     if !narrow {
         let hy = r.bottom() - 1;
         let mut x = put(buf, x0 + 1, hy, 2, "n", t.secondary.add_modifier(Modifier::BOLD)) + 1;
-        x = put(buf, x, hy, 10, "new bot", t.dim) + 3;
+        x = put(buf, x, hy, 10, "new bot", t.dim) + 2;
+        x = put(buf, x, hy, 2, "m", t.secondary.add_modifier(Modifier::BOLD)) + 1;
+        x = put(buf, x, hy, 10, "group", t.dim) + 2;
         x = put(buf, x, hy, 3, "^k", t.secondary.add_modifier(Modifier::BOLD)) + 1;
         put(buf, x, hy, 8, "go to", t.dim);
     }
@@ -652,6 +658,8 @@ struct Built {
     lines: Vec<Line<'static>>,
     /// (line index, x offset, width, click)
     buttons: Vec<(usize, u16, u16, Click)>,
+    /// Each message's (entry id, first line, end line), for picking one to reply to.
+    messages: Vec<(String, usize, usize)>,
 }
 
 fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
@@ -674,7 +682,8 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         x = put(buf, x, r.y, 2, "‹", t.bold) + 1;
     }
     put_line(buf, x, r.y, 2, &Line::from(avatar(&b)));
-    x = put(buf, x + 3, r.y, r.width / 3, &b.name, t.bold) + 2;
+    let title = if app.thread.is_some() { format!("Thread · {}", b.name) } else { b.name.clone() };
+    x = put(buf, x + 3, r.y, r.width / 3, &title, t.bold) + 2;
     let (status, ss) = match b.mark() {
         Mark::Need => ("◆ needs you".to_owned(), t.amber),
         Mark::Work => (format!("{} working {}", spin(app), elapsed(b.started_at)), t.secondary),
@@ -682,7 +691,12 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         _ => (String::new(), t.dim),
     };
     let sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
-    if !narrow {
+    if app.thread.is_some() {
+        put(buf, x, r.y, sx.saturating_sub(x + 2), "esc back to the chat", t.dim);
+    } else if b.group {
+        let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
+        put(buf, x, r.y, sx.saturating_sub(x + 2), &format!("group · {}", names.join(", ")), t.secondary);
+    } else if !narrow {
         let meta = format!("{} · {} · {}", b.backend, tilde(&b.cwd, &app.home), if b.auto { "auto" } else { "ask" });
         put(buf, x, r.y, sx.saturating_sub(x + 2), &meta, t.secondary);
     }
@@ -707,7 +721,7 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     }
 
     // Composer at the bottom.
-    let draft = app.drafts.get(&b.id).cloned().unwrap_or_default();
+    let draft = app.draft();
     let inner = usize::from(r.width.saturating_sub(4)).max(1);
     let (clines, cursor) = composer_lines(&draft, inner);
     let ch = u(clines.len().clamp(1, 8));
@@ -721,7 +735,9 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     app.hits.clicks.push((comp_rect, Click::Composer));
     let first = clines.len().saturating_sub(usize::from(ch)).min(cursor.1.saturating_sub(usize::from(ch) - 1));
     if draft.text.is_empty() {
-        put(buf, r.x + 3, comp_top + 1, r.width.saturating_sub(4), &format!("Message {}…", b.name), t.dim);
+        let placeholder =
+            if app.thread.is_some() { "Reply in thread…".to_owned() } else { format!("Message {}…", b.name) };
+        put(buf, r.x + 3, comp_top + 1, r.width.saturating_sub(4), &placeholder, t.dim);
     } else {
         for (i, l) in clines.iter().skip(first).take(usize::from(ch)).enumerate() {
             put(buf, r.x + 3, comp_top + 1 + u(i), r.width.saturating_sub(4), l, t.text);
@@ -733,6 +749,8 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             Status::NeedsInput => "sends after the approval",
             _ => "",
         }
+    } else if app.pick.is_some() {
+        "↵ opens its thread · esc cancels"
     } else if matches!(b.status, Status::Working) {
         "s stops"
     } else {
@@ -753,11 +771,26 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     let total = built.lines.len();
     let h = usize::from(body.height);
     let max = total.saturating_sub(h);
+    // Keep the picked message on screen.
+    let picked = app.pick.as_ref().and_then(|p| built.messages.iter().find(|m| &m.0 == p)).map(|m| (m.1, m.2));
+    if let Some((from, to)) = picked {
+        let start = total.saturating_sub(h + app.chat_scroll);
+        if from < start {
+            app.chat_scroll = total.saturating_sub(h + from);
+        } else if to > start + h {
+            app.chat_scroll = total.saturating_sub(to.max(h));
+        }
+    }
     app.chat_scroll = app.chat_scroll.min(max);
     app.chat_top = total > 0 && app.chat_scroll == max;
     let start = total.saturating_sub(h + app.chat_scroll);
     for (i, l) in built.lines.iter().skip(start).take(h).enumerate() {
         put_line(buf, body.x, body.y + u(i), body.width, l);
+    }
+    if let Some((from, to)) = picked {
+        for li in from.max(start)..to.min(start + h) {
+            put(buf, body.x, body.y + u(li - start), 1, "▌", t.amber);
+        }
     }
     for (li, bx, bw, click) in built.buttons {
         if li >= start && li < start + h {
@@ -847,127 +880,60 @@ fn turn_info(entries: &[&Entry]) -> HashMap<i64, TurnInfo> {
     m
 }
 
+fn gap(out: &mut Built) {
+    if !out.lines.is_empty() {
+        out.lines.push(Line::default());
+    }
+}
+
+fn name_style(color: &str) -> Style {
+    let t = theme();
+    if t.color { Style::default().fg(bot_color(color)).add_modifier(Modifier::BOLD) } else { t.bold }
+}
+
+/// "3 replies", "1 reply".
+fn replies(n: i64) -> String {
+    if n == 1 { "1 reply".into() } else { format!("{n} replies") }
+}
+
 fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
     let t = theme();
-    let mut out = Built { lines: vec![], buttons: vec![] };
-    let mut entries: Vec<&Entry> = app.entries.get(&b.id).map(|m| m.values().collect()).unwrap_or_default();
-    // A message sent mid-turn belongs after that turn's reply.
-    entries.sort_by_key(|e| (e.turn, e.seq));
+    let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
+    let thread = app.thread.as_deref();
+    let entries = app.lane(&b.id);
     let info = turn_info(&entries);
-    let name_style =
-        if t.color { Style::default().fg(bot_color(&b.color)).add_modifier(Modifier::BOLD) } else { t.bold };
-    let gap = |out: &mut Built| {
-        if !out.lines.is_empty() {
-            out.lines.push(Line::default());
-        }
-    };
-    if entries.is_empty() {
-        out.lines.push(Line::default());
-        for row in FACE {
-            out.lines.push(Line::from(vec![Span::raw("  "), Span::styled(row, face_style(&b.color))]));
-        }
-        out.lines.push(Line::default());
-        out.lines.push(Line::from(vec![Span::raw("  "), Span::styled(b.name.clone(), t.bold)]));
-        out.lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(format!("{} · {}", b.backend, tilde(&b.cwd, &app.home)), t.secondary),
-        ]));
-        out.lines.push(Line::default());
-        let hello =
-            format!("Say what you need. {} works in the background and pings you when it's done or needs you.", b.name);
-        out.lines.extend(md::wrap(&[Span::styled(hello, t.dim)], width, &[Span::raw("  ")], &[Span::raw("  ")]));
+    if entries.is_empty() && thread.is_none() {
+        intro(&mut out, app, b, width);
         return out;
     }
-    if !app.history_complete(&b.id) {
+    if thread.is_none() && !app.history_complete(&b.id) {
         out.lines.push(Line::from(Span::styled(" ↑ older messages load when you scroll up", t.dim)));
     }
-    for e in &entries {
-        match e.kind {
-            Kind::User => {
-                gap(&mut out);
-                let mut head = vec![
-                    Span::styled(" you", t.secondary.add_modifier(Modifier::BOLD)),
-                    Span::styled(format!(" {}", clock(e.created_at)), t.dim),
-                ];
-                match e.data["status"].as_str() {
-                    Some("queued") => head.push(Span::styled(" · queued", t.dim)),
-                    Some("cancelled") => head.push(Span::styled(" · not sent", t.red)),
-                    _ => {}
-                }
-                out.lines.push(Line::from(head));
-                let body = md::wrap(
-                    &[Span::styled(e.text().to_owned(), t.text)],
-                    width.saturating_sub(1),
-                    &[Span::raw(" › ")],
-                    &[Span::raw("   ")],
-                );
-                out.lines.extend(with_bg(body, width, t.band));
-            }
-            Kind::Agent if e.is_final() => {
-                gap(&mut out);
-                out.lines.push(Line::from(vec![
-                    Span::styled(format!(" {}", b.name), name_style),
-                    Span::styled(format!(" {}", clock(e.created_at)), t.dim),
-                ]));
-                out.lines.extend(md::render(e.text(), width, 1));
-                if let Some(ti) = info.get(&e.turn).filter(|ti| ti.steps > 0) {
-                    let files = if ti.files.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" · {} file{} changed", ti.files.len(), if ti.files.len() == 1 { "" } else { "s" })
-                    };
-                    out.lines.push(Line::from(Span::styled(
-                        format!("   ↳ {} step{}{files} · o opens them", ti.steps, if ti.steps == 1 { "" } else { "s" }),
-                        t.dim,
-                    )));
-                }
-            }
-            Kind::Permission => {
-                gap(&mut out);
-                if e.pending() {
-                    permission_card(&mut out, e, b, width, &app.home);
-                } else {
-                    decided_line(&mut out, e);
-                }
-            }
-            Kind::Notice => {
-                let text = e.text().to_owned();
-                match e.data["style"].as_str() {
-                    Some("divider") => {
-                        gap(&mut out);
-                        let label = format!(" {text} · {} ", clock(e.created_at));
-                        let side = width.saturating_sub(w(&label) + 4);
-                        out.lines.push(Line::from(Span::styled(format!(" ───{label}{}", "─".repeat(side)), t.dim)));
-                    }
-                    Some("error") => {
-                        gap(&mut out);
-                        out.lines.extend(md::wrap(
-                            &[Span::styled(text, t.red)],
-                            width,
-                            &[Span::styled(" × ", t.red)],
-                            &[Span::raw("   ")],
-                        ));
-                    }
-                    _ => {
-                        gap(&mut out);
-                        out.lines.extend(md::wrap(
-                            &[Span::styled(text, t.dim)],
-                            width,
-                            &[Span::styled(" · ", t.dim)],
-                            &[Span::raw("   ")],
-                        ));
-                    }
-                }
-            }
-            _ => {}
+    if let Some(root) = thread {
+        // The message the thread is on, then its replies.
+        if let Some(e) = app.entries.get(&b.id).and_then(|m| m.values().find(|e| e.id == root)) {
+            entry_lines(&mut out, app, b, e, &HashMap::new(), false, width);
         }
+        let n = entries.iter().filter(|e| e.is_message()).count();
+        let label = if n == 0 {
+            " No replies yet ".to_owned()
+        } else {
+            format!(" {} ", replies(i64::try_from(n).unwrap_or(0)))
+        };
+        gap(&mut out);
+        let side = width.saturating_sub(w(&label) + 4);
+        out.lines.push(Line::from(Span::styled(format!(" ───{label}{}", "─".repeat(side)), t.dim)));
+    }
+    for e in &entries {
+        entry_lines(&mut out, app, b, e, &info, thread.is_none(), width);
     }
     // A turn in flight: who's on it and what they're doing.
     let last_turn = entries.iter().map(|e| e.turn).max().unwrap_or(0);
-    let in_flight = info.get(&last_turn).is_none_or(|ti| !ti.has_final);
-    if b.status == Status::Working && in_flight {
+    // A group's members each reply in the room turn, so a reply doesn't end it.
+    let in_flight = b.group || info.get(&last_turn).is_none_or(|ti| !ti.has_final);
+    if b.status == Status::Working && b.works_in(thread) && in_flight {
         gap(&mut out);
-        out.lines.push(Line::from(Span::styled(format!(" {}", b.name), name_style)));
+        out.lines.push(Line::from(Span::styled(format!(" {}", b.name), name_style(&b.color))));
         let act = if b.activity.is_empty() { "Working…".to_owned() } else { b.activity.clone() };
         out.lines.push(Line::from(vec![
             Span::styled(format!(" {} ", spin(app)), t.secondary),
@@ -980,8 +946,166 @@ fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
                 t.dim,
             )));
         }
+    } else if thread.is_none()
+        && b.working_thread.is_some()
+        && b.working_chat.as_deref().unwrap_or(&b.id) == b.id
+        && matches!(b.status, Status::Working | Status::NeedsInput)
+    {
+        gap(&mut out);
+        let line = if b.status == Status::NeedsInput {
+            Span::styled(" ◆ Needs you in a thread · ! opens it", t.amber)
+        } else {
+            Span::styled(format!(" {} Working in a thread", spin(app)), t.secondary)
+        };
+        out.lines.push(Line::from(line));
     }
     out
+}
+
+/// An empty chat: who this is and how it works.
+fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
+    let t = theme();
+    out.lines.push(Line::default());
+    if !b.group {
+        for row in FACE {
+            out.lines.push(Line::from(vec![Span::raw("  "), Span::styled(row, face_style(&b.color))]));
+        }
+        out.lines.push(Line::default());
+    }
+    out.lines.push(Line::from(vec![Span::raw("  "), Span::styled(b.name.clone(), t.bold)]));
+    let (meta, hello) = if b.group {
+        let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
+        (
+            format!("group · {}", names.join(", ")),
+            "Everyone answers in turn unless you @mention someone. Each bot works in its own folder with its own tools."
+                .to_owned(),
+        )
+    } else {
+        (
+            format!("{} · {}", b.backend, tilde(&b.cwd, &app.home)),
+            format!("Say what you need. {} works in the background and pings you when it's done or needs you.", b.name),
+        )
+    };
+    out.lines.push(Line::from(vec![Span::raw("  "), Span::styled(meta, t.secondary)]));
+    out.lines.push(Line::default());
+    out.lines.extend(md::wrap(&[Span::styled(hello, t.dim)], width, &[Span::raw("  ")], &[Span::raw("  ")]));
+}
+
+/// One chat entry. `main`: the main chat, where a message shows its thread's replies line.
+fn entry_lines(
+    out: &mut Built,
+    app: &App,
+    b: &Bot,
+    e: &Entry,
+    info: &HashMap<i64, TurnInfo>,
+    main: bool,
+    width: usize,
+) {
+    let t = theme();
+    // In a group each reply is its author's; elsewhere the bot's own.
+    let author = if b.group { app.bots.get(e.data["author"].as_str().unwrap_or_default()) } else { Some(b) };
+    match e.kind {
+        Kind::User => {
+            gap(out);
+            let from = out.lines.len();
+            let mut head = vec![
+                Span::styled(" you", t.secondary.add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" {}", clock(e.created_at)), t.dim),
+            ];
+            match e.data["status"].as_str() {
+                Some("queued") => head.push(Span::styled(" · queued", t.dim)),
+                Some("cancelled") => head.push(Span::styled(" · not sent", t.red)),
+                _ => {}
+            }
+            out.lines.push(Line::from(head));
+            let body = md::wrap(
+                &[Span::styled(e.text().to_owned(), t.text)],
+                width.saturating_sub(1),
+                &[Span::raw(" › ")],
+                &[Span::raw("   ")],
+            );
+            out.lines.extend(with_bg(body, width, t.band));
+            out.messages.push((e.id.clone(), from, out.lines.len()));
+            if main {
+                thread_line(out, e);
+            }
+        }
+        Kind::Agent if e.is_final() => {
+            gap(out);
+            let from = out.lines.len();
+            let (name, color) = match author {
+                Some(a) => (a.name.clone(), a.color.as_str()),
+                None => ("A deleted bot".to_owned(), "gray"),
+            };
+            out.lines.push(Line::from(vec![
+                Span::styled(format!(" {name}"), name_style(color)),
+                Span::styled(format!(" {}", clock(e.created_at)), t.dim),
+            ]));
+            out.lines.extend(md::render(e.text(), width, 1));
+            out.messages.push((e.id.clone(), from, out.lines.len()));
+            if let Some(ti) = info.get(&e.turn).filter(|ti| ti.steps > 0) {
+                let files = if ti.files.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {} file{} changed", ti.files.len(), if ti.files.len() == 1 { "" } else { "s" })
+                };
+                out.lines.push(Line::from(Span::styled(
+                    format!("   ↳ {} step{}{files} · o opens them", ti.steps, if ti.steps == 1 { "" } else { "s" }),
+                    t.dim,
+                )));
+            }
+            if main {
+                thread_line(out, e);
+            }
+        }
+        Kind::Permission => {
+            gap(out);
+            if e.pending() {
+                // A card in a group is its asking bot's.
+                permission_card(out, e, author.unwrap_or(b), width, &app.home);
+            } else {
+                decided_line(out, e);
+            }
+        }
+        Kind::Notice => {
+            let text = e.text().to_owned();
+            gap(out);
+            match e.data["style"].as_str() {
+                Some("divider") => {
+                    let label = format!(" {text} · {} ", clock(e.created_at));
+                    let side = width.saturating_sub(w(&label) + 4);
+                    out.lines.push(Line::from(Span::styled(format!(" ───{label}{}", "─".repeat(side)), t.dim)));
+                }
+                Some("error") => out.lines.extend(md::wrap(
+                    &[Span::styled(text, t.red)],
+                    width,
+                    &[Span::styled(" × ", t.red)],
+                    &[Span::raw("   ")],
+                )),
+                _ => out.lines.extend(md::wrap(
+                    &[Span::styled(text, t.dim)],
+                    width,
+                    &[Span::styled(" · ", t.dim)],
+                    &[Span::raw("   ")],
+                )),
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Under a message with a thread: how many replies, how recently (click opens it).
+fn thread_line(out: &mut Built, e: &Entry) {
+    let Some(text) = thread_summary(&e.data["thread"]) else { return };
+    out.buttons.push((out.lines.len(), 3, u(w(&text)), Click::Thread(e.id.clone())));
+    out.lines.push(Line::from(vec![Span::raw("   "), Span::styled(text, theme().secondary)]));
+}
+
+/// "↳ 3 replies · 12:31" from the host's `data.thread`, or nothing without replies.
+fn thread_summary(v: &serde_json::Value) -> Option<String> {
+    let n = v["count"].as_i64().filter(|&n| n > 0)?;
+    let at = when(v["lastAt"].as_i64().unwrap_or(0));
+    Some(if at.is_empty() { format!("↳ {}", replies(n)) } else { format!("↳ {} · {at}", replies(n)) })
 }
 
 /// Keys printed on approval buttons: y / a / n for the usual kinds, digits otherwise.
@@ -1498,6 +1622,7 @@ fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay) {
             );
         }
         Overlay::Form(form) => form_view(buf, area, app, form),
+        Overlay::Group(g) => group_view(buf, area, app, g),
         Overlay::Usage => usage(buf, area, app),
         Overlay::Pair(url) => pair(buf, area, url.as_deref()),
     }
@@ -1575,8 +1700,9 @@ fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::app::Goto, items
                 put(buf, inner.x, y, 1, gl, gs.patch(base));
                 put_line(buf, inner.x + 2, y, 2, &Line::from(avatar(b)));
                 put(buf, inner.x + 5, y, 10, &b.name, t.bold.patch(base));
-                put(buf, inner.x + 16, y, 10, &b.backend, t.secondary.patch(base));
-                let cwd = truncate(&tilde(&b.cwd, &app.home), 18);
+                put(buf, inner.x + 16, y, 10, if b.group { "group" } else { &b.backend }, t.secondary.patch(base));
+                let cwd =
+                    if b.group { format!("{} bots", b.members.len()) } else { truncate(&tilde(&b.cwd, &app.home), 18) };
                 put(buf, inner.x + 27, y, 19, &cwd, t.secondary.patch(base));
                 let (pv, ps) = preview(b);
                 let room = inner.width.saturating_sub(47);
@@ -1612,14 +1738,13 @@ fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::app::Goto, items
     if let Some(GotoItem::Bot(id)) = items.get(g.cursor)
         && let Some(b) = app.bots.get(id)
     {
-        put(
-            buf,
-            inner.x,
-            inner.bottom() - 2,
-            inner.width,
-            &format!("{} · {} · {}", b.name, b.backend, tilde(&b.cwd, &app.home)),
-            t.secondary.patch(t.panel),
-        );
+        let meta = if b.group {
+            let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
+            format!("{} · group · {}", b.name, names.join(", "))
+        } else {
+            format!("{} · {} · {}", b.name, b.backend, tilde(&b.cwd, &app.home))
+        };
+        put(buf, inner.x, inner.bottom() - 2, inner.width, &meta, t.secondary.patch(t.panel));
     }
     put(
         buf,
@@ -1631,7 +1756,7 @@ fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::app::Goto, items
     );
 }
 
-const HELP: [(&str, &str, &str); 40] = [
+const HELP: [(&str, &str, &str); 44] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -1650,6 +1775,9 @@ const HELP: [(&str, &str, &str); 40] = [
     ("CHAT", "s", "stop the bot"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
+    ("CHAT", "r", "reply in thread: pick a message"),
+    ("CHAT", "j k  ↵", "picking: move / open its thread"),
+    ("CHAT", "esc", "close the thread"),
     ("TYPE", "↵", "send"),
     ("TYPE", "⇧↵ alt↵ ^j", "new line"),
     ("TYPE", "esc", "back to NAV"),
@@ -1658,7 +1786,8 @@ const HELP: [(&str, &str, &str); 40] = [
     ("TYPE", "alt b / f", "word left / right"),
     ("TYPE", "^w ^u", "delete word / line"),
     ("BOTS", "n", "new bot"),
-    ("BOTS", "e", "edit bot"),
+    ("BOTS", "m", "new group chat"),
+    ("BOTS", "e", "edit bot or group"),
     ("BOTS", "p", "pin / unpin"),
     ("BOTS", "S", "new session"),
     ("BOTS", "x", "delete bot"),
@@ -1670,13 +1799,13 @@ const HELP: [(&str, &str, &str); 40] = [
     ("VIEW", "P", "pair a phone"),
     ("VIEW", "esc", "close / go back"),
     ("VIEW", "q", "quit; bots keep going"),
-    ("MOUSE", "click", "open bot, press button"),
+    ("MOUSE", "click", "open bot or thread, press button"),
     ("MOUSE", "wheel", "scroll under pointer"),
 ];
 
 fn help(buf: &mut Buffer, area: Rect, filter: &Editor) {
     let t = theme();
-    let r = centered(area, 80, 30);
+    let r = centered(area, 80, 34);
     let inner = frame_box(buf, r, t.text, t.panel, Some(("Keys", t.text)));
     field_line(buf, inner, inner.y, filter, "filter actions and keys", true);
     let q = filter.text.to_lowercase();
@@ -1863,6 +1992,82 @@ fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     rput(buf, inner.right(), by, hint, t.dim.patch(t.panel));
 }
 
+fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm) {
+    let t = theme();
+    let bots = app.group_candidates(&g.members);
+    let r = centered(area, 74, u(bots.len() + 10).max(14));
+    let title = if g.group_id.is_some() { "Group chat" } else { "New group chat" };
+    let inner = frame_box(buf, r, t.text, t.panel, Some((title, t.text)));
+    let label = |on: bool| if on { t.bold } else { t.secondary }.patch(t.panel);
+    put(buf, inner.x, inner.y, 8, "Name", label(g.on_name));
+    let default = app.group_default_name(&g.members);
+    let placeholder = if default.is_empty() { "Name" } else { default.as_str() };
+    field_line(
+        buf,
+        Rect::new(inner.x + 8, inner.y, inner.width.saturating_sub(8), 1),
+        inner.y,
+        &g.name,
+        placeholder,
+        g.on_name,
+    );
+    put(
+        buf,
+        inner.x,
+        inner.y + 2,
+        inner.width,
+        &format!("Bots · {} of {MAX_MEMBERS}", g.members.len()),
+        label(!g.on_name),
+    );
+    let list_h = usize::from(inner.height.saturating_sub(7));
+    let off = g.cursor.saturating_sub(list_h.saturating_sub(1));
+    if bots.is_empty() {
+        put(buf, inner.x, inner.y + 3, inner.width, "No bots yet. n creates one.", t.dim.patch(t.panel));
+    }
+    for (y, (i, b)) in (inner.y + 3..).zip(bots.iter().enumerate().skip(off).take(list_h)) {
+        let sel = !g.on_name && i == g.cursor;
+        let base = if sel { t.sel } else { t.panel };
+        if sel {
+            restyle(buf, Rect::new(inner.x - 1, y, inner.width + 2, 1), t.sel);
+        }
+        let on = g.members.contains(&b.id);
+        put(buf, inner.x, y, 2, if on { "☑" } else { "☐" }, if on { t.bold } else { t.dim }.patch(base));
+        put_line(buf, inner.x + 2, y, 2, &Line::from(avatar(b)));
+        put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
+        let folder =
+            std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+        rput(buf, inner.right(), y, &truncate(&folder, usize::from(inner.width / 3)), t.dim.patch(base));
+    }
+    let by = inner.bottom() - 1;
+    if let Some(e) = &g.error {
+        put(buf, inner.x, by - 1, inner.width, e, t.red.patch(t.panel));
+    } else {
+        put(
+            buf,
+            inner.x,
+            by - 1,
+            inner.width,
+            "Everyone answers in turn unless you @mention someone.",
+            t.dim.patch(t.panel),
+        );
+    }
+    let save = if g.saving {
+        " … Saving "
+    } else if g.group_id.is_some() {
+        " ↵ Save "
+    } else {
+        " ↵ Create "
+    };
+    let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
+    put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
+    rput(
+        buf,
+        inner.right(),
+        by,
+        if g.on_name { "tab bots" } else { "↑↓ move · space pick · tab name" },
+        t.dim.patch(t.panel),
+    );
+}
+
 fn usage(buf: &mut Buffer, area: Rect, app: &App) {
     let t = theme();
     let providers = app.usage["providers"].as_array().cloned().unwrap_or_default();
@@ -2005,6 +2210,14 @@ mod tests {
         let (l, c) = composer_lines(&Editor::with("abcdef"), 3);
         assert_eq!(l, ["abc", "def", ""]);
         assert_eq!(c, (0, 2));
+    }
+
+    #[test]
+    fn thread_summary_counts_replies() {
+        assert_eq!(thread_summary(&serde_json::json!({"count": 0})), None);
+        assert_eq!(thread_summary(&serde_json::Value::Null), None);
+        assert_eq!(thread_summary(&serde_json::json!({"count": 1})).as_deref(), Some("↳ 1 reply"));
+        assert_eq!(thread_summary(&serde_json::json!({"count": 3, "lastAt": 0})).as_deref(), Some("↳ 3 replies"));
     }
 
     #[test]

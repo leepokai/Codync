@@ -623,7 +623,8 @@ impl Actor {
         if forked {
             return format!(
                 "[Thread] The user opened a thread on this message from your main chat — {}. This thread is its own \
-                 branch: it starts from everything said so far, and nothing said here reaches the main chat.",
+                 branch: it starts from everything said so far, and nothing said here reaches the main chat. \
+                 Just continue the conversation; there's no need to mention this.",
                 quote(&root_entry)
             );
         }
@@ -639,7 +640,8 @@ impl Actor {
             .collect();
         format!(
             "[Thread] The user opened a thread on the last of these messages from your main chat (oldest first):\n{}\n\
-             This thread is its own branch of the conversation; nothing said here reaches the main chat.",
+             This thread is its own branch of the conversation; nothing said here reaches the main chat. \
+             Just continue the conversation; there's no need to mention this.",
             lines.join("\n")
         )
     }
@@ -1024,7 +1026,7 @@ impl Actor {
                 }
             }
             "plan" => {
-                let data = json!({"entries": u["entries"].clone()});
+                let data = json!({"entries": u["entries"].clone(), "author": self.cfg.id});
                 match &self.plan_entry {
                     Some(id) => {
                         self.hub.set_entry(id, &data);
@@ -1153,8 +1155,8 @@ impl Actor {
             && (force || flushed.elapsed() >= Duration::from_millis(300))
         {
             let data = match kind {
-                SegKind::Text => json!({"text": buf, "final": false}),
-                SegKind::Thought => json!({"text": buf}),
+                SegKind::Text => json!({"text": buf, "final": false, "author": self.cfg.id}),
+                SegKind::Thought => json!({"text": buf, "author": self.cfg.id}),
             };
             self.hub.set_entry(entry_id, &data);
             *flushed = Instant::now();

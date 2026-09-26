@@ -3,18 +3,23 @@ name: Release macOS
 on:
   push:
     tags: ["v*"]
+  # A dry run from any branch: builds, signs and notarizes, but publishes nothing.
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+      - name: Set version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION=${GITHUB_REF_NAME#v}
+          else VERSION=$(awk '/MARKETING_VERSION:/ {print $2; exit}' project.yml); fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -70,11 +75,14 @@ jobs:
           APP_PATH=$(find build/derived -name "Codync.app" -path "*/Release/*" | head -1)
           # Sign-in and the cloud relay read their settings from here.
           test -f "$APP_PATH/Contents/Resources/AccountConfig.plist" || { echo "AccountConfig.plist missing"; exit 1; }
-          # Nested helper first (the bundled Rust host), then the app itself.
-          codesign --force --options runtime --timestamp \
-            --sign "Developer ID Application" "$APP_PATH/Contents/MacOS/codync-host"
-          codesign --force --options runtime --timestamp \
-            --sign "Developer ID Application" "$APP_PATH"
+          sign() { codesign --force --options runtime --timestamp --sign "Developer ID Application" "$1"; }
+          # Inside out: frameworks, the Screen helper, the bundled Rust host, then the app itself.
+          SCREEN="$APP_PATH/Contents/Library/LoginItems/CodyncScreen.app"
+          find "$APP_PATH" -name "*.framework" -prune -print0 | while IFS= read -r -d '' f; do sign "$f"; done
+          sign "$SCREEN"
+          sign "$APP_PATH/Contents/MacOS/codync-host"
+          sign "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           cp -R "$APP_PATH" "$RUNNER_TEMP/Codync.app"
 
       - name: Notarize and staple
@@ -102,29 +110,39 @@ jobs:
           cp -R "$RUNNER_TEMP/Codync.app" "$DMG_DIR/"
           ln -s /Applications "$DMG_DIR/Applications"
           hdiutil create -volname "Codync" -srcfolder "$DMG_DIR" \
-            -ov -format UDZO build/Codync.dmg
+            -ov -format UDZO build/Codync-macOS.dmg
+          spctl --assess --type execute -v "$RUNNER_TEMP/Codync.app"
+
+      - name: Keep the dry run's DMG
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Codync-macOS
+          path: build/Codync-macOS.dmg
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           # The host workflow may have created this release already (same tag).
           gh release create ${{ github.ref_name }} \
-            build/Codync.dmg \
+            build/Codync-macOS.dmg \
             --title "Codync ${{ github.ref_name }}" \
             --generate-notes \
-          || gh release upload ${{ github.ref_name }} build/Codync.dmg --clobber
+          || gh release upload ${{ github.ref_name }} build/Codync-macOS.dmg --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update Homebrew tap
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          SHA=$(shasum -a 256 build/Codync.dmg | awk '{print $1}')
+          SHA=$(shasum -a 256 build/Codync-macOS.dmg | awk '{print $1}')
           git clone https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/leepokai/homebrew-codync.git tap
           cat > tap/Casks/codync.rb << RUBY
           cask "codync" do
             version "${{ env.VERSION }}"
             sha256 "${SHA}"
 
-            url "https://github.com/leepokai/Codync/releases/download/v#{version}/Codync.dmg"
+            url "https://github.com/leepokai/Codync/releases/download/v#{version}/Codync-macOS.dmg"
             name "Codync"
             desc "Message your coding agents (Claude Code, Codex, OpenCode) from your iPhone"
             homepage "https://codync.dev"

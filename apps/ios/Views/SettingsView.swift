@@ -219,6 +219,7 @@ private struct ComputerRow: View {
     let remove: () -> Void
     @Environment(AccountStore.self) private var accounts
     @State private var coloring = false
+    @State private var routing = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -236,6 +237,15 @@ private struct ComputerRow: View {
             if store.screen != nil, store.connection == .online {
                 IconButton("Screen", systemImage: "display", action: openScreen)
             }
+            // Which route goes first, and whether Cloudflare is a fallback at all.
+            IconButton("Connection", systemImage: preference.icon, selected: routing) { routing = true }
+                .codyncMenu(isPresented: $routing) {
+                    ConnectionRoute.allCases.map { route in
+                        MenuItem(route.title, icon: route.icon, selected: route == preference) {
+                            accounts.setRoute(store.computer.id, route)
+                        }
+                    }
+                }
             if inAccount != nil {
                 Image(systemName: "person.crop.circle.badge.checkmark")
                     .foregroundStyle(Palette.tertiary)
@@ -277,11 +287,13 @@ private struct ComputerRow: View {
         }
     }
 
+    private var preference: ConnectionRoute { store.computer.route ?? .automatic }
+
     private var detail: String {
         guard store.connection == .online else { return store.statusText }
         let count = store.roster.count
         let route = switch store.hostRoute {
-        case .direct: " · Direct"
+        case .direct: " · Wi-Fi/Tailscale"
         case .relay: " · Cloudflare"
         default: ""
         }
@@ -364,5 +376,23 @@ private struct SwatchPanel: View {
             }
         }
         .padding(14)
+    }
+}
+
+private extension ConnectionRoute {
+    var title: String {
+        switch self {
+        case .automatic: "Auto: Wi-Fi or Tailscale, then Cloudflare"
+        case .cloudflareFirst: "Cloudflare, then Wi-Fi or Tailscale"
+        case .directOnly: "Wi-Fi or Tailscale only, never Cloudflare"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .automatic: "arrow.triangle.branch"
+        case .cloudflareFirst: "cloud"
+        case .directOnly: "wifi"
+        }
     }
 }

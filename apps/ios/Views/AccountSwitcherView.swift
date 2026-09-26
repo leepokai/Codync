@@ -23,10 +23,8 @@ struct AccountSwitcherButton: View {
 struct AccountSwitcherView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountSession.self) private var account
-    @Environment(AccountStore.self) private var accounts
     @State private var showSettings = false
     @State private var confirmSignOut = false
-    @State private var route = ConnectionRoute.current
     @State private var pairing = false
 
     var body: some View {
@@ -51,10 +49,6 @@ struct AccountSwitcherView: View {
 
             if account.isSignedIn, account.supportsMultipleAccounts || account.accounts.count > 1 {
                 switcher
-            }
-
-            CardSection("Connection") {
-                RoutePicker(selection: Binding(get: { route }, set: { setRoute($0) }))
             }
 
             CardSection {
@@ -98,13 +92,6 @@ struct AccountSwitcherView: View {
                       message: "This iPhone forgets the account's computers. Your bots stay on them.") {
             [DialogAction("Sign out", destructive: true) { Task { await app.signOut() } }]
         }
-    }
-
-    /// Saved for this iPhone; every computer reconnects over the new route right away.
-    private func setRoute(_ new: ConnectionRoute) {
-        withAnimation(Motion.morph) { route = new }
-        ConnectionRoute.current = new
-        for computer in accounts.computers { accounts.store(for: computer.id)?.restartStream() }
     }
 
     /// The big picture: your face and address when signed in, the Google button when not.
@@ -182,48 +169,6 @@ struct AccountSwitcherView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
-    }
-}
-
-/// Three routes as icons; one line under them says what the chosen one does.
-private struct RoutePicker: View {
-    @Binding var selection: ConnectionRoute
-
-    private func info(_ route: ConnectionRoute) -> (icon: String, title: String, detail: String) {
-        switch route {
-        case .automatic: ("wand.and.sparkles", "Auto", "Wi-Fi or Tailscale when it answers, Cloudflare otherwise.")
-        case .direct: ("point.3.connected.trianglepath.dotted", "Wi-Fi · Tailscale", "Direct only. Nothing goes through Cloudflare.")
-        case .relay: ("cloud", "Cloudflare", "Always through Cloudflare, encrypted, from anywhere.")
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                ForEach(ConnectionRoute.allCases, id: \.self) { route in
-                    let item = info(route)
-                    let on = route == selection
-                    Button { selection = route } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: item.icon).font(.system(size: 20))
-                            Text(item.title).font(.caption.weight(.medium))
-                        }
-                        .foregroundStyle(on ? Palette.onAccent : Palette.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 64)
-                        .background(on ? Palette.accentFill : Palette.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressScale())
-                    .accessibilityLabel(item.title)
-                    .accessibilityHint(item.detail)
-                    .accessibilityAddTraits(on ? .isSelected : [])
-                }
-            }
-            Text(info(selection).detail)
-                .font(.caption)
-                .foregroundStyle(Palette.secondary)
-                .contentTransition(.opacity)
-        }
     }
 }
 

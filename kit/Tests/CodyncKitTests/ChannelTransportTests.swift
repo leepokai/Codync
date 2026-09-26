@@ -253,6 +253,33 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     await t.shutdown()
 }
 
+@Test(.timeLimit(.minutes(1))) func routeOrderFollowsTheComputer() async throws {
+    var computer = v.computer
+    computer.urls = ["http://192.168.1.20:19222"]
+    computer.cloud = URL(string: "https://cloud.example.dev")
+
+    computer.route = .cloudflareFirst
+    let (dial, sockets) = fakeDialer()
+    let first = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    await first.start()
+    var it = sockets.makeAsyncIterator()
+    let socket = try #require(await it.next())
+    guard case .relay = socket.endpoint else { Issue.record("Cloudflare first dials the relay first"); return }
+    await first.shutdown()
+
+    computer.route = .directOnly
+    let (dial2, sockets2) = fakeDialer()
+    let second = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial2, watchesNetwork: false)
+    await second.start()
+    var it2 = sockets2.makeAsyncIterator()
+    let stranger = HostSide(try #require(await it2.next()))
+    _ = try await stranger.raw()
+    await stranger.push(["t": "reject", "code": "unauthorized"])
+    let retry = try #require(await it2.next())
+    if case .relay = retry.endpoint { Issue.record("direct only never dials the relay") }
+    await second.shutdown()
+}
+
 @Test(.timeLimit(.minutes(1))) func relayPresenceAndMailbox() async throws {
     let (dial, sockets) = fakeDialer()
     var computer = v.computer

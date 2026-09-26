@@ -23,9 +23,9 @@ struct RouteIcon: View {
     var body: some View {
         switch route {
         case .direct:
-            Image(systemName: "wifi").accessibilityLabel("Direct connection")
+            Image(systemName: "wifi").accessibilityLabel("Wi-Fi or Tailscale")
         case .relay:
-            Image(systemName: "cloud").accessibilityLabel("Through the encrypted relay")
+            Image(systemName: "cloud").accessibilityLabel("Through Cloudflare")
         case .loopback, nil:
             EmptyView()
         }

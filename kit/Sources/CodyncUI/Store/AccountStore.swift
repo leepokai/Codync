@@ -132,6 +132,19 @@ public final class AccountStore {
         refreshList()
     }
 
+    /// Saved with the computer on this device; its channel reconnects over the new order right away.
+    public func setRoute(_ id: ComputerID, _ route: ConnectionRoute) {
+        let value: ConnectionRoute? = route == .automatic ? nil : route
+        if let i = saved.firstIndex(where: { $0.id == id }) {
+            saved[i].route = value
+            persist()
+        }
+        if let i = attached.firstIndex(where: { $0.id == id }) { attached[i].route = value }
+        stores[id]?.updateComputer { $0.route = value }
+        stores[id]?.restartStream()
+        refreshList()
+    }
+
     public func setColor(_ id: ComputerID, _ color: String) {
         if let i = saved.firstIndex(where: { $0.id == id }) {
             saved[i].color = color

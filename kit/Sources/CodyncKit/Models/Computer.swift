@@ -19,6 +19,8 @@ public struct Computer: Codable, Hashable, Sendable, Identifiable {
     public var device: String?
     /// The badge color picked on this device (an `AvatarPalette` id).
     public var color: String?
+    /// How this device reaches the computer, picked per computer; nil = `.automatic`.
+    public var route: ConnectionRoute?
 
     public init(id: ComputerID, name: String, signKey: String, boxKey: String? = nil, urls: [String] = [],
                 cloud: URL? = nil, device: String? = nil, color: String? = nil) {
@@ -35,6 +37,21 @@ public struct Computer: Codable, Hashable, Sendable, Identifiable {
     /// `true` when `id` really is the computer ID of `signKey`.
     public var isConsistent: Bool {
         Data(base64URL: signKey).map { $0.count == 32 && RelayCrypto.computerId(signKey: $0) == id } ?? false
+    }
+}
+
+/// The order routes are tried in. Every paired computer has both routes; this only says which goes first
+/// and whether the other one is a fallback.
+public enum ConnectionRoute: String, Codable, CaseIterable, Sendable {
+    /// Wi-Fi or Tailscale when it answers within 1.5 s, Cloudflare when it doesn't.
+    case automatic
+    /// Cloudflare, falling back to Wi-Fi or Tailscale when Cloudflare can't be reached.
+    case cloudflareFirst
+    /// Wi-Fi and Tailscale only: nothing goes through Cloudflare, even when they fail.
+    case directOnly
+
+    public init(from decoder: any Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .automatic
     }
 }
 

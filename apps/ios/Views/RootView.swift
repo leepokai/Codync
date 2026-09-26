@@ -8,6 +8,8 @@ struct RootView: View {
     @Environment(AccountStore.self) private var accounts
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// First launch only: past the welcome, on to setup.
+    @State private var welcomed = false
 
     /// The open bot, as a NavigationStack path.
     private var path: Binding<[BotReference]> {
@@ -17,11 +19,18 @@ struct RootView: View {
     var body: some View {
         Group {
             if accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
-                VStack(spacing: 0) {
-                    if onboardingCompleted {
-                        ScreenHeader { AccountSwitcherButton() } title: { EmptyView() } trailing: { EmptyView() }
+                if !onboardingCompleted && !welcomed {
+                    WelcomeView { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = true } }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                } else {
+                    PairingView {
+                        if onboardingCompleted {
+                            AccountSwitcherButton()
+                        } else {
+                            BackButton { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = false } }
+                        }
                     }
-                    PairingView(introductory: !onboardingCompleted)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             } else {
                 tabs

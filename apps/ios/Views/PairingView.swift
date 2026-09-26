@@ -3,103 +3,254 @@ import CodyncUI
 import SwiftUI
 import VisionKit
 
-/// First run: explain the model, then pair with a computer running codync-host.
-struct PairingView: View {
-    var introductory = true
-    /// Adding another computer from the computers sheet: titled, with a close button; closes once paired.
+/// Pair with a computer running codync-host, one thing per page: install it, then scan its code.
+struct PairingView<Leading: View>: View {
+    /// Adding another computer from the computers sheet: has a close button; closes once paired.
     var inModal = false
-    @Environment(AppStore.self) private var app
+    /// Top-left on the first page (back to the welcome, the account switcher).
+    @ViewBuilder var leading: Leading
+
+    private enum Step { case install, scan }
+    @State private var step = Step.install
+    @State private var os = ComputerOS.mac
     @Environment(\.dismissModal) private var dismissModal
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var scanning = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScreenHeader {
+                if step == .scan { BackButton { go(.install) } } else { leading }
+            } title: {
+                HStack(spacing: 6) {
+                    Capsule().fill(Palette.text).frame(width: 18, height: 4)
+                    Capsule().fill(step == .scan ? Palette.text : Palette.accentDim).frame(width: 18, height: 4)
+                }
+                .accessibilityElement()
+                .accessibilityLabel(step == .install ? "Step 1 of 2" : "Step 2 of 2")
+            } trailing: {
+                if inModal { IconButton("Close", systemImage: "xmark") { dismissModal() } }
+            }
+
+            ZStack {
+                switch step {
+                case .install:
+                    InstallPage(os: $os) { go(.scan) }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                case .scan:
+                    ScanPage(os: os) { if inModal { dismissModal() } }
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .clipped()
+        }
+        .background(Palette.background)
+    }
+
+    private func go(_ next: Step) {
+        withAnimation(Motion.reduced(.spring(duration: 0.45, bounce: 0), reduceMotion)) { step = next }
+    }
+}
+
+extension PairingView where Leading == EmptyView {
+    init(inModal: Bool) { self.init(inModal: inModal) { EmptyView() } }
+}
+
+private enum ComputerOS: Hashable { case mac, linux }
+
+// MARK: - Install
+
+private struct InstallPage: View {
+    @Binding var os: ComputerOS
+    let next: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // A bot on the computer's screen: that's where it lives.
+                    ZStack {
+                        Image(systemName: "laptopcomputer")
+                            .font(.system(size: 150, weight: .ultraLight))
+                            .foregroundStyle(Palette.tertiary)
+                        CharacterAvatar(shape: "blob", color: "blue", size: 52, mood: .working)
+                            .offset(y: -12)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 8)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Install Codync\non your computer")
+                            .font(.system(size: 30, weight: .semibold))
+                            .tracking(-0.5)
+                            .foregroundStyle(Palette.text)
+                        Text("Your bots run there. This iPhone is how you talk to them.")
+                            .font(.body)
+                            .foregroundStyle(Palette.secondary)
+                    }
+
+                    SegmentedChoice(selection: $os, options: [(.mac, "Mac"), (.linux, "Linux")])
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        CommandBlock(os == .mac
+                                     ? "brew install --cask leepokai/codync/codync"
+                                     : "brew install leepokai/codync/codync-host\ncodync-host install")
+                        if os == .mac {
+                            Text("Then open Codync in the menu bar and click Install host.")
+                                .font(.subheadline)
+                                .foregroundStyle(Palette.secondary)
+                                .transition(.opacity)
+                        }
+                    }
+                    .animation(Motion.layout, value: os)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+            }
+
+            Button(action: next) {
+                Text("Continue").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.primary)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
+        }
+    }
+}
+
+/// A terminal command with a copy button.
+private struct CommandBlock: View {
+    let command: String
+    @State private var copied = false
+
+    init(_ command: String) { self.command = command }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(command)
+                .font(.footnote.monospaced())
+                .foregroundStyle(Palette.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 6)
+                .contentTransition(.opacity)
+            IconButton(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                UIPasteboard.general.string = command
+                withAnimation(Motion.morph) { copied = true }
+                Task {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    withAnimation(Motion.morph) { copied = false }
+                }
+            }
+            .contentTransition(.symbolEffect(.replace))
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 4)
+        .padding(.vertical, 4)
+        .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 12))
+        .animation(Motion.fade, value: command)
+    }
+}
+
+// MARK: - Scan
+
+private struct ScanPage: View {
+    let os: ComputerOS
+    let paired: () -> Void
+    @Environment(AppStore.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @State private var pairing = false
     @State private var pasted = ""
     @State private var error: String?
+    /// Bumped after a failed pair so the scanner starts looking again.
+    @State private var attempt = 0
     @State private var tailscaleOn = Tailscale.isConnected
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                if introductory {
-                    HStack(spacing: -10) {
-                        CharacterAvatar(shape: "blob", color: "blue", size: 64, mood: .working)
-                        CharacterAvatar(shape: "squircle", color: "orange", size: 64)
-                        CharacterAvatar(shape: "teardrop", color: "violet", size: 64, mood: .working)
-                    }
-                    .padding(.top, 40)
-                }
-
+            VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(introductory ? "Your coding agents,\nas teammates." : "Connect a computer")
-                        .font(.system(size: 34, weight: .semibold))
-                        .tracking(-0.6)
+                    Text("Scan the pairing code")
+                        .font(.system(size: 30, weight: .semibold))
+                        .tracking(-0.5)
                         .foregroundStyle(Palette.text)
-                    Text(introductory
-                         ? "Give each agent a name, a job and a project. Then just message the right one — it works on your computer while your phone is in your pocket."
-                         : "Pair a Mac or Linux computer to see its bots in this account.")
+                    Text(os == .mac
+                         ? "On your Mac, click Codync in the menu bar, then Pair iPhone."
+                         : "On your computer, run this in a terminal:")
                         .font(.body)
                         .foregroundStyle(Palette.secondary)
+                    if os == .linux { CommandBlock("codync-host pair") }
                 }
 
+                viewfinder
 
-                VStack(alignment: .leading, spacing: 14) {
-                    Step(n: 1, title: "Install Codync on your computer", detail: "Mac — then open Codync in the menu bar and click Install host:", code: "brew install --cask leepokai/codync/codync")
-                    Step(n: nil, title: "", detail: "Linux:", code: "brew install leepokai/codync/codync-host\ncodync-host install")
-                    Step(n: 2, title: "Show the pairing code", detail: "On a Mac, click Codync in the menu bar → Pair iPhone. Or run:", code: "codync-host pair")
-                    Step(n: 3, title: "Scan it", detail: "Use the button below, or point the Camera app at the code.", code: nil)
-                    TailscaleStep(connected: tailscaleOn)
+                HStack {
+                    TextField("Or paste a codync://pair link", text: $pasted)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.callout.monospaced())
+                        .onSubmit { pair(pasted) }
+                    IconButton("Pair", systemImage: "arrow.right") { pair(pasted) }
+                        .disabled(pasted.isEmpty || pairing)
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 4)
+                .padding(.vertical, 4)
+                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+
+                if let error {
+                    Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                        .transition(.opacity)
                 }
 
-                VStack(spacing: 12) {
-                    Button {
-                        scanning = true
-                    } label: {
-                        Group {
-                            if pairing {
-                                Spinner(size: 18)
-                            } else {
-                                Label("Scan pairing code", systemImage: "qrcode.viewfinder")
-                            }
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("End-to-end encrypted, on Wi-Fi or anywhere else. Your code and chats stay on the computer.",
+                          systemImage: "lock.fill")
+                    if tailscaleOn {
+                        Label("Tailscale is on, so Codync connects over it directly.", systemImage: "checkmark.circle.fill")
+                    } else {
+                        Button { openURL(Tailscale.downloadURL) } label: {
+                            Label("Use Tailscale? Codync connects over it directly.", systemImage: "arrow.up.right")
                         }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 50)
-                    }
-                    .buttonStyle(.primary)
-                    .disabled(!DataScannerViewController.isSupported || pairing)
-
-                    HStack {
-                        TextField("…or paste a codync://pair link", text: $pasted)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .font(.callout.monospaced())
-                        IconButton("Pair", systemImage: "arrow.right.circle.fill") { pair(pasted) }
-                            .disabled(pasted.isEmpty || pairing)
-                    }
-                    .padding(12)
-                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
-
-                    if let error {
-                        Text(error).font(.footnote).foregroundStyle(Palette.danger)
-                            .transition(.opacity)
+                        .buttonStyle(PressScale())
                     }
                 }
-
-                Text("No Tailscale or open ports needed: on the same Wi-Fi your iPhone talks to the computer directly, anywhere else through Codync's relay. Either way it's end-to-end encrypted, and your code and chats stay on the computer.")
-                    .font(.footnote)
-                    .foregroundStyle(Palette.tertiary)
+                .font(.footnote)
+                .foregroundStyle(Palette.tertiary)
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .background(Palette.background)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if inModal { ModalHeader("Pair a computer").background(Palette.background) }
-        }
+        .scrollDismissesKeyboard(.interactively)
         // Coming back from the Tailscale app: show whether it's connected now.
         .onChange(of: scenePhase) { _, phase in if phase == .active { tailscaleOn = Tailscale.isConnected } }
-        .codyncSheet(isPresented: $scanning) {
-            ScannerSheet { code in pair(code) }
+    }
+
+    /// The camera, right on the page: no extra sheet between the instruction and the scan.
+    private var viewfinder: some View {
+        ZStack {
+            if DataScannerViewController.isSupported {
+                QRScanner { code in pair(code) }
+                    .id(attempt)
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: "qrcode.viewfinder").font(.system(size: 44, weight: .light))
+                    Text("Camera not available. Paste the link below.").font(.footnote)
+                }
+                .foregroundStyle(Palette.tertiary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Palette.surface)
+            }
+            if pairing {
+                Palette.background.opacity(0.7)
+                Spinner(size: 28)
+            }
         }
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .animation(Motion.fade, value: pairing)
     }
 
     private func pair(_ text: String) {
@@ -117,7 +268,7 @@ struct PairingView: View {
             do {
                 _ = try await app.pair(p)
                 pasted = ""
-                if inModal { dismissModal() }
+                paired()
             } catch {
                 show(error)
             }
@@ -125,89 +276,8 @@ struct PairingView: View {
     }
 
     private func show(_ error: Error) {
+        attempt += 1
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = error.localizedDescription }
-    }
-}
-
-private struct Step: View {
-    let n: Int?
-    let title: String
-    let detail: String
-    let code: String?
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(n.map { String(format: "%02d", $0) } ?? "")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .frame(width: 24, alignment: .leading)
-                .padding(.top, 2)
-                .foregroundStyle(Palette.tertiary)
-            VStack(alignment: .leading, spacing: 6) {
-                if !title.isEmpty {
-                    Text(title).font(.headline).foregroundStyle(Palette.text)
-                }
-                Text(detail).font(.subheadline).foregroundStyle(Palette.secondary)
-                if let code {
-                    Text(code)
-                        .font(.footnote.monospaced())
-                        .textSelection(.enabled)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 8))
-                }
-            }
-        }
-    }
-}
-
-/// Optional: Tailscale is an alternative way in for people who already use it; the relay doesn't need it.
-private struct TailscaleStep: View {
-    let connected: Bool
-    @Environment(\.openURL) private var openURL
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text("")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .frame(width: 24, alignment: .leading)
-                .padding(.top, 2)
-                .foregroundStyle(Palette.tertiary)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Already use Tailscale? (optional)").font(.headline).foregroundStyle(Palette.text)
-                Text("Codync works away from home without it. If Tailscale runs on this iPhone and the computer, Codync connects over it directly instead of the relay.")
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.secondary)
-                if connected {
-                    Label("Tailscale is on", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Palette.added)
-                } else {
-                    Button { openURL(Tailscale.downloadURL) } label: {
-                        Label("Get Tailscale", systemImage: "arrow.down.circle")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(Palette.accent)
-                    }
-                    .buttonStyle(PressScale())
-                }
-            }
-        }
-    }
-}
-
-/// The camera scanner in a Codync sheet; closes as soon as it reads a pairing code.
-private struct ScannerSheet: View {
-    let onCode: (String) -> Void
-    @Environment(\.dismissModal) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ModalHeader("Scan pairing code")
-            QRScanner { code in
-                dismiss()
-                onCode(code)
-            }
-            .ignoresSafeArea(edges: .bottom)
-        }
     }
 }
 

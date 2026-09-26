@@ -115,7 +115,7 @@ struct SettingsView: View {
         }
         .task { await accounts.refreshCloud() }
         .codyncSheet(isPresented: $addingComputer) {
-            PairingView(introductory: false, inModal: true)
+            PairingView(inModal: true)
         }
         .codyncSheet(item: $access) { target in
             AccessRequestView(computer: target.computer, pending: accounts.pendingAccess[target.id] != nil)

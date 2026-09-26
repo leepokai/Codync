@@ -37,6 +37,7 @@
 		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
 		ACCB28F3DB9C89108B7911E3 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 842DA106CA15E3810C3C9461 /* Input.swift */; };
 		AD4428FB4374EC7B1B89F1FD /* ActivityGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B6C42CD9B7CED28A1EE536C /* ActivityGalleryView.swift */; };
+		AD70E2D55507BF2A75743763 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57273C989336832CFF7B7ACD /* WelcomeView.swift */; };
 		AFC0CD8BD1FA61F810C96057 /* com.pokai.Codync.screen.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 895BB6C2EB8986266EB4159A /* com.pokai.Codync.screen.plist */; };
 		B55C0D49B47C628C367BD92A /* AXTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97876A72710A37EB86A082C1 /* AXTree.swift */; };
 		B75DD137E6F645F797B60B09 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739EC95223CC8F8717C33736 /* PairingView.swift */; };
@@ -134,6 +135,7 @@
 		4CFB70DD8757C90695CDA211 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		4EDD440CC0624F03363AC1BA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		55AABA9596547D7459B1CC5B /* Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Push.swift; sourceTree = "<group>"; };
+		57273C989336832CFF7B7ACD /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		57DFD81025893713D631B5D7 /* ComputersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputersView.swift; sourceTree = "<group>"; };
 		60422D3CA8FEBCDC5AC465E0 /* iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6D734BEE7CD3F84677B0218B /* Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -229,6 +231,7 @@
 				E1B79D48C1D6F90D53751B3F /* RootView.swift */,
 				DE4AE9A34F61B3D28E0C2550 /* SettingsView.swift */,
 				47BCE8E2AFA6CA829DBC489A /* UsageView.swift */,
+				57273C989336832CFF7B7ACD /* WelcomeView.swift */,
 				0E8563C243AB130DFA063CAD /* WidgetGalleryView.swift */,
 			);
 			path = Views;
@@ -719,6 +722,7 @@
 				E430F9317B690366F62164DB /* RootView.swift in Sources */,
 				DEF7478AB86DB605F52905F5 /* SettingsView.swift in Sources */,
 				ED143C01BF7AD4953101D160 /* UsageView.swift in Sources */,
+				AD70E2D55507BF2A75743763 /* WelcomeView.swift in Sources */,
 				A12D125989D2EA1AC5308218 /* WidgetGalleryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

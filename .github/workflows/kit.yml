@@ -3,9 +3,9 @@ name: CodyncKit
 on:
   push:
     branches: [main, v2]
-    paths: ["kit/**", "docs/remote-relay-vectors.json", ".github/workflows/kit.yml"]
+    paths: ["kit/**", "docs/reference/fixtures/remote-relay-vectors.json", ".github/workflows/kit.yml"]
   pull_request:
-    paths: ["kit/**", "docs/remote-relay-vectors.json"]
+    paths: ["kit/**", "docs/reference/fixtures/remote-relay-vectors.json"]
 
 jobs:
   test:

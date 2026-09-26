@@ -53,6 +53,15 @@ public struct BotActivityCard: View {
             }
             Text(state.detail).font(.system(size: 12)).foregroundStyle(Palette.secondary)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            if state.phase == .working, let started = state.startedAt {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock")
+                    Text(started, style: .timer).monospacedDigit()
+                    Text("elapsed")
+                }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Palette.tertiary)
+            }
         }
         .padding(16)
         .accessibilityElement(children: .combine)

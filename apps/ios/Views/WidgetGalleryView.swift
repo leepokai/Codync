@@ -17,6 +17,8 @@ struct WidgetGalleryView: View {
     @State private var size = "medium"
     @State private var hasWidget: Bool?
     @State private var widgetCheckFailed = false
+    @AppStorage(SharedStore.usageIconStyleKey, store: UserDefaults(suiteName: SharedStore.appGroup))
+    private var usageIconStyle = UsageIconStyle.character.rawValue
 
     private var provider: UsageProvider? { Usage.widgetPreview.providers.first { $0.id == providerID } }
 
@@ -87,7 +89,17 @@ struct WidgetGalleryView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    sectionLabel("More ways to stay up to date")
+                    sectionLabel("Choose the look")
+                    SegmentedChoice(selection: Binding(
+                        get: { usageIconStyle },
+                        set: { usageIconStyle = $0; WidgetCenter.shared.reloadTimelines(ofKind: "CodyncProviderUsage") }
+                    ), options: [(UsageIconStyle.character.rawValue, "Character"), (UsageIconStyle.original.rawValue, "Original icon")])
+                    Text("Applies to Usage on iPhone and in the Mac menu bar.")
+                        .font(.caption).foregroundStyle(Palette.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionLabel("Keep tasks in view")
                     Button { page = .lockScreen } label: {
                         Label("Lock Screen widgets", systemImage: "lock.rectangle").foregroundStyle(Palette.accent)
                     }
@@ -100,14 +112,15 @@ struct WidgetGalleryView: View {
                 .font(.subheadline)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                guide(number: "01", title: "Add the widget", icon: "plus.square.on.square",
-                      detail: "Touch and hold your Home Screen. Tap Edit, then Add Widget. Search for Codync and choose Bots or Provider usage.")
-                guide(number: "02", title: "Make it yours", icon: "slider.horizontal.3",
-                      detail: "Touch and hold Provider usage, then tap Edit Widget to choose Claude or Codex. Widgets follow the account selected in Codync.")
-                guide(number: "03", title: "On your Lock Screen", icon: "lock",
-                      detail: "Touch and hold your Lock Screen. Tap Customize, choose the Lock Screen, then tap the widget area. Select Codync to add Bots or Usage limits.")
-                Text("Widgets show the last reported state. Open Codync for live updates and approvals.")
-                    .font(.caption).foregroundStyle(Palette.secondary)
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionLabel("Add a widget")
+                    WidgetSetupAnimation()
+                    Text("Touch and hold the Home Screen · Edit · Add Widget · Codync")
+                        .font(.caption).foregroundStyle(Palette.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+                Text("Widgets show the latest report. Open Codync for live updates and approvals.")
+                    .font(.caption2).foregroundStyle(Palette.tertiary)
             }
             .padding(18)
             .frame(maxWidth: 560)
@@ -172,25 +185,6 @@ struct WidgetGalleryView: View {
         .accessibilityValue(status ?? (complete ? "Complete" : "Not complete"))
     }
 
-    private func guide(number: String, title: String, icon: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionLabel(title)
-            HStack(alignment: .top, spacing: 14) {
-                VStack(spacing: 8) {
-                    Image(systemName: icon).font(.system(size: 24, weight: .light))
-                    Text(number).font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Palette.tertiary)
-                }
-                .frame(width: 42)
-                Text(detail).font(.footnote).foregroundStyle(Palette.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20))
-        }
-    }
-
     private func checkWidgets() {
         let animation = Motion.reduced(Motion.layout, reduceMotion)
         withAnimation(animation) { widgetCheckFailed = false }
@@ -202,6 +196,105 @@ struct WidgetGalleryView: View {
                     widgetCheckFailed = installed == nil
                 }
             }
+        }
+    }
+}
+
+private struct WidgetSetupAnimation: View {
+    private enum Stage: CaseIterable { case home, choose, placed }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            if reduceMotion {
+                stageContent(.placed)
+            } else {
+                PhaseAnimator(Stage.allCases) { stage in
+                    stageContent(stage)
+                } animation: { _ in .easeInOut(duration: 0.55) }
+            }
+        }
+    }
+
+    private func stageContent(_ stage: Stage) -> some View {
+        ZStack {
+                RoundedRectangle(cornerRadius: 24).fill(Palette.bubbleAgent)
+                switch stage {
+                case .home:
+                    VStack(spacing: 14) {
+                        Text("9:41").font(.system(size: 32, weight: .medium, design: .rounded)).foregroundStyle(Palette.text)
+                        HStack(spacing: 12) {
+                            appIcon("message.fill", "Messages", .green)
+                            appIcon("calendar", "Calendar", .red)
+                            appIcon("photo.fill", "Photos", .blue)
+                            appIcon("gearshape.fill", "Settings", .gray)
+                        }
+                        Label("Touch & hold", systemImage: "hand.tap.fill")
+                            .font(.caption.weight(.medium)).foregroundStyle(Palette.secondary)
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                case .choose:
+                    VStack(spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass").foregroundStyle(Palette.tertiary)
+                            Text("Search widgets").foregroundStyle(Palette.secondary)
+                            Spacer()
+                        }
+                        .font(.caption).padding(10).background(Palette.surface, in: Capsule())
+                        HStack(spacing: 12) {
+                            CharacterAvatar(shape: "hex", color: "gray", size: 38)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Codync").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
+                                Text("Bots · Usage").font(.caption).foregroundStyle(Palette.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "plus.circle.fill").font(.title2).foregroundStyle(Palette.accent)
+                        }
+                        .padding(14).background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+                    .padding(20).transition(.opacity.combined(with: .move(edge: .trailing)))
+                case .placed:
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Codync").font(.caption.weight(.semibold)).foregroundStyle(Palette.text)
+                            HStack(spacing: 6) {
+                                CharacterAvatar(shape: "blob", color: "green", size: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Reviewer").font(.system(size: 10, weight: .semibold))
+                                    Text("Needs you").font(.system(size: 9)).foregroundStyle(Palette.warning)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            HStack(spacing: 6) {
+                                CharacterAvatar(shape: "hex", color: "orange", size: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Builder").font(.system(size: 10, weight: .semibold))
+                                    Text("Running tests").font(.system(size: 9)).foregroundStyle(Palette.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                        .padding(14).frame(width: 188, height: 142, alignment: .topLeading)
+                        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 22))
+                        VStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill").font(.system(size: 32)).foregroundStyle(Palette.added)
+                            Text("Added").font(.caption.weight(.medium)).foregroundStyle(Palette.text)
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+        }
+        .frame(height: 190)
+        .padding(10)
+        .accessibilityLabel("Widget setup preview, \(stage == .home ? "hold the Home Screen" : stage == .choose ? "choose Codync" : "widget added")")
+    }
+
+    private func appIcon(_ symbol: String, _ title: String, _ tint: Color) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: symbol).font(.system(size: 17, weight: .medium)).foregroundStyle(.white)
+                .frame(width: 38, height: 38).background(tint, in: RoundedRectangle(cornerRadius: 11))
+            Text(title).font(.system(size: 8)).foregroundStyle(Palette.secondary)
         }
     }
 }

@@ -38,7 +38,7 @@ The custom account menu displays the authenticated email and avatar when
 available. `AccountSession.sessionToken()` hands the session JWT to the Codync
 cloud client. A Clerk session never authorizes a computer by itself: each
 computer approves each device after comparing a 6-digit code
-([remote-relay-spec.md](remote-relay-spec.md) §4.2). Conversations are not uploaded.
+([remote-relay-spec.md](../reference/remote-relay.md) §4.2). Conversations are not uploaded.
 
 ## Verification
 

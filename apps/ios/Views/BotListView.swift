@@ -21,7 +21,7 @@ struct BotListView: View {
         let roster = accounts.roster
         ScrollView {
             LazyVStack(spacing: 0) {
-                // One banner per computer that isn't reachable; the others keep working.
+                // Keep actionable offline warnings; transient connecting state lives in the header.
                 ForEach(accounts.computers) { computer in
                     if let store = accounts.store(for: computer.id), store.connection != .online {
                         ConnectionBanner()
@@ -44,15 +44,27 @@ struct BotListView: View {
             .padding(.horizontal, 16)
         }
         .background(Palette.background)
-        // Grok-style bare top bar: no visible title, just the buttons.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            ScreenHeader {
+        .navigationTitle("Bots")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
                 AccountSwitcherButton()
-            } title: {
-                EmptyView()
-            } trailing: {
-                IconButton("Computers", systemImage: "desktopcomputer") { app.showComputers = true }
-                IconButton("New", systemImage: "plus") { newMenu = true }
+            }
+            ToolbarItem(placement: .principal) {
+                // Keep the center empty when connected, while the system owns the bar's layout.
+                ZStack {
+                    Color.clear.frame(width: 1, height: 1)
+                    ConnectingIndicator(isConnecting: accounts.computers.contains {
+                        accounts.store(for: $0.id)?.connection == .connecting
+                    })
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Computers", systemImage: "desktopcomputer") { app.showComputers = true }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("New", systemImage: "plus") { newMenu = true }
                     .disabled(onlineStores.isEmpty)
                     .codyncMenu(isPresented: $newMenu) {
                         [
@@ -62,7 +74,6 @@ struct BotListView: View {
                     }
             }
         }
-        .hidesSystemNavigationBar()
         .refreshable {
             for computer in accounts.computers { accounts.store(for: computer.id)?.restartStream() }
             await accounts.refreshCloud()

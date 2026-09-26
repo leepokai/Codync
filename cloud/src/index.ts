@@ -1,6 +1,6 @@
 // Codync cloud: accounts (Clerk), computers, access grants (D1) and the end-to-end encrypted relay
 // (one ComputerRelay Durable Object per computer). The cloud only ever sees ciphertext and routing
-// metadata; the host stays the sole authority on which devices may decrypt (docs/remote-relay-spec.md).
+// metadata; the host stays the sole authority on which devices may decrypt (docs/reference/remote-relay.md).
 
 import * as api from "./api";
 import { ApiError, type Ctx } from "./api";

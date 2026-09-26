@@ -114,13 +114,7 @@ public struct ConnectionBanner: View {
         case .online, .unpaired:
             EmptyView()
         case .connecting:
-            Label {
-                Text("Connecting to \(model.hostName)…")
-            } icon: {
-                ThinkingOrb(state: .connecting, size: 18, color: Palette.secondary)
-            }
-                .font(.footnote)
-                .foregroundStyle(Palette.secondary)
+            EmptyView()
         case let .computerOffline(lastSeen):
             let seen = lastSeen.map { " Last seen \(RelativeTime.day($0))." } ?? ""
             banner(icon: "moon.zzz", title: "\(model.hostName) is offline",

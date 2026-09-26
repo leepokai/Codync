@@ -3,9 +3,9 @@ name: codync-cloud
 on:
   push:
     branches: [main, v2]
-    paths: ["cloud/**", "relay/**", "docs/remote-relay-vectors.json", ".github/workflows/cloud.yml"]
+    paths: ["cloud/**", "relay/**", "docs/reference/fixtures/remote-relay-vectors.json", ".github/workflows/cloud.yml"]
   pull_request:
-    paths: ["cloud/**", "relay/**", "docs/remote-relay-vectors.json"]
+    paths: ["cloud/**", "relay/**", "docs/reference/fixtures/remote-relay-vectors.json"]
 
 jobs:
   cloud:

@@ -55,6 +55,8 @@ struct MenuView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var showPairing = false
     @State private var showSettings = false
+    @AppStorage(SharedStore.usageIconStyleKey, store: UserDefaults(suiteName: SharedStore.appGroup))
+    private var usageIconStyle = UsageIconStyle.character.rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -237,6 +239,12 @@ struct MenuView: View {
             IconButton("Settings", systemImage: "gearshape", selected: showSettings) { showSettings.toggle() }
                 .codyncMenu(isPresented: $showSettings) {
                     [
+                        MenuItem("Usage icon · Character", selected: usageIconStyle == UsageIconStyle.character.rawValue) {
+                            usageIconStyle = UsageIconStyle.character.rawValue
+                        },
+                        MenuItem("Usage icon · Original", selected: usageIconStyle == UsageIconStyle.original.rawValue) {
+                            usageIconStyle = UsageIconStyle.original.rawValue
+                        },
                         MenuItem("Open at login", selected: host.launchAtLogin) { host.setLaunchAtLogin(!host.launchAtLogin) },
                         MenuItem("Restart host", divider: true) { host.restart() },
                         MenuItem("Open log") { NSWorkspace.shared.open(host.logURL) },
@@ -353,11 +361,13 @@ private struct PermissionLine: View {
 /// One provider's limits: its character and name, then a thin bar per limit in its color.
 private struct UsageBlock: View {
     let provider: UsageProvider
+    @AppStorage(SharedStore.usageIconStyleKey, store: UserDefaults(suiteName: SharedStore.appGroup))
+    private var usageIconStyle = UsageIconStyle.character.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                CharacterAvatar(shape: provider.mascotShape, tint: provider.widgetTint, size: 15)
+                ProviderMascot(provider, size: 15, style: UsageIconStyle(rawValue: usageIconStyle) ?? .character)
                 Text(provider.name).font(.caption.weight(.semibold)).foregroundStyle(Palette.text)
                 Spacer()
                 Text("updated \(RelativeTime.short(Date(milliseconds: provider.updatedAt)))")

@@ -8,7 +8,7 @@ public struct BotActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable, Sendable {
         /// idle | working | needsInput | error
         public var status: String
-        /// Always empty: pushes never carry free text (§6.7). Kept so the content state shape stays stable.
+        /// Local app updates may show the current step; remote pushes leave it empty (§6.7).
         public var activity: String
         public var startedAt: Date?
 

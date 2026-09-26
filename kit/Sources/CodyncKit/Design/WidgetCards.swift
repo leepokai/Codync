@@ -7,17 +7,19 @@ public struct ProviderWidgetCard: View {
     let provider: UsageProvider
     let layout: Layout
     let date: Date
+    let iconStyle: UsageIconStyle
 
-    public init(provider: UsageProvider, layout: Layout, date: Date = .now) {
+    public init(provider: UsageProvider, layout: Layout, date: Date = .now, iconStyle: UsageIconStyle = SharedStore.usageIconStyle) {
         self.provider = provider
         self.layout = layout
         self.date = date
+        self.iconStyle = iconStyle
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: layout == .small ? 6 : 8) {
             HStack(spacing: 7) {
-                CharacterAvatar(shape: provider.mascotShape, tint: provider.widgetTint, size: 22)
+                ProviderMascot(provider, size: 22, style: iconStyle)
                 Text(provider.name)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.text)

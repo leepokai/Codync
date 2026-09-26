@@ -9,7 +9,7 @@ Cloudflare API、D1、裝置目錄、雲端授權／撤權與中繼由 Claude Co
 
 前後端整合時以已驗證的 Clerk user ID 作帳號關聯；不要把目前手機的配對資料分區誤認為已完成後端 ownership。新增 API 後應接到 `CloudClient`／account store，而非重新複製一套登入流程。
 
-> **2026-09-25 更新：實作以 [遠端連線實作規格](remote-relay-spec.md) 為準。** 與本文不同之處：
+> **2026-09-25 更新：實作以 [遠端連線實作規格](../reference/remote-relay.md) 為準。** 與本文不同之處：
 > - Cloudflare 中繼（Workers + 每台電腦一個 Durable Object）是第一版的**主要**離家連線路徑；LAN／Tailscale 直連是替代，Tailscale 不是必要條件。
 > - 中繼**端對端加密**：直連與中繼共用同一套 E2E channel（Ed25519 + X25519 + HKDF-SHA256 + ChaCha20-Poly1305），Worker／DO 只看得到密文與路由 metadata。
 > - Host 是授權權威：本機 QR 配對與帳號 grant 都寫進 host 的已授權裝置表，host 簽署 ACL 發佈到 DO；無帳號的本機模式也能用中繼。
@@ -46,13 +46,13 @@ Cloudflare API、D1、裝置目錄、雲端授權／撤權與中繼由 Claude Co
 
 目標階層為 `Account → Computers → Bots`，帳號下的 bot 清單可跨 computer 彙整。使用者可以同時保有本機 bot 與遠端 bot，不需要每次先切換全域 host。
 
-具體的多 computer 路由與 SSH 計畫見 [Bot 與遠端 computer 計畫](bot-computer-ssh-plan.md)。
+具體的多 computer 路由與 SSH 計畫見 [Bot 與遠端 computer 計畫](bot-computer-ssh-plan-2026-09-25.md)。
 
 ## 2. 已確認的專案現況
 
 | 現況 | 程式位置 | 對計畫的影響 |
 |---|---|---|
-| Mac 已使用 ClerkKit，支援 Google 登入 | `apps/shared/AccountSession.swift`、`docs/clerk-macos.md` | 延伸現有登入，不另建帳號系統 |
+| Mac 已使用 ClerkKit，支援 Google 登入 | `apps/shared/AccountSession.swift`、`docs/guides/accounts-and-ssh.md` | 延伸現有登入，不另建帳號系統 |
 | iOS 已接 Clerk 帳號入口，電腦仍靠掃碼配對 | `apps/ios/App/CodyncApp.swift`、`apps/ios/Views/RootView.swift`、`PairingView.swift` | 登入入口已建立；雲端電腦清單待實作 |
 | host SQLite 位於 `~/.codync/codync.db` | `host/src/main.rs`、`host/src/store.rs` | 保留本機資料與既有 `rev` 同步機制 |
 | host 使用共用 pairing token，旋轉會使所有舊裝置失效 | `host/src/main.rs`、`host/src/api.rs` | 必須新增逐裝置授權，才能精準撤權 |
@@ -81,7 +81,7 @@ SQLite 是資料庫引擎；本機 SQLite 存在使用者電腦，D1 的資料�
 
 雲端目錄的價值：新手機即使還沒連到 Mac，也能知道帳號擁有哪些電腦，並啟動授權流程。電腦離線時仍能顯示清單，但無法讀取最新 bots、聊天或執行新指令。
 
-推播的標題與內文由 host 以裝置的 push key 加密，Cloudflare（`relay/`）與 APNs 只看到通用文字與 ID（規格 §6.7）。聊天中繼採端對端加密：Cloudflare 只經手密文與路由 metadata（computer／裝置公鑰、時間、大小），見 [規格](remote-relay-spec.md) §15。
+推播的標題與內文由 host 以裝置的 push key 加密，Cloudflare（`relay/`）與 APNs 只看到通用文字與 ID（規格 §6.7）。聊天中繼採端對端加密：Cloudflare 只經手密文與路由 metadata（computer／裝置公鑰、時間、大小），見 [規格](../reference/remote-relay.md) §15。
 
 ## 4. 服務配置與範圍
 
@@ -202,7 +202,7 @@ Worker 驗證 Clerk token 的簽章、issuer、到期與適用的 audience／aut
 - host 私鑰使用 OS 安全儲存或受限制權限的檔案；Linux 至少使用專屬使用者與 `0600`。
 - 所有遠端連線（LAN、Tailscale、中繼）都走同一套 E2E channel；長效 token 只接受 loopback。
 - 不在 URL query、一般 log、分析事件或 crash report 中記錄憑證。現有 query token 相容入口需列入退場範圍。
-- 中繼的端對端加密設計見 [規格](remote-relay-spec.md) §3、§6；不能把 TLS 描述成端對端加密。
+- 中繼的端對端加密設計見 [規格](../reference/remote-relay.md) §3、§6；不能把 TLS 描述成端對端加密。
 
 ## 8. D1 資料模型
 
@@ -298,7 +298,7 @@ API 使用 `/v1`，錯誤固定為 `{ error: { code, message }, requestId }`。�
 
 WebRTC 優先直連，必要時使用 TURN；憑證需短效且受裝置授權約束。Cloudflare 是否承接 TURN、其容量和費用，在該階段核對官方文件後決定。
 
-中繼採端對端加密；首次信任（QR 或 SAS 比對）、換機、key rotation、撤權與復原定義於 [規格](remote-relay-spec.md)。
+中繼採端對端加密；首次信任（QR 或 SAS 比對）、換機、key rotation、撤權與復原定義於 [規格](../reference/remote-relay.md)。
 
 ## 13. 儲存庫實作位置
 
@@ -313,7 +313,7 @@ WebRTC 優先直連，必要時使用 TURN；憑證需短效且受裝置授權�
 | `kit/Sources/CodyncUI/Store/` | 本機／雲端電腦清單合併、帳號切換、grant 更新 |
 | `host/src/` | host identity、cloud client、逐裝置 auth、撤權與版本協商 |
 | `project.yml` | iOS Clerk 依賴、shared sources、config 與 Keychain entitlement 配置 |
-| `docs/clerk-macos.md`、README、PairingView 文案 | 更新帳號、資料處理與本機模式說明 |
+| `docs/guides/accounts-and-ssh.md`、README、PairingView 文案 | 更新帳號、資料處理與本機模式說明 |
 
 實作應保持帳號 SDK 與 widget-safe 資料模型分離，避免 widget 因共享套件被迫初始化 Clerk。不要把雲端管理 API 全塞進現有 `HostClient`。
 
@@ -364,7 +364,7 @@ WebRTC 優先直連，必要時使用 TURN；憑證需短效且受裝置授權�
 - SSH 試行不依賴雲端中繼，可以在 P2 後、P3 前交付；但必須先完成 host 身分驗證、獨立授權、連線生命週期及正確路由。
 - 手機直接連 SSH host、手機經 Mac gateway 存取，以及免安裝 remote host 是不同工作項；不因桌面 tunnel 成功就宣稱三者均完成。
 
-完成條件與延後原因詳見 [SSH 計畫的整合門檻](bot-computer-ssh-plan.md#6-整合順序與是否現在一起做)。
+完成條件與延後原因詳見 [SSH 計畫的整合門檻](bot-computer-ssh-plan-2026-09-25.md#6-整合順序與是否現在一起做)。
 
 ### P4：商業與可選同步
 
@@ -434,4 +434,4 @@ Worker 執行 typecheck 與具 D1 binding 的整合測試；Rust 執行 auth／�
 - [Cloudflare Queues](https://developers.cloudflare.com/queues/)
 - [Apple App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
 
-本地參考：[專案結構](structure.md)、[目前 macOS Clerk 設定](clerk-macos.md)、[既有推播 relay](../relay/README.md)。
+本地參考：[專案結構](../architecture/file-structure.md)、[目前 macOS Clerk 設定](../guides/accounts-and-ssh.md)、[既有推播 relay](../../relay/README.md)。

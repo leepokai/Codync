@@ -112,7 +112,7 @@ python3 tools/render-widgets.py
 
 DEBUG simulator build 也可用 `SIMCTL_CHILD_CODYNC_ACTIVITY_PREVIEW=needsInput xcrun simctl launch --terminate-running-process booted com.pokai.Codync.ios` 啟動系統範例。值可為 `working`、`needsInput`、`idle`、`error`、`stale` 或 `multiple`；以 `stop` 結束範例。此入口只存在於 DEBUG simulator，不連 host／relay／APNs，清理僅針對 `codync-design-preview-` 的活動。
 
-帳號／雲端架構與 SSH computer 路線分別見 [帳號與裝置計畫](cloudflare-account-device-plan.md) 與 [Bot／computer／SSH 計畫](bot-computer-ssh-plan.md)。
+帳號／雲端架構與 SSH computer 路線分別見 [帳號與裝置計畫](../archive/cloudflare-account-device-plan-2026-09-25.md) 與 [Bot／computer／SSH 計畫](../archive/bot-computer-ssh-plan-2026-09-25.md)。
 
 
 ## Halftone 與 Thinking Orbs（2026-09-26）

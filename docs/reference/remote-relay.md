@@ -1,8 +1,8 @@
 # 遠端連線實作規格：Cloudflare 中繼（主要）、直連（替代）、帳號與 SSH
 
 日期：2026-09-25（rev 2：安全與可實作性審查後修訂）
-狀態：**實作規格**，交給平行的 CLOUD／HOST／APPLE-KIT／APPLE-APPS 四條 track。與 [帳號與裝置計畫](cloudflare-account-device-plan.md)、[SSH 計畫](bot-computer-ssh-plan.md) 衝突時，以本文件為準。
-測試向量：[remote-relay-vectors.json](remote-relay-vectors.json)（由 [remote-relay-vectors.py](remote-relay-vectors.py) 以固定種子產生，`python3` + `cryptography`；三種語言的實作都必須逐欄通過）。
+狀態：**實作規格**，交給平行的 CLOUD／HOST／APPLE-KIT／APPLE-APPS 四條 track。與 [帳號與裝置計畫](../archive/cloudflare-account-device-plan-2026-09-25.md)、[SSH 計畫](../archive/bot-computer-ssh-plan-2026-09-25.md) 衝突時，以本文件為準。
+測試向量：[remote-relay-vectors.json](fixtures/remote-relay-vectors.json)（由 [remote-relay-vectors.py](fixtures/remote-relay-vectors.py) 以固定種子產生，`python3` + `cryptography`；三種語言的實作都必須逐欄通過）。
 
 本文件中「必須／不得」是介面契約；沒有寫到的內部結構由各 track 自行決定。各 track 之間**只透過本文件溝通**，發現本文件有矛盾或缺漏時停下回報，不要自行發明另一套 wire format。
 
@@ -62,13 +62,13 @@
 | **CLOUD** | `cloud/**`（新建）、`relay/**`（只改 §6.7 的 `mutableContent` 透傳）、`.github/workflows/cloud.yml`（新建） | Worker（`/v1` API + Clerk + D1）、`ComputerRelay` DO、migrations、vitest、e2e 測試、`cloud/README.md`、CI |
 | **HOST** | `host/**`、`.github/workflows/host.yml` | identity、channel、relay client、cloud client、逐裝置授權、loopback-only token、CLI |
 | **APPLE-KIT** | `kit/**`、`.github/workflows/kit.yml`（新建，`swift test`） | `DeviceIdentity`、channel 加密、`HostTransport`、`HostConnector`、`CloudClient`、`AccountStore`、`BotStore` 調整、models |
-| **APPLE-APPS** | `apps/ios/**`（含 `apps/ios/Widgets`、新 `apps/ios/NotificationService`）、`apps/macos/**`、`apps/shared/**`、`project.yml`、`Codync.xcodeproj`（只經 `xcodegen generate`）、`docs/clerk-macos.md`、`.github/workflows/release-macos.yml` | UI、帳號流程、Mac 核准介面、SSH、Notification Service Extension、entitlements、設定檔 |
+| **APPLE-APPS** | `apps/ios/**`（含 `apps/ios/Widgets`、新 `apps/ios/NotificationService`）、`apps/macos/**`、`apps/shared/**`、`project.yml`、`Codync.xcodeproj`（只經 `xcodegen generate`）、`docs/guides/accounts-and-ssh.md`、`.github/workflows/release-macos.yml` | UI、帳號流程、Mac 核准介面、SSH、Notification Service Extension、entitlements、設定檔 |
 
 - `relay/`（APNs 推播）只加一個欄位：`/push` body 的 `mutableContent: true` → `aps["mutable-content"] = 1`。其他不變。推播撤權由 host 端「ticket 綁定 deviceKey、撤權即刪」達成（§9.4）。
-- `docs/structure.md` 的 `cloud/` 一行已由本規格作者加入。
+- `docs/architecture/file-structure.md` 的 `cloud/` 一行已由本規格作者加入。
 - `apps/linux/**`、`apps/screen*/**`：不動（它們只用 loopback token / unix socket）。
-- 共用唯讀檔：`docs/remote-relay-spec.md`、`docs/remote-relay-vectors.json`。任何 track 要改它們 → 回報 orchestrator，不自行修改。
-- `CLAUDE.md`、`docs/cloudflare-account-device-plan.md`、`docs/bot-computer-ssh-plan.md`：由本規格作者更新；各 track 不改。
+- 共用唯讀檔：`docs/reference/remote-relay.md`、`docs/reference/fixtures/remote-relay-vectors.json`。任何 track 要改它們 → 回報 orchestrator，不自行修改。
+- `CLAUDE.md`、`docs/archive/cloudflare-account-device-plan-2026-09-25.md`、`docs/archive/bot-computer-ssh-plan-2026-09-25.md`：由本規格作者更新；各 track 不改。
 - 版本：HOST 把 `host/Cargo.toml` 的 `version` 設為 `2.2.0`；APPLE-APPS 把 `project.yml` 的 `MARKETING_VERSION` 設為 `2.2.0`（`CURRENT_PROJECT_VERSION` 只在上傳時遞增）。
 
 **順序**：四條 track 同時開始，各自以 `remote-relay-vectors.json` 做單元測試，互不等待。APPLE-APPS 依賴 APPLE-KIT 的公開 API（§10.1 已定死簽章），可先以本文件寫 UI，kit 完成後接上。跨 track 整合測試（§12.1）由 CLOUD 擁有，在 HOST 合併後執行。
@@ -773,7 +773,7 @@ Rust 以 enum 表示：`DeviceSource { Local, Account }`、`Scope { Control, Scr
 
 ### 9.8 HOST 測試
 
-- `crypto.rs`：通過 `remote-relay-vectors.json` 全部欄位（`include_str!("../../docs/remote-relay-vectors.json")`）。
+- `crypto.rs`：通過 `remote-relay-vectors.json` 全部欄位（`include_str!("../../docs/reference/fixtures/remote-relay-vectors.json")`）。
 - 授權：未知 dk 被拒、pairing 流程（回應後 4100、pairing channel 上非 `pair` 被關）、無 code 時 `pair:true` 在 ECDH 前被拒、code 單次、lease 到期關閉 channel、撤權關閉進行中的 events 訂閱並刪 push／activity tickets、scope 拒絕、loopback-only 方法經 channel 被拒、非 loopback bearer 被拒、`::ffff:127.0.0.1` 視為 loopback。
 - state 套用：未知 grant 被忽略（表不變）、已知 grant 續約、缺席者刪除；relay 連上後 state 拉取前帳號裝置握手被拒；relay link 上 `hello.dk != open.dk` 被關；SAS commit 不符自動 deny、reveal 前 approve 被拒。
 - `acl_ver`：刪 DB 保留 identity → `staleVersion` 後以 `max+1` 成功。

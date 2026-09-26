@@ -4,20 +4,9 @@ import SwiftUI
 import UIKit
 #endif
 
-private struct ScreenHeaderIconGlassKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-private extension EnvironmentValues {
-    var screenHeaderIconGlass: Bool {
-        get { self[ScreenHeaderIconGlassKey.self] }
-        set { self[ScreenHeaderIconGlassKey.self] = newValue }
-    }
-}
-
 // Codync's own screen chrome: modals, headers, icon buttons and the iPhone tab bar.
-// Never use `.sheet`, `.popover`, `.toolbar`/`ToolbarItem`, navigation bars or
-// `TabView`: present with `.codyncSheet`, title with `ModalHeader` / `ScreenHeader`.
+// Present with `.codyncSheet`, title with `ModalHeader` / `ScreenHeader`.
+// The iPhone bot list and conversation use the native navigation toolbar for Liquid Glass.
 // Every transition animates (Motion.layout / Motion.fade), honoring Reduce Motion.
 
 // MARK: - Icon button
@@ -63,24 +52,16 @@ public struct IconButtonStyle: ButtonStyle {
         let size: CGFloat
         @State private var hovering = false
         @Environment(\.isEnabled) private var isEnabled
-        @Environment(\.screenHeaderIconGlass) private var screenHeaderIconGlass
 
         var body: some View {
             configuration.label
                 .font(.system(size: size / 2, weight: .medium))
                 .foregroundStyle(selected ? Palette.onAccent : hovering ? Palette.text : Palette.secondary)
                 .frame(width: size, height: size)
-                .background {
-                    let shape = RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
-                    #if os(iOS)
-                    if screenHeaderIconGlass {
-                        shape.fill(.clear).glass(in: shape)
-                    }
-                    #endif
-                    shape.fill(
-                        selected ? Palette.accentFill : Palette.text.opacity(configuration.isPressed ? 0.14 : hovering ? 0.08 : 0)
-                    )
-                }
+                .background(
+                    selected ? Palette.accentFill : Palette.text.opacity(configuration.isPressed ? 0.14 : hovering ? 0.08 : 0),
+                    in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                )
                 .opacity(isEnabled ? 1 : 0.35)
                 .scaleEffect(configuration.isPressed ? Motion.pressScale : 1)
                 .animation(Motion.press, value: configuration.isPressed)
@@ -146,11 +127,52 @@ public struct ScreenHeader<Leading: View, Title: View, Trailing: View>: View {
                 Spacer(minLength: 8)
                 trailing
             }
-            .environment(\.screenHeaderIconGlass, true)
         }
         .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 12))
         .frame(height: InterfaceMetrics.value(mac: 44, mobile: 52))
         .background(Palette.background)
+    }
+}
+
+/// A small connection state shown in the center of a screen header.
+public struct ConnectingIndicator: View {
+    let isConnecting: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isVisible = false
+    @State private var shownAt = Date.distantPast
+
+    public init(isConnecting: Bool) { self.isConnecting = isConnecting }
+
+    public var body: some View {
+        Group {
+            if isVisible {
+                HStack(spacing: 6) {
+                    ThinkingOrb(state: .connecting, size: 14, color: Palette.secondary)
+                    Text("Connecting")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                }
+                .transition(.opacity)
+                .accessibilityLabel("Connecting")
+            }
+        }
+        .task(id: isConnecting) {
+            if isConnecting {
+                if !isVisible {
+                    shownAt = .now
+                    withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { isVisible = true }
+                }
+            } else if isVisible {
+                let remainingMilliseconds = max(0, Int((0.7 - Date.now.timeIntervalSince(shownAt)) * 1_000))
+                if remainingMilliseconds > 0 {
+                    try? await Task.sleep(for: .milliseconds(Int64(remainingMilliseconds)))
+                }
+                guard !Task.isCancelled else { return }
+                withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { isVisible = false }
+            }
+        }
+        .frame(minWidth: 1, minHeight: 1)
     }
 }
 

@@ -1,5 +1,5 @@
 // Reference device/host crypto for the Codync relay protocol (spec §4–§7), built on @noble/*.
-// Test-only: checked against docs/remote-relay-vectors.json, then used by the unit tests and the e2e harness.
+// Test-only: checked against docs/reference/fixtures/remote-relay-vectors.json, then used by the unit tests and the e2e harness.
 // Runs in both workerd (vitest) and Node (e2e).
 
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";

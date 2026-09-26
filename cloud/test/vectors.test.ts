@@ -1,7 +1,7 @@
-// docs/remote-relay-vectors.json, field by field: the TS reference implementation and the Worker's own code.
+// docs/reference/fixtures/remote-relay-vectors.json, field by field: the TS reference implementation and the Worker's own code.
 
 import { describe, expect, it } from "vitest";
-import V from "../../docs/remote-relay-vectors.json";
+import V from "../../docs/reference/fixtures/remote-relay-vectors.json";
 import { claimCanonical as workerClaimCanonical } from "../src/api";
 import { computerIdFor, fromB64url, sigCanonical, verifyEd25519, verifySig } from "../src/auth";
 import { parseAcl } from "../src/relay";

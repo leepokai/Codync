@@ -1,8 +1,8 @@
 import CryptoKit
 import Foundation
 
-// The relay protocol's cryptography (docs/remote-relay-spec.md §5, §6), checked field by field
-// against docs/remote-relay-vectors.json. Labels are ASCII without a trailing NUL.
+// The relay protocol's cryptography (docs/reference/remote-relay.md §5, §6), checked field by field
+// against docs/reference/fixtures/remote-relay-vectors.json. Labels are ASCII without a trailing NUL.
 
 extension Data {
     /// Strict base64url without padding (RFC 4648 §5).

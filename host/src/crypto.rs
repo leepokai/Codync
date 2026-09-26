@@ -1,10 +1,10 @@
-//! Wire cryptography of the phone ↔ host protocol (docs/remote-relay-spec.md §5, §6):
+//! Wire cryptography of the phone ↔ host protocol (docs/reference/remote-relay.md §5, §6):
 //! the signed-ephemeral handshake, frame sealing and chunking, mailbox opening,
 //! push sealing, SAS, pairing offer ids and the canonical strings that get signed.
 //!
 //! Pure functions over bytes, no host state: `tests/e2e.rs` includes this file
 //! as its device-side implementation, so it must only use external crates.
-//! Every construction is checked against `docs/remote-relay-vectors.json`.
+//! Every construction is checked against `docs/reference/fixtures/remote-relay-vectors.json`.
 
 use anyhow::{Result, anyhow, bail, ensure};
 use base64::Engine as _;
@@ -322,7 +322,7 @@ mod tests {
     use serde_json::Value;
 
     fn vectors() -> Value {
-        serde_json::from_str(include_str!("../../docs/remote-relay-vectors.json")).unwrap()
+        serde_json::from_str(include_str!("../../docs/reference/fixtures/remote-relay-vectors.json")).unwrap()
     }
 
     fn b(v: &Value) -> Vec<u8> {

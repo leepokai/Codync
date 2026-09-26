@@ -23,6 +23,7 @@ public struct ThreadView: View {
     @State private var availableWidth: CGFloat = 800
     @State private var compactDetails = false
     @State private var calling = false
+    @State private var showMenu = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var bot: Bot? { model.bots[botId] }
@@ -133,28 +134,31 @@ public struct ThreadView: View {
             }
         }
         #if os(iOS)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                ScreenHeader {
-                    BackButton { dismiss() }
-                } title: {
-                    header
-                } trailing: {
-                    if model.screen?.agentBot == botId {
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        header
+                        ConnectingIndicator(isConnecting: model.connection == .connecting)
+                    }
+                }
+                if model.screen?.agentBot == botId {
+                    ToolbarItem(placement: .topBarTrailing) {
                         // The bot is operating the computer: watch it live (and take over from there).
-                        IconButton("Watch the screen", systemImage: "cursorarrow.motionlines") {
+                        Button("Watch the screen", systemImage: "cursorarrow.motionlines") {
                             model.screenRequest = ScreenRequest(watching: botId)
                         }
                         .symbolEffect(.pulse, options: .repeating)
-                        .transition(.opacity)
                     }
-                    if bot?.isGroup != true {
-                        IconButton("Call", systemImage: "phone") { calling = true }
-                    }
-                    menu
                 }
-                .animation(Motion.reduced(Motion.fade, reduceMotion), value: model.screen?.agentBot == botId)
+                if bot?.isGroup != true {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Call", systemImage: "phone") { calling = true }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) { menu }
             }
-            .hidesSystemNavigationBar()
             .codyncOverlay(isPresented: $calling) { close in
                 CallView(botId: botId, close: close)
             }
@@ -252,13 +256,10 @@ public struct ThreadView: View {
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
             }
-            #if os(iOS)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .glass(in: Capsule())
-            #endif
         }
-        .buttonStyle(.plain)
+        #if os(macOS)
+            .buttonStyle(.plain)
+        #endif
         .accessibilityLabel("View conversation details")
         .help("View conversation details")
     }
@@ -281,41 +282,48 @@ public struct ThreadView: View {
         }
     #endif
 
-    private var menu: some View {
-        DropdownMenu {
-            var items = [MenuItem("Full conversation", icon: "list.bullet.rectangle") { showTrace = true }]
-            if let bot, bot.isGroup {
-                items.append(MenuItem("Edit group", icon: "person.2") { editingGroup = true })
-                items.append(MenuItem(bot.pinned ? "Unpin" : "Pin", icon: "pin") { model.setPinned(bot, !bot.pinned) })
-                items.append(MenuItem("Delete group", icon: "trash", destructive: true, divider: true) { confirmDelete = bot })
-                return items
-            }
-            if let bot {
-                items.append(MenuItem("Edit profile", icon: "pencil") {
-                    #if os(macOS)
-                        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
-                            editingDetails = true
-                            showSettings = true
-                        }
-                        if availableWidth < 680 { compactDetails = true }
-                    #else
-                        editing = EditorRequest(BotDraft(bot))
-                    #endif
-                })
-                items.append(MenuItem(bot.pinned ? "Unpin" : "Pin", icon: "pin") { model.setPinned(bot, !bot.pinned) })
-            }
-            items.append(MenuItem("New session", icon: "arrow.counterclockwise") { confirmNewSession = true })
-            items.append(MenuItem("Delete bot", icon: "trash", destructive: true, divider: true) { confirmDelete = bot })
+    private var menuItems: [MenuItem] {
+        var items = [MenuItem("Full conversation", icon: "list.bullet.rectangle") { showTrace = true }]
+        if let bot, bot.isGroup {
+            items.append(MenuItem("Edit group", icon: "person.2") { editingGroup = true })
+            items.append(MenuItem(bot.pinned ? "Unpin" : "Pin", icon: "pin") { model.setPinned(bot, !bot.pinned) })
+            items.append(MenuItem("Delete group", icon: "trash", destructive: true, divider: true) { confirmDelete = bot })
             return items
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.system(size: InterfaceMetrics.value(mac: 14, mobile: 18), weight: .medium))
-                .foregroundStyle(Palette.secondary)
-                .frame(width: InterfaceMetrics.value(mac: 28, mobile: 36), height: InterfaceMetrics.value(mac: 28, mobile: 36))
-                .contentShape(Rectangle())
         }
-        .accessibilityLabel("More")
-        .help("More")
+        if let bot {
+            items.append(MenuItem("Edit profile", icon: "pencil") {
+                #if os(macOS)
+                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
+                        editingDetails = true
+                        showSettings = true
+                    }
+                    if availableWidth < 680 { compactDetails = true }
+                #else
+                    editing = EditorRequest(BotDraft(bot))
+                #endif
+            })
+            items.append(MenuItem(bot.pinned ? "Unpin" : "Pin", icon: "pin") { model.setPinned(bot, !bot.pinned) })
+        }
+        items.append(MenuItem("New session", icon: "arrow.counterclockwise") { confirmNewSession = true })
+        items.append(MenuItem("Delete bot", icon: "trash", destructive: true, divider: true) { confirmDelete = bot })
+        return items
+    }
+
+    private var menu: some View {
+        #if os(iOS)
+            Button("More", systemImage: "ellipsis") { showMenu = true }
+                .codyncMenu(isPresented: $showMenu) { menuItems }
+        #else
+            DropdownMenu { menuItems } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Palette.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("More")
+            .help("More")
+        #endif
     }
 }
 

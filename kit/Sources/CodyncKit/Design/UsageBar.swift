@@ -1,5 +1,20 @@
 import SwiftUI
 
+public enum UsageIconStyle: String, CaseIterable, Sendable {
+    case character, original
+
+    public var title: String { self == .character ? "Character" : "Original icon" }
+}
+
+public extension SharedStore {
+    static let usageIconStyleKey = "usageIconStyle"
+
+    static var usageIconStyle: UsageIconStyle {
+        get { UserDefaults(suiteName: appGroup)?.string(forKey: usageIconStyleKey).flatMap(UsageIconStyle.init(rawValue:)) ?? .character }
+        set { UserDefaults(suiteName: appGroup)?.set(newValue.rawValue, forKey: usageIconStyleKey) }
+    }
+}
+
 /// One place for "how full is this limit" colors, shared by the apps, the menu bar and widgets.
 public extension Palette {
     /// Fill for bars: ink, amber from 70%, red from 90%.
@@ -73,23 +88,34 @@ public extension UsageWindow {
 public struct ProviderMascot: View {
     let provider: UsageProvider
     let size: CGFloat
+    var style: UsageIconStyle = .character
 
-    public init(_ provider: UsageProvider, size: CGFloat) {
+    public init(_ provider: UsageProvider, size: CGFloat, style: UsageIconStyle = .character) {
         self.provider = provider
         self.size = size
+        self.style = style
     }
 
     public var body: some View {
         let full = (provider.tightest?.percent ?? 0) >= 90
-        CharacterAvatar(shape: provider.mascotShape, tint: provider.tint, size: size, mood: full ? .needsInput : .idle)
-            .overlay(alignment: .topTrailing) {
-                if full {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: size * 0.34, weight: .bold))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, Palette.danger)
-                        .offset(x: size * 0.12, y: -size * 0.12)
+        Group {
+            if style == .original {
+                Image("agent-\(provider.registry)", bundle: .module)
+                    .resizable().scaledToFit().padding(size * 0.08)
+                    .foregroundStyle(provider.tint)
+            } else {
+                CharacterAvatar(shape: provider.mascotShape, tint: provider.tint, size: size, mood: full ? .needsInput : .idle)
+                    .overlay(alignment: .topTrailing) {
+                        if full {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.system(size: size * 0.34, weight: .bold))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, Palette.danger)
+                                .offset(x: size * 0.12, y: -size * 0.12)
+                        }
+                    }
                 }
-            }
+        }
+        .frame(width: size, height: size)
     }
 }

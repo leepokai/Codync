@@ -14,7 +14,6 @@ struct AccountSwitcherButton: View {
                     .foregroundStyle(Palette.secondary)
             }
         }
-        .buttonStyle(PressScale())
         .accessibilityLabel("Switch account")
         .accessibilityValue(account.email ?? "Local pairing")
     }

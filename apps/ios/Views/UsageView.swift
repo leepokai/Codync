@@ -49,12 +49,14 @@ struct UsageView: View {
 private struct ProviderCard: View {
     let provider: UsageProvider
     @Binding var collapsed: Bool
+    @AppStorage(SharedStore.usageIconStyleKey, store: UserDefaults(suiteName: SharedStore.appGroup))
+    private var usageIconStyle = UsageIconStyle.character.rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                CharacterAvatar(shape: provider.mascotShape, tint: provider.widgetTint, size: 22)
+                ProviderMascot(provider, size: 22, style: UsageIconStyle(rawValue: usageIconStyle) ?? .character)
                     .frame(width: 34, height: 34)
                     .background(provider.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Text(provider.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)

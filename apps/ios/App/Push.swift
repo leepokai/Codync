@@ -150,7 +150,7 @@ final class LiveActivities {
     private func finishedRequest(_ id: UUID) { requests[id] = nil }
 
     private nonisolated static func request(attributes: BotActivityAttributes, client: HostClient) async {
-        // Status only: pushes never carry free text, so local updates don't either.
+        // Start with status only. Later foreground updates may add the current ACP step locally.
         let state = BotActivityAttributes.ContentState(status: "working", activity: "", startedAt: .now)
         do {
             try Task.checkCancellation()
@@ -172,7 +172,9 @@ final class LiveActivities {
         guard Self.find(ref) != nil else { return }
         let state = BotActivityAttributes.ContentState(
             status: bot.status,
-            activity: "",
+            // ACP activity is already visible in the app. Show it in the local Live Activity
+            // while this phone is connected; APNs payloads continue to contain no free text.
+            activity: bot.activity,
             startedAt: bot.startedAt.map(Date.init(milliseconds:))
         )
         let working = bot.isWorking

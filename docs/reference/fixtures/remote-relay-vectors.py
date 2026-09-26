@@ -1,4 +1,4 @@
-# Generates docs/remote-relay-vectors.json (Codync relay crypto, protocol v1 (spec rev 2)).
+# Generates docs/reference/fixtures/remote-relay-vectors.json (Codync relay crypto, protocol v1 (spec rev 2)).
 import base64, hashlib, json, struct
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey

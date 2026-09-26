@@ -3,13 +3,13 @@ import Foundation
 import Testing
 @testable import CodyncKit
 
-/// docs/remote-relay-vectors.json, the single source of truth shared with the host and the cloud.
+/// docs/reference/fixtures/remote-relay-vectors.json, the single source of truth shared with the host and the cloud.
 struct Vectors: Sendable {
     let data: Data
     var json: [String: Any] { (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:] }
 
     static let shared = Vectors(data: (try? Data(contentsOf: URL(filePath: #filePath).deletingLastPathComponent()
-            .appending(path: "../../../docs/remote-relay-vectors.json").standardized)) ?? Data())
+            .appending(path: "../../../docs/reference/fixtures/remote-relay-vectors.json").standardized)) ?? Data())
 
     subscript(_ section: String) -> [String: Any] { json[section] as? [String: Any] ?? [:] }
 

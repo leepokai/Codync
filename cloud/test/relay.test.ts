@@ -2,7 +2,7 @@
 
 import { runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import V from "../../docs/remote-relay-vectors.json";
+import V from "../../docs/reference/fixtures/remote-relay-vectors.json";
 import type { ComputerRelay } from "../src/relay";
 import { acl, call, devicePath, env, hostSocket, newHost, sleep, socket, upgrade, type TestHost } from "./helpers";
 import * as ref from "./ref";

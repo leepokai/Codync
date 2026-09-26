@@ -1,6 +1,6 @@
 # Codync cloud
 
-Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/remote-relay-spec.md](../docs/remote-relay-spec.md)).
+Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/reference/remote-relay.md](../docs/reference/remote-relay.md)).
 
 - **`/v1` API** (`src/api.ts`): Clerk-authenticated account routes (devices, claims, computers, access
   requests, grants), `Codync-Sig`-authenticated host routes (`/v1/host/*`), the Clerk webhook, and a
@@ -25,7 +25,7 @@ npm test          # vitest in workerd: vectors, Codync-Sig, API, DO relay/mailbo
 ```
 
 `test/ref.ts` is a device/host reference implementation on `@noble/*`, checked against
-`docs/remote-relay-vectors.json` and reused by the relay tests and the e2e harness.
+`docs/reference/fixtures/remote-relay-vectors.json` and reused by the relay tests and the e2e harness.
 
 The vitest pool's bundled workerd may trail wrangler's; `vitest.config.ts` pins the test compatibility
 date to the newest one it supports. `wrangler.toml` keeps the deploy date.

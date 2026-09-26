@@ -15,7 +15,7 @@ import {
 } from "./auth";
 import type { Env } from "./index";
 
-export const VERSION = "3.0.0";
+export const VERSION = "2.2.0";
 
 const CLAIM_TTL_MS = 5 * 60_000;
 const REQUEST_TTL_MS = 10 * 60_000;

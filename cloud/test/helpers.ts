@@ -186,7 +186,7 @@ export interface TestHost {
 export async function newHost(sign = signKey(), box = boxKey()): Promise<TestHost> {
   const r = await call("POST", "/v1/host/register", {
     key: sign,
-    body: { boxKey: b64url(box.pub), name: "Mac", platform: "macos", device: "laptop", version: "3.0.0" },
+    body: { boxKey: b64url(box.pub), name: "Mac", platform: "macos", device: "laptop", version: "2.2.0" },
   });
   if (r.status !== 200) throw new Error(`register failed: ${JSON.stringify(r.body)}`);
   return { sign, box, cid: computerId(sign.pub), ver: 0 };

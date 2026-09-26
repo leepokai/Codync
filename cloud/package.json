@@ -1,6 +1,6 @@
 {
   "name": "codync-cloud",
-  "version": "3.0.0",
+  "version": "2.2.0",
   "description": "Codync cloud: accounts, computers and the end-to-end encrypted relay (Cloudflare Worker + Durable Object)",
   "private": true,
   "license": "MIT",

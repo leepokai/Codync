@@ -346,7 +346,7 @@ describe("host health check via the API", () => {
     const key = ref.signKey();
     const r = await call("POST", "/v1/host/register", {
       key,
-      body: { boxKey: ref.b64url(ref.boxKey().pub), name: "Mac", platform: "macos", version: "3.0.0" },
+      body: { boxKey: ref.b64url(ref.boxKey().pub), name: "Mac", platform: "macos", version: "2.2.0" },
     });
     expect(r.body).toEqual({ computerId: ref.computerId(key.pub), owned: false });
   });

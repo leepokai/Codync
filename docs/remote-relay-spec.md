@@ -20,7 +20,7 @@
 | D6 | 帳號 → Computers → Bots：新增 `AccountStore`（`[ComputerID: BotStore]`），`BotReference = accountId + computerId + botId`。 | 產品決策 5。 |
 | D7 | 共用 bearer token（`~/.codync/token`）**只接受 loopback 連線**（Mac App 本機、SSH tunnel、statusline、MCP、TUI、Linux App）。手機與其他遠端 client 一律走 E2E channel。 | 移除「一個 token 開所有手機」的舊模型；不留相容路徑。 |
 | D8 | SSH：macOS App 以系統 OpenSSH `-L` 轉發到遠端 host 的 loopback API；遠端側看到的是 loopback 呼叫者，所以 SSH 帳號等同本機使用者權限（能讀 `~/.codync/token` 的人本來就有這權限）。 | 產品決策 6；重用 loopback API，不需要額外授權層。 |
-| D9 | 版本升為 **3.0.0**（`MARKETING_VERSION`、`host/Cargo.toml`）：手機↔host 協定不相容（無 token 直連），依 CLAUDE.md 規則升 major。 | 2.x App 不會誤連 3.x host。 |
+| D9 | 正式發布前維持 **2.x**（目前 `2.2.0`，`MARKETING_VERSION`、`host/Cargo.toml`）：尚無公開使用者，不必為協定變更升 major。 | 正式發布後才依 CLAUDE.md 規則管理 major 相容性。 |
 | D10 | **推播內容也加密**：host 以裝置註冊的 X25519 push key 封裝通知標題／內文（§6.7），APNs 只帶通用文字 + `mutable-content`，iOS Notification Service Extension 解開。Live Activity 只推狀態 enum，不推自由文字。 | 決策 2：Cloudflare（`relay/`）只看得到密文。 |
 
 **審查後的取捨（rev 2）**：
@@ -69,7 +69,7 @@
 - `apps/linux/**`、`apps/screen*/**`：不動（它們只用 loopback token / unix socket）。
 - 共用唯讀檔：`docs/remote-relay-spec.md`、`docs/remote-relay-vectors.json`。任何 track 要改它們 → 回報 orchestrator，不自行修改。
 - `CLAUDE.md`、`docs/cloudflare-account-device-plan.md`、`docs/bot-computer-ssh-plan.md`：由本規格作者更新；各 track 不改。
-- 版本：HOST 把 `host/Cargo.toml` 的 `version` 設為 `3.0.0`；APPLE-APPS 把 `project.yml` 的 `MARKETING_VERSION` 設為 `3.0.0`（`CURRENT_PROJECT_VERSION` 只在上傳時遞增）。
+- 版本：HOST 把 `host/Cargo.toml` 的 `version` 設為 `2.2.0`；APPLE-APPS 把 `project.yml` 的 `MARKETING_VERSION` 設為 `2.2.0`（`CURRENT_PROJECT_VERSION` 只在上傳時遞增）。
 
 **順序**：四條 track 同時開始，各自以 `remote-relay-vectors.json` 做單元測試，互不等待。APPLE-APPS 依賴 APPLE-KIT 的公開 API（§10.1 已定死簽章），可先以本文件寫 UI，kit 完成後接上。跨 track 整合測試（§12.1）由 CLOUD 擁有，在 HOST 合併後執行。
 
@@ -632,7 +632,7 @@ code 清單：`badRequest`(400) `unauthenticated`(401) `badSignature`(401) `forb
 所有 body 為 JSON；時間為 ms。「Clerk」= 需要 Bearer；「Sig(dev)」= 需要該 device key 的 `Codync-Sig`；「Sig(host)」= host key 的 `Codync-Sig`。
 
 **公開**
-- `GET /v1/health` → `{"ok":true,"version":"3.0.0"}`
+- `GET /v1/health` → `{"ok":true,"version":"2.2.0"}`
 
 **Clerk（使用者）**
 - `GET /v1/me` → `{"userId","email","createdAt"}`
@@ -1000,7 +1000,7 @@ public struct RosterItem: Identifiable, Sendable { public var ref: BotReference;
 
 - `apps/shared/AccountSession.swift`：新增 `func sessionToken() async throws -> String`（ClerkKit 1.5.6 的 session token API，以實際 SDK 名稱為準）。
 - 設定檔：`ClerkConfig.plist` 改名為 `AccountConfig.plist`，keys `clerkPublishableKey`、`cloudURL`（目前填 dev URL）；env `CODYNC_CLOUD_URL` 可覆寫。兩個 App 都要。
-- `project.yml`：`MARKETING_VERSION: 3.0.0`；iOS、Widgets、NotificationService 加 `keychain-access-groups: [$(AppIdentifierPrefix)com.pokai.Codync]`，Info.plist 加 `CodyncKeychainGroup`；新增 `NotificationService` app-extension target（`apps/ios/NotificationService/`，bundle id `com.pokai.Codync.ios.NotificationService`，依賴 CodyncKit，embed 進 iOS App）；macOS **不加** entitlements（§3.2）；改完執行 `xcodegen generate`。
+- `project.yml`：`MARKETING_VERSION: 2.2.0`；iOS、Widgets、NotificationService 加 `keychain-access-groups: [$(AppIdentifierPrefix)com.pokai.Codync]`，Info.plist 加 `CodyncKeychainGroup`；新增 `NotificationService` app-extension target（`apps/ios/NotificationService/`，bundle id `com.pokai.Codync.ios.NotificationService`，依賴 CodyncKit，embed 進 iOS App）；macOS **不加** entitlements（§3.2）；改完執行 `xcodegen generate`。
 - `.github/workflows/release-macos.yml`：配合 `AccountConfig.plist` 改名。
 
 ### 11.2 iOS

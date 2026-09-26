@@ -4,6 +4,8 @@
 //!   (<https://registry.modelcontextprotocol.io>) or added by hand. They're
 //!   installed once per computer and handed to the agent as `mcpServers` when a
 //!   bot that has them turned on starts or resumes its session.
+//! - **Apps** are connected through Composio and listed as `composio-*`
+//!   connectors; see `composio`.
 //! - **Skills** are instruction folders (a `SKILL.md` plus any files it uses),
 //!   from <https://github.com/anthropics/skills> or written by hand, kept in
 //!   `~/.codync/skills/<id>`. A bot that has one turned on is told where it is

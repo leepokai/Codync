@@ -14,26 +14,30 @@ struct SetupTerminalView: View {
     let step: SetupStep
     /// A terminal sign-in method the agent offered; nil runs Codync's own command.
     var method: AuthMethod?
+    /// Back to the agent's sheet (the terminal is a step inside it).
+    let back: () -> Void
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var session = TermSession()
 
     var body: some View {
         VStack(spacing: 0) {
+            ScreenHeader {
+                BackButton(action: back).keyboardShortcut(.cancelAction)
+            } title: {
+                Text(step == .install ? "Install \(backend.name)" : method?.name ?? "Sign in to \(backend.name)")
+                    .font(InterfaceMetrics.body.weight(.semibold))
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(1)
+            } trailing: {
+                EmptyView()
+            }
             TerminalSurface(session: session) { openURL($0) }
                 .padding(.horizontal, 10)
                 .padding(.top, 6)
             footer
         }
         .background(Palette.background)
-        .navigationTitle(step == .install ? "Install \(backend.name)" : method?.name ?? "Sign in to \(backend.name)")
-        .inlineNavigationTitle()
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
-            }
-        }
         .task {
             guard let client = model.client else { return }
             await session.run(client, backend: backend.id, step: step, method: method?.id)
@@ -58,7 +62,7 @@ struct SetupTerminalView: View {
             }
             Spacer(minLength: 0)
             if session.exitCode != nil {
-                Button("Done") { dismiss() }.buttonStyle(.primary)
+                Button("Done", action: back).buttonStyle(.primary)
             }
         }
         .font(.footnote)

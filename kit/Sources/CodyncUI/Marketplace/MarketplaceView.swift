@@ -11,6 +11,8 @@ import AppKit
 public struct MarketplaceView: View {
     @Environment(BotStore.self) private var model
     @State private var search = ""
+    /// Bumped on each submitted search, so every section searches again.
+    @State private var searchToken = 0
     @State private var connectors: [MarketConnector] = []
     @State private var skills: [MarketSkill] = []
     @State private var loadingConnectors = true
@@ -42,6 +44,34 @@ public struct MarketplaceView: View {
     private var installedCount: Int { model.installedConnectors.count + model.installedSkills.count }
 
     public var body: some View {
+        ZStack {
+            if showInstalled {
+                InstalledView { withAnimation(Motion.layout) { showInstalled = false } }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else {
+                page.transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .background(Palette.background)
+        .task {
+            await model.refreshPlugins()
+        }
+        // Picks up CLIs installed or signed in outside Codync.
+        .task { await model.refreshBackends() }
+        .task { await loadConnectors() }
+        .task {
+            do { skills = try await model.marketSkills() } catch { self.error = error.localizedDescription }
+            loadingSkills = false
+        }
+        .codyncSheet(item: $installing) { item in
+            InstallConnectorSheet(item: item) { Task { await loadConnectors() } }
+        }
+        .codyncSheet(isPresented: $addingConnector) { CustomConnectorSheet() }
+        .codyncSheet(isPresented: $writingSkill) { NewSkillSheet() }
+        .codyncSheet(item: $agent) { b in AgentSheet(initial: b) }
+    }
+
+    private var page: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
@@ -82,6 +112,7 @@ public struct MarketplaceView: View {
                         }
                     }
                 }
+                ComposioSection(query: query, searchToken: searchToken)
                 MarketSection(title: "Skills") {
                     if loadingSkills {
                         SkeletonGrid()
@@ -119,7 +150,7 @@ public struct MarketplaceView: View {
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(Palette.danger)
                 }
-                Text("Connectors come from the official MCP Registry, skills from Anthropic, agents from the ACP registry. Everything installs on \(model.hostName).")
+                Text("Connectors come from the official MCP Registry, apps through Composio, skills from Anthropic, agents from the ACP registry. Everything installs on \(model.hostName).")
                     .font(.footnote)
                     .foregroundStyle(Palette.tertiary)
             }
@@ -131,59 +162,10 @@ public struct MarketplaceView: View {
         .background(Palette.background)
         .overlay(alignment: .topTrailing) {
             if let close {
-                Button("Close", systemImage: "xmark", action: close)
-                    .labelStyle(.iconOnly)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Palette.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-                    .buttonStyle(.plain)
+                IconButton("Close", systemImage: "xmark", action: close)
                     .keyboardShortcut(.cancelAction)
-                    .help("Close")
                     .padding(8)
             }
-        }
-        .navigationTitle(close == nil ? "Marketplace" : "")
-        #if os(iOS)
-        .toolbar(close == nil ? .automatic : .hidden, for: .navigationBar)
-        #else
-        // The page draws its own title and close button; no empty bar above it.
-        .toolbar(close == nil ? .automatic : .hidden, for: .windowToolbar)
-        #endif
-        .navigationDestination(isPresented: $showInstalled) { InstalledView(ownsHeader: close != nil) }
-        .task {
-            await model.refreshPlugins()
-        }
-        // Picks up CLIs installed or signed in outside Codync.
-        .task { await model.refreshBackends() }
-        .task { await loadConnectors() }
-        .task {
-            do { skills = try await model.marketSkills() } catch { self.error = error.localizedDescription }
-            loadingSkills = false
-        }
-        .sheet(item: $installing) { item in
-            NavigationStack { InstallConnectorSheet(item: item) { Task { await loadConnectors() } } }
-                #if os(macOS)
-                .frame(minWidth: 460, minHeight: 420)
-                #endif
-        }
-        .sheet(isPresented: $addingConnector) {
-            NavigationStack { CustomConnectorSheet() }
-                #if os(macOS)
-                .frame(minWidth: 460, minHeight: 420)
-                #endif
-        }
-        .sheet(isPresented: $writingSkill) {
-            NavigationStack { NewSkillSheet() }
-                #if os(macOS)
-                .frame(minWidth: 480, minHeight: 480)
-                #endif
-        }
-        .sheet(item: $agent) { b in
-            NavigationStack { AgentSheet(initial: b) }
-                #if os(macOS)
-                .frame(minWidth: 640, minHeight: 460)
-                #endif
         }
     }
 
@@ -197,7 +179,7 @@ public struct MarketplaceView: View {
                 .layoutPriority(1)
             Spacer()
             if installedCount > 0 {
-                Button { showInstalled = true } label: {
+                Button { withAnimation(Motion.layout) { showInstalled = true } } label: {
                     HStack(spacing: 8) {
                         HStack(spacing: -8) {
                             ForEach(model.installedConnectors.prefix(3)) { c in
@@ -221,9 +203,9 @@ public struct MarketplaceView: View {
             TextField("Search agents, connectors and skills", text: $search)
                 .textFieldStyle(.plain)
                 .plainTextInput()
-                .onSubmit { Task { await loadConnectors() } }
+                .onSubmit { searchToken += 1; Task { await loadConnectors() } }
             if !search.isEmpty {
-                Button { search = ""; Task { await loadConnectors() } } label: {
+                Button { search = ""; searchToken += 1; Task { await loadConnectors() } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.tertiary)
                 }
                 .buttonStyle(.plain)
@@ -254,10 +236,8 @@ public struct MarketplaceView: View {
 // MARK: - Installed
 
 private struct InstalledView: View {
-    /// In the Marketplace sheet the bar is hidden, so the page draws its own back button.
-    let ownsHeader: Bool
+    let back: () -> Void
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
     @State private var removing: Removal?
 
     private struct Removal: Identifiable {
@@ -267,30 +247,33 @@ private struct InstalledView: View {
     }
 
     var body: some View {
-        CardForm {
-            if ownsHeader {
-                HStack(spacing: 6) {
-                        Button("Back", systemImage: "chevron.left") { dismiss() }
-                            .labelStyle(.iconOnly)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Palette.text)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                            .buttonStyle(.plain)
-                            .keyboardShortcut(.cancelAction)
-                            .help("Back to Marketplace")
-                        Text("Installed").font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
-                }
-                .padding(.leading, -12)
+        VStack(spacing: 0) {
+            ScreenHeader {
+                BackButton(action: back).keyboardShortcut(.cancelAction)
+            } title: {
+                Text("Installed").font(InterfaceMetrics.body.weight(.semibold)).foregroundStyle(Palette.text)
+            } trailing: {
+                EmptyView()
             }
+            list
+        }
+        .background(Palette.background)
+    }
+
+    private var list: some View {
+        CardForm {
             if model.installedConnectors.isEmpty && model.installedSkills.isEmpty {
-                ContentUnavailableView("Nothing installed", systemImage: "shippingbox", description: Text("Connectors and skills you add show up here."))
+                EmptyState(icon: "shippingbox", title: "Nothing installed", detail: "Connectors and skills you add show up here.")
             }
             if !model.installedConnectors.isEmpty {
                 CardSection("Connectors") {
                     ForEach(model.installedConnectors) { c in
                         InstalledRow(title: c.name, subtitle: c.command ?? c.url ?? c.description) {
-                            ServiceLogo(website: nil, name: c.name, registryName: c.registryName, size: 32)
+                            if c.kind == "composio" {
+                                AppLogo(url: c.logo, name: c.name, size: 32)
+                            } else {
+                                ServiceLogo(website: nil, name: c.name, registryName: c.registryName, size: 32)
+                            }
                         } remove: {
                             removing = Removal(id: c.id, name: c.name, isSkill: false)
                         }
@@ -309,8 +292,6 @@ private struct InstalledView: View {
                 }
             }
         }
-        .navigationTitle("Installed")
-        .inlineNavigationTitle()
         .codyncDialog(
             "Remove \(removing?.name ?? "")?",
             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
@@ -327,6 +308,43 @@ private struct InstalledView: View {
                 }
             }]
         }
+    }
+}
+
+/// Text that opens a web page (replaces the system `Link`).
+struct WebLink: View {
+    let title: String
+    let url: URL
+    @Environment(\.openURL) private var openURL
+
+    init(_ title: String, url: URL) {
+        self.title = title
+        self.url = url
+    }
+
+    var body: some View {
+        Button(title) { openURL(url) }
+            .buttonStyle(.plain)
+            .foregroundStyle(Palette.text)
+            .underline()
+            .help(url.absoluteString)
+    }
+}
+
+/// A quiet "nothing here" message (replaces `ContentUnavailableView`).
+private struct EmptyState: View {
+    let icon: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 28)).foregroundStyle(Palette.tertiary).accessibilityHidden(true)
+            Text(title).font(InterfaceMetrics.body.weight(.semibold)).foregroundStyle(Palette.text)
+            Text(detail).font(InterfaceMetrics.secondary).foregroundStyle(Palette.secondary).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 }
 
@@ -358,7 +376,7 @@ private struct InstalledRow<Icon: View>: View {
 
 // MARK: - Pieces
 
-private struct MarketSection<Content: View>: View {
+struct MarketSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
 
@@ -371,7 +389,7 @@ private struct MarketSection<Content: View>: View {
 }
 
 /// Two columns on wide screens, one on a phone.
-private struct ItemGrid<Content: View>: View {
+struct ItemGrid<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -424,7 +442,6 @@ private struct AgentCard: View {
 private struct AgentSheet: View {
     let initial: Backend
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
     @State private var route: SetupRoute?
     @State private var auth: AgentAuth?
     @State private var checking = false
@@ -438,6 +455,40 @@ private struct AgentSheet: View {
     private var signedIn: Bool? { auth?.signedIn ?? backend.signedIn }
 
     var body: some View {
+        ZStack {
+            if let route {
+                routed(route).transition(.move(edge: .trailing).combined(with: .opacity))
+            } else {
+                VStack(spacing: 0) {
+                    ModalHeader(backend.name)
+                    overview
+                }
+                .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .frame(minWidth: InterfaceMetrics.value(mac: 560, mobile: 0), minHeight: InterfaceMetrics.value(mac: 460, mobile: 0))
+        // A known "signed in" needs no agent start; everything else asks the agent.
+        .task { if backend.signedIn != true { await check() } }
+        .onChange(of: route) { old, new in
+            // Back from a terminal or key form: see what changed.
+            if new == nil, old != nil { Task { await check() } }
+        }
+    }
+
+    @ViewBuilder private func routed(_ route: SetupRoute) -> some View {
+        let back = { withAnimation(Motion.layout) { self.route = nil } }
+        switch route {
+        case .install: SetupTerminalView(backend: backend, step: .install, back: back)
+        case .terminal(let method): SetupTerminalView(backend: backend, step: .login, method: method, back: back)
+        case .keys(let method): AgentKeysForm(backend: backend, method: method, saved: auth?.savedEnv ?? [], back: back) { auth = $0 }
+        }
+    }
+
+    private func go(_ route: SetupRoute) {
+        withAnimation(Motion.layout) { self.route = route }
+    }
+
+    private var overview: some View {
         CardForm {
             CardSection {
                 HStack(spacing: 14) {
@@ -462,7 +513,7 @@ private struct AgentSheet: View {
                             ? "Installed on \(model.hostName)."
                             : backend.canInstall == true ? "Runs the official installer on \(model.hostName)." : backend.installHint,
                         done: installed,
-                        action: installed || backend.canInstall != true ? nil : ("Install", { route = .install })
+                        action: installed || backend.canInstall != true ? nil : ("Install", { go(.install) })
                     )
                 }
             }
@@ -470,26 +521,6 @@ private struct AgentSheet: View {
             if let error {
                 CardSection { Text(error).foregroundStyle(Palette.danger).textSelection(.enabled) }
             }
-        }
-        .navigationTitle(backend.name)
-        .inlineNavigationTitle()
-        .navigationDestination(item: $route) { route in
-            switch route {
-            case .install: SetupTerminalView(backend: backend, step: .install)
-            case .terminal(let method): SetupTerminalView(backend: backend, step: .login, method: method)
-            case .keys(let method): AgentKeysForm(backend: backend, method: method, saved: auth?.savedEnv ?? []) { auth = $0 }
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
-            }
-        }
-        // A known "signed in" needs no agent start; everything else asks the agent.
-        .task { if backend.signedIn != true { await check() } }
-        .onChange(of: route) { old, new in
-            // Back from a terminal or key form: see what changed.
-            if new == nil, old != nil { Task { await check() } }
         }
     }
 
@@ -516,18 +547,18 @@ private struct AgentSheet: View {
             if signedIn != true, !checking {
                 if auth?.login == true {
                     optionRow("Sign in", detail: "In a terminal on \(model.hostName). Links open here.", icon: "terminal") {
-                        route = .terminal(nil)
+                        go(.terminal(nil))
                     }
                 }
                 ForEach(auth?.methods ?? []) { m in
                     switch m.kind {
                     case .terminal?:
                         optionRow(m.name, detail: m.description ?? "In a terminal on \(model.hostName).", icon: "terminal") {
-                            route = .terminal(m)
+                            go(.terminal(m))
                         }
                     case .envVar?:
                         optionRow(m.name, detail: m.description ?? "Saved on \(model.hostName) only.", icon: "key") {
-                            route = .keys(m)
+                            go(.keys(m))
                         }
                     case .agent?, nil:
                         optionRow(
@@ -618,9 +649,9 @@ private struct AgentKeysForm: View {
     let backend: Backend
     let method: AuthMethod
     let saved: [String]
+    let back: () -> Void
     let done: (AgentAuth) -> Void
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
     @State private var values: [String: String] = [:]
     @State private var saving = false
     @State private var error: String?
@@ -628,6 +659,25 @@ private struct AgentKeysForm: View {
     private var vars: [AuthMethod.Var] { method.vars ?? [] }
 
     var body: some View {
+        VStack(spacing: 0) {
+            ScreenHeader {
+                BackButton(action: back).keyboardShortcut(.cancelAction)
+            } title: {
+                Text(method.name).font(InterfaceMetrics.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+            } trailing: {
+                if saving {
+                    Spinner()
+                } else {
+                    IconButton("Save", systemImage: "checkmark") { save(values.filter { !$0.value.isEmpty }) }
+                        .disabled(vars.contains { !$0.optional && (values[$0.name] ?? "").isEmpty && !saved.contains($0.name) })
+                }
+            }
+            form
+        }
+        .background(Palette.background)
+    }
+
+    private var form: some View {
         CardForm {
             VStack(alignment: .leading, spacing: 6) {
                 CardSection(method.name) {
@@ -650,7 +700,7 @@ private struct AgentKeysForm: View {
                     if let d = method.description { Text(d) }
                     Text("Saved on \(model.hostName) only and given to \(backend.name) when it starts.")
                     if let link = method.link, let url = URL(string: link) {
-                        Link("Get a key", destination: url)
+                        WebLink("Get a key", url: url)
                     }
                 }
                 .font(.caption)
@@ -671,18 +721,6 @@ private struct AgentKeysForm: View {
             }
         }
         .textFieldStyle(.plain)
-        .navigationTitle(backend.name)
-        .inlineNavigationTitle()
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                if saving {
-                    Spinner()
-                } else {
-                    Button("Save") { save(values.filter { !$0.value.isEmpty }) }
-                        .disabled(vars.contains { !$0.optional && (values[$0.name] ?? "").isEmpty && !saved.contains($0.name) })
-                }
-            }
-        }
     }
 
     private func binding(_ name: String) -> Binding<String> {
@@ -696,7 +734,7 @@ private struct AgentKeysForm: View {
             defer { saving = false }
             do {
                 done(try await client.setAgentEnv(backend.id, vars: vars))
-                dismiss()
+                back()
             } catch {
                 self.error = error.localizedDescription
             }
@@ -745,7 +783,7 @@ private struct SetupStepRow: View {
     }
 }
 
-private struct MarketRow<Icon: View>: View {
+struct MarketRow<Icon: View>: View {
     let title: String
     let subtitle: String
     let added: Bool
@@ -790,7 +828,7 @@ private struct MarketRow<Icon: View>: View {
 }
 
 /// Placeholder rows while a list loads, shaped like the real ones.
-private struct SkeletonGrid: View {
+struct SkeletonGrid: View {
     @State private var dim = false
 
     var body: some View {
@@ -861,7 +899,7 @@ private struct ServiceLogo: View {
     }
 }
 
-private struct TileIcon: View {
+struct TileIcon: View {
     let systemName: String
 
     var body: some View {
@@ -875,7 +913,7 @@ private struct InstallConnectorSheet: View {
     let item: MarketConnector
     let done: () -> Void
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissModal) private var dismiss
     @State private var optionId = ""
     @State private var values: [String: String] = [:]
     @State private var saving = false
@@ -886,13 +924,28 @@ private struct InstallConnectorSheet: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader("Add connector") {
+                if saving {
+                    Spinner()
+                } else {
+                    IconButton("Add", systemImage: "plus") { install() }
+                        .disabled(option?.inputs.contains { $0.required && (values[$0.name] ?? "").isEmpty } ?? true)
+                }
+            }
+            form
+        }
+        .background(Palette.background)
+    }
+
+    private var form: some View {
         CardForm {
             CardSection {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(item.title).font(.title3.weight(.semibold))
                     if let d = item.description { Text(d).foregroundStyle(Palette.secondary) }
                     if let w = item.website, let url = URL(string: w) {
-                        Link(w, destination: url).font(.footnote).lineLimit(1)
+                        WebLink(w, url: url).font(.footnote).lineLimit(1)
                     }
                 }
                 .padding(.vertical, 4)
@@ -934,22 +987,7 @@ private struct InstallConnectorSheet: View {
             }
         }
         .textFieldStyle(.plain)
-        .navigationTitle("Add connector")
-        .inlineNavigationTitle()
         .onAppear { optionId = item.options.first?.id ?? "" }
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                if saving {
-                    Spinner()
-                } else {
-                    Button("Add") { install() }
-                        .disabled(option?.inputs.contains { $0.required && (values[$0.name] ?? "").isEmpty } ?? true)
-                }
-            }
-        }
     }
 
     private func binding(_ input: MarketConnector.Input) -> Binding<String> {
@@ -975,7 +1013,7 @@ private struct InstallConnectorSheet: View {
 
 private struct CustomConnectorSheet: View {
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissModal) private var dismiss
     @State private var name = ""
     @State private var remote = false
     @State private var target = ""
@@ -984,6 +1022,21 @@ private struct CustomConnectorSheet: View {
     @State private var error: String?
 
     var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader("Custom connector") {
+                if saving {
+                    Spinner()
+                } else {
+                    IconButton("Add", systemImage: "plus") { save() }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || target.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            form
+        }
+        .background(Palette.background)
+    }
+
+    private var form: some View {
         CardForm {
             CardSection(footer: remote ? "A remote MCP server (streamable HTTP)." : "Runs on \(model.hostName) in the bot's project folder.") {
                 TextField("Name", text: $name)
@@ -1005,21 +1058,6 @@ private struct CustomConnectorSheet: View {
             }
         }
         .textFieldStyle(.plain)
-        .navigationTitle("Custom connector")
-        .inlineNavigationTitle()
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                if saving {
-                    Spinner()
-                } else {
-                    Button("Add") { save() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || target.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        }
     }
 
     private func save() {
@@ -1044,7 +1082,7 @@ private struct CustomConnectorSheet: View {
 
 private struct NewSkillSheet: View {
     @Environment(BotStore.self) private var model
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissModal) private var dismiss
     @State private var name = ""
     @State private var summary = ""
     @State private var instructions = ""
@@ -1052,31 +1090,12 @@ private struct NewSkillSheet: View {
     @State private var error: String?
 
     var body: some View {
-        CardForm {
-            CardSection(footer: "The bot sees the name and when to use it, and reads the instructions only when a task fits.") {
-                TextField("Name", text: $name)
-                TextField("When to use it", text: $summary, axis: .vertical).lineLimit(2...4)
-            }
-            CardSection("Instructions") {
-                TextField("Step by step, in plain words…", text: $instructions, axis: .vertical)
-                    .lineLimit(6...20)
-            }
-            if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger) }
-            }
-        }
-        .textFieldStyle(.plain)
-        .navigationTitle("New skill")
-        .inlineNavigationTitle()
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
-            }
-            ToolbarItem(placement: .confirmationAction) {
+        VStack(spacing: 0) {
+            ModalHeader("New skill") {
                 if saving {
                     Spinner()
                 } else {
-                    Button("Save") {
+                    IconButton("Save", systemImage: "checkmark") {
                         saving = true
                         Task {
                             do {
@@ -1091,7 +1110,26 @@ private struct NewSkillSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || instructions.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            form
         }
+        .background(Palette.background)
+    }
+
+    private var form: some View {
+        CardForm {
+            CardSection(footer: "The bot sees the name and when to use it, and reads the instructions only when a task fits.") {
+                TextField("Name", text: $name)
+                TextField("When to use it", text: $summary, axis: .vertical).lineLimit(2...4)
+            }
+            CardSection("Instructions") {
+                TextField("Step by step, in plain words…", text: $instructions, axis: .vertical)
+                    .lineLimit(6...20)
+            }
+            if let error {
+                CardSection { Text(error).foregroundStyle(Palette.danger) }
+            }
+        }
+        .textFieldStyle(.plain)
     }
 }
 

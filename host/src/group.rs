@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
-pub const MAX_MEMBERS: usize = 6;
 const MAX_ROUNDS: usize = 3;
 /// Replies per room turn, across all rounds.
 const MAX_REPLIES: usize = 10;
@@ -76,7 +75,7 @@ impl Rooms {
     }
 }
 
-/// Existing, distinct agent bots (not groups, not the group itself), at most [`MAX_MEMBERS`].
+/// Existing, distinct agent bots (not groups, not the group itself).
 pub fn valid_members(store: &Store, group_id: &str, ids: &[String]) -> Result<Vec<String>> {
     let mut out: Vec<String> = vec![];
     for id in ids.iter().map(|i| i.trim()) {
@@ -91,9 +90,6 @@ pub fn valid_members(store: &Store, group_id: &str, ids: &[String]) -> Result<Ve
     }
     if out.is_empty() {
         bail!("a group needs at least one bot");
-    }
-    if out.len() > MAX_MEMBERS {
-        bail!("groups can have up to {MAX_MEMBERS} bots");
     }
     Ok(out)
 }

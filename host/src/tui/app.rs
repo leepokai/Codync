@@ -508,9 +508,6 @@ impl Form {
     }
 }
 
-/// A group's bots: at most this many.
-pub const MAX_MEMBERS: usize = 6;
-
 /// Create a group chat, or rename one and change who's in it.
 pub struct GroupForm {
     /// The group being edited; `None` creates one.
@@ -1571,10 +1568,8 @@ impl App {
                     g.error = None;
                     if let Some(i) = g.members.iter().position(|m| *m == id) {
                         g.members.remove(i);
-                    } else if g.members.len() < MAX_MEMBERS {
-                        g.members.push(id);
                     } else {
-                        g.error = Some(format!("A group holds up to {MAX_MEMBERS} bots."));
+                        g.members.push(id);
                     }
                 }
             }

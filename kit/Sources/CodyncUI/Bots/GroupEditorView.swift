@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// Create a group chat, or rename one and change who's in it (up to six bots).
+/// Create a group chat, or rename one and change who's in it.
 public struct GroupEditorView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
@@ -12,8 +12,6 @@ public struct GroupEditorView: View {
     @State private var saving = false
     @State private var error: String?
     @State private var confirmDelete: Bot?
-
-    static let maxMembers = 6
 
     public init(group: Bot? = nil, members: [String] = []) {
         groupId = group?.id
@@ -43,7 +41,7 @@ public struct GroupEditorView: View {
                     Field("Name") {
                         TextField(defaultName, text: $name).fieldBox()
                     }
-                    Field("Bots · \(members.count) of \(Self.maxMembers)") {
+                    Field("Bots · \(members.count)") {
                         VStack(spacing: 2) {
                             ForEach(candidates) { bot in memberRow(bot) }
                         }
@@ -77,7 +75,7 @@ public struct GroupEditorView: View {
         let on = members.contains(bot.id)
         return Button {
             withAnimation(Motion.layout) {
-                if on { members.removeAll { $0 == bot.id } } else if members.count < Self.maxMembers { members.append(bot.id) }
+                if on { members.removeAll { $0 == bot.id } } else { members.append(bot.id) }
             }
         } label: {
             HStack(spacing: 12) {
@@ -97,7 +95,6 @@ public struct GroupEditorView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScale())
-        .disabled(!on && members.count >= Self.maxMembers)
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 

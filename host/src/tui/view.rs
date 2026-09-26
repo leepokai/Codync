@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 
 use super::app::{
     ACTIONS, App, Bot, COLORS, Click, Editor, Entry, FIELDS, FILTERS, Field, Focus, Form, GotoItem, GroupForm, Kind,
-    MAX_MEMBERS, Mark, Overlay, SHAPES, Status, TraceMode, Width, tilde,
+    Mark, Overlay, SHAPES, Status, TraceMode, Width, tilde,
 };
 use super::md::{self, truncate, width as w};
 
@@ -2010,14 +2010,7 @@ fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm) {
         placeholder,
         g.on_name,
     );
-    put(
-        buf,
-        inner.x,
-        inner.y + 2,
-        inner.width,
-        &format!("Bots · {} of {MAX_MEMBERS}", g.members.len()),
-        label(!g.on_name),
-    );
+    put(buf, inner.x, inner.y + 2, inner.width, &format!("Bots · {}", g.members.len()), label(!g.on_name));
     let list_h = usize::from(inner.height.saturating_sub(7));
     let off = g.cursor.saturating_sub(list_h.saturating_sub(1));
     if bots.is_empty() {

@@ -376,8 +376,6 @@ pub fn editor(ui: &App, bot: Option<Value>) {
 
 // MARK: group editor
 
-const MAX_MEMBERS: usize = 6;
-
 /// Create a group chat, or rename one and change who's in it (up to six bots).
 pub fn group_editor(ui: &App, group: Option<Value>) {
     let is_new = group.is_none();
@@ -474,10 +472,7 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
         );
         move || {
             let m = members.borrow();
-            bots_group.set_title(&format!("Bots · {} of {MAX_MEMBERS}", m.len()));
-            for (_, _, check) in checks.iter() {
-                check.set_sensitive(check.is_active() || m.len() < MAX_MEMBERS);
-            }
+            bots_group.set_title(&format!("Bots · {}", m.len()));
             let names: Vec<&str> = m
                 .iter()
                 .filter_map(|id| checks.iter().find(|c| c.0 == *id).map(|c| c.1.as_str()))

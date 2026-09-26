@@ -135,8 +135,6 @@ pub(crate) struct Conn {
     pub(crate) acp: Arc<Acp>,
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     sessions: SessionCaps,
-    /// The agent can reach remote (HTTP) MCP servers itself.
-    mcp_http: bool,
     /// Claude's adapter: takes `_meta.systemPrompt` and `_meta.claudeCode.options`.
     pub(crate) claude: bool,
     /// Sessions already created or loaded in this process.
@@ -256,7 +254,7 @@ impl Actor {
                 // Dropping a queued turn's reply tells the room it won't come.
                 self.queue.retain(|q| !matches!(q, Queued::Group(g) if g.lane.chat == chat));
                 if self.active_group.as_ref().is_some_and(|g| g.lane.chat == chat) {
-                    self.stop().await;
+                    self.cancel_turn().await;
                 }
             }
             Cmd::Ask(ask) => {
@@ -292,8 +290,10 @@ impl Actor {
             }
             Cmd::Reconfigure(cfg) => {
                 let cfg = *cfg;
-                let restart =
-                    cfg.backend != self.cfg.backend || cfg.command != self.cfg.command || cfg.cwd != self.cfg.cwd;
+                let restart = cfg.backend != self.cfg.backend
+                    || cfg.command != self.cfg.command
+                    || cfg.cwd != self.cfg.cwd
+                    || cfg.model != self.cfg.model;
                 self.tools_changed |= cfg.connectors != self.cfg.connectors || cfg.computer != self.cfg.computer;
                 // Name, description and skill changes reach the agent as a profile update
                 // on the next message (see `context`).
@@ -308,7 +308,7 @@ impl Actor {
                     if self.session_id.is_some() {
                         self.forget_session();
                         self.notice(
-                            "The agent, command or folder changed — the agent starts with a fresh context.",
+                            "The agent, model, command or folder changed — the agent starts with a fresh context.",
                             NoticeStyle::Divider,
                         );
                     }
@@ -330,6 +330,11 @@ impl Actor {
                 self.hub.set_entry(&entry_id, &e.data);
             }
         }
+        self.cancel_turn().await;
+    }
+
+    /// Stops the running turn only (queued ones stay).
+    async fn cancel_turn(&mut self) {
         if self.turn.is_none() {
             return;
         }
@@ -557,9 +562,11 @@ impl Actor {
             "sessionId": sid,
             "prompt": [{"type": "text", "text": prompt}],
         });
+        // Written before this returns, so a Stop right after is sent after the prompt.
+        let answer = acp.send("session/prompt", params).await?;
         let done_tx = done_tx.clone();
         tokio::spawn(async move {
-            let _ = done_tx.send(acp.request("session/prompt", params).await);
+            let _ = done_tx.send(answer.response().await);
         });
         Ok(())
     }
@@ -647,23 +654,25 @@ impl Actor {
     }
 
     /// ACP connectors, team collaboration, and optional computer control.
-    fn mcp_servers(&self, http_ok: bool) -> Value {
-        let all = crate::market::connectors(&self.hub.store);
-        let mut servers: Vec<Value> =
-            all.iter().filter(|c| self.cfg.connectors.contains(&c.id)).filter_map(|c| c.acp(http_ok)).collect();
-        match std::env::current_exe() {
-            Ok(exe) => {
-                let composio = crate::composio::enabled_for(&self.hub.store, &self.cfg.connectors);
-                let builtin = [Some("team"), self.cfg.computer.then_some("computer"), composio.then_some("composio")];
-                for name in builtin.into_iter().flatten() {
-                    servers.push(json!({
-                        "name": name, "command": exe,
-                        "args": ["mcp", name, "--bot", self.cfg.id, "--port", self.hub.port.to_string()],
-                        "env": [],
-                    }));
-                }
-            }
-            Err(error) => tracing::warn!(%error, "can't locate codync-host for built-in MCP servers"),
+    fn mcp_servers(&self) -> Value {
+        let Ok(exe) = std::env::current_exe() else {
+            tracing::warn!("can't locate codync-host for MCP servers");
+            return json!([]);
+        };
+        let port = self.hub.port;
+        let mut servers: Vec<Value> = crate::market::connectors(&self.hub.store)
+            .iter()
+            .filter(|c| self.cfg.connectors.contains(&c.id))
+            .filter_map(|c| c.acp(&exe, port))
+            .collect();
+        let composio = crate::composio::enabled_for(&self.hub.store, &self.cfg.connectors);
+        let builtin = [Some("team"), self.cfg.computer.then_some("computer"), composio.then_some("composio")];
+        for name in builtin.into_iter().flatten() {
+            servers.push(json!({
+                "name": name, "command": exe,
+                "args": ["mcp", name, "--bot", self.cfg.id, "--port", port.to_string()],
+                "env": [],
+            }));
         }
         Value::Array(servers)
     }
@@ -707,7 +716,7 @@ impl Actor {
                 return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
             }
         }
-        let servers = self.mcp_servers(self.conn.as_ref().is_some_and(|c| c.mcp_http));
+        let servers = self.mcp_servers();
         let claude = self.conn.as_ref().is_some_and(|c| c.claude);
         let mut forked = false;
         if let Some(root) = slot
@@ -797,12 +806,12 @@ impl Actor {
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone());
         if let Some(model) = self.cfg.model.clone().filter(|m| !m.is_empty()) {
-            let has_model = res["configOptions"].as_array().is_some_and(|o| o.iter().any(|o| o["id"] == "model"));
-            let r = if has_model {
+            let config_id = crate::auth::model_config(&res).and_then(|c| c["id"].as_str());
+            let r = if let Some(config_id) = config_id {
                 conn.acp
                     .request(
                         "session/set_config_option",
-                        json!({"sessionId": sid, "configId": "model", "value": model}),
+                        json!({"sessionId": sid, "configId": config_id, "value": model}),
                     )
                     .await
             } else {
@@ -810,6 +819,7 @@ impl Actor {
             };
             if let Err(e) = r {
                 tracing::warn!(model, error = format!("{e:#}"), "couldn't set model");
+                bail!("Couldn't select model {model}: {e:#}");
             }
         }
         self.set_session(slot, Some(&sid));
@@ -1266,9 +1276,8 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         load: init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false),
         fork: init["agentCapabilities"]["sessionCapabilities"]["fork"].is_object(),
     };
-    let mcp_http = init["agentCapabilities"]["mcpCapabilities"]["http"].as_bool().unwrap_or(false);
     let claude = init["agentCapabilities"]["_meta"]["claudeCode"].is_object();
-    Ok(Conn { acp, rx, sessions, mcp_http, claude, loaded: HashSet::new() })
+    Ok(Conn { acp, rx, sessions, claude, loaded: HashSet::new() })
 }
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {

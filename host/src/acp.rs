@@ -43,6 +43,29 @@ impl std::fmt::Display for RpcError {
 
 impl std::error::Error for RpcError {}
 
+/// A request already written to the agent, waiting for its response.
+pub struct Answer {
+    method: String,
+    rx: oneshot::Receiver<std::result::Result<Value, Value>>,
+}
+
+impl Answer {
+    pub async fn response(self) -> Result<Value> {
+        match self.rx.await {
+            Ok(Ok(v)) => Ok(v),
+            Ok(Err(e)) => {
+                let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
+                let message = match e["data"]["details"].as_str().or(e["data"].as_str()) {
+                    Some(d) => format!("{msg} ({d})"),
+                    None => msg,
+                };
+                Err(RpcError { code: e["code"].as_i64().unwrap_or_default(), message }.into())
+            }
+            Err(_) => bail!("{}: connection closed", self.method),
+        }
+    }
+}
+
 pub struct Acp {
     stdin: tokio::sync::Mutex<ChildStdin>,
     next_id: AtomicI64,
@@ -152,22 +175,17 @@ impl Acp {
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
+        self.send(method, params).await?.response().await
+    }
+
+    /// Writes a request and returns its pending answer: anything written after this
+    /// (a `session/cancel`) reaches the agent after the request itself.
+    pub async fn send(&self, method: &str, params: Value) -> Result<Answer> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.locked().insert(id, tx);
         self.write(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).await?;
-        match rx.await {
-            Ok(Ok(v)) => Ok(v),
-            Ok(Err(e)) => {
-                let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
-                let message = match e["data"]["details"].as_str().or(e["data"].as_str()) {
-                    Some(d) => format!("{msg} ({d})"),
-                    None => msg,
-                };
-                Err(RpcError { code: e["code"].as_i64().unwrap_or_default(), message }.into())
-            }
-            Err(_) => bail!("{method}: connection closed"),
-        }
+        Ok(Answer { method: method.to_owned(), rx })
     }
 
     pub async fn notify(&self, method: &str, params: Value) -> Result<()> {

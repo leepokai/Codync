@@ -64,6 +64,11 @@ def prompt(request):
     while "BLOCK" in text and not pathlib.Path("release").exists() and not cancel.wait(0.01):
         pass
     if text.startswith("[Group chat") or "\n[Group chat" in text:
+        while "BLOCK" in text and not pathlib.Path("release").exists() and not cancel.wait(0.01):
+            pass
+        if cancel.is_set():
+            send({"id": request["id"], "result": {"stopReason": "cancelled"}})
+            return
         # A room turn: answer only when the user spoke last, otherwise pass.
         room = text.split("New messages in the room (oldest first):\n", 1)[-1].split("\n\n", 1)[0]
         last = room.strip().splitlines()[-1] if "New messages" in text else ""

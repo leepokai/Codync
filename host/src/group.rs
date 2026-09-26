@@ -492,6 +492,26 @@ mod tests {
         room.shutdown().await;
     }
 
+    #[tokio::test]
+    async fn stop_ends_the_room_turn_before_the_next_speaker() {
+        let room = Room::new();
+        room.send("BLOCK everyone look", None).await;
+        let hub = room.hub.clone();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while hub.runtime("a").status != BotStatus::Working {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("a starts");
+        crate::api::dispatch(&room.hub, &Caller::Local, "stop", json!({"botId": room.group})).await.unwrap();
+        room.settle().await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(!room.dir.join("b/prompts.jsonl").exists(), "b never got a turn after Stop");
+        assert!(room.replies(&Lane::main(&room.group)).iter().all(|(_, t)| t != "reply: group"));
+        room.shutdown().await;
+    }
+
     #[test]
     fn pass_is_recognized_loosely() {
         for t in ["(pass)", " (pass) ", "\"(pass)\"", "pass.", ""] {

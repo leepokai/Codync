@@ -137,7 +137,12 @@ impl Bot {
 
     /// Whether the running turn talks in this chat: its main lane (`None`) or that thread.
     pub fn works_in(&self, thread: Option<&str>) -> bool {
-        self.working_chat.as_deref().unwrap_or(&self.id) == self.id && self.working_thread.as_deref() == thread
+        self.away().is_none() && self.working_thread.as_deref() == thread
+    }
+
+    /// The other chat (a group) the running turn talks in, if it isn't this bot's own.
+    pub fn away(&self) -> Option<&str> {
+        self.working_chat.as_deref().filter(|c| *c != self.id)
     }
 
     pub fn mark(&self) -> Mark {
@@ -739,8 +744,13 @@ impl App {
         id.and_then(|id| self.bots.get(id)).map_or_else(|| "A deleted bot".into(), |b| b.name.clone())
     }
 
-    pub fn latest_turn(&self, bot: &str) -> Option<i64> {
-        self.entries.get(bot)?.values().map(|e| e.turn).max()
+    /// The turns of the lane on screen, oldest first: the trace steps through these.
+    /// Turn numbers count per bot, so a lane's own are not consecutive.
+    pub fn lane_turns(&self, bot: &str) -> Vec<i64> {
+        let mut v: Vec<i64> = self.lane(bot).iter().map(|e| e.turn).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
     }
 
     /// Whether every older entry of this bot is loaded.
@@ -789,17 +799,22 @@ impl App {
 
     /// Next bot (after the selected one, wrapping) whose mark matches.
     fn jump(&mut self, want: Mark) {
-        let ids: Vec<(String, Mark)> = self.roster().iter().map(|b| (b.id.clone(), b.mark())).collect();
+        // A bot busy in a group needs you there, and the group is marked too: skip the bot.
+        let ids: Vec<(String, bool)> = self
+            .roster()
+            .iter()
+            .map(|b| (b.id.clone(), b.mark() == want && (want != Mark::Need || b.away().is_none())))
+            .collect();
         let start = self.selected.as_ref().and_then(|s| ids.iter().position(|(x, _)| x == s)).map_or(0, |i| i + 1);
-        let found = (0..ids.len()).map(|k| &ids[(start + k) % ids.len()]).find(|(_, m)| *m == want).cloned();
+        let found = (0..ids.len()).map(|k| &ids[(start + k) % ids.len()]).find(|(_, hit)| *hit).cloned();
         match found {
             Some((id, _)) => {
                 self.select(&id);
                 self.chat_page = true;
                 self.focus = Focus::Chat;
                 // A card waiting in a thread shows there.
-                let here = self.bots.get(&id).filter(|b| b.working_chat.as_deref().unwrap_or(&b.id) == b.id);
-                if let Some(root) = here.and_then(|b| b.working_thread.clone()) {
+                let thread = self.bots.get(&id).and_then(|b| b.working_thread.clone()).filter(|_| want == Mark::Need);
+                if let Some(root) = thread {
                     self.open_thread(root);
                 }
             }
@@ -936,7 +951,8 @@ impl App {
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
         let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
-        if !new.notify || watching {
+        // A member's turn in a group is the group's: it alone says done / needs you.
+        if !new.notify || watching || old.away().is_some() || new.away().is_some() {
             return;
         }
         if new.status == Status::NeedsInput && old.status != Status::NeedsInput {
@@ -1039,16 +1055,24 @@ impl App {
             }
             After::Saved => {
                 let saved = self.overlays.iter().rposition(|o| matches!(o, Overlay::Form(_) | Overlay::Group(_)));
+                // A new bot or group opens ready to type; an edit goes back to where it was.
+                let created = saved.is_some_and(|i| match &self.overlays[i] {
+                    Overlay::Form(f) => f.bot_id.is_none(),
+                    Overlay::Group(g) => g.group_id.is_none(),
+                    _ => false,
+                });
                 if let Some(i) = saved {
                     self.overlays.truncate(i);
                 }
                 if let Some(id) = v["bot"]["id"].as_str() {
                     let id = id.to_owned();
                     self.upsert_bot(&v["bot"]);
-                    self.select(&id);
-                    self.chat_page = true;
-                    self.focus = Focus::Chat;
-                    self.typing = true;
+                    if created {
+                        self.select(&id);
+                        self.chat_page = true;
+                        self.focus = Focus::Chat;
+                        self.typing = true;
+                    }
                 }
             }
             After::Connectors | After::Skills => {
@@ -1258,6 +1282,8 @@ impl App {
                 } else if self.thread.is_some() {
                     self.thread = None;
                     self.chat_scroll = 0;
+                    self.trace_turn = None;
+                    self.trace_scroll = 0;
                 } else if narrow && self.chat_page {
                     self.chat_page = false;
                     self.focus = Focus::Roster;
@@ -1303,11 +1329,13 @@ impl App {
             }
             KeyCode::Char('o') => {
                 let Some(id) = self.selected.clone() else { return };
-                // The newest turn that did something.
+                // The newest turn in this lane that did something.
                 self.trace_turn = self
-                    .entries
-                    .get(&id)
-                    .and_then(|m| m.values().rev().find(|e| matches!(e.kind, Kind::Tool | Kind::Plan)).map(|e| e.turn));
+                    .lane(&id)
+                    .into_iter()
+                    .filter(|e| matches!(e.kind, Kind::Tool | Kind::Plan))
+                    .map(|e| e.turn)
+                    .max();
                 self.trace_scroll = 0;
                 if self.trace == TraceMode::Off {
                     self.trace = if matches!(self.width, Width::Narrow | Width::Mid) {
@@ -1450,11 +1478,12 @@ impl App {
         self.focus = p[j];
     }
 
-    fn step_turn(&mut self, d: i64) {
+    fn step_turn(&mut self, d: isize) {
         let Some(id) = self.selected.clone() else { return };
-        let Some(latest) = self.latest_turn(&id) else { return };
-        let cur = self.trace_turn.unwrap_or(latest);
-        let next = (cur + d).clamp(1, latest);
+        let turns = self.lane_turns(&id);
+        let Some(&latest) = turns.last() else { return };
+        let at = self.trace_turn.and_then(|t| turns.iter().position(|x| *x == t)).unwrap_or(turns.len() - 1);
+        let next = turns[at.saturating_add_signed(d).min(turns.len() - 1)];
         self.trace_turn = if next == latest { None } else { Some(next) };
         self.trace_scroll = 0;
         if self.trace == TraceMode::Off {
@@ -1523,6 +1552,8 @@ impl App {
         let Some(id) = self.selected.clone() else { return };
         self.pick = None;
         self.chat_scroll = 0;
+        self.trace_turn = None;
+        self.trace_scroll = 0;
         self.chat_page = true;
         self.focus = Focus::Chat;
         if self.trace == TraceMode::Full {
@@ -2275,14 +2306,16 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
         for (seq, thread) in [(1, Value::Null), (2, json!("r")), (3, Value::Null)] {
-            let v = json!({"botId": "g", "id": format!("e{seq}"), "seq": seq, "kind": "user", "threadId": thread});
+            let v = json!({"botId": "g", "id": format!("e{seq}"), "seq": seq, "turn": seq, "kind": "user", "threadId": thread});
             let (bot, e) = Entry::parse(&v).expect("a full entry parses");
             app.entries.entry(bot).or_default().insert(e.seq, e);
         }
         let ids = |app: &App| app.lane("g").iter().map(|e| e.id.clone()).collect::<Vec<_>>();
         assert_eq!(ids(&app), ["e1", "e3"]);
+        assert_eq!(app.lane_turns("g"), [1, 3]);
         app.thread = Some("r".into());
         assert_eq!(ids(&app), ["e2"]);
+        assert_eq!(app.lane_turns("g"), [2]);
     }
 
     #[test]

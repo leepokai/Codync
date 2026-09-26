@@ -530,7 +530,7 @@ fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         fill(buf, Rect::new(r.x, r.y, r.width, 1), t.panel);
     }
     put(buf, x0 + 1, r.y, wd.saturating_sub(10), if app.host.is_empty() { "codync" } else { &app.host }, t.bold);
-    rput(buf, r.right() - 1, r.y, &format!("{} bots", bots.len()), t.dim);
+    rput(buf, r.right() - 1, r.y, &format!("{} chat{}", bots.len(), if bots.len() == 1 { "" } else { "s" }), t.dim);
     if !narrow {
         hline(buf, x0, r.y + 1, wd, t.line);
     }
@@ -709,14 +709,16 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         _ => (String::new(), t.dim),
     };
     let sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
+    let room = sx.saturating_sub(x + 2);
     if app.thread.is_some() {
-        put(buf, x, r.y, sx.saturating_sub(x + 2), "esc back to the chat", t.dim);
+        put(buf, x, r.y, room, "esc back to the chat", t.dim);
     } else if b.group {
         let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
-        put(buf, x, r.y, sx.saturating_sub(x + 2), &format!("group · {}", names.join(", ")), t.secondary);
+        put(buf, x, r.y, room, &truncate(&format!("group · {}", names.join(", ")), usize::from(room)), t.secondary);
     } else if !narrow {
-        let meta = format!("{} · {} · {}", b.backend, tilde(&b.cwd, &app.home), if b.auto { "auto" } else { "ask" });
-        put(buf, x, r.y, sx.saturating_sub(x + 2), &meta, t.secondary);
+        let mode = if b.auto { "auto" } else { "ask" };
+        let cwd = truncate(&tilde(&b.cwd, &app.home), usize::from(room).saturating_sub(w(&b.backend) + w(mode) + 6));
+        put(buf, x, r.y, room, &format!("{} · {cwd} · {mode}", b.backend), t.secondary);
     }
     let mut top = r.y + 1;
     if !narrow {
@@ -752,29 +754,45 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     let comp_rect = Rect::new(r.x, comp_top, r.width, ch + 2);
     app.hits.clicks.push((comp_rect, Click::Composer));
     let first = clines.len().saturating_sub(usize::from(ch)).min(cursor.1.saturating_sub(usize::from(ch) - 1));
+    // Where the first composer line's text ends, so the chip on its right never covers it.
+    let mut used = clines.get(first).map_or(0, |l| w(l));
     if draft.text.is_empty() {
-        let placeholder =
-            if app.thread.is_some() { "Reply in thread…".to_owned() } else { format!("Message {}…", b.name) };
+        // The apps' wording.
+        let placeholder = if app.pick.is_some() {
+            "Reply in thread: j k pick a message · ↵ open · esc cancel".to_owned()
+        } else if app.thread.is_some() {
+            "Reply…".to_owned()
+        } else if b.group {
+            format!("Message {} · @ to ask one bot", b.name)
+        } else {
+            format!("Message {}…", b.name)
+        };
         put(buf, r.x + 3, comp_top + 1, r.width.saturating_sub(4), &placeholder, t.dim);
+        used = w(&placeholder);
     } else {
         for (i, l) in clines.iter().skip(first).take(usize::from(ch)).enumerate() {
             put(buf, r.x + 3, comp_top + 1 + u(i), r.width.saturating_sub(4), l, t.text);
         }
     }
+    // Only a turn in this lane holds a message back; in a group a new one ends the round instead.
+    let here = b.works_in(app.thread.as_deref());
     let chip = if typing {
         match b.status {
-            Status::Working => "sends after this turn",
-            Status::NeedsInput => "sends after the approval",
+            Status::Working if here && b.group => "goes in after this reply",
+            Status::Working if here => "sends after this turn",
+            Status::NeedsInput if here => "sends after the approval",
             _ => "",
         }
     } else if app.pick.is_some() {
-        "↵ opens its thread · esc cancels"
-    } else if matches!(b.status, Status::Working) {
+        if draft.text.is_empty() { "" } else { "↵ opens its thread · esc cancels" }
+    } else if matches!(b.status, Status::Working | Status::NeedsInput) {
         "s stops"
+    } else if app.thread.is_none() {
+        "i to type · r reply in thread"
     } else {
         "i to type"
     };
-    if draft.text.is_empty() || !typing {
+    if (draft.text.is_empty() || !typing) && used + w(chip) + 6 <= usize::from(r.width) {
         rput(buf, r.right() - 1, comp_top + 1, chip, t.dim);
     }
     if typing {
@@ -964,16 +982,18 @@ fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
                 t.dim,
             )));
         }
-    } else if thread.is_none()
-        && b.working_thread.is_some()
-        && b.working_chat.as_deref().unwrap_or(&b.id) == b.id
-        && matches!(b.status, Status::Working | Status::NeedsInput)
-    {
+    } else if matches!(b.status, Status::Working | Status::NeedsInput) && !b.works_in(thread) {
+        // Busy somewhere else: another thread here, or a group it's in.
+        let place = match b.away() {
+            Some(g) => app.author_name(Some(g)),
+            None if b.working_thread.is_some() => "a thread".to_owned(),
+            None => "the chat".to_owned(),
+        };
         gap(&mut out);
         let line = if b.status == Status::NeedsInput {
-            Span::styled(" ◆ Needs you in a thread · ! opens it", t.amber)
+            Span::styled(format!(" ◆ Needs you in {place} · ! opens it"), t.amber)
         } else {
-            Span::styled(format!(" {} Working in a thread", spin(app)), t.secondary)
+            Span::styled(format!(" {} Working in {place}", spin(app)), t.secondary)
         };
         out.lines.push(Line::from(line));
     }
@@ -1005,6 +1025,14 @@ fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
         )
     };
     out.lines.push(Line::from(vec![Span::raw("  "), Span::styled(meta, t.secondary)]));
+    if b.group && !b.description.is_empty() {
+        out.lines.extend(md::wrap(
+            &[Span::styled(b.description.clone(), t.text)],
+            width,
+            &[Span::raw("  ")],
+            &[Span::raw("  ")],
+        ));
+    }
     out.lines.push(Line::default());
     out.lines.extend(md::wrap(&[Span::styled(hello, t.dim)], width, &[Span::raw("  ")], &[Span::raw("  ")]));
 }
@@ -1305,10 +1333,14 @@ fn trace(buf: &mut Buffer, r: Rect, app: &mut App) {
     app.hits.trace = r;
     let full = app.trace == TraceMode::Full;
     let Some(b) = app.bot().cloned() else { return };
-    let latest = app.latest_turn(&b.id).unwrap_or(0);
+    // The trace is the lane's: the main chat's turns, or the open thread's.
+    let turns = app.lane_turns(&b.id);
+    let latest = turns.last().copied().unwrap_or(0);
     let turn = app.trace_turn.unwrap_or(latest);
-    let live = turn == latest && b.status == Status::Working;
-    let mut x = put(
+    let live = turn == latest && b.status == Status::Working && b.works_in(app.thread.as_deref());
+    let nth = turns.iter().position(|x| *x == turn).map_or(0, |i| i + 1);
+    let lane = if app.thread.is_some() { "thread" } else { "chat" };
+    let x = put(
         buf,
         r.x + 1,
         r.y,
@@ -1316,16 +1348,16 @@ fn trace(buf: &mut Buffer, r: Rect, app: &mut App) {
         "TRACE",
         if app.focus == Focus::Trace { t.bold } else { t.secondary.add_modifier(Modifier::BOLD) },
     );
-    x = put(
-        buf,
-        x + 1,
-        r.y,
-        r.width.saturating_sub(20),
-        &format!("· {} · turn {turn}{}", b.name, if live { " · live" } else { "" }),
-        t.dim,
-    );
-    let _ = x;
-    rput(buf, r.right() - 1, r.y, if full { "{ } turns · esc close" } else { "{ } turns · T full" }, t.dim);
+    let keys = if full { "{ } turns · esc close" } else { "{ } turns · T full" };
+    // The keys hint only when the title leaves it room.
+    let right = if r.width >= 64 { rput(buf, r.right() - 1, r.y, keys, t.dim) } else { r.right() };
+    let title = if turns.is_empty() {
+        format!("· {} · {lane}", b.name)
+    } else {
+        format!("· {} · {lane} · turn {nth} of {}{}", b.name, turns.len(), if live { " · live" } else { "" })
+    };
+    let room = right.saturating_sub(x + 2);
+    put(buf, x + 1, r.y, room, &truncate(&title, usize::from(room)), t.dim);
     hline(buf, r.x, r.y + 1, r.width, t.line);
     let body = Rect::new(r.x, r.y + 2, r.width, r.height.saturating_sub(2));
     let lines = build_trace(app, &b, turn, usize::from(body.width.saturating_sub(1)), full);
@@ -1339,7 +1371,8 @@ fn trace(buf: &mut Buffer, r: Rect, app: &mut App) {
         put_line(buf, body.x, body.y + u(i), body.width, l);
     }
     if lines.is_empty() {
-        put(buf, body.x + 2, body.y, body.width.saturating_sub(2), "Nothing happened in this turn yet.", t.dim);
+        let empty = if turns.is_empty() { "Nothing yet." } else { "Nothing happened in this turn yet." };
+        put(buf, body.x + 2, body.y, body.width.saturating_sub(2), empty, t.dim);
     }
 }
 
@@ -1358,7 +1391,20 @@ fn build_trace(app: &App, b: &Bot, turn: i64, width: usize, full: bool) -> Vec<L
     let label = |s: &str| Span::styled(format!("{s:<8} "), t.secondary);
     let text_rest = |width: usize| width.saturating_sub(13);
     let (diff_max, out_max) = if full { (400, 400) } else { (14, 6) };
-    for e in map.values().filter(|e| e.turn == turn) {
+    let mut speaker: Option<&str> = None;
+    for e in map.values().filter(|e| e.turn == turn && e.thread_id == app.thread) {
+        // In a group, each member's steps under its name.
+        if b.group && e.kind != Kind::User {
+            let author = e.data["author"].as_str();
+            if author.is_some() && author != speaker {
+                speaker = author;
+                let (name, color) = author.and_then(|a| app.bots.get(a)).map_or_else(
+                    || ("A deleted bot".to_owned(), "gray".to_owned()),
+                    |a| (a.name.clone(), a.color.clone()),
+                );
+                out.push(Line::from(Span::styled(format!(" {name}"), name_style(&color))));
+            }
+        }
         match e.kind {
             Kind::User => out.push(Line::from(vec![
                 Span::styled(" › ", t.dim),
@@ -1672,10 +1718,15 @@ fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay) {
     }
 }
 
+/// A one-line text field. A search shows "/ " first, unless the caller drew its own prefix
+/// (the folder path, with an empty placeholder).
 fn field_line(buf: &mut Buffer, r: Rect, y: u16, e: &Editor, placeholder: &str, active: bool) {
+    input_line(buf, r, y, e, placeholder, active, !placeholder.is_empty());
+}
+
+fn input_line(buf: &mut Buffer, r: Rect, y: u16, e: &Editor, placeholder: &str, active: bool, search: bool) {
     let t = theme();
-    // An empty placeholder means the caller drew its own prefix (the folder path).
-    let x = if placeholder.is_empty() { r.x } else { put(buf, r.x, y, 2, "/ ", t.dim.patch(t.panel)) };
+    let x = if search { put(buf, r.x, y, 2, "/ ", t.dim.patch(t.panel)) } else { r.x };
     if e.text.is_empty() {
         if active {
             set_cursor(Position::new(x, y));
@@ -1800,7 +1851,7 @@ fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::app::Goto, items
     );
 }
 
-const HELP: [(&str, &str, &str); 44] = [
+const HELP: [(&str, &str, &str); 45] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -1819,8 +1870,8 @@ const HELP: [(&str, &str, &str); 44] = [
     ("CHAT", "s", "stop the bot"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
-    ("CHAT", "r", "reply in thread: pick a message"),
-    ("CHAT", "j k  ↵", "picking: move / open its thread"),
+    ("CHAT", "r", "reply in a thread"),
+    ("CHAT", "j k  ↵", "picking: move / open"),
     ("CHAT", "esc", "close the thread"),
     ("TYPE", "↵", "send"),
     ("TYPE", "⇧↵ alt↵ ^j", "new line"),
@@ -1829,12 +1880,13 @@ const HELP: [(&str, &str, &str); 44] = [
     ("TYPE", "^a ^e", "line start / end"),
     ("TYPE", "alt b / f", "word left / right"),
     ("TYPE", "^w ^u", "delete word / line"),
+    ("TYPE", "@name", "group: ask just that bot"),
     ("BOTS", "n", "new bot"),
     ("BOTS", "m", "new group chat"),
     ("BOTS", "e", "edit bot or group"),
     ("BOTS", "p", "pin / unpin"),
     ("BOTS", "S", "new session"),
-    ("BOTS", "x", "delete bot"),
+    ("BOTS", "x", "delete bot or group"),
     ("VIEW", "t", "trace pane"),
     ("VIEW", "T", "trace full screen"),
     ("VIEW", "{ }", "previous / next turn"),
@@ -1843,13 +1895,14 @@ const HELP: [(&str, &str, &str); 44] = [
     ("VIEW", "P", "pair a phone"),
     ("VIEW", "esc", "close / go back"),
     ("VIEW", "q", "quit; bots keep going"),
-    ("MOUSE", "click", "open bot or thread, press button"),
+    ("MOUSE", "click", "open, press a button"),
     ("MOUSE", "wheel", "scroll under pointer"),
 ];
 
 fn help(buf: &mut Buffer, area: Rect, filter: &Editor) {
     let t = theme();
-    let r = centered(area, 80, 34);
+    // Two columns fit everything from 36 rows up; shorter windows get a third.
+    let r = centered(area, if area.height >= 36 { 80 } else { 120 }, 34);
     let inner = frame_box(buf, r, t.text, t.panel, Some(("Keys", t.text)));
     field_line(buf, inner, inner.y, filter, "filter actions and keys", true);
     let q = filter.text.to_lowercase();
@@ -1857,16 +1910,19 @@ fn help(buf: &mut Buffer, area: Rect, filter: &Editor) {
         .iter()
         .filter(|(_, k, d)| q.is_empty() || d.to_lowercase().contains(&q) || k.to_lowercase().contains(&q))
         .collect();
-    let col_w = inner.width / 2;
+    // As many 38-wide columns as fit; what doesn't fit is counted in the footer.
+    let cols = (inner.width / 38).max(1);
+    let col_w = inner.width / cols;
     let rows = usize::from(inner.height.saturating_sub(3));
-    let (mut col, mut y, mut section) = (0u16, inner.y + 2, "");
+    let total = items.len();
+    let (mut col, mut y, mut section, mut shown) = (0u16, inner.y + 2, "", 0usize);
     for (sec, k, d) in items {
         let need = if *sec == section { 1 } else { 2 + u16::from(!section.is_empty()) };
         if y + need > inner.y + 2 + u(rows) {
-            if col == 1 {
+            if col + 1 == cols {
                 break;
             }
-            col = 1;
+            col += 1;
             y = inner.y + 2;
             section = "";
         }
@@ -1882,8 +1938,11 @@ fn help(buf: &mut Buffer, area: Rect, filter: &Editor) {
         put(buf, x, y, 11, k, t.bold.patch(t.panel));
         put(buf, x + 12, y, col_w.saturating_sub(13), d, t.secondary.patch(t.panel));
         y += 1;
+        shown += 1;
     }
-    put(buf, inner.x, inner.bottom() - 1, inner.width, "esc close", t.dim.patch(t.panel));
+    let foot =
+        if shown < total { format!("{} more: type to filter · esc close", total - shown) } else { "esc close".into() };
+    put(buf, inner.x, inner.bottom() - 1, inner.width, &foot, t.dim.patch(t.panel));
 }
 
 fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
@@ -2047,22 +2106,24 @@ fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm) {
     put(buf, inner.x, inner.y, 8, "Name", label(g.field == GroupField::Name));
     let default = app.group_default_name(&g.members);
     let placeholder = if default.is_empty() { "Name" } else { default.as_str() };
-    field_line(
+    input_line(
         buf,
         Rect::new(inner.x + 8, inner.y, inner.width.saturating_sub(8), 1),
         inner.y,
         &g.name,
         placeholder,
         g.field == GroupField::Name,
+        false,
     );
     put(buf, inner.x, inner.y + 2, 8, "About", label(g.field == GroupField::About));
-    field_line(
+    input_line(
         buf,
         Rect::new(inner.x + 8, inner.y + 2, inner.width.saturating_sub(8), 1),
         inner.y + 2,
         &g.about,
-        "optional: what this group is for",
+        "What this group works on (optional)",
         g.field == GroupField::About,
+        false,
     );
     put(buf, inner.x, inner.y + 4, inner.width, &format!("Bots · {}", g.members.len()), label(on_bots));
     let list_h = usize::from(inner.height.saturating_sub(9));

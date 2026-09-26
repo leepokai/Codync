@@ -1024,6 +1024,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Codync connects to the computer running your bots on your local network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Talk to your bots in a voice call.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Your words are transcribed on this iPhone and sent to your bot as a message.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -1074,6 +1076,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Codync connects to the computer running your bots on your local network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Talk to your bots in a voice call.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Your words are transcribed on this iPhone and sent to your bot as a message.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

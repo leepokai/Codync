@@ -20,6 +20,7 @@ public struct ThreadView: View {
     @State private var editingDetails = false
     @State private var availableWidth: CGFloat = 800
     @State private var compactDetails = false
+    @State private var calling = false
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -124,11 +125,15 @@ public struct ThreadView: View {
                         .symbolEffect(.pulse, options: .repeating)
                         .transition(.opacity)
                     }
+                    IconButton("Call", systemImage: "phone") { calling = true }
                     menu
                 }
                 .animation(Motion.reduced(Motion.fade, reduceMotion), value: model.screen?.agentBot == botId)
             }
             .hidesSystemNavigationBar()
+            .codyncOverlay(isPresented: $calling) { close in
+                CallView(botId: botId, close: close)
+            }
         #endif
         #if os(macOS)
             .safeAreaInset(edge: .top, spacing: 0) {

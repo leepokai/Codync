@@ -3,7 +3,7 @@
 ```
 apps/{ios,macos,linux}   one folder per client (iOS widgets in apps/ios/Widgets, push decryption in apps/ios/NotificationService)
 kit/Sources/CodyncKit/           Models/ Client/ Design/   (no CodyncUI, widget-safe)
-kit/Sources/CodyncUI/            Store/ Bots/ Thread/ Marketplace/ Usage/ Resources/, cross-platform glue at root (Platform.swift)
+kit/Sources/CodyncUI/            Store/ Bots/ Thread/ Call/ Screen/ Marketplace/ Usage/ Resources/, cross-platform glue at root (Platform.swift)
 host/  cloud/  relay/  web/  packaging/
 ```
 

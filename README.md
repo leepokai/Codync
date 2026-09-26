@@ -11,13 +11,13 @@ Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, 
 
 ## How it works
 
-```
-iPhone · Mac window · Linux (GTK)  ⇄  HTTP + SSE  ⇄  codync-host  ⇄  ACP (stdio)  ⇄  claude · codex · cursor · pi · opencode · …
-       ▲                                                  │
-       └──────── APNs ◀── relay (Cloudflare Worker) ◀─────┘  "needs you" / "done"
+```text
+Remote Apple client ⇄ encrypted channel (direct or Cloudflare cloud/) ⇄ codync-host ⇄ ACP agent
+Local / SSH client  ⇄ loopback HTTP + SSE                             ⇄ codync-host
+Host notifications → APNs worker (relay/) → iPhone
 ```
 
-- **Bots** have a name, a character avatar, standing instructions, an agent backend, a project folder and a permission policy. Each bot is **one endless conversation**; the agent sessions underneath are an implementation detail (resumed with `session/load`, restarted with *New session*).
+- **Bots** have a name, a character avatar, standing instructions, an agent backend, a project folder and a permission policy. Each bot has **a persistent main chat and optional reply threads**; the agent sessions underneath are an implementation detail (resumed with `session/load`, restarted with *New session*).
 - **Bots can ask each other for help.** Tell one “ask Reviewer to check these changes.” The built-in `team` MCP server lets it discover your other visible bots and wait for a reply. Requests appear in both chats; each recipient keeps its own agent, folder and approvals. Native subagents stay under the coding agent's control. See [bot collaboration](docs/features/bot-collaboration.md).
 - **The chat only shows what matters**: your messages, each turn's final reply, approval cards and notices. Every tool call, diff, plan and thought is one tap away in *Full conversation*. While a bot works, its row shows what it's doing right now.
 - **Agents are detected automatically**: the host hydrates PATH from your login shell (plus Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), finds every harness you have installed, and prefers its native ACP mode. Anything else in the official [ACP registry](https://agentclientprotocol.com/registry) can be picked too — Codync fetches it on first use (npx, uvx or a checksummed binary).
@@ -50,7 +50,7 @@ codync-host pair                           # QR code in the terminal, or Setting
 
 Building the Linux app yourself needs `libgtk-4-dev libadwaita-1-dev`: `cargo install --path apps/linux`.
 
-Install [Tailscale](https://tailscale.com) on the computer and the phone to reach your bots from anywhere.
+Remote access uses an encrypted channel over direct LAN/Tailscale or the Cloudflare relay. Tailscale is optional. Configure matching app/host environments and follow the [Cloudflare test guide](docs/guides/cloudflare-testing.md); development configuration exists, while production configuration still needs completion.
 
 **Agents** — install and sign in to whichever you use; Codync finds them. Claude Code, Codex and Pi run through their ACP adapters (fetched by `npx`, so Node.js is needed for those).
 
@@ -66,9 +66,12 @@ Install [Tailscale](https://tailscale.com) on the computer and the phone to reac
 | `codync-host status` | installed? running? |
 | `codync-host serve [--port 19222]` | run in the foreground |
 | `codync-host statusline [-- <your command>]` | Claude Code status line command (wraps yours) |
-| `codync-host reset-token` | unpair every phone |
+| `codync-host reset-token` | rotate the local loopback bearer token |
+| `codync-host cloud` | cloud enablement, URL and status |
+| `codync-host devices` | list/revoke authorized remote devices |
+| `codync-host access` | review device access requests |
 
-Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). **The token is full access** — whoever has it can run agents in any folder on your computer. Prefer Tailscale over open Wi-Fi (the API is plain HTTP; Tailscale encrypts it), and `codync-host reset-token` if a phone is lost. The API is `POST /api/<method>` + `GET /events` (SSE), both with `Authorization: Bearer <token>`; see `host/src/api.rs`.
+Data lives in `~/.codync`. The local bearer token authorizes loopback helpers and SSH-forwarded callers. Remote devices use individual keys and grants over the encrypted channel; revoke a lost device through device management rather than rotating the loopback token. Host methods and caller permissions live in `host/src/api.rs`.
 
 ## Repository
 
@@ -80,9 +83,15 @@ Data lives in `~/.codync` (`codync.db`, `token`, `host.log`). **The token is ful
 | `apps/ios/Widgets/` | Bots, usage and per-provider usage widgets + bot Live Activity |
 | `apps/macos/` | Menu bar + native chat window; installs/monitors the host |
 | `apps/linux/` | Native Linux app (GTK 4 + libadwaita, Rust) |
+| `cloud/` | Cloudflare accounts, D1, encrypted channel relay and offline mailbox |
+| `apps/shared/` | Shared Apple account integration and environment configuration |
+| `apps/screen/`, `apps/screen-linux/` | Platform screen capture/input helpers |
+| `docs/` | [Documentation index](docs/README.md) and [file structure](docs/architecture/file-structure.md) |
 | `relay/` | Cloudflare Worker APNs relay with encrypted per-device tickets |
 | `web/` | Website (git submodule) |
 | `packaging/` | Homebrew formula template |
+
+Build, install, restart and full checks: [development guide](docs/guides/development.md).
 
 The Xcode project is generated: `xcodegen generate`.
 
@@ -90,6 +99,7 @@ The Xcode project is generated: `xcodegen generate`.
 cd host && cargo test            # host
 cd kit && swift test             # shared Swift
 cd apps/linux && cargo test      # Linux app (needs GTK dev packages)
+cd cloud && npm test            # cloud API / channel relay
 cd relay && npm test             # relay tickets
 ```
 

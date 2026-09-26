@@ -4,11 +4,11 @@ How a bot keeps its instructions, context and long-term memory. The mechanisms f
 (`system-prompt-assembly`, `sand-memory`, `turn-memory`, `upgrade-recreate-resume`) and are adapted to ACP,
 where the harness owns the conversation.
 
-## Two memories
+## Transcript, context and memory
 
 | | Where | Owner | Lifetime |
 |---|---|---|---|
-| Transcript | SQLite `entries` | Codync | Forever, one endless thread per bot |
+| Transcript | SQLite `entries` | Codync | Persistent main chat and flat reply threads per bot |
 | Model context | ACP session (`bots.session_id`) | The harness | Until *New session*, a failed resume, or an agent/command/folder change |
 | Long-term memory | `~/.codync/bots/<id>/memory/` | Codync (keeper) + the user | Forever, across sessions |
 
@@ -55,7 +55,7 @@ its own context and compacts it itself.
 - Messages sent while the agent works are folded into one next turn, joined by blank lines.
 - Bot-to-bot requests occupy separate turns in the same queue; user messages are only folded together up to the next request. Requests never feed the user-fact memory keeper. See [bot collaboration](bot-collaboration.md).
 - Delegated turns do not set the restart marker: their waiter disappears on restart. Pending delegation notices become interrupted errors instead of automatically replaying work.
-- `turn.inflight.<bot>` holds the start time of a running turn. If the host stops mid-turn (update, crash, restart), the next
+- `turn.inflight.<bot>` records the running turn start and its thread lane. If the host stops mid-turn (update, crash, restart), the next
   start resumes that session with a hidden "you were interrupted, don't repeat finished steps" prompt. If the
   session can't be resumed, or the turn started over an hour ago, it does nothing.
 
@@ -69,3 +69,5 @@ its own context and compacts it itself.
   starts fresh, but its memory remains.
 - User-level memory shared across bots, project memory and the daily memory "dreaming" pass from Grok Bot
   are not implemented.
+
+Reply threads have separate session/context lanes; see [groups and threads](groups-and-threads.md). Group/delegated requests do not become user facts in the memory keeper.

@@ -3,10 +3,10 @@ name: codync-host
 on:
   push:
     branches: [main, v2]
-    paths: ["host/**", "apps/linux/**", ".github/workflows/host.yml"]
+    paths: ["host/**", "apps/linux/**", "docs/reference/fixtures/remote-relay-vectors.json", ".github/workflows/host.yml"]
     tags: ["v*"]  # one version tag ships the Mac app, the host and the Linux app
   pull_request:
-    paths: ["host/**", "apps/linux/**"]
+    paths: ["host/**", "apps/linux/**", "docs/reference/fixtures/remote-relay-vectors.json"]
 
 jobs:
   test:

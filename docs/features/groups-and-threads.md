@@ -15,7 +15,7 @@ replies itself.
 
 ## Data (all over the existing sync: `bot` and `entry` events)
 
-- Bot: `kind` (`agent` | `group`), `members` (group: bot ids, any number), `workingChat` /
+- Bot: `kind` (`agent` | `group`), `members` (group: one or more distinct agent bot IDs on the same computer; no nested groups), `workingChat` /
   `workingThread` (where the running turn talks). A group's `status` / `activity` are its busy
   member's (`"Alice: Writing a reply…"`); its `lastMessage` names who spoke (`"Alice: …"`).
 - Entry: `threadId`; `data.author` (the bot that wrote it; every agent-made entry has one);

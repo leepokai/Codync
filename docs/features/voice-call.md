@@ -3,7 +3,7 @@
 A hands-free call with one bot from the iPhone chat (phone icon in the header). The bot is the
 same agent on the computer; the call only changes how you talk to it.
 
-## Free tier (shipped): on the phone
+## Implemented: on the phone
 
 - `kit/Sources/CodyncUI/Call/`: `CallSession` (audio loop) + `CallView` (full-screen layer).
 - Speech → text with `SFSpeechRecognizer` (on-device when the language supports it). A 1.5 s pause
@@ -12,10 +12,10 @@ same agent on the computer; the call only changes how you talk to it.
 - Each new final reply (`data.final`) is read aloud with `AVSpeechSynthesizer` in the reply's own
   language; markdown and code blocks are dropped (`SpokenText`). The mic pauses while it speaks;
   tapping the avatar interrupts. An approval request is announced, answered in the chat.
-- The host and relay see text only. No new cloud pieces. `UIBackgroundModes: audio` keeps the call
+- The host receives recognized text; the Cloudflare transport sees encrypted channel frames. Codync does not forward microphone audio to the host. Speech recognition may use Apple services when on-device recognition is unavailable. `UIBackgroundModes: audio` keeps the call
   alive with the screen locked.
 
-## Pro tier (planned): cloud realtime voice
+## Proposal: cloud realtime voice (not implemented)
 
 For better recognition (mixed Chinese/English, code terms) and a real conversation (barge-in,
 "what are you doing?" answered from the transcript):

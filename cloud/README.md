@@ -13,7 +13,7 @@ Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/reference/remo
   cached per isolate; `CLERK_JWT_KEY` → networkless, dev/e2e only) and Ed25519 request signatures
   (WebCrypto).
 
-The cloud sees ciphertext and routing metadata only. It can shorten access (revoke, block) but never grant
+The channel relay sees ciphertext and routing metadata. The account API also stores account/device metadata. It can shorten access (revoke, block) but never grant
 it: new devices come from the host's own QR pairing or its approval, and the ACL is signed by the host.
 
 ## Test
@@ -42,10 +42,11 @@ Env: `CODYNC_HOST_BIN` (default `../host/target/debug/codync-host`), `CODYNC_E2E
 
 ## Deploy
 
-Staging (the integration stage runs this; production needs the owner):
+Development deployment (see [environment readiness](../docs/guides/environments-and-deployment.md); these commands change remote resources):
 
 ```bash
-npx wrangler d1 create codync-dev          # put database_id into [env.dev]
+# Only if the database does not exist: npx wrangler d1 create codync-dev
+# Confirm its database_id in [env.dev] before applying migrations.
 npx wrangler d1 migrations apply codync-dev --env dev --remote
 npx wrangler secret put CLERK_SECRET_KEY --env dev
 npx wrangler secret put CLERK_WEBHOOK_SECRET --env dev

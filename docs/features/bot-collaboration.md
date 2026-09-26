@@ -10,7 +10,7 @@ The host records the request and its outcome in both chats using existing notice
 
 ## Execution
 
-- Each bot still owns one ACP process/session and runs one turn at a time. A busy recipient queues the request. Different bots can work concurrently.
+- Each bot still owns an ACP process with main/reply-thread sessions and runs one turn at a time. A busy recipient queues the request. Different bots can work concurrently.
 - Requests have their own reply channel and never merge with user messages or another request. Contiguous user messages keep the existing batching behavior.
 - The recipient uses its own folder, tools, memory and permission policy. Permission cards appear in its chat. The requesting bot's entire transcript is not copied; only the request is passed. Requests are not treated as user facts by the memory keeper.
 - The host rejects self-delegation, duplicate outstanding requests to the same recipient, and direct or indirect wait cycles, including queued requests. Up to 64 requests can be outstanding host-wide.

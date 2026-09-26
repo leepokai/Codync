@@ -1,27 +1,14 @@
-# macOS account authentication
+# Accounts, device approval and SSH
 
 The macOS app uses the official ClerkKit SDK (1.5.6). The sidebar's account
 panel is a custom SwiftUI overlay, independent of the system authentication browser.
 The footer displays **Account**, never the Mac user's local name.
 
-## Dashboard setup
+## Configuration
 
-1. Create a Clerk application named **Codync** and enable Google sign-in.
-2. Enable the Native API under **Native applications**.
-3. Register the native application for team `7FUM8A8H72` and bundle identifier
-   `com.pokai.Codync`, following Clerk's Apple/native configuration instructions.
-4. Allow the native callback `com.pokai.Codync://callback` where Clerk's dashboard
-   requests allowed redirect URLs.
-5. Copy only the **publishable key** into
-   `apps/macos/Resources/AccountConfig.plist` (`clerkPublishableKey`), next to
-   `cloudURL`, the Codync cloud the app talks to (dev for now). A development
-   launch can override them with `CODYNC_CLERK_PUBLISHABLE_KEY` and `CODYNC_CLOUD_URL`.
+Both Apple apps use `apps/shared/AccountSession.swift`. Public keys and cloud URLs come from `apps/shared/Config/<env>.plist`, copied into the bundle as `AccountConfig.plist` by `project.yml`. Debug selects dev; Release selects main. See [environments](environments-and-deployment.md).
 
-The checked-in public configuration uses the Codync development instance
-`sunny-mollusk-8651.clerk.accounts.dev`. Native API is enabled, the Apple app
-is registered, and `com.pokai.Codync://callback` is allowlisted. Google and
-email sign-in are enabled. Production deployment needs its own Clerk instance
-and publishable key. Never put a Clerk secret key in the Mac bundle or this file.
+Confirm Google sign-in, Native API and the native app registrations in the intended Clerk instance. macOS uses `com.pokai.Codync`, iOS uses `com.pokai.Codync.ios`, with their matching `://callback` URLs. Dashboard configuration and actual OAuth consent must be verified independently of the checked-in plist. Do not bundle Clerk secret keys.
 
 ## Flow
 
@@ -38,7 +25,7 @@ The custom account menu displays the authenticated email and avatar when
 available. `AccountSession.sessionToken()` hands the session JWT to the Codync
 cloud client. A Clerk session never authorizes a computer by itself: each
 computer approves each device after comparing a 6-digit code
-([remote-relay-spec.md](../reference/remote-relay.md) §4.2). Conversations are not uploaded.
+([remote relay protocol](../reference/remote-relay.md) §4.2). Conversations are not uploaded.
 
 ## Verification
 
@@ -64,7 +51,7 @@ Its top-left button opens Accounts; Computers & settings is a separate destinati
 inside that sheet. The iOS native application must be registered in the same Clerk
 instance with bundle ID `com.pokai.Codync.ios` and its own callback
 `com.pokai.Codync.ios://callback`. The iOS public configuration is in
-`apps/ios/Resources/AccountConfig.plist`. The repository configuration does not prove
+`apps/shared/Config/<env>.plist`. The repository configuration does not prove
 that the corresponding Clerk Dashboard registration has been completed.
 
 To retain several accounts at once, enable multi-session support in the Clerk
@@ -107,16 +94,10 @@ resolve the target, `ssh-keygen -F` against `~/.ssh/known_hosts` and
 A changed host key or a different computer ID blocks the connection. Debug builds run
 `SSH.selfCheck()` at launch (argv, `ssh -G` parsing, validation).
 
-## Local verification on 2026-09-25
+## Verification boundaries
 
-- iOS Simulator build succeeded with normal simulator signing. Do not use
-  `CODE_SIGNING_ALLOWED=NO` for a Clerk runtime smoke test: an unsigned simulator
-  installation failed Keychain initialization with OSStatus -34018.
-- The app launches, the top-left Accounts sheet opens, and its Computers & settings
-  destination navigates successfully in iPhone 17 Pro / iOS 26.5 Simulator.
-- `swift test --package-path kit` passed. Account storage separation and rejecting
-  another account's or computer's widget link are now covered by
-  `PairingStorageTests` (per-context computers, usage and deep links).
-- Real Google login, two-account switching, and Clerk Dashboard configuration still
-  need end-to-end verification with test accounts. No cloud ownership implementation
-  or Cloudflare deployment was performed in this change.
+Build with normal simulator signing for Clerk Keychain access. Test Google consent, cancellation, restoration, two-account switching, per-account cache isolation and sign-out on real test accounts. Build success cannot verify Clerk Dashboard state.
+
+For SSH, verify first-contact fingerprints and changed-key rejection. With ProxyJump/ProxyCommand, establish trust in a terminal first. The app checks that the local forwarding listener belongs to its SSH process. The Mac is not a phone-to-SSH gateway.
+
+Use [Cloudflare testing](cloudflare-testing.md) for remote account approval and relay acceptance.

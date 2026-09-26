@@ -5,6 +5,7 @@
 - `host/`: Rust daemon, ACP integration, SQLite storage, HTTP/SSE API, and terminal UI; unit tests live alongside modules in `src/`.
 - `kit/`: shared Swift package. `CodyncKit` contains models, clients, and design primitives; `CodyncUI` contains shared screens and stores. Tests and fixtures live in `kit/Tests/CodyncKitTests/`.
 - `apps/`: iOS, macOS, and Linux clients, plus `screen` and `screen-linux` helpers. Apple assets live in each target’s `Resources/`; widgets live in `apps/ios/Widgets/`.
+- `cloud/`: Cloudflare accounts, encrypted relay, Durable Objects and D1; tests live in `cloud/test/`.
 - `relay/`: Cloudflare push worker and `test/`; `web/`: website git submodule; `packaging/`: distribution templates; `docs/`: architecture and naming guidance.
 
 ## Build, Test, and Development Commands
@@ -17,6 +18,7 @@ Run from the repository root unless a command changes directories:
 - `cd host && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`: run host CI checks.
 - `cd kit && swift test`: run shared Swift tests.
 - `cd apps/linux && cargo test`: test Linux code; requires GTK 4 and libadwaita development packages.
+- `cd cloud && npm ci && npm test && npm run typecheck`: validate the cloud service; see `docs/guides/cloudflare-testing.md` for integration checks.
 - `cd relay && npm ci && npm test && npm run typecheck`: install dependencies and validate the relay.
 
 ## Installing a new build: kill the old one first
@@ -32,7 +34,7 @@ Use four-space indentation for Swift and Rust. Follow Swift 6 strict concurrency
 
 Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and `kebab-case.ts`. Follow role suffixes such as `View`, `Row`, and `Store`. See `docs/architecture/file-structure.md` and `CLAUDE.md` for architectural conventions.
 
-- No native/system UI at all: no `Menu`/`Picker`, `.switch` toggles, `Form`/`List` styling, `confirmationDialog`/`alert`, `ProgressView`, `.sheet`/`.popover`/`.fullScreenCover`, `.toolbar`/navigation bars, `TabView`, `ContentUnavailableView`. Use `kit/Sources/CodyncUI/Controls.swift` + `Chrome.swift` (`.codyncSheet`, `ModalHeader`, `ScreenHeader`, `TabBar`, `.codyncMenu`, `.codyncDialog`, `ToggleStyle.codync`). Every tap that shows/hides something animates (`Motion`). Anything with a background fill gets no border line.
+- UI controls default to the shared custom components. Explicit exception: iOS BotListView and ThreadView use native navigation/toolbar items and automatic back navigation for system Liquid Glass, as specified in `docs/design/ui-conventions.md`. Keep system authentication and widget containers native. Outside these exceptions, avoid: no `Menu`/`Picker`, `.switch` toggles, `Form`/`List` styling, `confirmationDialog`/`alert`, `ProgressView`, `.sheet`/`.popover`/`.fullScreenCover`, `.toolbar`/navigation bars, `TabView`, `ContentUnavailableView`. Use `kit/Sources/CodyncUI/Controls.swift` + `Chrome.swift` (`.codyncSheet`, `ModalHeader`, `ScreenHeader`, `TabBar`, `.codyncMenu`, `.codyncDialog`, `ToggleStyle.codync`). Every tap that shows/hides something animates (`Motion`). Anything with a background fill gets no border line.
 
 ## Testing Guidelines
 

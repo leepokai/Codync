@@ -1,6 +1,6 @@
 # Mobile onboarding 與 Widgets 設計
 
-更新：2026-09-26。此工作範圍是 iOS 介面、WidgetKit 與 ActivityKit；Cloudflare 後端由 Claude Code 另行實作。
+更新：2026-09-26。本文件描述 iOS onboarding、WidgetKit 與 ActivityKit 的目前設計。連線與部署另見 [Cloudflare 測試](../guides/cloudflare-testing.md)。
 
 ## 參考方向
 
@@ -13,13 +13,13 @@
 
 ## Onboarding 與帳號
 
-1. 首次開啟先顯示連接電腦流程，隱藏左上角 profile／帳號切換入口，也不彈出帳號選單。
+1. 首次開啟由 Welcome 提供 Get started 與 Google 登入，再進入配對／帳號電腦流程。
 2. 儲存第一台配對電腦後，記錄此裝置的 `onboardingCompleted`。
 3. 既有已配對安裝自動視為完成 onboarding。
 4. 完成後才顯示帳號入口；切換到沒有電腦的帳號，或解除配對後，入口仍保留，避免無法切回原帳號。
 5. 「帳號」代表 Codync 的 Google／Clerk 登入身分。帳號與 computer 是不同概念。
 
-目前完成條件沿用現有的配對資料儲存事件，不代表已驗證雲端登入或 host 當下在線。待雲端 onboarding 整合時，應由單一流程明確管理登入、電腦註冊與完成狀態。
+目前完成條件沿用現有的配對資料儲存事件，不代表已驗證雲端登入或 host 當下在線。Welcome、配對與帳號電腦的選擇由 RootView 和帳號狀態共同決定。
 
 ## Widget 與 App 內預覽
 
@@ -75,49 +75,22 @@ Dynamic Island 固定黑底，文字採淺色；Lock Screen 卡片配合系統�
 - Widgets 跟隨 App 目前選取的帳號，讀取該帳號的 App Group 快取；不合併不同帳號的 bots 或用量。
 - 切換帳號時由既有 App 流程重載 widgets；非同步用量請求保留原 storage context，避免舊回應寫入新帳號。
 - 切換或移除目前電腦時清除舊用量、bot 快取與偏好 URL；更新同一台電腦的地址則保留快取。
-- App 與 widget 的非同步用量回應都核對 computer token，避免切換途中收到的舊資料覆蓋新電腦。
+- App 與 widget 的非同步用量回應都核對原始帳號 context 與 computer ID，避免切換途中收到的舊資料覆蓋新電腦。
 - Bot 新增、改名、活動變化、隱藏、刪除與清空都會更新 widget feed；刷新判斷包含 widget 實際顯示的欄位。
 - Bot 連結帶有帳號與電腦範圍，舊 widget 的連結不會直接開啟其他帳號的 bot。
 - Provider widget 點擊開啟 Usage。Bot 的中尺寸可點擊個別 bot。
 - Widgets 顯示最近回報的狀態；即時聊天與審批在 App 完成。WidgetKit 排程由系統決定，不保證即時更新。
-- Bots 由 App 更新快取後重載；用量沿用目前直接連 host 的刷新與快取退路，未加入新的 Cloudflare API。
+- Bots 由 App 更新快取後重載；用量透過 HostConnector 連線（direct 或 relay），失敗時使用快取。
 
-## 驗證與後續
+## 驗證
 
-已完成：
+執行 `swift test --package-path kit` 與 `python3 tools/render-widgets.py` 檢查共用邏輯及繪製。系統 WidgetKit／ActivityKit 預覽在 `apps/ios/Widgets/WidgetPreviews.swift`。
 
-- iOS Simulator build，含 widget extension 與原生 WidgetKit 預覽巨集，沒有編譯警告。
-- Swift package 14 個測試，包含跨帳號隔離、跨電腦 widget 快取清除／保留，以及 Live Activity 錯誤／未知／stale／計時狀態的回歸測試。
-- 首次 onboarding 隱藏帳號入口；完成後，即使沒有電腦仍保留帳號入口。
-- App 內 Widgets 頁、Claude／Codex 預覽切換、淺色／深色與無障礙大字體佈局檢查。
-- 共用卡片的離線圖片輸出：Claude、Codex、接近上限、Bots 工作／待回應、空清單；每種包含小／中尺寸及淺色／深色。
-- 本機 HTTP／SSE 測試 host 到 App Group 的整合檢查：初次 bot／用量同步、狀態不變時改名及活動更新、刪除 bot、切換到離線電腦後清除上一台資料。
-- 系統 Add Widget 搜尋能找到 Codync。測試配對不會保留在模擬器。
-- 大型 widget 用四個限制視窗及六個 bot 測試實際共用元件的排版；三種鎖定畫面配件也產生了深淺色檢查圖。
-- Live Activity 五種狀態 × Lock Screen／compact／minimal／expanded 共用內容已輸出檢查；四種原生 ActivityKit 預覽均可編譯。
-- 模擬器實際啟動不連 relay／APNs 的本機範例 Activity，確認系統 Dynamic Island compact 與 Lock Screen 卡片的 Needs you 呈現。Lock Screen 同時出現 iOS 的首次 Allow 提示，未操作該權限提示。
-
-驗證限制：系統 widget 搜尋結果沒有提供可點擊的 accessibility 元素，座標點擊與捲動仍回報 `noWindowsAvailable`，鍵盤導覽也未能開啟結果。因此尚未在系統 Home／Lock Screen 上實際加入 widget、編輯 provider 或量測背景刷新排程；原生預覽可編譯與共用卡片圖片檢查不等同這些整合驗證。
-
-Live Activity 的 compact／Lock Screen 已觀察到系統實際呈現；minimal／expanded 的系統切換及 APNs 背景更新未完成端到端操作驗證。兩個同時活動的範例在此次模擬器中仍顯示 compact，不能據此宣稱 minimal 已驗證。
-
-重現方式：
-
-```sh
-swift test --package-path kit
-python3 tools/render-widgets.py
-```
-
-圖片輸出在 `build/widget-previews/`：`widgets-{light,dark}.png`、`large-widgets-{light,dark}.png`、`activities-{light,dark}.png`、`halftone-icons-{light,dark}.png`。腳本使用 macOS 的 SwiftUI ImageRenderer，直接繪製產品共用元件；產物不含使用者資料。實際 WidgetKit／ActivityKit 預覽在 `apps/ios/Widgets/WidgetPreviews.swift`，可於 Xcode canvas 切換 timeline／content states。
-
-DEBUG simulator build 也可用 `SIMCTL_CHILD_CODYNC_ACTIVITY_PREVIEW=needsInput xcrun simctl launch --terminate-running-process booted com.pokai.Codync.ios` 啟動系統範例。值可為 `working`、`needsInput`、`idle`、`error`、`stale` 或 `multiple`；以 `stop` 結束範例。此入口只存在於 DEBUG simulator，不連 host／relay／APNs，清理僅針對 `codync-design-preview-` 的活動。
-
-帳號／雲端架構與 SSH computer 路線分別見 [帳號與裝置計畫](../archive/cloudflare-account-device-plan-2026-09-25.md) 與 [Bot／computer／SSH 計畫](../archive/bot-computer-ssh-plan-2026-09-25.md)。
-
+實機仍需分別確認加入 Home／Lock Screen widget、編輯 provider、跨帳號切換、背景刷新，以及 Live Activity／APNs 更新。共用圖片與 build 成功不等於這些系統整合已通過。[歷史檢查紀錄](../archive/mobile-widgets-verification-2026-09-26.md) 保留當時的測試範圍與操作限制。
 
 ## Halftone 與 Thinking Orbs（2026-09-26）
 
-Bot 與 provider 的角色頭像統一使用 `CharacterAvatar` 點陣；小於 24 pt 也不再改用實心剪影。15 pt 用 7 × 7、20–26 pt 用 9 × 9、28 pt 以上用 13 × 13 網格，保留鏤空眼睛並提高小尺寸墨色。iOS 與 macOS 用量卡的 provider 頭像採相同元件。
+Bot 的角色頭像使用 `CharacterAvatar` 點陣；provider 圖示由 `ProviderMascot` 選擇，小尺寸可使用隨 app 打包的官方 provider 圖示。15 pt 用 7 × 7、20–26 pt 用 9 × 9、28 pt 以上用 13 × 13 網格，保留鏤空眼睛並提高小尺寸墨色。iOS 與 macOS 共用 provider 呈現邏輯。
 
 狀態圖示以 [Jakub Antalik 的 thinking-orbs](https://github.com/Jakubantalik/thinking-orbs) 為來源，這次原生移植四種實際使用的造型：
 
@@ -135,5 +108,3 @@ Bot 與 provider 的角色頭像統一使用 `CharacterAvatar` 點陣；小於 2
 App 內動畫最多 30 fps；離開畫面、App 非 active 或啟用 Reduce Motion 時顯示靜態幀。Widget、Live Activity 與 Dynamic Island 明確傳入 `animated: false`，不依賴持續動畫計時。狀態仍隨既有資料更新。
 
 上游 MIT 授權全文隨 `CodyncKit` resource bundle 發佈，位於 `kit/Sources/CodyncKit/Resources/ThirdPartyNotices/thinking-orbs-LICENSE.txt`。`ThinkingOrbGeometryTests` 使用上游獨立 golden vectors 的取樣，驗證四種造型 × 兩尺寸 × 四時間點的 dot／line 數量、位置、半徑、墨色及深度順序。其餘五種上游造型暫未移植；有對應產品狀態時再加入。
-
-本次驗證：14 個 Swift package 測試全數通過（含 32 組上游幾何參考案例）；iOS Simulator App／Widget extension build 成功、無編譯警告；確認兩個產物都包含第三方授權。已檢查深淺色 icon 圖版及 Live Activity 共用元件圖版。此驗證不擴大前述原生系統互動／APNs 的完成範圍。

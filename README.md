@@ -29,11 +29,13 @@ UI patterns (roster, character avatars, approval cards, trace sheet, "needs you 
 
 ## Install
 
-**Mac**
+**Mac** — [download Codync-macOS.dmg](https://github.com/leepokai/Codync/releases/latest/download/Codync-macOS.dmg) and drag it to Applications, or:
 
 ```bash
 brew install --cask leepokai/codync/codync
 ```
+
+Both install the same signed, notarized app; the host ships inside it.
 
 Open Codync in the menu bar → **Install host**. The chat bubble opens the full Codync window; the QR button pairs your iPhone.
 

@@ -1,5 +1,7 @@
 # Codync 帳號、裝置管理與 Cloudflare 架構計畫
 
+> Archived 2026-09-25 record. Statements below describe the original plan/audit, not current implementation or verification. See the [archive index](README.md) for current replacements.
+
 日期：2026-09-25  
 狀態：雲端、逐裝置授權與 SSH 為規劃，尚未部署；手機帳號入口與本機資料分區已實作，詳見補充計畫的落地範圍。文中的時間、容量與保留期限是建議產品設定，不是服務商限制。
 

@@ -786,7 +786,7 @@ impl App {
             Some("hello") if !v["usage"].is_null() => self.usage = v["usage"].clone(),
             Some("usage") => self.usage = v["usage"].clone(),
             Some("bot") => self.upsert_bot(&v["bot"]),
-            Some("entry") => {
+            Some("entry") if v["entry"]["threadId"].is_null() => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"]) {
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
@@ -797,7 +797,8 @@ impl App {
 
     fn upsert_bot(&mut self, v: &Value) {
         let Some(id) = v["id"].as_str() else { return };
-        if v["deleted"].as_bool().unwrap_or(false) {
+        // Group chats and threads are on the iPhone and Mac apps only for now.
+        if v["deleted"].as_bool().unwrap_or(false) || v["kind"] == "group" {
             self.bots.remove(id);
             self.entries.remove(id);
             if self.selected.as_deref() == Some(id) {

@@ -14,7 +14,7 @@ struct CallView: View {
 
     private var bot: Bot? { model.bots[botId] }
     /// The newest final reply; each new one is read aloud.
-    private var lastReply: Entry? { model.thread(botId).last { $0.kind == "agent" && $0.data.final == true } }
+    private var lastReply: Entry? { model.chat(botId).last { $0.kind == "agent" && $0.data.final == true } }
 
     var body: some View {
         VStack(spacing: 0) {

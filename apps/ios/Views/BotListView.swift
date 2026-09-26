@@ -7,6 +7,8 @@ struct BotListView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountStore.self) private var accounts
     @State private var editing: EditTarget?
+    @State private var editingGroup: GroupTarget?
+    @State private var newMenu = false
     @State private var pickingComputer = false
     @State private var confirmDelete: RosterItem?
 
@@ -50,8 +52,14 @@ struct BotListView: View {
                 EmptyView()
             } trailing: {
                 IconButton("Computers", systemImage: "desktopcomputer") { app.showComputers = true }
-                IconButton("New bot", systemImage: "plus", action: newBot)
+                IconButton("New", systemImage: "plus") { newMenu = true }
                     .disabled(onlineStores.isEmpty)
+                    .codyncMenu(isPresented: $newMenu) {
+                        [
+                            MenuItem("New bot", icon: "plus", action: newBot),
+                            MenuItem("New group chat", icon: "person.2", action: newGroup),
+                        ]
+                    }
             }
         }
         .hidesSystemNavigationBar()
@@ -71,6 +79,17 @@ struct BotListView: View {
                     }
             }
         }
+        .codyncSheet(item: $editingGroup) { target in
+            if let store = accounts.store(for: target.computerId) {
+                GroupEditorView(group: target.group)
+                    .environment(store)
+                    .onChange(of: store.selection) { _, botId in
+                        guard let botId else { return }
+                        store.selection = nil
+                        accounts.selection = BotReference(accountId: accounts.accountId, computerId: target.computerId, botId: botId)
+                    }
+            }
+        }
         .codyncSheet(isPresented: $pickingComputer) {
             ComputerPicker(stores: onlineStores) { store in
                 // Let the picker slide away before the editor slides up.
@@ -82,9 +101,9 @@ struct BotListView: View {
         }
         .codyncDialog("Delete \(confirmDelete?.bot.name ?? "bot")?",
                       isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
-                      message: "Files it changed on your computer stay as they are.") {
+                      message: confirmDelete?.bot.isGroup == true ? "Its bots and their own chats stay." : "Files it changed on your computer stay as they are.") {
             let item = confirmDelete
-            return [DialogAction("Delete bot and its conversation", destructive: true) {
+            return [DialogAction(item?.bot.isGroup == true ? "Delete group chat" : "Delete bot and its conversation", destructive: true) {
                 if let item { accounts.store(for: item.ref.computerId)?.delete(item.bot) }
             }]
         }
@@ -107,11 +126,23 @@ struct BotListView: View {
         .contextActions {
             [
                 MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) },
-                MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
+                bot.isGroup
+                    ? MenuItem("Edit group", icon: "person.2") { editingGroup = GroupTarget(computerId: item.ref.computerId, group: bot) }
+                    : MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
                 MenuItem("Mark as read", icon: "checkmark.message") { store.markRead(bot.id) },
                 MenuItem("Hide from list", icon: "eye.slash") { store.setHidden(bot, true) },
                 MenuItem("Delete", icon: "trash", destructive: true, divider: true) { confirmDelete = item },
             ]
+        }
+    }
+
+    /// A group chat gathers bots of one computer (the first one online; more computers are future work).
+    private func newGroup() {
+        guard let store = onlineStores.first else { return }
+        Task {
+            // Let the menu fold away before the editor slides up.
+            try? await Task.sleep(for: .milliseconds(200))
+            editingGroup = GroupTarget(computerId: store.computer.id, group: nil)
         }
     }
 
@@ -124,6 +155,12 @@ struct BotListView: View {
             pickingComputer = true
         }
     }
+}
+
+private struct GroupTarget: Identifiable {
+    let id = UUID()
+    let computerId: ComputerID
+    let group: Bot?
 }
 
 private struct EditTarget: Identifiable {

@@ -205,7 +205,8 @@ struct MenuView: View {
         } else {
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(host.roster) { item in
+                    // The menu shows what the bots are doing; group chats open in the window.
+                    ForEach(host.roster.filter { !$0.bot.isGroup }) { item in
                         BotLine(bot: item.bot, computer: host.accounts.computers.count > 1 ? item.computer : nil) { host.stop(item) }
                             .contentShape(Rectangle())
                             .onTapGesture {

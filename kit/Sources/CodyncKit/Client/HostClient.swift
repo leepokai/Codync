@@ -139,6 +139,26 @@ public extension HostClient {
         return res.entries
     }
 
+    /// A thread's replies (the root is in the main chat).
+    func thread(botId: String, rootId: String) async throws -> [Entry] {
+        struct Res: Decodable { var entries: [Entry] }
+        let res: Res = try await call("thread", ["botId": botId, "rootId": rootId])
+        return res.entries
+    }
+
+    /// Creates a group chat (or returns the one these bots already share).
+    func createGroup(_ draft: GroupDraft) async throws -> Bot {
+        struct Res: Decodable { var bot: Bot }
+        let res: Res = try await call("createBot", draft)
+        return res.bot
+    }
+
+    func updateGroup(_ draft: GroupDraft) async throws -> Bot {
+        struct Res: Decodable { var bot: Bot }
+        let res: Res = try await call("updateBot", draft)
+        return res.bot
+    }
+
     func createBot(_ draft: BotDraft) async throws -> Bot {
         struct Res: Decodable { var bot: Bot }
         let res: Res = try await call("createBot", draft)
@@ -159,9 +179,11 @@ public extension HostClient {
         let _: Empty = try await call("markRead", ["botId": id])
     }
 
-    func send(botId: String, text: String, clientNonce: String) async throws -> Entry {
+    /// `threadId`: reply in the thread on that main-chat message.
+    func send(botId: String, text: String, clientNonce: String, threadId: String? = nil) async throws -> Entry {
+        struct Body: Encodable { var botId: String; var text: String; var clientNonce: String; var threadId: String? }
         struct Res: Decodable { var entry: Entry }
-        let res: Res = try await call("send", ["botId": botId, "text": text, "clientNonce": clientNonce])
+        let res: Res = try await call("send", Body(botId: botId, text: text, clientNonce: clientNonce, threadId: threadId))
         return res.entry
     }
 

@@ -254,7 +254,7 @@ struct BotSettingsForm: View {
     }
 }
 
-private struct Field<Content: View>: View {
+struct Field<Content: View>: View {
     let label: String
     @ViewBuilder let content: Content
 

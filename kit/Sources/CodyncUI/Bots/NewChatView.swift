@@ -10,6 +10,7 @@ public struct NewChatView: View {
     @State private var query = ""
     @State private var draft = ""
     @State private var creating = false
+    @State private var creatingGroup = false
     @FocusState private var toFocused: Bool
 
     public init(close: @escaping () -> Void) { self.close = close }
@@ -45,9 +46,21 @@ public struct NewChatView: View {
                     } label: {
                         Text(query.isEmpty ? "Create new Bot" : "Create “\(query)”")
                     }
+                    PickRow(shortcut: 2, action: { creatingGroup = true }) {
+                        Image(systemName: "person.2")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 26, height: 26)
+                            .background(Palette.bubbleAgent, in: Circle())
+                    } label: {
+                        Text("Create group chat")
+                    }
                     ForEach(Array(matches.enumerated()), id: \.element.id) { i, bot in
-                        PickRow(shortcut: i + 2 <= 9 ? i + 2 : nil, action: { pick(bot) }) {
-                            CharacterAvatar(bot: bot, size: 26, animated: false)
+                        PickRow(shortcut: i + 3 <= 9 ? i + 3 : nil, action: { pick(bot) }) {
+                            if bot.isGroup {
+                                GroupAvatar(members: model.members(of: bot), size: 26, animated: false)
+                            } else {
+                                CharacterAvatar(bot: bot, size: 26, animated: false)
+                            }
                         } label: {
                             Text(bot.name)
                         }
@@ -83,12 +96,25 @@ public struct NewChatView: View {
             await Task.yield()
             toFocused = true
         }
+        .codyncSheet(isPresented: $creatingGroup) {
+            GroupEditorView()
+                .frame(width: 420, height: 560)
+                .onDisappear { if model.selection != nil { finishGroup() } }
+        }
     }
 
     private func pick(_ bot: Bot) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         model.selection = bot.id
         if !text.isEmpty { model.send(text, to: bot.id) }
+        close()
+    }
+
+    /// The new group is selected: carry over what was typed and close.
+    private func finishGroup() {
+        guard let id = model.selection else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { model.send(text, to: id) }
         close()
     }
 

@@ -5,6 +5,10 @@ import Foundation
 
 public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var id: String
+    /// `agent`, or `group`: several bots and the user in one chat (it has no agent, folder or harness).
+    public var kind: String
+    /// A group's bots.
+    public var members: [String]
     public var name: String
     public var description: String
     public var avatarColor: String
@@ -31,11 +35,19 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var status: String
     public var activity: String
     public var startedAt: Int64?
+    /// Where the running turn talks: the chat (a bot's own, or a group) and thread root.
+    public var workingChat: String?
+    public var workingThread: String?
     public var unread: Int
     public var lastMessage: String?
     public var lastAt: Int64
 
+    public var isGroup: Bool { kind == "group" }
     public var isWorking: Bool { status == "working" || status == "needsInput" }
+    /// Working right now in this chat's main conversation (`thread == nil`) or in that thread.
+    public func isWorking(in chat: String, thread: String?) -> Bool {
+        isWorking && (workingChat ?? id) == chat && workingThread == thread
+    }
     public var needsInput: Bool { status == "needsInput" }
     public var folderName: String { (cwd as NSString).lastPathComponent }
 }
@@ -50,7 +62,10 @@ struct BotStub: Decodable {
 public struct Entry: Codable, Identifiable, Hashable, Sendable {
     public var id: String
     public var seq: Int64
+    /// The chat it's in: a bot's, or a group's.
     public var botId: String
+    /// The root message of the thread it's in; nil in the main chat.
+    public var threadId: String?
     public var rev: Int64
     /// user | agent | thought | tool | plan | permission | notice
     public var kind: String
@@ -59,10 +74,11 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
     public var createdAt: Int64
     public var updatedAt: Int64
 
-    public init(id: String, seq: Int64, botId: String, rev: Int64, kind: String, turn: Int64, data: EntryData, createdAt: Int64, updatedAt: Int64) {
+    public init(id: String, seq: Int64, botId: String, threadId: String? = nil, rev: Int64, kind: String, turn: Int64, data: EntryData, createdAt: Int64, updatedAt: Int64) {
         self.id = id
         self.seq = seq
         self.botId = botId
+        self.threadId = threadId
         self.rev = rev
         self.kind = kind
         self.turn = turn
@@ -102,12 +118,23 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var entries: [PlanItem]?
     /// notice: info | error | divider
     public var style: String?
+    /// The bot that wrote it (a group shows who spoke).
+    public var author: String?
+    /// On a main-chat message that has a thread: its replies.
+    public var thread: ThreadSummary?
 
     public init(text: String? = nil, status: String? = nil, clientNonce: String? = nil) {
         self.text = text
         self.status = status
         self.clientNonce = clientNonce
     }
+}
+
+public struct ThreadSummary: Codable, Hashable, Sendable {
+    public var count: Int
+    public var lastAt: Int64
+    /// Who replied, first reply first: bot ids, and `user`.
+    public var authors: [String]
 }
 
 public struct FileDiff: Codable, Hashable, Sendable {
@@ -351,6 +378,27 @@ public struct DirItem: Codable, Hashable, Sendable, Identifiable {
     public var id: String { path }
 }
 
+/// Create / update payload for a group chat.
+public struct GroupDraft: Codable, Hashable, Sendable {
+    public var id: String?
+    public var kind = "group"
+    public var name: String
+    public var members: [String]
+    public var pinned: Bool?
+
+    public init(name: String, members: [String]) {
+        self.name = name
+        self.members = members
+    }
+
+    public init(_ group: Bot) {
+        id = group.id
+        name = group.name
+        members = group.members
+        pinned = group.pinned
+    }
+}
+
 /// Create / update payload for a bot.
 public struct BotDraft: Codable, Hashable, Sendable {
     public var id: String?
@@ -411,6 +459,8 @@ extension Bot {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? "agent"
+        members = try c.decodeIfPresent([String].self, forKey: .members) ?? []
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Bot"
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         avatarColor = try c.decodeIfPresent(String.self, forKey: .avatarColor) ?? "blue"
@@ -431,6 +481,8 @@ extension Bot {
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? "idle"
         activity = try c.decodeIfPresent(String.self, forKey: .activity) ?? ""
         startedAt = try c.decodeIfPresent(Int64.self, forKey: .startedAt)
+        workingChat = try c.decodeIfPresent(String.self, forKey: .workingChat)
+        workingThread = try c.decodeIfPresent(String.self, forKey: .workingThread)
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt

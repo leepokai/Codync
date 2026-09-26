@@ -175,18 +175,56 @@ public struct CharacterShape: Shape {
     }
 }
 
+/// A group chat's face: its first two bots, one tucked behind the other.
+public struct GroupAvatar: View {
+    let members: [Bot]
+    let size: CGFloat
+    let animated: Bool
+
+    public init(members: [Bot], size: CGFloat = 40, animated: Bool = true) {
+        self.members = members
+        self.size = size
+        self.animated = animated
+    }
+
+    public var body: some View {
+        let small = size * 0.66
+        ZStack {
+            if members.isEmpty {
+                Image(systemName: "person.2")
+                    .font(.system(size: size * 0.4))
+                    .foregroundStyle(.secondary)
+            } else if members.count == 1 {
+                CharacterAvatar(bot: members[0], size: size, animated: animated)
+            } else {
+                CharacterAvatar(bot: members[1], size: small, animated: animated)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                CharacterAvatar(bot: members[0], size: small, animated: animated)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Avatar with the roster status dot: lime = unread, orange = needs you.
+/// A group shows its `members`.
 public struct AvatarWithStatus: View {
     let bot: Bot
+    let members: [Bot]
     let size: CGFloat
 
-    public init(bot: Bot, size: CGFloat = 44) {
+    public init(bot: Bot, members: [Bot] = [], size: CGFloat = 44) {
         self.bot = bot
+        self.members = members
         self.size = size
     }
 
     public var body: some View {
-        CharacterAvatar(bot: bot, size: size)
+        Group {
+            if bot.isGroup { GroupAvatar(members: members, size: size) } else { CharacterAvatar(bot: bot, size: size) }
+        }
             .overlay(alignment: .bottomTrailing) {
                 if bot.needsInput {
                     Image(systemName: "exclamationmark")

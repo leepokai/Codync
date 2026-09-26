@@ -24,7 +24,7 @@ public struct BotRow: View {
 
     public var body: some View {
         HStack(spacing: compact ? 0 : InterfaceMetrics.value(mac: 8, mobile: 12)) {
-            AvatarWithStatus(bot: bot, size: avatar)
+            AvatarWithStatus(bot: bot, members: model.members(of: bot), size: avatar)
             VStack(alignment: .leading, spacing: lineSpacing) {
                 HStack(alignment: .firstTextBaseline) {
                     if bot.pinned {

@@ -25,7 +25,7 @@ private struct DeleteBotConfirmation: ViewModifier {
         content.codyncDialog(
             "Delete \(bot?.name ?? "bot")?",
             isPresented: Binding(get: { bot != nil }, set: { if !$0 { bot = nil } }),
-            message: "Files it changed on your computer stay as they are."
+            message: bot?.isGroup == true ? "Its bots and their own chats stay." : "Files it changed on your computer stay as they are."
         ) {
             // Captured now: the dialog clears `bot` before running the action.
             let target = bot

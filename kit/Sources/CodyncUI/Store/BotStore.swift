@@ -148,7 +148,20 @@ public final class BotStore {
 
     public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
 
-    public func thread(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+    /// A bot's or group's main chat (thread replies are left out).
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.threadId == nil } }
+
+    /// Everything in a chat, threads included (the full conversation).
+    public func allEntries(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+
+    /// The replies in the thread on `root`, oldest first.
+    public func replies(_ botId: String, root: String) -> [Entry] { (entries[botId] ?? []).filter { $0.threadId == root } }
+
+    /// A group's bots that still exist.
+    public func members(of group: Bot) -> [Bot] { group.members.compactMap { bots[$0] } }
+
+    /// Display name of an entry's author in a group chat.
+    public func authorName(_ id: String?) -> String { id.flatMap { bots[$0]?.name } ?? "A deleted bot" }
 
     func updateComputer(_ change: (inout Computer) -> Void) {
         var c = computer
@@ -454,31 +467,32 @@ public final class BotStore {
         return client
     }
 
-    public func send(_ text: String, to botId: String) {
-        send(text, to: botId, nonce: UUID().uuidString)
+    /// `thread`: reply in the thread on that main-chat message.
+    public func send(_ text: String, to botId: String, thread: String? = nil) {
+        send(text, to: botId, thread: thread, nonce: UUID().uuidString)
     }
 
-    private func send(_ text: String, to botId: String, nonce: String) {
+    private func send(_ text: String, to botId: String, thread: String?, nonce: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !retired else { return }
         let local = Entry(
-            id: "local-\(nonce)", seq: Int64.max, botId: botId, rev: 0, kind: "user",
+            id: "local-\(nonce)", seq: Int64.max, botId: botId, threadId: thread, rev: 0, kind: "user",
             turn: 0, data: EntryData(text: trimmed, status: "sending", clientNonce: nonce),
             createdAt: Int64(Date.now.timeIntervalSince1970 * 1000), updatedAt: 0
         )
         upsert(local)
         storage.lastComputerId = computer.id
         if canQueue, let remote = transport as? any RemoteTransport {
-            enqueue(remote, text: trimmed, botId: botId, nonce: nonce)
+            enqueue(remote, text: trimmed, botId: botId, thread: thread, nonce: nonce)
             return
         }
-        deliver(trimmed, botId: botId, nonce: nonce)
+        deliver(trimmed, botId: botId, thread: thread, nonce: nonce)
     }
 
-    private func deliver(_ text: String, botId: String, nonce: String) {
+    private func deliver(_ text: String, botId: String, thread: String?, nonce: String) {
         Task {
             do {
-                let e = try await require().send(botId: botId, text: text, clientNonce: nonce)
+                let e = try await require().send(botId: botId, text: text, clientNonce: nonce, threadId: thread)
                 upsert(e)
                 if let bot = bots[botId] { onSent?(bot) }
             } catch {
@@ -488,18 +502,18 @@ public final class BotStore {
     }
 
     /// The computer is offline: the message waits, sealed for it, in the relay mailbox.
-    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, nonce: String) {
+    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, thread: String?, nonce: String) {
         markLocal(nonce: nonce, botId: botId, status: "waiting")
         saveCache()
         Task {
             do {
-                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce)
+                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, threadId: thread)
                 if let bot = bots[botId] { onSent?(bot) }
             } catch MailboxError.hostOnline {
                 // It came back meanwhile: send it the normal way once the link is up.
                 markLocal(nonce: nonce, botId: botId, status: "sending")
                 try? await Task.sleep(for: .seconds(2))
-                deliver(text, botId: botId, nonce: nonce)
+                deliver(text, botId: botId, thread: thread, nonce: nonce)
             } catch {
                 lastError = error.localizedDescription
                 markLocal(nonce: nonce, botId: botId, status: "failed")
@@ -558,7 +572,7 @@ public final class BotStore {
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         // The same clientNonce: if the computer got it after all, it won't run twice (the host
         // skips a nonce it has). Every seal still takes a fresh ephemeral key (§6.4).
-        send(text, to: entry.botId, nonce: entry.data.clientNonce ?? UUID().uuidString)
+        send(text, to: entry.botId, thread: entry.threadId, nonce: entry.data.clientNonce ?? UUID().uuidString)
     }
 
     public func discard(_ entry: Entry) {
@@ -614,6 +628,25 @@ public final class BotStore {
         bots[bot.id] = nil
         entries[bot.id] = nil
         perform { try await $0.deleteBot(bot.id) }
+    }
+
+    /// Creates a group chat (or opens the one these bots already share) and selects it.
+    public func createGroup(name: String, members: [String]) async throws -> Bot {
+        let group = try await require().createGroup(GroupDraft(name: name, members: members))
+        bots[group.id] = group
+        selection = group.id
+        return group
+    }
+
+    public func updateGroup(_ draft: GroupDraft) async throws {
+        let group = try await require().updateGroup(draft)
+        bots[group.id] = group
+    }
+
+    /// Pages in a thread's replies (the stream only carries recent entries).
+    public func loadThread(_ botId: String, root: String) async {
+        guard let client, let replies = try? await client.thread(botId: botId, rootId: root) else { return }
+        for e in replies { upsert(e) }
     }
 
     public func save(_ draft: BotDraft) async throws -> Bot {
@@ -688,7 +721,7 @@ public final class BotStore {
 
     public func loadOlder(_ botId: String) async {
         guard let client, !historyComplete.contains(botId) else { return }
-        let first = thread(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
+        let first = chat(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
         guard let older = try? await client.history(botId: botId, beforeSeq: first, limit: 100) else { return }
         if older.count < 100 { historyComplete.insert(botId) }
         for e in older { upsert(e) }

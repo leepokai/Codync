@@ -4,6 +4,17 @@ import SwiftUI
 import UIKit
 #endif
 
+private struct ScreenHeaderIconGlassKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private extension EnvironmentValues {
+    var screenHeaderIconGlass: Bool {
+        get { self[ScreenHeaderIconGlassKey.self] }
+        set { self[ScreenHeaderIconGlassKey.self] = newValue }
+    }
+}
+
 // Codync's own screen chrome: modals, headers, icon buttons and the iPhone tab bar.
 // Never use `.sheet`, `.popover`, `.toolbar`/`ToolbarItem`, navigation bars or
 // `TabView`: present with `.codyncSheet`, title with `ModalHeader` / `ScreenHeader`.
@@ -52,16 +63,24 @@ public struct IconButtonStyle: ButtonStyle {
         let size: CGFloat
         @State private var hovering = false
         @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.screenHeaderIconGlass) private var screenHeaderIconGlass
 
         var body: some View {
             configuration.label
                 .font(.system(size: size / 2, weight: .medium))
                 .foregroundStyle(selected ? Palette.onAccent : hovering ? Palette.text : Palette.secondary)
                 .frame(width: size, height: size)
-                .background(
-                    selected ? Palette.accentFill : Palette.text.opacity(configuration.isPressed ? 0.14 : hovering ? 0.08 : 0),
-                    in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                )
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
+                    #if os(iOS)
+                    if screenHeaderIconGlass {
+                        shape.fill(.clear).glass(in: shape)
+                    }
+                    #endif
+                    shape.fill(
+                        selected ? Palette.accentFill : Palette.text.opacity(configuration.isPressed ? 0.14 : hovering ? 0.08 : 0)
+                    )
+                }
                 .opacity(isEnabled ? 1 : 0.35)
                 .scaleEffect(configuration.isPressed ? Motion.pressScale : 1)
                 .animation(Motion.press, value: configuration.isPressed)
@@ -127,6 +146,7 @@ public struct ScreenHeader<Leading: View, Title: View, Trailing: View>: View {
                 Spacer(minLength: 8)
                 trailing
             }
+            .environment(\.screenHeaderIconGlass, true)
         }
         .padding(.horizontal, InterfaceMetrics.value(mac: 12, mobile: 12))
         .frame(height: InterfaceMetrics.value(mac: 44, mobile: 52))

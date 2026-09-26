@@ -5,6 +5,7 @@ import SwiftUI
 /// First launch, before any setup: who the bots are, a glimpse of talking to one, one way forward.
 struct WelcomeView: View {
     let start: () -> Void
+    @Environment(AccountSession.self) private var account
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 0 = nothing yet … 4 = everything shown. Each beat enters in turn.
     @State private var beat = 0
@@ -34,10 +35,31 @@ struct WelcomeView: View {
 
             Spacer(minLength: 32)
 
-            Button(action: start) {
-                Text("Get started").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+            VStack(spacing: 10) {
+                Button(action: start) {
+                    Text("Get started").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.primary)
+                // Signed in, the computers on the account show up without scanning a code.
+                if account.isConfigured {
+                    Button { Task { await account.signIn() } } label: {
+                        ZStack {
+                            Label("Continue with Google", systemImage: "person.crop.circle")
+                                .opacity(account.isBusy ? 0 : 1)
+                            if account.isBusy { Spinner(size: 18) }
+                        }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.secondary)
+                    .disabled(account.isBusy)
+                    .animation(Motion.fade, value: account.isBusy)
+                }
+                if let message = account.errorMessage {
+                    Text(message).font(.footnote).foregroundStyle(Palette.danger)
+                        .transition(.opacity)
+                }
             }
-            .buttonStyle(.primary)
             .rise(beat >= 4)
         }
         .padding(.horizontal, 24)

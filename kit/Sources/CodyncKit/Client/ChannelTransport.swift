@@ -855,16 +855,16 @@ public actor ChannelTransport: RemoteTransport {
         return link
     }
 
-    public func enqueue(botId: String, text: String, clientNonce: String) async throws {
+    public func enqueue(botId: String, text: String, clientNonce: String, threadId: String? = nil) async throws {
         guard pairingCode == nil, let bk = computer.boxKey.flatMap(Data.init(base64URL:)), bk.count == 32 else {
             throw HostError.computerOffline(lastSeen: lastSeen)
         }
         if case let .ready(route) = state, route == .direct { throw MailboxError.hostOnline }
         let link = try relaySocket()
         guard puts[clientNonce] == nil else { throw MailboxError.rejected("busy") }
-        struct Send: Encodable { var botId: String; var text: String; var clientNonce: String }
+        struct Send: Encodable { var botId: String; var text: String; var clientNonce: String; var threadId: String? }
         struct Inner: Encodable { var m = "send"; var b: Send; var ts: Int64 }
-        let inner = try JSONEncoder().encode(Inner(b: Send(botId: botId, text: text, clientNonce: clientNonce),
+        let inner = try JSONEncoder().encode(Inner(b: Send(botId: botId, text: text, clientNonce: clientNonce, threadId: threadId),
                                                    ts: Int64(Date.now.timeIntervalSince1970 * 1000)))
         // A fresh ephemeral key on every seal, retries included (§6.4 MUST).
         let sealed = try RelayCrypto.sealMailbox(inner, hostBoxKey: bk, computerId: computer.id, deviceKey: identity.deviceKey,

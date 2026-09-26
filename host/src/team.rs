@@ -173,7 +173,7 @@ impl Drop for Pending {
 fn visible_bot(hub: &Hub, id: &str) -> Result<BotConfig> {
     hub.store
         .bot(id)?
-        .filter(|r| !r.deleted && !r.config.hidden)
+        .filter(|r| !r.deleted && !r.config.hidden && !r.config.is_group())
         .map(|r| r.config)
         .ok_or_else(|| anyhow!("unknown or hidden bot"))
 }
@@ -186,7 +186,7 @@ pub async fn call(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) -> Resul
                 .store
                 .bots()?
                 .into_iter()
-                .filter(|b| !b.deleted && !b.config.hidden && b.config.id != from)
+                .filter(|b| !b.deleted && !b.config.hidden && !b.config.is_group() && b.config.id != from)
                 .map(|b| {
                     json!({
                         "id": b.config.id, "name": b.config.name, "description": b.config.description,
@@ -227,7 +227,7 @@ async fn ask(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str, timeou
     ] {
         let entry = hub
             .add_entry(
-                bot,
+                &crate::store::Lane::main(bot),
                 EntryKind::Notice,
                 hub.store.max_turn(bot) + i64::from(bot != &source.id),
                 &json!({
@@ -526,7 +526,7 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let pending = store
             .insert_entry(
-                "b",
+                &crate::store::Lane::main("b"),
                 EntryKind::Notice,
                 1,
                 &json!({
@@ -536,7 +536,7 @@ mod tests {
             .unwrap();
         let complete = store
             .insert_entry(
-                "a",
+                &crate::store::Lane::main("a"),
                 EntryKind::Notice,
                 1,
                 &json!({

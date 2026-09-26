@@ -50,10 +50,25 @@ impl EntryKind {
     }
 }
 
+/// A roster row is an agent bot or a group chat of bots (wire values `agent` / `group`).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BotKind {
+    #[default]
+    Agent,
+    /// Several bots and the user in one conversation; it has no agent of its own (see `group`).
+    Group,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BotConfig {
     pub id: String,
+    #[serde(default)]
+    pub kind: BotKind,
+    /// A group's bots, in the order they were added.
+    #[serde(default)]
+    pub members: Vec<String>,
     pub name: String,
     #[serde(default)]
     pub description: String,
@@ -62,9 +77,13 @@ pub struct BotConfig {
     /// Grok-Bot-style character shape: blob | pebble | squircle | tablet | wedge | hex | cloud | teardrop.
     #[serde(default = "default_shape")]
     pub avatar_shape: String,
+    /// Empty for a group.
+    #[serde(default)]
     pub backend: String,
     #[serde(default)]
     pub command: Option<String>,
+    /// Empty for a group.
+    #[serde(default)]
     pub cwd: String,
     #[serde(default)]
     pub permission: Permission,
@@ -89,11 +108,48 @@ pub struct BotConfig {
     pub created_at: i64,
 }
 
+impl BotConfig {
+    pub fn is_group(&self) -> bool {
+        self.kind == BotKind::Group
+    }
+}
+
 fn default_color() -> String {
     "blue".into()
 }
 fn default_shape() -> String {
     "blob".into()
+}
+
+/// kv key for per-bot state in one lane (`what`: `session`, `seen`).
+pub fn lane_key(what: &str, bot_id: &str, lane: &Lane) -> String {
+    format!("lane.{what}.{bot_id}@{}", lane.key())
+}
+
+/// Where an entry lives: a bot's or group's chat (`bot_id`), and optionally a thread in it,
+/// named by its root entry. Every lane a bot talks in has its own ACP session.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Lane {
+    pub chat: String,
+    pub thread: Option<String>,
+}
+
+impl Lane {
+    pub fn main(chat: &str) -> Self {
+        Self { chat: chat.to_owned(), thread: None }
+    }
+
+    pub fn in_thread(chat: &str, root: &str) -> Self {
+        Self { chat: chat.to_owned(), thread: Some(root.to_owned()) }
+    }
+
+    /// Stable text form for kv keys: `chat` or `chat/root`.
+    pub fn key(&self) -> String {
+        match &self.thread {
+            Some(t) => format!("{}/{t}", self.chat),
+            None => self.chat.clone(),
+        }
+    }
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -102,12 +158,21 @@ pub struct Entry {
     pub id: String,
     pub seq: i64,
     pub bot_id: String,
+    /// The thread's root entry; `None` in the main chat.
+    pub thread_id: Option<String>,
     pub rev: i64,
     pub kind: String,
     pub turn: i64,
     pub data: Value,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+pub struct LastMessage {
+    pub text: String,
+    pub at: i64,
+    /// The bot that wrote it; `None` when the user did.
+    pub author: Option<String>,
 }
 
 pub struct BotRow {
@@ -157,6 +222,7 @@ fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         data: serde_json::from_str(&data).unwrap_or(Value::Null),
         created_at: r.get(7)?,
         updated_at: r.get(8)?,
+        thread_id: r.get(9)?,
     })
 }
 
@@ -176,16 +242,33 @@ fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<Bo
 }
 
 /// Current schema version (kv `schema`).
-const SCHEMA: i64 = 3;
+const SCHEMA: i64 = 4;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
+/// 4: threads (`entries.thread_id`); instruction snapshots are kept per session, so the
+/// per-bot ones go.
 fn migrate(c: &Connection) -> Result<()> {
     let version: i64 =
         c.query_row("SELECT CAST(v AS INTEGER) FROM kv WHERE k = 'schema'", [], |r| r.get(0)).optional()?.unwrap_or(0);
     if version >= SCHEMA {
         return Ok(());
     }
+    if version < 3 {
+        migrate_3(c)?;
+    }
+    c.execute_batch(
+        "BEGIN;
+         ALTER TABLE entries ADD COLUMN thread_id TEXT;
+         CREATE INDEX IF NOT EXISTS entries_thread ON entries(bot_id, thread_id, seq);
+         DELETE FROM kv WHERE k GLOB 'context.*';
+         INSERT INTO kv(k, v) VALUES('schema', '4') ON CONFLICT(k) DO UPDATE SET v = '4';
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
+fn migrate_3(c: &Connection) -> Result<()> {
     c.execute_batch(
         "BEGIN;
          DROP TABLE IF EXISTS devices;
@@ -265,7 +348,7 @@ fn row_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
     })
 }
 
-const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, updated_at";
+const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, updated_at, thread_id";
 const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
 
 impl Store {
@@ -298,6 +381,15 @@ impl Store {
         let c = self.db.locked();
         c.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, v])?;
         Ok(())
+    }
+
+    /// Keys starting with `prefix`.
+    pub fn kv_prefix(&self, prefix: &str) -> Vec<String> {
+        let c = self.db.locked();
+        let rows = c
+            .prepare("SELECT k FROM kv WHERE substr(k, 1, length(?1)) = ?1")
+            .and_then(|mut st| st.query_map([prefix], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>());
+        logged("kv prefix", rows).unwrap_or_default()
     }
 
     pub fn current_rev(&self) -> i64 {
@@ -342,6 +434,13 @@ impl Store {
         let rev = next_rev(&c)?;
         c.execute("UPDATE bots SET rev = ?2, deleted = 1, session_id = NULL WHERE id = ?1", params![id, rev])?;
         c.execute("DELETE FROM entries WHERE bot_id = ?1", [id])?;
+        // Lane state (see `lane_key`) it owned, or that bots kept in it.
+        c.execute("DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2", [format!("lane.*.{id}@*"), format!("lane.*@{id}*")])?;
+        // ponytail: snapshots of replaced sessions stay until the bot goes; prune by session if kv grows.
+        c.execute(
+            "DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2",
+            [format!("context.{id}.*"), format!("context.epoch.{id}.*")],
+        )?;
         Ok(rev)
     }
 
@@ -371,11 +470,12 @@ impl Store {
         logged("unread", n).unwrap_or(0)
     }
 
-    /// Newest chat-visible line for the roster preview.
-    pub fn last_message(&self, id: &str) -> Option<(String, i64)> {
+    /// Newest chat-visible line in the main chat for the roster preview, with its author
+    /// (`None` for the user; a group reply names the bot that wrote it).
+    pub fn last_message(&self, id: &str) -> Option<LastMessage> {
         let c = self.db.locked();
         let row = c.query_row(
-            "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
+            "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND thread_id IS NULL AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
              ORDER BY seq DESC LIMIT 1",
             [id],
@@ -383,12 +483,11 @@ impl Store {
                 let kind: String = r.get(0)?;
                 let data: String = r.get(1)?;
                 let at: i64 = r.get(2)?;
-                let text = serde_json::from_str::<Value>(&data)
-                    .ok()
-                    .and_then(|v| v["text"].as_str().map(str::to_owned))
-                    .unwrap_or_default();
-                let text = if kind == EntryKind::User.as_str() { format!("You: {text}") } else { text };
-                Ok((text, at))
+                let data = serde_json::from_str::<Value>(&data).unwrap_or_default();
+                let text = data["text"].as_str().unwrap_or_default().to_owned();
+                let author =
+                    (kind != EntryKind::User.as_str()).then(|| data["author"].as_str().unwrap_or(id).to_owned());
+                Ok(LastMessage { text, at, author })
             },
         );
         logged("last message", row.optional()).flatten()
@@ -396,20 +495,21 @@ impl Store {
 
     // MARK: entries
 
-    pub fn insert_entry(&self, bot_id: &str, kind: EntryKind, turn: i64, data: &Value) -> Result<Entry> {
+    pub fn insert_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Result<Entry> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
         let now = now_ms();
         let id = uuid::Uuid::new_v4().to_string();
         c.execute(
-            "INSERT INTO entries(id, bot_id, rev, kind, turn, data, created_at, updated_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-            params![id, bot_id, rev, kind.as_str(), turn, data.to_string(), now],
+            "INSERT INTO entries(id, bot_id, thread_id, rev, kind, turn, data, created_at, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+            params![id, lane.chat, lane.thread, rev, kind.as_str(), turn, data.to_string(), now],
         )?;
         Ok(Entry {
             id,
             seq: c.last_insert_rowid(),
-            bot_id: bot_id.into(),
+            bot_id: lane.chat.clone(),
+            thread_id: lane.thread.clone(),
             rev,
             kind: kind.as_str().to_owned(),
             turn,
@@ -469,15 +569,79 @@ impl Store {
         Ok(st.query_map(params![since, cap], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Older main-chat entries (threads load whole with [`Self::thread`]).
     pub fn history(&self, bot_id: &str, before_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3"
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND thread_id IS NULL AND seq < ?2
+             ORDER BY seq DESC LIMIT ?3"
         ))?;
         let mut rows: Vec<Entry> =
             st.query_map(params![bot_id, before_seq, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
         rows.reverse();
         Ok(rows)
+    }
+
+    /// A thread's newest `limit` entries, oldest first.
+    pub fn thread(&self, bot_id: &str, root: &str, limit: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND thread_id = ?2 ORDER BY seq DESC LIMIT ?3"
+        ))?;
+        let mut rows: Vec<Entry> =
+            st.query_map(params![bot_id, root, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
+        rows.reverse();
+        Ok(rows)
+    }
+
+    /// Chat-visible messages (the user's, final replies) in `lane` after `after_seq`, oldest first.
+    pub fn messages_after(&self, lane: &Lane, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND thread_id IS ?2 AND seq > ?3 AND
+               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
+             ORDER BY seq DESC LIMIT ?4"
+        ))?;
+        let mut rows: Vec<Entry> = st
+            .query_map(params![lane.chat, lane.thread, after_seq, limit], row_entry)?
+            .collect::<rusqlite::Result<_>>()?;
+        rows.reverse();
+        Ok(rows)
+    }
+
+    /// The `seq` of `bot`'s last reply in `lane` (0 if it hasn't spoken there).
+    pub fn last_spoke(&self, lane: &Lane, bot: &str) -> i64 {
+        let c = self.db.locked();
+        let n = c.query_row(
+            "SELECT COALESCE(MAX(seq), 0) FROM entries WHERE bot_id = ?1 AND thread_id IS ?2 AND kind = 'agent'
+               AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.author') = ?3",
+            params![lane.chat, lane.thread, bot],
+            |r| r.get(0),
+        );
+        logged("last spoke", n).unwrap_or(0)
+    }
+
+    /// A thread's reply count, newest reply time and the bots that replied (first reply first).
+    pub fn thread_summary(&self, chat: &str, root: &str) -> Result<Value> {
+        let c = self.db.locked();
+        let mut st = c.prepare(
+            "SELECT kind, json_extract(data, '$.author'), created_at FROM entries WHERE bot_id = ?1 AND thread_id = ?2
+               AND (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) ORDER BY seq",
+        )?;
+        let rows = st.query_map(params![chat, root], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, i64>(2)?))
+        })?;
+        let (mut count, mut last_at, mut authors) = (0, 0, Vec::<String>::new());
+        for row in rows {
+            let (kind, author, at) = row?;
+            count += 1;
+            last_at = at;
+            let author = if kind == EntryKind::User.as_str() { "user".to_owned() } else { author.unwrap_or_default() };
+            if !author.is_empty() && !authors.contains(&author) {
+                authors.push(author);
+            }
+        }
+        Ok(serde_json::json!({"count": count, "lastAt": last_at, "authors": authors}))
     }
 
     /// Permission cards left `pending` (and sends left `queued`) by a crash or restart
@@ -649,6 +813,8 @@ mod tests {
         let s = temp_store();
         let cfg = BotConfig {
             id: "b1".into(),
+            kind: BotKind::Agent,
+            members: vec![],
             name: "Rev".into(),
             description: String::new(),
             avatar_color: "blue".into(),
@@ -667,15 +833,17 @@ mod tests {
             created_at: 0,
         };
         s.save_bot(&cfg).unwrap();
-        let u = s.insert_entry("b1", EntryKind::User, 1, &serde_json::json!({"text": "hi"})).unwrap();
-        let a = s.insert_entry("b1", EntryKind::Agent, 1, &serde_json::json!({"text": "yo", "final": false})).unwrap();
+        let u = s.insert_entry(&Lane::main("b1"), EntryKind::User, 1, &serde_json::json!({"text": "hi"})).unwrap();
+        let a = s
+            .insert_entry(&Lane::main("b1"), EntryKind::Agent, 1, &serde_json::json!({"text": "yo", "final": false}))
+            .unwrap();
         assert!(a.rev > u.rev);
         assert_eq!(s.unread("b1", 0), 0, "narration is not unread");
         let a2 = s.update_entry(&a.id, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
         assert_eq!(s.unread("b1", 0), 1);
         assert_eq!(s.entries_since(a2.rev - 1, 500).unwrap().len(), 1);
         assert_eq!(s.entries_since(0, 1).unwrap().len(), 1, "fresh sync is capped per bot");
-        assert_eq!(s.last_message("b1").unwrap().0, "yo!");
+        assert_eq!(s.last_message("b1").unwrap().text, "yo!");
         let r = s.mark_read("b1").unwrap();
         assert_eq!(s.unread("b1", r), 0);
         assert_eq!(s.history("b1", a.seq, 10).unwrap().len(), 1);
@@ -686,9 +854,10 @@ mod tests {
     #[test]
     fn restart_expires_pending_cards_and_queued_sends() {
         let s = temp_store();
-        s.insert_entry("b1", EntryKind::Permission, 1, &serde_json::json!({"status": "pending"})).unwrap();
-        let q = s.insert_entry("b1", EntryKind::User, 2, &serde_json::json!({"status": "queued"})).unwrap();
-        s.insert_entry("b1", EntryKind::User, 1, &serde_json::json!({"status": "sent"})).unwrap();
+        s.insert_entry(&Lane::main("b1"), EntryKind::Permission, 1, &serde_json::json!({"status": "pending"})).unwrap();
+        let q =
+            s.insert_entry(&Lane::main("b1"), EntryKind::User, 2, &serde_json::json!({"status": "queued"})).unwrap();
+        s.insert_entry(&Lane::main("b1"), EntryKind::User, 1, &serde_json::json!({"status": "sent"})).unwrap();
         assert_eq!(s.expire_pending().unwrap(), 2);
         assert_eq!(s.entry(&q.id).unwrap().data["status"], "failed");
         assert_eq!(s.expire_pending().unwrap(), 0, "idempotent");
@@ -727,7 +896,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_3_replaces_the_old_ticket_table() {
+    fn migrations_replace_the_old_ticket_table_and_add_threads() {
         let dir = std::env::temp_dir().join(format!("codync-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("t.db");
@@ -742,7 +911,8 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("3"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("4"));
+        assert!(s.thread("b", "root", 10).unwrap().is_empty(), "entries have a thread column");
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");

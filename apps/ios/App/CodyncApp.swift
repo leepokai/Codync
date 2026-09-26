@@ -21,7 +21,7 @@ struct CodyncApp: App {
                 .environment(app.account)
                 .tint(Palette.accent)
                 .codyncSheet(isPresented: Binding(
-                    get: { onboardingCompleted && app.account.showSwitcher },
+                    get: { (onboardingCompleted || app.account.isSignedIn) && app.account.showSwitcher },
                     set: { app.account.showSwitcher = $0 }
                 )) {
                     // Holds the pushes inside the sheet (Computers & settings, Widgets); no bar shows.

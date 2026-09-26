@@ -10,7 +10,7 @@ public struct TraceView: View {
     @Environment(BotStore.self) private var model
 
     public var body: some View {
-        let turns = Dictionary(grouping: model.thread(botId), by: \.turn)
+        let turns = Dictionary(grouping: model.allEntries(botId), by: \.turn)
             .sorted { $0.key < $1.key }
         VStack(spacing: 0) {
             ModalHeader("Full conversation")

@@ -11,6 +11,7 @@ mod composio;
 mod context;
 mod crypto;
 mod devices;
+mod group;
 mod hub;
 mod identity;
 mod market;

@@ -66,7 +66,7 @@ actor FakeRemote: RemoteTransport {
 
     nonisolated func computerUpdates() -> AsyncStream<Computer> { AsyncStream { _ in } }
 
-    func enqueue(botId: String, text: String, clientNonce: String) async throws { enqueued.append(clientNonce) }
+    func enqueue(botId: String, text: String, clientNonce: String, threadId: String?) async throws { enqueued.append(clientNonce) }
     func cancelQueued(clientNonce: String) async -> MailboxCancel { cancelResult }
     func listQueued() async -> [QueuedItem] { enqueued.map { QueuedItem(nonce: $0, exp: nil, state: "queued") } }
 
@@ -125,28 +125,28 @@ private func botEvent(_ id: String, name: String, rev: Int) -> String {
 
     store.send("hi", to: "b1")
     #expect(await until { await fake.enqueued.count == 1 })
-    let waiting = try #require(store.thread("b1").first)
+    let waiting = try #require(store.chat("b1").first)
     #expect(waiting.data.status == "waiting")
     #expect(await fake.sent.isEmpty)
 
     // Cancelled before the computer saw it: gone.
     store.cancelQueued(waiting)
-    #expect(await until { store.thread("b1").isEmpty })
+    #expect(await until { store.chat("b1").isEmpty })
 
     // Already handed over: it stays, marked delivered.
     store.send("second", to: "b1")
     #expect(await until { await fake.enqueued.count == 2 })
     await fake.setCancelResult(.delivering)
-    let second = try #require(store.thread("b1").first)
+    let second = try #require(store.chat("b1").first)
     store.cancelQueued(second)
-    #expect(await until { store.thread("b1").first?.data.status == "delivering" })
+    #expect(await until { store.chat("b1").first?.data.status == "delivering" })
 
     // Expired in the mailbox: failed, can be resent.
     store.send("third", to: "b2")
     #expect(await until { await fake.enqueued.count == 3 })
-    let third = try #require(store.thread("b2").first?.data.clientNonce)
+    let third = try #require(store.chat("b2").first?.data.clientNonce)
     await fake.emit(.expired(nonce: third))
-    #expect(await until { store.thread("b2").first?.data.status == "failed" })
+    #expect(await until { store.chat("b2").first?.data.status == "failed" })
 
     // Back online: sends go straight to the computer, and its copy replaces the local one.
     await fake.set(.ready(.relay))
@@ -154,7 +154,7 @@ private func botEvent(_ id: String, name: String, rev: Int) -> String {
     await fake.emit(botEvent("b1", name: "Rex", rev: 1))
     #expect(await until { store.connection == .online })
     store.send("live", to: "b3")
-    #expect(await until { store.thread("b3").first?.id == "e1" })
+    #expect(await until { store.chat("b3").first?.id == "e1" })
     #expect(await fake.sent == ["live"])
     store.retire()
 }

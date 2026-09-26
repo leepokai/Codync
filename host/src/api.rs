@@ -6,7 +6,7 @@ use crate::LockExt;
 use crate::bot::Cmd;
 use crate::devices::{Caller, Forbidden};
 use crate::hub::Hub;
-use crate::store::{BotConfig, DeviceSource, EntryKind};
+use crate::store::{BotConfig, DeviceSource, EntryKind, Lane};
 use crate::{backends, crypto, market, usage};
 use anyhow::{Context, Result, anyhow, bail};
 use axum::body::Bytes;
@@ -226,6 +226,8 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
             let limit = b["limit"].as_i64().unwrap_or(100).clamp(1, 500);
             json!({"entries": hub.store.history(bot, before, limit)?})
         }
+        // A thread's replies (its newest 500); the root is in the main chat.
+        "thread" => json!({"entries": hub.store.thread(str_arg(&b, "botId")?, str_arg(&b, "rootId")?, 500)?}),
         "createBot" => {
             let mut b = b;
             b["id"] = "".into();
@@ -253,19 +255,41 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
             {
                 return Ok(json!({"entry": e}));
             }
-            hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            // `threadId`: reply in the thread on that message of the main chat (threads are flat).
+            let thread = match b["threadId"].as_str().filter(|t| !t.is_empty()) {
+                Some(root) => {
+                    let r = hub.store.entry(root).ok_or_else(|| anyhow!("unknown message"))?;
+                    if r.bot_id != bot || r.thread_id.is_some() {
+                        bail!("threads start from a message in the main chat");
+                    }
+                    Some(root.to_owned())
+                }
+                None => None,
+            };
+            let lane = Lane { chat: bot.to_owned(), thread };
             let turn = hub.store.max_turn(bot) + 1;
+            // A group has no agent of its own to queue behind: its message is simply sent.
+            let status = if row.config.is_group() { "sent" } else { "queued" };
             let e = hub
-                .add_entry(bot, EntryKind::User, turn, &json!({"text": text, "clientNonce": nonce, "status": "queued"}))
+                .add_entry(&lane, EntryKind::User, turn, &json!({"text": text, "clientNonce": nonce, "status": status}))
                 .ok_or_else(|| anyhow!("couldn't save the message"))?;
-            hub.send_cmd(bot, Cmd::Send { entry_id: e.id.clone(), text: text.to_owned() })?;
+            if row.config.is_group() {
+                crate::group::start(hub, &row.config, lane);
+            } else {
+                hub.send_cmd(bot, Cmd::Send { lane, entry_id: e.id.clone(), text: text.to_owned() })?;
+            }
             if let Err(error) = hub.mark_read(bot) {
                 tracing::warn!(%error, bot, "couldn't mark bot read after send");
             }
             json!({"entry": e})
         }
         "stop" => {
-            hub.send_cmd(str_arg(&b, "botId")?, Cmd::Stop)?;
+            let bot = str_arg(&b, "botId")?;
+            match hub.store.bot(bot)? {
+                Some(row) if row.config.is_group() => hub.groups.stop(hub, bot),
+                _ => hub.send_cmd(bot, Cmd::Stop)?,
+            }
             json!({})
         }
         "newSession" => {
@@ -292,7 +316,9 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
             let entry_id = str_arg(&b, "entryId")?;
             let e = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
             let option_id = b["optionId"].as_str().map(str::to_owned);
-            hub.send_cmd(&e.bot_id, Cmd::Permission { entry_id: entry_id.to_owned(), option_id })?;
+            // A card in a group belongs to the bot that asked.
+            let bot = e.data["author"].as_str().unwrap_or(&e.bot_id);
+            hub.send_cmd(bot, Cmd::Permission { entry_id: entry_id.to_owned(), option_id })?;
             json!({})
         }
         "registerDevice" => {

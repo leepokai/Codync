@@ -6,6 +6,7 @@ import WidgetKit
 struct RootView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountStore.self) private var accounts
+    @Environment(AccountSession.self) private var account
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// First launch only: past the welcome, on to setup.
@@ -19,12 +20,12 @@ struct RootView: View {
     var body: some View {
         Group {
             if accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
-                if !onboardingCompleted && !welcomed {
+                if !onboardingCompleted && !welcomed && !account.isSignedIn {
                     WelcomeView { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = true } }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 } else {
                     PairingView {
-                        if onboardingCompleted {
+                        if onboardingCompleted || account.isSignedIn {
                             AccountSwitcherButton()
                         } else {
                             BackButton { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = false } }

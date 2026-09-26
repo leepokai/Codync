@@ -330,7 +330,8 @@ fn handle(ui: &App, ev: Event) {
                 "bot" => {
                     let bot = &m["bot"];
                     let id = bot["id"].as_str().unwrap_or_default().to_owned();
-                    if bot["deleted"].as_bool().unwrap_or(false) {
+                    // Group chats and threads are on the iPhone and Mac apps only for now.
+                    if bot["deleted"].as_bool().unwrap_or(false) || bot["kind"] == "group" {
                         st.bots.remove(&id);
                         st.entries.remove(&id);
                         if st.current.as_deref() == Some(&id) {
@@ -343,7 +344,7 @@ fn handle(ui: &App, ev: Event) {
                         st.bots.insert(id, bot.clone());
                     }
                 }
-                "entry" => upsert(&mut st, m["entry"].clone()),
+                "entry" if m["entry"]["threadId"].is_null() => upsert(&mut st, m["entry"].clone()),
                 _ => {}
             },
         }

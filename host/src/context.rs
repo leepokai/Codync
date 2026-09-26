@@ -44,18 +44,20 @@ pub struct Snapshot {
     pub announced: Identity,
 }
 
-fn key(bot_id: &str) -> String {
-    format!("context.{bot_id}")
+// A bot talks in several lanes (its chat, threads, groups), each its own session: snapshots
+// and epochs are kept per session.
+fn key(bot_id: &str, session: &str) -> String {
+    format!("context.{bot_id}.{session}")
 }
 
-fn epoch_key(bot_id: &str) -> String {
-    format!("context.epoch.{bot_id}")
+fn epoch_key(bot_id: &str, session: &str) -> String {
+    format!("context.epoch.{bot_id}.{session}")
 }
 
 /// `(epoch, last compaction id)` stored as `session \t epoch \t id`.
 fn epoch_state(store: &Store, bot_id: &str, session: &str) -> (u32, String) {
     store
-        .kv_get(&epoch_key(bot_id))
+        .kv_get(&epoch_key(bot_id, session))
         .and_then(|v| {
             let mut parts = v.splitn(3, '\t');
             (parts.next()? == session).then(|| {
@@ -77,23 +79,23 @@ pub fn bump_epoch(store: &Store, bot_id: &str, session: &str, compaction_id: &st
     if !compaction_id.is_empty() && compaction_id == last {
         return Ok(false);
     }
-    store.kv_set(&epoch_key(bot_id), &format!("{session}\t{}\t{compaction_id}", n + 1))?;
+    store.kv_set(&epoch_key(bot_id, session), &format!("{session}\t{}\t{compaction_id}", n + 1))?;
     Ok(true)
 }
 
-fn load(store: &Store, bot_id: &str) -> Option<Snapshot> {
-    store.kv_get(&key(bot_id)).and_then(|v| serde_json::from_str(&v).ok())
+fn load(store: &Store, bot_id: &str, session: &str) -> Option<Snapshot> {
+    store.kv_get(&key(bot_id, session)).and_then(|v| serde_json::from_str(&v).ok())
 }
 
 fn save(store: &Store, bot_id: &str, s: &Snapshot) -> Result<()> {
-    store.kv_set(&key(bot_id), &serde_json::to_string(s)?)
+    store.kv_set(&key(bot_id, &s.session), &serde_json::to_string(s)?)
 }
 
 /// The snapshot for `session` at its current epoch, rendering a fresh one when
 /// the stored one belongs to another session or an earlier epoch. Reads memory files.
 pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot> {
     let epoch = epoch(store, &cfg.id, session);
-    if let Some(s) = load(store, &cfg.id).filter(|s| s.session == session && s.epoch == epoch) {
+    if let Some(s) = load(store, &cfg.id, session).filter(|s| s.epoch == epoch) {
         return Ok(s);
     }
     adopt(store, cfg, session, render(store, cfg))
@@ -129,6 +131,10 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
             .to_owned(),
     );
     lines.push(crate::team::INSTRUCTIONS.to_owned());
+    lines.push(
+        "Your history is shared across your chats: a message that starts with [Group chat: ...] is your turn in a group chat, where the user and the other bots see only your final reply. Everything else here is your private chat with the user: don't @-mention anyone in it, and don't assume a group sees it."
+            .to_owned(),
+    );
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(skills);
     }
@@ -169,7 +175,7 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
 /// After the turn that carried an update reached the agent: remember it heard
 /// `identity`, unless the snapshot moved on meanwhile (a compaction re-rendered it).
 pub fn mark_announced(store: &Store, bot_id: &str, turn_snapshot: &Snapshot, identity: Identity) -> Result<()> {
-    let Some(mut current) = load(store, bot_id) else { return Ok(()) };
+    let Some(mut current) = load(store, bot_id, &turn_snapshot.session) else { return Ok(()) };
     if current.session != turn_snapshot.session
         || current.epoch != turn_snapshot.epoch
         || current.system != turn_snapshot.system

@@ -39,6 +39,7 @@ public struct Computer: Codable, Hashable, Sendable, Identifiable {
 }
 
 /// A bot on a computer in an account context: bot IDs are only unique per computer.
+/// (Multiple computers are future work; with one computer this is just the bot's address.)
 public struct BotReference: Codable, Hashable, Sendable {
     /// `SharedStore.Context.accountID` (raw Clerk user ID; nil = the local context).
     public var accountId: String?

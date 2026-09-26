@@ -13,6 +13,10 @@ public struct RosterItem: Identifiable, Sendable {
 /// Account → computers → bots: one `BotStore` per computer this context can reach
 /// (QR-paired, approved through the account, or attached over loopback / SSH on the Mac),
 /// plus the account's computers from the cloud that this device can still ask access to.
+///
+/// Multiple computers are a future direction, not a current priority: the product targets one
+/// computer today. This structure stays because the relay, accounts and SSH are built on it and it
+/// works unchanged with a single computer; don't extend or polish multi-computer features for now.
 @MainActor
 @Observable
 public final class AccountStore {

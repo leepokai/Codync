@@ -1,7 +1,8 @@
 //! Bot and group editors, full-conversation trace, settings/pairing and the bot menu.
 
 use crate::client;
-use crate::ui::{self, App};
+use crate::rows::{icon_button, label};
+use crate::ui::{self, App, MenuItem};
 use crate::{avatar, markup};
 use adw::prelude::*;
 use serde_json::{Value, json};
@@ -65,12 +66,11 @@ pub fn editor(ui: &App, bot: Option<Value>) {
                 preview.remove(&c);
             }
             let b = d.borrow();
-            preview.append(&avatar::widget(
+            preview.append(&avatar::shape(
                 b["avatarShape"].as_str().unwrap_or("blob"),
                 b["avatarColor"].as_str().unwrap_or("blue"),
                 84,
-                true,
-                "",
+                avatar::Mood::Working,
             ));
         }
     };
@@ -89,12 +89,11 @@ pub fn editor(ui: &App, bot: Option<Value>) {
         .build();
     for s in avatar::SHAPES {
         let btn = gtk::Button::builder()
-            .child(&avatar::widget(
+            .child(&avatar::shape(
                 s,
                 d.borrow()["avatarColor"].as_str().unwrap_or("blue"),
                 30,
-                false,
-                "",
+                avatar::Mood::Idle,
             ))
             .css_classes(["flat"])
             .tooltip_text(*s)
@@ -376,7 +375,8 @@ pub fn editor(ui: &App, bot: Option<Value>) {
 
 // MARK: group editor
 
-/// Create a group chat, or rename one, describe it and change who's in it.
+/// Create a group chat, or change its name, what it's for and who's in it (GroupEditorView).
+/// Bots are picked like recipients: chips on top, a search, and the bots not in it yet.
 pub fn group_editor(ui: &App, group: Option<Value>) {
     let is_new = group.is_none();
     let group_id = group
@@ -392,32 +392,49 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
             .filter_map(|m| m.as_str().map(str::to_owned))
             .collect(),
     ));
-    let (dialog, view, header) = header_dialog(
+    let (dialog, body, save) = modal(
         if is_new {
             "New group chat"
         } else {
             "Group chat"
         },
-        480,
-        620,
+        if is_new { "Create" } else { "Save" },
+        420,
+        560,
     );
-    let save = gtk::Button::builder()
-        .icon_name("object-select-symbolic")
-        .tooltip_text(if is_new { "Create" } else { "Save" })
-        .css_classes(["accent-fill", "circular"])
-        .build();
-    header.pack_end(&save);
+    let preview = gtk::Box::builder().halign(gtk::Align::Center).build();
+    body.append(&preview);
 
-    let page = adw::PreferencesPage::new();
-    let profile = adw::PreferencesGroup::new();
-    // The sidebar's avatar: the first two members overlapped.
-    let preview = gtk::Box::builder()
-        .halign(gtk::Align::Center)
-        .margin_bottom(8)
+    let bots_label = field_label("Bots");
+    let chips = gtk::Box::builder().spacing(6).build();
+    let chips_scroll = gtk::ScrolledWindow::builder()
+        .child(&chips)
+        .vscrollbar_policy(gtk::PolicyType::Never)
+        .hscrollbar_policy(gtk::PolicyType::External)
         .build();
-    profile.add(&preview);
-    let name = adw::EntryRow::builder()
-        .title("Name")
+    let search = gtk::Entry::builder().css_classes(["field-box"]).build();
+    let candidates = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .build();
+    let bots_field = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .build();
+    bots_field.append(&bots_label);
+    bots_field.append(&chips_scroll);
+    bots_field.append(&search);
+    bots_field.append(&candidates);
+    let help = label(
+        "Everyone answers in turn unless you @mention someone. Each bot works in its own folder with its own tools.",
+        &["footnote", "tertiary"],
+    );
+    help.set_wrap(true);
+    bots_field.append(&help);
+    body.append(&bots_field);
+
+    let name = gtk::Entry::builder()
+        .css_classes(["field-box"])
         .text(
             group
                 .as_ref()
@@ -425,19 +442,9 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
                 .unwrap_or(""),
         )
         .build();
-    profile.add(&name);
-    page.add(&profile);
-
-    let about_group = adw::PreferencesGroup::builder()
-        .title("About this group")
-        .description("Optional. Every bot in the group sees it.")
-        .build();
+    body.append(&field("Name", &name));
     let about = gtk::TextView::builder()
         .wrap_mode(gtk::WrapMode::WordChar)
-        .top_margin(8)
-        .bottom_margin(8)
-        .left_margin(8)
-        .right_margin(8)
         .build();
     about.buffer().set_text(
         group
@@ -445,116 +452,16 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
             .and_then(|g| g["description"].as_str())
             .unwrap_or(""),
     );
-    about_group.add(
-        &gtk::Frame::builder()
-            .child(
-                &gtk::ScrolledWindow::builder()
-                    .min_content_height(70)
-                    .child(&about)
-                    .build(),
-            )
-            .build(),
-    );
-    page.add(&about_group);
-
-    let bots_group = adw::PreferencesGroup::builder()
-        .description("Everyone answers in turn unless you @mention someone. Each bot works in its own folder with its own tools.")
-        .build();
-    let st = ui.state.borrow();
-    let mut candidates: Vec<&Value> = st
-        .bots
-        .values()
-        .filter(|b| {
-            b["kind"] != "group"
-                && (b["hidden"] != true
-                    || b["id"]
-                        .as_str()
-                        .is_some_and(|id| members.borrow().iter().any(|m| m == id)))
-        })
-        .collect();
-    candidates.sort_by_key(|b| b["name"].as_str().unwrap_or("").to_lowercase());
-    let mut checks: Vec<(String, String, gtk::CheckButton)> = vec![];
-    for b in candidates {
-        let id = b["id"].as_str().unwrap_or_default().to_owned();
-        let bname = b["name"].as_str().unwrap_or("").to_owned();
-        let check = gtk::CheckButton::builder()
-            .active(members.borrow().contains(&id))
-            .valign(gtk::Align::Center)
-            .build();
-        let row = adw::ActionRow::builder()
-            .title(gtk::glib::markup_escape_text(&bname))
-            .subtitle(gtk::glib::markup_escape_text(&ui::folder(
-                b["cwd"].as_str().unwrap_or(""),
-            )))
-            .activatable_widget(&check)
-            .build();
-        row.add_prefix(&avatar::of(&st.bots, b, 30, false, ""));
-        row.add_suffix(&check);
-        bots_group.add(&row);
-        checks.push((id, bname, check));
-    }
-    drop(st);
-    page.add(&bots_group);
-    let checks = Rc::new(checks);
-    // "Alice, Bob" when no name is typed; nothing to save without a bot.
-    let sync = {
-        let (members, checks, bots_group, name, save, ui2) = (
-            members.clone(),
-            checks.clone(),
-            bots_group.clone(),
-            name.clone(),
-            save.clone(),
-            ui.clone(),
-        );
-        move || {
-            let m = members.borrow();
-            while let Some(c) = preview.first_child() {
-                preview.remove(&c);
-            }
-            preview.append(&avatar::of(
-                &ui2.state.borrow().bots,
-                &json!({"kind": "group", "members": *m}),
-                84,
-                false,
-                "",
-            ));
-            bots_group.set_title(&format!("Bots · {}", m.len()));
-            let names: Vec<&str> = m
-                .iter()
-                .filter_map(|id| checks.iter().find(|c| c.0 == *id).map(|c| c.1.as_str()))
-                .collect();
-            name.set_title(
-                if names.is_empty() {
-                    "Name".to_owned()
-                } else {
-                    format!("Name · {}", names.join(", "))
-                }
-                .as_str(),
-            );
-            save.set_sensitive(!m.is_empty());
-        }
-    };
-    for (id, _, check) in checks.iter() {
-        let (members, sync, id) = (members.clone(), sync.clone(), id.clone());
-        check.connect_toggled(move |c| {
-            {
-                let mut m = members.borrow_mut();
-                m.retain(|x| *x != id);
-                if c.is_active() {
-                    m.push(id.clone());
-                }
-            }
-            sync();
-        });
-    }
-    sync();
-
+    body.append(&field(
+        "About",
+        &text_area(&about, "What this group works on (optional)", 2, 5),
+    ));
     if let Some(g) = group.as_ref() {
-        let danger = adw::PreferencesGroup::new();
         let del = gtk::Button::builder()
             .label("Delete group chat")
-            .css_classes(["destructive-action"])
-            .halign(gtk::Align::Center)
+            .css_classes(["secondary-pill", "danger-text"])
+            .halign(gtk::Align::Start)
+            .margin_top(8)
             .build();
         let (ui2, dialog2, id, gname) = (
             ui.clone(),
@@ -566,20 +473,168 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
             dialog2.close();
             confirm_delete(&ui2, &id, &gname, true);
         });
-        danger.add(&del);
-        page.add(&danger);
+        body.append(&del);
     }
-    view.set_content(Some(&page));
+
+    let names_of = {
+        let ui2 = ui.clone();
+        move |ids: &[String]| -> Vec<String> {
+            let st = ui2.state.borrow();
+            ids.iter()
+                .filter_map(|id| st.bots.get(id)?["name"].as_str().map(str::to_owned))
+                .collect()
+        }
+    };
+    // Redraws the avatar, chips, candidates and default name from `members` and the search.
+    let sync: Rc<RefCell<Box<dyn Fn()>>> = Rc::new(RefCell::new(Box::new(|| {})));
+    let toggle = {
+        let (members, sync, search) = (members.clone(), Rc::downgrade(&sync), search.clone());
+        move |id: &str| {
+            {
+                let mut m = members.borrow_mut();
+                if m.iter().any(|x| x == id) {
+                    m.retain(|x| x != id);
+                } else {
+                    m.push(id.to_owned());
+                }
+            }
+            search.set_text("");
+            if let Some(sync) = sync.upgrade() {
+                (sync.borrow())();
+            }
+        }
+    };
+    let toggle = Rc::new(toggle);
+    *sync.borrow_mut() = {
+        let (ui2, members, chips, chips_scroll, candidates, search, name, save, toggle) = (
+            ui.clone(),
+            members.clone(),
+            chips.clone(),
+            chips_scroll.clone(),
+            candidates.clone(),
+            search.clone(),
+            name.clone(),
+            save.clone(),
+            toggle.clone(),
+        );
+        let names_of = names_of.clone();
+        let preview = preview.clone();
+        Box::new(move || {
+            let m = members.borrow().clone();
+            let st = ui2.state.borrow();
+            ui::clear(&preview);
+            if m.is_empty() {
+                let icon = gtk::Image::builder()
+                    .icon_name("system-users-symbolic")
+                    .pixel_size(29)
+                    .width_request(72)
+                    .height_request(72)
+                    .css_classes(["secondary"])
+                    .build();
+                preview.append(&icon);
+            } else {
+                preview.append(&avatar::of(
+                    &st.bots,
+                    &json!({"kind": "group", "members": m}),
+                    72,
+                    false,
+                ));
+            }
+            bots_label.set_label(&format!("Bots · {}", m.len()));
+            ui::clear(&chips);
+            chips_scroll.set_visible(!m.is_empty());
+            for id in &m {
+                if let Some(b) = st.bots.get(id) {
+                    let (t, id) = (toggle.clone(), id.clone());
+                    chips.append(&crate::compose::bot_chip(&st.bots, b, move || t(&id)));
+                }
+            }
+            search.set_placeholder_text(Some(if m.is_empty() {
+                "Search bots"
+            } else {
+                "Add another bot"
+            }));
+            let q = search.text().trim().to_lowercase();
+            ui::clear(&candidates);
+            for b in ui::roster(&st).into_iter().filter(|b| {
+                !ui::is_group(b)
+                    && !m.iter().any(|x| b["id"] == x.as_str())
+                    && (q.is_empty()
+                        || b["name"]
+                            .as_str()
+                            .is_some_and(|n| n.to_lowercase().contains(&q)))
+            }) {
+                let row = gtk::Box::builder().spacing(12).build();
+                row.append(&avatar::of(&st.bots, b, 26, false));
+                let text = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Vertical)
+                    .spacing(1)
+                    .hexpand(true)
+                    .build();
+                let bname = b["name"].as_str().unwrap_or("");
+                text.append(&label(bname, &["body13"]));
+                text.append(&label(
+                    &ui::folder(b["cwd"].as_str().unwrap_or("")),
+                    &["footnote", "tertiary"],
+                ));
+                row.append(&text);
+                let plus = gtk::Image::from_icon_name("list-add-symbolic");
+                plus.add_css_class("tertiary");
+                row.append(&plus);
+                let btn = gtk::Button::builder()
+                    .child(&row)
+                    .css_classes(["candidate"])
+                    .tooltip_text(format!("Add {bname}"))
+                    .build();
+                let (t, id) = (toggle.clone(), b["id"].as_str().unwrap_or("").to_owned());
+                btn.connect_clicked(move |_| t(&id));
+                candidates.append(&btn);
+            }
+            drop(st);
+            let names = names_of(&m);
+            name.set_placeholder_text(Some(&if names.is_empty() {
+                "Name".to_owned()
+            } else {
+                names.join(", ")
+            }));
+            save.set_sensitive(!m.is_empty());
+        })
+    };
+    {
+        let sync = sync.clone();
+        search.connect_changed(move |_| (sync.borrow())());
+    }
+    {
+        let (ui2, members, toggle) = (ui.clone(), members.clone(), toggle.clone());
+        search.connect_activate(move |s| {
+            let q = s.text().trim().to_lowercase();
+            let first = {
+                let st = ui2.state.borrow();
+                let m = members.borrow();
+                ui::roster(&st)
+                    .into_iter()
+                    .find(|b| {
+                        !ui::is_group(b)
+                            && !m.iter().any(|x| b["id"] == x.as_str())
+                            && b["name"]
+                                .as_str()
+                                .is_some_and(|n| n.to_lowercase().contains(&q))
+                    })
+                    .and_then(|b| b["id"].as_str().map(str::to_owned))
+            };
+            if let Some(id) = first {
+                toggle(&id);
+            }
+        });
+    }
+    (sync.borrow())();
 
     let (ui2, dialog2) = (ui.clone(), dialog.clone());
     save.connect_clicked(move |btn| {
         let m = members.borrow().clone();
         let typed = name.text().trim().to_owned();
         let final_name = if typed.is_empty() {
-            m.iter()
-                .filter_map(|id| checks.iter().find(|c| c.0 == *id).map(|c| c.1.clone()))
-                .collect::<Vec<_>>()
-                .join(", ")
+            names_of(&m).join(", ")
         } else {
             typed
         };
@@ -604,17 +659,13 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
             Ok(v) => {
                 let bot = v["bot"].clone();
                 let id = bot["id"].as_str().unwrap_or_default().to_owned();
-                {
-                    let mut st = ui3.state.borrow_mut();
-                    st.bots.insert(id.clone(), bot);
-                    if is_new {
-                        st.current = Some(id);
-                        st.open_thread = None;
-                    }
-                }
+                ui3.state.borrow_mut().bots.insert(id.clone(), bot);
                 dialog3.close();
-                ui3.split.set_show_content(true);
-                ui::schedule(&ui3);
+                if is_new {
+                    ui::select(&ui3, &id);
+                } else {
+                    ui::schedule(&ui3);
+                }
             }
             Err(e) => {
                 btn2.set_sensitive(true);
@@ -625,24 +676,138 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
     dialog.present(Some(&ui.window));
 }
 
-fn confirm_delete(ui: &App, id: &str, name: &str, group: bool) {
-    let alert = adw::AlertDialog::new(
-        Some(&format!("Delete {name}?")),
-        Some(if group {
-            "The group chat is removed. Its bots stay."
-        } else {
-            "The conversation is removed. Files it changed stay as they are."
-        }),
+/// A sheet with Codync's modal header (title, a check to save, close) over a scrolling body.
+fn modal(
+    title: &str,
+    save_tip: &str,
+    width: i32,
+    height: i32,
+) -> (adw::Dialog, gtk::Box, gtk::Button) {
+    let save = icon_button("object-select-symbolic", save_tip);
+    let close = icon_button("window-close-symbolic", "Close");
+    let head = gtk::Box::builder()
+        .spacing(8)
+        .margin_start(16)
+        .margin_end(10)
+        .height_request(48)
+        .build();
+    let t = label(title, &["semibold"]);
+    t.set_hexpand(true);
+    head.append(&t);
+    head.append(&save);
+    head.append(&close);
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(12)
+        .margin_start(16)
+        .margin_end(16)
+        .margin_top(4)
+        .margin_bottom(16)
+        .build();
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    col.append(&head);
+    col.append(
+        &gtk::ScrolledWindow::builder()
+            .child(&body)
+            .vexpand(true)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .build(),
     );
-    alert.add_responses(&[("cancel", "Cancel"), ("delete", "Delete")]);
-    alert.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
-    let id = id.to_owned();
+    let dialog = adw::Dialog::builder()
+        .title(title)
+        .content_width(width)
+        .content_height(height)
+        .child(&col)
+        .build();
+    {
+        let d = dialog.clone();
+        close.connect_clicked(move |_| {
+            d.close();
+        });
+    }
+    (dialog, body, save)
+}
+
+fn field_label(text: &str) -> gtk::Label {
+    label(text, &["field-label"])
+}
+
+/// A labelled field (the editors' `Field`).
+fn field(title: &str, content: &impl IsA<gtk::Widget>) -> gtk::Box {
+    let b = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(6)
+        .build();
+    b.append(&field_label(title));
+    b.append(content);
+    b
+}
+
+/// A multi-line field box with a placeholder, `min`…`max` lines tall.
+fn text_area(view: &gtk::TextView, placeholder: &str, min: i32, max: i32) -> gtk::Box {
+    let hint = label(placeholder, &["tertiary"]);
+    hint.set_valign(gtk::Align::Start);
+    hint.set_can_target(false);
+    let buf = view.buffer();
+    hint.set_visible(buf.char_count() == 0);
+    {
+        let hint = hint.clone();
+        buf.connect_changed(move |b| hint.set_visible(b.char_count() == 0));
+    }
+    let scroll = gtk::ScrolledWindow::builder()
+        .child(view)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .min_content_height(min * 16)
+        .max_content_height(max * 16)
+        .propagate_natural_height(true)
+        .build();
+    let overlay = gtk::Overlay::builder().child(&scroll).build();
+    overlay.add_overlay(&hint);
+    let b = gtk::Box::builder().css_classes(["field-box-area"]).build();
+    overlay.set_hexpand(true);
+    b.append(&overlay);
+    b
+}
+
+fn confirm(
+    ui: &App,
+    title: &str,
+    body: &str,
+    action: &str,
+    destructive: bool,
+    f: impl Fn() + 'static,
+) {
+    let alert = adw::AlertDialog::new(Some(title), Some(body));
+    alert.add_responses(&[("cancel", "Cancel"), ("ok", action)]);
+    if destructive {
+        alert.set_response_appearance("ok", adw::ResponseAppearance::Destructive);
+    }
     alert.connect_response(None, move |_, r| {
-        if r == "delete" {
-            client::call("deleteBot", json!({"botId": id}), |_| {});
+        if r == "ok" {
+            f();
         }
     });
     alert.present(Some(&ui.window));
+}
+
+fn confirm_delete(ui: &App, id: &str, name: &str, group: bool) {
+    let id = id.to_owned();
+    confirm(
+        ui,
+        &format!("Delete {name}?"),
+        if group {
+            "The group chat is removed. Its bots stay."
+        } else {
+            "Files it changed on your computer stay as they are."
+        },
+        if group {
+            "Delete group chat"
+        } else {
+            "Delete bot and its conversation"
+        },
+        true,
+        move || client::call("deleteBot", json!({"botId": id}), |_| {}),
+    );
 }
 
 fn client_seed() -> usize {
@@ -849,88 +1014,224 @@ fn trace_lane(list: &gtk::Box, entries: &[&Value]) {
     }
 }
 
-// MARK: bot menu
+// MARK: menus
 
-pub fn bot_menu(ui: &App) -> gtk::Popover {
-    let pop = gtk::Popover::new();
-    let col = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(2)
-        .build();
-    let bot = {
-        let st = ui.state.borrow();
-        st.current.as_ref().and_then(|id| st.bots.get(id)).cloned()
+/// A bot's actions: from the roster (right-click) like the Mac sidebar's menu, or from
+/// the chat header's More button.
+pub fn bot_menu(ui: &App, parent: &gtk::Widget, point: Option<(f64, f64)>, id: &str, roster: bool) {
+    let Some(bot) = ui.state.borrow().bots.get(id).cloned() else {
+        return;
     };
-    let Some(bot) = bot else { return pop };
-    let id = bot["id"].as_str().unwrap_or_default().to_owned();
     let group = bot["kind"] == "group";
-    let add = |label: &str, destructive: bool, f: Box<dyn Fn()>| {
-        let b = gtk::Button::builder()
-            .label(label)
-            .css_classes(["flat"])
-            .build();
-        if destructive {
-            b.add_css_class("error");
-        }
-        let pop2 = pop.clone();
-        b.connect_clicked(move |_| {
-            pop2.popdown();
-            f();
-        });
-        col.append(&b);
-    };
-    {
-        let (ui2, bot2) = (ui.clone(), bot.clone());
-        if group {
-            add(
-                "Edit group",
-                false,
-                Box::new(move || group_editor(&ui2, Some(bot2.clone()))),
-            );
-        } else {
-            add(
-                "Edit profile",
-                false,
-                Box::new(move || editor(&ui2, Some(bot2.clone()))),
-            );
-        }
+    let pinned = bot["pinned"].as_bool().unwrap_or(false);
+    let name = bot["name"].as_str().unwrap_or("").to_owned();
+    let mut items = vec![];
+    if !roster {
+        let ui2 = ui.clone();
+        items.push(MenuItem::new(
+            "view-list-symbolic",
+            "Full conversation",
+            Box::new(move || trace(&ui2)),
+        ));
     }
     {
-        let (id2, pinned) = (id.clone(), bot["pinned"].as_bool().unwrap_or(false));
-        add(
+        let id2 = id.to_owned();
+        items.push(MenuItem::new(
+            "view-pin-symbolic",
             if pinned { "Unpin" } else { "Pin" },
-            false,
             Box::new(move || {
-                client::call("updateBot", json!({"id": id2, "pinned": !pinned}), |_| {})
+                client::call("updateBot", json!({"id": id2, "pinned": !pinned}), |_| {});
             }),
+        ));
+    }
+    if roster {
+        let id2 = id.to_owned();
+        items.push(MenuItem::new(
+            "mail-unread-symbolic",
+            "Mark as Read",
+            Box::new(move || client::call("markRead", json!({"botId": id2}), |_| {})),
+        ));
+    }
+    {
+        let (ui2, bot2) = (ui.clone(), bot.clone());
+        let item = MenuItem::new(
+            if group {
+                "system-users-symbolic"
+            } else {
+                "document-edit-symbolic"
+            },
+            if group {
+                "Edit group…"
+            } else {
+                "Edit profile…"
+            },
+            Box::new(move || {
+                if group {
+                    group_editor(&ui2, Some(bot2.clone()));
+                } else {
+                    editor(&ui2, Some(bot2.clone()));
+                }
+            }),
+        );
+        items.push(if roster { item.divider() } else { item });
+    }
+    if roster {
+        let id2 = id.to_owned();
+        items.push(
+            MenuItem::new(
+                "edit-copy-symbolic",
+                "Copy conversation ID",
+                Box::new(move || {
+                    if let Some(d) = gtk::gdk::Display::default() {
+                        d.clipboard().set_text(&id2);
+                    }
+                }),
+            )
+            .divider(),
         );
     }
     if !group {
-        let id2 = id.clone();
-        add(
+        let (ui2, id2) = (ui.clone(), id.to_owned());
+        items.push(MenuItem::new(
+            "view-refresh-symbolic",
             "New session",
-            false,
-            Box::new(move || client::call("newSession", json!({"botId": id2}), |_| {})),
+            Box::new(move || {
+                let id3 = id2.clone();
+                confirm(
+                    &ui2,
+                    "Start a new session?",
+                    "The conversation stays here, but the agent starts with a fresh context.",
+                    "New session",
+                    false,
+                    move || client::call("newSession", json!({"botId": id3}), |_| {}),
+                );
+            }),
+        ));
+    }
+    if roster {
+        let id2 = id.to_owned();
+        items.push(
+            MenuItem::new(
+                "view-conceal-symbolic",
+                "Hide from sidebar",
+                Box::new(move || {
+                    client::call("updateBot", json!({"id": id2, "hidden": true}), |_| {});
+                }),
+            )
+            .divider(),
         );
     }
     {
-        let (ui2, id2, name) = (
-            ui.clone(),
-            id.clone(),
-            bot["name"].as_str().unwrap_or("").to_owned(),
-        );
-        add(
-            if group {
-                "Delete group…"
-            } else {
-                "Delete bot…"
-            },
-            true,
+        let (ui2, id2) = (ui.clone(), id.to_owned());
+        let item = MenuItem::new(
+            "user-trash-symbolic",
+            if group { "Delete group" } else { "Delete" },
             Box::new(move || confirm_delete(&ui2, &id2, &name, group)),
-        );
+        )
+        .destructive();
+        items.push(if roster { item } else { item.divider() });
     }
-    pop.set_child(Some(&col));
-    pop
+    ui::popup_menu(parent, point, items);
+}
+
+/// The sidebar's Account panel: usage, this computer and its devices, the mobile app, help.
+pub fn account_menu(ui: &App, anchor: &gtk::Button) {
+    let usage = {
+        let st = ui.state.borrow();
+        st.usage["providers"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|p| p["windows"].as_array().into_iter().flatten())
+            .filter_map(|w| w["percent"].as_f64())
+            .fold(None, |m: Option<f64>, p| Some(m.map_or(p, |m| m.max(p))))
+    };
+    let open = |url: &'static str| -> Box<dyn Fn()> {
+        Box::new(move || {
+            gtk::UriLauncher::new(url).launch(
+                None::<&gtk::Window>,
+                gtk::gio::Cancellable::NONE,
+                |_| {},
+            );
+        })
+    };
+    let (ui2, ui3) = (ui.clone(), ui.clone());
+    let items = vec![
+        MenuItem::new(
+            "power-profile-balanced-symbolic",
+            "Usage",
+            Box::new(move || usage_sheet(&ui2)),
+        )
+        .detail(usage.map(|u| format!("{u:.0}%")))
+        .chevron(),
+        MenuItem::new(
+            "computer-symbolic",
+            "Computers & devices",
+            Box::new(move || settings(&ui3)),
+        )
+        .chevron(),
+        MenuItem::new(
+            "phone-symbolic",
+            "Get Codync for mobile",
+            open("https://apps.apple.com/app/id6760984418"),
+        ),
+        MenuItem::new(
+            "help-browser-symbolic",
+            "Help & documentation",
+            open("https://github.com/leepokai/codync#readme"),
+        )
+        .divider(),
+        MenuItem::new(
+            "dialog-warning-symbolic",
+            "Report an issue",
+            open("https://github.com/leepokai/codync/issues"),
+        ),
+    ];
+    ui::popup_menu(anchor, None, items);
+}
+
+/// Usage limits per provider (UsageSheet).
+fn usage_sheet(ui: &App) {
+    let (dialog, view, _) = header_dialog("Usage", 520, 460);
+    let page = adw::PreferencesPage::new();
+    let usage = adw::PreferencesGroup::new();
+    let st = ui.state.borrow();
+    let mut any = false;
+    for p in st.usage["providers"].as_array().into_iter().flatten() {
+        for w in p["windows"].as_array().into_iter().flatten() {
+            any = true;
+            let reset = w["resetsText"]
+                .as_str()
+                .map(|s| format!("resets {s}"))
+                .unwrap_or_default();
+            let row = adw::ActionRow::builder()
+                .title(format!(
+                    "{} {}",
+                    p["name"].as_str().unwrap_or(""),
+                    w["label"].as_str().unwrap_or("")
+                ))
+                .subtitle(gtk::glib::markup_escape_text(&reset))
+                .build();
+            let pct = w["percent"].as_f64().unwrap_or(0.0);
+            row.add_suffix(
+                &gtk::LevelBar::builder()
+                    .min_value(0.0)
+                    .max_value(100.0)
+                    .value(pct)
+                    .width_request(120)
+                    .valign(gtk::Align::Center)
+                    .build(),
+            );
+            row.add_suffix(&gtk::Label::new(Some(&format!("{pct:.0}%"))));
+            usage.add(&row);
+        }
+    }
+    if !any {
+        usage.add(&label("No usage information yet.", &["secondary"]));
+    }
+    page.add(&usage);
+    view.set_content(Some(&page));
+    dialog.present(Some(&ui.window));
 }
 
 // MARK: settings & pairing
@@ -994,7 +1295,7 @@ fn remote_screen_group() -> adw::PreferencesGroup {
 }
 
 pub fn settings(ui: &App) {
-    let (dialog, view, _) = header_dialog("Settings", 520, 720);
+    let (dialog, view, _) = header_dialog("Computers & devices", 520, 720);
     let page = adw::PreferencesPage::new();
     let pair = adw::PreferencesGroup::builder()
         .title("Pair your iPhone")
@@ -1092,39 +1393,6 @@ pub fn settings(ui: &App) {
     }
     page.add(&agents);
 
-    let usage = adw::PreferencesGroup::builder()
-        .title("Usage limits")
-        .build();
-    for p in st.usage["providers"].as_array().into_iter().flatten() {
-        for w in p["windows"].as_array().into_iter().flatten() {
-            let reset = w["resetsText"]
-                .as_str()
-                .map(|s| format!("resets {s}"))
-                .unwrap_or_default();
-            let row = adw::ActionRow::builder()
-                .title(format!(
-                    "{} {}",
-                    p["name"].as_str().unwrap_or(""),
-                    w["label"].as_str().unwrap_or("")
-                ))
-                .subtitle(gtk::glib::markup_escape_text(&reset))
-                .build();
-            let bar = gtk::LevelBar::builder()
-                .min_value(0.0)
-                .max_value(100.0)
-                .value(w["percent"].as_f64().unwrap_or(0.0))
-                .width_request(120)
-                .valign(gtk::Align::Center)
-                .build();
-            row.add_suffix(&bar);
-            row.add_suffix(&gtk::Label::new(Some(&format!(
-                "{:.0}%",
-                w["percent"].as_f64().unwrap_or(0.0)
-            ))));
-            usage.add(&row);
-        }
-    }
-    page.add(&usage);
     let about = adw::PreferencesGroup::new();
     about.add(
         &adw::ActionRow::builder()

@@ -30,7 +30,7 @@ replies itself.
 |---|---|---|
 | `send` | `botId, text, clientNonce, threadId?` | `botId` is a bot or a group. `threadId` replies in that root's thread. Works in the relay mailbox too. |
 | `thread` | `botId, rootId` | `{entries}`: the thread's replies, oldest first. |
-| `createBot` | `{kind:"group", name, members}` | Returns the existing group when these exact bots already share one. |
+| `createBot` | `{kind:"group", name, description?, members}` | Returns the existing group when these exact bots already share one. |
 | `updateBot` | `{id, name?, members?, pinned?, hidden?}` | A group can't become a bot or the reverse. |
 | `deleteBot` | `botId` | A group's bots stay. A deleted bot leaves its groups. |
 | `stop` | `botId` | For a group: ends its room turns (main and threads) and stops members working in it. |
@@ -43,6 +43,7 @@ replies itself.
 - Who answers each round: the members @-mentioned since the user's last message (full
   name, name without spaces, or first word; `@all` / `@everyone`), or everyone if none is.
   Members speak one at a time; each round starts one member later.
+- A group's `description` ("About") tells its members what the room is for.
 - A member runs the turn in its **own main session** (its history is unified across chats),
   told who's in the room and what was said since it last spoke there, framed as
   `[Group chat: "<name>" - with …]`. Its final reply is the one message the room sees; replying
@@ -62,7 +63,7 @@ replies itself.
 
 ## Client checklist
 
-Roster row for groups (member avatars), author label on group replies, the thread summary
+Roster row for groups (member avatars), a trace per lane (main chat, or one thread), author label on group replies, the thread summary
 under a root (opens the thread), "Reply in thread" on any main-chat message, a thread view
 (root, replies, composer sending `threadId`), group create/edit (name, members), Stop in a
 group calls `stop` with the group id.

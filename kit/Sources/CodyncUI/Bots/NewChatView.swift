@@ -35,7 +35,7 @@ public struct NewChatView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(picked) { bot in
-                                RecipientChip(bot: bot) { remove(bot.id) }
+                                BotChip(bot: bot) { remove(bot.id) }
                                     .transition(.scale(scale: 0.85).combined(with: .opacity))
                             }
                             TextField(recipients.isEmpty ? "Search or create bots" : "Add another bot", text: $query)
@@ -200,38 +200,6 @@ public struct NewChatView: View {
             }
             creating = false
         }
-    }
-}
-
-/// A picked bot in the To: field; its x takes it back out.
-private struct RecipientChip: View {
-    let bot: Bot
-    let remove: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            CharacterAvatar(bot: bot, size: 20, animated: false)
-            Text(bot.name)
-                .font(.body)
-                .foregroundStyle(Palette.text)
-                .lineLimit(1)
-                .frame(maxWidth: 220, alignment: .leading)
-                .fixedSize(horizontal: true, vertical: false)
-            Button(action: remove) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Palette.secondary)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Remove \(bot.name)")
-            .help("Remove \(bot.name)")
-        }
-        .padding(.leading, 8)
-        .padding(.trailing, 6)
-        .padding(.vertical, 5)
-        .background(Palette.bubbleAgent, in: Capsule())
     }
 }
 

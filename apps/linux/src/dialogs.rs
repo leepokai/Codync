@@ -376,7 +376,7 @@ pub fn editor(ui: &App, bot: Option<Value>) {
 
 // MARK: group editor
 
-/// Create a group chat, or rename one and change who's in it (up to six bots).
+/// Create a group chat, or rename one, describe it and change who's in it.
 pub fn group_editor(ui: &App, group: Option<Value>) {
     let is_new = group.is_none();
     let group_id = group
@@ -410,6 +410,12 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
 
     let page = adw::PreferencesPage::new();
     let profile = adw::PreferencesGroup::new();
+    // The sidebar's avatar: the first two members overlapped.
+    let preview = gtk::Box::builder()
+        .halign(gtk::Align::Center)
+        .margin_bottom(8)
+        .build();
+    profile.add(&preview);
     let name = adw::EntryRow::builder()
         .title("Name")
         .text(
@@ -421,6 +427,35 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
         .build();
     profile.add(&name);
     page.add(&profile);
+
+    let about_group = adw::PreferencesGroup::builder()
+        .title("About this group")
+        .description("Optional. Every bot in the group sees it.")
+        .build();
+    let about = gtk::TextView::builder()
+        .wrap_mode(gtk::WrapMode::WordChar)
+        .top_margin(8)
+        .bottom_margin(8)
+        .left_margin(8)
+        .right_margin(8)
+        .build();
+    about.buffer().set_text(
+        group
+            .as_ref()
+            .and_then(|g| g["description"].as_str())
+            .unwrap_or(""),
+    );
+    about_group.add(
+        &gtk::Frame::builder()
+            .child(
+                &gtk::ScrolledWindow::builder()
+                    .min_content_height(70)
+                    .child(&about)
+                    .build(),
+            )
+            .build(),
+    );
+    page.add(&about_group);
 
     let bots_group = adw::PreferencesGroup::builder()
         .description("Everyone answers in turn unless you @mention someone. Each bot works in its own folder with its own tools.")
@@ -461,17 +496,28 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
     drop(st);
     page.add(&bots_group);
     let checks = Rc::new(checks);
-    // "Alice, Bob" when no name is typed; at most six; nothing to save without a bot.
+    // "Alice, Bob" when no name is typed; nothing to save without a bot.
     let sync = {
-        let (members, checks, bots_group, name, save) = (
+        let (members, checks, bots_group, name, save, ui2) = (
             members.clone(),
             checks.clone(),
             bots_group.clone(),
             name.clone(),
             save.clone(),
+            ui.clone(),
         );
         move || {
             let m = members.borrow();
+            while let Some(c) = preview.first_child() {
+                preview.remove(&c);
+            }
+            preview.append(&avatar::of(
+                &ui2.state.borrow().bots,
+                &json!({"kind": "group", "members": *m}),
+                84,
+                false,
+                "",
+            ));
             bots_group.set_title(&format!("Bots · {}", m.len()));
             let names: Vec<&str> = m
                 .iter()
@@ -537,14 +583,19 @@ pub fn group_editor(ui: &App, group: Option<Value>) {
         } else {
             typed
         };
+        let buf = about.buffer();
+        let description = buf
+            .text(&buf.start_iter(), &buf.end_iter(), false)
+            .trim()
+            .to_owned();
         let (method, body) = match &group_id {
             Some(id) => (
                 "updateBot",
-                json!({"id": id, "name": final_name, "members": m}),
+                json!({"id": id, "name": final_name, "members": m, "description": description}),
             ),
             None => (
                 "createBot",
-                json!({"id": "", "kind": "group", "name": final_name, "members": m}),
+                json!({"id": "", "kind": "group", "name": final_name, "members": m, "description": description}),
             ),
         };
         btn.set_sensitive(false);
@@ -616,9 +667,63 @@ pub fn trace(ui: &App) {
         .margin_bottom(16)
         .build();
     let entries = st.entries.get(&id).cloned().unwrap_or_default();
+    // Main chat first, then each thread under its root's text.
+    for (thread, lane) in lanes(&entries) {
+        if let Some(root) = thread {
+            let text = entries
+                .iter()
+                .find(|x| x["id"] == root)
+                .and_then(|x| x["data"]["text"].as_str())
+                .unwrap_or("");
+            list.append(
+                &gtk::Label::builder()
+                    .label(format!("Thread · {}", short(text, 60)))
+                    .xalign(0.0)
+                    .ellipsize(gtk::pango::EllipsizeMode::End)
+                    .css_classes(["title-4"])
+                    .margin_top(16)
+                    .build(),
+            );
+        }
+        trace_lane(&list, &lane);
+    }
+    view.set_content(Some(
+        &gtk::ScrolledWindow::builder()
+            .child(&list)
+            .vexpand(true)
+            .build(),
+    ));
+    dialog.present(Some(&ui.window));
+}
+
+fn short(text: &str, n: usize) -> String {
+    let line = text.lines().next().unwrap_or("");
+    if line.chars().count() > n || text.contains('\n') {
+        format!("{}…", line.chars().take(n).collect::<String>())
+    } else {
+        line.to_owned()
+    }
+}
+
+/// Entries split by lane: the main chat (`None`) first, then threads in the order
+/// they first appear, each keeping its entries' order.
+fn lanes(entries: &[Value]) -> Vec<(Option<String>, Vec<&Value>)> {
+    let mut out: Vec<(Option<String>, Vec<&Value>)> = vec![(None, vec![])];
+    for e in entries {
+        let t = e["threadId"].as_str().map(str::to_owned);
+        match out.iter_mut().find(|(k, _)| *k == t) {
+            Some((_, l)) => l.push(e),
+            None => out.push((t, vec![e])),
+        }
+    }
+    out
+}
+
+/// One lane's entries grouped by turn, each group titled by that turn's message.
+fn trace_lane(list: &gtk::Box, entries: &[&Value]) {
     let mut turn = -1i64;
     let mut group = adw::PreferencesGroup::new();
-    for e in &entries {
+    for e in entries {
         let t = e["turn"].as_i64().unwrap_or(0);
         if t != turn {
             turn = t;
@@ -742,13 +847,6 @@ pub fn trace(ui: &App) {
         };
         group.add(&widget);
     }
-    view.set_content(Some(
-        &gtk::ScrolledWindow::builder()
-            .child(&list)
-            .vexpand(true)
-            .build(),
-    ));
-    dialog.present(Some(&ui.window));
 }
 
 // MARK: bot menu
@@ -1076,4 +1174,34 @@ pub fn host_missing(ui: &App) {
         });
     });
     dialog.present(Some(&ui.window));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lanes;
+    use serde_json::json;
+
+    #[test]
+    fn trace_lanes() {
+        let e = [
+            json!({"id": "a"}),
+            json!({"id": "b", "threadId": "a"}),
+            json!({"id": "c"}),
+            json!({"id": "d", "threadId": "c"}),
+            json!({"id": "e", "threadId": "a"}),
+        ];
+        let ids = |l: &[&serde_json::Value]| {
+            l.iter()
+                .map(|x| x["id"].as_str().unwrap_or(""))
+                .collect::<String>()
+        };
+        let l = lanes(&e);
+        assert_eq!(l.len(), 3);
+        assert_eq!((l[0].0.as_deref(), ids(&l[0].1).as_str()), (None, "ac"));
+        assert_eq!(
+            (l[1].0.as_deref(), ids(&l[1].1).as_str()),
+            (Some("a"), "be")
+        );
+        assert_eq!((l[2].0.as_deref(), ids(&l[2].1).as_str()), (Some("c"), "d"));
+    }
 }

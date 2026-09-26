@@ -3,14 +3,19 @@ import SwiftUI
 
 /// "Full conversation": everything the agent did — narration, thinking, tool
 /// calls with output and diffs, plans — grouped by turn.
+/// A chat's trace, or one thread's (`thread`: its root).
 public struct TraceView: View {
     let botId: String
+    let thread: String?
 
-    public init(botId: String) { self.botId = botId }
+    public init(botId: String, thread: String? = nil) {
+        self.botId = botId
+        self.thread = thread
+    }
     @Environment(BotStore.self) private var model
 
     public var body: some View {
-        let turns = Dictionary(grouping: model.allEntries(botId), by: \.turn)
+        let turns = Dictionary(grouping: model.allEntries(botId).filter { $0.threadId == thread }, by: \.turn)
             .sorted { $0.key < $1.key }
         VStack(spacing: 0) {
             ModalHeader("Full conversation")

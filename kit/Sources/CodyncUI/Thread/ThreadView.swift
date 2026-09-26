@@ -372,6 +372,12 @@ private struct GroupIntroCard: View {
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
+            if !group.description.isEmpty {
+                Text(group.description)
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.secondary)
+                    .multilineTextAlignment(.center)
+            }
             Text("Everyone answers in turn. @mention a bot to ask just that one. Each bot works in its own folder.")
                 .font(.footnote)
                 .foregroundStyle(Palette.tertiary)

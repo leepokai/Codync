@@ -387,6 +387,8 @@ pub enum Action {
     Keys,
 }
 
+pub const NEW_GROUP: &str = "New group chat";
+
 pub const ACTIONS: [(&str, &str, Action); 6] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
@@ -508,15 +510,37 @@ impl Form {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GroupField {
+    Name,
+    About,
+    Bots,
+}
+
+impl GroupField {
+    fn next(self) -> Self {
+        match self {
+            Self::Name => Self::About,
+            Self::About => Self::Bots,
+            Self::Bots => Self::Name,
+        }
+    }
+
+    fn prev(self) -> Self {
+        self.next().next()
+    }
+}
+
 /// Create a group chat, or rename one and change who's in it.
 pub struct GroupForm {
     /// The group being edited; `None` creates one.
     pub group_id: Option<String>,
     pub name: Editor,
+    /// What the group is for; sent as `description`, shown to its members.
+    pub about: Editor,
     /// Picked bot ids, in the order they were picked.
     pub members: Vec<String>,
-    /// Typing the name (else moving in the bot list).
-    pub on_name: bool,
+    pub field: GroupField,
     pub cursor: usize,
     pub error: Option<String>,
     pub saving: bool,
@@ -867,6 +891,10 @@ impl App {
                 self.bots.clear();
                 self.entries.clear();
                 self.history_done.clear();
+                // Catch-up carries only recent thread replies: fetch the open thread whole again.
+                if let (Some(id), Some(root)) = (&self.selected, &self.thread) {
+                    self.call("thread", json!({"botId": id, "rootId": root}), After::Thread);
+                }
             }
             Msg::Event(v) => self.on_event(&v),
             Msg::Reply(after, r) => self.on_reply(after, r),
@@ -1072,7 +1100,11 @@ impl App {
             Overlay::Help(e) => Some(e),
             Overlay::Agents(a) => Some(&mut a.query),
             Overlay::Folder(p) => Some(&mut p.query),
-            Overlay::Group(g) if g.on_name => Some(&mut g.name),
+            Overlay::Group(g) => match g.field {
+                GroupField::Name => Some(&mut g.name),
+                GroupField::About => Some(&mut g.about),
+                GroupField::Bots => None,
+            },
             Overlay::Form(f) => match f.current() {
                 Field::Name => Some(&mut f.name),
                 Field::Instructions => Some(&mut f.instructions),
@@ -1529,8 +1561,9 @@ impl App {
         self.overlays.push(Overlay::Group(GroupForm {
             group_id: None,
             name: Editor::default(),
+            about: Editor::default(),
             members: vec![],
-            on_name: false,
+            field: GroupField::Bots,
             cursor: 0,
             error: None,
             saving: false,
@@ -1557,12 +1590,14 @@ impl App {
             KeyCode::Esc => return None,
             KeyCode::Enter => self.save_group(&mut g),
             KeyCode::Char('s') if ctrl => self.save_group(&mut g),
-            KeyCode::Tab | KeyCode::BackTab => g.on_name = !g.on_name,
-            KeyCode::Down if g.on_name => g.on_name = false,
+            KeyCode::Tab => g.field = g.field.next(),
+            KeyCode::BackTab => g.field = g.field.prev(),
+            KeyCode::Down if g.field != GroupField::Bots => g.field = g.field.next(),
             KeyCode::Down => g.cursor = (g.cursor + 1).min(n.saturating_sub(1)),
-            KeyCode::Up if g.cursor == 0 => g.on_name = true,
-            KeyCode::Up if !g.on_name => g.cursor -= 1,
-            KeyCode::Char(' ') if !g.on_name => {
+            KeyCode::Up if g.field == GroupField::About => g.field = GroupField::Name,
+            KeyCode::Up if g.field == GroupField::Bots && g.cursor == 0 => g.field = GroupField::About,
+            KeyCode::Up if g.field == GroupField::Bots => g.cursor -= 1,
+            KeyCode::Char(' ') if g.field == GroupField::Bots => {
                 let id = self.group_candidates(&g.members).get(g.cursor).map(|b| b.id.clone());
                 if let Some(id) = id {
                     g.error = None;
@@ -1573,8 +1608,11 @@ impl App {
                     }
                 }
             }
-            _ if g.on_name => {
+            _ if g.field == GroupField::Name => {
                 g.name.key(k);
+            }
+            _ if g.field == GroupField::About => {
+                g.about.key(k);
             }
             _ => {}
         }
@@ -1591,7 +1629,7 @@ impl App {
         }
         let typed = g.name.text.trim();
         let name = if typed.is_empty() { self.group_default_name(&g.members) } else { typed.to_owned() };
-        let mut body = json!({"name": name, "members": g.members});
+        let mut body = json!({"name": name, "members": g.members, "description": g.about.text.trim()});
         g.saving = true;
         g.error = None;
         if let Some(id) = &g.group_id {
@@ -1610,8 +1648,9 @@ impl App {
             self.overlays.push(Overlay::Group(GroupForm {
                 group_id: Some(b.id.clone()),
                 name: Editor::with(&b.name),
+                about: Editor::with(&b.description),
                 members: b.members.clone(),
-                on_name: true,
+                field: GroupField::Name,
                 cursor: 0,
                 error: None,
                 saving: false,
@@ -1771,12 +1810,22 @@ impl App {
         Some(Overlay::Goto(g))
     }
 
+    /// The agent picker's last row, "New group chat", when the filter matches it.
+    pub fn agent_group_row(query: &str) -> bool {
+        fuzzy(query, &[NEW_GROUP])
+    }
+
     fn agents_key(&mut self, mut a: AgentPicker, k: KeyEvent) -> Option<Overlay> {
-        let n = self.agent_choices(&a.query.text).len();
+        let agents = self.agent_choices(&a.query.text).len();
+        let n = agents + usize::from(Self::agent_group_row(&a.query.text));
         match k.code {
             KeyCode::Esc => return None,
             KeyCode::Down => a.cursor = (a.cursor + 1).min(n.saturating_sub(1)),
             KeyCode::Up => a.cursor = a.cursor.saturating_sub(1),
+            KeyCode::Enter if a.cursor == agents && Self::agent_group_row(&a.query.text) => {
+                self.new_group();
+                return None;
+            }
             KeyCode::Enter => {
                 let backend =
                     self.agent_choices(&a.query.text).get(a.cursor).and_then(|b| b["id"].as_str()).map(str::to_owned);

@@ -214,10 +214,10 @@ fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotCo
     } else {
         peers.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
     };
-    let mut out = vec![format!(
-        "You are {}, one participant in a group chat (\"{}\") with the user and {peer_names}.",
-        me.name, group.name
-    )];
+    let about = group.description.trim();
+    let room = if about.is_empty() { format!("\"{}\"", group.name) } else { format!("\"{}\" — {about}", group.name) };
+    let mut out =
+        vec![format!("You are {}, one participant in a group chat ({room}) with the user and {peer_names}.", me.name)];
     if !peers.is_empty() {
         out.push("Other participants in the room:".into());
         for p in &peers {
@@ -354,7 +354,7 @@ mod tests {
             let group = hub
                 .create_bot(
                     serde_json::from_value(
-                        json!({"id": "", "kind": "group", "name": "Crew", "members": ["a", "b", "a"]}),
+                        json!({"id": "", "kind": "group", "name": "Crew", "description": "Ship the release", "members": ["a", "b", "a"]}),
                     )
                     .unwrap(),
                 )
@@ -435,6 +435,11 @@ mod tests {
         assert_eq!(room.replies(&main).len(), 2);
         let listed = room.hub.bot_value_for_test(&room.group);
         assert_eq!(listed["lastMessage"], "b: reply: group");
+        let prompts = std::fs::read_to_string(room.dir.join("a/prompts.jsonl")).unwrap();
+        assert!(
+            prompts.contains("Ship the release) with the user"),
+            "members are told what the room is for: {prompts}"
+        );
         // The members' own chats stay private: the room's entries live in the group.
         assert!(room.hub.store.messages_after(&Lane::main("a"), 0, 100).unwrap().is_empty());
         room.shutdown().await;

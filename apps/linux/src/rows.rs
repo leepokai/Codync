@@ -266,8 +266,9 @@ pub fn author_label(st: &State, id: Option<&str>) -> gtk::Widget {
         .upcast()
 }
 
-/// A main-chat message with a "Reply in thread" button that shows on hover or focus.
-pub fn with_reply(ui: &App, w: &gtk::Widget, end: bool, root: &str) -> gtk::Widget {
+/// A main-chat message with a "Reply in thread" button that shows on hover or focus,
+/// and the same action (plus Copy) on right-click or long-press, so touchscreens reach it.
+pub fn with_reply(ui: &App, w: &gtk::Widget, end: bool, root: &str, text: &str) -> gtk::Widget {
     let host = gtk::Box::builder()
         .spacing(4)
         .css_classes(["reply-host"])
@@ -281,8 +282,8 @@ pub fn with_reply(ui: &App, w: &gtk::Widget, end: bool, root: &str) -> gtk::Widg
         .css_classes(["flat", "circular", "reply-btn"])
         .valign(gtk::Align::Center)
         .build();
-    let (ui2, root) = (ui.clone(), root.to_owned());
-    btn.connect_clicked(move |_| ui::open_thread(&ui2, &root));
+    let (ui2, root2) = (ui.clone(), root.to_owned());
+    btn.connect_clicked(move |_| ui::open_thread(&ui2, &root2));
     if end {
         host.append(&btn);
         host.append(w);
@@ -290,7 +291,77 @@ pub fn with_reply(ui: &App, w: &gtk::Widget, end: bool, root: &str) -> gtk::Widg
         host.append(w);
         host.append(&btn);
     }
+    let menu = {
+        let (ui2, root, text, host2) = (ui.clone(), root.to_owned(), text.to_owned(), host.clone());
+        move |x: f64, y: f64| message_menu(&ui2, &host2, x, y, &root, &text)
+    };
+    // Capture phase: runs before the selectable label's own context menu.
+    let click = gtk::GestureClick::builder()
+        .button(gtk::gdk::BUTTON_SECONDARY)
+        .propagation_phase(gtk::PropagationPhase::Capture)
+        .build();
+    {
+        let menu = menu.clone();
+        click.connect_pressed(move |g, _, x, y| {
+            g.set_state(gtk::EventSequenceState::Claimed);
+            menu(x, y);
+        });
+    }
+    host.add_controller(click);
+    let hold = gtk::GestureLongPress::builder()
+        .touch_only(true)
+        .propagation_phase(gtk::PropagationPhase::Capture)
+        .build();
+    hold.connect_pressed(move |g, x, y| {
+        g.set_state(gtk::EventSequenceState::Claimed);
+        menu(x, y);
+    });
+    host.add_controller(hold);
     host.upcast()
+}
+
+/// The message's context menu: a popover of flat buttons, like the bot menu.
+fn message_menu(ui: &App, host: &gtk::Box, x: f64, y: f64, root: &str, text: &str) {
+    let pop = gtk::Popover::builder()
+        .pointing_to(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1))
+        .has_arrow(false)
+        .build();
+    let col = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .build();
+    let reply = gtk::Button::builder()
+        .label("Reply in thread")
+        .css_classes(["flat"])
+        .build();
+    let copy = gtk::Button::builder()
+        .label("Copy text")
+        .css_classes(["flat"])
+        .build();
+    col.append(&reply);
+    col.append(&copy);
+    pop.set_child(Some(&col));
+    {
+        let (pop2, ui2, root) = (pop.clone(), ui.clone(), root.to_owned());
+        reply.connect_clicked(move |_| {
+            pop2.popdown();
+            ui::open_thread(&ui2, &root);
+        });
+    }
+    {
+        let (pop2, text) = (pop.clone(), text.to_owned());
+        copy.connect_clicked(move |b| {
+            b.clipboard().set_text(&text);
+            pop2.popdown();
+        });
+    }
+    // The chat re-renders often; the popover lives only while shown.
+    pop.connect_closed(|p| {
+        let p = p.clone();
+        gtk::glib::idle_add_local_once(move || p.unparent());
+    });
+    pop.set_parent(host);
+    pop.popup();
 }
 
 /// Under a message with a thread (Slack's): who replied, how many, how recently.

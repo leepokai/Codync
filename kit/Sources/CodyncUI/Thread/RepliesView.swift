@@ -64,8 +64,11 @@ struct RepliesView: View {
         }
         .background(Palette.background)
         .task(id: rootId) { await model.loadThread(botId, root: rootId) }
+        // Replies count as unread too: reading the thread reads them.
+        .onAppear { model.markRead(botId) }
+        .onChange(of: replies.last?.id) { _, _ in model.markRead(botId) }
         .codyncSheet(isPresented: $showTrace) {
-            TraceView(botId: botId)
+            TraceView(botId: botId, thread: rootId)
                 #if os(macOS)
                     .frame(width: 620, height: 560)
                 #endif

@@ -15,8 +15,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
 
 use super::app::{
-    ACTIONS, App, Bot, COLORS, Click, Editor, Entry, FIELDS, FILTERS, Field, Focus, Form, GotoItem, GroupForm, Kind,
-    Mark, Overlay, SHAPES, Status, TraceMode, Width, tilde,
+    ACTIONS, App, Bot, COLORS, Click, Editor, Entry, FIELDS, FILTERS, Field, Focus, Form, GotoItem, GroupField,
+    GroupForm, Kind, Mark, NEW_GROUP, Overlay, SHAPES, Status, TraceMode, Width, tilde,
 };
 use super::md::{self, truncate, width as w};
 
@@ -157,17 +157,35 @@ pub fn glyph(app: &App, m: Mark) -> (&'static str, Style) {
     }
 }
 
-fn avatar(b: &Bot) -> Span<'static> {
+fn avatar(app: &App, b: &Bot) -> Line<'static> {
     let t = theme();
     if b.group {
-        // A group: # and how many bots are in it.
-        return Span::styled(format!("#{}", b.members.len().min(9)), t.bold.patch(t.btn));
+        // A group: its first two bots, like the apps' avatar stack.
+        let mut v: Vec<Span<'static>> = b.members.iter().take(2).map(|m| person(app, m)).collect();
+        v.resize(2, Span::raw(" "));
+        return Line::from(v);
     }
-    if t.color {
+    Line::from(if t.color {
         Span::styled("••", Style::default().fg(t.on_color).bg(bot_color(&b.color)).add_modifier(Modifier::BOLD))
     } else {
         Span::styled("[]", t.bold)
+    })
+}
+
+/// One cell for a bot id (its initial on its color) or `"user"` (Y), as in a group's avatar stack.
+fn person(app: &App, id: &str) -> Span<'static> {
+    let t = theme();
+    if id == "user" {
+        return Span::styled("Y", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     }
+    let Some(b) = app.bots.get(id) else { return Span::styled("?", t.dim) };
+    let initial: String = b.name.chars().next().map_or_else(|| "?".into(), |c| c.to_uppercase().collect());
+    let style = if t.color {
+        Style::default().fg(t.on_color).bg(bot_color(&b.color)).add_modifier(Modifier::BOLD)
+    } else {
+        t.bold
+    };
+    Span::styled(initial, style)
 }
 
 pub const FACE: [&str; 7] = [
@@ -575,7 +593,7 @@ fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             put(buf, x0, yy, 1, "▌", bar);
             put(buf, x0, yy + 1, 1, "▌", bar);
         }
-        put_line(buf, x0 + 2, yy, 2, &Line::from(avatar(b)));
+        put_line(buf, x0 + 2, yy, 2, &avatar(app, b));
         let (g, gs) = glyph(app, b.mark());
         let time = if b.status == Status::Working { elapsed(b.started_at) } else { when(b.last_at) };
         let tx = rput(buf, r.right() - 1, yy, &time, if b.unread > 0 { t.bold } else { t.dim });
@@ -646,7 +664,7 @@ fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
             restyle(buf, row, t.sel);
             put(buf, r.x, y, 1, "▌", if app.focus == Focus::Roster { t.bold } else { t.secondary });
         }
-        put_line(buf, r.x + 1, y, 2, &Line::from(avatar(b)));
+        put_line(buf, r.x + 1, y, 2, &avatar(app, b));
         let (g, gs) = glyph(app, b.mark());
         put(buf, r.x + 3, y, 1, g, gs);
     }
@@ -681,7 +699,7 @@ fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         fill(buf, Rect::new(r.x, r.y, r.width, 1), t.panel);
         x = put(buf, x, r.y, 2, "‹", t.bold) + 1;
     }
-    put_line(buf, x, r.y, 2, &Line::from(avatar(&b)));
+    put_line(buf, x, r.y, 2, &avatar(app, &b));
     let title = if app.thread.is_some() { format!("Thread · {}", b.name) } else { b.name.clone() };
     x = put(buf, x + 3, r.y, r.width / 3, &title, t.bold) + 2;
     let (status, ss) = match b.mark() {
@@ -1027,7 +1045,7 @@ fn entry_lines(
             out.lines.extend(with_bg(body, width, t.band));
             out.messages.push((e.id.clone(), from, out.lines.len()));
             if main {
-                thread_line(out, e);
+                thread_line(out, app, e);
             }
         }
         Kind::Agent if e.is_final() => {
@@ -1055,7 +1073,7 @@ fn entry_lines(
                 )));
             }
             if main {
-                thread_line(out, e);
+                thread_line(out, app, e);
             }
         }
         Kind::Permission => {
@@ -1095,10 +1113,22 @@ fn entry_lines(
 }
 
 /// Under a message with a thread: how many replies, how recently (click opens it).
-fn thread_line(out: &mut Built, e: &Entry) {
+fn thread_line(out: &mut Built, app: &App, e: &Entry) {
     let Some(text) = thread_summary(&e.data["thread"]) else { return };
-    out.buttons.push((out.lines.len(), 3, u(w(&text)), Click::Thread(e.id.clone())));
-    out.lines.push(Line::from(vec![Span::raw("   "), Span::styled(text, theme().secondary)]));
+    let mut line = vec![Span::raw("   "), Span::styled(text, theme().secondary)];
+    // Who replied: one cell each, first reply first (the host keeps them distinct).
+    let authors: Vec<&str> =
+        e.data["thread"]["authors"].as_array().into_iter().flatten().filter_map(|a| a.as_str()).collect();
+    for a in authors.iter().take(5) {
+        line.push(Span::raw(" "));
+        line.push(person(app, a));
+    }
+    if authors.len() > 5 {
+        line.push(Span::styled(format!(" +{}", authors.len() - 5), theme().dim));
+    }
+    let width = u(line.iter().skip(1).map(|s| w(&s.content)).sum());
+    out.buttons.push((out.lines.len(), 3, width, Click::Thread(e.id.clone())));
+    out.lines.push(Line::from(line));
 }
 
 /// "↳ 3 replies · 12:31" from the host's `data.thread`, or nothing without replies.
@@ -1507,13 +1537,14 @@ fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay) {
         Overlay::Agents(a) => {
             let t = theme();
             let choices: Vec<serde_json::Value> = app.agent_choices(&a.query.text).into_iter().cloned().collect();
-            let h = u(choices.len() + 8).min(area.height.saturating_sub(2)).max(10);
+            let group_row = App::agent_group_row(&a.query.text);
+            let h = u(choices.len() + usize::from(group_row) + 8).min(area.height.saturating_sub(2)).max(10);
             let r = centered(area, 74, h);
             let inner = frame_box(buf, r, t.text, t.panel, Some(("New bot · 1/3 agent", t.text)));
             field_line(buf, inner, inner.y, &a.query, "type to filter", true);
             let list_h = usize::from(inner.height.saturating_sub(4));
             let off = a.cursor.saturating_sub(list_h.saturating_sub(1));
-            if choices.is_empty() {
+            if choices.is_empty() && !group_row {
                 put(
                     buf,
                     inner.x,
@@ -1549,6 +1580,19 @@ fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay) {
                 );
                 let how = if installed { "on this computer".to_owned() } else { "fetched on first use".to_owned() };
                 rput(buf, inner.right(), y, &how, t.dim.patch(base));
+            }
+            // Last row: a group chat instead of a bot.
+            let gi = choices.len();
+            if group_row && gi >= off && gi < off + list_h {
+                let y = inner.y + 2 + u(gi - off);
+                let sel = gi == a.cursor;
+                let base = if sel { t.sel } else { t.panel };
+                if sel {
+                    restyle(buf, Rect::new(inner.x - 1, y, inner.width + 2, 1), t.sel);
+                }
+                put(buf, inner.x, y, 2, "+", t.secondary.patch(base));
+                put(buf, inner.x + 2, y, inner.width / 2, NEW_GROUP, if sel { t.bold } else { t.text }.patch(base));
+                rput(buf, inner.right(), y, "several bots, one chat", t.dim.patch(base));
             }
             put(
                 buf,
@@ -1698,7 +1742,7 @@ fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::app::Goto, items
                 app.hits.clicks.push((Rect::new(inner.x - 1, y, inner.width + 2, 1), Click::Bot(id.clone())));
                 let (gl, gs) = glyph(app, b.mark());
                 put(buf, inner.x, y, 1, gl, gs.patch(base));
-                put_line(buf, inner.x + 2, y, 2, &Line::from(avatar(b)));
+                put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
                 put(buf, inner.x + 5, y, 10, &b.name, t.bold.patch(base));
                 put(buf, inner.x + 16, y, 10, if b.group { "group" } else { &b.backend }, t.secondary.patch(base));
                 let cwd =
@@ -1995,11 +2039,12 @@ fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
 fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm) {
     let t = theme();
     let bots = app.group_candidates(&g.members);
-    let r = centered(area, 74, u(bots.len() + 10).max(14));
+    let r = centered(area, 74, u(bots.len() + 12).max(16));
     let title = if g.group_id.is_some() { "Group chat" } else { "New group chat" };
     let inner = frame_box(buf, r, t.text, t.panel, Some((title, t.text)));
     let label = |on: bool| if on { t.bold } else { t.secondary }.patch(t.panel);
-    put(buf, inner.x, inner.y, 8, "Name", label(g.on_name));
+    let on_bots = g.field == GroupField::Bots;
+    put(buf, inner.x, inner.y, 8, "Name", label(g.field == GroupField::Name));
     let default = app.group_default_name(&g.members);
     let placeholder = if default.is_empty() { "Name" } else { default.as_str() };
     field_line(
@@ -2008,23 +2053,32 @@ fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm) {
         inner.y,
         &g.name,
         placeholder,
-        g.on_name,
+        g.field == GroupField::Name,
     );
-    put(buf, inner.x, inner.y + 2, inner.width, &format!("Bots · {}", g.members.len()), label(!g.on_name));
-    let list_h = usize::from(inner.height.saturating_sub(7));
+    put(buf, inner.x, inner.y + 2, 8, "About", label(g.field == GroupField::About));
+    field_line(
+        buf,
+        Rect::new(inner.x + 8, inner.y + 2, inner.width.saturating_sub(8), 1),
+        inner.y + 2,
+        &g.about,
+        "optional: what this group is for",
+        g.field == GroupField::About,
+    );
+    put(buf, inner.x, inner.y + 4, inner.width, &format!("Bots · {}", g.members.len()), label(on_bots));
+    let list_h = usize::from(inner.height.saturating_sub(9));
     let off = g.cursor.saturating_sub(list_h.saturating_sub(1));
     if bots.is_empty() {
-        put(buf, inner.x, inner.y + 3, inner.width, "No bots yet. n creates one.", t.dim.patch(t.panel));
+        put(buf, inner.x, inner.y + 5, inner.width, "No bots yet. n creates one.", t.dim.patch(t.panel));
     }
-    for (y, (i, b)) in (inner.y + 3..).zip(bots.iter().enumerate().skip(off).take(list_h)) {
-        let sel = !g.on_name && i == g.cursor;
+    for (y, (i, b)) in (inner.y + 5..).zip(bots.iter().enumerate().skip(off).take(list_h)) {
+        let sel = on_bots && i == g.cursor;
         let base = if sel { t.sel } else { t.panel };
         if sel {
             restyle(buf, Rect::new(inner.x - 1, y, inner.width + 2, 1), t.sel);
         }
         let on = g.members.contains(&b.id);
         put(buf, inner.x, y, 2, if on { "☑" } else { "☐" }, if on { t.bold } else { t.dim }.patch(base));
-        put_line(buf, inner.x + 2, y, 2, &Line::from(avatar(b)));
+        put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
         put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
         let folder =
             std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
@@ -2056,7 +2110,7 @@ fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm) {
         buf,
         inner.right(),
         by,
-        if g.on_name { "tab bots" } else { "↑↓ move · space pick · tab name" },
+        if on_bots { "↑↓ move · space pick · tab name" } else { "tab next field" },
         t.dim.patch(t.panel),
     );
 }

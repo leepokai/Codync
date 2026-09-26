@@ -631,8 +631,8 @@ public final class BotStore {
     }
 
     /// Creates a group chat (or opens the one these bots already share) and selects it.
-    public func createGroup(name: String, members: [String]) async throws -> Bot {
-        let group = try await require().createGroup(GroupDraft(name: name, members: members))
+    public func createGroup(name: String, description: String = "", members: [String]) async throws -> Bot {
+        let group = try await require().createGroup(GroupDraft(name: name, description: description, members: members))
         bots[group.id] = group
         selection = group.id
         return group

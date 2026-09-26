@@ -112,7 +112,14 @@ pub struct Ui {
     chat_list: gtk::Box,
     scroller: gtk::ScrolledWindow,
     compose: Composer,
+    convo: gtk::Box,
     pane: gtk::Revealer,
+    pane_box: gtk::Box,
+    pane_sep: gtk::Separator,
+    thread_back: gtk::Button,
+    close_thread: gtk::Button,
+    /// Below the breakpoint an open thread covers the chat instead of sitting beside it.
+    narrow: std::cell::Cell<bool>,
     pane_title: adw::WindowTitle,
     pane_list: gtk::Box,
     pane_scroller: gtk::ScrolledWindow,
@@ -220,6 +227,13 @@ pub fn build(app: &adw::Application) {
 
     // Thread pane beside the chat (Slack's).
     let pane_title = adw::WindowTitle::new("Thread", "");
+    let thread_back = gtk::Button::builder()
+        .icon_name("go-previous-symbolic")
+        .tooltip_text("Back to chat")
+        .css_classes(["flat", "circular"])
+        .valign(gtk::Align::Center)
+        .visible(false)
+        .build();
     let close_thread = gtk::Button::builder()
         .icon_name("window-close-symbolic")
         .tooltip_text("Close thread")
@@ -228,12 +242,13 @@ pub fn build(app: &adw::Application) {
         .build();
     let pane_head = gtk::Box::builder()
         .spacing(8)
-        .margin_start(12)
+        .margin_start(8)
         .margin_end(8)
         .margin_top(6)
         .margin_bottom(6)
         .build();
     pane_title.set_hexpand(true);
+    pane_head.append(&thread_back);
     pane_head.append(&pane_title);
     pane_head.append(&close_thread);
     let pane_list = entry_list();
@@ -253,7 +268,8 @@ pub fn build(app: &adw::Application) {
     pane_box.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     pane_box.append(&reply.root);
     let pane_outer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    pane_outer.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+    let pane_sep = gtk::Separator::new(gtk::Orientation::Vertical);
+    pane_outer.append(&pane_sep);
     pane_outer.append(&pane_box);
     let pane = gtk::Revealer::builder()
         .transition_type(gtk::RevealerTransitionType::SlideLeft)
@@ -295,7 +311,7 @@ pub fn build(app: &adw::Application) {
         adw::LengthUnit::Sp,
     ));
     bp.add_setter(&split, "collapsed", Some(&true.to_value()));
-    window.add_breakpoint(bp);
+    window.add_breakpoint(bp.clone());
 
     let ui: App = Rc::new(Ui {
         window,
@@ -309,7 +325,13 @@ pub fn build(app: &adw::Application) {
         chat_list,
         scroller,
         compose,
+        convo,
         pane,
+        pane_box,
+        pane_sep,
+        thread_back: thread_back.clone(),
+        close_thread: close_thread.clone(),
+        narrow: std::cell::Cell::new(false),
         pane_title,
         pane_list,
         pane_scroller,
@@ -344,12 +366,24 @@ pub fn build(app: &adw::Application) {
         let ui2 = ui.clone();
         group_btn.connect_clicked(move |_| dialogs::group_editor(&ui2, None));
     }
-    {
+    for b in [&close_thread, &thread_back] {
         let ui2 = ui.clone();
-        close_thread.connect_clicked(move |_| {
+        b.connect_clicked(move |_| {
             ui2.state.borrow_mut().open_thread = None;
             schedule(&ui2);
         });
+    }
+    for narrow in [true, false] {
+        let ui2 = ui.clone();
+        let f = move |_: &adw::Breakpoint| {
+            ui2.narrow.set(narrow);
+            schedule(&ui2);
+        };
+        if narrow {
+            bp.connect_apply(f);
+        } else {
+            bp.connect_unapply(f);
+        }
     }
     {
         let ui2 = ui.clone();
@@ -912,11 +946,13 @@ fn render_pane(ui: &App) {
         st.current.as_ref().and_then(|id| st.bots.get(id)),
         st.open_thread.as_deref(),
     ) else {
+        layout_pane(ui, false);
         ui.pane.set_reveal_child(false);
         ui.shown_thread.replace(String::new());
         return;
     };
     let id = bot["id"].as_str().unwrap_or_default();
+    layout_pane(ui, true);
     ui.pane.set_reveal_child(true);
     ui.pane_title
         .set_subtitle(bot["name"].as_str().unwrap_or(""));
@@ -954,6 +990,19 @@ fn render_pane(ui: &App) {
     if switched {
         ui.reply.view.grab_focus();
     }
+}
+
+/// Wide windows keep the thread in a side pane; narrow ones let it cover the chat,
+/// with a back button in place of close.
+fn layout_pane(ui: &App, open: bool) {
+    let cover = open && ui.narrow.get();
+    ui.convo.set_visible(!cover);
+    ui.pane.set_hexpand(cover);
+    ui.pane_box.set_hexpand(cover);
+    ui.pane_box.set_width_request(if cover { -1 } else { 380 });
+    ui.pane_sep.set_visible(!cover);
+    ui.thread_back.set_visible(cover);
+    ui.close_thread.set_visible(!cover);
 }
 
 /// Chat-visible entries with time separators (gaps > 1 h) and author grouping.
@@ -1000,7 +1049,13 @@ fn append_entries(
         let reply = |w: gtk::Widget, end: bool| {
             // Local echoes have no id on the host yet.
             if main && !entry_id.starts_with("local-") {
-                with_reply(ui, &w, end, entry_id)
+                with_reply(
+                    ui,
+                    &w,
+                    end,
+                    entry_id,
+                    e["data"]["text"].as_str().unwrap_or(""),
+                )
             } else {
                 w
             }

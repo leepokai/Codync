@@ -383,17 +383,21 @@ public struct GroupDraft: Codable, Hashable, Sendable {
     public var id: String?
     public var kind = "group"
     public var name: String
+    /// What the group is for; its bots are told.
+    public var description = ""
     public var members: [String]
     public var pinned: Bool?
 
-    public init(name: String, members: [String]) {
+    public init(name: String, description: String = "", members: [String]) {
         self.name = name
+        self.description = description
         self.members = members
     }
 
     public init(_ group: Bot) {
         id = group.id
         name = group.name
+        description = group.description
         members = group.members
         pinned = group.pinned
     }

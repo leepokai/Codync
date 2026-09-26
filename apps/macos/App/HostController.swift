@@ -136,6 +136,7 @@ final class HostController {
     func start() {
         refresh()
         ssh.connectAll()
+        watchAutoClaim()
     }
 
     func refresh() {
@@ -258,6 +259,7 @@ final class HostController {
             accounts.lastError = "Sign in first."
             return
         }
+        Self.setKeptOut(store.computer.id, false, userID: userID)
         do {
             if store.cloud?.enabled != true { _ = try await enableCloud(client, store: store) }
             let challenge = try await cloud.createClaim()
@@ -269,7 +271,44 @@ final class HostController {
         }
     }
 
+    /// Signed in, this Mac joins the account on its own, unless the user took it out of that account.
+    private func watchAutoClaim() {
+        let pending = withObservationTracking {
+            autoClaimTarget
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.watchAutoClaim() }
+        }
+        guard let pending, !autoClaiming else { return }
+        autoClaiming = true
+        Task {
+            await claim(pending)
+            autoClaiming = false
+        }
+    }
+
+    private var autoClaiming = false
+
+    /// This Mac's host, online, in no account yet, for a signed-in user who hasn't removed it.
+    private var autoClaimTarget: BotStore? {
+        guard let userID = account.userID, let store, store.connection == .online,
+              let status = store.cloud, status.owner == nil,
+              !Self.keptOut(userID).contains(store.computer.id) else { return nil }
+        return store
+    }
+
+    /// Computers the user removed from an account on this Mac; auto-join leaves them out.
+    private static func keptOut(_ userID: String) -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: "keptOutOfAccount.\(userID)") ?? [])
+    }
+
+    private static func setKeptOut(_ id: String, _ out: Bool, userID: String) {
+        var ids = keptOut(userID)
+        if out { ids.insert(id) } else { ids.remove(id) }
+        UserDefaults.standard.set(Array(ids), forKey: "keptOutOfAccount.\(userID)")
+    }
+
     func unclaim(_ store: BotStore) async {
+        if let userID = account.userID { Self.setKeptOut(store.computer.id, true, userID: userID) }
         do {
             try await store.client?.unclaim()
             await accounts.refreshCloud()

@@ -37,7 +37,7 @@ struct RouteLabel: View {
         if ssh {
             Image(systemName: "terminal").help("Over SSH").accessibilityLabel("Over SSH")
         } else if store.connection == .online {
-            RouteIcon(route: store.hostRoute).help(store.hostRoute == .relay ? "Through the encrypted relay" : "Direct connection")
+            RouteIcon(route: store.hostRoute).help(store.hostRoute == .relay ? "Through Cloudflare (encrypted)" : "Direct: Wi-Fi or Tailscale")
         }
     }
 }
@@ -373,7 +373,7 @@ private struct ManagedComputerCard: View {
     private var cloudLine: String {
         guard let cloud, cloud.enabled else { return "Off: only devices on the same network reach it." }
         if let error = cloud.lastError { return error }
-        return cloud.connected == true ? "Connected to the encrypted relay." : "Connecting to the relay…"
+        return cloud.connected == true ? "Reachable from anywhere through Cloudflare (encrypted)." : "Connecting to Cloudflare…"
     }
 
     @ViewBuilder private var accountLine: some View {

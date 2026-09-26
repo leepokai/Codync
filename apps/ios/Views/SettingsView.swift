@@ -282,7 +282,7 @@ private struct ComputerRow: View {
         let count = store.roster.count
         let route = switch store.hostRoute {
         case .direct: " · Direct"
-        case .relay: " · Relay"
+        case .relay: " · Cloudflare"
         default: ""
         }
         return "\(count) bot\(count == 1 ? "" : "s")\(route)"

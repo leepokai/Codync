@@ -27,9 +27,24 @@ struct AccountSwitcherView: View {
     @State private var showSettings = false
     @State private var confirmSignOut = false
     @State private var route = ConnectionRoute.current
+    @State private var pairing = false
 
     var body: some View {
         CardForm {
+            Button { pairing = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "qrcode.viewfinder").font(.system(size: 22))
+                    Text("Scan a computer's code").font(.body.weight(.medium))
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
+                }
+                .foregroundStyle(Palette.text)
+                .padding(16)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressScale())
+
             profile
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
@@ -78,6 +93,7 @@ struct AccountSwitcherView: View {
         .animation(Motion.fade, value: account.errorMessage)
         .hidesSystemNavigationBar()
         .navigationDestination(isPresented: $showSettings) { SettingsView(pushed: true) }
+        .codyncSheet(isPresented: $pairing) { PairingView(inModal: true) }
         .codyncDialog("Sign out of \(account.email ?? "this account")?", isPresented: $confirmSignOut,
                       message: "This iPhone forgets the account's computers. Your bots stay on them.") {
             [DialogAction("Sign out", destructive: true) { Task { await app.signOut() } }]
@@ -176,8 +192,8 @@ private struct RoutePicker: View {
     private func info(_ route: ConnectionRoute) -> (icon: String, title: String, detail: String) {
         switch route {
         case .automatic: ("wand.and.sparkles", "Auto", "Wi-Fi or Tailscale when it answers, Cloudflare otherwise.")
-        case .direct: ("point.3.connected.trianglepath.dotted", "Direct", "Wi-Fi and Tailscale only. Nothing goes through the cloud.")
-        case .relay: ("cloud", "Cloudflare", "Always through the encrypted relay, from anywhere.")
+        case .direct: ("point.3.connected.trianglepath.dotted", "Wi-Fi · Tailscale", "Direct only. Nothing goes through Cloudflare.")
+        case .relay: ("cloud", "Cloudflare", "Always through Cloudflare, encrypted, from anywhere.")
         }
     }
 

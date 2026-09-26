@@ -61,7 +61,7 @@ Cloudflare API、D1、裝置目錄、雲端授權／撤權與中繼由 Claude Co
 | 手機配對資料依帳號分區存入 App Group UserDefaults | `kit/Sources/CodyncKit/Client/SharedStore.swift` | 秘密搬到 Keychain，UserDefaults 僅留顯示資料與參照 |
 | 命令走 HTTP API，事件走 SSE | `host/src/api.rs`、`kit/Sources/CodyncKit/Client/HostClient.swift` | 第一版沿用；後續用 transport 抽象接中繼 |
 | 已有 Cloudflare Worker 轉送 APNs，使用加密 ticket | `relay/src/index.ts`、`relay/wrangler.toml` | 保留相容性；它目前不是裝置目錄或聊天中繼 |
-| Remote screen 使用獨立 helper 與 WebRTC | `apps/screen/`、`kit/Sources/CodyncUI/Screen/` | 影像傳輸與聊天中繼分開 |
+| Remote screen 使用獨立 helper 與 WebRTC | `apps/screen-macos/`、`kit/Sources/CodyncUI/Screen/` | 影像傳輸與聊天中繼分開 |
 
 目前「Mac 登入成功」不等於「手機已獲准連 host」。現有配對 token 也不會因 Clerk 登出而自動失效。
 

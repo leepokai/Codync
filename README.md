@@ -85,7 +85,7 @@ Data lives in `~/.codync`. The local bearer token authorizes loopback helpers an
 | `apps/linux/` | Native Linux app (GTK 4 + libadwaita, Rust) |
 | `cloud/` | Cloudflare accounts, D1, encrypted channel relay and offline mailbox |
 | `apps/shared/` | Shared Apple account integration and environment configuration |
-| `apps/screen/`, `apps/screen-linux/` | Platform screen capture/input helpers |
+| `apps/screen-macos/`, `apps/screen-linux/` | Platform screen capture/input helpers |
 | `docs/` | [Documentation index](docs/README.md) and [file structure](docs/architecture/file-structure.md) |
 | `relay/` | Cloudflare Worker APNs relay with encrypted per-device tickets |
 | `web/` | Website (git submodule) |

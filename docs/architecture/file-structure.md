@@ -31,7 +31,7 @@ Codync/
 │   ├── ios/                   # App/, Views/, Resources/, Widgets/, NotificationService/
 │   ├── macos/                 # App/, Views/, Resources/, LaunchAgents/
 │   ├── linux/                 # GTK 4/libadwaita desktop client
-│   ├── screen/                # macOS screen helper
+│   ├── screen-macos/          # macOS screen helper
 │   └── screen-linux/          # Linux portal/GStreamer screen helper
 ├── cloud/                     # Account API + encrypted relay Worker and Durable Object
 │   ├── src/

@@ -5,7 +5,7 @@ Remote screen lets a phone view and control a computer. Signaling travels throug
 ## Boundaries
 
 - `host/src/screen.rs` coordinates access to the local helper.
-- `apps/screen/` is the macOS capture/input helper, installed through `SMAppService` and responsible for the OS permissions.
+- `apps/screen-macos/` is the macOS capture/input helper, installed through `SMAppService` and responsible for the OS permissions.
 - `apps/screen-linux/` implements the Linux helper using desktop portals and GStreamer.
 - Helpers communicate locally through `~/.codync/screen.sock`. SDP is non-trickle; input uses the `input` and `input-fast` data channels.
 - Screen access is off by default. Enabling through `setScreenEnabled` requires a loopback caller. Interactive OS permission prompts must be completed on the computer.

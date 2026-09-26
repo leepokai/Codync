@@ -118,7 +118,7 @@ targets:
     type: application
     platform: macOS
     sources:
-      - apps/screen
+      - apps/screen-macos
     dependencies:
       - package: WebRTC
     settings:

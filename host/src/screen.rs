@@ -512,7 +512,13 @@ impl Screen {
         let res = match res {
             Ok(res) => res,
             Err(error) => {
-                self.session_closed(&session);
+                // A helper can finish after the RPC times out. Keep retrying close until it acknowledges.
+                if let Some(viewer) = self.sessions.locked().get_mut(&session) {
+                    viewer.ice.expires_at = 0;
+                }
+                if let Err(close_error) = self.close(&session).await {
+                    tracing::warn!(error = format!("{close_error:#}"), "couldn't close failed screen session");
+                }
                 return Err(error);
             }
         };

@@ -62,9 +62,14 @@ final class Session: NSObject {
         let answer = try await pc.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
         try await pc.setLocalDescription(answer)
         await waitForCandidates()
+        guard self.pc === pc else { throw HelperError("session closed") }
         if !capturing {
             tune()
             try await capture.start()
+            guard self.pc === pc else {
+                await capture.stop()
+                throw HelperError("session closed")
+            }
             capturing = true
             keepAwake(true)
             watchClipboard()

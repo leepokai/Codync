@@ -220,6 +220,13 @@ impl Session {
     }
 
     pub fn close(self) {
+        drop(self);
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Negotiation failure must stop capture too, before the session enters the helper's map.
         let _ = self.pipeline.set_state(gst::State::Null);
     }
 }

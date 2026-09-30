@@ -31,7 +31,12 @@ afterEach(() => vi.restoreAllMocks());
 describe("screen relay credentials", () => {
   it("issues expiring credentials for a claimed host and tags device usage", async () => {
     const { host } = await claimedHost();
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ iceServers: servers }));
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const payload = JSON.parse(init!.body as string);
+      // Match the live provider, which rejects the original 66-character tag.
+      if (payload.customIdentifier.length > 64) return new Response("invalid argument", { status: 400 });
+      return Response.json({ iceServers: servers });
+    });
     const start = Date.now();
     const res = await request(host);
     expect(res.status).toBe(200);
@@ -42,8 +47,16 @@ describe("screen relay credentials", () => {
     expect(data.expiresAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
     const [url, init] = fetch.mock.calls[0]!;
     expect(url).toBe("https://rtc.live.cloudflare.com/v1/turn/keys/test-key/credentials/generate-ice-servers");
-    expect(JSON.parse(init!.body as string)).toEqual({ ttl: 3600, customIdentifier: `${host.cid}:${deviceKey}` });
+    expect(JSON.parse(init!.body as string)).toEqual({ ttl: 3600, customIdentifier: `${host.cid}:${ref.computerId(ref.unb64url(deviceKey))}` });
     expect(JSON.stringify(data)).not.toContain("server-secret");
+    const repeated = await request(host);
+    expect(repeated.status).toBe(200);
+    expect(JSON.parse(fetch.mock.calls[1]![1]!.body as string).customIdentifier)
+      .toBe(JSON.parse(init!.body as string).customIdentifier);
+    const otherDevice = ref.b64url(ref.signKey().pub);
+    expect((await request(host, {}, { deviceKey: otherDevice })).status).toBe(200);
+    expect(JSON.parse(fetch.mock.calls[2]![1]!.body as string).customIdentifier)
+      .not.toBe(JSON.parse(init!.body as string).customIdentifier);
   });
 
   it("rejects anonymous registration, blocked computers and deleted accounts before contacting TURN", async () => {

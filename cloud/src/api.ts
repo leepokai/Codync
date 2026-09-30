@@ -2,11 +2,13 @@
 
 import { Webhook } from "svix";
 import {
+  b64url,
   COMPUTER_ID,
   computerIdFor,
   fromB64url,
   NONCE_TTL_MS,
   randomId,
+  sha256,
   utf8,
   verifyClerk,
   verifyEd25519,
@@ -660,13 +662,16 @@ export async function hostScreenIce(c: Ctx): Promise<Response> {
   const limit = await c.env.TURN_LIMITER.limit({ key: comp.owner_user_id! });
   if (!limit.success) throw new ApiError("rateLimited", "Too many screen connections. Try again in a minute.");
   const ttl = 3600;
+  // Cloudflare limits customIdentifier to 64 characters. Keep the computer ID
+  // and a stable 128-bit device fingerprint (45 characters total).
+  const deviceFingerprint = b64url((await sha256(fromB64url(dk, 32)!)).subarray(0, 16));
   try {
     const res = await fetch(
       `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(c.env.TURN_KEY_ID)}/credentials/generate-ice-servers`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${c.env.TURN_KEY_API_TOKEN}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ ttl, customIdentifier: `${comp.id}:${dk}` }),
+        body: JSON.stringify({ ttl, customIdentifier: `${comp.id}:${deviceFingerprint}` }),
         signal: AbortSignal.timeout(8000),
       },
     );

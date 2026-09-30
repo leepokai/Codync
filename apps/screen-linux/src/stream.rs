@@ -432,6 +432,7 @@ pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Re
 
 #[cfg(test)]
 mod ice_tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
 
     #[test]

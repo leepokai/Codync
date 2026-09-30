@@ -49,7 +49,22 @@ fn text(root: &impl IsA<gtk::Widget>, value: &str) -> bool {
 #[track_caller]
 fn click(root: &impl IsA<gtk::Widget>, name: &str) {
     wait(|| button(root, name).is_some_and(|b| b.is_sensitive()));
-    button(root, name).unwrap().emit_clicked();
+    let button = button(root, name).unwrap();
+    wait(|| button.is_mapped());
+    // libadwaita 1.5 opens a newly mapped dialog on its second frame.
+    // Emitting clicks before that can save and close a dialog before it opens.
+    let frames = Rc::new(std::cell::Cell::new(0));
+    let frames2 = frames.clone();
+    button.add_tick_callback(move |_, _| {
+        frames2.set(frames2.get() + 1);
+        if frames2.get() >= 3 {
+            gtk::glib::ControlFlow::Break
+        } else {
+            gtk::glib::ControlFlow::Continue
+        }
+    });
+    wait(|| frames.get() >= 3);
+    button.emit_clicked();
 }
 fn close(ui: &App) {
     if let Some(dialog) = ui.window.visible_dialog() {

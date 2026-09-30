@@ -24,6 +24,9 @@ public actor ChannelTransport: RemoteTransport {
     private let directBudget: Duration
     private let watchesNetwork: Bool
 
+    /// The screen follows the active signaling route; direct-only connections never request TURN.
+    public var usesScreenRelay: Bool { link?.route == .relay }
+
     private var state: LinkState = .connecting
     private var lastSeen: Date?
     private var link: Link?

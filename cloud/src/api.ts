@@ -644,6 +644,53 @@ export async function hostRegister(c: Ctx) {
   return { computerId: id, owned: !!existing?.owner_user_id };
 }
 
+/** The host attests that this device passed its local screen authorization (including QR pairing).
+ * Requiring a claimed, active account prevents anonymous host registration from issuing paid TURN.
+ */
+export async function hostScreenIce(c: Ctx): Promise<Response> {
+  const comp = await host(c);
+  const dk = key(body(c), "deviceKey", 32);
+  const owner = comp.owner_user_id && await c.env.DB.prepare(
+    "SELECT user_id FROM accounts WHERE user_id = ? AND status = 'active'",
+  ).bind(comp.owner_user_id).first();
+  if (!owner) throw new ApiError("forbidden", "Sign in on the computer to use remote screen relay.");
+  if (!c.env.TURN_KEY_ID || !c.env.TURN_KEY_API_TOKEN || !c.env.TURN_LIMITER) {
+    throw new ApiError("screenRelayUnavailable", "Remote screen relay is not configured on this cloud.", 503);
+  }
+  const limit = await c.env.TURN_LIMITER.limit({ key: comp.owner_user_id! });
+  if (!limit.success) throw new ApiError("rateLimited", "Too many screen connections. Try again in a minute.");
+  const ttl = 3600;
+  try {
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(c.env.TURN_KEY_ID)}/credentials/generate-ice-servers`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${c.env.TURN_KEY_API_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ttl, customIdentifier: `${comp.id}:${dk}` }),
+        signal: AbortSignal.timeout(8000),
+      },
+    );
+    if (!res.ok) throw new Error("TURN provider refused");
+    const data = await res.json() as { iceServers?: unknown };
+    if (!Array.isArray(data.iceServers) || !data.iceServers.length || data.iceServers.length > 8) throw new Error("Invalid TURN response");
+    const iceServers = data.iceServers.map((entry: { urls?: unknown; username?: unknown; credential?: unknown }) => {
+      if (!entry || !Array.isArray(entry.urls) || !entry.urls.length || !entry.urls.every(
+        (url: unknown) => typeof url === "string" && /^(stun:stun|turns?:turn)\.cloudflare\.com:\d+(\?transport=(udp|tcp))?$/.test(url),
+      )) throw new Error("Invalid TURN servers");
+      const turn = entry.urls.some((url: string) => url.startsWith("turn"));
+      if (turn && (typeof entry.username !== "string" || !entry.username || typeof entry.credential !== "string" || !entry.credential)) {
+        throw new Error("Invalid TURN credentials");
+      }
+      return { urls: entry.urls, ...(turn ? { username: entry.username, credential: entry.credential } : {}) };
+    });
+    if (!iceServers.some((s) => s.urls.some((u: string) => u.startsWith("turn")))) throw new Error("Missing TURN server");
+    return Response.json({ iceServers, expiresAt: c.now + ttl * 1000 }, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    // Provider bodies and credential-bearing errors must never reach logs or clients.
+    throw new ApiError("screenRelayUnavailable", "Remote screen relay is temporarily unavailable. Try again shortly.", 503);
+  }
+}
+
 export async function hostState(c: Ctx) {
   const comp = await host(c);
   const owner = comp.owner_user_id

@@ -1,0 +1,27 @@
+name: Linux screen helper
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/screen-linux/**", ".github/workflows/screen-linux.yml"]
+  pull_request:
+    paths: ["apps/screen-linux/**", ".github/workflows/screen-linux.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/screen-linux
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/screen-linux
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test

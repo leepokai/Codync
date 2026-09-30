@@ -29,6 +29,12 @@ name = "REGISTER_LIMITER"
 namespace_id = "1001"
 simple = { limit = 10, period = 60 }
 
+# Credential issuance per account; separate from registration limits.
+[[ratelimits]]
+name = "TURN_LIMITER"
+namespace_id = "1011"
+simple = { limit = 12, period = 60 }
+
 [triggers]
 crons = ["*/15 * * * *"]
 
@@ -39,7 +45,7 @@ routes = [{ pattern = "dev-api.codync.dev", custom_domain = true }]
 vars = { CLERK_ISSUER = "https://sunny-mollusk-8651.clerk.accounts.dev" }
 d1_databases = [{ binding = "DB", database_name = "codync-dev", database_id = "0c03c398-3cec-4f06-a76e-998176ca19ae", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
-ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1002", simple = { limit = 10, period = 60 } }]
+ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1002", simple = { limit = 10, period = 60 } }, { name = "TURN_LIMITER", namespace_id = "1012", simple = { limit = 12, period = 60 } }]
 triggers = { crons = ["*/15 * * * *"] }
 
 # local: wrangler dev / e2e with a local D1; CLERK_JWT_KEY is injected by the test (--var).
@@ -48,4 +54,4 @@ name = "codync-cloud-local"
 vars = { CLERK_ISSUER = "https://clerk.test.local" }
 d1_databases = [{ binding = "DB", database_name = "codync-local", database_id = "local", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]
-ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1003", simple = { limit = 10, period = 60 } }]
+ratelimits = [{ name = "REGISTER_LIMITER", namespace_id = "1003", simple = { limit = 10, period = 60 } }, { name = "TURN_LIMITER", namespace_id = "1013", simple = { limit = 12, period = 60 } }]

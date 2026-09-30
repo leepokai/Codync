@@ -3,7 +3,7 @@
 
 use crate::portal::Display;
 use crate::{Helper, input};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
 use gst::prelude::*;
 use serde_json::{Value, json};
@@ -29,7 +29,13 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(id: String, display: &Display, fd: OwnedFd, helper: Arc<Helper>) -> Result<Self> {
+    pub fn new(
+        id: String,
+        display: &Display,
+        fd: OwnedFd,
+        helper: Arc<Helper>,
+        config: &Value,
+    ) -> Result<Self> {
         let pipeline = gst::Pipeline::new();
         let src = gst::ElementFactory::make("pipewiresrc")
             .property("fd", fd.into_raw_fd())
@@ -46,13 +52,18 @@ impl Session {
         let scale = make("videoscale")?;
         let size = make("capsfilter")?;
         let rate = make("videorate")?;
-        rate.set_property("max-rate", 60i32);
+        let fps = config["maxFramerate"].as_i64().unwrap_or(60).clamp(1, 60);
+        rate.set_property("max-rate", i32::try_from(fps)?);
         rate.set_property("drop-only", true);
         let convert2 = make("videoconvert")?;
         let queue = make("queue")?;
         queue.set_property_from_str("leaky", "downstream");
         queue.set_property("max-size-buffers", 2u32);
-        let encoder = encoder()?;
+        let bitrate = config["maxBitrateBps"]
+            .as_u64()
+            .unwrap_or(u64::from(BITRATE_KBPS) * 1000)
+            .clamp(100_000, u64::from(BITRATE_KBPS) * 1000);
+        let encoder = encoder(u32::try_from(bitrate / 1000)?)?;
         let parse = make("h264parse")?;
         let pay = make("rtph264pay")?;
         pay.set_property("config-interval", -1i32);
@@ -70,6 +81,23 @@ impl Session {
         );
         let webrtc = make("webrtcbin")?;
         webrtc.set_property_from_str("bundle-policy", "max-bundle");
+        if let Some(servers) = config["iceServers"].as_array() {
+            for server in servers {
+                for url in server["urls"].as_array().context("missing ICE URLs")? {
+                    let url = url.as_str().context("invalid ICE URL")?;
+                    let uri = ice_uri(
+                        url,
+                        server["username"].as_str(),
+                        server["credential"].as_str(),
+                    )?;
+                    if url.starts_with("stun:") {
+                        webrtc.set_property("stun-server", &uri);
+                    } else if !webrtc.emit_by_name::<bool>("add-turn-server", &[&uri]) {
+                        bail!("couldn't configure screen relay");
+                    }
+                }
+            }
+        }
         let chain = [
             &src, &convert, &crop, &scale, &size, &rate, &convert2, &queue, &encoder, &parse, &pay,
             &rtp_caps, &webrtc,
@@ -171,7 +199,7 @@ impl Session {
         self.webrtc
             .emit_by_name::<()>("set-local-description", &[&answer, &p]);
         done.await?;
-        for _ in 0..60 {
+        for _ in 0..200 {
             if self
                 .webrtc
                 .property::<gst_webrtc::WebRTCICEGatheringState>("ice-gathering-state")
@@ -303,7 +331,36 @@ fn make(name: &str) -> Result<gst::Element> {
         .with_context(|| format!("GStreamer element {name} is missing"))
 }
 
-fn encoder() -> Result<gst::Element> {
+/// Convert WebRTC's ICE URL syntax to GStreamer's URI syntax without exposing credentials.
+fn ice_uri(url: &str, username: Option<&str>, credential: Option<&str>) -> Result<String> {
+    let (scheme, address) = url.split_once(':').context("invalid ICE URL")?;
+    if scheme == "stun" {
+        return Ok(format!("stun://{address}"));
+    }
+    if !matches!(scheme, "turn" | "turns") {
+        bail!("unsupported ICE scheme");
+    }
+    let username = username.context("missing TURN username")?;
+    let credential = credential.context("missing TURN credential")?;
+    let escape = |s: &str| -> String {
+        use std::fmt::Write as _;
+        s.bytes().fold(String::new(), |mut out, byte| {
+            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+                out.push(char::from(byte));
+            } else {
+                let _ = write!(out, "%{byte:02X}");
+            }
+            out
+        })
+    };
+    Ok(format!(
+        "{scheme}://{}:{}@{address}",
+        escape(username),
+        escape(credential)
+    ))
+}
+
+fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
     let name = ENCODERS
         .iter()
         .find(|n| gst::ElementFactory::find(n).is_some())
@@ -315,13 +372,13 @@ fn encoder() -> Result<gst::Element> {
         "x264enc" => {
             e.set_property_from_str("tune", "zerolatency");
             e.set_property_from_str("speed-preset", "veryfast");
-            e.set_property("bitrate", BITRATE_KBPS);
+            e.set_property("bitrate", bitrate_kbps);
             e.set_property("key-int-max", 120u32);
         }
-        "openh264enc" => e.set_property("bitrate", BITRATE_KBPS * 1000),
+        "openh264enc" => e.set_property("bitrate", bitrate_kbps * 1000),
         _ => {
             if e.has_property("bitrate") {
-                e.set_property_from_str("bitrate", &BITRATE_KBPS.to_string());
+                e.set_property_from_str("bitrate", &bitrate_kbps.to_string());
             }
         }
     }
@@ -364,4 +421,27 @@ pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Re
     let buffer = sample.buffer().ok_or_else(|| anyhow!("empty frame"))?;
     let map = buffer.map_readable()?;
     Ok(base64::engine::general_purpose::STANDARD.encode(map.as_slice()))
+}
+
+#[cfg(test)]
+mod ice_tests {
+    use super::*;
+
+    #[test]
+    fn turn_uri_preserves_transport_and_escapes_credentials() {
+        assert_eq!(
+            ice_uri(
+                "turns:turn.cloudflare.com:443?transport=tcp",
+                Some("a:b"),
+                Some("c+/@")
+            )
+            .unwrap(),
+            "turns://a%3Ab:c%2B%2F%40@turn.cloudflare.com:443?transport=tcp"
+        );
+        assert_eq!(
+            ice_uri("stun:stun.cloudflare.com:3478", None, None).unwrap(),
+            "stun://stun.cloudflare.com:3478"
+        );
+        assert!(ice_uri("turn:turn.cloudflare.com:3478", None, None).is_err());
+    }
 }

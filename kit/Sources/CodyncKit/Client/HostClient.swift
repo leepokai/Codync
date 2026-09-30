@@ -288,6 +288,11 @@ public extension HostClient {
 
     func screenStatus() async throws -> ScreenState { try await call("screenStatus") }
 
+    func screenPrepare() async throws -> ScreenConnection {
+        let relay = if let channel = transport as? ChannelTransport { await channel.usesScreenRelay } else { false }
+        return try await call("screenPrepare", ["relay": relay])
+    }
+
     /// Sends a WebRTC offer (with all its ICE candidates); returns the session id and the answer.
     /// Passing `session` restarts ICE on an existing session.
     func screenOffer(sdp: String, session: String?, display: UInt32?) async throws -> ScreenAnswer {

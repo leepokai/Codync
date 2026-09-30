@@ -22,10 +22,15 @@ final class Session: NSObject {
     private var awake: IOPMAssertionID = 0
     private var clipboardCount = NSPasteboard.general.changeCount
     private var clipboardTask: Task<Void, Never>?
+    private var gatherTask: Task<Void, Never>?
+    private let maxBitrate: Int
+    private let maxFramerate: Int
 
     var display: CGDirectDisplayID { capture.display }
 
-    init(id: String, display: CGDirectDisplayID, helper: ScreenHelper) {
+    init(id: String, display: CGDirectDisplayID, helper: ScreenHelper, iceServers: [RTCIceServer], maxBitrate: Int, maxFramerate: Int) {
+        self.maxBitrate = maxBitrate
+        self.maxFramerate = maxFramerate
         self.id = id
         self.helper = helper
         let source = Self.factory.videoSource(forScreenCast: true)
@@ -34,9 +39,8 @@ final class Session: NSObject {
         super.init()
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
-        // No STUN/TURN: the phone already reaches this computer (LAN / Tailscale), so host
-        // candidates connect; TCP candidates cover networks that drop UDP.
-        config.iceServers = []
+        // ICE prefers direct candidates; TURN covers NAT/firewalls when needed.
+        config.iceServers = iceServers
         config.tcpCandidatePolicy = .enabled
         config.continualGatheringPolicy = .gatherOnce
         config.bundlePolicy = .maxBundle
@@ -74,8 +78,8 @@ final class Session: NSObject {
         let p = sender.parameters
         p.degradationPreference = NSNumber(value: RTCDegradationPreference.maintainResolution.rawValue)
         for e in p.encodings {
-            e.maxBitrateBps = 16_000_000
-            e.maxFramerate = 60
+            e.maxBitrateBps = NSNumber(value: maxBitrate)
+            e.maxFramerate = NSNumber(value: maxFramerate)
             e.networkPriority = .high
         }
         sender.parameters = p
@@ -83,14 +87,17 @@ final class Session: NSObject {
 
     private func waitForCandidates() async {
         guard pc?.iceGatheringState != .complete else { return }
-        Task {
-            try? await Task.sleep(for: .seconds(3))
+        gatherTask?.cancel()
+        gatherTask = Task {
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
             self.finishGathering()
         }
         await withCheckedContinuation { gathered = $0 }
     }
 
     private func finishGathering() {
+        gatherTask?.cancel()
+        gatherTask = nil
         gathered?.resume()
         gathered = nil
     }

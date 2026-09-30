@@ -815,12 +815,35 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
             json!({})
         }
         "screenStatus" => hub.screen.state(),
+        "screenPrepare" => {
+            if !hub.screen.enabled() {
+                bail!("Remote screen is turned off on this computer.");
+            }
+            let ice = if b["relay"].as_bool().unwrap_or(false) {
+                crate::remote::cloud::screen_ice(hub, caller.device_key()).await?
+            } else {
+                crate::screen::IceConfig::default()
+            };
+            let result = hub.screen.prepare(caller.device_key(), ice)?;
+            let session = result["session"].as_str().context("missing screen session")?.to_owned();
+            tokio::spawn(crate::screen::watch_viewer(hub.clone(), session, caller.device_key().to_owned()));
+            result
+        }
         "screenOffer" => {
             let display = b["display"].as_u64().and_then(|d| u32::try_from(d).ok());
-            hub.screen.offer(str_arg(&b, "sdp")?, b["session"].as_str(), display).await?
+            let result =
+                hub.screen.offer(caller.device_key(), str_arg(&b, "sdp")?, b["session"].as_str(), display).await?;
+            if b["session"].as_str().is_none() {
+                let session = result["session"].as_str().context("missing screen session")?.to_owned();
+                tokio::spawn(crate::screen::watch_viewer(hub.clone(), session, caller.device_key().to_owned()));
+            }
+            result
         }
         "screenClose" => {
-            hub.screen.close(str_arg(&b, "session")?).await?;
+            let session = str_arg(&b, "session")?;
+            if hub.screen.owns_session(session, caller.device_key()) {
+                hub.screen.close(session).await?;
+            }
             json!({})
         }
         "screenTakeover" => {

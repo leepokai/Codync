@@ -126,7 +126,7 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
             }
             let d = display()?;
             let fd = h.portal.pipewire_fd().await?;
-            let session = stream::Session::new(id.clone(), &d, fd, h.clone())?;
+            let session = stream::Session::new(id.clone(), &d, fd, h.clone(), p)?;
             let answer = session.answer(sdp).await?;
             h.sessions.lock().await.insert(id, session);
             json!({"sdp": answer})

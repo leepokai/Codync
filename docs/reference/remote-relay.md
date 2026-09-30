@@ -24,7 +24,7 @@ Shared deterministic [vectors](fixtures/remote-relay-vectors.json) and their [ge
 - SSH 目標設了 `ProxyJump`／`ProxyCommand` 時不做 keyscan、也不做 `SSH_ASKPASS` 首次確認：要求使用者先在終端機連過一次（host key 已在 `~/.ssh/known_hosts`）。少見情境，換來不必實作 askpass helper。
 - 推播選擇「加密 + NSE」而非「只送通用文字」：保留 Grok Bot 式的通知預覽。
 
-明確不做（這一版）：雲端保存聊天、Mac 當手機的 SSH gateway、手機原生 SSH、TURN、host 金鑰輪替後沿用舊授權、團隊共享。
+明確不做（這一版）：雲端保存聊天、Mac 當手機的 SSH gateway、手機原生 SSH、host 金鑰輪替後沿用舊授權、團隊共享。
 
 ---
 
@@ -310,7 +310,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 |---|---|---|
 | loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `teamCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud` | `Caller::Local`（loopback + token） |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
-| screen scope | `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
+| screen scope | `screenPrepare`, `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
 | control scope | 其餘所有既有方法（`hello`, `sync`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
 
 v1 發出的 grant 一律 `["control","screen"]`。
@@ -541,4 +541,4 @@ The following implemented clarifications take precedence over the original contr
 - Copying `identity.json` creates competing connections for one computer identity; replacing host keys requires pairing again.
 - Revocation is enforced locally even when cloud synchronization fails; pending cloud revocations are retried.
 - Direct `ws://` still encrypts channel content, but exposes connection metadata to the local network.
-- Mailbox retention is bounded and is not cloud transcript storage. TURN, phone-native SSH and team sharing are outside this contract.
+- Mailbox retention is bounded and is not cloud transcript storage. Phone-native SSH and team sharing are outside this contract. Screen media uses the separate short-lived TURN flow in [Remote screen](../features/remote-screen.md).

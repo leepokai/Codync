@@ -54,7 +54,7 @@ const LOCAL_ONLY: &[&str] = &[
     "setCloud",
     "setApproval",
 ];
-const SCREEN: &[&str] = &["screenOffer", "screenClose", "screenTakeover"];
+const SCREEN: &[&str] = &["screenPrepare", "screenOffer", "screenClose", "screenTakeover"];
 
 /// A method the caller isn't allowed to call (403).
 #[derive(Debug)]
@@ -226,6 +226,8 @@ mod tests {
         }
         assert!(permit(&both, "send").is_ok());
         assert!(permit(&both, "screenOffer").is_ok());
+        assert!(permit(&both, "screenPrepare").is_ok());
+        assert!(permit(&control, "screenPrepare").is_err());
         assert!(permit(&control, "screenOffer").is_err(), "screen needs the screen scope");
         assert!(permit(&control, "screenStatus").is_ok(), "status is control");
         assert!(permit(&Caller::Device { key: "k".into(), scopes: vec![] }, "hello").is_err());

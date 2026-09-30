@@ -13,6 +13,10 @@ export interface Env {
   RELAY: DurableObjectNamespace<ComputerRelay>;
   /** Workers Rate Limiting binding for new computer registrations. */
   REGISTER_LIMITER?: RateLimit;
+  /** Server-only Cloudflare Realtime TURN key and credential-issuing token. */
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
+  TURN_LIMITER?: RateLimit;
   CLERK_ISSUER: string;
   CLERK_SECRET_KEY?: string;
   /** dev / e2e only: networkless verification with this public key. */
@@ -44,6 +48,7 @@ const routes: [string, RegExp, Handler][] = [
   ["DELETE", new RegExp(`^/v1/access-requests/${ID}$`), api.cancelAccessRequest],
   ["POST", /^\/v1\/host\/register$/, api.hostRegister],
   ["GET", /^\/v1\/host\/state$/, api.hostState],
+  ["POST", /^\/v1\/host\/screen-ice$/, api.hostScreenIce],
   ["POST", new RegExp(`^/v1/host/access-requests/${ID}/nonce$`), api.hostNonce],
   ["POST", new RegExp(`^/v1/host/access-requests/${ID}/decision$`), api.hostDecision],
   ["POST", new RegExp(`^/v1/host/grants/${ID}/revoke$`), api.hostRevokeGrant],

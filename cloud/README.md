@@ -63,3 +63,12 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 
 New computers are limited to 10 per IP per minute with the Workers Rate Limiting binding
 `REGISTER_LIMITER` (`[[ratelimits]]`; each environment needs its own `namespace_id`).
+
+## Remote screen relay
+
+`POST /v1/host/screen-ice` issues one-hour Cloudflare Realtime TURN credentials to a
+signed host belonging to an active account. The host first checks the calling
+device's screen permission. The Worker requires `TURN_KEY_ID`, `TURN_KEY_API_TOKEN`
+(server-only secrets) and `TURN_LIMITER` (12 issuances per account per minute).
+The credentials are never cached in HTTP caches or stored in D1. See
+[Remote screen setup and verification](../docs/features/remote-screen.md).

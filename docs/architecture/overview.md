@@ -57,7 +57,7 @@ The product currently prioritizes one computer. Existing account-scoped aggregat
 
 `cloud/` implements `/v1`, Clerk authentication, computer registration/claim, host-approved access, WebSocket relay and mailbox. `relay/` implements APNs registration tickets and push forwarding. [Remote protocol](../reference/remote-relay.md) defines wire details; [Cloudflare testing](../guides/cloudflare-testing.md) distinguishes these paths during acceptance.
 
-Remote screen uses the channel for signaling and WebRTC for media/input. Its traffic does not become a Cloudflare video relay. [Remote screen](../features/remote-screen.md) describes the helpers and current limitations.
+Remote screen uses the channel for signaling and WebRTC for media/input. Cloudflare Realtime TURN forwards encrypted media/input when a cloud connection cannot establish a direct WebRTC path. [Remote screen](../features/remote-screen.md) describes the helpers and current limitations.
 
 ## Release and environment boundaries
 

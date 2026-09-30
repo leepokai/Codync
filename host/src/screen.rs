@@ -14,9 +14,8 @@
 //!   - `status` [`HelperStatus`]
 //!   - `session {session, state: "connected" | "closed"}`
 //! - host → helper requests
-//!   - `answer {session, sdp, display?}` → `{sdp}`: non-trickle; the offer and
-//!     the answer carry every ICE candidate (host + TCP, no STUN/TURN: any
-//!     network that reaches this API reaches the helper).
+//!   - `answer {session, sdp, display?, iceServers, maxBitrateBps, maxFramerate}` → `{sdp}`:
+//!     non-trickle ICE, with short-lived STUN/TURN credentials for remote connections.
 //!   - `close {session}`, `closeAll {}`
 //!   - `screenshot {display, width, height}` → `{data}` (base64 JPEG, exactly
 //!     that size)
@@ -32,10 +31,10 @@
 
 use crate::LockExt;
 use crate::hub::Hub;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
@@ -356,13 +355,43 @@ impl Control {
     }
 }
 
+/// WebRTC ICE servers. Credentials are memory-only and must not be logged.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct IceServer {
+    pub urls: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IceConfig {
+    pub ice_servers: Vec<IceServer>,
+    pub expires_at: i64,
+}
+
+impl Default for IceConfig {
+    fn default() -> Self {
+        Self { ice_servers: vec![], expires_at: crate::store::now_ms() + 3_600_000 }
+    }
+}
+
+struct Viewer {
+    owner: String,
+    ice: IceConfig,
+    started: bool,
+    pending_until: i64,
+}
+
 pub struct Screen {
     enabled: AtomicBool,
     events: broadcast::Sender<Value>,
     link: Mutex<Option<Arc<Link>>>,
     status: Mutex<HelperStatus>,
     control: Mutex<Control>,
-    sessions: Mutex<HashSet<String>>,
+    sessions: Mutex<HashMap<String, Viewer>>,
     next_link: AtomicU64,
 }
 
@@ -391,6 +420,7 @@ impl Screen {
     pub fn state(&self) -> Value {
         let st = self.status.locked().clone();
         let connected = self.link.locked().is_some();
+        let viewers = self.sessions.locked().values().filter(|v| v.started).count();
         let c = self.control.locked();
         json!({
             "enabled": self.enabled(),
@@ -401,7 +431,7 @@ impl Screen {
             "displays": st.displays,
             "userControl": c.user,
             "agentBot": c.active_agent(),
-            "viewers": self.sessions.locked().len(),
+            "viewers": viewers,
         })
     }
 
@@ -427,18 +457,80 @@ impl Screen {
 
     // MARK: phone
 
-    /// Answers a WebRTC offer from the phone (a new session, or an ICE restart of `session`).
-    pub async fn offer(&self, sdp: &str, session: Option<&str>, display: Option<u32>) -> Result<Value> {
+    /// Reserve one session before the phone gathers ICE; the host keeps the exact configuration.
+    pub fn prepare(&self, owner: &str, ice: IceConfig) -> Result<Value> {
+        self.link()?;
+        let mut sessions = self.sessions.locked();
+        let now = crate::store::now_ms();
+        sessions.retain(|_, v| v.started || v.pending_until > now);
+        if sessions.len() >= 32 || sessions.values().filter(|v| v.owner == owner).count() >= 4 {
+            bail!("too many screen sessions; close another screen and try again");
+        }
+        let session = uuid::Uuid::new_v4().to_string();
+        let result = json!({"session": session, "iceServers": ice.ice_servers, "expiresAt": ice.expires_at});
+        sessions.insert(session, Viewer { owner: owner.to_owned(), ice, started: false, pending_until: now + 60_000 });
+        Ok(result)
+    }
+
+    pub fn owns_session(&self, session: &str, owner: &str) -> bool {
+        self.sessions.locked().get(session).is_some_and(|v| v.owner == owner)
+    }
+
+    /// Answers a prepared session or a direct offer from an older client.
+    pub async fn offer(&self, owner: &str, sdp: &str, session: Option<&str>, display: Option<u32>) -> Result<Value> {
         let link = self.link()?;
         if !self.status.locked().capture {
             bail!("Codync isn't allowed to record this computer's screen yet. Allow it in System Settings there.");
         }
-        let session = session.map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
-        let res = link.request("answer", json!({"session": session, "sdp": sdp, "display": display})).await?;
+        let session = match session {
+            Some(id) => id.to_owned(),
+            None => self.prepare(owner, IceConfig::default())?["session"]
+                .as_str()
+                .context("missing screen session")?
+                .to_owned(),
+        };
+        let ice = {
+            let sessions = self.sessions.locked();
+            let viewer = sessions.get(&session).filter(|v| v.owner == owner).context("unknown screen session")?;
+            let now = crate::store::now_ms();
+            if viewer.ice.expires_at <= now || (!viewer.started && viewer.pending_until <= now) {
+                bail!("screen connection expired; reconnect to continue");
+            }
+            viewer.ice.clone()
+        };
+        let remote = !ice.ice_servers.is_empty();
+        let res = link
+            .request(
+                "answer",
+                json!({
+                    "session": session, "sdp": sdp, "display": display, "iceServers": ice.ice_servers,
+                    "maxBitrateBps": if remote { 4_000_000 } else { 16_000_000 },
+                    "maxFramerate": if remote { 30 } else { 60 },
+                }),
+            )
+            .await;
+        let res = match res {
+            Ok(res) => res,
+            Err(error) => {
+                self.session_closed(&session);
+                return Err(error);
+            }
+        };
         let answer = res["sdp"].as_str().ok_or_else(|| anyhow!("the screen helper sent no answer"))?;
-        if self.sessions.locked().insert(session.clone()) {
-            self.emit();
+        let accepted = {
+            let mut sessions = self.sessions.locked();
+            if let Some(viewer) = sessions.get_mut(&session) {
+                viewer.started = true;
+                true
+            } else {
+                false
+            }
+        };
+        if !accepted || !self.enabled() {
+            self.close(&session).await?;
+            bail!("screen session closed while connecting");
         }
+        self.emit();
         Ok(json!({"session": session, "sdp": answer}))
     }
 
@@ -454,7 +546,7 @@ impl Screen {
     fn session_closed(&self, session: &str) {
         let removed = {
             let mut sessions = self.sessions.locked();
-            let removed = sessions.remove(session);
+            let removed = sessions.remove(session).is_some();
             if sessions.is_empty() {
                 // Nobody is watching: hand control back to the bots.
                 self.control.locked().user = false;
@@ -615,6 +707,29 @@ pub async fn computer(hub: &Arc<Hub>, bot: &str, tool: ComputerTool) -> Result<V
             link.request("openApp", json!({"name": name})).await?;
             tokio::time::sleep(Duration::from_secs(1)).await;
             shot(&link, &display(None)?).await
+        }
+    }
+}
+
+/// Media bypasses the API, so keep checking the device lease while a viewer is connected.
+pub async fn watch_viewer(hub: Arc<Hub>, session: String, owner: String) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let expired = {
+            let sessions = hub.screen.sessions.locked();
+            let Some(viewer) = sessions.get(&session) else { return };
+            let now = crate::store::now_ms();
+            viewer.ice.expires_at <= now || (!viewer.started && viewer.pending_until <= now)
+        };
+        let authorized = owner == "local"
+            || crate::api::devices::authorize(&hub, &owner)
+                .is_ok_and(|d| d.scopes.contains(&crate::store::Scope::Screen));
+        if expired || !authorized || !hub.screen.enabled() {
+            if let Err(error) = hub.screen.close(&session).await {
+                tracing::warn!(error = format!("{error:#}"), "couldn't close expired screen session");
+                continue;
+            }
+            return;
         }
     }
 }
@@ -852,12 +967,47 @@ mod tests {
         assert_eq!(t["children"][0]["frame"], json!([5.0, 5.0, 3.0, 3.0]));
     }
 
+    #[test]
+    fn prepared_sessions_are_bounded_and_do_not_count_as_viewers() {
+        let (tx, _) = broadcast::channel(8);
+        let screen = Screen::new(true, tx);
+        let (tx, _) = mpsc::unbounded_channel();
+        *screen.link.locked() =
+            Some(Arc::new(Link { id: 1, tx, pending: Mutex::default(), next_id: AtomicI64::new(1) }));
+        let config = IceConfig {
+            ice_servers: vec![IceServer {
+                urls: vec!["turns:turn.cloudflare.com:443?transport=tcp".into()],
+                username: Some("u".into()),
+                credential: Some("secret".into()),
+            }],
+            ..IceConfig::default()
+        };
+        let prepared = screen.prepare("phone", config).unwrap();
+        let id = prepared["session"].as_str().unwrap();
+        assert!(screen.owns_session(id, "phone"));
+        assert!(!screen.owns_session(id, "other"));
+        assert_eq!(prepared["iceServers"][0]["credential"], "secret");
+        assert_eq!(screen.state()["viewers"], 0);
+        assert!(!screen.state().to_string().contains("secret"));
+        for _ in 0..3 {
+            screen.prepare("phone", IceConfig::default()).unwrap();
+        }
+        assert!(screen.prepare("phone", IceConfig::default()).is_err());
+        for viewer in screen.sessions.locked().values_mut() {
+            viewer.pending_until = 0;
+        }
+        assert!(screen.prepare("phone", IceConfig::default()).is_ok());
+        screen.enabled.store(false, Ordering::Relaxed);
+        assert!(screen.prepare("phone", IceConfig::default()).is_err());
+    }
+
     #[tokio::test]
     async fn helper_roundtrip_over_the_socket() {
         let (tx, _) = broadcast::channel(8);
         let screen = Arc::new(Screen::new(true, tx));
         let (a, b) = UnixStream::pair().unwrap();
-        // Fake helper: reports a display, then answers every request with its method name.
+        let (observed_tx, mut observed_rx) = mpsc::unbounded_channel();
+        // Fake helper reports a display and records the host's ICE configuration.
         tokio::spawn(async move {
             let (rd, mut wr) = b.into_split();
             let status = json!({"jsonrpc": "2.0", "method": "status", "params": {"platform": "test", "capture": true, "displays": [retina()]}});
@@ -865,6 +1015,7 @@ mod tests {
             let mut lines = BufReader::new(rd).lines();
             while let Ok(Some(l)) = lines.next_line().await {
                 let m: Value = serde_json::from_str(&l).unwrap();
+                observed_tx.send(m.clone()).unwrap();
                 let res = json!({"jsonrpc": "2.0", "id": m["id"], "result": {"sdp": format!("answer to {}", m["params"]["sdp"].as_str().unwrap_or_default())}});
                 wr.write_all(format!("{res}\n").as_bytes()).await.unwrap();
             }
@@ -876,9 +1027,33 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        let res = screen.offer("offer", None, None).await.unwrap();
+        let res = screen.offer("local", "offer", None, None).await.unwrap();
         assert_eq!(res["sdp"], "answer to offer");
         assert_eq!(screen.state()["viewers"], 1);
         assert_eq!(screen.state()["displays"][0]["name"], "Built-in");
+        let direct = observed_rx.recv().await.unwrap();
+        assert_eq!(direct["params"]["iceServers"], json!([]));
+        assert_eq!(direct["params"]["maxBitrateBps"], 16_000_000);
+        let config = IceConfig {
+            ice_servers: vec![IceServer {
+                urls: vec!["turn:turn.cloudflare.com:3478?transport=udp".into()],
+                username: Some("u".into()),
+                credential: Some("p".into()),
+            }],
+            ..IceConfig::default()
+        };
+        screen.takeover(true);
+        let prepared = screen.prepare("phone", config).unwrap();
+        screen.session_closed(res["session"].as_str().unwrap());
+        assert_eq!(screen.state()["userControl"], true, "renewal keeps takeover while the replacement is pending");
+        let id = prepared["session"].as_str().unwrap();
+        assert!(screen.offer("other", "offer", Some(id), None).await.is_err());
+        screen.offer("phone", "offer", Some(id), None).await.unwrap();
+        let remote = observed_rx.recv().await.unwrap();
+        assert_eq!(remote["params"]["iceServers"], prepared["iceServers"]);
+        assert_eq!(remote["params"]["maxBitrateBps"], 4_000_000);
+        assert_eq!(remote["params"]["maxFramerate"], 30);
+        screen.sessions.locked().get_mut(id).unwrap().ice.expires_at = 0;
+        assert!(screen.offer("phone", "offer", Some(id), None).await.is_err());
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+@preconcurrency import WebRTC
 
 /// Serves the host's screen requests (see `host/src/screen.rs` for the protocol).
 @MainActor
@@ -52,7 +53,13 @@ final class ScreenHelper {
         case "answer":
             guard let id = p["session"] as? String, let sdp = p["sdp"] as? String else { throw HelperError("session and sdp are required") }
             if let s = sessions[id] { return ["sdp": try await s.answer(offer: sdp)] }
-            let s = Session(id: id, display: display(p["display"]), helper: self)
+            let iceServers = (p["iceServers"] as? [[String: Any]] ?? []).compactMap { value -> RTCIceServer? in
+                guard let urls = value["urls"] as? [String], !urls.isEmpty else { return nil }
+                return RTCIceServer(urlStrings: urls, username: value["username"] as? String, credential: value["credential"] as? String)
+            }
+            let s = Session(id: id, display: display(p["display"]), helper: self, iceServers: iceServers,
+                            maxBitrate: min(16_000_000, max(100_000, p["maxBitrateBps"] as? Int ?? 16_000_000)),
+                            maxFramerate: min(60, max(1, p["maxFramerate"] as? Int ?? 60)))
             sessions[id] = s
             do {
                 let answer = try await s.answer(offer: sdp)

@@ -39,6 +39,10 @@ public final class ScreenSession {
     private var events: PeerEvents?
     private var gathered: CheckedContinuation<Void, Never>?
     private var recoverTask: Task<Void, Never>?
+    private var gatherTask: Task<Void, Never>?
+    private var renewTask: Task<Void, Never>?
+    private var connectionTimer: Task<Void, Never>?
+    private var generation = 0
 
     static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
@@ -57,19 +61,36 @@ public final class ScreenSession {
         do {
             try await connect()
         } catch {
+            guard phase != .closed else { return }
+            close()
             phase = .failed(error.localizedDescription)
         }
     }
 
     private func connect() async throws {
+        let preparing = generation
+        let connection = try await client.screenPrepare()
+        guard generation == preparing, phase != .closed, !Task.isCancelled else {
+            try? await client.screenClose(session: connection.session)
+            throw CancellationError()
+        }
+        // Reserve the replacement before closing the old viewer so takeover survives renewal.
+        let old = session
         teardown()
+        let current = generation
+        session = connection.session
+        if let old { try? await client.screenClose(session: old) }
+        try Task.checkCancellation()
+        guard generation == current, phase != .closed else { throw CancellationError() }
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
-        config.iceServers = []
+        config.iceServers = connection.iceServers.map {
+            RTCIceServer(urlStrings: $0.urls, username: $0.username, credential: $0.credential)
+        }
         config.tcpCandidatePolicy = .enabled
         config.continualGatheringPolicy = .gatherOnce
         config.bundlePolicy = .maxBundle
-        let events = PeerEvents(owner: self)
+        let events = PeerEvents(owner: self, generation: current)
         guard let pc = Self.factory.peerConnection(with: config, constraints: Self.noConstraints, delegate: events) else {
             throw HostError.http(0, "Couldn't start the video connection.")
         }
@@ -96,69 +117,96 @@ public final class ScreenSession {
         reliable?.delegate = events
 
         try await negotiate(pc)
+        guard generation == current, phase != .closed else { throw CancellationError() }
+        // Refresh both endpoints before TURN credentials expire, including an idle screen.
+        let seconds = max(1, Double(connection.expiresAt) / 1000 - Date().timeIntervalSince1970 - 300)
+        renewTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
+            guard let self, self.generation == current, self.phase != .closed else { return }
+            self.phase = .reconnecting
+            self.scheduleRecovery(after: .zero)
+        }
+        connectionTimer = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            guard let self, self.generation == current, self.phase != .live else { return }
+            self.close()
+            self.phase = .failed("Couldn't connect to the remote screen. Check the computer's connection and try again.")
+        }
     }
 
-    /// Offer → host → answer. Also used for ICE restarts on the same session.
+    /// Offer → host → answer with the reserved session’s ICE configuration.
     private func negotiate(_ pc: RTCPeerConnection) async throws {
         let offer = try await pc.offer(for: Self.noConstraints)
         try await pc.setLocalDescription(offer)
         await waitForCandidates(pc)
+        try Task.checkCancellation()
+        guard self.pc === pc, phase != .closed else { throw CancellationError() }
         let sdp = pc.localDescription?.sdp ?? offer.sdp
         let answer = try await client.screenOffer(sdp: sdp, session: session, display: display?.id)
+        try Task.checkCancellation()
+        guard self.pc === pc, phase != .closed else { throw CancellationError() }
         session = answer.session
         try await pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer.sdp))
     }
 
     private func waitForCandidates(_ pc: RTCPeerConnection) async {
         guard pc.iceGatheringState != .complete else { return }
-        Task {
-            try? await Task.sleep(for: .seconds(3))
+        let current = generation
+        gatherTask?.cancel()
+        gatherTask = Task {
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            guard self.generation == current else { return }
             self.finishGathering()
         }
         await withCheckedContinuation { gathered = $0 }
     }
 
-    fileprivate func finishGathering() {
+    fileprivate func finishGathering(generation: Int? = nil) {
+        if let generation, generation != self.generation { return }
+        gatherTask?.cancel()
+        gatherTask = nil
         gathered?.resume()
         gathered = nil
     }
 
-    fileprivate func iceChanged(_ state: RTCIceConnectionState) {
+    fileprivate func iceChanged(_ state: RTCIceConnectionState, generation: Int) {
+        guard generation == self.generation, phase != .closed else { return }
         switch state {
         case .connected, .completed:
-            recoverTask?.cancel()
-            recoverTask = nil
+            connectionTimer?.cancel()
             phase = .live
             lastError = nil
         case .disconnected:
-            // Often recovers by itself (Wi-Fi ↔ cellular); restart ICE if it doesn't.
+            // Often recovers by itself (Wi-Fi ↔ cellular); reconnect if it does not.
             phase = .reconnecting
-            scheduleRecovery(after: .seconds(2), restartIce: true)
+            scheduleRecovery(after: .seconds(2))
         case .failed:
             phase = .reconnecting
-            scheduleRecovery(after: .zero, restartIce: false)
+            scheduleRecovery(after: .zero)
         default:
             break
         }
     }
 
-    private func scheduleRecovery(after delay: Duration, restartIce: Bool) {
+    private func scheduleRecovery(after delay: Duration) {
         recoverTask?.cancel()
         recoverTask = Task { [weak self] in
             var attempt = 0
             try? await Task.sleep(for: delay)
             while let self, !Task.isCancelled, self.phase == .reconnecting {
                 do {
-                    if restartIce, attempt == 0, let pc = self.pc {
-                        pc.restartIce()
-                        try await self.negotiate(pc)
-                    } else {
-                        try await self.connect()
-                    }
+                    // Re-evaluate the signaling route after Wi-Fi/cellular changes and fetch fresh ICE credentials.
+                    try await self.connect()
                     return
                 } catch {
+                    guard !Task.isCancelled, self.phase != .closed else { return }
                     log.info("screen reconnect failed: \(error.localizedDescription)")
                     attempt += 1
+                    if attempt >= 3 {
+                        self.close()
+                        self.phase = .failed(error.localizedDescription)
+                        return
+                    }
                     try? await Task.sleep(for: .seconds(min(Double(attempt) * 2, 10)))
                 }
             }
@@ -177,6 +225,9 @@ public final class ScreenSession {
     }
 
     private func teardown() {
+        generation += 1
+        renewTask?.cancel()
+        connectionTimer?.cancel()
         finishGathering()
         reliable?.close()
         fast?.close()
@@ -241,9 +292,11 @@ public final class ScreenSession {
 /// WebRTC delegate callbacks arrive on its signaling thread; this hops them to the main actor.
 private final class PeerEvents: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, Sendable {
     private let owner: WeakBox
+    private let generation: Int
 
-    @MainActor init(owner: ScreenSession) {
+    @MainActor init(owner: ScreenSession, generation: Int) {
         self.owner = WeakBox(owner)
+        self.generation = generation
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
@@ -257,13 +310,15 @@ private final class PeerEvents: NSObject, RTCPeerConnectionDelegate, RTCDataChan
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         let owner = owner
-        Task { @MainActor in owner.value?.iceChanged(newState) }
+        let generation = generation
+        Task { @MainActor in owner.value?.iceChanged(newState, generation: generation) }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         guard newState == .complete else { return }
         let owner = owner
-        Task { @MainActor in owner.value?.finishGathering() }
+        let generation = generation
+        Task { @MainActor in owner.value?.finishGathering(generation: generation) }
     }
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {

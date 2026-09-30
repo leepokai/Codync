@@ -268,6 +268,18 @@ pub async fn register(hub: &Hub, base: &str) -> Result<()> {
     Ok(())
 }
 
+/// Short-lived media credentials, issued only after the host checks screen authorization.
+pub async fn screen_ice(hub: &Hub, device_key: &str) -> Result<crate::screen::IceConfig> {
+    let value =
+        call(hub, &base(hub)?, Method::POST, "/v1/host/screen-ice", Some(&json!({"deviceKey": device_key}))).await?;
+    let config: crate::screen::IceConfig =
+        serde_json::from_value(value).context("invalid screen relay configuration")?;
+    if config.ice_servers.is_empty() || config.expires_at <= now_ms() + 60_000 {
+        bail!("the screen relay returned expired or empty credentials");
+    }
+    Ok(config)
+}
+
 // MARK: state (§4.3)
 
 #[derive(Deserialize)]

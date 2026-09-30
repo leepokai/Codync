@@ -71,3 +71,57 @@ Shared `.codyncMenu` lists scroll vertically when their content exceeds 420 poin
 A visible conversation registers its own read scope while its scene is active. New chat-visible entries (including final updates to an existing message ID) and later roster unread updates acknowledge that scope through the host. Opening the view, returning to the foreground, and reconnecting also acknowledge it. Never gate a receipt on the cached unread count: entry and roster events can arrive separately. Replies acknowledge only their own thread; leaving a view or backgrounding the scene unregisters it. The host remains authoritative and broadcasts the resulting unread state to all clients.
 
 The iPhone conversation navigation title includes a compact second line with the connection label and the current connection route icon: cloud for Cloudflare, Wi-Fi for direct Wi-Fi/Tailscale. It follows the live route, not the preferred route setting; offline and reconnecting states replace the route icon. VoiceOver also reads the connection description.
+
+
+## Native client parity
+
+UI changes apply to SwiftUI (iOS/macOS), Linux GTK and the terminal client together.
+Use each platform's controls while preserving the same actions, information and states.
+The October 2026 parity changes bring GTK and TUI up to the existing SwiftUI behavior;
+SwiftUI already supplies these actions and needs no duplicate implementation.
+
+- Chat and threads show the latest non-final agent segment only while that lane is
+  working and connected. Earlier narration, tools, empty text and `(pass)` stay out
+  of chat. Completed replies remain visible.
+- GTK's **Load earlier messages** requests older history without evicting loaded pages.
+  Failed messages retain their attachments and nonce for **Resend**, and can be deleted.
+  Reactions work in chats and threads. Attachments save to Downloads without replacing
+  an existing file.
+- TUI keeps text and attachments in the composer until sending succeeds. A failed
+  send can be retried with Enter; it reuses the nonce. A late response must not erase
+  a draft edited while the request was running.
+- GTK bot menus include **Memory** and **Routines**. Memory supports forgetting one or
+  all facts. Routines support creation, editing, schedule previews, pause/resume, test
+  runs, deletion, history and webhook credentials. The host validates schedules;
+  editing can preserve existing event, interval and multiple triggers.
+- GTK **Marketplace** includes agents, connectors and skills. Agent setup supports
+  install/login terminals, browser authentication and masked credential fields.
+  VTE's terminal sends ordered input, receives output, resizes with its view and closes
+  the host terminal when dismissed. Ctrl+click opens HTTP(S) links.
+- TUI **C** opens a pending connection request in the current lane; selecting a request
+  and pressing Enter opens that request. Credentials, connector installation/sign-in
+  and hosted apps use the secure setup APIs. Ctrl+X cancels the request; Escape closes
+  the editor without cancelling. Secrets are masked and never sent as chat text.
+- TUI bot settings include **Use computer**, matching SwiftUI and GTK. The separate
+  remote-screen viewer and voice-call UI remain phone-specific capabilities.
+
+### Verification
+
+Run Rust format, Clippy and tests for `host/` and `apps/linux/`. Linux needs
+`libgtk-4-dev`, `libadwaita-1-dev` and `libvte-2.91-gtk4-dev` (VTE 0.70+).
+
+The native GTK test runs real widgets and HTTP/SSE calls against an isolated fixture:
+
+```sh
+cd apps/linux
+GTK_A11Y=none CODYNC_UI_ARTIFACTS=/tmp/codync-ui \
+  xvfb-run -a dbus-run-session -- python3 tests/ui_fixture.py
+```
+
+Install `xvfb`, `dbus-x11` and `imagemagick` for that command. It exercises history,
+streaming, retry/discard, reactions, attachment downloads, memory, routines, skill
+installation, masked agent credentials and terminal cleanup. Downloads and tokens stay
+inside its temporary directory. CI runs it on both Linux architectures and uploads
+screenshots as `native-ui-linux-*` artifacts. Host tests cover TUI draft recovery,
+lane-specific streaming, computer settings and complete connection-request API flows.
+These fixtures do not authenticate real third-party accounts.

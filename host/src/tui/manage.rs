@@ -134,6 +134,7 @@ pub struct Input {
 
 pub enum Submit {
     AgentEnv(String),
+    Connection(Box<super::connections::Connection>),
     Connector(Value),
     Import,
 }
@@ -613,6 +614,7 @@ impl App {
                         submit: Submit::Connector(item),
                     };
                     connector_inputs(&mut f);
+                    super::connections::option_fields(&mut f);
                     self.overlays.push(Overlay::Market(m));
                     self.overlays.push(Overlay::Fields(Box::new(f)));
                     return None;
@@ -795,11 +797,24 @@ impl App {
     // ---------- fields ----------
 
     pub(super) fn fields_key(&mut self, mut f: Box<Fields>, k: KeyEvent) -> Option<Overlay> {
+        if f.saving {
+            return if k.code == KeyCode::Esc { None } else { Some(Overlay::Fields(f)) };
+        }
         let rows = f.offset() + f.inputs.len();
         let on_choice = f.offset() == 1 && f.cursor == 0;
         let multiline = f.current().is_some_and(|i| i.multiline);
         match k.code {
             KeyCode::Esc => return None,
+            KeyCode::Char('x') if ctrl(k) && matches!(f.submit, Submit::Connection(_)) => {
+                if let Submit::Connection(c) = &f.submit {
+                    f.saving = true;
+                    self.call(
+                        "connectorRequestFinish",
+                        json!({"entryId":c.entry,"cancel":true}),
+                        After::Connection(c.entry.clone(), super::connections::Step::Finish),
+                    );
+                }
+            }
             _ if newline(k) && multiline => {
                 if let Some(i) = f.current() {
                     i.ed.insert("\n");
@@ -812,6 +827,7 @@ impl App {
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') if on_choice => {
                 f.choice = (f.choice + 1) % f.choices.len();
                 connector_inputs(&mut f);
+                super::connections::option_fields(&mut f);
             }
             _ => {
                 if let Some(i) = f.current() {
@@ -834,11 +850,12 @@ impl App {
             .inputs
             .iter()
             .filter(|i| !i.ed.text.trim().is_empty())
-            .map(|i| (i.name.clone(), i.ed.text.trim().into()))
+            .map(|i| (i.name.clone(), if i.secret { i.ed.text.as_str() } else { i.ed.text.trim() }.into()))
             .collect();
         f.saving = true;
         f.error = None;
         match &f.submit {
+            Submit::Connection(_) => self.submit_connection(f, &values),
             Submit::AgentEnv(backend) => {
                 if values.is_empty() {
                     f.saving = false;
@@ -1314,7 +1331,7 @@ pub fn when_text(triggers: &Value, zone: &str) -> Option<String> {
 }
 
 /// Opens `url` in this computer's browser, when the host is this computer.
-fn open_browser(url: &str, host: &str) -> bool {
+pub(super) fn open_browser(url: &str, host: &str) -> bool {
     let local = ["//127.0.0.1", "//localhost", "//[::1]"].iter().any(|h| host.contains(h));
     if !local || url.is_empty() {
         return false;

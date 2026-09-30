@@ -17,7 +17,7 @@ Codync/
 │   │   ├── chat/              # Groups, bot-to-bot requests, prompt snapshots, memory
 │   │   ├── remote/            # Identity, wire crypto, E2E channel, cloud, relay socket, push
 │   │   ├── market/            # Marketplace, Composio, MCP OAuth
-│   │   └── tui/               # Terminal client (manage.rs + sheets.rs: memory, routines, marketplace, sign-in)
+│   │   └── tui/               # Terminal client (manage.rs + sheets.rs: settings; connections.rs: secure connection requests)
 │   └── tests/                 # Host integration tests and scripted ACP agents
 ├── kit/                       # Shared Swift package
 │   ├── Sources/

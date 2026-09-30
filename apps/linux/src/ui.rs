@@ -11,8 +11,16 @@ use crate::{avatar, compose, dialogs, orb};
 use adw::prelude::*;
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+
+#[derive(Clone)]
+pub struct Outgoing {
+    pub bot: String,
+    pub text: String,
+    pub thread: Option<String>,
+    pub files: Vec<std::path::PathBuf>,
+}
 
 #[derive(Default)]
 pub struct State {
@@ -31,6 +39,9 @@ pub struct State {
     pub hide_details: bool,
     pub search: String,
     pub online: bool,
+    pub outbox: HashMap<String, Outgoing>,
+    history_busy: HashSet<String>,
+    history_done: HashSet<String>,
 }
 
 /// A message box: send, or stop while the chat (or thread) is working. In a group,
@@ -354,7 +365,7 @@ fn empty_page(ui_new: &gtk::Button) -> gtk::Box {
     page
 }
 
-pub fn build(app: &adw::Application) {
+pub fn build(app: &adw::Application) -> App {
     let new_btn = icon_button("list-add-symbolic", "New chat (Ctrl+N)");
     let search = gtk::SearchEntry::builder()
         .placeholder_text("Search")
@@ -717,6 +728,7 @@ pub fn build(app: &adw::Application) {
 
     ui.window.present();
     connect(&ui);
+    ui
 }
 
 fn close_open_thread(ui: &App) {
@@ -1041,6 +1053,11 @@ fn notify(ui: &App, old: &Value, new: &Value) {
 
 pub fn upsert(st: &mut State, e: Value) {
     let bot = e["botId"].as_str().unwrap_or_default().to_owned();
+    if !e["id"].as_str().unwrap_or_default().starts_with("local-")
+        && let Some(nonce) = e["data"]["clientNonce"].as_str()
+    {
+        st.outbox.remove(nonce);
+    }
     let list = st.entries.entry(bot).or_default();
     let id = e["id"].as_str().unwrap_or_default();
     if let Some(i) = list.iter().position(|x| x["id"] == id) {
@@ -1057,9 +1074,6 @@ pub fn upsert(st: &mut State, e: Value) {
     }
     list.push(e);
     list.sort_by_key(|x| x["seq"].as_i64().unwrap_or(i64::MAX));
-    if list.len() > 400 {
-        list.drain(..list.len() - 400);
-    }
 }
 
 /// Coalesces bursts of events into one render per frame.
@@ -1302,6 +1316,76 @@ fn is_chat(e: &Value) -> bool {
     }
 }
 
+fn visible_entries<'a>(entries: &[&'a Value], streaming: bool) -> Vec<&'a Value> {
+    let live = entries.last().filter(|e| {
+        streaming
+            && e["kind"] == "agent"
+            && e["data"]["final"] == false
+            && e["data"]["text"]
+                .as_str()
+                .is_some_and(|t| !t.is_empty() && t != "(pass)")
+    });
+    entries
+        .iter()
+        .copied()
+        .filter(|e| is_chat(e) || live.is_some_and(|l| l["id"] == e["id"]))
+        .collect()
+}
+
+fn load_older(ui: &App, bot: &str) {
+    let before = {
+        let mut st = ui.state.borrow_mut();
+        if !st.history_busy.insert(bot.to_owned()) {
+            return;
+        }
+        st.entries
+            .get(bot)
+            .into_iter()
+            .flatten()
+            .filter(|e| {
+                e["threadId"].is_null()
+                    && !e["id"].as_str().unwrap_or_default().starts_with("local-")
+            })
+            .filter_map(|e| e["seq"].as_i64())
+            .min()
+            .unwrap_or(i64::MAX)
+    };
+    schedule(ui);
+    let (ui, bot) = (ui.clone(), bot.to_owned());
+    client::call(
+        "history",
+        json!({"botId": bot, "beforeSeq": before, "limit": 200}),
+        move |result| {
+            let adjust = ui.scroller.vadjustment();
+            let (height, position) = (adjust.upper(), adjust.value());
+            let mut st = ui.state.borrow_mut();
+            st.history_busy.remove(&bot);
+            match result {
+                Ok(v) => {
+                    let entries = v["entries"].as_array().cloned().unwrap_or_default();
+                    if entries.len() < 200 {
+                        st.history_done.insert(bot.clone());
+                    }
+                    for entry in entries {
+                        upsert(&mut st, entry);
+                    }
+                }
+                Err(error) => toast(&ui, &error),
+            }
+            let selected = st.current.as_deref() == Some(bot.as_str());
+            drop(st);
+            render(&ui);
+            if selected {
+                gtk::glib::idle_add_local_once(move || {
+                    if ui.state.borrow().current.as_deref() == Some(bot.as_str()) {
+                        adjust.set_value(position + (adjust.upper() - height).max(0.0));
+                    }
+                });
+            }
+        },
+    );
+}
+
 pub fn clear(b: &gtk::Box) {
     while let Some(c) = b.first_child() {
         b.remove(&c);
@@ -1404,6 +1488,21 @@ fn render_chat(ui: &App) {
         .get(id)
         .map(|l| l.iter().filter(|e| e["threadId"].is_null()).collect())
         .unwrap_or_default();
+    if !st.history_done.contains(id)
+        && entries
+            .iter()
+            .any(|e| e["seq"].as_i64().is_some_and(|n| n > 1 && n < i64::MAX))
+    {
+        let earlier = gtk::Button::with_label(if st.history_busy.contains(id) {
+            "Loading…"
+        } else {
+            "Load earlier messages"
+        });
+        earlier.set_sensitive(!st.history_busy.contains(id));
+        let (ui2, id) = (ui.clone(), id.to_owned());
+        earlier.connect_clicked(move |_| load_older(&ui2, &id));
+        ui.chat_list.append(&earlier);
+    }
     if !entries.iter().any(|e| is_chat(e)) {
         ui.chat_list.append(&intro(&st, bot));
     }
@@ -1636,7 +1735,13 @@ fn append_entries(
     let group = is_group(chat);
     let mut last_author = String::new();
     let mut last_time: Option<i64> = None;
-    for e in entries.iter().filter(|e| is_chat(e)) {
+    let thread = if main {
+        None
+    } else {
+        st.open_thread.as_deref()
+    };
+    let streaming = st.online && working_in(chat, chat["id"].as_str().unwrap_or_default(), thread);
+    for e in visible_entries(entries, streaming) {
         let at = e["createdAt"].as_i64().unwrap_or(0);
         if main && last_time.is_none_or(|t| at - t > 3_600_000) {
             let sep = label(&rows::separator(at), &["footnote", "tertiary"]);
@@ -1814,7 +1919,48 @@ pub fn send_text(
     thread: Option<String>,
     files: Vec<std::path::PathBuf>,
 ) {
-    let nonce = uuid::Uuid::new_v4().to_string();
+    send_outgoing(
+        ui,
+        Outgoing {
+            bot: bot.to_owned(),
+            text: text.to_owned(),
+            thread,
+            files,
+        },
+        uuid::Uuid::new_v4().to_string(),
+    );
+}
+
+pub fn retry(ui: &App, nonce: &str) {
+    let outgoing = ui.state.borrow().outbox.get(nonce).cloned();
+    if let Some(outgoing) = outgoing {
+        send_outgoing(ui, outgoing, nonce.to_owned());
+    }
+}
+
+pub fn discard(ui: &App, nonce: &str) {
+    let mut st = ui.state.borrow_mut();
+    if let Some(outgoing) = st.outbox.remove(nonce)
+        && let Some(entries) = st.entries.get_mut(&outgoing.bot)
+    {
+        entries.retain(|e| e["id"] != format!("local-{nonce}"));
+    }
+    drop(st);
+    schedule(ui);
+}
+
+fn send_outgoing(ui: &App, outgoing: Outgoing, nonce: String) {
+    ui.state
+        .borrow_mut()
+        .outbox
+        .insert(nonce.clone(), outgoing.clone());
+    let Outgoing {
+        bot,
+        text,
+        thread,
+        files,
+    } = outgoing;
+
     let attachments: Vec<Value> = files
         .iter()
         .map(|p| {
@@ -1994,6 +2140,70 @@ mod tests {
     use super::mention_query;
 
     #[test]
+    fn streaming_shows_only_the_active_last_segment() {
+        use super::*;
+        let old = json!({"id":"old","kind":"agent","data":{"text":"thinking","final":false}});
+        let final_reply = json!({"id":"final","kind":"agent","data":{"text":"done","final":true}});
+        let live = json!({"id":"live","kind":"agent","data":{"text":"new reply","final":false}});
+        let tool = json!({"id":"tool","kind":"tool"});
+        assert_eq!(
+            visible_entries(&[&old, &final_reply, &live], true),
+            [&final_reply, &live]
+        );
+        assert_eq!(
+            visible_entries(&[&old, &final_reply, &live], false),
+            [&final_reply]
+        );
+        assert_eq!(
+            visible_entries(&[&old, &final_reply, &live, &tool], true),
+            [&final_reply]
+        );
+        let pass = json!({"id":"pass","kind":"agent","data":{"text":"(pass)","final":false}});
+        assert!(visible_entries(&[&pass], true).is_empty());
+    }
+
+    #[test]
+    fn loading_history_retains_old_pages_and_newer_revisions() {
+        use super::*;
+        let mut state = State::default();
+        for seq in (1..=600).rev() {
+            upsert(
+                &mut state,
+                json!({"botId":"b","id":format!("e{seq}"),"seq":seq,"rev":10}),
+            );
+        }
+        upsert(&mut state, json!({"botId":"b","id":"e1","seq":1,"rev":1}));
+        assert_eq!(state.entries["b"].len(), 600);
+        assert_eq!(state.entries["b"][0]["rev"], 10);
+    }
+
+    #[test]
+    fn host_acknowledgement_replaces_failed_echo_and_releases_outbox() {
+        use super::*;
+        let mut state = State::default();
+        state.outbox.insert(
+            "nonce".into(),
+            Outgoing {
+                bot: "b".into(),
+                text: "hi".into(),
+                thread: None,
+                files: vec![],
+            },
+        );
+        upsert(
+            &mut state,
+            json!({"botId":"b","id":"local-nonce","seq":i64::MAX,"kind":"user","data":{"clientNonce":"nonce","status":"failed"}}),
+        );
+        upsert(
+            &mut state,
+            json!({"botId":"b","id":"server","seq":1,"kind":"user","data":{"clientNonce":"nonce"}}),
+        );
+        assert_eq!(state.entries["b"].len(), 1);
+        assert_eq!(state.entries["b"][0]["id"], "server");
+        assert!(state.outbox.is_empty());
+    }
+
+    #[test]
     fn mentions() {
         assert_eq!(mention_query("hi @al"), Some("al"));
         assert_eq!(mention_query("@"), Some(""));
@@ -2002,3 +2212,7 @@ mod tests {
         assert_eq!(mention_query("@al\nnext"), None);
     }
 }
+
+#[cfg(test)]
+#[path = "ui_tests.rs"]
+mod ui_tests;

@@ -2,10 +2,10 @@
 //! new one, with Ctrl+1…9 shortcuts, and the message box underneath. Picked bots become chips;
 //! one opens its chat, several start a group chat with them (or open the one they share).
 
+use crate::avatar;
 use crate::client;
 use crate::rows::{hline, icon_button, label};
 use crate::ui::{self, App, flat_header};
-use crate::avatar;
 use adw::prelude::*;
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};

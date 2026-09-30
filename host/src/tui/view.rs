@@ -950,6 +950,16 @@ fn replies(n: i64) -> String {
     if n == 1 { "1 reply".into() } else { format!("{n} replies") }
 }
 
+fn live_entry<'a>(app: &App, bot: &Bot, entries: &[&'a Entry]) -> Option<&'a str> {
+    if !app.online || bot.status != Status::Working || !bot.works_in(app.thread.as_deref()) {
+        return None;
+    }
+    entries
+        .last()
+        .filter(|e| e.kind == Kind::Agent && e.data["final"] == false && !e.text().is_empty() && e.text() != "(pass)")
+        .map(|e| e.id.as_str())
+}
+
 fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
     let t = theme();
     let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
@@ -978,7 +988,13 @@ fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
         let side = width.saturating_sub(w(&label) + 4);
         out.lines.push(Line::from(Span::styled(format!(" ───{label}{}", "─".repeat(side)), t.dim)));
     }
+    let live = live_entry(app, b, &entries);
     for e in &entries {
+        let mut visible = (*e).clone();
+        if live == Some(e.id.as_str()) {
+            visible.data["final"] = true.into();
+        }
+        let e = &visible;
         entry_lines(&mut out, app, b, e, &info, thread.is_none(), width);
     }
     // A turn in flight: who's on it and what they're doing.
@@ -1145,7 +1161,17 @@ fn entry_lines(
             }
         }
         Kind::Notice => {
-            let text = e.notice_text();
+            let from = out.lines.len();
+            let text = if let Some(status) = e.data["connectionRequest"]["status"].as_str() {
+                format!(
+                    "{} · {} · {}",
+                    e.data["connectionRequest"]["title"].as_str().unwrap_or("Connect service"),
+                    e.notice_text(),
+                    if status == "pending" { "C connects / cancels" } else { status }
+                )
+            } else {
+                e.notice_text()
+            };
             gap(out);
             match e.data["style"].as_str() {
                 Some("divider") => {
@@ -1165,6 +1191,9 @@ fn entry_lines(
                     &[Span::styled(" · ", t.dim)],
                     &[Span::raw("   ")],
                 )),
+            }
+            if e.data["connectionRequest"].is_object() {
+                out.messages.push((e.id.clone(), from, out.lines.len()));
             }
         }
         _ => {}
@@ -1912,7 +1941,7 @@ fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::app::Goto, items
     );
 }
 
-const HELP: [(&str, &str, &str); 51] = [
+const HELP: [(&str, &str, &str); 52] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -1931,6 +1960,7 @@ const HELP: [(&str, &str, &str); 51] = [
     ("CHAT", "s", "stop the bot"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
+    ("CHAT", "C", "open connection / login request"),
     ("CHAT", "r", "reply in a thread"),
     ("CHAT", "v", "pick a message"),
     ("CHAT", "j k  ↵", "picking: move / open"),
@@ -2051,6 +2081,7 @@ fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Folder => "Workspace",
             Field::Approvals => "Approvals",
             Field::Notify => "Notify",
+            Field::Computer => "Use computer",
             Field::Color => "Color",
             Field::Shape => "Shape",
             Field::Connectors => "Connectors",
@@ -2126,6 +2157,10 @@ fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 let s = if f.auto { "○ Ask   ◉ Auto (approve every request)" } else { "◉ Ask   ○ Auto" };
                 put(buf, vx, y, vw, s, t.text.patch(base));
             }
+            Field::Computer => {
+                let s = if f.computer { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                put(buf, vx, y, vw, s, t.text.patch(base));
+            }
             Field::Notify => {
                 let s = if f.notify { "◉ Done and needs-you   ○ Off" } else { "○ Done and needs-you   ◉ Off" };
                 put(buf, vx, y, vw, s, t.text.patch(base));
@@ -2182,7 +2217,9 @@ fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Connectors | Field::Skills => "←→ move · space toggle · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::Model => "←→ pick a model · or type its id",
-        Field::Color | Field::Shape | Field::Approvals | Field::Notify => "←→ change · tab next field",
+        Field::Color | Field::Shape | Field::Approvals | Field::Notify | Field::Computer => {
+            "←→ change · tab next field"
+        }
         Field::Instructions => "⇧↵ new line · tab next field",
         Field::Name => "tab next field · ^s save",
     };
@@ -2398,6 +2435,33 @@ fn toasts(buf: &mut Buffer, area: Rect, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_text_stays_in_its_lane_and_disappears_after_a_tool() {
+        use serde_json::json;
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(super::super::net::Client::new("http://127.0.0.1:1", None), tx, String::new());
+        app.on_msg(super::super::app::Msg::Event(json!({"type":"bot","bot":{"id":"b","status":"working"}})));
+        app.online = true;
+        let entry = Entry {
+            id: "live".into(),
+            seq: 1,
+            turn: 1,
+            kind: Kind::Agent,
+            data: json!({"text":"answer","final":false}),
+            created_at: 0,
+            thread_id: None,
+        };
+        let bot = &app.bots["b"];
+        assert_eq!(live_entry(&app, bot, &[&entry]), Some("live"));
+        let tool = Entry { kind: Kind::Tool, ..entry.clone() };
+        assert_eq!(live_entry(&app, bot, &[&entry, &tool]), None);
+        app.thread = Some("thread".into());
+        assert_eq!(live_entry(&app, &app.bots["b"], &[&entry]), None);
+        app.thread = None;
+        app.online = false;
+        assert_eq!(live_entry(&app, &app.bots["b"], &[&entry]), None);
+    }
 
     #[test]
     fn civil_dates() {

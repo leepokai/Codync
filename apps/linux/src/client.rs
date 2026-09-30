@@ -55,7 +55,20 @@ async fn call_async(method: String, body: Value) -> Result<Value, String> {
         .post(format!("{}/api/{method}", base()))
         .bearer_auth(token)
         .json(&body)
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(
+            if matches!(
+                method.as_str(),
+                "agentAuth"
+                    | "agentAuthenticate"
+                    | "setAgentEnv"
+                    | "installSkill"
+                    | "installConnector"
+            ) {
+                660
+            } else {
+                120
+            },
+        ))
         .send()
         .await
         .map_err(|_| "Can't reach the Codync host.".to_owned())?;
@@ -216,4 +229,139 @@ pub fn install_host(done: impl FnOnce(Result<(), String>) + 'static) {
 
 pub fn empty() -> Value {
     json!({})
+}
+
+/// Save an attachment without overwriting an existing download or trusting a remote path.
+pub fn save_file(
+    bot: String,
+    id: String,
+    name: String,
+    done: impl FnOnce(Result<PathBuf, String>) + 'static,
+) {
+    let (tx, rx) = async_channel::bounded(1);
+    runtime().spawn(async move {
+        let result = async {
+            use tokio::io::AsyncWriteExt as _;
+            let dir = dirs::download_dir()
+                .or_else(dirs::home_dir)
+                .ok_or("No Downloads folder")?;
+            tokio::fs::create_dir_all(&dir)
+                .await
+                .map_err(|e| e.to_string())?;
+            let name = std::path::Path::new(&name)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .filter(|n| !n.is_empty() && *n != "." && *n != "..")
+                .unwrap_or("attachment");
+            let mut suffix = 0;
+            let (path, mut file) = loop {
+                let path = dir.join(if suffix == 0 {
+                    name.to_owned()
+                } else {
+                    format!("{suffix}-{name}")
+                });
+                match tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                    .await
+                {
+                    Ok(file) => break (path, file),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => suffix += 1,
+                    Err(e) => return Err(e.to_string()),
+                }
+            };
+            let download = async {
+                let mut offset = 0_u64;
+                loop {
+                    let v = call_async(
+                        "readUpload".into(),
+                        json!({"botId":bot,"uploadId":id,"offset":offset}),
+                    )
+                    .await?;
+                    let chunk =
+                        gtk::glib::base64_decode(v["data"].as_str().ok_or("Missing file data")?);
+                    let size = v["size"].as_u64().ok_or("Missing file size")?;
+                    if size > 100 * 1024 * 1024 || offset + chunk.len() as u64 > size {
+                        return Err("Invalid attachment size".to_owned());
+                    }
+                    if chunk.is_empty() && offset < size {
+                        return Err("Incomplete attachment".to_owned());
+                    }
+                    file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+                    offset += chunk.len() as u64;
+                    if offset == size {
+                        return Ok(());
+                    }
+                }
+            }
+            .await;
+            drop(file);
+            if let Err(e) = download {
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err(e);
+            }
+            Ok(path)
+        }
+        .await;
+        let _ = tx.send(result).await;
+    });
+    gtk::glib::spawn_future_local(async move {
+        if let Ok(r) = rx.recv().await {
+            done(r);
+        }
+    });
+}
+
+/// One ordered input queue and cancellable output stream for a host setup terminal.
+pub fn terminal(
+    id: String,
+    events: async_channel::Sender<Result<Value, String>>,
+) -> (async_channel::Sender<Vec<u8>>, tokio::task::AbortHandle) {
+    let (keys, input) = async_channel::unbounded::<Vec<u8>>();
+    let term = id.clone();
+    let errors = events.clone();
+    runtime().spawn(async move {
+        while let Ok(bytes) = input.recv().await {
+            let data = gtk::glib::base64_encode(&bytes).to_string();
+            if let Err(e) = call_async("termInput".into(), json!({"term":term,"data":data})).await {
+                let _ = errors.send(Err(e)).await;
+            }
+        }
+    });
+    let output = runtime().spawn(async move {
+        let read = async {
+            let token = token().ok_or("Host token is missing")?;
+            let response = http()
+                .get(format!("{}/term/{id}", base()))
+                .bearer_auth(token)
+                .send()
+                .await
+                .and_then(reqwest::Response::error_for_status)
+                .map_err(|e| e.to_string())?;
+            let mut stream = response.bytes_stream();
+            let mut buffer = Vec::new();
+            while let Some(chunk) = stream.next().await {
+                buffer.extend_from_slice(&chunk.map_err(|e| e.to_string())?);
+                while let Some(end) = buffer.iter().position(|b| *b == b'\n') {
+                    let line: Vec<_> = buffer.drain(..=end).collect();
+                    let line = String::from_utf8_lossy(&line);
+                    if let Some(data) = line.trim_end().strip_prefix("data:") {
+                        let event: Value =
+                            serde_json::from_str(data.trim()).map_err(|e| e.to_string())?;
+                        let exited = event["type"] == "exit";
+                        if events.send(Ok(event)).await.is_err() || exited {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            Err("Terminal disconnected. Close it and retry setup.".to_owned())
+        }
+        .await;
+        if let Err(e) = read {
+            let _ = events.send(Err(e)).await;
+        }
+    });
+    (keys, output.abort_handle())
 }

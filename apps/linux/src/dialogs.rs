@@ -785,21 +785,24 @@ fn text_area(view: &gtk::TextView, placeholder: &str, min: i32, max: i32) -> gtk
     b
 }
 
-fn confirm(
+pub fn confirm(
     ui: &App,
     title: &str,
     body: &str,
     action: &str,
     destructive: bool,
-    f: impl Fn() + 'static,
+    f: impl FnOnce() + 'static,
 ) {
+    let callback = std::cell::RefCell::new(Some(f));
     let alert = adw::AlertDialog::new(Some(title), Some(body));
     alert.add_responses(&[("cancel", "Cancel"), ("ok", action)]);
     if destructive {
         alert.set_response_appearance("ok", adw::ResponseAppearance::Destructive);
     }
     alert.connect_response(None, move |_, r| {
-        if r == "ok" {
+        if r == "ok"
+            && let Some(f) = callback.borrow_mut().take()
+        {
             f();
         }
     });
@@ -1105,6 +1108,25 @@ pub fn bot_menu(ui: &App, parent: &gtk::Widget, point: Option<(f64, f64)>, id: &
             )
             .divider(),
         );
+    }
+    if !group {
+        for (icon, title, memory) in [
+            ("document-properties-symbolic", "Memory", true),
+            ("alarm-symbolic", "Routines", false),
+        ] {
+            let (ui2, id2) = (ui.clone(), id.to_owned());
+            items.push(MenuItem::new(
+                icon,
+                title,
+                Box::new(move || {
+                    if memory {
+                        crate::manage::memory(&ui2, &id2);
+                    } else {
+                        crate::manage::routines(&ui2, &id2);
+                    }
+                }),
+            ));
+        }
     }
     if !group {
         let (ui2, id2) = (ui.clone(), id.to_owned());
@@ -1478,9 +1500,9 @@ pub fn settings(ui: &App) {
     let ui2 = ui.clone();
     button.connect_clicked(move |_| crate::connections::credentials(&ui2));
     credentials.add(&button);
-    let marketplace = gtk::Button::with_label("Connectors");
+    let marketplace = gtk::Button::with_label("Marketplace");
     let ui2 = ui.clone();
-    marketplace.connect_clicked(move |_| crate::connections::marketplace(&ui2));
+    marketplace.connect_clicked(move |_| crate::market::open(&ui2));
     credentials.add(&marketplace);
     page.add(&credentials);
     let pair = adw::PreferencesGroup::builder()

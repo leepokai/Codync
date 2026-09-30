@@ -43,7 +43,7 @@ jobs:
         working-directory: apps/linux
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev xvfb dbus-x11 imagemagick
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -52,6 +52,16 @@ jobs:
           workspaces: apps/linux
       - run: cargo clippy -- -D warnings
       - run: cargo test
+      - name: Verify native UI flows
+        env:
+          GTK_A11Y: none
+          CODYNC_UI_ARTIFACTS: ${{ github.workspace }}/build/ui-parity
+        run: xvfb-run -a dbus-run-session -- python3 tests/ui_fixture.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-ui-${{ matrix.name }}
+          path: build/ui-parity/
       - name: Package
         if: startsWith(github.ref, 'refs/tags/v')
         run: |

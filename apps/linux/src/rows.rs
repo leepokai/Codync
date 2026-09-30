@@ -123,7 +123,7 @@ pub fn user_bubble(r: &Reply, e: &Value, bot_working: bool, start: bool) -> gtk:
         .build();
     let text = e["data"]["text"].as_str().unwrap_or("");
     for a in e["data"]["attachments"].as_array().into_iter().flatten() {
-        col.append(&file_card(a));
+        col.append(&file_card(r.ui, e, a));
     }
     if !text.is_empty() {
         let b = bubble(text, false, "bubble-user");
@@ -142,6 +142,28 @@ pub fn user_bubble(r: &Reply, e: &Value, bot_working: bool, start: bool) -> gtk:
         s.add_css_class("danger-text");
     }
     col.append(&s);
+    if e["data"]["status"] == "failed"
+        && let Some(nonce) = e["data"]["clientNonce"].as_str()
+    {
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        for (icon, title, retry) in [
+            ("view-refresh-symbolic", "Resend", true),
+            ("user-trash-symbolic", "Delete", false),
+        ] {
+            let button = icon_button(icon, title);
+            let (ui, nonce) = (r.ui.clone(), nonce.to_owned());
+            button.connect_clicked(move |_| {
+                if retry {
+                    ui::retry(&ui, &nonce)
+                } else {
+                    ui::discard(&ui, &nonce)
+                }
+            });
+            actions.append(&button);
+        }
+        col.append(&actions);
+    }
+    col.append(&reactions(r.ui, e));
     col.upcast()
 }
 
@@ -160,7 +182,7 @@ pub fn message_text(e: &Value) -> String {
 }
 
 /// A file sent with a message: its name and size.
-fn file_card(a: &Value) -> gtk::Widget {
+fn file_card(ui: &App, entry: &Value, a: &Value) -> gtk::Widget {
     let card = gtk::Box::builder()
         .spacing(8)
         .halign(gtk::Align::End)
@@ -177,6 +199,27 @@ fn file_card(a: &Value) -> gtk::Widget {
     size.set_xalign(0.0);
     col.append(&size);
     card.append(&col);
+    if let (Some(id), Some(bot)) = (a["id"].as_str(), entry["botId"].as_str()) {
+        let save = icon_button("document-save-symbolic", "Save attachment");
+        let (ui, id, bot, name) = (
+            ui.clone(),
+            id.to_owned(),
+            bot.to_owned(),
+            a["name"].as_str().unwrap_or("File").to_owned(),
+        );
+        save.connect_clicked(move |button| {
+            button.set_sensitive(false);
+            let (ui, button) = (ui.clone(), button.clone());
+            client::save_file(bot.clone(), id.clone(), name.clone(), move |result| {
+                button.set_sensitive(true);
+                match result {
+                    Ok(path) => toast(&ui, &format!("Saved {}", path.display())),
+                    Err(e) => toast(&ui, &e),
+                }
+            });
+        });
+        card.append(&save);
+    }
     card.upcast()
 }
 
@@ -209,7 +252,66 @@ pub fn agent_bubble(r: &Reply, st: &State, e: &Value, group: bool, start: bool) 
     let t = label(&clock(e["createdAt"].as_i64().unwrap_or(0)), &["time"]);
     t.set_margin_start(12);
     col.append(&t);
+    col.append(&reactions(r.ui, e));
     col.upcast()
+}
+
+fn reactions(ui: &App, entry: &Value) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    if entry["id"]
+        .as_str()
+        .unwrap_or_default()
+        .starts_with("local-")
+    {
+        return row;
+    }
+    for emoji in entry["data"]["reactions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        let button = gtk::Button::with_label(emoji);
+        button.set_tooltip_text(Some("Remove reaction"));
+        button.add_css_class("flat");
+        let (ui, id, emoji) = (ui.clone(), entry["id"].clone(), emoji.to_owned());
+        button.connect_clicked(move |button| {
+            button.set_sensitive(false);
+            let (ui, button) = (ui.clone(), button.clone());
+            client::call("react", json!({"entryId": id, "emoji": emoji}), move |r| {
+                button.set_sensitive(true);
+                if let Err(e) = r {
+                    toast(&ui, &e);
+                }
+            });
+        });
+        row.append(&button);
+    }
+    let add = icon_button("face-smile-symbolic", "React");
+    let (ui, id) = (ui.clone(), entry["id"].clone());
+    add.connect_clicked(move |button| {
+        let items = ["👍", "❤️", "😂", "🎉", "👀", "✅"]
+            .into_iter()
+            .map(|emoji| {
+                let (ui, id) = (ui.clone(), id.clone());
+                ui::MenuItem::new(
+                    "",
+                    emoji,
+                    Box::new(move || {
+                        let ui = ui.clone();
+                        client::call("react", json!({"entryId":id,"emoji":emoji}), move |r| {
+                            if let Err(e) = r {
+                                toast(&ui, &e);
+                            }
+                        });
+                    }),
+                )
+            })
+            .collect();
+        ui::popup_menu(button, None, items);
+    });
+    row.append(&add);
+    row
 }
 
 pub fn notice(e: &Value) -> gtk::Widget {

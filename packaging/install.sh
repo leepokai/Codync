@@ -107,7 +107,7 @@ install_linux_app() {
   mkdir -p "$data" && cp -R "$TMP/$name/share/." "$data/"
   say "Installed the Codync desktop app to $BIN_DIR/codync"
   if command -v ldd >/dev/null && missing=$(ldd "$BIN_DIR/codync" 2>&1 | grep 'not found'); then
-    echo "   It won't start yet: it needs GTK 4, libadwaita and glibc 2.39+ (Ubuntu 24.04 or newer). Missing:"
+    echo "   It won't start yet: it needs GTK 4, libadwaita, VTE (GTK 4) and glibc 2.39+ (Ubuntu 24.04 or newer). Missing:"
     echo "$missing" | sed 's/^[[:space:]]*/     /' | sort -u
   fi
 }

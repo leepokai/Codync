@@ -25,6 +25,8 @@ pub enum Msg {
 #[derive(Clone)]
 pub enum After {
     Nothing,
+    Sent(String),
+    Connection(String, super::connections::Step),
     Hello,
     History(String),
     Thread,
@@ -85,6 +87,7 @@ pub struct Bot {
     pub pinned: bool,
     pub hidden: bool,
     pub notify: bool,
+    pub computer: bool,
     pub connectors: Vec<String>,
     pub skills: Vec<String>,
     pub status: Status,
@@ -127,6 +130,7 @@ impl Bot {
             pinned: v["pinned"].as_bool().unwrap_or(false),
             hidden: v["hidden"].as_bool().unwrap_or(false),
             notify: v["notify"].as_bool().unwrap_or(true),
+            computer: v["computer"].as_bool().unwrap_or(false),
             connectors: strs(&v["connectors"]),
             skills: strs(&v["skills"]),
             status: match v["status"].as_str() {
@@ -246,7 +250,7 @@ impl Entry {
 
     /// What the chat shows as a message: the user's, and each turn's final reply.
     pub fn is_message(&self) -> bool {
-        self.kind == Kind::User || self.is_final()
+        self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
     }
 
     pub fn pending(&self) -> bool {
@@ -501,13 +505,14 @@ pub enum Field {
     Folder,
     Approvals,
     Notify,
+    Computer,
     Color,
     Shape,
     Connectors,
     Skills,
 }
 
-pub const FIELDS: [Field; 11] = [
+pub const FIELDS: [Field; 12] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -515,6 +520,7 @@ pub const FIELDS: [Field; 11] = [
     Field::Folder,
     Field::Approvals,
     Field::Notify,
+    Field::Computer,
     Field::Color,
     Field::Shape,
     Field::Connectors,
@@ -527,6 +533,7 @@ pub struct Toggle {
     pub on: bool,
 }
 
+#[allow(clippy::struct_excessive_bools, reason = "independent bot settings and save state")]
 pub struct Form {
     pub bot_id: Option<String>,
     pub name: Editor,
@@ -536,6 +543,7 @@ pub struct Form {
     pub cwd: String,
     pub auto: bool,
     pub notify: bool,
+    pub computer: bool,
     pub color: usize,
     pub shape: usize,
     pub connectors: Vec<Toggle>,
@@ -634,6 +642,14 @@ pub struct Hits {
     pub clicks: Vec<(Rect, Click)>,
 }
 
+#[derive(Clone)]
+struct PendingSend {
+    text: String,
+    files: Vec<std::path::PathBuf>,
+    nonce: String,
+    busy: bool,
+}
+
 #[allow(clippy::struct_excessive_bools, reason = "independent UI flags, not a state machine")]
 pub struct App {
     pub client: Client,
@@ -655,6 +671,7 @@ pub struct App {
     pub drafts: HashMap<String, Editor>,
     /// Files dropped on the composer (pasted paths), per draft like the text.
     pub files: HashMap<String, Vec<std::path::PathBuf>>,
+    sends: HashMap<String, PendingSend>,
     /// Lines scrolled up from the bottom of the chat (0 = follow new messages).
     pub chat_scroll: usize,
     pub trace_scroll: usize,
@@ -709,6 +726,7 @@ impl App {
             chat_page: false,
             drafts: HashMap::new(),
             files: HashMap::new(),
+            sends: HashMap::new(),
             chat_scroll: 0,
             trace_scroll: 0,
             trace: TraceMode::Off,
@@ -1027,6 +1045,14 @@ impl App {
     }
 
     fn on_reply(&mut self, after: After, r: Result<Value, String>) {
+        if let After::Connection(id, step) = after {
+            self.connection_reply(&id, step, r);
+            return;
+        }
+        if let After::Sent(key) = after {
+            self.sent(&key, r);
+            return;
+        }
         if let After::Sheet(s) = after {
             self.on_sheet_reply(s, r);
             return;
@@ -1061,7 +1087,7 @@ impl App {
             }
         };
         match after {
-            After::Nothing | After::Sheet(_) => {}
+            After::Nothing | After::Sheet(_) | After::Sent(_) | After::Connection(_, _) => {}
             After::Installed => {
                 self.error = None;
                 self.flash("Host installed; connecting…");
@@ -1252,23 +1278,35 @@ impl App {
             KeyCode::Char('j') if ctrl => draft.insert("\n"),
             KeyCode::Enter => {
                 let text = draft.text.trim().to_owned();
-                let files = self.files.remove(&key).unwrap_or_default();
+                let files = self.files.get(&key).cloned().unwrap_or_default();
                 if text.is_empty() && files.is_empty() {
                     return;
                 }
-                draft.clear();
+                if self.sends.get(&key).is_some_and(|s| s.busy) {
+                    self.flash("Sending…");
+                    return;
+                }
+                let nonce = self
+                    .sends
+                    .get(&key)
+                    .filter(|s| s.text == text && s.files == files)
+                    .map_or_else(|| uuid::Uuid::new_v4().to_string(), |s| s.nonce.clone());
+                self.sends.insert(
+                    key.clone(),
+                    PendingSend { text: text.clone(), files: files.clone(), nonce: nonce.clone(), busy: true },
+                );
                 self.chat_scroll = 0;
-                let nonce = uuid::Uuid::new_v4().to_string();
                 let mut body = json!({"botId": id, "text": text, "clientNonce": nonce});
                 if let Some(root) = thread {
                     body["threadId"] = root.into();
                 }
+                let after = After::Sent(key);
                 if files.is_empty() {
-                    self.call("send", body, After::Nothing);
+                    self.call("send", body, after);
                 } else {
-                    self.flash(&format!("uploading {} file{}…", files.len(), if files.len() == 1 { "" } else { "s" }));
-                    self.client.spawn_send_files(body, files, self.tx.clone());
+                    self.client.spawn_send_files(body, files, after, self.tx.clone());
                 }
+                self.flash("Sending… Your draft stays here until delivered.");
             }
             KeyCode::Backspace if draft.text.is_empty() => {
                 if let Some(files) = self.files.get_mut(&key) {
@@ -1294,6 +1332,25 @@ impl App {
         }
     }
 
+    fn sent(&mut self, key: &str, result: Result<Value, String>) {
+        let Some(sent) = self.sends.get_mut(key) else { return };
+        sent.busy = false;
+        match result {
+            Ok(value) => {
+                if self.drafts.get(key).is_some_and(|d| d.text.trim() == sent.text)
+                    && self.files.get(key).map_or(&[][..], Vec::as_slice) == sent.files
+                {
+                    self.drafts.remove(key);
+                    self.files.remove(key);
+                }
+                self.sends.remove(key);
+                self.on_event(&json!({"type": "entry", "entry": value["entry"]}));
+                self.flash("Sent");
+            }
+            Err(error) => self.flash(&format!("{error} Draft kept; Enter retries, Ctrl+C clears text.")),
+        }
+    }
+
     fn scroll_chat(&mut self, delta: isize) {
         self.chat_scroll = self.chat_scroll.saturating_add_signed(delta);
     }
@@ -1315,6 +1372,7 @@ impl App {
             KeyCode::Char('d') if ctrl => self.scroll_focused(-half),
             KeyCode::Char('u') if ctrl => self.scroll_focused(half),
             KeyCode::Char('q') => self.quit = true,
+            KeyCode::Char('C') => self.open_connection(),
             KeyCode::Char('I') if self.error.is_some() && self.bots.is_empty() => self.install_host(),
             KeyCode::Char('?') => self.overlays.push(Overlay::Help(Editor::default())),
             KeyCode::Char('!') => self.jump(Mark::Need),
@@ -1634,6 +1692,10 @@ impl App {
         match k.code {
             KeyCode::Char('j') | KeyCode::Down => self.step_pick(1),
             KeyCode::Char('k') | KeyCode::Up => self.step_pick(-1),
+            KeyCode::Char('C') => self.open_connection(),
+            KeyCode::Enter if picked.as_ref().is_some_and(|e| e.data["connectionRequest"]["status"] == "pending") => {
+                self.open_connection();
+            }
             KeyCode::Enter | KeyCode::Char('r') if self.thread.is_some() => {
                 self.pick = None;
                 self.start_typing();
@@ -1812,6 +1874,7 @@ impl App {
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
             auto: b.auto,
             notify: b.notify,
+            computer: b.computer,
             color: COLORS.iter().position(|c| *c == b.color).unwrap_or(7),
             shape: SHAPES.iter().position(|s| *s == b.shape).unwrap_or(0),
             connectors: b.connectors.iter().map(|id| Toggle { id: id.clone(), name: id.clone(), on: true }).collect(),
@@ -2087,6 +2150,7 @@ impl App {
             cwd: String::new(),
             auto: false,
             notify: true,
+            computer: false,
             color: (n * 7) % COLORS.len(),
             shape: n % SHAPES.len(),
             connectors: self
@@ -2161,6 +2225,7 @@ impl App {
                     Field::Agent
                         | Field::Approvals
                         | Field::Notify
+                        | Field::Computer
                         | Field::Color
                         | Field::Shape
                         | Field::Connectors
@@ -2183,6 +2248,7 @@ impl App {
                     }
                     Field::Approvals => f.auto = !f.auto,
                     Field::Notify => f.notify = !f.notify,
+                    Field::Computer => f.computer = !f.computer,
                     Field::Color if !space => f.color = cycle(f.color, d, COLORS.len()),
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::Connectors | Field::Skills => {
@@ -2230,6 +2296,7 @@ impl App {
             "permission": if f.auto { "auto" } else { "ask" },
             "model": if model.is_empty() { Value::Null } else { model.into() },
             "notify": f.notify,
+            "computer": f.computer,
             "avatarColor": COLORS[f.color],
             "avatarShape": SHAPES[f.shape],
             "connectors": f.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
@@ -2396,6 +2463,52 @@ pub fn tilde(path: &str, home: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_app() -> App {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        App::new(Client::new("http://127.0.0.1:1", None), tx, String::new())
+    }
+
+    #[test]
+    fn send_failure_keeps_text_files_and_nonce_for_retry() {
+        let mut app = test_app();
+        let key = "bot/thread";
+        let files = vec![std::path::PathBuf::from("/tmp/report.txt")];
+        app.drafts.insert(key.into(), Editor::with("draft"));
+        app.files.insert(key.into(), files.clone());
+        app.sends.insert(
+            key.into(),
+            PendingSend { text: "draft".into(), files: files.clone(), nonce: "same-nonce".into(), busy: true },
+        );
+        app.on_reply(After::Sent(key.into()), Err("Disconnected".into()));
+        assert_eq!(app.drafts[key].text, "draft");
+        assert_eq!(app.files[key], files);
+        assert_eq!(app.sends[key].nonce, "same-nonce");
+        assert!(!app.sends[key].busy);
+        app.on_reply(After::Sent(key.into()), Ok(json!({})));
+        assert!(!app.drafts.contains_key(key));
+        assert!(!app.files.contains_key(key));
+    }
+
+    #[test]
+    fn late_send_success_does_not_erase_a_new_draft() {
+        let mut app = test_app();
+        app.drafts.insert("bot".into(), Editor::with("new draft"));
+        app.sends.insert(
+            "bot".into(),
+            PendingSend { text: "old draft".into(), files: vec![], nonce: "n".into(), busy: true },
+        );
+        app.on_reply(After::Sent("bot".into()), Ok(json!({})));
+        assert_eq!(app.drafts["bot"].text, "new draft");
+    }
+
+    #[test]
+    fn computer_permission_survives_loading_the_editor() {
+        let mut app = test_app();
+        app.upsert_bot(&json!({"id":"b", "computer":true}));
+        assert!(app.bots["b"].computer);
+        assert!(FIELDS.contains(&Field::Computer));
+    }
 
     #[test]
     fn dropped_paths_are_files_only() {

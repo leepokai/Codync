@@ -20,3 +20,4 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "process"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "7"
+vte = { package = "vte4", version = "0.10", features = ["v0_70"] }

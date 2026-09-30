@@ -5,6 +5,8 @@ mod client;
 mod compose;
 mod connections;
 mod dialogs;
+mod manage;
+mod market;
 mod markup;
 mod orb;
 mod rows;

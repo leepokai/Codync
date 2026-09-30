@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::app::{App, Editor};
 use super::manage::{
-    AgentSetup, Fields, Market, MemorySheet, RoutineField, RoutineForm, RoutineList, Row, SetupRow, TABS, Tab,
+    AgentSetup, Fields, Market, MemorySheet, RoutineField, RoutineForm, RoutineList, Row, SetupRow, Submit, TABS, Tab,
 };
 use super::md::truncate;
 use super::view::{
@@ -399,8 +399,27 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
         put(buf, inner.x, by - 1, inner.width, e, t.red.patch(t.panel));
     }
     hline(buf, inner.x, by - 2, inner.width, t.line.patch(t.panel));
-    let x = put(buf, inner.x, by, 14, if f.saving { " … Saving " } else { " ↵ Save " }, t.btn_primary) + 1;
+    let x = put(
+        buf,
+        inner.x,
+        by,
+        14,
+        if f.saving {
+            " … Saving "
+        } else if matches!(f.submit, Submit::Connection(_)) {
+            " ↵ Continue "
+        } else {
+            " ↵ Save "
+        },
+        t.btn_primary,
+    ) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
-    let hint = if tall { "⇧↵ new line · paste works" } else { "tab next field" };
+    let hint = if matches!(f.submit, Submit::Connection(_)) {
+        "^x cancel request · tab next · esc close"
+    } else if tall {
+        "⇧↵ new line · paste works"
+    } else {
+        "tab next field"
+    };
     rput(buf, inner.right(), by, hint, t.dim.patch(t.panel));
 }

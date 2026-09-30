@@ -51,6 +51,7 @@ triggers = { crons = ["*/15 * * * *"] }
 # local: wrangler dev / e2e with a local D1; CLERK_JWT_KEY is injected by the test (--var).
 [env.local]
 name = "codync-cloud-local"
+routes = []
 vars = { CLERK_ISSUER = "https://clerk.test.local" }
 d1_databases = [{ binding = "DB", database_name = "codync-local", database_id = "local", migrations_dir = "migrations" }]
 durable_objects.bindings = [{ name = "RELAY", class_name = "ComputerRelay" }]

@@ -289,7 +289,7 @@ public extension HostClient {
     func screenStatus() async throws -> ScreenState { try await call("screenStatus") }
 
     func screenPrepare() async throws -> ScreenConnection {
-        let relay = if let channel = transport as? ChannelTransport { await channel.usesScreenRelay } else { false }
+        let relay = if let channel = transport as? ChannelTransport { try await channel.screenRelayRequired() } else { false }
         return try await call("screenPrepare", ["relay": relay])
     }
 

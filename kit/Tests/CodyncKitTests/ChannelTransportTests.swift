@@ -238,6 +238,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     computer.cloud = URL(string: "https://cloud.example.dev")
     let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
     await t.start()
+    let screenRoute = Task { try await t.screenRelayRequired() }
     var it = sockets.makeAsyncIterator()
     // Some other host now answers at the saved LAN address; its reject isn't signed.
     let stranger = HostSide(try #require(await it.next()))
@@ -249,6 +250,7 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     await relay.push(["t": "presence", "online": true, "lastSeenAt": NSNull()])
     try await relay.accept()
     #expect(await t.settled(within: .seconds(5)) == .ready(.relay))
+    #expect(try await screenRoute.value)
     #expect(await !t.isStopped)
     await t.shutdown()
 }

@@ -2,6 +2,7 @@
 use super::*;
 use std::time::{Duration, Instant};
 
+#[track_caller]
 fn wait(mut ready: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -11,10 +12,15 @@ fn wait(mut ready: impl FnMut() -> bool) {
         if ready() {
             return;
         }
-        assert!(
-            Instant::now() < deadline,
-            "native UI did not reach the expected state"
-        );
+        if Instant::now() >= deadline {
+            if let Ok(dir) = std::env::var("CODYNC_UI_ARTIFACTS") {
+                let _ = std::fs::create_dir_all(&dir);
+                let _ = std::process::Command::new("import")
+                    .args(["-window", "root", &format!("{dir}/failure.png")])
+                    .status();
+            }
+            panic!("native UI did not reach the expected state");
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
 }
@@ -40,6 +46,7 @@ fn text(root: &impl IsA<gtk::Widget>, value: &str) -> bool {
         .filter_map(|w| w.downcast::<gtk::Label>().ok())
         .any(|l| l.text().contains(value))
 }
+#[track_caller]
 fn click(root: &impl IsA<gtk::Widget>, name: &str) {
     wait(|| button(root, name).is_some_and(|b| b.is_sensitive()));
     button(root, name).unwrap().emit_clicked();
@@ -79,6 +86,10 @@ fn requests() -> Value {
 fn native_ui_flows() {
     assert_eq!(std::env::var("CODYNC_UI_TEST").as_deref(), Ok("1"));
     adw::init().unwrap();
+    // Exercise actions after their dialog is ready, without racing presentation animations.
+    gtk::Settings::default()
+        .unwrap()
+        .set_gtk_enable_animations(false);
     let app = adw::Application::builder()
         .application_id("com.pokai.Codync.ParityTest")
         .build();

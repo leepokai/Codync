@@ -24,6 +24,7 @@ struct CodyncMacApp: App {
     private func launch() {
         host.start()
         appDelegate.updates = updates
+        appDelegate.openChatWindow = { openWindow(id: "chat") }
         updates.start(host: host)
     }
 
@@ -102,6 +103,7 @@ struct MenuView: View {
     private var usageIconStyle = UsageIconStyle.character.rawValue
     @AppStorage(ConversationTypography.preferenceKey)
     private var conversationFontSize = ConversationTypography.defaultSize
+    @AppStorage(CodyncAppDelegate.showInDockKey) private var showInDock = false
 
     var body: some View {
         Text(status)
@@ -128,6 +130,13 @@ struct MenuView: View {
                         .tag(size)
                 }
             }
+            Toggle("Show in Dock", isOn: $showInDock)
+                .onChange(of: showInDock) { _, visible in
+                    let window = NSApp.windows.first { $0.isVisible && !$0.isMiniaturized && $0.canBecomeMain }
+                    NSApp.setActivationPolicy(visible ? .regular : .accessory)
+                    if visible || window != nil { NSApp.activate() }
+                    window?.makeKeyAndOrderFront(nil)
+                }
             Toggle("Open at login", isOn: Binding(
                 get: { host.launchAtLogin },
                 set: { host.setLaunchAtLogin($0) }

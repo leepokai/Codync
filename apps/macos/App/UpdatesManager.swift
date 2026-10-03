@@ -262,7 +262,21 @@ final class UpdatesManager: NSObject, SPUUpdaterDelegate, @preconcurrency SPUSta
 /// termination waits until the background services have actually stopped.
 @MainActor
 final class CodyncAppDelegate: NSObject, NSApplicationDelegate {
+    static let showInDockKey = "showInDock"
+
     weak var updates: UpdatesManager?
+    var openChatWindow: (() -> Void)?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let visible = UserDefaults.standard.bool(forKey: Self.showInDockKey)
+        NSApp.setActivationPolicy(visible ? .regular : .accessory)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openChatWindow?()
+        sender.activate()
+        return false
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let updates, updates.hasStagedUpdate else { return .terminateNow }

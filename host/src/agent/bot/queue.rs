@@ -40,15 +40,15 @@ impl Actor {
                     self.cancel_turn().await;
                 }
             }
-            Cmd::Ask(ask) => {
-                self.queue.push_back(Queued::Ask(ask));
+            Cmd::BotRequest(ask) => {
+                self.queue.push_back(Queued::BotRequest(ask));
                 if self.turn.is_none() {
                     self.next_in_queue(done_tx).await;
                 }
             }
             Cmd::CancelAsk { id } => {
-                self.queue.retain(|q| !matches!(q, Queued::Ask(a) if a.id == id));
-                if self.active_ask.as_ref().is_some_and(|a| a.id == id) {
+                self.queue.retain(|q| !matches!(q, Queued::BotRequest(a) if a.expects_reply() && a.id == id));
+                if self.active_request.as_ref().is_some_and(|a| a.expects_reply() && a.id == id) {
                     self.hub.team.cancel_from(&self.cfg.id);
                     self.stop_requested = true;
                     // The request has expired. Kill only its process so a harness
@@ -171,14 +171,15 @@ impl Actor {
                     }
                     continue;
                 }
-                Some(Queued::Ask(_)) => {
-                    let Some(Queued::Ask(ask)) = self.queue.pop_front() else { unreachable!("front is an ask") };
-                    if ask.reply.is_closed() {
+                Some(Queued::BotRequest(_)) => {
+                    let Some(Queued::BotRequest(mut ask)) = self.queue.pop_front() else { unreachable!("front is an ask") };
+                    if ask.reply_closed() {
                         continue;
                     }
                     let ids = [ask.entry_id.clone()];
                     let prompt = ask.prompt.clone();
-                    self.active_ask = Some(ask);
+                    ask.mark_started();
+                    self.active_request = Some(ask);
                     let result = self.start_turn(main.clone(), &ids, &prompt, false, done_tx).await;
                     // Another bot's words are not facts learned from the user.
                     self.turn_text = None;
@@ -228,7 +229,7 @@ impl Actor {
 
     pub(super) fn start_failed(&mut self, e: &anyhow::Error) {
         self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
-        self.complete_ask(Err(anyhow!("couldn't start recipient: {e:#}")));
+        self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
         let mut msg = format!("Couldn't start the agent: {e}");
         if e.to_string().to_lowercase().contains("auth")
@@ -250,9 +251,9 @@ impl Actor {
         self.hub.team.cancel_from(&self.cfg.id);
     }
 
-    pub(super) fn complete_ask(&mut self, result: Result<String>) {
-        if let Some(ask) = self.active_ask.take() {
-            let _ = ask.reply.send(result);
+    pub(super) fn complete_request(&mut self, result: Result<String>, cancelled: bool) {
+        if let Some(ask) = self.active_request.take() {
+            ask.complete(result, cancelled);
         }
     }
 

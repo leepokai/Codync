@@ -68,17 +68,16 @@ impl Host {
         let cwd = self.home.join(name);
         std::fs::create_dir_all(&cwd).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
-        self.call(
-            "createBot",
-            json!({
-                "name": name, "backend": "custom", "cwd": cwd, "permission": "ask", "notify": false,
-                "command": common::python_agent(&agent),
-            }),
-        )
-        .await["bot"]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned()
+        let result = self
+            .call(
+                "createBot",
+                json!({
+                    "name": name, "backend": "custom", "cwd": cwd, "permission": "ask", "notify": false,
+                    "command": common::python_agent(&agent),
+                }),
+            )
+            .await;
+        result["bot"]["id"].as_str().unwrap().to_owned()
     }
 
     async fn wait_for(&self, bot: &str, predicate: impl Fn(&Value) -> bool) -> Value {
@@ -115,4 +114,39 @@ async fn agent_uses_team_mcp_and_returns_the_reviewers_answer() {
     assert!(requests.iter().all(|e| e["data"]["status"] == "completed"));
     assert_eq!(requests[0]["data"]["delegationId"], requests[1]["data"]["delegationId"]);
     assert!(sync["bots"].as_array().unwrap().iter().all(|b| b["status"] == "idle"));
+}
+
+#[tokio::test]
+async fn agent_messages_another_bot_then_finishes_before_recipient_approval() {
+    let host = Host::start().await;
+    let lead = host.bot("lead").await;
+    let reviewer = host.bot("reviewer").await;
+    host.call("send", json!({"botId": lead, "text": format!("MESSAGE {reviewer}")})).await;
+    let permission = host.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
+    let final_reply = host.wait_for(&lead, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(final_reply["data"]["text"], "Message queued");
+    let history = host.call("history", json!({"botId": reviewer})).await;
+    assert!(!history["entries"].as_array().unwrap().iter().any(|e| e["data"]["final"] == true));
+    assert!(history["entries"].as_array().unwrap().iter().all(|e| e["kind"] != "user"));
+    // The sender's turn and MCP subprocess have finished; Stop must still leave
+    // the recipient's approval and admitted message intact.
+    host.call("stop", json!({"botId": lead})).await;
+    host.call("respondPermission", json!({"entryId": permission["id"], "optionId": "allow"})).await;
+    let report = host.wait_for(&reviewer, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(report["data"]["text"], "reply: PERMISSION review the changes");
+    host.wait_for(&reviewer, |e| e["kind"] == "notice" && e["data"]["status"] == "completed").await;
+    let sync = host.call("sync", json!({"since": 0})).await;
+    let notices: Vec<_> =
+        sync["entries"].as_array().unwrap().iter().filter(|e| e["data"]["delegationId"].is_string()).collect();
+    assert_eq!(notices.len(), 2);
+    for entry in &notices {
+        assert_eq!(entry["kind"], "notice");
+        assert_eq!(entry["data"]["sourceBotId"], lead);
+        assert_eq!(entry["data"]["targetBotId"], reviewer);
+        assert_eq!(entry["data"]["status"], "completed");
+        assert!(!entry["data"]["text"].as_str().unwrap().contains("reply: PERMISSION"));
+    }
+    assert_eq!(notices[0]["data"]["delegationId"], notices[1]["data"]["delegationId"]);
+    let history = host.call("history", json!({"botId": lead})).await;
+    assert_eq!(history["entries"].as_array().unwrap().iter().filter(|e| e["data"]["final"] == true).count(), 1);
 }

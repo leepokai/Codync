@@ -55,7 +55,7 @@ impl Actor {
         self.sent.clear();
         // A delegated or group turn has no live waiter after a host restart. Its persisted
         // notices are marked interrupted instead of silently repeating work.
-        self.set_inflight(self.active_ask.is_none() && self.active_group.is_none() && self.active_routine.is_none());
+        self.set_inflight(self.active_request.is_none() && self.active_group.is_none() && self.active_routine.is_none());
         self.hub.set_runtime(&self.id(), |r| {
             r.status = BotStatus::Working;
             r.activity = if hidden { "Picking up where it left off…" } else { "Starting…" }.into();
@@ -201,7 +201,7 @@ impl Actor {
             _ => {}
         }
         let failed = done.is_err() && !self.stop_requested;
-        let delegated = self.active_ask.is_some();
+        let delegated = self.active_request.as_ref().is_some_and(crate::chat::team::BotRequest::expects_reply);
         let reply = if stopped {
             Err(anyhow!("recipient was stopped; partial work may have happened"))
         } else if stop_reason != "end_turn" {
@@ -231,7 +231,8 @@ impl Actor {
             let text = (status == crate::routines::Status::Succeeded).then(|| final_text.clone()).flatten();
             self.finish_routine(status, detail, text);
         }
-        self.complete_ask(reply);
+        let message_failed = !stopped && reply.is_err() && self.active_request.as_ref().is_some_and(|r| !r.expects_reply());
+        self.complete_request(reply, stopped);
         self.complete_group(if stopped || failed || stop_reason != "end_turn" {
             Err(anyhow!("turn did not complete ({stop_reason})"))
         } else {
@@ -264,7 +265,7 @@ impl Actor {
         if !self.stop_requested
             && !delegated
             && !grouped
-            && let Some(kind) = turn_alert(failed, &stop_reason, more)
+            && let Some(kind) = turn_alert(failed || message_failed, &stop_reason, more)
         {
             let body = final_text.unwrap_or_else(|| match kind {
                 AlertKind::Done => "Finished.".into(),

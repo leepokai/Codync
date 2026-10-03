@@ -54,7 +54,7 @@ pub enum Cmd {
         entry_id: String,
         text: String,
     },
-    Ask(crate::chat::team::Ask),
+    BotRequest(crate::chat::team::BotRequest),
     /// `send_message` from the bot's `chat` MCP server: a message for the user, now.
     SendToUser {
         text: String,
@@ -82,7 +82,7 @@ pub enum Cmd {
 enum Queued {
     Routine(String),
     User { lane: Lane, entry_id: String, text: String },
-    Ask(crate::chat::team::Ask),
+    BotRequest(crate::chat::team::BotRequest),
     Group(GroupTurn),
 }
 
@@ -126,7 +126,7 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         announce: None,
         turn: None,
         queue: VecDeque::new(),
-        active_ask: None,
+        active_request: None,
         seg: Seg::None,
         tools: HashMap::new(),
         plan_entry: None,
@@ -208,7 +208,7 @@ struct Actor {
     announce: Option<(Snapshot, Identity)>,
     turn: Option<i64>,
     queue: VecDeque<Queued>,
-    active_ask: Option<crate::chat::team::Ask>,
+    active_request: Option<crate::chat::team::BotRequest>,
     seg: Seg,
     tools: HashMap<String, String>,
     plan_entry: Option<String>,
@@ -285,7 +285,7 @@ impl Actor {
             }
         }
         self.hub.team.cancel_from(&self.cfg.id);
-        self.complete_ask(Err(anyhow!("recipient shut down")));
+        self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;

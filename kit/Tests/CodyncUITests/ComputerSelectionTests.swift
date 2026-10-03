@@ -31,3 +31,23 @@ import Testing
     #expect(ConnectionSummary(connections: [.offline("timeout"), .connecting]).text == "Connecting…")
     #expect(ConnectionSummary(connections: [.unauthorized("revoked")]).text == "No access")
 }
+
+@Test func startupCountsSSHBeforeAttachmentAndHandsOffWithoutDoubleCounting() {
+    let signingIn = ComputerConnectionProgress(computerId: nil, name: "Remote", detail: "Signing in…")
+    #expect(ConnectionSummary(computers: [:], progress: [signingIn]).progressText == "1 connecting…")
+
+    let known = ComputerConnectionProgress(computerId: "remote", name: "Remote", detail: "Opening tunnel…")
+    #expect(ConnectionSummary(computers: [:], progress: [known]).progressText == "1 connecting…")
+    #expect(ConnectionSummary(computers: ["remote": .connecting], progress: [known]).progressText == "1 connecting…")
+    #expect(ConnectionSummary(computers: ["remote": .online], progress: [known]).progressText == "1 connected")
+    #expect(ConnectionSummary(computers: ["remote": .online], progress: []).progressText == "1 connected")
+}
+
+@Test func startupDistinguishesConnectingFromOfflineAndPreservesAnOnlineRoute() {
+    let retrying = ComputerConnectionProgress(computerId: "remote", name: "Remote", detail: "Retrying…")
+    #expect(ConnectionSummary(computers: ["remote": .offline("timeout")], progress: [retrying]).progressText == "1 connecting…")
+    #expect(ConnectionSummary(computers: ["remote": .offline("timeout")], progress: []).progressText == "1 offline")
+    #expect(ConnectionSummary(computers: ["remote": .online], progress: [retrying]).progressText == "1 connected")
+    #expect(ConnectionSummary(computers: ["local": .online], progress: [retrying]).progressText == "1 connected · 1 connecting…")
+    #expect(ConnectionSummary(computers: [:], progress: []).progressText == "Computers")
+}

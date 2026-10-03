@@ -34,8 +34,46 @@ public struct ComputerSelection: Equatable, Sendable {
     private func encoded(_ ids: Set<ComputerID>) -> String { ids.sorted().joined(separator: ",") }
 }
 
+/// A connection in progress before the computer has attached to the account.
+public struct ComputerConnectionProgress {
+    public let computerId: ComputerID?
+    public let name: String
+    public let detail: String
+
+    public init(computerId: ComputerID?, name: String, detail: String) {
+        self.computerId = computerId
+        self.name = name
+        self.detail = detail
+    }
+}
+
 struct ConnectionSummary {
     let connections: [BotStore.Connection]
+    private var additionalConnecting = 0
+
+    init(connections: [BotStore.Connection]) { self.connections = connections }
+
+    init(computers: [ComputerID: BotStore.Connection], progress: [ComputerConnectionProgress]) {
+        var connections = computers
+        var additionalConnecting = 0
+        for pending in progress {
+            if let id = pending.computerId {
+                // An existing route may already be online while SSH connects.
+                if connections[id] != .online { connections[id] = .connecting }
+            } else {
+                additionalConnecting += 1
+            }
+        }
+        self.connections = Array(connections.values)
+        self.additionalConnecting = additionalConnecting
+    }
+
+    var progressText: String {
+        let connecting = connections.filter { $0 == .connecting }.count + additionalConnecting
+        guard connecting > 0 else { return text }
+        let online = connections.filter { $0 == .online }.count
+        return online > 0 ? "\(online) connected · \(connecting) connecting…" : "\(connecting) connecting…"
+    }
 
     var text: String {
         guard !connections.isEmpty else { return "Computers" }

@@ -7,13 +7,16 @@ public struct ComputerFilterHeader: View {
     @Binding var hidden: String
     let manage: () -> Void
     let compact: Bool
+    let connectingComputers: [ComputerConnectionProgress]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(accounts: AccountStore, hidden: Binding<String>, compact: Bool = false, manage: @escaping () -> Void) {
+    public init(accounts: AccountStore, hidden: Binding<String>, compact: Bool = false,
+                connectingComputers: [ComputerConnectionProgress] = [], manage: @escaping () -> Void) {
         self.accounts = accounts
         _hidden = hidden
         self.manage = manage
         self.compact = compact
+        self.connectingComputers = connectingComputers
     }
 
     private var selection: ComputerSelection {
@@ -21,7 +24,23 @@ public struct ComputerFilterHeader: View {
     }
 
     private var stores: [BotStore] { selection.shown.compactMap { accounts.store(for: $0) } }
-    private var summary: String { ConnectionSummary(connections: stores.map(\.shownConnection)).text }
+    private var progress: [ComputerConnectionProgress] {
+        connectingComputers.filter { pending in
+            guard let id = pending.computerId, accounts.computers.contains(where: { $0.id == id }) else { return true }
+            return selection.shown.contains(id)
+        }
+    }
+    private var unattached: [ComputerConnectionProgress] {
+        progress.filter { pending in !accounts.computers.contains { $0.id == pending.computerId } }
+    }
+    private var summary: String {
+        #if os(iOS)
+        ConnectionSummary(connections: stores.map(\.shownConnection)).text
+        #else
+        ConnectionSummary(computers: Dictionary(uniqueKeysWithValues: stores.map { ($0.computer.id, $0.shownConnection) }),
+                          progress: progress).progressText
+        #endif
+    }
 
     public var body: some View {
         #if os(iOS)
@@ -55,6 +74,9 @@ public struct ComputerFilterHeader: View {
                 MenuItem(computerTitle(computer), selected: selection.shown.contains(computer.id)) {
                     update(selection.toggling(computer.id))
                 }
+            }
+            items += unattached.map { pending in
+                MenuItem("\(pending.name) · \(pending.detail)", icon: "terminal", action: manage)
             }
             if accounts.computers.count > 1 {
                 items += accounts.computers.enumerated().map { index, computer in
@@ -90,6 +112,11 @@ public struct ComputerFilterHeader: View {
 
     private func computerTitle(_ computer: Computer) -> String {
         guard let store = accounts.store(for: computer.id) else { return computer.name }
+        #if os(macOS)
+        if store.shownConnection != .online, let pending = progress.first(where: { $0.computerId == computer.id }) {
+            return "\(store.hostName) · \(pending.detail)"
+        }
+        #endif
         return "\(store.hostName) · \(store.connectionLabel)"
     }
 

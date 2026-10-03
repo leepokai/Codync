@@ -48,7 +48,7 @@ pub enum Cmd {
         entry_id: String,
         text: String,
     },
-    Ask(crate::chat::team::Ask),
+    BotRequest(crate::chat::team::BotRequest),
     CancelAsk {
         id: String,
     },
@@ -71,7 +71,7 @@ pub enum Cmd {
 enum Queued {
     Routine(String),
     User { lane: Lane, entry_id: String, text: String },
-    Ask(crate::chat::team::Ask),
+    BotRequest(crate::chat::team::BotRequest),
     Group(GroupTurn),
 }
 
@@ -115,7 +115,7 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         announce: None,
         turn: None,
         queue: VecDeque::new(),
-        active_ask: None,
+        active_request: None,
         seg: Seg::None,
         tools: HashMap::new(),
         plan_entry: None,
@@ -191,7 +191,7 @@ struct Actor {
     announce: Option<(Snapshot, Identity)>,
     turn: Option<i64>,
     queue: VecDeque<Queued>,
-    active_ask: Option<crate::chat::team::Ask>,
+    active_request: Option<crate::chat::team::BotRequest>,
     seg: Seg,
     tools: HashMap<String, String>,
     plan_entry: Option<String>,
@@ -266,7 +266,7 @@ impl Actor {
             }
         }
         self.hub.team.cancel_from(&self.cfg.id);
-        self.complete_ask(Err(anyhow!("recipient shut down")));
+        self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
@@ -309,15 +309,15 @@ impl Actor {
                     self.cancel_turn().await;
                 }
             }
-            Cmd::Ask(ask) => {
-                self.queue.push_back(Queued::Ask(ask));
+            Cmd::BotRequest(request) => {
+                self.queue.push_back(Queued::BotRequest(request));
                 if self.turn.is_none() {
                     self.next_in_queue(done_tx).await;
                 }
             }
             Cmd::CancelAsk { id } => {
-                self.queue.retain(|q| !matches!(q, Queued::Ask(a) if a.id == id));
-                if self.active_ask.as_ref().is_some_and(|a| a.id == id) {
+                self.queue.retain(|q| !matches!(q, Queued::BotRequest(r) if r.expects_reply() && r.id == id));
+                if self.active_request.as_ref().is_some_and(|r| r.expects_reply() && r.id == id) {
                     self.hub.team.cancel_from(&self.cfg.id);
                     self.stop_requested = true;
                     // The request has expired. Kill only its process so a harness
@@ -437,14 +437,17 @@ impl Actor {
                     }
                     continue;
                 }
-                Some(Queued::Ask(_)) => {
-                    let Some(Queued::Ask(ask)) = self.queue.pop_front() else { unreachable!("front is an ask") };
-                    if ask.reply.is_closed() {
+                Some(Queued::BotRequest(_)) => {
+                    let Some(Queued::BotRequest(mut request)) = self.queue.pop_front() else {
+                        unreachable!("front is a bot request")
+                    };
+                    if request.reply_closed() {
                         continue;
                     }
-                    let ids = [ask.entry_id.clone()];
-                    let prompt = ask.prompt.clone();
-                    self.active_ask = Some(ask);
+                    let ids = [request.entry_id.clone()];
+                    let prompt = request.prompt.clone();
+                    request.mark_started();
+                    self.active_request = Some(request);
                     let result = self.start_turn(main.clone(), &ids, &prompt, false, done_tx).await;
                     // Another bot's words are not facts learned from the user.
                     self.turn_text = None;
@@ -494,7 +497,7 @@ impl Actor {
 
     fn start_failed(&mut self, e: &anyhow::Error) {
         self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
-        self.complete_ask(Err(anyhow!("couldn't start recipient: {e:#}")));
+        self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
         let mut msg = format!("Couldn't start the agent: {e}");
         if e.to_string().to_lowercase().contains("auth")
@@ -516,9 +519,9 @@ impl Actor {
         self.hub.team.cancel_from(&self.cfg.id);
     }
 
-    fn complete_ask(&mut self, result: Result<String>) {
-        if let Some(ask) = self.active_ask.take() {
-            let _ = ask.reply.send(result);
+    fn complete_request(&mut self, result: Result<String>, cancelled: bool) {
+        if let Some(request) = self.active_request.take() {
+            request.complete(result, cancelled);
         }
     }
 
@@ -640,9 +643,11 @@ impl Actor {
         self.tools.clear();
         self.plan_entry = None;
         self.last_text = None;
-        // A delegated or group turn has no live waiter after a host restart. Its persisted
-        // notices are marked interrupted instead of silently repeating work.
-        self.set_inflight(self.active_ask.is_none() && self.active_group.is_none() && self.active_routine.is_none());
+        // Bot requests and group turns never resume after a host restart. Their
+        // persisted notices are marked interrupted instead of repeating work.
+        self.set_inflight(
+            self.active_request.is_none() && self.active_group.is_none() && self.active_routine.is_none(),
+        );
         self.hub.set_runtime(&self.id(), |r| {
             r.status = BotStatus::Working;
             r.activity = if hidden { "Picking up where it left off…" } else { "Starting…" }.into();
@@ -1043,7 +1048,7 @@ impl Actor {
             _ => {}
         }
         let failed = done.is_err() && !self.stop_requested;
-        let delegated = self.active_ask.is_some();
+        let delegated = self.active_request.as_ref().is_some_and(crate::chat::team::BotRequest::expects_reply);
         let reply = if stopped {
             Err(anyhow!("recipient was stopped; partial work may have happened"))
         } else if stop_reason != "end_turn" {
@@ -1073,7 +1078,9 @@ impl Actor {
             let text = (status == crate::routines::Status::Succeeded).then(|| final_text.clone()).flatten();
             self.finish_routine(status, detail, text);
         }
-        self.complete_ask(reply);
+        let message_failed =
+            !stopped && reply.is_err() && self.active_request.as_ref().is_some_and(|r| !r.expects_reply());
+        self.complete_request(reply, stopped);
         self.complete_group(if stopped || failed || stop_reason != "end_turn" {
             Err(anyhow!("turn did not complete ({stop_reason})"))
         } else {
@@ -1106,7 +1113,7 @@ impl Actor {
         if !self.stop_requested
             && !delegated
             && !grouped
-            && let Some(kind) = turn_alert(failed, &stop_reason, more)
+            && let Some(kind) = turn_alert(failed || message_failed, &stop_reason, more)
         {
             let body = final_text.unwrap_or_else(|| match kind {
                 AlertKind::Done => "Finished.".into(),

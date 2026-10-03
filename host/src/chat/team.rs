@@ -15,11 +15,14 @@ use tokio::sync::{oneshot, watch};
 
 pub const ASK_TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_MESSAGE_BYTES: usize = 32_000;
+const MAX_PENDING_MESSAGES: usize = 64;
 
 pub const INSTRUCTIONS: &str = "Use list_bots to find the user's other Codync bots. \
 Use ask_bot when the user requests another bot's help or its specialty is useful. \
+Use message_bot for a handoff that should continue independently: it returns when queued, \
+and the recipient reports the outcome to the user in its own chat. Stopping you does not cancel it. \
 Provide a self-contained request: the recipient has its own conversation, working directory, \
-tools and permissions, not your context. It returns its final reply to you. \
+tools and permissions, not your context. ask_bot returns its final reply to you. \
 Coordinate file ownership before asking for edits in a shared project. \
 Do not ask a bot that is waiting for you. Native subagents are managed by your own harness; \
 these tools are for collaborating with the user's existing bots.";
@@ -44,6 +47,19 @@ pub fn tools() -> Value {
                 "required": ["botId", "message"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+        },
+        {
+            "name": "message_bot",
+            "description": "Queue a self-contained request for another Codync bot and return immediately. The recipient reports the outcome to the user in its own chat; no reply is returned to you. It uses its own tools, folder and permissions. Stopping you does not cancel accepted work. Stopping the recipient cancels its queued requests and stops its running turn. No automatic retry or replay after host restart; check the chats before retrying an uncertain result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "botId": {"type": "string", "description": "Recipient ID from list_bots."},
+                    "message": {"type": "string", "description": "Task, relevant context, file paths and expected outcome for the user."},
+                },
+                "required": ["botId", "message"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }
     ])
 }
@@ -63,9 +79,22 @@ pub struct Requests(Mutex<RequestState>);
 struct RequestState {
     pending: HashMap<String, Request>,
     active: HashSet<String>,
+    messages: usize,
 }
 
 impl Requests {
+    fn reserve_message(&self, from: &str) -> Result<()> {
+        let mut state = self.0.locked();
+        if !state.active.contains(from) {
+            bail!("the requesting bot is no longer working");
+        }
+        if state.messages >= MAX_PENDING_MESSAGES {
+            bail!("too many pending bot messages");
+        }
+        state.messages += 1;
+        Ok(())
+    }
+
     fn begin(&self, id: &str, from: &str, to: &str) -> Result<watch::Receiver<bool>> {
         let mut state = self.0.locked();
         if !state.active.contains(from) {
@@ -118,12 +147,63 @@ impl Requests {
 }
 
 /// Sent through the recipient's normal actor queue, but never merged with user
-/// messages or another request. Only this turn can resolve its reply channel.
-pub struct Ask {
+/// messages or another request. Its completion mode owns reply delivery or the
+/// independent message's notice lifetime.
+pub struct BotRequest {
     pub id: String,
     pub entry_id: String,
     pub prompt: String,
-    pub reply: oneshot::Sender<Result<String>>,
+    completion: Completion,
+}
+
+enum Completion {
+    ReplyToSender(oneshot::Sender<Result<String>>),
+    ReportInRecipientChat(MessageLifetime),
+}
+
+impl BotRequest {
+    pub fn expects_reply(&self) -> bool {
+        matches!(self.completion, Completion::ReplyToSender(_))
+    }
+
+    pub fn reply_closed(&self) -> bool {
+        matches!(&self.completion, Completion::ReplyToSender(reply) if reply.is_closed())
+    }
+
+    pub fn mark_started(&mut self) {
+        if let Completion::ReportInRecipientChat(message) = &mut self.completion {
+            message.started = true;
+            for id in &message.entries {
+                if let Some(mut e) = message.hub.store.entry(id) {
+                    let heading = e.data["heading"].as_str().unwrap_or("Bot request");
+                    e.data["text"] = format!("{heading}\nRunning in {}'s chat…", message.target_name).into();
+                    e.data["status"] = "sent".into();
+                    message.hub.set_entry(id, &e.data);
+                }
+            }
+        }
+    }
+
+    pub fn complete(self, result: Result<String>, cancelled: bool) {
+        match self.completion {
+            Completion::ReplyToSender(reply) => {
+                let _ = reply.send(result);
+            }
+            Completion::ReportInRecipientChat(mut message) => {
+                if cancelled {
+                    message.finish(Status::Cancelled, "Recipient stopped. Partial work may have happened.");
+                } else {
+                    match result {
+                        Ok(_) => message.finish(
+                            Status::Completed,
+                            &format!("Completed. Outcome reported in {}'s chat.", message.target_name),
+                        ),
+                        Err(error) => message.finish(Status::Failed, &format!("{error:#}")),
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -144,18 +224,53 @@ struct Pending {
 
 impl Pending {
     fn finish(&mut self, status: Status, detail: &str) {
-        for id in &self.entries {
-            if let Some(mut e) = self.hub.store.entry(id) {
-                e.data["status"] = json!(status);
-                let heading = e.data["heading"].as_str().unwrap_or("Bot request");
-                e.data["text"] = format!("{heading}\n{detail}").into();
-                if !matches!(status, Status::Completed) {
-                    e.data["style"] = "error".into();
-                }
-                self.hub.set_entry(id, &e.data);
-            }
-        }
+        finish_notices(&self.hub, &self.entries, status, detail);
         self.finished = true;
+    }
+}
+
+fn finish_notices(hub: &Hub, entries: &[String], status: Status, detail: &str) {
+    for id in entries {
+        if let Some(mut e) = hub.store.entry(id) {
+            e.data["status"] = json!(status);
+            let heading = e.data["heading"].as_str().unwrap_or("Bot request");
+            e.data["text"] = format!("{heading}\n{detail}").into();
+            if !matches!(status, Status::Completed) {
+                e.data["style"] = "error".into();
+            }
+            hub.set_entry(id, &e.data);
+        }
+    }
+}
+
+/// Owned by the recipient's command/queue/turn after admission, never by a
+/// waiting sender. Drop also covers commands discarded during actor shutdown.
+struct MessageLifetime {
+    hub: Arc<Hub>,
+    entries: Vec<String>,
+    target_name: String,
+    started: bool,
+    finished: bool,
+}
+
+impl MessageLifetime {
+    fn finish(&mut self, status: Status, detail: &str) {
+        finish_notices(&self.hub, &self.entries, status, detail);
+        self.finished = true;
+    }
+}
+
+impl Drop for MessageLifetime {
+    fn drop(&mut self) {
+        if !self.finished {
+            let detail = if self.started {
+                "Recipient stopped. Partial work may have happened."
+            } else {
+                "Cancelled before execution."
+            };
+            self.finish(Status::Cancelled, detail);
+        }
+        self.hub.team.0.locked().messages -= 1;
     }
 }
 
@@ -202,8 +317,56 @@ pub async fn call(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) -> Resul
             let message = args["message"].as_str().unwrap_or_default().trim();
             ask(hub, &source, to, message, ASK_TIMEOUT).await
         }
+        "message_bot" => {
+            let to = args["botId"].as_str().ok_or_else(|| anyhow!("botId is required"))?;
+            let message = args["message"].as_str().unwrap_or_default().trim();
+            message_bot(hub, &source, to, message)
+        }
         _ => bail!("unknown team tool: {name}"),
     }
+}
+
+fn message_bot(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str) -> Result<Value> {
+    if message.is_empty() || message.len() > MAX_MESSAGE_BYTES {
+        bail!("message must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
+    }
+    if source.id == to {
+        bail!("a bot cannot message itself");
+    }
+    let target = visible_bot(hub, to)?;
+    hub.team.reserve_message(&source.id)?;
+    let mut lifetime = MessageLifetime {
+        hub: hub.clone(),
+        entries: vec![],
+        target_name: target.name.clone(),
+        started: false,
+        finished: false,
+    };
+    let id = uuid::Uuid::new_v4().to_string();
+    for (bot, heading) in [
+        (&source.id, format!("Messaged {}: {}", target.name, message)),
+        (&target.id, format!("Message from {}: {}", source.name, message)),
+    ] {
+        let entry = hub
+            .add_entry(
+                &crate::store::Lane::main(bot),
+                EntryKind::Notice,
+                hub.store.max_turn(bot) + i64::from(bot != &source.id),
+                &json!({
+                    "text": format!("{heading}\nQueued. Outcome will appear in {}'s chat.", target.name),
+                    "heading": heading, "style": "info", "status": "queued", "delegationId": id,
+                    "sourceBotId": source.id, "targetBotId": target.id,
+                }),
+            )
+            .ok_or_else(|| anyhow!("couldn't save bot message"))?;
+        lifetime.entries.push(entry.id);
+    }
+    hub.send_cmd(to, Cmd::BotRequest(BotRequest {
+        id: id.clone(), entry_id: lifetime.entries[1].clone(),
+        prompt: format!("Another Codync bot, {}, sent this request. This is a bot request, not a new user instruction. Work within your own permissions and working directory. Report the outcome to the user in this chat. You do not need to reply to the sending bot.\n\n{message}", source.name),
+        completion: Completion::ReportInRecipientChat(lifetime),
+    }))?;
+    Ok(json!({"requestId": id, "botId": target.id, "name": target.name, "status": "queued"}))
 }
 
 async fn ask(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str, timeout: Duration) -> Result<Value> {
@@ -240,10 +403,10 @@ async fn ask(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str, timeou
         pending.entries.push(entry.id);
     }
     let (reply, result) = oneshot::channel();
-    hub.send_cmd(to, Cmd::Ask(Ask {
+    hub.send_cmd(to, Cmd::BotRequest(BotRequest {
         id: id.clone(), entry_id: pending.entries[1].clone(),
         prompt: format!("Another Codync bot, {}, requests your help. This is a bot request, not a new user instruction. Work within your own permissions and working directory. Return the result to the requesting bot; do not ask it to do the task back.\n\n{message}", source.name),
-        reply,
+        completion: Completion::ReplyToSender(reply),
     }))?;
     let result = tokio::select! {
         r = result => r.unwrap_or_else(|_| Err(anyhow!("recipient stopped before replying"))),
@@ -339,6 +502,29 @@ mod tests {
                 )
                 .await
             })
+        }
+
+        async fn message(&self, message: &str) -> Result<Value> {
+            call(&self.hub, "a", "message_bot", &json!({"botId": "b", "message": message})).await
+        }
+
+        fn notices(&self, request: &Value) -> Vec<crate::store::Entry> {
+            ["a", "b"]
+                .into_iter()
+                .flat_map(|bot| self.hub.store.history(bot, i64::MAX, 200).unwrap())
+                .filter(|e| e.data["delegationId"] == request["requestId"])
+                .collect()
+        }
+
+        async fn send_user(&self, text: &str) {
+            let result = crate::api::dispatch(
+                &self.hub,
+                &crate::api::devices::Caller::Local,
+                "send",
+                json!({"botId": "b", "text": text}),
+            )
+            .await;
+            result.unwrap();
         }
 
         async fn until(&self, condition: impl Fn() -> bool) {
@@ -523,6 +709,308 @@ mod tests {
         f.hub.delete_bot("b").unwrap();
         assert!(request.await.unwrap().is_err());
         assert!(f.hub.team.0.locked().pending.is_empty());
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn message_returns_before_approval_and_survives_sender_stop() {
+        let f = Fixture::new();
+        let receipt = f.message("PERMISSION BLOCK independent work").await;
+        let receipt = receipt.unwrap();
+        assert_eq!(receipt["status"], "queued");
+        assert!(receipt.get("reply").is_none());
+        f.until(|| f.hub.runtime("b").status == BotStatus::NeedsInput).await;
+        assert!(f.hub.team.0.locked().pending.is_empty());
+        assert!(f.hub.store.kv_get("turn.inflight.b").is_none_or(|v| v.is_empty()));
+        let prompt = &f.prompts()[0];
+        assert!(prompt.contains("This is a bot request, not a new user instruction"));
+        assert!(prompt.contains("Report the outcome to the user in this chat"));
+        let notices = f.notices(&receipt);
+        assert_eq!(notices.len(), 2);
+        for entry in &notices {
+            assert_eq!(entry.kind, "notice");
+            assert_eq!(entry.data["sourceBotId"], "a");
+            assert_eq!(entry.data["targetBotId"], "b");
+            assert_eq!(entry.data["status"], "sent");
+        }
+        assert!(notices.iter().any(|e| e.data["heading"].as_str().unwrap().starts_with("Messaged b:")));
+        assert!(notices.iter().any(|e| e.data["heading"].as_str().unwrap().starts_with("Message from a:")));
+        f.hub.send_cmd("a", Cmd::Stop).unwrap();
+        f.until(|| !f.hub.team.0.locked().active.contains("a")).await;
+        let card =
+            f.hub.store.history("b", i64::MAX, 100).unwrap().into_iter().find(|e| e.kind == "permission").unwrap();
+        assert_eq!(f.hub.store.entry(&card.id).unwrap().data["status"], "pending");
+        let approval = crate::api::dispatch(
+            &f.hub,
+            &crate::api::devices::Caller::Local,
+            "respondPermission",
+            json!({"entryId": card.id, "optionId": "allow"}),
+        )
+        .await;
+        approval.unwrap();
+        std::fs::write(f.dir.join("b/release"), "").unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "completed"));
+        for bot in ["a", "b"] {
+            assert!(f.hub.store.history(bot, i64::MAX, 100).unwrap().iter().all(|e| e.kind != "user"));
+        }
+        let history = f.hub.store.history("b", i64::MAX, 100).unwrap();
+        assert!(history.iter().any(|e| e.kind == "agent"
+            && e.data["final"] == true
+            && e.data["text"] == "reply: PERMISSION BLOCK independent work"));
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn cancelling_an_ask_preserves_the_independent_message_behind_it() {
+        let f = Fixture::new();
+        let ask = f.request("BLOCK synchronous work");
+        f.until(|| f.prompts().len() == 1).await;
+        let receipt = f.message("independent work").await;
+        let receipt = receipt.unwrap();
+        assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "queued"));
+        assert_eq!(f.hub.team.0.locked().pending.len(), 1);
+        f.hub.send_cmd("a", Cmd::Stop).unwrap();
+        let result = ask.await;
+        assert!(result.unwrap().unwrap_err().to_string().contains("cancelled"));
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        assert_eq!(f.prompts().len(), 2);
+        assert!(f.prompts()[1].ends_with("\n\nindependent work"));
+        assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "completed"));
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn recipient_stop_cancels_queued_messages_before_execution() {
+        let f = Fixture::new();
+        f.send_user("BLOCK user work").await;
+        f.until(|| f.prompts().len() == 1).await;
+        let first = f.message("must never run").await;
+        let first = first.unwrap();
+        let second = f.message("also must never run").await;
+        let second = second.unwrap();
+        f.hub.send_cmd("b", Cmd::Stop).unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0 && f.hub.runtime("b").status == BotStatus::Idle).await;
+        for receipt in [&first, &second] {
+            let notices = f.notices(receipt);
+            assert_eq!(notices.len(), 2);
+            assert!(notices.iter().all(|e| e.data["status"] == "cancelled"
+                && e.data["text"].as_str().unwrap().ends_with("Cancelled before execution.")));
+        }
+        let later = f.message("new work after Stop").await;
+        let later = later.unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        assert_eq!(f.prompts().len(), 2);
+        assert!(f.prompts()[1].ends_with("\n\nnew work after Stop"));
+        assert!(f.notices(&later).iter().all(|e| e.data["status"] == "completed"));
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn recipient_stop_cancels_running_message_and_releases_capacity() {
+        let f = Fixture::new();
+        let receipt = f.message("BLOCK running work").await;
+        let receipt = receipt.unwrap();
+        f.until(|| f.prompts().len() == 1).await;
+        f.hub.send_cmd("b", Cmd::Stop).unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "cancelled"
+            && e.data["text"].as_str().unwrap().contains("Partial work may have happened")));
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn mixed_requests_preserve_fifo_and_user_batch_boundaries() {
+        let f = Fixture::new();
+        f.send_user("BLOCK current turn").await;
+        f.until(|| f.prompts().len() == 1).await;
+        f.send_user("first user").await;
+        f.send_user("second user").await;
+        let first = f.message("first message").await;
+        let first = first.unwrap();
+        let ask = f.request("synchronous request");
+        f.until(|| f.hub.team.0.locked().pending.len() == 1).await;
+        let second = f.message("second message").await;
+        let second = second.unwrap();
+        f.send_user("third user").await;
+        f.send_user("fourth user").await;
+        std::fs::write(f.dir.join("b/release"), "").unwrap();
+        let result = ask.await;
+        assert_eq!(result.unwrap().unwrap()["reply"], "reply: synchronous request");
+        f.until(|| f.prompts().len() == 6 && f.hub.runtime("b").status == BotStatus::Idle).await;
+        let prompts = f.prompts();
+        assert_eq!(prompts[1], "first user\n\nsecond user");
+        assert!(prompts[2].ends_with("\n\nfirst message"));
+        assert!(prompts[3].ends_with("\n\nsynchronous request"));
+        assert!(prompts[4].ends_with("\n\nsecond message"));
+        assert_eq!(prompts[5], "third user\n\nfourth user");
+        for receipt in [&first, &second] {
+            assert!(f.notices(receipt).iter().all(|e| e.data["status"] == "completed"));
+        }
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn message_failures_finish_notices_and_release_capacity() {
+        let f = Fixture::new();
+        for message in ["FAIL agent error", "REFUSE requested refusal", "EMPTY no report"] {
+            let receipt = f.message(message).await;
+            let receipt = receipt.unwrap();
+            f.until(|| f.hub.team.0.locked().messages == 0).await;
+            assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "failed"));
+        }
+        f.hub.update_bot(&json!({"id": "b", "command": "/codync-nonexistent-test-agent"})).unwrap();
+        let receipt = f.message("startup failure").await;
+        let receipt = receipt.unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        assert!(
+            f.notices(&receipt).iter().all(|e| e.data["status"] == "failed"
+                && e.data["text"].as_str().unwrap().contains("couldn't start recipient"))
+        );
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn failed_message_admission_never_executes_or_leaks_capacity() {
+        let f = Fixture::new();
+        let db = rusqlite::Connection::open(f.dir.join("test.db")).unwrap();
+        db.execute_batch(
+            "CREATE TRIGGER reject_message BEFORE INSERT ON entries
+            WHEN NEW.bot_id = 'b' AND NEW.kind = 'notice'
+            BEGIN SELECT RAISE(ABORT, 'fixture save failure'); END;",
+        )
+        .unwrap();
+        let result = f.message("cannot save recipient notice").await;
+        assert!(result.is_err());
+        assert_eq!(f.hub.team.0.locked().messages, 0);
+        let history = f.hub.store.history("a", i64::MAX, 100).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].data["status"], "cancelled");
+        db.execute_batch("DROP TRIGGER reject_message;").unwrap();
+        f.hub.send_cmd("b", Cmd::Shutdown).unwrap();
+        f.until(|| f.hub.send_cmd("b", Cmd::RefreshTools).is_err()).await;
+        let result = f.message("recipient actor has exited").await;
+        assert!(result.is_err());
+        assert_eq!(f.hub.team.0.locked().messages, 0);
+        assert_eq!(f.prompts().len(), 0);
+        assert!(f.hub.store.history("a", i64::MAX, 100).unwrap().iter().all(|e| e.data["status"] == "cancelled"));
+        drop(db);
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn message_capacity_is_bounded_and_freed_by_recipient_stop() {
+        let f = Fixture::new();
+        f.send_user("BLOCK user work").await;
+        f.until(|| f.prompts().len() == 1).await;
+        for _ in 0..MAX_PENDING_MESSAGES {
+            let result = f.message("queued message").await;
+            assert!(result.is_ok());
+        }
+        let result = f.message("overflow").await;
+        assert!(result.unwrap_err().to_string().contains("too many pending bot messages"));
+        assert!(f.hub.team.0.locked().pending.is_empty());
+        f.hub.send_cmd("b", Cmd::Stop).unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0 && f.hub.runtime("b").status == BotStatus::Idle).await;
+        let result = f.message("after capacity released").await;
+        assert!(result.is_ok());
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        assert_eq!(f.prompts().len(), 2);
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn shutdown_discards_accepted_mailbox_messages_and_finishes_notices() {
+        let f = Fixture::new();
+        // Admission is synchronous: these commands enter the mailbox in order
+        // before the actor runs, so shutdown disposes of the unread request.
+        f.hub.send_cmd("b", Cmd::Shutdown).unwrap();
+        let receipt = f.message("must never start").await;
+        let receipt = receipt.unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "cancelled"));
+        assert_eq!(f.prompts().len(), 0);
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn invalid_messages_never_start_and_stopped_senders_cannot_admit_more() {
+        let f = Fixture::new();
+        let mut hidden = visible_bot(&f.hub, "c").unwrap();
+        hidden.hidden = true;
+        f.hub.store.save_bot(&hidden).unwrap();
+        for target in ["a", "c", "missing"] {
+            let result = call(&f.hub, "a", "message_bot", &json!({"botId": target, "message": "work"})).await;
+            assert!(result.is_err());
+        }
+        for message in [" ".to_owned(), "x".repeat(MAX_MESSAGE_BYTES + 1)] {
+            let result = f.message(&message).await;
+            assert!(result.is_err());
+        }
+        f.hub.team.cancel_from("a");
+        let result = f.message("late request").await;
+        assert!(result.unwrap_err().to_string().contains("no longer working"));
+        f.hub.team.start_turn("a");
+        f.hub.delete_bot("b").unwrap();
+        let result = f.message("deleted recipient").await;
+        assert!(result.is_err());
+        assert_eq!(f.hub.team.0.locked().messages, 0);
+        assert_eq!(f.prompts().len(), 0);
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn sender_deletion_preserves_messages_and_recipient_deletion_closes_them() {
+        let f = Fixture::new();
+        let running = f.message("BLOCK active message").await;
+        let running = running.unwrap();
+        f.until(|| f.prompts().len() == 1).await;
+        let queued = f.message("queued message").await;
+        let queued = queued.unwrap();
+        f.hub.delete_bot("a").unwrap();
+        assert_eq!(f.hub.team.0.locked().messages, 2);
+        assert_eq!(f.hub.runtime("b").status, BotStatus::Working);
+        std::fs::write(f.dir.join("b/release"), "").unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        for receipt in [&running, &queued] {
+            assert!(f.notices(receipt).iter().all(|e| e.data["status"] == "completed"));
+        }
+        f.shutdown().await;
+
+        let f = Fixture::new();
+        let running = f.message("BLOCK active message").await;
+        let running = running.unwrap();
+        f.until(|| f.prompts().len() == 1).await;
+        let queued = f.message("queued message").await;
+        let queued = queued.unwrap();
+        f.hub.delete_bot("b").unwrap();
+        f.until(|| f.hub.team.0.locked().messages == 0).await;
+        for receipt in [&running, &queued] {
+            assert!(f.notices(receipt).iter().all(|e| e.data["status"] == "cancelled"));
+        }
+        assert_eq!(f.prompts().len(), 1);
+        f.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn message_turns_have_no_resume_marker_and_restart_expires_both_notices() {
+        let f = Fixture::new();
+        let running = f.message("BLOCK active message").await;
+        let running = running.unwrap();
+        f.until(|| f.prompts().len() == 1).await;
+        let queued = f.message("queued message").await;
+        let queued = queued.unwrap();
+        assert!(f.hub.store.kv_get("turn.inflight.b").is_none_or(|v| v.is_empty()));
+        // A new store connection applies the same startup cleanup to the
+        // persisted queued and running notices, without replaying a prompt.
+        let store = Store::open(&f.dir.join("test.db")).unwrap();
+        assert_eq!(store.expire_pending().unwrap(), 4);
+        for receipt in [&running, &queued] {
+            assert!(f.notices(receipt).iter().all(|e| e.data["status"] == "failed"
+                && e.data["text"].as_str().unwrap().contains("Interrupted by host restart")));
+        }
+        assert_eq!(f.prompts().len(), 1);
+        drop(store);
         f.shutdown().await;
     }
 

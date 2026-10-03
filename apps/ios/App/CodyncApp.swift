@@ -288,11 +288,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         Task { @MainActor in PushRegistrar.shared.didRegister(token: deviceToken) }
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                          withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         let info = response.notification.request.content.userInfo
-        guard let ctx = info["ctx"] as? String, let computerId = info["computerId"] as? String,
-              let botId = info["botId"] as? String else { return }
-        await MainActor.run {
+        let ctx = info["ctx"] as? String
+        let computerId = info["computerId"] as? String
+        let botId = info["botId"] as? String
+        // UIKit saves application state from this completion. The async delegate
+        // bridge can complete off the main thread even after MainActor.run.
+        Task { @MainActor in
+            defer { completionHandler() }
+            guard let ctx, let computerId, let botId else { return }
             // Only open it in the account it was sent to, on a computer that account still has.
             let accounts = AppStore.shared.accounts
             guard ctx == accounts.storage.id, accounts.store(for: computerId) != nil else { return }

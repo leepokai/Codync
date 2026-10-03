@@ -146,7 +146,7 @@
 		64888B10E98F19723500FBCA /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
 		6D734BEE7CD3F84677B0218B /* Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		741B706007BA1B91CB853699 /* Screen.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Screen.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		7549E88A01FD7650C5746C54 /* AppIcon.icon */ = {isa = PBXFileReference; path = AppIcon.icon; sourceTree = "<group>"; };
+		7549E88A01FD7650C5746C54 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		772D2E6B5C5157077E504B35 /* ComputerStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerStatus.swift; sourceTree = "<group>"; };
 		7A2F5A7F5A648909D8CC5C19 /* kit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = kit; path = ../kit; sourceTree = SOURCE_ROOT; };
 		7AB018B7D7F8E8137E0A1012 /* CodyncMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncMacApp.swift; sourceTree = "<group>"; };
@@ -573,7 +573,6 @@
 				};
 			};
 			buildConfigurationList = F977CF173B7D60769B393751 /* Build configuration list for PBXProject "Codync" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -589,14 +588,15 @@
 				4821371032224740E592D19C /* XCLocalSwiftPackageReference "../kit" */,
 			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 3EC1FDCCFFFB4BA1A23FDDB0 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				C42E5E078332C6C2B35AF5FA /* NotificationService */,
-				907F1F4A709111FC7178EAE9 /* Screen */,
-				A27E4E88D6A5B9850734B594 /* Widgets */,
-				913BDA9F79CE8C35A9E35830 /* iOS */,
 				72F29E7EBE9A88B16B4E608A /* macOS */,
+				907F1F4A709111FC7178EAE9 /* Screen */,
+				913BDA9F79CE8C35A9E35830 /* iOS */,
+				A27E4E88D6A5B9850734B594 /* Widgets */,
+				C42E5E078332C6C2B35AF5FA /* NotificationService */,
 			);
 		};
 /* End PBXProject section */
@@ -837,7 +837,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.5.1;
+				MARKETING_VERSION = 2.5.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1015,7 +1015,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.5.1;
+				MARKETING_VERSION = 2.5.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

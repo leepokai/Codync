@@ -495,7 +495,14 @@ struct ChatItem: Identifiable {
         let live = streaming ? entries.last.flatMap { $0.kind == "agent" && $0.data.final == false ? $0.id : nil } : nil
         for e in entries where e.isChat || (e.id == live && !(e.data.text ?? "").isEmpty && e.data.text != "(pass)") {
             let date = e.date
-            let id = e.kind == "user" ? e.data.clientNonce.map { "user-\($0)" } ?? e.id : e.id
+            // Bot-originated messages carry an empty nonce. Their entry IDs
+            // distinguish them; only real nonces identify optimistic echoes.
+            let id: String
+            if e.kind == "user", let nonce = e.data.clientNonce, !nonce.isEmpty {
+                id = "user-\(nonce)"
+            } else {
+                id = e.id
+            }
             if lastDate.map({ date.timeIntervalSince($0) > 3600 }) ?? true {
                 out.append(ChatItem(id: "sep-\(id)", kind: .separator(date)))
                 lastAuthor = nil

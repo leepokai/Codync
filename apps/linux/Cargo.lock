@@ -152,7 +152,7 @@ dependencies = [
 
 [[package]]
 name = "codync-gtk"
-version = "2.5.1"
+version = "2.5.2"
 dependencies = [
  "async-channel",
  "dirs",

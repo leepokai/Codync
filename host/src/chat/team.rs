@@ -194,10 +194,7 @@ impl BotRequest {
                     message.finish(Status::Cancelled, "Recipient stopped. Partial work may have happened.");
                 } else {
                     match result {
-                        Ok(_) => message.finish(
-                            Status::Completed,
-                            &format!("Completed. Outcome reported in {}'s chat.", message.target_name),
-                        ),
+                        Ok(_) => message.finish(Status::Completed, "Completed."),
                         Err(error) => message.finish(Status::Failed, &format!("{error:#}")),
                     }
                 }
@@ -751,7 +748,11 @@ mod tests {
         approval.unwrap();
         std::fs::write(f.dir.join("b/release"), "").unwrap();
         f.until(|| f.hub.team.0.locked().messages == 0).await;
-        assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "completed"));
+        for entry in f.notices(&receipt) {
+            assert_eq!(entry.data["status"], "completed");
+            let heading = entry.data["heading"].as_str().unwrap();
+            assert_eq!(entry.data["text"], format!("{heading}\nCompleted."));
+        }
         for bot in ["a", "b"] {
             assert!(f.hub.store.history(bot, i64::MAX, 100).unwrap().iter().all(|e| e.kind != "user"));
         }

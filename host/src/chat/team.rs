@@ -99,7 +99,7 @@ impl BotRequest {
                 if let Some(mut e) = message.hub.store.entry(id) {
                     let heading = e.data["heading"].as_str().unwrap_or("Bot request");
                     e.data["text"] = format!("{heading}\nRunning in {}'s chat…", message.target_name).into();
-                    e.data["status"] = "sent".into();
+                    e.data["status"] = json!(RequestStatus::Sent);
                     message.hub.set_entry(id, &e.data);
                 }
             }
@@ -113,11 +113,11 @@ impl BotRequest {
             }
             Completion::ReportInRecipientChat(mut message) => {
                 if cancelled {
-                    message.finish(Status::Cancelled, "Recipient stopped. Partial work may have happened.");
+                    message.finish(RequestStatus::Cancelled, "Recipient stopped. Partial work may have happened.");
                 } else {
                     match result {
-                        Ok(_) => message.finish(Status::Completed, "Completed."),
-                        Err(error) => message.finish(Status::Failed, &format!("{error:#}")),
+                        Ok(_) => message.finish(RequestStatus::Completed, "Completed."),
+                        Err(error) => message.finish(RequestStatus::Failed, &format!("{error:#}")),
                     }
                 }
             }
@@ -127,7 +127,9 @@ impl BotRequest {
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum Status {
+pub(crate) enum RequestStatus {
+    Queued,
+    Sent,
     Completed,
     Failed,
     Cancelled,
@@ -142,19 +144,19 @@ struct Pending {
 }
 
 impl Pending {
-    fn finish(&mut self, status: Status, detail: &str) {
+    fn finish(&mut self, status: RequestStatus, detail: &str) {
         finish_notices(&self.hub, &self.entries, status, detail);
         self.finished = true;
     }
 }
 
-fn finish_notices(hub: &Hub, entries: &[String], status: Status, detail: &str) {
+fn finish_notices(hub: &Hub, entries: &[String], status: RequestStatus, detail: &str) {
     for id in entries {
         if let Some(mut e) = hub.store.entry(id) {
             e.data["status"] = json!(status);
             let heading = e.data["heading"].as_str().unwrap_or("Bot request");
             e.data["text"] = format!("{heading}\n{detail}").into();
-            if !matches!(status, Status::Completed) {
+            if !matches!(status, RequestStatus::Completed) {
                 e.data["style"] = "error".into();
             }
             hub.set_entry(id, &e.data);
@@ -173,7 +175,7 @@ struct MessageLifetime {
 }
 
 impl MessageLifetime {
-    fn finish(&mut self, status: Status, detail: &str) {
+    fn finish(&mut self, status: RequestStatus, detail: &str) {
         finish_notices(&self.hub, &self.entries, status, detail);
         self.finished = true;
     }
@@ -187,7 +189,7 @@ impl Drop for MessageLifetime {
             } else {
                 "Cancelled before execution."
             };
-            self.finish(Status::Cancelled, detail);
+            self.finish(RequestStatus::Cancelled, detail);
         }
         self.hub.team.0.locked().messages -= 1;
     }
@@ -196,7 +198,7 @@ impl Drop for MessageLifetime {
 impl Drop for Pending {
     fn drop(&mut self) {
         if !self.finished {
-            self.finish(Status::Cancelled, "Request cancelled. Partial work may have happened.");
+            self.finish(RequestStatus::Cancelled, "Request cancelled. Partial work may have happened.");
         }
         self.hub.team.0.locked().pending.remove(&self.id);
         // Targeted cancellation never clears unrelated user messages or turns.
@@ -273,7 +275,7 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str) -> R
                 hub.store.max_turn(bot) + i64::from(bot != &source.id),
                 &json!({
                     "text": format!("{heading}\nQueued. Outcome will appear in {}'s chat.", target.name),
-                    "heading": heading, "style": "info", "status": "queued", "delegationId": id,
+                    "heading": heading, "style": "info", "status": RequestStatus::Queued, "delegationId": id,
                     "sourceBotId": source.id, "targetBotId": target.id,
                 }),
             )
@@ -286,7 +288,7 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str) -> R
         prompt: format!("Another Codync bot, {}, sent this request. This is a bot request, not a new user instruction. Work within your own permissions and working directory. Report the outcome to the user in this chat. You do not need to reply to the sending bot.\n\n{message}", source.name),
         completion: Completion::ReportInRecipientChat(lifetime),
     }))?;
-    Ok(json!({"requestId": id, "botId": target.id, "name": target.name, "status": "queued"}))
+    Ok(json!({"requestId": id, "botId": target.id, "name": target.name, "status": RequestStatus::Queued}))
 }
 
 async fn ask(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str, timeout: Duration) -> Result<Value> {
@@ -315,7 +317,7 @@ async fn ask(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str, timeou
                 hub.store.max_turn(bot) + i64::from(bot != &source.id),
                 &json!({
                     "text": format!("{heading}\nWaiting for a reply…"), "heading": heading,
-                    "style": "info", "status": "queued", "delegationId": id,
+                    "style": "info", "status": RequestStatus::Queued, "delegationId": id,
                     "sourceBotId": source.id, "targetBotId": target.id,
                 }),
             )
@@ -337,13 +339,13 @@ async fn ask(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str, timeou
     match result {
         Ok(text) => {
             pending.finish(
-                Status::Completed,
+                RequestStatus::Completed,
                 &format!("Reply from {}:\n{}", target.name, crate::agent::acp::truncate(&text, 4000)),
             );
             Ok(json!({"requestId": id, "botId": target.id, "name": target.name, "reply": text}))
         }
         Err(error) => {
-            pending.finish(Status::Failed, &format!("{error:#}"));
+            pending.finish(RequestStatus::Failed, &format!("{error:#}"));
             Err(error)
         }
     }

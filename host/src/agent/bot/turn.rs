@@ -37,7 +37,7 @@ impl Actor {
         );
         for id in entry_ids {
             if let Some(mut e) = self.hub.store.entry(id) {
-                e.data["status"] = "sent".into();
+                e.data["status"] = json!(crate::chat::team::RequestStatus::Sent);
                 self.hub.set_entry(id, &e.data);
             }
         }

@@ -168,6 +168,7 @@ fn finish_notices(hub: &Hub, entries: &[String], status: RequestStatus, detail: 
 /// waiting sender. Drop also covers commands discarded during actor shutdown.
 struct MessageLifetime {
     hub: Arc<Hub>,
+    sender: String,
     entries: Vec<String>,
     target_name: String,
     started: bool,
@@ -191,7 +192,7 @@ impl Drop for MessageLifetime {
             };
             self.finish(RequestStatus::Cancelled, detail);
         }
-        self.hub.team.0.locked().messages -= 1;
+        self.hub.team.release_message(&self.sender);
     }
 }
 
@@ -258,6 +259,7 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str) -> R
     let hops = hub.team.reserve_message(&source.id)?;
     let mut lifetime = MessageLifetime {
         hub: hub.clone(),
+        sender: source.id.clone(),
         entries: vec![],
         target_name: target.name.clone(),
         started: false,

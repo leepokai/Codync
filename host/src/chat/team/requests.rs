@@ -6,7 +6,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use tokio::sync::watch;
 
-use super::MAX_PENDING_MESSAGES;
+use super::{BotRequest, MAX_PENDING_MESSAGES};
+
+const MAX_REQUEST_HOPS: u8 = 8;
 
 pub(super) struct Request {
     from: String,
@@ -22,28 +24,24 @@ pub struct Requests(pub(super) Mutex<RequestState>);
 #[derive(Default)]
 pub(super) struct RequestState {
     pub(super) pending: HashMap<String, Request>,
-    pub(super) active: HashSet<String>,
+    pub(super) active: HashMap<String, u8>,
     pub(super) messages: usize,
 }
 
 impl Requests {
-    pub(super) fn reserve_message(&self, from: &str) -> Result<()> {
+    pub(super) fn reserve_message(&self, from: &str) -> Result<u8> {
         let mut state = self.0.locked();
-        if !state.active.contains(from) {
-            bail!("the requesting bot is no longer working");
-        }
+        let hops = state.next_hop(from)?;
         if state.messages >= MAX_PENDING_MESSAGES {
             bail!("too many pending bot messages");
         }
         state.messages += 1;
-        Ok(())
+        Ok(hops)
     }
 
-    pub(super) fn begin(&self, id: &str, from: &str, to: &str) -> Result<watch::Receiver<bool>> {
+    pub(super) fn begin(&self, id: &str, from: &str, to: &str) -> Result<(watch::Receiver<bool>, u8)> {
         let mut state = self.0.locked();
-        if !state.active.contains(from) {
-            bail!("the requesting bot is no longer working");
-        }
+        let hops = state.next_hop(from)?;
         let requests = &mut state.pending;
         if from == to {
             bail!("a bot cannot ask itself");
@@ -66,7 +64,7 @@ impl Requests {
         }
         let (cancel, rx) = watch::channel(false);
         requests.insert(id.to_owned(), Request { from: from.to_owned(), to: to.to_owned(), cancel });
-        Ok(rx)
+        Ok((rx, hops))
     }
 
     pub fn cancel_from(&self, bot: &str) {
@@ -77,8 +75,8 @@ impl Requests {
         }
     }
 
-    pub fn start_turn(&self, bot: &str) {
-        self.0.locked().active.insert(bot.to_owned());
+    pub fn start_turn(&self, bot: &str, request: Option<&BotRequest>) {
+        self.0.locked().active.insert(bot.to_owned(), request.map_or(0, |r| r.hops));
     }
 
     pub fn cancel_bot(&self, bot: &str) {
@@ -90,3 +88,42 @@ impl Requests {
     }
 }
 
+impl RequestState {
+    fn next_hop(&self, from: &str) -> Result<u8> {
+        let hops = *self.active.get(from).ok_or_else(|| anyhow::anyhow!("the requesting bot is no longer working"))?;
+        if hops >= MAX_REQUEST_HOPS {
+            bail!("bot request hop limit ({MAX_REQUEST_HOPS}) reached; ask the user before starting another chain");
+        }
+        Ok(hops + 1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exhausted_chain_rejects_messages_and_asks_without_reserving_capacity() {
+        let requests = Requests::default();
+        requests.0.locked().active.insert("a".into(), MAX_REQUEST_HOPS);
+        let message = requests.reserve_message("a");
+        assert!(message.unwrap_err().to_string().contains("hop limit"));
+        let ask = requests.begin("ask", "a", "b");
+        assert!(ask.unwrap_err().to_string().contains("hop limit"));
+        let state = requests.0.locked();
+        assert_eq!(state.messages, 0);
+        assert!(state.pending.is_empty());
+        drop(state);
+        requests.start_turn("a", None);
+        assert_eq!(requests.reserve_message("a").unwrap(), 1);
+    }
+
+    #[test]
+    fn last_allowed_handoff_is_admitted() {
+        let requests = Requests::default();
+        requests.0.locked().active.insert("a".into(), MAX_REQUEST_HOPS - 1);
+        assert_eq!(requests.reserve_message("a").unwrap(), MAX_REQUEST_HOPS);
+        let (_, hops) = requests.begin("ask", "a", "b").unwrap();
+        assert_eq!(hops, MAX_REQUEST_HOPS);
+    }
+}

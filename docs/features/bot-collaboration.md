@@ -32,9 +32,16 @@ The host records the request and its outcome in both chats using existing notice
 
 Accepted messages survive sender completion, Stop, disconnection and deletion. Recipient Stop or deletion cancels queued messages and stops running work; started work may have left partial changes. Outcomes update both notices; failures mark them as failed. The recipient uses its normal completion notifications. Messages have no ask timeout or automatic retry and are not replayed after host restart.
 
+Bot request chains can make at most eight handoffs. Both `message_bot` and
+`ask_bot` carry the count into the recipient's turn, including queued work;
+finishing an earlier request does not reset it. This bounds repeated A → B → A
+messages even when few requests are outstanding. At the limit, the tool reports
+an error without queuing more work. A new user turn starts a fresh allowance.
+
 ## Code and verification
 
-- `host/src/chat/team.rs`: discovery, wait graph, request lifetime and persisted notices.
+- `host/src/chat/team.rs`: discovery, request lifetime and persisted notices.
+- `host/src/chat/team/requests.rs`: admission, wait graph, capacity and chain hop limit.
 - `host/src/agent/bot/` (`queue.rs`, `turn.rs`): queue boundaries, recipient execution, completion and targeted cancellation.
 - `host/src/mcp.rs`: the authenticated local MCP → HTTP bridge.
 - `host/tests/team_e2e.rs`: a real host and MCP subprocess, with scripted ACP agents, covering discovery → delegation → recipient approval → reply → client sync. No paid provider calls.

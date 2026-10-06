@@ -6,10 +6,10 @@ use std::path::PathBuf;
 fn wait_graph_rejects_self_duplicates_and_indirect_cycles() {
     let requests = Requests::default();
     for bot in ["a", "b", "c", "d"] {
-        requests.start_turn(bot);
+        requests.start_turn(bot, None);
     }
     assert!(requests.begin("self", "a", "a").is_err());
-    let ab = requests.begin("ab", "a", "b").unwrap();
+    let (ab, _) = requests.begin("ab", "a", "b").unwrap();
     assert!(requests.begin("duplicate", "a", "b").is_err());
     let _bc = requests.begin("bc", "b", "c").unwrap();
     assert!(requests.begin("ca", "c", "a").is_err());
@@ -52,7 +52,7 @@ impl Fixture {
         );
         hub.start().unwrap();
         hub.set_runtime("a", |r| r.status = BotStatus::Working);
-        hub.team.start_turn("a");
+        hub.team.start_turn("a", None);
         Self { hub, dir }
     }
 
@@ -164,8 +164,7 @@ async fn permission_cards_still_require_the_recipients_approval() {
     assert!(!request.is_finished());
     let cycle = call(&f.hub, "b", "ask_bot", &json!({"botId": "a", "message": "help me back"})).await;
     assert!(cycle.unwrap_err().to_string().contains("wait for each other"));
-    let card =
-        f.hub.store.history("b", i64::MAX, 100).unwrap().into_iter().find(|e| e.kind == "permission").unwrap();
+    let card = f.hub.store.history("b", i64::MAX, 100).unwrap().into_iter().find(|e| e.kind == "permission").unwrap();
     crate::api::dispatch(
         &f.hub,
         &crate::api::devices::Caller::Local,
@@ -183,14 +182,9 @@ async fn stopping_requester_cancels_only_its_delegation() {
     let f = Fixture::new();
     let request = f.request("BLOCK waiting for cancellation");
     f.until(|| f.prompts().len() == 1).await;
-    crate::api::dispatch(
-        &f.hub,
-        &crate::api::devices::Caller::Local,
-        "send",
-        json!({"botId": "b", "text": "thanks"}),
-    )
-    .await
-    .unwrap();
+    crate::api::dispatch(&f.hub, &crate::api::devices::Caller::Local, "send", json!({"botId": "b", "text": "thanks"}))
+        .await
+        .unwrap();
     f.hub.send_cmd("a", Cmd::Stop).unwrap();
     assert!(request.await.unwrap().unwrap_err().to_string().contains("cancelled"));
     f.until(|| f.prompts().len() == 2 && f.hub.runtime("b").status == BotStatus::Idle).await;
@@ -238,13 +232,14 @@ async fn invalid_hidden_and_deleted_targets_never_start() {
 async fn queued_requests_are_not_merged_and_cancelled_requests_never_execute() {
     let f = Fixture::new();
     f.hub.set_runtime("c", |r| r.status = BotStatus::Working);
-    f.hub.team.start_turn("c");
+    f.hub.team.start_turn("c", None);
     let first = f.request("BLOCK first request");
     f.until(|| f.prompts().len() == 1).await;
     let hub = f.hub.clone();
-    let second = tokio::spawn(async move {
-        call(&hub, "c", "ask_bot", &json!({"botId": "b", "message": "second request"})).await
-    });
+    let second =
+        tokio::spawn(
+            async move { call(&hub, "c", "ask_bot", &json!({"botId": "b", "message": "second request"})).await },
+        );
     f.until(|| f.hub.team.0.locked().pending.len() == 2).await;
     assert_eq!(f.prompts().len(), 1);
     std::fs::write(f.dir.join("b/release"), "").unwrap();
@@ -305,9 +300,8 @@ async fn message_returns_before_approval_and_survives_sender_stop() {
     assert!(notices.iter().any(|e| e.data["heading"].as_str().unwrap().starts_with("Messaged b:")));
     assert!(notices.iter().any(|e| e.data["heading"].as_str().unwrap().starts_with("Message from a:")));
     f.hub.send_cmd("a", Cmd::Stop).unwrap();
-    f.until(|| !f.hub.team.0.locked().active.contains("a")).await;
-    let card =
-        f.hub.store.history("b", i64::MAX, 100).unwrap().into_iter().find(|e| e.kind == "permission").unwrap();
+    f.until(|| !f.hub.team.0.locked().active.contains_key("a")).await;
+    let card = f.hub.store.history("b", i64::MAX, 100).unwrap().into_iter().find(|e| e.kind == "permission").unwrap();
     assert_eq!(f.hub.store.entry(&card.id).unwrap().data["status"], "pending");
     let approval = crate::api::dispatch(
         &f.hub,
@@ -437,8 +431,10 @@ async fn message_failures_finish_notices_and_release_capacity() {
     let receipt = receipt.unwrap();
     f.until(|| f.hub.team.0.locked().messages == 0).await;
     assert!(
-        f.notices(&receipt).iter().all(|e| e.data["status"] == "failed"
-            && e.data["text"].as_str().unwrap().contains("couldn't start recipient"))
+        f.notices(&receipt)
+            .iter()
+            .all(|e| e.data["status"] == "failed"
+                && e.data["text"].as_str().unwrap().contains("couldn't start recipient"))
     );
     f.shutdown().await;
 }
@@ -523,7 +519,7 @@ async fn invalid_messages_never_start_and_stopped_senders_cannot_admit_more() {
     f.hub.team.cancel_from("a");
     let result = f.message("late request").await;
     assert!(result.unwrap_err().to_string().contains("no longer working"));
-    f.hub.team.start_turn("a");
+    f.hub.team.start_turn("a", None);
     f.hub.delete_bot("b").unwrap();
     let result = f.message("deleted recipient").await;
     assert!(result.is_err());

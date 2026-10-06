@@ -46,7 +46,7 @@ impl Actor {
         self.turn_text = (!hidden).then(|| text.to_owned());
         self.announce = None;
         self.stop_requested = false;
-        self.hub.team.start_turn(&self.cfg.id);
+        self.hub.team.start_turn(&self.cfg.id, self.active_request.as_ref());
         self.exit_tail = None;
         self.seg = Seg::None;
         self.tools.clear();

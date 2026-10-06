@@ -150,3 +150,57 @@ async fn agent_messages_another_bot_then_finishes_before_recipient_approval() {
     let history = host.call("history", json!({"botId": lead})).await;
     assert_eq!(history["entries"].as_array().unwrap().iter().filter(|e| e["data"]["final"] == true).count(), 1);
 }
+
+async fn exercise_bounded_chain(second_tool: &str) {
+    let host = Host::start().await;
+    let first = host.bot("first").await;
+    let second = host.bot("second").await;
+    for (name, target, tool) in [("first", &second, "message_bot"), ("second", &first, second_tool)] {
+        std::fs::write(host.home.join(name).join("handoff.json"), json!({"target": target, "tool": tool}).to_string())
+            .unwrap();
+    }
+    let mut previous_rev = 0;
+    // The second user turn must start a fresh budget after the first chain ends.
+    for chain in 1..=2 {
+        host.call("send", json!({"botId": first, "text": "CHAIN"})).await;
+        let stopped = host
+            .wait_for(&first, |e| {
+                e["rev"].as_i64().unwrap_or(0) > previous_rev
+                    && e["data"]["final"] == true
+                    && e["data"]["text"].as_str().is_some_and(|s| s.contains("hop limit (8)"))
+            })
+            .await;
+        assert!(stopped["data"]["text"].as_str().unwrap().contains("Chain stopped"));
+        let sync = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let sync = host.call("sync", json!({"since": 0})).await;
+                let notices: Vec<_> = sync["entries"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|e| e["data"]["delegationId"].is_string())
+                    .collect();
+                if sync["bots"].as_array().unwrap().iter().all(|b| b["status"] == "idle")
+                    && notices.iter().all(|e| e["data"]["status"] == "completed")
+                {
+                    assert_eq!(notices.len(), chain * 8 * 2, "the ninth handoff must never be queued");
+                    return sync;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("bounded chain did not release its turns and notices");
+        previous_rev = sync["rev"].as_i64().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn independent_message_ping_pong_stops_and_a_new_user_turn_can_delegate() {
+    exercise_bounded_chain("message_bot").await;
+}
+
+#[tokio::test]
+async fn asking_between_independent_handoffs_cannot_reset_the_hop_limit() {
+    exercise_bounded_chain("ask_bot").await;
+}

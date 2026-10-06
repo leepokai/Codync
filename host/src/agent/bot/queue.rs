@@ -172,7 +172,9 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::BotRequest(_)) => {
-                    let Some(Queued::BotRequest(mut ask)) = self.queue.pop_front() else { unreachable!("front is an ask") };
+                    let Some(Queued::BotRequest(mut ask)) = self.queue.pop_front() else {
+                        unreachable!("front is an ask")
+                    };
                     if ask.reply_closed() {
                         continue;
                     }

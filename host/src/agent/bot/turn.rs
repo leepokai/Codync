@@ -55,7 +55,9 @@ impl Actor {
         self.sent.clear();
         // A delegated or group turn has no live waiter after a host restart. Its persisted
         // notices are marked interrupted instead of silently repeating work.
-        self.set_inflight(self.active_request.is_none() && self.active_group.is_none() && self.active_routine.is_none());
+        self.set_inflight(
+            self.active_request.is_none() && self.active_group.is_none() && self.active_routine.is_none(),
+        );
         self.hub.set_runtime(&self.id(), |r| {
             r.status = BotStatus::Working;
             r.activity = if hidden { "Picking up where it left off…" } else { "Starting…" }.into();
@@ -231,7 +233,8 @@ impl Actor {
             let text = (status == crate::routines::Status::Succeeded).then(|| final_text.clone()).flatten();
             self.finish_routine(status, detail, text);
         }
-        let message_failed = !stopped && reply.is_err() && self.active_request.as_ref().is_some_and(|r| !r.expects_reply());
+        let message_failed =
+            !stopped && reply.is_err() && self.active_request.as_ref().is_some_and(|r| !r.expects_reply());
         self.complete_request(reply, stopped);
         self.complete_group(if stopped || failed || stop_reason != "end_turn" {
             Err(anyhow!("turn did not complete ({stop_reason})"))

@@ -55,6 +55,14 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO
         SKIP_INSTALL: YES
+    postBuildScripts:
+      # The computer-use driver bots act through (host/src/screen/cua.rs), pinned and checked
+      # by packaging/cua-driver. Its own Developer ID signature stays: it is never re-signed.
+      - name: Embed cua-driver
+        basedOnDependencyAnalysis: false
+        script: |
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          node "$SRCROOT/../packaging/cua-driver/fetch.mjs" darwin "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
   iOS:
     type: application
     platform: iOS

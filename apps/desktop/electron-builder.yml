@@ -3,7 +3,8 @@
 #   build/native/codync-host        the host for this platform (macOS: universal)
 #   build/native/codync-host.exe    Windows: the host, and codync-hostw.exe that runs it at sign-in
 #   build/native/codync-speech      macOS on-device speech helper
-#   build/native/CodyncScreen.app   macOS screen helper (Xcode `Screen` target)
+#   build/native/CodyncScreen.app   macOS screen helper (Xcode `Screen` target, with cua-driver inside)
+#   build/native/cua-driver.exe     Windows: the computer-use driver and its UI Automation helper
 appId: com.pokai.Codync
 productName: Codync
 copyright: ""
@@ -39,6 +40,9 @@ mac:
   # The zip (update feed) takes this name; the DMG sets its own.
   artifactName: codync-macos.${ext}
   hardenedRuntime: true
+  # The computer-use driver keeps its maker's Developer ID signature (packaging/cua-driver).
+  signIgnore:
+    - CodyncScreen\.app/Contents/Helpers/cua-driver$
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
   extendInfo:
@@ -94,6 +98,13 @@ win:
       to: codync-host.exe
     - from: build/native/codync-hostw.exe
       to: codync-hostw.exe
+    # The computer-use driver bots act through; the host starts it from beside itself.
+    - from: build/native/cua-driver.exe
+      to: cua-driver.exe
+    - from: build/native/cua-driver-uia.exe
+      to: cua-driver-uia.exe
+    - from: build/native/cua-driver.LICENSE
+      to: cua-driver.LICENSE
     # The tray icon (template glyphs are for macOS).
     - from: resources/icon.png
       to: icon.png

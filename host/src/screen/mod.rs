@@ -1,13 +1,14 @@
 //! Remote screen: the phone views and controls this computer over WebRTC, and
-//! bots operate it through the built-in `computer` MCP server (`mcp.rs`).
+//! bots operate it through the built-in `computer` MCP server (`mcp.rs`, `computer.rs`).
 //!
-//! Capture, encoding and input injection live in a separate *screen helper*
+//! Capture, encoding and the phone's input live in a separate *screen helper*
 //! that connects to `~/.codync/screen.sock` — on macOS `CodyncScreen.app`
 //! (a signed bundle, so Screen Recording / Accessibility grants stick), on
 //! Linux `codync-screen` (xdg portals + `GStreamer`). The host stays the only
 //! network-facing process: it relays WebRTC signaling, gates access (on by
 //! default where there is a desktop, toggled only from this computer) and arbitrates control between
-//! the user and bots.
+//! the user and bots. Bots act through the computer-use driver (`cua.rs`), which Codync Screen
+//! starts on macOS and the host starts on Windows and Linux.
 //!
 //! Helper protocol: newline-delimited JSON-RPC 2.0 over the socket.
 //! - helper → host notifications
@@ -17,24 +18,27 @@
 //!   - `answer {session, sdp, display?, iceServers, maxBitrateBps, maxFramerate}` → `{sdp}`:
 //!     non-trickle ICE, with short-lived STUN/TURN credentials for remote connections.
 //!   - `close {session}`, `closeAll {}`
-//!   - `screenshot {display, width, height}` → `{data}` (base64 JPEG, exactly
-//!     that size)
-//!   - `input {display, event}` → `{}`; `event` is an [`InputEvent`](protocol::InputEvent) in display points
-//!   - `uiTree {display}` → `{app, tree}`: accessibility tree of the frontmost
-//!     app; nodes are `{role, title?, value?, frame: [x, y, w, h], children?}`
-//!     with frames in display points
-//!   - `openApp {name}` → `{}`
+//!   - `focusedField {pid?}` → `{app, pid, url?, secure}`: the focused control of that app (the
+//!     frontmost one by default), for `type_login`
+//!   - macOS: `driver {}` → `{socket}`: starts the computer-use driver if it isn't running
+//!   - Linux, for bots on desktops the driver doesn't support (`helper_tools.rs`):
+//!     `screenshot {display, width, height}` → `{data}` (base64 JPEG, exactly that size);
+//!     `input {display, event}` → `{}` (display points); `uiTree {display}` → `{app, tree}`;
+//!     `openApp {name}` → `{}`
 //!
 //! The phone's input travels straight to the helper over WebRTC data channels
-//! (`input-fast` unordered for moves, `input` reliable) using the same
-//! [`InputEvent`](protocol::InputEvent) JSON plus `down`/`up` for touch drags and `clipboard {text}`.
+//! (`input-fast` unordered for moves, `input` reliable): `move`, `click`, `drag`, `scroll`,
+//! `text`, `key` in display points, plus `down`/`up` for touch drags and `clipboard {text}`.
 
 mod computer;
+mod cua;
 mod helper;
+#[cfg(target_os = "linux")]
+mod helper_tools;
 mod protocol;
 mod viewer;
 
-pub use computer::{ComputerTool, computer};
+pub use computer::{computer, computer_tools};
 pub use helper::serve_helpers;
 #[cfg(target_os = "linux")]
 pub use helper::supervise_linux_helper;
@@ -43,7 +47,7 @@ pub use viewer::{IceConfig, watch_viewer};
 use crate::LockExt;
 use anyhow::{Result, anyhow, bail};
 use helper::{Link, graphical_session};
-use protocol::{Display, HelperStatus};
+use protocol::HelperStatus;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -55,6 +59,7 @@ use tokio::sync::broadcast;
 /// How long after its last computer call a bot still counts as "using the computer".
 const AGENT_HOLD: Duration = Duration::from_secs(20);
 /// Lets the UI react to an action before the follow-up screenshot.
+#[cfg(target_os = "linux")]
 const SETTLE: Duration = Duration::from_millis(400);
 const HELPER_TIMEOUT: Duration = Duration::from_secs(15);
 const KV_ENABLED: &str = "screen_enabled";
@@ -88,6 +93,7 @@ pub struct Screen {
     status: Mutex<HelperStatus>,
     control: Mutex<Control>,
     sessions: Mutex<HashMap<String, Viewer>>,
+    driver: cua::Driver,
     #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
     next_link: AtomicU64,
 }
@@ -101,6 +107,7 @@ impl Screen {
             status: Mutex::default(),
             control: Mutex::default(),
             sessions: Mutex::default(),
+            driver: cua::Driver::default(),
             next_link: AtomicU64::new(1),
         }
     }
@@ -135,6 +142,7 @@ impl Screen {
             "displays": st.displays,
             "userControl": c.user,
             "agentBot": c.active_agent(),
+            "computerUse": self.computer_use(),
             "viewers": viewers,
         })
     }
@@ -150,7 +158,8 @@ impl Screen {
         self.link.locked().clone().ok_or_else(|| anyhow!("The screen helper isn't running on this computer."))
     }
 
-    fn display(&self, id: Option<u32>) -> Result<Display> {
+    #[cfg(target_os = "linux")]
+    fn display(&self, id: Option<u32>) -> Result<protocol::Display> {
         let st = self.status.locked();
         let found = match id {
             Some(id) => st.displays.iter().find(|d| d.id == id),
@@ -160,11 +169,11 @@ impl Screen {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    pub(super) fn retina() -> Display {
-        Display { id: 1, name: "Built-in".into(), width: 1512.0, height: 982.0, main: true }
+    pub(super) fn retina() -> protocol::Display {
+        protocol::Display { id: 1, name: "Built-in".into(), width: 1512.0, height: 982.0, main: true }
     }
 }

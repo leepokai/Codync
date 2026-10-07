@@ -1,6 +1,7 @@
 // Builds Codync Screen (Remote screen capture and input) into build/native/CodyncScreen.app for the
-// Mac app to bundle, unsigned (electron-builder signs it). Without it the app registers a launch
-// agent pointing at a missing helper and Remote screen never starts.
+// Mac app to bundle, unsigned (electron-builder signs it; the cua-driver the Xcode target embeds
+// keeps its own signature). Without it the app registers a launch agent pointing at a missing
+// helper and Remote screen never starts.
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'

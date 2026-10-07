@@ -351,6 +351,8 @@ public struct ScreenState: Codable, Equatable, Sendable {
     public var userControl = false
     /// The bot using the computer right now.
     public var agentBot: String?
+    /// Bots with computer use can act here (Windows: always; elsewhere Remote screen is on).
+    public var computerUse = false
     public var viewers = 0
 
     public init() {}
@@ -368,6 +370,7 @@ public struct ScreenState: Codable, Equatable, Sendable {
         displays = try c.decodeIfPresent([ScreenDisplay].self, forKey: .displays) ?? []
         userControl = try c.decodeIfPresent(Bool.self, forKey: .userControl) ?? false
         agentBot = try c.decodeIfPresent(String.self, forKey: .agentBot)
+        computerUse = try c.decodeIfPresent(Bool.self, forKey: .computerUse) ?? enabled
         viewers = try c.decodeIfPresent(Int.self, forKey: .viewers) ?? 0
     }
 }

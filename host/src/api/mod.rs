@@ -70,7 +70,8 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         || method.starts_with("composio")
         || method == "setComposioKey"
         || method.starts_with("credential")
-        || method == "computerCall"
+        // Only signing in reads the vault; other computer tools work without a keyring.
+        || (method == "computerCall" && b["name"] == "type_login")
         || method.starts_with("voice")
         || method == "setVoiceKey"
         || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv")

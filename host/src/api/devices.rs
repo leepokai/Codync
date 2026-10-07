@@ -42,6 +42,7 @@ const LOCAL_ONLY: &[&str] = &[
     "setVoiceKey",
     "pairing",
     "computerCall",
+    "computerTools",
     "chatCall",
     "teamCall",
     "memoryCall",

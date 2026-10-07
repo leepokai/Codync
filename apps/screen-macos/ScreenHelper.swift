@@ -8,6 +8,7 @@ import CoreGraphics
 final class ScreenHelper {
     private let link = HostLink()
     let input = InputInjector()
+    private let driver = Driver()
     private var sessions: [String: Session] = [:]
     private let badge = ViewingBadge()
     private var lastStatus: [String: AnyHashable] = [:]
@@ -79,21 +80,10 @@ final class ScreenHelper {
         case "closeAll":
             closeAll()
             return [String: Any]()
-        case "screenshot":
-            guard let w = InputInjector.number(p["width"]), let h = InputInjector.number(p["height"]) else { throw HelperError("width and height are required") }
-            return ["data": try await Capture.screenshot(display: display(p["display"]), width: Int(w), height: Int(h))]
-        case "input":
-            guard let event = p["event"] as? [String: Any] else { throw HelperError("event is required") }
-            try await input.perform(event, display: display(p["display"]))
-            return [String: Any]()
-        case "uiTree":
-            return try AXTree.frontmost(display: display(p["display"]))
         case "focusedField":
-            return try AXTree.focusedField()
-        case "openApp":
-            guard let name = p["name"] as? String, !name.isEmpty else { throw HelperError("name is required") }
-            try await openApp(name)
-            return [String: Any]()
+            return try AXTree.focusedField(pid: (p["pid"] as? NSNumber).map { pid_t($0.int32Value) })
+        case "driver":
+            return ["socket": try await driver.socket()]
         default:
             throw HelperError("unknown method \(method)")
         }
@@ -129,17 +119,6 @@ final class ScreenHelper {
 
     private func display(_ v: Any?) -> CGDirectDisplayID {
         (v as? NSNumber)?.uint32Value ?? CGMainDisplayID()
-    }
-
-    private func openApp(_ name: String) async throws {
-        let p = Process()
-        p.executableURL = URL(filePath: "/usr/bin/open")
-        p.arguments = ["-a", name]
-        let err = Pipe()
-        p.standardError = err
-        try p.run()
-        await withCheckedContinuation { c in p.terminationHandler = { _ in c.resume() } }
-        guard p.terminationStatus == 0 else { throw HelperError("Couldn't find an app named \(name).") }
     }
 
     // MARK: status

@@ -20,99 +20,11 @@ pub enum Server {
     Composio,
 }
 
-const INSTRUCTIONS: &str = "Operate this computer's desktop like a person would. Start with `screenshot` \
-(or `ui_tree` to find controls precisely), then act; every action returns a fresh screenshot. \
-Coordinates are pixels in the latest screenshot. Prefer keyboard shortcuts and `open_app` over hunting with the mouse. \
-Never type a password yourself: use type_login with a saved login (request_login asks the user for one). Don't approve payments: ask the user to do that from their phone.";
-
-fn tools() -> Value {
-    let display = json!({"type": "integer", "description": "Display id; defaults to the main display."});
-    let xy = |what: &str| json!({"type": "number", "description": format!("{what} in screenshot pixels.")});
-    json!([
-        {
-            "name": "screenshot",
-            "description": "Capture the screen. Returns a JPEG whose pixels are the coordinate space for every other tool.",
-            "inputSchema": {"type": "object", "properties": {"display": display}},
-            "annotations": {"readOnlyHint": true},
-        },
-        {
-            "name": "ui_tree",
-            "description": "Accessibility tree of the frontmost app: roles, titles, values and frames in screenshot pixels. Cheaper and more precise than reading pixels when you need to find a control.",
-            "inputSchema": {"type": "object", "properties": {"display": display}},
-            "annotations": {"readOnlyHint": true},
-        },
-        {
-            "name": "click",
-            "description": "Click at a point. Returns a screenshot afterwards.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "x": xy("X"), "y": xy("Y"),
-                    "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"},
-                    "count": {"type": "integer", "minimum": 1, "maximum": 3, "default": 1, "description": "2 = double-click, 3 = triple-click."},
-                    "modifiers": {"type": "array", "items": {"type": "string", "enum": ["cmd", "option", "ctrl", "shift"]}, "description": "Keys held during the click."},
-                    "display": display,
-                },
-                "required": ["x", "y"],
-            },
-        },
-        {
-            "name": "move",
-            "description": "Move the pointer (for hover menus and tooltips). Returns a screenshot afterwards.",
-            "inputSchema": {"type": "object", "properties": {"x": xy("X"), "y": xy("Y"), "display": display}, "required": ["x", "y"]},
-        },
-        {
-            "name": "drag",
-            "description": "Press at (x, y), drag to (to_x, to_y), release. Returns a screenshot afterwards.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {"x": xy("Start x"), "y": xy("Start y"), "to_x": xy("End x"), "to_y": xy("End y"), "display": display},
-                "required": ["x", "y", "to_x", "to_y"],
-            },
-        },
-        {
-            "name": "scroll",
-            "description": "Scroll with the pointer over (x, y). Returns a screenshot afterwards.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "x": xy("X"), "y": xy("Y"),
-                    "dx": {"type": "number", "description": "Lines to scroll right (negative = left)."},
-                    "dy": {"type": "number", "description": "Lines to scroll down (negative = up)."},
-                    "display": display,
-                },
-                "required": ["x", "y"],
-            },
-        },
-        {
-            "name": "type",
-            "description": "Type text into the focused field (any Unicode). Returns a screenshot afterwards.",
-            "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
-        },
-        {
-            "name": "key",
-            "description": "Press a key or shortcut, e.g. `return`, `escape`, `tab`, `cmd+t`, `cmd+shift+4`, `ctrl+c`. On Linux `cmd` is Super. Returns a screenshot afterwards.",
-            "inputSchema": {"type": "object", "properties": {"keys": {"type": "string"}}, "required": ["keys"]},
-        },
-        {
-            "name": "type_login",
-            "description": "Type a saved login (see list_logins / request_login) into the focused field. Works only while the login's website or app is in front; `password` only into a password field. You never see the value. Returns a screenshot afterwards.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "login": {"type": "string", "description": "The login's id."},
-                    "field": {"type": "string", "enum": ["username", "password"]},
-                },
-                "required": ["login", "field"],
-            },
-        },
-        {
-            "name": "open_app",
-            "description": "Open or bring an application to the front by name (e.g. `Safari`, `Simulator`, `firefox`). Returns a screenshot afterwards.",
-            "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
-        },
-    ])
-}
+const INSTRUCTIONS: &str = "Operate this computer's apps like a person would, in the background where you can: \
+find the window (list_windows, list_apps, launch_app), look at it (get_window_state: its controls and a screenshot), \
+act on a control by its element_token, then look again. Use pixel coordinates only for what has no control. \
+Never type a password yourself: use type_login with a saved login (request_login asks the user for one). \
+Don't approve payments: ask the user to do that from their phone.";
 
 /// Serves MCP on stdio until the agent closes it.
 pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
@@ -124,7 +36,8 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         Server::Connectors => {
             ("codync-connectors", crate::market::requests::INSTRUCTIONS, crate::market::requests::tools())
         }
-        Server::Computer => ("codync-computer", INSTRUCTIONS, tools()),
+        // Listed by the host: they depend on this computer's driver.
+        Server::Computer => ("codync-computer", INSTRUCTIONS, Value::Null),
         Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS, crate::routines::tools()),
         Server::Chat => ("codync-chat", crate::chat::outbox::INSTRUCTIONS, crate::chat::outbox::tools()),
         Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS, crate::chat::team::tools()),
@@ -147,7 +60,10 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
                 "instructions": instructions,
             })),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({"tools": available_tools})),
+            "tools/list" => Ok(match server {
+                Server::Computer => computer_tools(port, &token).await,
+                _ => json!({"tools": available_tools}),
+            }),
             "tools/call" => Ok(call(port, &token, &bot, params, server).await),
             method => Err(json!({"code": -32601, "message": format!("unknown method {method}")})),
         };
@@ -161,6 +77,21 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         out.flush().await?;
     }
     Ok(())
+}
+
+/// The `computer` tools the host offers; none when it can't be reached.
+async fn computer_tools(port: u16, token: &str) -> Value {
+    let res = crate::http()
+        .post(format!("http://127.0.0.1:{port}/api/computerTools"))
+        .bearer_auth(token)
+        .json(&json!({}))
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await;
+    match res {
+        Ok(r) if r.status().is_success() => r.json::<Value>().await.unwrap_or_else(|_| json!({"tools": []})),
+        _ => json!({"tools": []}),
+    }
 }
 
 /// One tool call through the host. Failures are tool errors the agent can read, not protocol errors.
@@ -192,6 +123,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
             match r.json::<Value>().await {
                 Ok(v) if ok => {
                     return match server {
+                        Server::Computer if v["isError"] == true => json!({"content": v["content"], "isError": true}),
                         Server::Computer => json!({"content": v["content"]}),
                         Server::Chat | Server::Team | Server::Memory | Server::Routines | Server::Connectors => {
                             json!({"content": [{"type": "text", "text": v.to_string()}]})
@@ -530,26 +462,5 @@ mod tests {
         assert_eq!(sse_data("event: message\ndata: {\"id\":1}\n\n").unwrap()["id"], 1);
         assert_eq!(sse_data("data:{\"a\":\ndata: 2}\n\n").unwrap()["a"], 2);
         assert!(sse_data(": ping\n\n").is_none());
-    }
-
-    #[test]
-    fn every_tool_parses_as_a_computer_tool() {
-        for t in tools().as_array().unwrap() {
-            let name = t["name"].as_str().unwrap();
-            let required = t["inputSchema"]["required"].as_array().cloned().unwrap_or_default();
-            let mut args = json!({});
-            for r in required {
-                let k = r.as_str().unwrap();
-                let prop = &t["inputSchema"]["properties"][k];
-                args[k] = match prop["enum"].get(0) {
-                    Some(first) => first.clone(),
-                    None if prop["type"] == "string" => json!("x"),
-                    None => json!(1),
-                };
-            }
-            let parsed =
-                serde_json::from_value::<crate::screen::ComputerTool>(json!({"name": name, "arguments": args}));
-            assert!(parsed.is_ok(), "{name}: {parsed:?}");
-        }
     }
 }

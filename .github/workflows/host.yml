@@ -76,7 +76,11 @@ jobs:
           NAME=codync-host-${{ matrix.name }}
           mkdir $NAME
           cp host/target/${{ matrix.target }}/release/codync-host $NAME/
-          if [ "$RUNNER_OS" = Linux ]; then cp apps/screen-linux/target/release/codync-screen $NAME/; fi
+          if [ "$RUNNER_OS" = Linux ]; then
+            cp apps/screen-linux/target/release/codync-screen $NAME/
+            # The computer-use driver the host starts from beside itself (pinned, checked).
+            node packaging/cua-driver/fetch.mjs ${{ matrix.name }} $NAME/
+          fi
           cp LICENSE $NAME/
           tar czf $NAME.tar.gz $NAME
           shasum -a 256 $NAME.tar.gz > $NAME.tar.gz.sha256

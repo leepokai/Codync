@@ -64,6 +64,7 @@
 		E78E3B5FAFEB79F31AAC104D /* CodyncBot-teardrop-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C8F46BD8301E7E2C83C35111 /* CodyncBot-teardrop-Tint.ttf */; };
 		EBB0417A5FB2CE6D514D21BE /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = D9AB2F442A5F243653EAE936 /* ClerkKit */; };
 		F171F16563D1FF6308697173 /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 06C9F37C6502131CAF0F145E /* CodyncUI */; };
+		F6A380E8A026CA849620F2F7 /* Driver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D16AD9979C77D976BC832D1 /* Driver.swift */; };
 		F842AE1C5ED96AF9A7F5D16C /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D734BEE7CD3F84677B0218B /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F97C489DDB806224CEFCEB57 /* ScreenHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B2CB561A43ED9F2F1A4391 /* ScreenHelper.swift */; };
 		FCE6E509AEFC88C3D05D8E3D /* CodyncBot-tablet-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F7CAD5C4F330637102B40288 /* CodyncBot-tablet-Tint.ttf */; };
@@ -133,6 +134,7 @@
 		89A0D530BEF30AF36F9DBEA8 /* CodyncBot-hex-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-hex-Ink.ttf"; sourceTree = "<group>"; };
 		8BA06CEE98A7CDED62678522 /* Input.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Input.swift; sourceTree = "<group>"; };
 		8CC3E47D480A5F15CA95C504 /* HostLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostLink.swift; sourceTree = "<group>"; };
+		8D16AD9979C77D976BC832D1 /* Driver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Driver.swift; sourceTree = "<group>"; };
 		8E783FFF5EC2697C16FA2E1B /* CodyncOrb-Ghost.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncOrb-Ghost.ttf"; sourceTree = "<group>"; };
 		9AD0BD16672E128A4F26272B /* SignInButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInButtons.swift; sourceTree = "<group>"; };
 		A65FE0504B741D0B44DB2516 /* CodyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncApp.swift; sourceTree = "<group>"; };
@@ -321,6 +323,7 @@
 			children = (
 				D4D13418ABB5FD7CFC087677 /* AXTree.swift */,
 				CE63C84233B14A2D63640EAA /* Capture.swift */,
+				8D16AD9979C77D976BC832D1 /* Driver.swift */,
 				8CC3E47D480A5F15CA95C504 /* HostLink.swift */,
 				8BA06CEE98A7CDED62678522 /* Input.swift */,
 				28B2CB561A43ED9F2F1A4391 /* ScreenHelper.swift */,
@@ -379,6 +382,7 @@
 			buildPhases = (
 				34C567D8C7B2C02F5D48CA29 /* Sources */,
 				9BF4C7DD5C26BAD44BD453BF /* Frameworks */,
+				558AFCA61717F426992F99B8 /* Embed cua-driver */,
 			);
 			buildRules = (
 			);
@@ -550,6 +554,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		558AFCA61717F426992F99B8 /* Embed cua-driver */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed cua-driver";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\"\nnode \"$SRCROOT/../packaging/cua-driver/fetch.mjs\" darwin \"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n";
+		};
 		9900BE8858E71975C4052787 /* Codync environment */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -589,6 +612,7 @@
 			files = (
 				54CEEA0734C2940E2D9FAC7D /* AXTree.swift in Sources */,
 				75C4B7F344DF1E52A1EADEFC /* Capture.swift in Sources */,
+				F6A380E8A026CA849620F2F7 /* Driver.swift in Sources */,
 				9638BAA981354C4CE72884A0 /* HostLink.swift in Sources */,
 				974A5D8D89758A61E7D8D1B6 /* Input.swift in Sources */,
 				F97C489DDB806224CEFCEB57 /* ScreenHelper.swift in Sources */,

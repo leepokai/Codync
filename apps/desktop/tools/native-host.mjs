@@ -1,8 +1,9 @@
 // Builds the host the app bundles for the same environment as the app: node tools/native-host.mjs
 // dev|main compiles it in as CODYNC_ENV. Built on every package so a host made for another
 // environment is never shipped. macOS: build/native/codync-host (universal). Windows:
-// build/native/codync-host.exe and codync-hostw.exe (runs it at sign-in). Linux apps use the
-// installed host, so there's nothing to do there.
+// build/native/codync-host.exe and codync-hostw.exe (runs it at sign-in), plus the computer-use
+// driver the host starts from beside itself. Linux apps use the installed host, so there's
+// nothing to do there.
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
@@ -25,6 +26,7 @@ if (process.platform === 'win32') {
   const target = 'x86_64-pc-windows-msvc'
   build(target)
   for (const exe of ['codync-host.exe', 'codync-hostw.exe']) copyFileSync(join(host, 'target', target, 'release', exe), join(out, exe))
+  run(process.execPath, [join(root, '../../packaging/cua-driver/fetch.mjs'), 'windows-x86_64', out])
 } else {
   const targets = ['aarch64-apple-darwin', 'x86_64-apple-darwin']
   for (const target of targets) build(target)

@@ -182,10 +182,15 @@ pub async fn apply(
     }
     let bytes = release::archive(release).await?;
     let stage = target.with_file_name(format!(".codync-host-update-{}", uuid::Uuid::new_v4()));
-    let helper = Helper::new(target);
+    let helpers: Vec<Helper> = HELPERS.iter().map(|name| Helper::new(target, name)).collect();
     let result = async {
         release::extract(&bytes, &release.platform, &stage)?;
-        let has_helper = release::extract_file(&bytes, &release.platform, HELPER, &helper.stage)?;
+        let mut shipped = vec![];
+        for helper in &helpers {
+            if release::extract_file(&bytes, &release.platform, helper.name, &helper.stage)? {
+                shipped.push(helper);
+            }
+        }
         let output = tokio::process::Command::new(&stage).arg("--version").kill_on_drop(true).output();
         let output = tokio::time::timeout(Duration::from_secs(10), output).await??;
         ensure!(
@@ -216,10 +221,12 @@ pub async fn apply(
                 if managed {
                     tokio::task::spawn_blocking(service::stop).await??;
                 }
-                // Swapped while the host is stopped, so the new host never starts the old helper.
+                // Swapped while the host is stopped, so the new host never starts an old helper.
                 // A failed swap keeps the old helper rather than leaving the host stopped.
-                if has_helper && let Err(error) = helper.swap() {
-                    tracing::warn!(error = format!("{error:#}"), "screen helper not updated");
+                for helper in &shipped {
+                    if let Err(error) = helper.swap() {
+                        tracing::warn!(helper = helper.name, error = format!("{error:#}"), "helper not updated");
+                    }
                 }
                 Ok(())
             },
@@ -231,7 +238,9 @@ pub async fn apply(
                 Ok(())
             },
             || async {
-                helper.restore();
+                for helper in &helpers {
+                    helper.restore();
+                }
                 if managed {
                     tokio::task::spawn_blocking(service::stop).await??;
                     tokio::task::spawn_blocking(service::start).await??;
@@ -245,16 +254,19 @@ pub async fn apply(
     }
     .await;
     let _ = std::fs::remove_file(stage);
-    helper.finish();
+    for helper in &helpers {
+        helper.finish();
+    }
     result
 }
 
-/// The Linux Remote screen helper ships in the host's archive; the host starts it from beside
-/// itself, so an update replaces it there too.
-const HELPER: &str = "codync-screen";
+/// Linux helpers in the host's archive: the Remote screen helper and the computer-use driver.
+/// The host starts them from beside itself, so an update replaces them there too.
+const HELPERS: &[&str] = &["codync-screen", "cua-driver"];
 
-/// Swaps the helper beside the host for the staged one, keeping a copy to roll back to.
+/// Swaps a helper beside the host for the staged one, keeping a copy to roll back to.
 struct Helper {
+    name: &'static str,
     path: std::path::PathBuf,
     stage: std::path::PathBuf,
     backup: std::path::PathBuf,
@@ -262,21 +274,22 @@ struct Helper {
 }
 
 impl Helper {
-    fn new(target: &Path) -> Self {
+    fn new(target: &Path, name: &'static str) -> Self {
         let id = uuid::Uuid::new_v4();
         Self {
-            path: target.with_file_name(HELPER),
-            stage: target.with_file_name(format!(".{HELPER}-update-{id}")),
-            backup: target.with_file_name(format!(".{HELPER}-backup-{id}")),
+            name,
+            path: target.with_file_name(name),
+            stage: target.with_file_name(format!(".{name}-update-{id}")),
+            backup: target.with_file_name(format!(".{name}-backup-{id}")),
             swapped: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     fn swap(&self) -> Result<()> {
         if self.path.exists() {
-            std::fs::hard_link(&self.path, &self.backup).context("saving the screen helper")?;
+            std::fs::hard_link(&self.path, &self.backup).with_context(|| format!("saving {}", self.name))?;
         }
-        std::fs::rename(&self.stage, &self.path).context("replacing the screen helper")?;
+        std::fs::rename(&self.stage, &self.path).with_context(|| format!("replacing {}", self.name))?;
         self.swapped.store(true, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }

@@ -1,8 +1,6 @@
 import CoreMedia
 import Foundation
-import ImageIO
 @preconcurrency import ScreenCaptureKit
-import UniformTypeIdentifiers
 @preconcurrency import WebRTC
 
 /// Hands ScreenCaptureKit frames to WebRTC. Lives on its own queue: frames never touch the main thread.
@@ -134,21 +132,5 @@ final class Capture {
         }
         let own = content.applications.filter { $0.processID == getpid() }
         return SCContentFilter(display: d, excludingApplications: own, exceptingWindows: [])
-    }
-
-    /// A still for agents: exactly `width`×`height`, JPEG, base64.
-    static func screenshot(display: CGDirectDisplayID, width: Int, height: Int) async throws -> String {
-        let cfg = SCStreamConfiguration()
-        cfg.width = width
-        cfg.height = height
-        cfg.showsCursor = true
-        let image = try await SCScreenshotManager.captureImage(contentFilter: try await filter(display), configuration: cfg)
-        let data = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else {
-            throw HelperError("Couldn't encode the screenshot.")
-        }
-        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
-        guard CGImageDestinationFinalize(dest) else { throw HelperError("Couldn't encode the screenshot.") }
-        return (data as Data).base64EncodedString()
     }
 }

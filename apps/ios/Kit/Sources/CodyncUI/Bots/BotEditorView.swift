@@ -170,6 +170,8 @@ struct BotSettingsForm: View {
                     if model.screen != nil {
                         SwitchRow("Use the computer", detail: model.screen?.enabled == true
                             ? "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone."
+                            : model.screen?.computerUse == true
+                            ? "Let this bot see the screen and use the mouse and keyboard."
                             : "Let this bot see the screen and use the mouse and keyboard. Turn on Remote screen in Codync's menu on the computer first.",
                                   isOn: Binding(get: { draft.computer ?? false }, set: { draft.computer = $0 }))
                     }

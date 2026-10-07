@@ -204,7 +204,9 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
               detail={
                 store.screen.enabled
                   ? 'Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.'
-                  : "Let this bot see the screen and use the mouse and keyboard. Turn on Remote screen in Codync's menu on the computer first."
+                  : store.screen.computerUse
+                    ? 'Let this bot see the screen and use the mouse and keyboard.'
+                    : "Let this bot see the screen and use the mouse and keyboard. Turn on Remote screen in Codync's menu on the computer first."
               }
               on={draft.computer ?? false}
               onChange={(on) => set('computer', on)}

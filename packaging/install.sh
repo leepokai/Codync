@@ -67,6 +67,8 @@ install_host() {
   place "$TMP/$name/codync-host" "$BIN_DIR/codync-host"
   # Linux: the Remote screen helper, which the host starts from beside itself.
   if [ -f "$TMP/$name/codync-screen" ]; then place "$TMP/$name/codync-screen" "$BIN_DIR/codync-screen"; fi
+  # Linux: the computer-use driver bots act through, also started from beside the host.
+  if [ -f "$TMP/$name/cua-driver" ]; then place "$TMP/$name/cua-driver" "$BIN_DIR/cua-driver"; fi
   say "Installed $("$BIN_DIR/codync-host" --version) to $BIN_DIR"
   restart_service "$BIN_DIR/codync-host"
 }

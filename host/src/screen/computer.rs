@@ -1,88 +1,44 @@
-//! Bots operating the computer: the `computer` MCP tools and who is in control.
+//! Bots operating the computer: the `computer` MCP tools, who is in control, and signing in.
+//! Tools run on the computer-use driver (`cua.rs`); on Linux desktops it doesn't support, on
+//! Codync Screen's portal input (`helper_tools.rs`).
 
-use super::helper::Link;
-use super::protocol::{Button, Display, InputEvent, parse_keys, parse_modifiers};
-use super::{AGENT_HOLD, SETTLE, Screen};
+#[cfg(target_os = "linux")]
+use super::helper_tools;
+use super::{AGENT_HOLD, Screen, cua};
 use crate::LockExt;
 use crate::hub::Hub;
 use anyhow::{Result, anyhow, bail};
-use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-/// A `computer` MCP tool call, as the MCP server forwards it (`{name, arguments}`).
-#[derive(Debug, Deserialize)]
-#[serde(tag = "name", content = "arguments", rename_all = "snake_case")]
-pub enum ComputerTool {
-    Screenshot {
-        display: Option<u32>,
-    },
-    Click {
-        x: f64,
-        y: f64,
-        #[serde(default)]
-        button: Button,
-        count: Option<u8>,
-        #[serde(default)]
-        modifiers: Vec<String>,
-        display: Option<u32>,
-    },
-    Move {
-        x: f64,
-        y: f64,
-        display: Option<u32>,
-    },
-    Drag {
-        x: f64,
-        y: f64,
-        to_x: f64,
-        to_y: f64,
-        display: Option<u32>,
-    },
-    Scroll {
-        x: f64,
-        y: f64,
-        #[serde(default)]
-        dx: f64,
-        #[serde(default)]
-        dy: f64,
-        display: Option<u32>,
-    },
-    Type {
-        text: String,
-    },
-    Key {
-        keys: String,
-    },
-    UiTree {
-        display: Option<u32>,
-    },
-    OpenApp {
-        name: String,
-    },
-    TypeLogin {
-        login: String,
-        field: LoginField,
-    },
+const TYPE_LOGIN: &str = "type_login";
+
+/// What runs the tools on this computer.
+#[derive(Clone, Copy)]
+enum Backend {
+    Driver,
+    #[cfg(target_os = "linux")]
+    Helper,
 }
 
-/// Which half of a saved login `type_login` types.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum LoginField {
-    Username,
-    Password,
+#[cfg(not(target_os = "linux"))]
+fn backend() -> Backend {
+    Backend::Driver
 }
 
-impl ComputerTool {
-    /// Tools that only look: allowed while the user has control.
-    fn read_only(&self) -> bool {
-        matches!(self, Self::Screenshot { .. } | Self::UiTree { .. })
-    }
+#[cfg(target_os = "linux")]
+fn backend() -> Backend {
+    if cua::linux_session() && cua::executable().is_some() { Backend::Driver } else { Backend::Helper }
 }
 
 impl Screen {
+    /// Whether bots may use the computer here: Windows needs nothing else; macOS and Linux run
+    /// their part through Codync Screen, which runs while Remote screen is on.
+    pub(super) fn computer_use(&self) -> bool {
+        cfg!(windows) || self.enabled()
+    }
+
     /// Marks `bot` as the one using the computer. Returns whether that's news.
     fn claim(&self, bot: &str, read_only: bool) -> Result<bool> {
         let mut c = self.control.locked();
@@ -102,15 +58,39 @@ impl Screen {
     }
 }
 
-/// Runs one `computer` tool for `bot`: MCP `CallToolResult` content.
-pub async fn computer(hub: &Arc<Hub>, bot: &str, tool: ComputerTool) -> Result<Value> {
+/// The `computer` MCP tools on this computer.
+pub async fn computer_tools(hub: &Arc<Hub>) -> Value {
+    let screen = &hub.screen;
+    let mut tools = match backend() {
+        Backend::Driver => cua::tools(screen).await,
+        #[cfg(target_os = "linux")]
+        Backend::Helper => helper_tools::tools(),
+    };
+    if cfg!(not(windows)) {
+        tools.push(type_login_tool());
+    }
+    json!({"tools": tools})
+}
+
+/// Runs one `computer` tool for `bot`: `{content, isError?}` for the agent.
+pub async fn computer(hub: &Arc<Hub>, bot: &str, name: &str, args: Value) -> Result<Value> {
     let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
     if !row.config.computer {
         bail!("Computer use is turned off for this bot.");
     }
     let screen = &hub.screen;
-    let link = screen.link()?;
-    if screen.claim(bot, tool.read_only())? {
+    if !screen.computer_use() {
+        bail!("Remote screen is turned off on this computer. Turn it on in Codync's menu there.");
+    }
+    let backend = backend();
+    let read_only = match backend {
+        _ if name == TYPE_LOGIN => false,
+        Backend::Driver if !cua::offered(name) => bail!("unknown computer tool `{name}`"),
+        Backend::Driver => cua::read_only(name),
+        #[cfg(target_os = "linux")]
+        Backend::Helper => helper_tools::read_only(name),
+    };
+    if screen.claim(bot, read_only)? {
         screen.emit();
         let screen = screen.clone();
         tokio::spawn(async move {
@@ -124,119 +104,96 @@ pub async fn computer(hub: &Arc<Hub>, bot: &str, tool: ComputerTool) -> Result<V
             }
         });
     }
-    let display = |id| screen.display(id);
-    let act = |id: Option<u32>, event: InputEvent| {
-        let link = link.clone();
-        async move {
-            let d = display(id)?;
-            link.request("input", json!({"display": d.id, "event": event})).await?;
-            tokio::time::sleep(SETTLE).await;
-            shot(&link, &d).await
+    if name == TYPE_LOGIN {
+        return type_login(hub, bot, backend, args).await;
+    }
+    match backend {
+        Backend::Driver => cua::call(screen, bot, name, args).await,
+        #[cfg(target_os = "linux")]
+        Backend::Helper => helper_tools::run(screen, name, args).await,
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum LoginField {
+    Username,
+    Password,
+}
+
+#[derive(serde::Deserialize)]
+struct LoginArgs {
+    login: String,
+    field: LoginField,
+    pid: Option<i64>,
+}
+
+fn type_login_tool() -> Value {
+    json!({
+        "name": TYPE_LOGIN,
+        "description": "Type a saved login (see list_logins / request_login) into an app's focused sign-in field: click the field first, then pass that app's `pid`. Works only when the field belongs to the login's website or app; `password` only into a password field. You never see the value.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "login": {"type": "string", "description": "The login's id."},
+                "field": {"type": "string", "enum": ["username", "password"]},
+                "pid": {"type": "integer", "description": "The app with the sign-in field (from list_windows); the frontmost app when left out."},
+            },
+            "required": ["login", "field"],
+        },
+    })
+}
+
+/// Types a saved login only into its own site or app, and a password only into a password
+/// field, so a misled bot can't paste it into a page or chat that would show it. Codync Screen
+/// checks the focused field (accessibility): which app, which web page, whether it's secure.
+/// Windows has no Codync Screen to check it yet.
+async fn type_login(hub: &Arc<Hub>, bot: &str, backend: Backend, args: Value) -> Result<Value> {
+    if cfg!(windows) {
+        bail!("type_login isn't available on Windows yet. Ask the user to sign in themselves.");
+    }
+    let a: LoginArgs = serde_json::from_value(args).map_err(|e| anyhow!("invalid type_login call: {e}"))?;
+    let login = crate::market::logins::get(&hub.store, &a.login)?;
+    let screen = &hub.screen;
+    let focus = screen.link()?.request("focusedField", json!({"pid": a.pid})).await?;
+    let app = focus["app"].as_str().unwrap_or_default();
+    let url = focus["url"].as_str();
+    if !crate::market::logins::matches(&login.site, url, app) {
+        bail!(
+            "The focused field is in {}, not {}. Open {} and click its sign-in field first.",
+            url.unwrap_or(app),
+            login.site,
+            login.site
+        );
+    }
+    let text = match a.field {
+        LoginField::Username => login.username,
+        LoginField::Password => {
+            if focus["secure"] != true {
+                bail!("Click into the password field first; type_login types a password only into a password field.");
+            }
+            crate::market::passwords::resolve(&hub.store, &login.password).await?
         }
     };
-    match tool {
-        ComputerTool::Screenshot { display: id } => shot(&link, &display(id)?).await,
-        ComputerTool::Click { x, y, button, count, modifiers, display: id } => {
-            let d = display(id)?;
-            let (x, y) = d.to_points(x, y)?;
-            let modifiers = parse_modifiers(&modifiers)?;
-            let count = count.unwrap_or(1).clamp(1, 3);
-            act(Some(d.id), InputEvent::Click { x, y, button, count, modifiers }).await
-        }
-        ComputerTool::Move { x, y, display: id } => {
-            let d = display(id)?;
-            let (x, y) = d.to_points(x, y)?;
-            act(Some(d.id), InputEvent::Move { x, y }).await
-        }
-        ComputerTool::Drag { x, y, to_x, to_y, display: id } => {
-            let d = display(id)?;
-            let (x, y) = d.to_points(x, y)?;
-            let (to_x, to_y) = d.to_points(to_x, to_y)?;
-            act(Some(d.id), InputEvent::Drag { x, y, to_x, to_y }).await
-        }
-        ComputerTool::Scroll { x, y, dx, dy, display: id } => {
-            let d = display(id)?;
-            let (x, y) = d.to_points(x, y)?;
-            act(Some(d.id), InputEvent::Scroll { x, y, dx, dy }).await
-        }
-        ComputerTool::Type { text } => act(None, InputEvent::Text { text }).await,
-        ComputerTool::Key { keys } => {
-            let (key, modifiers) = parse_keys(&keys)?;
-            act(None, InputEvent::Key { key, modifiers }).await
-        }
-        ComputerTool::UiTree { display: id } => {
-            let d = display(id)?;
-            let mut res = link.request("uiTree", json!({"display": d.id})).await?;
-            scale_frames(&mut res["tree"], d.shot_scale());
-            let text = format!(
-                "Accessibility tree of {} (frames are [x, y, width, height] in screenshot pixels):\n{}",
-                res["app"].as_str().unwrap_or("the frontmost app"),
-                res["tree"]
-            );
-            Ok(json!([{"type": "text", "text": text}]))
-        }
-        ComputerTool::TypeLogin { login, field } => {
-            let login = crate::market::logins::get(&hub.store, &login)?;
-            // Type only into the login's own site, and a password only into a password field,
-            // so a misled bot can't paste it into a page or chat that would show it.
-            let focus = link.request("focusedField", json!({})).await?;
-            let app = focus["app"].as_str().unwrap_or_default();
-            let url = focus["url"].as_str();
-            if !crate::market::logins::matches(&login.site, url, app) {
-                bail!(
-                    "The focused window is {}, not {}. Open {} and focus its sign-in field first.",
-                    url.unwrap_or(app),
-                    login.site,
-                    login.site
-                );
-            }
-            let text = match field {
-                LoginField::Username => login.username,
-                LoginField::Password => {
-                    if focus["secure"] != true {
-                        bail!(
-                            "Click into the password field first; type_login types a password only into a password field."
-                        );
-                    }
-                    crate::market::passwords::resolve(&hub.store, &login.password).await?
-                }
+    match backend {
+        Backend::Driver => {
+            // macOS: into the checked app, in the background; Linux: the active window it checked.
+            let args = if cfg!(target_os = "macos") {
+                json!({"pid": focus["pid"], "text": text})
+            } else {
+                json!({"scope": "desktop", "text": text})
             };
-            act(None, InputEvent::Text { text }).await
-        }
-        ComputerTool::OpenApp { name } => {
-            link.request("openApp", json!({"name": name})).await?;
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            shot(&link, &display(None)?).await
-        }
-    }
-}
-
-async fn shot(link: &Link, d: &Display) -> Result<Value> {
-    let (width, height) = d.shot_size();
-    let res = link.request("screenshot", json!({"display": d.id, "width": width, "height": height})).await?;
-    let data = res["data"].as_str().ok_or_else(|| anyhow!("the screen helper sent no image"))?;
-    Ok(json!([
-        {"type": "image", "data": data, "mimeType": "image/jpeg"},
-        {"type": "text", "text": format!(
-            "Display {} \"{}\", {width}×{height}. Coordinates for click/move/drag/scroll are pixels in this image.",
-            d.id, d.name
-        )},
-    ]))
-}
-
-/// Display points → screenshot pixels, for every `frame` in an accessibility tree.
-fn scale_frames(node: &mut Value, s: f64) {
-    if let Some(frame) = node.get_mut("frame").and_then(Value::as_array_mut) {
-        for v in frame.iter_mut() {
-            if let Some(f) = v.as_f64() {
-                *v = json!((f * s).round());
+            // The driver's answer may quote what it typed: the agent gets only the outcome.
+            let res = cua::call(screen, bot, "type_text", args).await?;
+            if res["isError"] == true {
+                bail!("Couldn't type into {app}'s field. Click it again and retry.");
             }
+            Ok(
+                json!({"content": [{"type": "text", "text": format!("Typed the saved value into {app}. Take a fresh look to check it landed.")}]}),
+            )
         }
-    }
-    if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
-        for c in children {
-            scale_frames(c, s);
-        }
+        #[cfg(target_os = "linux")]
+        Backend::Helper => helper_tools::type_text(screen, text).await,
     }
 }
 
@@ -244,15 +201,6 @@ fn scale_frames(node: &mut Value, s: f64) {
 mod tests {
     use super::*;
     use tokio::sync::broadcast;
-
-    #[test]
-    fn tools_parse_from_mcp_calls() {
-        let t: ComputerTool =
-            serde_json::from_value(json!({"name": "click", "arguments": {"x": 1, "y": 2, "button": "right"}})).unwrap();
-        assert!(matches!(t, ComputerTool::Click { button: Button::Right, count: None, .. }));
-        let t: ComputerTool = serde_json::from_value(json!({"name": "screenshot", "arguments": {}})).unwrap();
-        assert!(t.read_only());
-    }
 
     #[test]
     fn user_takeover_blocks_bot_actions_but_not_looking() {
@@ -267,10 +215,9 @@ mod tests {
     }
 
     #[test]
-    fn frames_scale_recursively() {
-        let mut t = json!({"frame": [100, 50, 200, 20], "children": [{"frame": [10.0, 10.0, 5.0, 5.0]}]});
-        scale_frames(&mut t, 0.5);
-        assert_eq!(t["frame"], json!([50.0, 25.0, 100.0, 10.0]));
-        assert_eq!(t["children"][0]["frame"], json!([5.0, 5.0, 3.0, 3.0]));
+    fn type_login_names_its_target() {
+        let t = type_login_tool();
+        assert_eq!(t["inputSchema"]["required"], json!(["login", "field"]));
+        assert!(t["inputSchema"]["properties"]["pid"].is_object());
     }
 }

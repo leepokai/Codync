@@ -35,6 +35,8 @@ class CodyncHost < Formula
     bin.install "codync-host"
     # Linux: the Remote screen helper (needs the system's GStreamer and xdg-desktop-portal).
     bin.install "codync-screen" if OS.linux?
+    # Linux: the computer-use driver bots act through (MIT, cua-driver.LICENSE).
+    bin.install "cua-driver" if OS.linux?
   end
 
   def caveats

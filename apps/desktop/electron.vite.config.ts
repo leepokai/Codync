@@ -6,7 +6,6 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 // Fresh macOS checkouts must include SF Symbols without a separate manual icons step.
 if (process.platform === 'darwin') {
   execFileSync('swift', [resolve('tools/export-symbols.swift')], { stdio: 'inherit' })
-  execFileSync(process.execPath, [resolve('tools/native-auth.mjs')], { stdio: 'inherit' })
 }
 
 export default defineConfig({

@@ -59,6 +59,10 @@ keyring = { version = "3.6.3", features = ["sync-secret-service", "crypto-rust",
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # rust-skills lint-* rules: all default groups plus pedantic, with the
 # library-oriented pedantic lints turned off for this binary crate.

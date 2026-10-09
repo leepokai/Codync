@@ -2,6 +2,7 @@
 //! process's stdio. Updates are kept as `serde_json::Value` on purpose so a
 //! newer adapter adding a variant never breaks parsing.
 
+use super::process::Process;
 use crate::LockExt;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
@@ -10,7 +11,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 
 /// stderr lines kept to explain a crash.
@@ -46,12 +47,15 @@ impl std::error::Error for RpcError {}
 /// A request already written to the agent, waiting for its response.
 pub struct Answer {
     method: String,
-    rx: oneshot::Receiver<std::result::Result<Value, Value>>,
+    id: i64,
+    pending: Pending,
+    rx: Option<oneshot::Receiver<std::result::Result<Value, Value>>>,
 }
 
 impl Answer {
-    pub async fn response(self) -> Result<Value> {
-        match self.rx.await {
+    pub async fn response(mut self) -> Result<Value> {
+        let receiver = self.rx.take().expect("a response is consumed once");
+        match receiver.await {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => {
                 let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
@@ -66,11 +70,17 @@ impl Answer {
     }
 }
 
+impl Drop for Answer {
+    fn drop(&mut self) {
+        self.pending.locked().remove(&self.id);
+    }
+}
+
 pub struct Acp {
     stdin: tokio::sync::Mutex<ChildStdin>,
     next_id: AtomicI64,
     pending: Pending,
-    child: tokio::sync::Mutex<Child>,
+    child: Arc<tokio::sync::Mutex<Process>>,
 }
 
 impl Acp {
@@ -92,10 +102,16 @@ impl Acp {
         // Its own group, so `kill` can stop everything it started.
         #[cfg(unix)]
         process.process_group(0);
+        // Establish job ownership before the shell can spawn any descendants.
+        #[cfg(windows)]
+        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
+        let child = Process::new(child)?;
+        let child = Arc::new(tokio::sync::Mutex::new(child));
+        Process::monitor(&child);
         // Deliberately unbounded: `session/load` replays a whole history as notifications
         // *before* its response, while the bot is still awaiting that response. A bounded
         // queue would stall this reader, and with it the response — a deadlock.
@@ -157,12 +173,7 @@ impl Acp {
             });
         }
 
-        let acp = Arc::new(Self {
-            stdin: tokio::sync::Mutex::new(stdin),
-            next_id: AtomicI64::new(1),
-            pending,
-            child: tokio::sync::Mutex::new(child),
-        });
+        let acp = Arc::new(Self { stdin: tokio::sync::Mutex::new(stdin), next_id: AtomicI64::new(1), pending, child });
         Ok((acp, rx))
     }
 
@@ -176,7 +187,8 @@ impl Acp {
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
-        self.send(method, params).await?.response().await
+        let answer = self.send(method, params).await?;
+        answer.response().await
     }
 
     /// Writes a request and returns its pending answer: anything written after this
@@ -185,8 +197,9 @@ impl Acp {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.locked().insert(id, tx);
+        let answer = Answer { method: method.to_owned(), id, pending: self.pending.clone(), rx: Some(rx) };
         self.write(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).await?;
-        Ok(Answer { method: method.to_owned(), rx })
+        Ok(answer)
     }
 
     pub async fn notify(&self, method: &str, params: Value) -> Result<()> {
@@ -203,26 +216,7 @@ impl Acp {
 
     pub async fn kill(&self) {
         let mut child = self.child.lock().await;
-        // ACP adapters spawn MCP servers and tools. Stop the adapter's whole
-        // process group (Windows: process tree) before reaping its leader.
-        if let Some(pid) = child.id() {
-            let mut tree = if cfg!(windows) {
-                let mut c = Command::new("taskkill");
-                c.args(["/T", "/F", "/PID", &pid.to_string()]);
-                c
-            } else {
-                let mut c = Command::new("/bin/kill");
-                c.args(["-KILL", "--", &format!("-{pid}")]);
-                c
-            };
-            let _ = tree.stdout(Stdio::null()).stderr(Stdio::null()).status().await;
-        }
-        // Already exited is fine; anything else is worth a log line.
-        if let Err(error) = child.kill().await
-            && error.kind() != std::io::ErrorKind::InvalidInput
-        {
-            tracing::debug!(%error, "couldn't kill agent process");
-        }
+        child.kill().await;
     }
 }
 
@@ -267,6 +261,59 @@ mod tests {
         ]);
         assert_eq!(content_text(&v), "a\nb");
         assert_eq!(truncate("héllo", 2), "h…");
+    }
+
+    async fn descendant_agent() -> (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>) {
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/process_agent.py");
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        let command = format!("{python} -u {}", crate::shell::quote(&script.display().to_string()));
+        let (acp, mut rx) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+        let ready = tokio::time::timeout(std::time::Duration::from_secs(15), rx.recv()).await.unwrap();
+        assert!(matches!(ready, Some(Incoming::Notification { method, .. }) if method == "ready"));
+        (acp, rx)
+    }
+
+    async fn assert_descendant_pipes_close(mut rx: mpsc::UnboundedReceiver<Incoming>) {
+        let closed = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await.unwrap();
+        assert!(matches!(closed, Some(Incoming::Closed { .. })));
+    }
+
+    #[tokio::test]
+    async fn leader_exit_releases_descendants_without_waiting_for_stdout_eof() {
+        let (acp, rx) = descendant_agent().await;
+        acp.notify("exit", json!({})).await.unwrap();
+        assert_descendant_pipes_close(rx).await;
+    }
+
+    #[tokio::test]
+    async fn dropping_an_agent_releases_its_process_tree() {
+        let (acp, rx) = descendant_agent().await;
+        drop(acp);
+        assert_descendant_pipes_close(rx).await;
+    }
+
+    #[tokio::test]
+    async fn actor_unwinding_releases_its_process_tree() {
+        let (acp, rx) = descendant_agent().await;
+        let task = tokio::spawn(async move {
+            let _owned = acp;
+            panic!("simulated actor panic");
+        });
+        assert!(task.await.unwrap_err().is_panic());
+        assert_descendant_pipes_close(rx).await;
+    }
+
+    #[tokio::test]
+    async fn timed_out_requests_do_not_accumulate_pending_answers() {
+        let (acp, rx) = descendant_agent().await;
+        for _ in 0..10 {
+            let response =
+                tokio::time::timeout(std::time::Duration::from_millis(10), acp.request("never", json!({}))).await;
+            assert!(response.is_err());
+            assert_eq!(acp.pending.locked().len(), 0);
+        }
+        acp.kill().await;
+        assert_descendant_pipes_close(rx).await;
     }
 
     #[cfg(unix)]

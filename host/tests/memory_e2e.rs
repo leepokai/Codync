@@ -122,7 +122,7 @@ async fn migrate_manage_backup_and_forget_without_cross_bot_reads() {
     let cleared = host.call("exportMemory", json!({"botId":a})).await;
     let cleared: Value = serde_json::from_str(cleared["json"].as_str().unwrap()).unwrap();
     assert!(!cleared.to_string().contains("UNIQUE_SECRET_CAPTURE"));
-    assert!(cleared["observations"].as_array().unwrap().is_empty());
+    assert_eq!(cleared["observations"], json!([]));
     assert_eq!(host.call("memory", json!({"botId":a})).await["total"], 0);
     // Import into another bot's isolated store, then search the source content.
     host.call("importMemory", json!({"botId":b,"json":exported["json"]})).await;

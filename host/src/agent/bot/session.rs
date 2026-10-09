@@ -1,12 +1,11 @@
 //! The agent process and its ACP sessions: launch, handshake, new/load/fork, thread sessions.
 
-use super::{Actor, Conn, NoticeStyle, SessionCaps};
-use crate::agent::acp::{self, Acp, Incoming};
-use crate::chat::context;
+use super::{Actor, Conn, SessionCaps};
+use crate::agent::acp::{self, Acp};
 use crate::store::{BotConfig, Entry, EntryKind, Lane, lane_key};
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::time::Duration;
 
 impl Actor {
@@ -93,7 +92,7 @@ impl Actor {
     }
 
     /// ACP connectors, team collaboration, and optional computer control.
-    pub(super) fn mcp_servers(&self) -> Result<Value> {
+    pub(super) fn mcp_servers(&self, slot: Option<&str>) -> Result<Value> {
         let Ok(exe) = std::env::current_exe() else {
             tracing::warn!("can't locate codync-host for MCP servers");
             return Ok(json!([]));
@@ -117,7 +116,7 @@ impl Actor {
         ];
         for name in builtin.into_iter().flatten() {
             let env = if name == "memory" {
-                json!([{"name":"CODYNC_MEMORY_LANE", "value":self.slot(&self.lane).unwrap_or_default()}])
+                json!([{"name":"CODYNC_MEMORY_LANE", "value":slot.unwrap_or_default()}])
             } else {
                 json!([])
             };
@@ -130,154 +129,6 @@ impl Actor {
         Ok(Value::Array(servers))
     }
 
-    /// Makes sure the agent runs and `slot`'s session (main, or a thread's) is live;
-    /// sets `turn_session`. A thread without one forks the main session when it can.
-    pub(super) async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
-        crate::chat::memory::prepare(&self.cfg.id).await?;
-        if !self.cfg.connectors.is_empty()
-            || self.hub.store.kv_read(&format!("agent-env:{}", self.cfg.backend))?.is_some()
-        {
-            crate::market::vault::unlock(self.hub.clone()).await?;
-        }
-        if self.tools_changed && self.turn.is_none() {
-            self.tools_changed = false;
-            if let Some(c) = self.conn.take() {
-                c.acp.kill().await;
-            }
-        }
-        if self.conn.is_none() {
-            let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
-            let candidates = launch_commands(&self.cfg, move |msg: &str| {
-                let msg = msg.to_owned();
-                hub.set_runtime(&id, |r| r.activity = msg);
-            })
-            .await?;
-            self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
-            // Keys saved from an "environment variable" sign-in.
-            let env = crate::agent::auth::env(&self.hub.store, &self.cfg.backend)?;
-            let mut last_err = None;
-            for (i, command) in candidates.iter().enumerate() {
-                let fallback_left = i + 1 < candidates.len();
-                // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
-                let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
-                match start_agent(command, &self.cfg.cwd, &env, budget).await {
-                    Ok(conn) => {
-                        self.conn = Some(conn);
-                        break;
-                    }
-                    Err(e) => {
-                        tracing::info!(command, error = format!("{e:#}"), "agent failed to start");
-                        last_err = Some(e);
-                    }
-                }
-            }
-            if self.conn.is_none() {
-                return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
-            }
-        }
-        let servers = self.mcp_servers()?;
-        let claude = self.conn.as_ref().is_some_and(|c| c.claude);
-        let mut forked = false;
-        if let Some(root) = slot
-            && self.session_for(slot).is_none()
-            && let Some(main) = self.session_id.clone()
-            && self.conn.as_ref().is_some_and(|c| c.sessions.fork)
-        {
-            self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Opening the thread…".into());
-            let conn = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?;
-            let res = conn
-                .acp
-                .request("session/fork", json!({"sessionId": main, "cwd": self.cfg.cwd, "mcpServers": servers}))
-                .await;
-            if let Some(sid) = res.ok().and_then(|r| r["sessionId"].as_str().map(str::to_owned)) {
-                self.set_session(slot, Some(&sid));
-                forked = true;
-            } else {
-                tracing::warn!(bot = %self.cfg.id, "session/fork failed; the thread starts fresh");
-            }
-            if forked {
-                self.thread_intro = Some(self.thread_intro(root, true));
-            }
-        }
-        // Claude gets the frozen instructions as its system prompt. When a compaction
-        // re-rendered them, loading the session again swaps the prompt in (the adapter
-        // rebuilds its query and resumes the same conversation).
-        let current = self.session_for(slot);
-        let snapshot = match (&current, claude) {
-            (Some(sid), true) => Some(self.snapshot(sid).await?),
-            _ => None,
-        };
-        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
-        if let Some(sid) = current {
-            let prompt_current = snapshot
-                .as_ref()
-                .is_none_or(|s| self.applied_system.as_ref().is_some_and(|(a, t)| *a == sid && *t == s.system));
-            if conn.loaded.contains(&sid) && prompt_current {
-                self.turn_session = Some(sid);
-                return Ok(());
-            }
-            if !conn.sessions.load {
-                self.notice(
-                    "This agent can't resume sessions after a restart — starting a fresh one.",
-                    NoticeStyle::Divider,
-                );
-                self.set_session(slot, None);
-                return Box::pin(self.ensure_session(slot)).await;
-            }
-            self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
-            let mut params = json!({"sessionId": sid, "cwd": self.cfg.cwd, "mcpServers": servers});
-            if let Some(s) = &snapshot {
-                params["_meta"] = system_meta(&s.system);
-            }
-            let res = conn.acp.request("session/load", params).await;
-            // The agent replays history as session/update before answering; drop it.
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
-            }
-            match res {
-                Ok(_) => {
-                    conn.loaded.insert(sid.clone());
-                    if let Some(s) = snapshot {
-                        self.applied_system = Some((sid.clone(), s.system));
-                    }
-                    self.turn_session = Some(sid);
-                    return Ok(());
-                }
-                Err(e) => {
-                    tracing::warn!(error = format!("{e:#}"), "session/load failed; starting fresh");
-                    self.thread_intro = None;
-                    self.notice("Couldn't resume the previous session — starting a fresh one.", NoticeStyle::Divider);
-                }
-            }
-        }
-        let system = {
-            let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
-            tokio::task::spawn_blocking(move || context::render(&hub.store, &cfg)).await?
-        };
-        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
-        let mut params = json!({"cwd": self.cfg.cwd, "mcpServers": servers});
-        if claude {
-            params["_meta"] = system_meta(&system);
-        }
-        let res = conn.acp.request("session/new", params).await?;
-        let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
-        conn.loaded.insert(sid.clone());
-        select_model(&conn.acp, &res, &sid, &self.cfg).await?;
-        self.set_session(slot, Some(&sid));
-        self.session_fresh = true;
-        self.turn_session = Some(sid.clone());
-        if let Some(root) = slot {
-            self.thread_intro = Some(self.thread_intro(root, false));
-        }
-        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone())?;
-        if claude {
-            self.applied_system = Some((sid, system));
-        }
-        Ok(())
-    }
-
     /// Drops the main ACP session so the next turn starts a fresh one.
     pub(super) fn forget_session(&mut self) {
         self.set_session(None, None);
@@ -285,7 +136,7 @@ impl Actor {
 }
 
 /// Claude's `_meta`: the bot's instructions appended to Claude Code's own system prompt.
-fn system_meta(system: &str) -> Value {
+pub(super) fn system_meta(system: &str) -> Value {
     json!({"systemPrompt": {"append": system}})
 }
 
@@ -353,7 +204,8 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
     let sessions = SessionCaps {
         load: init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false),
         fork: init["agentCapabilities"]["sessionCapabilities"]["fork"].is_object(),
+        close: init["agentCapabilities"]["sessionCapabilities"]["close"].is_object(),
     };
     let claude = init["agentCapabilities"]["_meta"]["claudeCode"].is_object();
-    Ok(Conn { acp, rx, sessions, claude, loaded: HashSet::new() })
+    Ok(Conn { acp, rx, sessions, claude, loaded: HashMap::new(), allocation_uncertain: false })
 }

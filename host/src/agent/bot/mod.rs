@@ -15,8 +15,10 @@
 //! forked from the main one when the agent can fork) and in group chats (turns in
 //! its main session, written to the group's transcript; see `group`).
 
+mod lifecycle;
 mod queue;
 mod session;
+mod session_setup;
 mod turn;
 mod updates;
 
@@ -29,9 +31,10 @@ use crate::chat::memory;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
+use lifecycle::{Lifecycle, LiveSession, Retirement};
 use serde::Serialize;
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -109,18 +112,16 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         hub,
         cfg,
         conn: None,
+        lifecycle: Lifecycle::default(),
         session_id,
         thread_sessions: HashMap::new(),
         lane,
         turn_session: None,
-        thread_intro: None,
         active_group: None,
         active_routine: None,
         routine_deadline: None,
         routine_timed_out: false,
         routine_completion: None,
-        session_fresh: false,
-        applied_system: None,
         keeper,
         turn_text: None,
         memory_session: None,
@@ -155,6 +156,8 @@ struct SessionCaps {
     load: bool,
     /// `session/fork`: a thread starts as a copy of the main session.
     fork: bool,
+    /// `session/close`: release resources without deleting saved conversation data.
+    close: bool,
 }
 
 pub(crate) struct Conn {
@@ -164,7 +167,8 @@ pub(crate) struct Conn {
     /// Claude's adapter: takes `_meta.systemPrompt` and `_meta.claudeCode.options`.
     pub(crate) claude: bool,
     /// Sessions already created or loaded in this process.
-    loaded: HashSet<String>,
+    loaded: HashMap<String, LiveSession>,
+    allocation_uncertain: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -184,6 +188,7 @@ struct Actor {
     hub: Arc<Hub>,
     cfg: BotConfig,
     conn: Option<Conn>,
+    lifecycle: Lifecycle,
     /// The main session: the bot's own chat and its group turns.
     session_id: Option<String>,
     /// Thread root -> the thread's session (loaded from kv on first use).
@@ -192,17 +197,11 @@ struct Actor {
     lane: Lane,
     /// The session the current turn prompts.
     turn_session: Option<String>,
-    /// Told on the first message of a new thread session: what the thread is about.
-    thread_intro: Option<String>,
     active_group: Option<GroupTurn>,
     active_routine: Option<String>,
     routine_deadline: Option<Instant>,
     routine_timed_out: bool,
     routine_completion: Option<RoutineCompletion>,
-    /// True until the first prompt of a new ACP session has been sent.
-    session_fresh: bool,
-    /// (session, instructions) last handed to Claude as its system prompt by this process.
-    applied_system: Option<(String, String)>,
     keeper: mpsc::UnboundedSender<memory::KeeperEvent>,
     /// The user's words for this turn (None for a hidden turn); feeds memory.
     turn_text: Option<String>,
@@ -283,17 +282,16 @@ impl Actor {
                     if self.active_routine.is_some() && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
                         self.stop_requested = true;
-                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                        self.retire_agent(Retirement::Timeout).await;
                     }
+                    self.retire_if_idle(&rx).await;
                 },
             }
         }
         self.hub.team.cancel_from(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
-        if let Some(c) = self.conn.take() {
-            c.acp.kill().await;
-        }
+        self.retire_agent(Retirement::Shutdown).await;
     }
 
     fn id(&self) -> String {

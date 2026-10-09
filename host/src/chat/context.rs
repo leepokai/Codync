@@ -42,6 +42,17 @@ pub struct Snapshot {
     pub system_identity: Identity,
     /// The identity the agent last heard of (`system` or a later update block).
     pub announced: Identity,
+    /// Initial instructions still owed to the first prompt, including after restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prelude: Option<Prelude>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Prelude {
+    New,
+    Fork,
+    UnpromptedFork,
 }
 
 // A bot talks in several lanes (its chat, threads, groups), each its own session: snapshots
@@ -103,6 +114,21 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
 
 /// Records `system` (already handed to a new session) as that session's snapshot.
 pub fn adopt(store: &Store, cfg: &BotConfig, session: &str, system: String) -> Result<Snapshot> {
+    adopt_with_prelude(store, cfg, session, system, None)
+}
+
+/// New sessions retain their first-prompt instructions until the prompt is written.
+pub fn adopt_new(store: &Store, cfg: &BotConfig, session: &str, system: String) -> Result<Snapshot> {
+    adopt_with_prelude(store, cfg, session, system, Some(Prelude::New))
+}
+
+fn adopt_with_prelude(
+    store: &Store,
+    cfg: &BotConfig,
+    session: &str,
+    system: String,
+    prelude: Option<Prelude>,
+) -> Result<Snapshot> {
     let identity = Identity::of(cfg);
     let s = Snapshot {
         session: session.to_owned(),
@@ -110,9 +136,29 @@ pub fn adopt(store: &Store, cfg: &BotConfig, session: &str, system: String) -> R
         system,
         system_identity: identity.clone(),
         announced: identity,
+        prelude,
     };
     save(store, &cfg.id, &s)?;
     Ok(s)
+}
+
+/// A fork inherits the instructions its parent actually heard, plus a thread intro.
+pub fn fork(store: &Store, cfg: &BotConfig, parent: &Snapshot, session: &str) -> Result<()> {
+    let mut snapshot = parent.clone();
+    session.clone_into(&mut snapshot.session);
+    snapshot.epoch = epoch(store, &cfg.id, session);
+    snapshot.prelude = Some(if parent.prelude == Some(Prelude::New) { Prelude::UnpromptedFork } else { Prelude::Fork });
+    save(store, &cfg.id, &snapshot)
+}
+
+/// A sent prompt clears only its own pending instructions, never another session's.
+pub fn mark_prompted(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()> {
+    let Some(mut current) = load(store, bot_id, &sent.session) else { return Ok(()) };
+    if current.epoch != sent.epoch || current.system != sent.system || current.prelude.is_none() {
+        return Ok(());
+    }
+    current.prelude = None;
+    save(store, bot_id, &current)
 }
 
 /// The bot's instructions, rendered live. Reads memory files.

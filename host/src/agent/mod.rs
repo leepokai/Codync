@@ -5,6 +5,9 @@ pub mod acp;
 pub mod auth;
 pub mod backends;
 pub mod bot;
+mod process;
+#[cfg(windows)]
+mod process_windows;
 pub mod registry;
 pub mod term;
 pub mod workspace;

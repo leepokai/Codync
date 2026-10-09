@@ -46,6 +46,8 @@ Cloud account metadata includes names, public keys, ownership and access state. 
 
 ## Client state and routing
 
+Live sessions and their descendant processes follow the [agent resource lifecycle](../reference/agent-lifecycle.md). Saved conversation identities are independent of those live resources.
+
 - On iPhone, `AccountSession` owns Clerk integration; `AccountStore` owns one account context's computer stores.
 - `BotReference(accountId, computerId, botId)` identifies a destination. Widgets and pushes carry account/computer scope.
 - `BotStore` mirrors one computer and consumes a `HostTransport`: loopback or encrypted channel.

@@ -1,6 +1,6 @@
 //! Agent → client: `session/update`s, permission requests and streamed text mapped onto entries.
 
-use super::{Actor, NoticeStyle, Seg, SegKind};
+use super::{Actor, NoticeStyle, Retirement, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
 use crate::chat::context;
 use crate::hub::BotStatus;
@@ -17,7 +17,7 @@ impl Actor {
                     Some(Incoming::Closed { stderr_tail }) => stderr_tail,
                     _ => String::new(),
                 };
-                self.conn = None;
+                self.retire_agent(Retirement::Exited).await;
                 // The in-flight prompt request resolves with an error; finish_turn reports it with this output.
                 self.exit_tail = Some(tail);
             }

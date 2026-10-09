@@ -16,6 +16,7 @@ jobs:
   test:
     if: github.event_name == 'pull_request'
     strategy:
+      fail-fast: false
       matrix:
         # Windows hosts ship inside the desktop app (release-desktop.yml), so no release archive below.
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -34,7 +35,8 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - name: Fetch pinned memory runtime for integration tests
         run: python ../packaging/engram/test-runtime.py
-      - run: cargo test
+      # Run every target so a separate unit failure cannot hide lifecycle regressions.
+      - run: cargo test --no-fail-fast
       - run: cargo test --test memory_e2e -- --ignored
       - run: cargo test --bin codync-host native_memory_survives_restart -- --ignored
 

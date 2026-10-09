@@ -134,6 +134,20 @@ pub const HARNESSES: &[Harness] = &[
         signed_in: None,
     },
     Harness {
+        id: "omp",
+        name: "oh-my-pi",
+        bins: &["omp"],
+        local: Some("{bin} acp"),
+        registry: None,
+        setup: "Install oh-my-pi (curl -fsSL https://omp.sh/install | sh) and run `omp login`.",
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://omp.sh/install | sh",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://omp.sh/install.ps1 | iex\"",
+        }),
+        login: "{bin} login",
+        signed_in: None,
+    },
+    Harness {
         id: "opencode",
         name: "OpenCode",
         bins: &["opencode"],
@@ -439,6 +453,8 @@ fn well_known_dirs() -> Vec<PathBuf> {
         // Global npm CLIs (%APPDATA%\npm), and Node itself.
         dirs.extend(dirs::data_dir().map(|d| d.join("npm")));
         dirs.extend(std::env::var_os("ProgramFiles").map(|d| PathBuf::from(d).join("nodejs")));
+        // oh-my-pi's standalone installer (%LOCALAPPDATA%\omp); its Bun install lands in ~/.bun/bin below.
+        dirs.extend(dirs::data_local_dir().map(|d| d.join("omp")));
     }
     for rel in [
         ".local/bin",

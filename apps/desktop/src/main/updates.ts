@@ -32,6 +32,8 @@ export class Updates extends EventEmitter {
   private userInitiated = false
   private preparing: Promise<boolean> | null = null
   private prepared = false
+  private installing = false
+  private updateGeneration = 0
   private appStoreVersion: string | null = null
 
   constructor(private host: HostController) {
@@ -60,15 +62,7 @@ export class Updates extends EventEmitter {
       if (this.userInitiated) void this.install()
       else this.installWhenIdle()
     })
-    autoUpdater.on('error', (error) => {
-      // An install that failed after the host was stopped puts the host back.
-      if (this.prepared) {
-        this.prepared = false
-        this.host.resumeAfterCancelledUpdate()
-      }
-      this.checked({ error: this.userInitiated || this.state.staged ? error.message : null })
-      this.userInitiated = false
-    })
+    autoUpdater.on('error', (error) => this.failed(error))
 
     // A staged update installs on Quit, once the host has actually stopped.
     app.on('before-quit', (event) => {
@@ -100,6 +94,19 @@ export class Updates extends EventEmitter {
     const now = Date.now()
     prefs.set('updatesLastCheck', now)
     this.set({ checking: false, lastCheck: now, ...change })
+  }
+
+  private failed(error: unknown) {
+    this.updateGeneration++
+    this.installing = false
+    // A preparation still stopping the host restores it after stop completes.
+    if (this.prepared) {
+      this.prepared = false
+      this.host.resumeAfterCancelledUpdate()
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    this.checked({ error: this.userInitiated || this.state.staged ? message : null })
+    this.userInitiated = false
   }
 
   /** Daily, or hourly while a release waits for the iPhone app to pass review. */
@@ -170,9 +177,14 @@ export class Updates extends EventEmitter {
 
   private prepare(): Promise<boolean> {
     if (this.prepared) return Promise.resolve(true)
+    const generation = this.updateGeneration
     this.preparing ??= (async () => {
       try {
         await this.host.prepareForUpdate()
+        if (generation !== this.updateGeneration) {
+          this.host.resumeAfterCancelledUpdate()
+          return false
+        }
         this.prepared = true
         this.set({ error: null })
         return true
@@ -188,7 +200,14 @@ export class Updates extends EventEmitter {
   }
 
   private async install() {
-    if (await this.prepare()) autoUpdater.quitAndInstall(true, true)
+    if (this.installing) return
+    this.installing = true
+    try {
+      if (await this.prepare()) autoUpdater.quitAndInstall(true, true)
+      else this.installing = false
+    } catch (error) {
+      this.failed(error)
+    }
   }
 }
 

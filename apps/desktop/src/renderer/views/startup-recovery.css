@@ -1,0 +1,34 @@
+.startup-recovery {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  padding: 44px 32px 32px;
+}
+.startup-recovery-content {
+  width: min(560px, 100%);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.startup-recovery-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.startup-recovery-profiles {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.startup-recovery .local-recovery {
+  height: auto;
+  width: 100%;
+  align-items: flex-start;
+  padding: 18px;
+  margin-top: 12px;
+  border-radius: 14px;
+  background: var(--surface);
+}

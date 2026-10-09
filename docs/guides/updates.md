@@ -27,6 +27,35 @@ persistent restart marker makes the next app launch reinstall the host service f
 the new bundle; remote screen registration is restored when the host reports that
 it is enabled. Ordinary Quit keeps the host running when no update is staged.
 
+The desktop window's close-to-background handler also listens to Electron's native
+`before-quit-for-update` event. On macOS, `quitAndInstall()` closes windows before
+`app.before-quit`, so waiting for the latter blocks installation after the host has
+already stopped. If an older release is stuck on **Update to …** after downloading,
+choose **Codync → Quit Codync**: the staged installer can finish and relaunch the app.
+This lifecycle fix is desktop-only; iOS uses the App Store, and the terminal client
+uses the independent host updater without Electron windows.
+
+Installation requests are single-flight while the host stops and the installer
+starts. An updater error during shutdown cancels that pending installation and
+restores the host after the stop finishes; an installer exception also restores
+the host and leaves the staged release available to retry.
+
+### Desktop updater regression tests
+
+Run `cd apps/desktop && npm run typecheck && npm test`. The updater tests load the
+actual main-process modules with fake Electron, service commands, network and
+timers; they never stop a real host or replace an installed app. Coverage includes
+manual and idle installation, renderer state broadcasts, download errors, repeated
+clicks, errors during shutdown, staged Quit, host restart markers and binary health
+checks, development-build exclusion, and iPhone compatibility holds. The native
+quit event ordering has a separate regression test and an updater integration test.
+
+The macOS and Windows bundled-host branches and Linux's externally managed host
+branch run against simulated OS boundaries. These tests do not replace a signed
+release upgrade on each OS, nor do they verify download progress rendering: the
+current Updates page exposes checking, available/staged and error states but has
+no download percentage or installation progress UI yet.
+
 The release workflow publishes `latest-mac.yml` and `latest-linux*.yml` with the
 app archives. macOS build versions follow the marketing version; the iOS build
 counter is independent. Installs of the SwiftUI Mac app that preceded the desktop

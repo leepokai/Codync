@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WindowCommand } from '@shared/ipc'
+import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
 import { draftOf, isGroup, type Bot, type BotDraft } from '@shared/models'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, ChoicePicker, IconButton } from '../components/Controls'
-import { Icon } from '../components/Icon'
 import { AnchoredMenu, Dialog, Sheet, type MenuItem } from '../components/Overlay'
 import { font } from '../lib/fonts'
 import { useModels } from '../lib/observable'
@@ -23,12 +23,15 @@ import { ApprovalSheet } from './settings/ApprovalSheet'
 import { UpdateNeededCard } from './UpdateNeededCard'
 import { SearchPalette } from './SearchPalette'
 import { AccountWelcomeView } from './AccountWelcomeView'
+import { HostStateView } from './HostStateView'
+import { StartupRecovery } from './StartupRecovery'
+export { EmptyState } from './HostStateView'
 import { AnalyticsPrompt } from './AnalyticsPrompt'
 import { StarPrompt } from './StarPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, DesktopActionMenu, ProfileAvatar } from './PanelMenus'
 import { useTraySummary } from './tray-summary'
-import { useSSHAttachments } from './settings/ssh-model'
+import { useSSH, useSSHAttachments } from './settings/ssh-model'
 import './chat-window.css'
 import './sidebar-header.css'
 
@@ -41,7 +44,8 @@ export function ChatWindow() {
   const [confirmReset, setConfirmReset] = useState(false)
   useTraySummary(app)
   useSSHAttachments(app)
-  const showsChat = app.host.state.kind === 'running' || app.computers.length > 0
+  const ssh = useSSH()
+  const showsChat = shouldShowChat(app.host.state.kind, app.computers.length, ssh.state)
 
   useEffect(
     () =>
@@ -104,38 +108,6 @@ export function ChatWindow() {
   )
 }
 
-/** What stands between this computer and the chat, with the one action that fixes it. */
-function HostStateView() {
-  const app = useApp()
-  const state = app.host.state
-  switch (state.kind) {
-    case 'notInstalled':
-      return <EmptyState icon="desktopcomputer" title={`Set up this ${isMac ? 'Mac' : 'computer'}`} message={`Codync runs your coding agents through the host, a small background service on this ${isMac ? 'Mac' : 'computer'}.`} action={['Install host', () => window.codync.host.install()]} />
-    case 'missingBinary':
-      return <EmptyState icon="desktopcomputer.trianglebadge.exclamationmark" title="The host is missing" message="This copy of Codync doesn't include codync-host. Download Codync again from codync.dev or GitHub." />
-    case 'failed':
-      return <EmptyState icon="desktopcomputer.trianglebadge.exclamationmark" title="The host isn't running" message={state.message} action={['Try again', () => window.codync.host.restart()]} />
-    default:
-      return <EmptyState icon="desktopcomputer" title="Starting the host…" message="This takes a few seconds." />
-  }
-}
-
-/** A quiet placeholder for an empty screen: icon, title, a line of help and an optional action. */
-export function EmptyState({ icon, title, message, action }: { icon: string; title: string; message: string; action?: [string, () => void] }) {
-  return (
-    <div className="empty-state">
-      <Icon name={icon} size={36} weight="light" color="var(--tertiary)" />
-      <div style={{ ...font('title3', 'semibold'), color: 'var(--text)' }}>{title}</div>
-      <div style={{ ...font('callout'), color: 'var(--secondary)', textAlign: 'center', maxWidth: 360 }}>{message}</div>
-      {action ? (
-        <Button onClick={action[1]} style={{ marginTop: 4 }}>
-          {action[0]}
-        </Button>
-      ) : null}
-    </div>
-  )
-}
-
 interface BotTarget {
   bot: Bot
   store: BotStore
@@ -149,6 +121,8 @@ interface EditTarget {
 
 function ChatSplitView() {
   const app = useApp()
+  const ssh = useSSH()
+  const connecting = ssh.state.profiles.some((p) => isSSHConnecting(ssh.status(p.id))) || [...app.stores.values()].some((s) => s.shownConnection.kind === 'connecting')
   const [compact, setCompact] = usePref(prefs.sidebarCompact)
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
@@ -310,6 +284,8 @@ function ChatSplitView() {
         <ThreadView key={refKey(selected)} botId={selected.botId} />
       </StoreContext.Provider>
     )
+  } else if (!onlineStores.length && ssh.state.profiles.length) {
+    detail = <StartupRecovery manage={() => setSettings('computers')} />
   } else {
     detail = (
       <div className="empty-detail">
@@ -318,8 +294,8 @@ function ChatSplitView() {
           <CharacterAvatar shape="squircle" color="orange" size={60} style={{ marginLeft: -10 }} />
           <CharacterAvatar shape="teardrop" color="violet" size={60} mood="working" style={{ marginLeft: -10 }} />
         </div>
-        <div style={font('title2', 'semibold')}>Your coding agents, as teammates.</div>
-        <div style={{ color: 'var(--secondary)', textAlign: 'center', maxWidth: 420 }}>Pick a bot, or create one for each kind of work and point it at a project.</div>
+        <div style={font('title2', 'semibold')}>{connecting ? 'Connecting to your computers…' : 'Your coding agents, as teammates.'}</div>
+        <div style={{ color: 'var(--secondary)', textAlign: 'center', maxWidth: 420 }}>{connecting ? 'Your bots will appear once connected. Manage computers to see connection progress.' : 'Pick a bot, or create one for each kind of work and point it at a project.'}</div>
         <Button onClick={() => compose()} disabled={!onlineStores.length}>
           New Bot
         </Button>
@@ -385,8 +361,8 @@ function ChatSplitView() {
           })}
           {visibleRoster.length === 0 && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
-              <div style={font(13, 'medium')}>No bots yet</div>
-              <div style={{ ...font(12), color: 'var(--secondary)' }}>Use + to start a new chat.</div>
+              <div style={font(13, 'medium')}>{onlineStores.length ? 'No bots yet' : 'Waiting for a computer'}</div>
+              {onlineStores.length ? <div style={{ ...font(12), color: 'var(--secondary)' }}>Use + to start a new chat.</div> : null}
             </div>
           ) : null}
         </div>

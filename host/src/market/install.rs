@@ -116,6 +116,35 @@ fn fill(template: Option<&str>, value: &str) -> String {
     }
 }
 
+/// The exact package reference passed to the runtime. OCI embeds its version in
+/// the identifier; server metadata cannot pin an otherwise floating image.
+fn package_reference(p: &Value) -> Result<String> {
+    let id = p["identifier"].as_str().ok_or_else(|| anyhow!("package has no identifier"))?;
+    let unpinned = || anyhow!("{id} has no pinned version in the MCP Registry, so it can't be installed safely");
+    let pinned = |v: &str| !v.is_empty() && v != "latest" && !v.contains(['^', '~', '*', ' ']);
+    if p["registryType"] == "oci" {
+        let valid = if let Some((_, digest)) = id.split_once('@') {
+            digest
+                .strip_prefix("sha256:")
+                .is_some_and(|hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+        } else {
+            // A registry port is not an image tag.
+            id.rsplit('/').next().and_then(|name| name.rsplit_once(':')).is_some_and(|(_, tag)| {
+                pinned(tag)
+                    && tag.len() <= 128
+                    && tag.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                    && tag.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+            })
+        };
+        if !valid {
+            return Err(unpinned());
+        }
+        return Ok(id.to_owned());
+    }
+    let version = p["version"].as_str().filter(|v| pinned(v)).ok_or_else(unpinned)?;
+    Ok(if p["registryType"] == "pypi" { format!("{id}=={version}") } else { format!("{id}@{version}") })
+}
+
 /// Installs a registry server with the user's inputs (`{NAME: value}`).
 pub async fn install_connector(store: &crate::store::Store, name: &str, option: &str, inputs: &Value) -> Result<Value> {
     let server = registry_server(name).await?;
@@ -143,14 +172,7 @@ pub async fn install_connector(store: &crate::store::Store, name: &str, option: 
     match kind {
         "package" => {
             let p = server["packages"].get(index).ok_or_else(|| anyhow!("unknown package"))?;
-            let id = p["identifier"].as_str().ok_or_else(|| anyhow!("package has no identifier"))?;
-            // A package runs as the user: install exactly the version the registry lists, never "latest".
-            let version = p["version"]
-                .as_str()
-                .filter(|v| !v.is_empty() && *v != "latest" && !v.contains(['^', '~', '*', ' ']))
-                .ok_or_else(|| {
-                    anyhow!("{id} has no pinned version in the MCP Registry, so it can't be installed safely")
-                })?;
+            let reference = package_reference(p)?;
             for e in p["environmentVariables"].as_array().into_iter().flatten() {
                 let Some(k) = e["name"].as_str() else { continue };
                 match input(k).or_else(|| e["default"].as_str().map(str::to_owned)) {
@@ -182,11 +204,7 @@ pub async fn install_connector(store: &crate::store::Store, name: &str, option: 
                     args.push(a);
                 }
             }
-            args.push(match p["registryType"].as_str() {
-                Some("pypi") => format!("{id}=={version}"),
-                Some("oci") => id.to_owned(),
-                _ => format!("{id}@{version}"),
-            });
+            args.push(reference);
             if p["registryType"] == "nuget" {
                 args.push("--yes".into());
             }
@@ -346,6 +364,57 @@ pub fn remove_connector(store: &crate::store::Store, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oci_references_do_not_need_a_separate_package_version() {
+        for id in [
+            "ghcr.io/github/github-mcp-server:2.0.2".to_owned(),
+            "localhost:5000/team/server:2.0.2".to_owned(),
+            "server:v2.0.2-rc.1".to_owned(),
+            format!("ghcr.io/team/server@sha256:{}", "a".repeat(64)),
+            format!("ghcr.io/team/server:latest@sha256:{}", "b".repeat(64)),
+        ] {
+            let mut package = json!({"registryType": "oci", "identifier": id});
+            assert_eq!(package_reference(&package).unwrap(), id);
+            // Older registry entries also supply a separate package version.
+            package["version"] = json!("0.20.0");
+            assert_eq!(package_reference(&package).unwrap(), id);
+        }
+    }
+
+    #[test]
+    fn package_metadata_cannot_pin_a_floating_or_invalid_oci_reference() {
+        for id in [
+            "ghcr.io/github/github-mcp-server",
+            "localhost:5000/team/server",
+            "server:latest",
+            "server:",
+            "server:^2.0.2",
+            "server:2.*",
+            "server:2.0.2 invalid",
+            "server:2.0.2\n",
+            "server@sha256:",
+            "server@sha256:not-a-digest",
+            "server:2.0.2@sha256:invalid",
+        ] {
+            for version in [Value::Null, json!("2.0.2")] {
+                let package = json!({"registryType": "oci", "identifier": id, "version": version});
+                assert!(package_reference(&package).is_err(), "accepted {package}");
+            }
+        }
+    }
+
+    #[test]
+    fn other_registries_still_require_their_own_package_version() {
+        for (kind, expected) in [("npm", "server@2.0.2"), ("pypi", "server==2.0.2"), ("nuget", "server@2.0.2")] {
+            let mut package = json!({"registryType": kind, "identifier": "server", "version": "2.0.2"});
+            assert_eq!(package_reference(&package).unwrap(), expected);
+            for version in [Value::Null, json!(""), json!("latest"), json!("^2.0.2"), json!("~2.0.2"), json!("*")] {
+                package["version"] = version;
+                assert!(package_reference(&package).is_err(), "accepted {package}");
+            }
+        }
+    }
 
     #[test]
     fn registry_arguments_become_words() {

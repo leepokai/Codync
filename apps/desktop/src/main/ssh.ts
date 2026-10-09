@@ -6,6 +6,7 @@ import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import type { SSHAttachment, SSHProfile, SSHState, SSHStatus } from '../shared/ssh'
+import { infoArguments, knownHostsFiles, resolveArguments, tunnelArguments } from './ssh-command'
 
 // SSH computers (port of the Mac app's SSHTunnel.swift): profiles, host key checks and one
 // OpenSSH tunnel per connected profile. Arguments are always an argv array, never a shell string.
@@ -15,9 +16,6 @@ const KEYGEN = '/usr/bin/ssh-keygen'
 const KEYSCAN = '/usr/bin/ssh-keyscan'
 const LSOF = ['/usr/sbin/lsof', '/usr/bin/lsof'].find((p) => existsSync(p)) ?? null
 const home = homedir()
-
-/** Where `codync-host` lives when `sh -l` doesn't see it (Homebrew, install.sh, the Mac app's bundle). */
-const REMOTE_PATH = '$PATH:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/Applications/Codync.app/Contents/MacOS'
 
 // MARK: pure helpers
 
@@ -39,44 +37,6 @@ export function validate(p: SSHProfile): string | null {
   }
   return null
 }
-
-const knownHostsFiles = (h: string) => [`${h}/.ssh/known_hosts`, `${h}/.codync/ssh_known_hosts`]
-
-/** ssh's config tokenizer splits `UserKnownHostsFile` on spaces, so each path carries literal quotes. */
-export const hostKeyOptions = (h: string) => [
-  '-o', 'UserKnownHostsFile=' + knownHostsFiles(h).map((f) => `"${f}"`).join(' '),
-  '-o', 'StrictHostKeyChecking=yes',
-]
-
-function targetOptions(p: SSHProfile) {
-  const args: string[] = []
-  if (p.port !== null) args.push('-p', String(p.port))
-  if (p.identityFile !== null) args.push('-i', p.identityFile)
-  if (p.user !== null) args.push('-l', p.user)
-  return args
-}
-
-export function resolveArguments(p: SSHProfile) {
-  const args = ['-G']
-  if (p.port !== null) args.push('-p', String(p.port))
-  if (p.user !== null) args.push('-l', p.user)
-  return [...args, '--', p.host]
-}
-
-/** The remote command is fixed; only the validated port number goes into it. */
-export const infoArguments = (p: SSHProfile, h: string) => [
-  '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no',
-  ...hostKeyOptions(h), ...targetOptions(p),
-  '--', p.host, `sh -lc 'PATH="${REMOTE_PATH}" codync-host info --json --port ${p.remotePort}'`,
-]
-
-export const tunnelArguments = (p: SSHProfile, localPort: number, h: string) => [
-  '-N', '-T', '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
-  '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no', '-o', 'BatchMode=yes',
-  ...hostKeyOptions(h),
-  '-L', `127.0.0.1:${localPort}:127.0.0.1:${p.remotePort}`,
-  ...targetOptions(p), '--', p.host,
-]
 
 /** The far side rejected our key (BatchMode never prompts, so a password or passphrase can't help). */
 export const authRefused = (stderr: string) => stderr.includes('Permission denied') || stderr.includes('Too many authentication failures')

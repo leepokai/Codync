@@ -38,6 +38,7 @@ impl Environment {
         }
     }
 
+    #[cfg(any(unix, test))]
     pub const fn service_label(self) -> &'static str {
         match self {
             Self::Main => "com.pokai.codync.host",
@@ -45,6 +46,7 @@ impl Environment {
         }
     }
 
+    #[cfg(any(unix, test))]
     pub const fn systemd_unit(self) -> &'static str {
         match self {
             Self::Main => "codync-host.service",

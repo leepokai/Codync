@@ -4,6 +4,8 @@ Codync Dev uses the same source as Codync, with a separate installed identity an
 
 Both variants use the original Codync icon. The installed name **Codync Dev** distinguishes the development app.
 
+Desktop development and builds on macOS generate SF Symbols automatically, including the Apple sign-in logo. Packaging rejects a macOS build without the Apple logo assets; a fresh worktree does not need a separate `npm run icons` step.
+
 ## Choose a build
 
 | Client | Production | Development |

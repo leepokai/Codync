@@ -81,7 +81,7 @@ import ActivityKit
 }
 
 private extension BotActivityAttributes {
-    static var preview: Self { .init(bot: Bot.widgetPreview[0], computerId: "preview", link: URL(string: "codync://computers")) }
+    static var preview: Self { .init(bot: Bot.widgetPreview[0], computerId: "preview", link: AppEnvironment.current.link("computers")) }
 }
 
 #Preview("Activity · Lock Screen", as: .content, using: BotActivityAttributes.preview) {

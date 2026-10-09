@@ -14,7 +14,7 @@
 Run from the repository root unless a command changes directories:
 
 - `xcodegen generate --spec apps/project.yml`: regenerate `apps/Codync.xcodeproj` after editing `apps/project.yml`; never edit `project.pbxproj` directly.
-- Use Xcode’s `iOS` scheme to run the iPhone app on a simulator or device.
+- Use Xcode’s `iOS Dev` scheme for development and `iOS` for production; see [Dev app isolation](docs/guides/dev-app.md).
 - `cd apps/desktop && npm ci && npm run dev`: run the desktop app; `npm run typecheck && npm test` for its CI checks.
 - `cd host && cargo build`: build the host; `cargo run -- serve` starts it in the foreground.
 - `cd host && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`: run host CI checks.
@@ -24,7 +24,7 @@ Run from the repository root unless a command changes directories:
 
 ## Installing a new build: kill the old one first
 
-Always stop the old desktop app, host and iPhone process before running a new build (old host = old protocol, old app = old UI); commands in [docs/guides/development.md](docs/guides/development.md#apple-apps).
+Always stop the old desktop app, host and iPhone process for the variant being rebuilt before running a new build (old host = old protocol, old app = old UI); commands in [docs/guides/development.md](docs/guides/development.md#apple-apps).
 
 Keep only the latest build: in this checkout, Apple builds go to `build/dd` only (no other `-derivedDataPath`, no copies in scratchpads, `/tmp` or Xcode's DerivedData); delete any older Codync build right away, so macOS never launches a stale copy. A git worktree may keep its own single build inside that worktree.
 
@@ -71,6 +71,7 @@ Use Swift Testing (`@Test`, `#expect`), Rust unit tests, `node --test` in the de
 - One logical change per commit. Don't mix unrelated work, and stage only your own hunks when others have uncommitted changes in the tree.
 - Breaking changes: `!` after the type/scope, or a `BREAKING CHANGE:` footer.
 - English only.
+- Thank external contributors when responding to their PRs. After merging an external PR, leave a brief thank-you comment acknowledging their contribution and confirming the merge.
 
 PRs should explain behavior changes, link relevant issues, list validation performed, and include screenshots for UI changes. Fill the template's *What's New* bullets (zh-Hant + en-US) for iOS changes users can see; they become the App Store notes when `apps/ios/WhatsNew.md` has no section for the release. Update affected documentation in the same change.
 

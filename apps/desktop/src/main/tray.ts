@@ -4,6 +4,7 @@ import type { TraySummary, WindowCommand } from '../shared/ipc'
 import type { HostController } from './host-controller'
 import type { Updates } from './updates'
 import { setShowInDock, showInDock } from './dock'
+import { identity } from './environment'
 
 interface Deps {
   openChat: () => unknown
@@ -24,7 +25,7 @@ export class Tray {
 
   constructor(private deps: Deps) {
     this.tray = new ElectronTray(this.icon(false))
-    this.tray.setToolTip('Codync')
+    this.tray.setToolTip(app.getName())
     // Windows opens a tray icon's menu on right-click; a left-click opens the chat.
     if (process.platform === 'win32') this.tray.on('click', () => this.deps.openChat())
     this.rebuild()
@@ -69,7 +70,7 @@ export class Tray {
       : state.kind === 'failed' ? 'Host problem'
       : (s?.status ?? 'Connected')
     items.push({ label: status, enabled: false })
-    items.push({ label: 'Open Codync', accelerator: 'CmdOrCtrl+O', click: () => this.deps.openChat() })
+    items.push({ label: `Open ${app.getName()}`, accelerator: 'CmdOrCtrl+O', click: () => this.deps.openChat() })
     if (state.kind === 'running') {
       items.push({ label: 'Pair iPhone…', enabled: s?.canPair ?? false, click: () => this.deps.openPairing() })
     }
@@ -77,6 +78,10 @@ export class Tray {
 
     switch (state.kind) {
       case 'missingBinary':
+        if (identity.environment === 'dev') {
+          items.push({ label: 'Rebuild Codync Dev with its development host.', enabled: false })
+          break
+        }
         items.push({ label: 'Reinstall Codync or install the host with Homebrew.', enabled: false })
         items.push({ label: 'Copy host install command', click: () => clipboard.writeText('brew install leepokai/codync/codync-host') })
         break
@@ -128,7 +133,7 @@ export class Tray {
     items.push({ type: 'separator' })
     items.push({ label: 'Settings', submenu: this.settingsMenu() })
     if (s?.version) items.push({ label: `Version ${s.version}`, enabled: false })
-    items.push({ label: 'Quit Codync', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() })
+    items.push({ label: `Quit ${app.getName()}`, accelerator: 'CmdOrCtrl+Q', click: () => app.quit() })
     this.tray.setContextMenu(Menu.buildFromTemplate(items))
   }
 
@@ -142,14 +147,7 @@ export class Tray {
       },
       { label: screen.subtitle, enabled: false },
     ]
-    if (screen.enabled) {
-      if (screen.needsLoginItem) {
-        items.push({ label: 'Allow Codync Screen in Login Items…', click: () => void shell.openExternal('x-apple.systempreferences:com.apple.LoginItems-Settings.extension') })
-      } else {
-        if (screen.needsCapture) items.push({ label: 'Allow Screen Recording…', click: () => void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture') })
-        if (screen.needsInput) items.push({ label: 'Allow Accessibility…', click: () => void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility') })
-      }
-    }
+    items.push({ label: 'Set up computer access…', click: () => this.deps.send({ kind: 'computerAccess' }, true) })
     if (screen.error) items.push({ label: screen.error, enabled: false })
     return items
   }

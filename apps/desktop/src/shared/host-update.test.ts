@@ -48,6 +48,7 @@ test('failed stop reports the error and cancellation reinstalls the service once
   await assert.rejects(f.host.prepareForUpdate(), /service command failed/)
   f.host.resumeAfterCancelledUpdate()
   f.host.resumeAfterCancelledUpdate()
+  await settle()
   assert.deepEqual(f.calls, [['stop'], ['install', '--port', '19222']])
   await f.tick(1000)
 })
@@ -102,4 +103,25 @@ test('idle detection distinguishes working, offline and idle hosts', async () =>
   assert.equal(await f.host.isIdleForUpdate(), false)
   f.behavior.reachable = false
   assert.equal(await f.host.isIdleForUpdate(), false)
+})
+
+
+test('development install and stop reject a production binary before touching its service', async () => {
+  const f = hostUpdateFixture({ environment: 'dev' })
+  f.behavior.binaryEnvironment = 'main'
+  await f.host.install()
+  assert.equal(f.host.state.kind, 'failed')
+  assert.deepEqual(f.calls, [])
+  assert.equal(await f.host.uninstall(), false)
+  assert.deepEqual(f.calls, [])
+})
+
+test('development service installs on its own port', async () => {
+  const f = hostUpdateFixture({ environment: 'dev' })
+  const installing = f.host.install()
+  await settle()
+  assert.deepEqual(f.calls, [['install', '--port', '19223']])
+  await f.tick(1000)
+  await installing
+  assert.equal(f.host.state.kind, 'running')
 })

@@ -6,7 +6,7 @@ export type VersionMismatch =
   | { kind: 'updateHost'; version: string; minimum: string }
 
 /** The oldest host this app works with. */
-export const MIN_HOST = '2.3.0'
+export const MIN_HOST = '2.12.0'
 
 /** `major.minor.patch`, ignoring a leading `v` and any pre-release or build suffix. */
 export function parseVersion(version: string): number[] | null {

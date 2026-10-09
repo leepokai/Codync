@@ -13,6 +13,6 @@ test('versions parse like the host and the iPhone app', () => {
 
 test('the side that must update', () => {
   assert.deepEqual(checkVersions('2.6.0', '2.7.0', '2.7.0'), { kind: 'updateApp', minimum: '2.7.0' })
-  assert.deepEqual(checkVersions('2.7.0', '2.2.0', null), { kind: 'updateHost', version: '2.2.0', minimum: '2.3.0' })
-  assert.equal(checkVersions('2.7.0', '2.7.0', '2.3.0'), null)
+  assert.deepEqual(checkVersions('2.7.0', '2.2.0', null), { kind: 'updateHost', version: '2.2.0', minimum: '2.12.0' })
+  assert.equal(checkVersions('2.12.0', '2.12.0', '2.3.0'), null)
 })

@@ -229,6 +229,8 @@ export interface ScreenDisplay {
 }
 
 export interface ScreenState {
+  /** The helper's display name in operating-system permission settings. */
+  permissionApp?: string
   enabled: boolean
   connected: boolean
   platform: string
@@ -248,6 +250,7 @@ export function normalizeScreen(raw: Partial<ScreenState> | undefined | null): S
     enabled: raw.enabled ?? false,
     connected: raw.connected ?? false,
     platform: raw.platform ?? '',
+    permissionApp: raw.permissionApp,
     capture: raw.capture ?? false,
     input: raw.input ?? false,
     displays: raw.displays ?? [],

@@ -4,11 +4,11 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.pokai.Codync</string>
+		<string>$(CODYNC_APP_GROUP)</string>
 	</array>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.pokai.Codync</string>
+		<string>$(AppIdentifierPrefix)$(CODYNC_KEYCHAIN_GROUP)</string>
 	</array>
 </dict>
 </plist>

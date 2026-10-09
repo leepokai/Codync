@@ -638,29 +638,29 @@ private func helloJSON(version: String, minApp: String? = nil, backends: String 
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let fake = FakeRemote(.ready(.relay))
     await fake.setHello(helloJSON(version: "2.2.0"))
-    let store = BotStore(computer: randomComputer("Mac"), clientKind: "ios", storage: storage, appVersion: "2.4.0") { fake }
+    let store = BotStore(computer: randomComputer("Mac"), clientKind: "ios", storage: storage, appVersion: "2.12.0") { fake }
     defer { store.retire() }
     store.setActive(true)
     #expect(await until { store.mismatch == .updateHost(version: "2.2.0", minimum: VersionMismatch.minHost) })
     // The host updates and restarts: the link drops and comes back.
-    await fake.setHello(helloJSON(version: "2.4.0", minApp: "2.3.0"))
+    await fake.setHello(helloJSON(version: "2.12.0", minApp: "2.3.0"))
     await fake.set(.connecting)
     await fake.set(.ready(.relay))
     #expect(await until { store.mismatch == nil })
     #expect(await until { await fake.subscribed })
-    #expect(store.hostVersion == HostVersion(version: "2.4.0", minApp: "2.3.0"))
+    #expect(store.hostVersion == HostVersion(version: "2.12.0", minApp: "2.3.0"))
 }
 
 @MainActor @Test func unreadableHelloStillSaysWhichSideToUpdate() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     // A newer host whose hello this app can't decode, with or without a minApp that covers it.
-    for minApp in ["2.6.0", "2.0.0"] {
+    for minApp in ["2.14.0", "2.0.0"] {
         let fake = FakeRemote(.ready(.relay))
-        await fake.setHello(helloJSON(version: "2.6.0", minApp: minApp, backends: #""changed shape""#))
-        let store = BotStore(computer: randomComputer("Mac"), clientKind: "ios", storage: storage, appVersion: "2.4.0") { fake }
+        await fake.setHello(helloJSON(version: "2.14.0", minApp: minApp, backends: #""changed shape""#))
+        let store = BotStore(computer: randomComputer("Mac"), clientKind: "ios", storage: storage, appVersion: "2.12.0") { fake }
         store.setActive(true)
-        #expect(await until { store.mismatch == .updateApp(minimum: "2.6.0") }, "minApp \(minApp)")
+        #expect(await until { store.mismatch == .updateApp(minimum: "2.14.0") }, "minApp \(minApp)")
         #expect(store.hello == nil)
         store.retire()
     }
@@ -669,10 +669,10 @@ private func helloJSON(version: String, minApp: String? = nil, backends: String 
 @MainActor @Test func unreadableEventsAskForAnAppUpdateOnlyFromANewerHost() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-    for (hostVersion, appIsBehind) in [("2.6.0", true), ("2.4.0", false)] {
+    for (hostVersion, appIsBehind) in [("2.14.0", true), ("2.12.0", false)] {
         let fake = FakeRemote(.ready(.relay))
         await fake.setHello(helloJSON(version: hostVersion, minApp: "2.3.0"))
-        let store = BotStore(computer: randomComputer("Mac"), clientKind: "ios", storage: storage, appVersion: "2.4.0") { fake }
+        let store = BotStore(computer: randomComputer("Mac"), clientKind: "ios", storage: storage, appVersion: "2.12.0") { fake }
         store.setActive(true)
         let broken = #"{"type":"bot","bot":{"id":"b1","name":7}}"#
         #expect(await until { await fake.eventSubscriptionCount == 1 })

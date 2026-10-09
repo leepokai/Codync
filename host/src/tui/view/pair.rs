@@ -43,7 +43,11 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, url: Option<&str>) {
         inner.x,
         y,
         inner.width,
-        "Scan with the Codync iPhone app, or open on the phone:",
+        if url.starts_with("codync-dev:") {
+            "Scan with Codync Dev on your iPhone:"
+        } else {
+            "Scan with the Codync iPhone app, or open on the phone:"
+        },
         t.secondary.patch(t.panel),
     );
     put(buf, inner.x, y + 1, inner.width, &truncate(url, usize::from(inner.width)), t.dim.patch(t.panel));

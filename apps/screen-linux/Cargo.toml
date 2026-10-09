@@ -11,6 +11,7 @@ ashpd = { version = "0.13", default-features = false, features = ["tokio", "remo
 atspi = { version = "0.30", default-features = false, features = ["proxies", "connection", "tokio"] }
 base64 = "0.22"
 dirs = "7"
+futures-util = "0.3"
 gst = { package = "gstreamer", version = "0.25" }
 gst-app = { package = "gstreamer-app", version = "0.25" }
 gst-sdp = { package = "gstreamer-sdp", version = "0.25" }

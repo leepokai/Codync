@@ -31,7 +31,8 @@ fn data_dir() -> PathBuf {
 pub type Outbox = mpsc::UnboundedSender<Value>;
 
 pub struct Helper {
-    portal: portal::Portal,
+    portal: Arc<Mutex<Option<portal::Portal>>>,
+    last_status: Mutex<Option<Value>>,
     sessions: Mutex<HashMap<String, stream::Session>>,
     out: Outbox,
 }
@@ -45,9 +46,8 @@ async fn main() -> Result<()> {
         )
         .init();
     gst::init().context("starting GStreamer")?;
-    // One portal session for the life of the process: the approval dialog appears once,
-    // and later runs restore it silently from the saved token.
-    let portal = portal::Portal::start(&data_dir()).await?;
+    // Starting the helper must not display a system dialog. Setup explicitly opens a session.
+    let portal = Arc::new(Mutex::new(None));
     loop {
         match UnixStream::connect(data_dir().join("screen.sock")).await {
             Ok(sock) => {
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn serve(sock: UnixStream, portal: &portal::Portal) -> Result<()> {
+async fn serve(sock: UnixStream, portal: &Arc<Mutex<Option<portal::Portal>>>) -> Result<()> {
     let (rd, mut wr) = sock.into_split();
     let (out, mut outbox) = mpsc::unbounded_channel::<Value>();
     let writer = tokio::spawn(async move {
@@ -76,13 +76,25 @@ async fn serve(sock: UnixStream, portal: &portal::Portal) -> Result<()> {
     });
     let helper = Arc::new(Helper {
         portal: portal.clone(),
+        last_status: Mutex::new(None),
         sessions: Mutex::default(),
         out: out.clone(),
     });
-    let _ =
-        out.send(json!({"jsonrpc": "2.0", "method": "status", "params": helper.portal.status()}));
+    helper.send_status().await;
+    let watched = helper.clone();
+    let status_task = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            watched.send_status().await;
+        }
+    });
     let mut lines = BufReader::new(rd).lines();
-    while let Some(line) = lines.next_line().await? {
+    let result = loop {
+        let line = match lines.next_line().await {
+            Ok(Some(line)) => line,
+            Ok(None) => break Ok(()),
+            Err(error) => break Err(error.into()),
+        };
         let Ok(msg) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
@@ -102,16 +114,55 @@ async fn serve(sock: UnixStream, portal: &portal::Portal) -> Result<()> {
             };
             let _ = helper.out.send(reply);
         });
-    }
+    };
     writer.abort();
+    status_task.abort();
     for (_, s) in helper.sessions.lock().await.drain() {
         s.close();
     }
-    Ok(())
+    result
 }
 
 async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
-    let display = || h.portal.display(p["display"].as_u64());
+    if method == "requestPermission" {
+        if p["permission"] != "portal" {
+            return Err(anyhow!("Linux uses the screen sharing portal"));
+        }
+        let mut portal = h.portal.lock().await;
+        if portal.as_ref().is_none_or(|p| !p.has_input()) {
+            let restore = portal.as_ref().is_none_or(|p| !p.is_active());
+            let next = portal::Portal::start(&data_dir(), restore).await?;
+            if let Some(previous) = portal.as_ref() {
+                if previous.is_active() {
+                    previous.session().close().await?;
+                }
+                for (_, session) in h.sessions.lock().await.drain() {
+                    session.close();
+                }
+            }
+            *portal = Some(next);
+        }
+        drop(portal);
+        h.send_status().await;
+        return Ok(json!({}));
+    }
+    // Close requests remain valid before setup; all other methods require a granted session.
+    if method == "closeAll" {
+        for (_, s) in h.sessions.lock().await.drain() {
+            s.close();
+        }
+        return Ok(json!({}));
+    }
+    if method == "close" {
+        if let Some(id) = p["session"].as_str()
+            && let Some(s) = h.sessions.lock().await.remove(id)
+        {
+            s.close();
+        }
+        return Ok(json!({}));
+    }
+    let portal = h.portal().await?;
+    let display = || portal.display(p["display"].as_u64());
     Ok(match method {
         "answer" => {
             let id = p["session"]
@@ -125,26 +176,11 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
                 return Ok(json!({"sdp": s.answer(sdp).await?}));
             }
             let d = display()?;
-            let fd = h.portal.pipewire_fd().await?;
+            let fd = portal.pipewire_fd().await?;
             let session = stream::Session::new(id.clone(), &d, fd, h.clone(), p)?;
             let answer = session.answer(sdp).await?;
             h.sessions.lock().await.insert(id, session);
             json!({"sdp": answer})
-        }
-        "close" => {
-            if let Some(s) = p["session"]
-                .as_str()
-                .and_then(|id| h.sessions.try_lock().ok()?.remove(id))
-            {
-                s.close();
-            }
-            json!({})
-        }
-        "closeAll" => {
-            for (_, s) in h.sessions.lock().await.drain() {
-                s.close();
-            }
-            json!({})
         }
         "screenshot" => {
             let (w, h2) = (
@@ -152,13 +188,13 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
                 p["height"].as_u64().unwrap_or(800),
             );
             let d = display()?;
-            let fd = h.portal.pipewire_fd().await?;
+            let fd = portal.pipewire_fd().await?;
             let jpeg = stream::screenshot(fd, &d, u32::try_from(w)?, u32::try_from(h2)?).await?;
             json!({"data": jpeg})
         }
         "input" => {
             let d = display()?;
-            input::perform(&h.portal, &d, &p["event"]).await?;
+            input::perform(&portal, &d, &p["event"]).await?;
             json!({})
         }
         "uiTree" => a11y::frontmost(&display()?).await?,
@@ -177,6 +213,30 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
 }
 
 impl Helper {
+    async fn portal(&self) -> Result<portal::Portal> {
+        self.portal
+            .lock()
+            .await
+            .clone()
+            .filter(portal::Portal::is_active)
+            .ok_or_else(|| anyhow!("Set up Computer access in Codync on this computer first."))
+    }
+
+    async fn send_status(&self) {
+        let status = self.portal.lock().await.as_ref().map_or_else(
+            || json!({"platform": "linux", "permissionApp": "Codync Screen", "capture": false, "input": false, "displays": []}),
+            portal::Portal::status,
+        );
+        let mut last = self.last_status.lock().await;
+        if last.as_ref() == Some(&status) {
+            return;
+        }
+        *last = Some(status.clone());
+        let _ = self
+            .out
+            .send(json!({"jsonrpc": "2.0", "method": "status", "params": status}));
+    }
+
     /// A session's WebRTC connection ended on its own.
     pub fn ended(self: &Arc<Self>, id: &str) {
         let this = self.clone();

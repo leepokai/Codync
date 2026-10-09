@@ -5,6 +5,8 @@ import { Observable } from '../lib/observable'
 import { account } from './account'
 import { BotStore } from './bot-store'
 import { CloudModel } from './cloud'
+import { DeviceComputerOrder } from './computer-order'
+import { ComputerAccess } from './computer-access'
 
 /** A bot on a computer: bot ids are only unique per computer. */
 export interface BotRef {
@@ -56,10 +58,14 @@ export class AppModel extends Observable {
   private storeSubscriptions = new Map<string, () => void>()
 
   /** The signed-in account's side of this computer (claims, cloud default, account computers). */
+  readonly computerAccess: ComputerAccess
+  readonly computerOrder: DeviceComputerOrder
   readonly cloud: CloudModel
 
   constructor(private mirrors = true) {
     super()
+    this.computerAccess = new ComputerAccess(this)
+    this.computerOrder = new DeviceComputerOrder()
     this.cloud = new CloudModel(this)
     account.subscribe(() => this.noteAccount())
   }
@@ -221,6 +227,9 @@ export class AppModel extends Observable {
     this.screenSynced = true
     void window.codync.app.syncScreenAgent(store.screen.enabled).then((r) => {
       this.screenNeedsApproval = r.needsApproval
+      this.changed()
+    }).catch((error: unknown) => {
+      this.screenError = error instanceof Error ? error.message : String(error)
       this.changed()
     })
   }

@@ -24,6 +24,10 @@ export const health = async () => ({ ok: true, version: VERSION });
 export const oauthCallback = async (c: Ctx) =>
   new Response(null, { status: 302, headers: { Location: `codync://oauth${c.url.search}`, "Cache-Control": "no-store" } });
 
+/** Separate callback route keeps installed production clients and older dev builds working. */
+export const oauthDevCallback = async (c: Ctx) =>
+  new Response(null, { status: 302, headers: { Location: `codync-dev://oauth${c.url.search}`, "Cache-Control": "no-store" } });
+
 // ---- cron (every 15 minutes) ----
 
 export async function sweep(env: Env, now: number): Promise<void> {

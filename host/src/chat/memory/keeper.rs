@@ -6,11 +6,8 @@ use super::extract::{
     episode_user_prompt, existing_for_extraction, extraction_system_prompt, extraction_user_prompt, parse_extraction,
     pending_episode, set_pending_episode,
 };
-use super::facts::{Kind, Memory, dedupe_key, normalize};
-use super::{
-    EPISODE_INTERVAL, EPISODE_PREFIX, EXCHANGE_CHARS, KEEPER_BATCH, KEEPER_IDLE, KEEPER_TIMEOUT, NONE,
-    PROFILE_PROMPT_LIMIT,
-};
+use super::facts::{Kind, Memory, dedupe_key};
+use super::{EXCHANGE_CHARS, KEEPER_BATCH, KEEPER_IDLE, KEEPER_TIMEOUT, NONE, PROFILE_PROMPT_LIMIT};
 use crate::agent::acp::{self, Acp, Incoming};
 use crate::hub::Hub;
 use crate::store::{BotConfig, Store};
@@ -26,6 +23,13 @@ pub struct Exchange {
     pub user: String,
     pub agent: String,
     pub at: i64,
+    pub session: String,
+    pub revision: String,
+}
+
+pub enum KeeperEvent {
+    Exchange(Exchange),
+    Flush,
 }
 
 fn unprocessed_key(bot_id: &str) -> String {
@@ -42,8 +46,8 @@ fn unprocessed(store: &Store, bot_id: &str) -> Vec<EpisodeTurn> {
 /// compaction or session anyway, and one run over several exchanges sees their
 /// context. An unnamed bot is named right away (see `naming`). It stops when the
 /// bot actor drops the sender; what's queued is picked up by the next keeper.
-pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Exchange> {
-    let (tx, mut rx) = mpsc::unbounded_channel::<Exchange>();
+pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<KeeperEvent> {
+    let (tx, mut rx) = mpsc::unbounded_channel::<KeeperEvent>();
     tokio::spawn(async move {
         let mut queued = unprocessed(&hub.store, &bot_id);
         let idle = tokio::time::sleep(KEEPER_IDLE);
@@ -51,20 +55,30 @@ pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Exch
         loop {
             let flush = tokio::select! {
                 x = rx.recv() => {
-                    let Some(x) = x else { break };
+                    let Some(event) = x else { break };
+                    let KeeperEvent::Exchange(x) = event else {
+                        idle.as_mut().reset(tokio::time::Instant::now());
+                        continue;
+                    };
+                    if x.revision != super::maintenance::revision(&hub.store, &bot_id) { continue; }
                     let turn = EpisodeTurn {
                         ts: x.at,
                         user: acp::truncate(&x.user, EXCHANGE_CHARS),
                         agent: acp::truncate(&x.agent, EXCHANGE_CHARS),
+                        session: x.session,
                     };
-                    if let Err(e) = crate::chat::naming::observe(&hub, &bot_id, turn.clone()).await {
-                        tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "naming the bot failed");
-                    }
+                    let mutation = super::maintenance::lock(&bot_id);
+                    let guard = mutation.lock().await;
+                    if x.revision != super::maintenance::revision(&hub.store, &bot_id) { continue; }
                     // Re-read: another keeper of this bot (before a restart) may have flushed.
                     queued = unprocessed(&hub.store, &bot_id);
-                    queued.push(turn);
+                    queued.push(turn.clone());
                     if let Err(e) = hub.store.kv_set(&unprocessed_key(&bot_id), &serde_json::to_string(&queued).unwrap_or_default()) {
                         tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "couldn't queue an exchange for memory");
+                    }
+                    drop(guard);
+                    if let Err(e) = crate::chat::naming::observe(&hub, &bot_id, turn.clone()).await {
+                        tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "naming the bot failed");
                     }
                     idle.as_mut().reset(tokio::time::Instant::now() + KEEPER_IDLE);
                     queued.len() >= KEEPER_BATCH
@@ -74,57 +88,99 @@ pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Exch
             if !flush {
                 continue;
             }
-            let batch = std::mem::take(&mut queued);
-            // Cleared before the run: a failing agent must not retry the same batch forever.
-            if let Err(e) = hub.store.kv_set(&unprocessed_key(&bot_id), "[]") {
-                tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "couldn't clear the memory queue");
+            let processing = super::maintenance::keeper_lock(&bot_id);
+            let _processing = processing.lock().await;
+            queued = unprocessed(&hub.store, &bot_id);
+            match remember(&hub, &bot_id, queued.clone()).await {
+                Ok(()) => {
+                    let mutation = super::maintenance::lock(&bot_id);
+                    let _guard = mutation.lock().await;
+                    let mut current = unprocessed(&hub.store, &bot_id);
+                    acknowledge(&mut current, &queued);
+                    if let Err(e) = hub
+                        .store
+                        .kv_set(&unprocessed_key(&bot_id), &serde_json::to_string(&current).unwrap_or_default())
+                    {
+                        tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "couldn't acknowledge the memory queue");
+                    } else {
+                        queued = current;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "memory keeper failed; batch retained for retry");
+                }
             }
-            if let Err(e) = remember(&hub, &bot_id, batch).await {
-                tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "memory keeper failed");
-            }
+            idle.as_mut().reset(tokio::time::Instant::now() + KEEPER_IDLE);
         }
     });
     tx
 }
 
+/// Another actor may have appended turns while an old keeper was working.
+fn acknowledge(current: &mut Vec<EpisodeTurn>, completed: &[EpisodeTurn]) {
+    if current.starts_with(completed) {
+        current.drain(..completed.len());
+    }
+}
+
 async fn remember(hub: &Arc<Hub>, bot_id: &str, turns: Vec<EpisodeTurn>) -> Result<()> {
+    let mut groups = std::collections::BTreeMap::<String, Vec<EpisodeTurn>>::new();
+    for turn in pending_episode(&hub.store, bot_id).into_iter().chain(turns) {
+        groups.entry(turn.session.clone()).or_default().push(turn);
+    }
+    for (session, turns) in groups {
+        remember_session(hub, bot_id, &session, turns).await?;
+    }
+    set_pending_episode(&hub.store, bot_id, &[])?;
+    Ok(())
+}
+
+async fn remember_session(hub: &Arc<Hub>, bot_id: &str, session: &str, turns: Vec<EpisodeTurn>) -> Result<()> {
     let Some(cfg) = hub.store.bot(bot_id)?.filter(|b| !b.deleted).map(|b| b.config) else { return Ok(()) };
     let Some(at) = turns.last().map(|t| t.ts) else { return Ok(()) };
+    let revision = super::maintenance::revision(&hub.store, bot_id);
 
     let id = bot_id.to_owned();
     let exchange_text = turns.iter().map(|t| format!("{}\n{}", t.user, t.agent)).collect::<Vec<_>>().join("\n");
     let existing = tokio::task::spawn_blocking(move || {
-        Memory::for_bot(&id).map(|mem| existing_for_extraction(&mem, &exchange_text))
+        Memory::for_bot(&id).and_then(|mem| existing_for_extraction(&mem, &exchange_text))
     })
     .await??;
     let raw = one_shot(hub, &cfg, &extraction_system_prompt(), &extraction_user_prompt(&turns, &existing)).await?;
     let extraction = parse_extraction(&raw, &existing);
+    let mutation = super::maintenance::lock(bot_id);
+    let guard = mutation.lock().await;
+    if super::maintenance::revision(&hub.store, bot_id) != revision {
+        return Ok(()); // A user's edit/forget supersedes this extraction from old context.
+    }
     let id = bot_id.to_owned();
+    let source_session =
+        if session.is_empty() { String::new() } else { super::lifecycle::begin(hub, bot_id, session).await? };
+    let summary_session = source_session.clone();
     let (added, removed, crowded) = tokio::task::spawn_blocking(move || {
-        Memory::for_bot(&id).and_then(|mem| {
+        Memory::for_session(&id, &source_session).and_then(|mem| {
             let (added, removed) = apply(&mem, &extraction, &existing, at)?;
-            Ok((added, removed, mem.profile_facts().len() > PROFILE_PROMPT_LIMIT))
+            Ok((added, removed, mem.profile_facts()?.len() > PROFILE_PROMPT_LIMIT))
         })
     })
     .await??;
     tracing::info!(bot = %bot_id, exchanges = turns.len(), added, removed, "memory updated");
-    if crowded && let Err(e) = consolidate(hub, &cfg).await {
+    drop(guard);
+    if crowded && let Err(e) = consolidate(hub, &cfg, &revision).await {
         tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "consolidating the profile failed");
     }
 
-    let mut pending = pending_episode(&hub.store, bot_id);
-    pending.extend(turns);
-    if pending.len() < EPISODE_INTERVAL {
-        return set_pending_episode(&hub.store, bot_id, &pending);
+    let raw = one_shot(hub, &cfg, &episode_system_prompt(&cfg.name), &episode_user_prompt(&cfg.name, &turns)).await?;
+    let narrative: String = raw.trim().chars().take(8_000).collect();
+    let _guard = mutation.lock().await;
+    if super::maintenance::revision(&hub.store, bot_id) != revision {
+        return Ok(());
     }
-    set_pending_episode(&hub.store, bot_id, &[])?;
-    let raw = one_shot(hub, &cfg, &episode_system_prompt(&cfg.name), &episode_user_prompt(&cfg.name, &pending)).await?;
-    let narrative = normalize(&raw);
     if !narrative.is_empty() && !narrative.eq_ignore_ascii_case(NONE) {
-        let at = pending.last().map_or(at, |t| t.ts);
         let id = bot_id.to_owned();
         tokio::task::spawn_blocking(move || {
-            Memory::for_bot(&id).and_then(|mem| mem.add(&format!("{EPISODE_PREFIX}{narrative}"), Kind::Log, at))
+            let mem = Memory::for_session(&id, &summary_session)?;
+            mem.summary(&narrative)
         })
         .await??;
     }
@@ -133,9 +189,9 @@ async fn remember(hub: &Arc<Hub>, bot_id: &str, turns: Vec<EpisodeTurn>) -> Resu
 
 /// The profile outgrew what the prompt shows: have the keeper merge it down to
 /// [`PROFILE_TARGET`] facts. Nothing is lost: facts it drops move to the log.
-async fn consolidate(hub: &Arc<Hub>, cfg: &BotConfig) -> Result<()> {
+async fn consolidate(hub: &Arc<Hub>, cfg: &BotConfig, revision: &str) -> Result<()> {
     let id = cfg.id.clone();
-    let facts = tokio::task::spawn_blocking(move || Memory::for_bot(&id).map(|m| m.profile_facts())).await??;
+    let facts = tokio::task::spawn_blocking(move || Memory::for_bot(&id).and_then(|m| m.profile_facts())).await??;
     let raw = one_shot(hub, cfg, &consolidation_system_prompt(), &consolidation_user_prompt(&facts)).await?;
     let plan = parse_extraction(&raw, &[]);
     let keep: Vec<&String> = plan.additions.iter().filter(|(_, k)| *k == Kind::Profile).map(|(c, _)| c).collect();
@@ -152,6 +208,11 @@ async fn consolidate(hub: &Arc<Hub>, cfg: &BotConfig) -> Result<()> {
         .map(|f| (f.content.clone(), f.created_at))
         .collect();
     demoted.extend(plan.additions.iter().filter(|(_, k)| *k == Kind::Log).map(|(c, _)| (c.clone(), now)));
+    let mutation = super::maintenance::lock(&cfg.id);
+    let _guard = mutation.lock().await;
+    if super::maintenance::revision(&hub.store, &cfg.id) != revision {
+        return Ok(());
+    }
     let id = cfg.id.clone();
     let (before, after) = (facts.len(), kept.len());
     tokio::task::spawn_blocking(move || Memory::for_bot(&id).and_then(|m| m.rewrite_profile(&kept, &demoted)))
@@ -247,5 +308,20 @@ async fn collect(acp: &Acp, inc: Option<Incoming>, out: &mut String) -> bool {
             };
             true
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acknowledging_a_batch_preserves_newer_or_replaced_work() {
+        let turn = |ts| EpisodeTurn { ts, user: "preference".into(), agent: "noted".into(), session: "session".into() };
+        let mut current = vec![turn(1), turn(2), turn(3)];
+        acknowledge(&mut current, &[turn(1), turn(2)]);
+        assert_eq!(current, vec![turn(3)]);
+        acknowledge(&mut current, &[turn(1)]);
+        assert_eq!(current, vec![turn(3)]);
     }
 }

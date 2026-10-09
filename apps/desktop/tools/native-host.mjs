@@ -25,7 +25,7 @@ mkdirSync(out, { recursive: true })
 if (process.platform === 'win32') {
   const target = 'x86_64-pc-windows-msvc'
   build(target)
-  for (const exe of ['codync-host.exe', 'codync-hostw.exe']) copyFileSync(join(host, 'target', target, 'release', exe), join(out, exe))
+  for (const exe of ['codync-host.exe', 'codync-hostw.exe']) copyFileSync(join(host, 'target', target, 'release', exe), join(out, env === 'dev' && exe === 'codync-hostw.exe' ? 'codync-dev-hostw.exe' : exe))
   run(process.execPath, [join(root, '../../packaging/cua-driver/fetch.mjs'), 'windows-x86_64', out])
 } else {
   const targets = ['aarch64-apple-darwin', 'x86_64-apple-darwin']

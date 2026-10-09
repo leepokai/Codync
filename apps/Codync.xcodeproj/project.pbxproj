@@ -30,9 +30,11 @@
 		5C9AE497DA83EB32AEC9057C /* OpenBotIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4EB0DBA2F08CD7C0E25E30 /* OpenBotIntent.swift */; };
 		5CF8180C760CFAE49CF4B8C6 /* CodyncBot-cloud-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = AAD970B8394F4EDFB85A8936 /* CodyncBot-cloud-Tint.ttf */; };
 		5FD48874687C2D18B31C7C01 /* CodyncBot-pebble-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1FECC371F3CD98687C0B69FA /* CodyncBot-pebble-Tint.ttf */; };
+		6147896360A45F5880C39BC9 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 1BDF6A8F94A945065D4348F8 /* AppIcon.icon */; };
 		646410F85B1110297E5F54B9 /* CodyncBot-squircle-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D5F23C3F9FCE63B4AFB4771A /* CodyncBot-squircle-Tint.ttf */; };
 		674BCFBAC7022359FB673FDB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AD18A04CD014230F1B7B0535 /* PrivacyInfo.xcprivacy */; };
 		684F7F77EECBA0BD95BDD658 /* UsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEBE2E6A9D0AF0A0D89FFE7 /* UsageView.swift */; };
+		6BFFA8A75324425132F1FC2C /* ComputerSectionGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A379E88F918744832CF0CB0 /* ComputerSectionGesture.swift */; };
 		719EABCBBAC0A973D729363A /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECD0B4EA4BBA2BB2826C4362 /* PairingView.swift */; };
 		72A907055F1AAEF8F10EAD72 /* NotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7B7E845BA1B8696B266CF578 /* NotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		75C4B7F344DF1E52A1EADEFC /* Capture.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE63C84233B14A2D63640EAA /* Capture.swift */; };
@@ -50,6 +52,7 @@
 		974A5D8D89758A61E7D8D1B6 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA06CEE98A7CDED62678522 /* Input.swift */; };
 		980C29719BDE2E874C9AD53A /* CodyncBot-wedge-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C3BB9F034194450254CE14EC /* CodyncBot-wedge-Tint.ttf */; };
 		9BBB2FAEDBD35A83EAB02981 /* AccountSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EB282B31FBC94EE70D07638 /* AccountSwitcherView.swift */; };
+		A1B7C7774E7FAF6D45D1BEF8 /* Permissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FA78A055791BBBA79DF8C8B /* Permissions.swift */; };
 		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
 		ABE57DA1C72A08A22262AAB1 /* CodyncOrb-Ghost.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8E783FFF5EC2697C16FA2E1B /* CodyncOrb-Ghost.ttf */; };
 		B09F6D6EDC6C6B0B9919D6BF /* CodyncBot-blob-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C484135603CEF437C27BE67B /* CodyncBot-blob-Ink.ttf */; };
@@ -109,16 +112,20 @@
 		0C44BCF971511A5E94D073D5 /* CodyncOrb-Dot.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncOrb-Dot.ttf"; sourceTree = "<group>"; };
 		120FD9DBA315A6DD543463D8 /* CodyncBot-tablet-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-tablet-Ink.ttf"; sourceTree = "<group>"; };
 		1318104275E5BEC47B7088AD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		1BDF6A8F94A945065D4348F8 /* AppIcon.icon */ = {isa = PBXFileReference; path = AppIcon.icon; sourceTree = "<group>"; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		1FECC371F3CD98687C0B69FA /* CodyncBot-pebble-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-pebble-Tint.ttf"; sourceTree = "<group>"; };
 		203A43D8DF8D3832F95FA837 /* CodyncBot-teardrop-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-teardrop-Ink.ttf"; sourceTree = "<group>"; };
 		28B2CB561A43ED9F2F1A4391 /* ScreenHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenHelper.swift; sourceTree = "<group>"; };
+		2A379E88F918744832CF0CB0 /* ComputerSectionGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerSectionGesture.swift; sourceTree = "<group>"; };
 		2C0E04490F5C56FD070539E6 /* ViewingBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewingBadge.swift; sourceTree = "<group>"; };
 		305DDCC18BB8AA6CD9D19CEF /* WidgetPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPreviews.swift; sourceTree = "<group>"; };
 		31BFDAD6DCCE1CC98642ACDD /* AccountSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSession.swift; sourceTree = "<group>"; };
 		3F4C4D3B64C608AEF2F85F91 /* Kit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Kit; path = ios/Kit; sourceTree = SOURCE_ROOT; };
+		445DB0A03CFBB5CC7A830139 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		4815867922559696EDCA47FD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4EB282B31FBC94EE70D07638 /* AccountSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSwitcherView.swift; sourceTree = "<group>"; };
+		4FA78A055791BBBA79DF8C8B /* Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Permissions.swift; sourceTree = "<group>"; };
 		52A96030D47F1B9678095909 /* iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iOS.entitlements; sourceTree = "<group>"; };
 		5A21538E748C62E82DF7B139 /* CodyncBot-cloud-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-cloud-Ink.ttf"; sourceTree = "<group>"; };
 		5B22589689593E0089118FDB /* WidgetGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetGalleryView.swift; sourceTree = "<group>"; };
@@ -282,6 +289,7 @@
 				4EB282B31FBC94EE70D07638 /* AccountSwitcherView.swift */,
 				DD3DE9A4EEB369C4F75C9448 /* ActivityGalleryView.swift */,
 				0582B6169BFC36E4BCD51C0D /* BotListView.swift */,
+				2A379E88F918744832CF0CB0 /* ComputerSectionGesture.swift */,
 				6BC00039A6C2C0D3F39A5F67 /* ComputerStatus.swift */,
 				6FC76D28AB02DF1427D530ED /* LaunchSplash.swift */,
 				ECD0B4EA4BBA2BB2826C4362 /* PairingView.swift */,
@@ -318,6 +326,14 @@
 			path = NotificationService;
 			sourceTree = "<group>";
 		};
+		81A66851EEC5AD60B2F47AC8 /* resources */ = {
+			isa = PBXGroup;
+			children = (
+				1BDF6A8F94A945065D4348F8 /* AppIcon.icon */,
+			);
+			path = resources;
+			sourceTree = "<group>";
+		};
 		95C8CE71ADF48ACFE026A1AF /* screen-macos */ = {
 			isa = PBXGroup;
 			children = (
@@ -325,7 +341,9 @@
 				CE63C84233B14A2D63640EAA /* Capture.swift */,
 				8D16AD9979C77D976BC832D1 /* Driver.swift */,
 				8CC3E47D480A5F15CA95C504 /* HostLink.swift */,
+				445DB0A03CFBB5CC7A830139 /* Info.plist */,
 				8BA06CEE98A7CDED62678522 /* Input.swift */,
+				4FA78A055791BBBA79DF8C8B /* Permissions.swift */,
 				28B2CB561A43ED9F2F1A4391 /* ScreenHelper.swift */,
 				F99C11684BFBEB49006600A9 /* Session.swift */,
 				2C0E04490F5C56FD070539E6 /* ViewingBadge.swift */,
@@ -355,6 +373,7 @@
 		C9B7D3953422AE726DDC6347 = {
 			isa = PBXGroup;
 			children = (
+				F7E0DF6A3B011B9B09B6A4ED /* desktop */,
 				75D64C75DA194CAF10294493 /* ios */,
 				AD54741A2330C502CD3BB628 /* Packages */,
 				95C8CE71ADF48ACFE026A1AF /* screen-macos */,
@@ -373,6 +392,14 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		F7E0DF6A3B011B9B09B6A4ED /* desktop */ = {
+			isa = PBXGroup;
+			children = (
+				81A66851EEC5AD60B2F47AC8 /* resources */,
+			);
+			path = desktop;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -381,6 +408,7 @@
 			buildConfigurationList = EC3A304F5821443C1DD50876 /* Build configuration list for PBXNativeTarget "Screen" */;
 			buildPhases = (
 				34C567D8C7B2C02F5D48CA29 /* Sources */,
+				C5E68F2A8282CE0CD8C8460E /* Resources */,
 				9BF4C7DD5C26BAD44BD453BF /* Frameworks */,
 				558AFCA61717F426992F99B8 /* Embed cua-driver */,
 			);
@@ -525,6 +553,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C5E68F2A8282CE0CD8C8460E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6147896360A45F5880C39BC9 /* AppIcon.icon in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E296E7C6EA511439ADB4F915 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -590,7 +626,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Debug builds use dev (dev-api.codync.dev), Release builds use main (api.codync.dev).\ncp \"$SRCROOT/shared/Config/$CODYNC_ENV.plist\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AccountConfig.plist\"\n";
+			shellScript = "# The scheme chooses an environment independently of Debug/Release optimization.\ncp \"$SRCROOT/shared/Config/$CODYNC_ENV.plist\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AccountConfig.plist\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -615,6 +651,7 @@
 				F6A380E8A026CA849620F2F7 /* Driver.swift in Sources */,
 				9638BAA981354C4CE72884A0 /* HostLink.swift in Sources */,
 				974A5D8D89758A61E7D8D1B6 /* Input.swift in Sources */,
+				A1B7C7774E7FAF6D45D1BEF8 /* Permissions.swift in Sources */,
 				F97C489DDB806224CEFCEB57 /* ScreenHelper.swift in Sources */,
 				921ED46A1643AB90BB3D4CF7 /* Session.swift in Sources */,
 				17DD96A91B1EC2AE699F4A2F /* ViewingBadge.swift in Sources */,
@@ -631,6 +668,7 @@
 				00F78E3DAAF66E8E0933D091 /* ActivityGalleryView.swift in Sources */,
 				01A1F820EFEE49A8FCCFC3F3 /* BotListView.swift in Sources */,
 				7C20764DC05D499075BC5E8C /* CodyncApp.swift in Sources */,
+				6BFFA8A75324425132F1FC2C /* ComputerSectionGesture.swift in Sources */,
 				2002C16E427B4E4E7279E1C4 /* ComputerStatus.swift in Sources */,
 				35CFB641A4F10C0EBD21CB14 /* LaunchSplash.swift in Sources */,
 				E695251CFD06AC6F4E3396B7 /* OpenBotIntent.swift in Sources */,
@@ -670,6 +708,110 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		05067FF08AA4B445153FC8E5 /* DevDebug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CODYNC_APNS_ENVIRONMENT = sandbox;
+				CODYNC_APP_GROUP = group.com.pokai.Codync.dev;
+				CODYNC_APP_NAME = "Codync Dev";
+				CODYNC_DATA_FOLDER = ".codync-dev";
+				CODYNC_ENV = dev;
+				CODYNC_IOS_BUNDLE_ID = com.pokai.Codync.ios.dev;
+				CODYNC_KEYCHAIN_GROUP = com.pokai.Codync.dev;
+				CODYNC_SCREEN_BUNDLE_ID = com.pokai.Codync.dev.screen;
+				CODYNC_SCREEN_NAME = CodyncDevScreen;
+				CODYNC_URL_SCHEME = "codync-dev";
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 24;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7FUM8A8H72;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.12.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = DevDebug;
+		};
+		0A80A3A954825D6FB822E4A6 /* DevDebug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "screen-macos/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME) Screen";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_SCREEN_BUNDLE_ID)";
+				PRODUCT_NAME = "$(CODYNC_SCREEN_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = DevDebug;
+		};
 		0FE1E0F076B087CEBC2AD3BE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -704,7 +846,16 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
+				CODYNC_APNS_ENVIRONMENT = production;
+				CODYNC_APP_GROUP = group.com.pokai.Codync;
+				CODYNC_APP_NAME = Codync;
+				CODYNC_DATA_FOLDER = .codync;
 				CODYNC_ENV = main;
+				CODYNC_IOS_BUNDLE_ID = com.pokai.Codync.ios;
+				CODYNC_KEYCHAIN_GROUP = com.pokai.Codync;
+				CODYNC_SCREEN_BUNDLE_ID = com.pokai.Codync.screen;
+				CODYNC_SCREEN_NAME = CodyncScreen;
+				CODYNC_URL_SCHEME = codync;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 24;
 				DEAD_CODE_STRIPPING = YES;
@@ -723,7 +874,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.11.3;
+				MARKETING_VERSION = 2.12.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -734,6 +885,66 @@
 			};
 			name = Release;
 		};
+		11BC91DD3F1932F31AB39498 /* DevDebug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ios/Widgets/Resources/Widgets.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/Widgets/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID).LiveActivity";
+				PRODUCT_NAME = CodyncWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = DevDebug;
+		};
+		2069ACA5FBBB95C57CA9AF2A /* DevRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ios/Widgets/Resources/Widgets.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/Widgets/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID).LiveActivity";
+				PRODUCT_NAME = CodyncWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = DevRelease;
+		};
+		5BC265FBB8C161E9DF1D9399 /* DevDebug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ios/NotificationService/NotificationService.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/NotificationService/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID).NotificationService";
+				PRODUCT_NAME = CodyncNotificationService;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = DevDebug;
+		};
 		6377E0B7DC2015DD92AB6550 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -742,15 +953,17 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Codync Screen";
+				INFOPLIST_FILE = "screen-macos/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME) Screen";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.screen;
-				PRODUCT_NAME = CodyncScreen;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_SCREEN_BUNDLE_ID)";
+				PRODUCT_NAME = "$(CODYNC_SCREEN_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 			};
@@ -762,13 +975,13 @@
 				CODE_SIGN_ENTITLEMENTS = ios/Widgets/Resources/Widgets.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Widgets/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID).LiveActivity";
 				PRODUCT_NAME = CodyncWidgets;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -782,13 +995,13 @@
 				CODE_SIGN_ENTITLEMENTS = ios/NotificationService/NotificationService.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/NotificationService/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.NotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID).NotificationService";
 				PRODUCT_NAME = CodyncNotificationService;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -804,19 +1017,53 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Codync Screen";
+				INFOPLIST_FILE = "screen-macos/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME) Screen";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.screen;
-				PRODUCT_NAME = CodyncScreen;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_SCREEN_BUNDLE_ID)";
+				PRODUCT_NAME = "$(CODYNC_SCREEN_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 			};
 			name = Release;
+		};
+		9284F9FFE5BA9F3EBA6F3086 /* DevRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ios/Resources/iOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Codync connects to the computer running your bots on your local network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Talk to your bots in a voice call.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Your words are transcribed on this iPhone and sent to your bot as a message.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID)";
+				PRODUCT_NAME = "$(CODYNC_APP_NAME)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = DevRelease;
 		};
 		A8BF4A3388AA1B9ECD65A197 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -852,7 +1099,16 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CODYNC_ENV = dev;
+				CODYNC_APNS_ENVIRONMENT = sandbox;
+				CODYNC_APP_GROUP = group.com.pokai.Codync;
+				CODYNC_APP_NAME = Codync;
+				CODYNC_DATA_FOLDER = .codync;
+				CODYNC_ENV = main;
+				CODYNC_IOS_BUNDLE_ID = com.pokai.Codync.ios;
+				CODYNC_KEYCHAIN_GROUP = com.pokai.Codync;
+				CODYNC_SCREEN_BUNDLE_ID = com.pokai.Codync.screen;
+				CODYNC_SCREEN_NAME = CodyncScreen;
+				CODYNC_URL_SCHEME = codync;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 24;
 				DEAD_CODE_STRIPPING = YES;
@@ -877,7 +1133,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.11.3;
+				MARKETING_VERSION = 2.12.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -898,7 +1154,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
@@ -914,12 +1170,129 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
-				PRODUCT_NAME = Codync;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID)";
+				PRODUCT_NAME = "$(CODYNC_APP_NAME)";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		CC6EC33414AD65E072117755 /* DevRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ios/NotificationService/NotificationService.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/NotificationService/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID).NotificationService";
+				PRODUCT_NAME = CodyncNotificationService;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = DevRelease;
+		};
+		D2555C4A6D2F635EFD3EF91E /* DevRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "screen-macos/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME) Screen";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_SCREEN_BUNDLE_ID)";
+				PRODUCT_NAME = "$(CODYNC_SCREEN_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = DevRelease;
+		};
+		D332EFBFFE130E9B27B67337 /* DevRelease */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CODYNC_APNS_ENVIRONMENT = production;
+				CODYNC_APP_GROUP = group.com.pokai.Codync.dev;
+				CODYNC_APP_NAME = "Codync Dev";
+				CODYNC_DATA_FOLDER = ".codync-dev";
+				CODYNC_ENV = dev;
+				CODYNC_IOS_BUNDLE_ID = com.pokai.Codync.ios.dev;
+				CODYNC_KEYCHAIN_GROUP = com.pokai.Codync.dev;
+				CODYNC_SCREEN_BUNDLE_ID = com.pokai.Codync.dev.screen;
+				CODYNC_SCREEN_NAME = CodyncDevScreen;
+				CODYNC_URL_SCHEME = "codync-dev";
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 24;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7FUM8A8H72;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.12.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = DevRelease;
 		};
 		D4128E0292901EF39924C449 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -927,13 +1300,13 @@
 				CODE_SIGN_ENTITLEMENTS = ios/NotificationService/NotificationService.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/NotificationService/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.NotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID).NotificationService";
 				PRODUCT_NAME = CodyncNotificationService;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -950,7 +1323,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
@@ -966,12 +1339,44 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios;
-				PRODUCT_NAME = Codync;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID)";
+				PRODUCT_NAME = "$(CODYNC_APP_NAME)";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
+		};
+		E00ACB95077931E4BE46DB4C /* DevDebug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ios/Resources/iOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing code shown on your computer.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Codync connects to the computer running your bots on your local network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Talk to your bots in a voice call.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Your words are transcribed on this iPhone and sent to your bot as a message.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID)";
+				PRODUCT_NAME = "$(CODYNC_APP_NAME)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = DevDebug;
 		};
 		EB1D26BC053D93E98D308A5C /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -979,13 +1384,13 @@
 				CODE_SIGN_ENTITLEMENTS = ios/Widgets/Resources/Widgets.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Widgets/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Codync;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(CODYNC_APP_NAME)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pokai.Codync.ios.LiveActivity;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CODYNC_IOS_BUNDLE_ID).LiveActivity";
 				PRODUCT_NAME = CodyncWidgets;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1000,6 +1405,8 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA5DD179E0A7875E9EC22904 /* Debug */,
+				E00ACB95077931E4BE46DB4C /* DevDebug */,
+				9284F9FFE5BA9F3EBA6F3086 /* DevRelease */,
 				D8FAD997F1279E25370608C5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1009,6 +1416,8 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				6A5CD5AB98E7B897A9E57C49 /* Debug */,
+				11BC91DD3F1932F31AB39498 /* DevDebug */,
+				2069ACA5FBBB95C57CA9AF2A /* DevRelease */,
 				EB1D26BC053D93E98D308A5C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1018,6 +1427,8 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8B4776624C6CD584BCA689AF /* Debug */,
+				5BC265FBB8C161E9DF1D9399 /* DevDebug */,
+				CC6EC33414AD65E072117755 /* DevRelease */,
 				D4128E0292901EF39924C449 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1027,6 +1438,8 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				6377E0B7DC2015DD92AB6550 /* Debug */,
+				0A80A3A954825D6FB822E4A6 /* DevDebug */,
+				D2555C4A6D2F635EFD3EF91E /* DevRelease */,
 				8BF1ED628DCBF23F16CFD028 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1036,6 +1449,8 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A8BF4A3388AA1B9ECD65A197 /* Debug */,
+				05067FF08AA4B445153FC8E5 /* DevDebug */,
+				D332EFBFFE130E9B27B67337 /* DevRelease */,
 				0FE1E0F076B087CEBC2AD3BE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;

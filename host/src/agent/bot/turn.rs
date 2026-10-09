@@ -44,6 +44,7 @@ impl Actor {
         self.lane = lane.clone();
         self.turn = Some(turn);
         self.turn_text = (!hidden).then(|| text.to_owned());
+        self.turn_memory_revision = memory::maintenance::revision(&self.hub.store, &self.cfg.id);
         self.announce = None;
         self.stop_requested = false;
         self.hub.team.start_turn(&self.cfg.id, self.active_request.as_ref());
@@ -107,8 +108,16 @@ impl Actor {
         }
         let claude = self.conn.as_ref().is_some_and(|c| c.claude);
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
+        let memory_session = memory::lifecycle::begin(&self.hub, &self.cfg.id, &sid).await?;
+        self.memory_session = Some(memory_session.clone());
+        if !hidden && let Err(error) = memory::lifecycle::capture_prompt(&self.cfg.id, &memory_session, text).await {
+            tracing::warn!(bot = %self.cfg.id, %error, "memory prompt capture failed");
+        }
         let snapshot = self.snapshot(&sid).await?;
         let mut prompt = text.to_owned();
+        if let Some(notice) = memory::lifecycle::change_notice(&self.hub, &self.cfg.id, &sid) {
+            prompt = format!("{notice}\n\n{prompt}");
+        }
         if let Some(intro) = self.thread_intro.take() {
             prompt = format!("{intro}\n\n{prompt}");
         }
@@ -135,6 +144,10 @@ impl Actor {
         }
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.send("session/prompt", params).await?;
+        if let Err(error) = memory::lifecycle::mark_announced(&self.hub, &self.cfg.id, &sid, &self.turn_memory_revision)
+        {
+            tracing::warn!(%error, "could not acknowledge memory update notice");
+        }
         let done_tx = done_tx.clone();
         tokio::spawn(async move {
             let _ = done_tx.send(answer.response().await);
@@ -254,7 +267,13 @@ impl Actor {
         if let (Some(user), Some(agent), "end_turn") = (self.turn_text.take(), &final_text, stop_reason.as_str())
             && memory::is_memorable(&user)
         {
-            let _ = self.keeper.send(memory::Exchange { user, agent: agent.clone(), at: now_ms() });
+            let _ = self.keeper.send(memory::KeeperEvent::Exchange(memory::Exchange {
+                user,
+                agent: agent.clone(),
+                at: now_ms(),
+                session: self.memory_session.clone().unwrap_or_default(),
+                revision: self.turn_memory_revision.clone(),
+            }));
         }
         self.hub.set_runtime(&self.id(), |r| {
             r.status = if failed { BotStatus::Error } else { BotStatus::Idle };

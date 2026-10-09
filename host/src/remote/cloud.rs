@@ -20,7 +20,7 @@ use tokio::sync::watch;
 /// release workflows), dev for every local build, debug or release, like the apps built next
 /// to it.
 fn build_cloud_url() -> &'static str {
-    if option_env!("CODYNC_ENV") == Some("main") { "https://api.codync.dev" } else { "https://dev-api.codync.dev" }
+    crate::environment::Environment::current().cloud_url()
 }
 
 /// How long one successful state pull keeps an account device allowed.

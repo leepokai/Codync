@@ -38,6 +38,7 @@ fn free_port() -> u16 {
 async fn start_host() -> Host {
     let home = std::env::temp_dir().join(format!("codync-e2e-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
+    common::seed_memory_runtime(&home);
     let port = free_port();
     let child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
         .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])

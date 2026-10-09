@@ -23,6 +23,9 @@ pub struct HelperStatus {
     pub platform: String,
     #[serde(default)]
     pub version: String,
+    /// Name to look for in the operating system's permission settings.
+    #[serde(default)]
+    pub permission_app: String,
     #[serde(default)]
     pub displays: Vec<Display>,
     /// Screen capture is permitted.

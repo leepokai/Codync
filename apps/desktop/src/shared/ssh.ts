@@ -43,13 +43,13 @@ export interface SSHState {
 
 export const SSH_INSTALL_COMMAND = 'brew install leepokai/codync/codync-host && codync-host install'
 
-export const newSSHProfile = (): SSHProfile => ({
+export const newSSHProfile = (remotePort = 19222): SSHProfile => ({
   id: crypto.randomUUID(),
   host: '',
   port: null,
   user: null,
   identityFile: null,
-  remotePort: 19222,
+  remotePort,
   computerId: null,
   name: '',
 })

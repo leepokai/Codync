@@ -31,6 +31,17 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deploy on Vercel
 
+With the Vercel project's Root Directory set to `web/`, `vercel.json` limits
+automatic Git deployments to `main` and `dev`. Other branches, including normal
+external PR branches, do not create previews. GitHub Actions tests still run.
+
+This filters branch names, not repository owners. Keep Git Fork Protection
+enabled: fork branches named `main` or `dev` still require authorization.
+Existing PR checks are not removed; PR branches need to include this
+configuration for subsequent events to use it.
+
+See [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration).
+
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

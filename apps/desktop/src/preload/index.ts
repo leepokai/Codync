@@ -20,6 +20,9 @@ function listen<T>(channel: string, cb: (value: T) => void) {
 
 const bridge: CodyncBridge = {
   platform: process.platform as CodyncBridge['platform'],
+  appName: ipcRenderer.sendSync('app:name') as string,
+  appScheme: ipcRenderer.sendSync('app:scheme') as string,
+  hostPort: ipcRenderer.sendSync('app:hostPort') as number,
   appVersion: ipcRenderer.sendSync('app:version') as string,
   computerName: ipcRenderer.sendSync('app:computerName') as string,
   debugOpen: ipcRenderer.sendSync('app:debugOpen') as string | null,
@@ -89,6 +92,7 @@ const bridge: CodyncBridge = {
     launchAtLogin: () => ipcRenderer.invoke('app:launchAtLogin'),
     openSettings: (url) => ipcRenderer.send('app:openSettings', url),
     authenticate: (url, scheme) => ipcRenderer.invoke('app:authenticate', url, scheme),
+    screenAgentState: () => ipcRenderer.invoke('screen:state'),
     setScreenAgent: (on) => ipcRenderer.invoke('screen:setAgent', on),
     syncScreenAgent: (enabled) => ipcRenderer.invoke('screen:syncAgent', enabled),
   },

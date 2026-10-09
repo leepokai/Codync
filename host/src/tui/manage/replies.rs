@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use super::super::app::{After, App, Overlay, Toggle};
-use super::{Fact, Reply, Shell, open_browser, s};
+use super::{MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
     pub(in crate::tui) fn on_sheet_reply(&mut self, r: Reply, res: Result<Value, String>) {
@@ -20,14 +20,57 @@ impl App {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
                     {
-                        let facts: Vec<Fact> = v["facts"]
-                            .as_array()
-                            .into_iter()
-                            .flatten()
-                            .map(|f| Fact { id: s(f, "id"), content: s(f, "content"), profile: f["kind"] == "profile" })
-                            .collect();
+                        if v["query"].as_str() != Some(m.query.trim())
+                            || v["filter"].as_str() != Some(super::memory::FILTERS[m.filter])
+                            || v["offset"].as_u64() != Some(m.offset as u64)
+                        {
+                            continue;
+                        }
+                        let facts = v["facts"].as_array().cloned().unwrap_or_default();
                         m.cursor = m.cursor.min(facts.len().saturating_sub(1));
                         m.facts = Some(facts);
+                        m.total = v["total"].as_u64().and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
+                        m.next_offset = v["nextOffset"].as_u64().and_then(|n| usize::try_from(n).ok());
+                        m.busy = false;
+                        m.error = None;
+                    }
+                }
+            }
+            Reply::MemorySaved(bot) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Memory(m) = o
+                        && m.bot == bot
+                    {
+                        m.mode = MemoryMode::Browse;
+                        m.busy = false;
+                    }
+                }
+                self.refresh_sheets();
+            }
+            Reply::MemoryDetail(bot) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Memory(m) = o
+                        && m.bot == bot
+                    {
+                        m.mode = MemoryMode::Detail {
+                            text: format!(
+                                "{}\n\nSession timeline\n{}",
+                                s(&v["history"], "result"),
+                                s(&v["timeline"], "result")
+                            ),
+                            scroll: 0,
+                            id: s(&v["fact"], "id"),
+                            history_cursor: v["history"]["history_cursor"].as_i64(),
+                        };
+                    }
+                }
+            }
+            Reply::MemoryExport(bot) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Memory(m) = o
+                        && m.bot == bot
+                    {
+                        m.mode = MemoryMode::Export { text: s(&v, "json"), scroll: 0 };
                     }
                 }
             }
@@ -196,11 +239,16 @@ impl App {
                     m.error = Some(e);
                 }
             }
-            Reply::Memory(_) | Reply::Routines(_) => {
+            Reply::Memory(_)
+            | Reply::MemorySaved(_)
+            | Reply::MemoryDetail(_)
+            | Reply::MemoryExport(_)
+            | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {
                         Overlay::Memory(m) => {
-                            m.facts.get_or_insert_with(Vec::new);
+                            m.busy = false;
+                            m.error = Some(e.clone());
                         }
                         Overlay::Routines(l) => {
                             l.items.get_or_insert_with(Vec::new);
@@ -220,7 +268,7 @@ impl App {
         for o in &self.overlays {
             match o {
                 Overlay::Memory(m) => {
-                    calls.push(("memory", json!({"botId": m.bot}), After::Sheet(Reply::Memory(m.bot.clone()))));
+                    calls.push(("memory", m.body(), After::Sheet(Reply::Memory(m.bot.clone()))));
                 }
                 Overlay::Routines(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));

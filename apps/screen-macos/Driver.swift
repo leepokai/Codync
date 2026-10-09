@@ -52,7 +52,8 @@ final class Driver {
 
     /// In the per-user temporary directory (private, and short enough for a socket path).
     private static var socketPath: String {
-        NSTemporaryDirectory() + "codync-cua/cua.sock"
+        let development = Bundle.main.object(forInfoDictionaryKey: "CodyncEnvironment") as? String == "dev"
+        return NSTemporaryDirectory() + (development ? "codync-dev-cua/cua.sock" : "codync-cua/cua.sock")
     }
 
     private static func listening(_ path: String) -> Bool {

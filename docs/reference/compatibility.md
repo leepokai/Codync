@@ -138,6 +138,7 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.12.0 | 2.3.0 | 2.12.0 | The clients require Engram memory management fields and methods. Older clients can still list and forget memories on the new host. |
 | 2.4.0 | 2.3.0 | 2.3.0 | First release with the check. Since 2.3.0 the wire only gained `minApp` and lost the unused `protocol`; 2.3.0 is the oldest pairing verified to work, and a higher floor would lock out hosts that never auto-update. |
 
 ## Trying it on a simulator

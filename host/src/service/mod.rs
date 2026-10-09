@@ -70,7 +70,7 @@ fn wait_for_host_exit() -> Result<()> {
     }
 }
 
-pub const DEFAULT_PORT: u16 = 19222;
+pub const DEFAULT_PORT: u16 = crate::environment::Environment::current().port();
 /// Marker between our command and a wrapped user status line.
 const STATUSLINE_MARK: &str = " statusline --";
 
@@ -80,7 +80,8 @@ pub(crate) fn home() -> PathBuf {
 }
 
 pub fn data_dir() -> PathBuf {
-    std::env::var_os("CODYNC_HOME").map_or_else(|| home().join(".codync"), PathBuf::from)
+    std::env::var_os("CODYNC_HOME")
+        .map_or_else(|| home().join(crate::environment::Environment::current().data_folder()), PathBuf::from)
 }
 
 fn create_parent(file: &Path) -> Result<()> {
@@ -266,7 +267,8 @@ pub struct PairingQr<'a> {
 
 pub fn pairing_url(q: &PairingQr) -> String {
     let mut url = format!(
-        "codync://pair?v=3&name={}&id={}&sk={}&bk={}&code={}&urls={}",
+        "{}://pair?v=3&name={}&id={}&sk={}&bk={}&code={}&urls={}",
+        crate::environment::Environment::current().url_scheme(),
         pct(q.name),
         q.computer_id,
         q.sign_key,
@@ -391,7 +393,10 @@ mod tests {
         };
         assert_eq!(
             pairing_url(&q),
-            "codync://pair?v=3&name=Kevin%27s%20Mac&id=cid&sk=sk&bk=bk&code=c0de&urls=http%3A%2F%2F100.1.2.3%3A19222%2Chttp%3A%2F%2Fa%3A1"
+            format!(
+                "{}://pair?v=3&name=Kevin%27s%20Mac&id=cid&sk=sk&bk=bk&code=c0de&urls=http%3A%2F%2F100.1.2.3%3A19222%2Chttp%3A%2F%2Fa%3A1",
+                crate::environment::Environment::current().url_scheme()
+            )
         );
         q.cloud = Some("https://cloud.example");
         assert!(pairing_url(&q).ends_with("&cloud=https%3A%2F%2Fcloud.example"));

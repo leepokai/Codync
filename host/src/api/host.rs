@@ -133,6 +133,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "screenStatus" => hub.screen.state(),
+        "requestScreenPermission" => hub.screen.request_permission(&b).await?,
         "screenPrepare" => {
             if !hub.screen.enabled() {
                 bail!("Remote screen is turned off on this computer.");

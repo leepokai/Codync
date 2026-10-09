@@ -1,0 +1,97 @@
+.computer-roster-section {
+  flex: none;
+  min-width: 0;
+  transition: opacity var(--layout);
+}
+
+.computer-roster-section.dragging {
+  opacity: 0.45;
+}
+
+.computer-roster-heading {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 2px 4px;
+}
+
+.computer-roster-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 4px;
+  color: var(--secondary);
+  border-radius: 8px;
+  cursor: grab;
+}
+
+.computer-roster-toggle:hover {
+  background: var(--bubble-agent);
+}
+
+.computer-roster-label {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  font-size: calc(11px * var(--scale));
+  text-align: left;
+}
+
+.computer-roster-label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.computer-roster-label > span {
+  color: var(--tertiary);
+  font-size: calc(10px * var(--scale));
+  white-space: nowrap;
+}
+
+.computer-roster-label > .warning {
+  color: var(--warning);
+}
+
+.computer-roster-chevron {
+  flex: none;
+  display: flex;
+  transition: transform var(--layout);
+}
+
+.computer-roster-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.computer-roster-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows var(--layout), opacity var(--layout);
+}
+
+.computer-roster-content.collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.computer-roster-content > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.computer-roster-empty {
+  padding: 8px 10px 12px;
+  color: var(--tertiary);
+  font-size: calc(11px * var(--scale));
+}
+
+.sidebar.compact .computer-roster-toggle {
+  justify-content: center;
+  padding: 4px 0;
+  gap: 2px;
+}

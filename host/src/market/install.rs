@@ -118,7 +118,7 @@ fn fill(template: Option<&str>, value: &str) -> String {
 
 /// The exact package reference passed to the runtime. OCI embeds its version in
 /// the identifier; server metadata cannot pin an otherwise floating image.
-fn package_reference(p: &Value) -> Result<String> {
+pub(super) fn package_reference(p: &Value) -> Result<String> {
     let id = p["identifier"].as_str().ok_or_else(|| anyhow!("package has no identifier"))?;
     let unpinned = || anyhow!("{id} has no pinned version in the MCP Registry, so it can't be installed safely");
     let pinned = |v: &str| !v.is_empty() && v != "latest" && !v.contains(['^', '~', '*', ' ']);

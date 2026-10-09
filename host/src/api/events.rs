@@ -47,6 +47,9 @@ impl Drop for IosClientGuard {
 /// Event types only this computer's own apps receive.
 const LOCAL_EVENTS: &[&str] = &["accessRequests", "cloud"];
 
+#[cfg(test)]
+mod tests;
+
 /// Subscribes first, then yields a catch-up (everything after `since`, in rev order),
 /// then live events. Duplicates are fine: clients upsert by id/rev. Shared by SSE and channels.
 pub fn events_stream(

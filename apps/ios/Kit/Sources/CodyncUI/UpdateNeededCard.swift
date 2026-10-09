@@ -159,9 +159,10 @@ public struct UpdateReminderCard: View {
 
     public var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.title3)
-                .foregroundStyle(Palette.secondary)
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.title3.weight(.medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Palette.text)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)

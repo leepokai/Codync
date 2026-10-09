@@ -47,6 +47,7 @@ public final class AccountStore {
 
     private let clientKind: String
     private let cloud: CloudClient?
+    private let computerOrder: ComputerOrderStore
     private let makeStore: @MainActor (Computer) -> BotStore
     /// Persisted in the context (channel route).
     private var saved: [Computer]
@@ -67,9 +68,11 @@ public final class AccountStore {
         self.storage = storage
         self.clientKind = clientKind
         self.cloud = cloud
+        computerOrder = ComputerOrderStore(storage: storage)
         self.makeStore = makeStore
         saved = storage.computers.filter(\.isConsistent)
         for computer in saved { open(computer) }
+        computerOrder.onChanged = { [weak self] in self?.refreshList() }
         refreshList()
     }
 
@@ -135,14 +138,9 @@ public final class AccountStore {
         refreshList()
     }
 
-    /// Moves a computer (and its bots in the roster) to `target`'s place; saved on this device.
-    /// Attached computers (the Mac's own host, SSH tunnels) stay first.
+    /// Moves a computer section on this device only.
     public func move(_ id: ComputerID, to target: ComputerID) {
-        guard id != target, let from = saved.firstIndex(where: { $0.id == id }),
-              let to = saved.firstIndex(where: { $0.id == target }) else { return }
-        saved.insert(saved.remove(at: from), at: to)
-        persist()
-        refreshList()
+        computerOrder.move(id, to: target, available: computers.map(\.id))
     }
 
     // MARK: account (§4.2 B)
@@ -292,6 +290,7 @@ public final class AccountStore {
     /// Account switched or signed out: nothing from here writes into storage or calls back anymore.
     public func retire() {
         retired = true
+        computerOrder.retire()
         for store in stores.values { store.retire() }
         for poll in accessPolls.values { poll.cancel() }
         accessPolls = [:]
@@ -352,7 +351,13 @@ public final class AccountStore {
     }
 
     private func refreshList() {
-        if saved != computers { Motion.animate { computers = saved } }
+        let byID = Dictionary(saved.map { ($0.id, $0) }, uniquingKeysWith: { _, newest in newest })
+        let ordered = computerOrder.state.orderedIDs(saved.map(\.id)).compactMap { byID[$0] }
+        if saved != ordered {
+            saved = ordered
+            persist()
+        }
+        if ordered != computers { Motion.animate { computers = ordered } }
         rosterChanged()
     }
 

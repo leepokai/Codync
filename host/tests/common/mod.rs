@@ -3,6 +3,17 @@
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
+/// Use the checksum-verified release fixture so isolated hosts don't each download it.
+pub fn seed_memory_runtime(home: &std::path::Path) {
+    let Some(binary) = std::env::var_os("CODYNC_TEST_ENGRAM") else {
+        return;
+    };
+    let dir = home.join("engram/3.2.1");
+    std::fs::create_dir_all(&dir).expect("memory runtime folder");
+    std::fs::copy(binary, dir.join(if cfg!(windows) { "engram.exe" } else { "engram" })).expect("copy Engram fixture");
+    std::fs::write(dir.join(".installed"), "3.2.1").expect("mark fixture installed");
+}
+
 /// Stops a test host the way launchd does (SIGTERM), so it shuts down its own
 /// children: a SIGKILL would orphan whatever it had running, such as a harness
 /// sign-in check (`cursor-agent status` then spins forever). Kills it after 5 s.

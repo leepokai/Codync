@@ -49,6 +49,7 @@ impl App {
             },
             Overlay::Market(m) => Some(&mut m.query),
             Overlay::Fields(f) => f.current().map(|i| &mut i.ed),
+            Overlay::Memory(m) => m.editor(),
             Overlay::Routine(f) => Some(match f.field {
                 super::super::manage::RoutineField::Name => &mut f.name,
                 super::super::manage::RoutineField::Instruction => &mut f.instruction,

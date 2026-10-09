@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-const VALUE: &str = "CodyncHost";
-const SUPERVISOR: &str = "codync-hostw.exe";
+const VALUE: &str = crate::environment::Environment::current().windows_value();
+const SUPERVISOR: &str = crate::environment::Environment::current().supervisor();
 const HOST: &str = "codync-host.exe";
 
 const DETACHED_PROCESS: u32 = 0x0000_0008;

@@ -3,18 +3,24 @@ import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync, promises as fs, readFileSync, realpathSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { app } from 'electron'
 import type { HostState, LocalHost } from '../shared/ipc'
 import { unregisterScreenAgent } from './screen'
+import { identity } from './environment'
+import { hostEnvironmentError } from '../shared/environment'
 
 /** `CODYNC_PORT` / `CODYNC_HOME` point the app at a dev host started with `codync-host serve`. */
 export const devPort = process.env.CODYNC_PORT ? Number(process.env.CODYNC_PORT) : null
-export const port = devPort ?? 19222
-export const dataDir = process.env.CODYNC_HOME ?? join(homedir(), '.codync')
+export const port = devPort ?? identity.port
+export const dataDir = process.env.CODYNC_HOME ?? join(homedir(), identity.dataFolder)
+if (identity.environment === 'dev' && (port === 19222 || resolve(dataDir) === resolve(homedir(), '.codync'))) {
+  throw new Error('Codync Dev requires its own host port and data directory.')
+}
 export const baseURL = `http://127.0.0.1:${port}`
 
 interface Health {
+  environment?: string
   ok?: boolean
   computerId?: string
   binaryPath?: string
@@ -52,11 +58,11 @@ function serviceDefinition(): string | null {
     if (isWindows) {
       // The per-user Run key that starts the host at sign-in.
       const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-      return execFileSync('reg', ['query', key, '/v', 'CodyncHost'], { encoding: 'utf8', windowsHide: true })
+      return execFileSync('reg', ['query', key, '/v', identity.windowsService], { encoding: 'utf8', windowsHide: true })
     }
     const file = isMac
-      ? join(homedir(), 'Library/LaunchAgents/com.pokai.codync.host.plist')
-      : join(homedir(), '.config/systemd/user/codync-host.service')
+      ? join(homedir(), `Library/LaunchAgents/${identity.hostLabel}.plist`)
+      : join(homedir(), `.config/systemd/user/${identity.systemdUnit}`)
     return readFileSync(file, 'utf8')
   } catch {
     return null
@@ -85,11 +91,17 @@ export class HostController extends EventEmitter {
       app.isPackaged && isMac ? join(process.resourcesPath, 'codync-host') : null,
       app.isPackaged && isWindows ? join(process.resourcesPath, 'codync-host.exe') : null,
       process.env.CODYNC_HOST_BIN ?? null,
-      join(homedir(), '.local/bin/codync-host'),
-      '/opt/homebrew/bin/codync-host',
-      '/usr/local/bin/codync-host',
-      '/usr/bin/codync-host',
-      join(homedir(), '.cargo/bin/codync-host'),
+      ...(identity.environment === 'dev' ? [
+        join(__dirname, '../../build/native/codync-host'),
+        join(__dirname, '../../../../host/target/debug/codync-host'),
+        join(homedir(), '.local/bin/codync-dev-host'),
+      ] : [
+        join(homedir(), '.local/bin/codync-host'),
+        '/opt/homebrew/bin/codync-host',
+        '/usr/local/bin/codync-host',
+        '/usr/bin/codync-host',
+        join(homedir(), '.cargo/bin/codync-host'),
+      ]),
     ]
     return candidates.find((c): c is string => !!c && existsSync(c)) ?? null
   }
@@ -131,15 +143,24 @@ export class HostController extends EventEmitter {
     this.connect()
   }
 
-  /** `codync-host install` also routes Claude Code's status line through the host. */
+  private async verifyBinary(bin: string) {
+    const result = await run(bin, ['compat'])
+    if (result.status !== 0) throw new Error(result.output || 'Cannot verify the host environment.')
+    const info = JSON.parse(result.output) as { environment?: string }
+    const mismatch = hostEnvironmentError(identity.environment, info.environment)
+    if (mismatch) throw new Error(mismatch)
+  }
+
+  /** A service operation must never invoke the other environment's binary. */
   async install() {
     const bin = this.binary
-    if (this.preparingForUpdate || this.installing || !bin) return
+    if (this.preparingForUpdate || this.installing || !bin || devPort !== null) return
     this.installing = true
     this.stopLoop()
     prefs.set('hostUninstalled', false)
     this.setState({ kind: 'starting' })
     try {
+      await this.verifyBinary(bin)
       const result = await run(bin, ['install', '--port', String(port)])
       if (result.status !== 0) {
         this.setState({ kind: 'failed', message: result.output || 'Install failed' })
@@ -147,6 +168,8 @@ export class HostController extends EventEmitter {
         await sleep(1000)
         this.connect()
       }
+    } catch (error) {
+      this.setState({ kind: 'failed', message: error instanceof Error ? error.message : String(error) })
     } finally {
       this.installing = false
     }
@@ -175,14 +198,22 @@ export class HostController extends EventEmitter {
     return (await res.json()) as T
   }
 
-  async uninstall() {
+  async uninstall(): Promise<boolean> {
     const bin = this.binary
-    if (!bin) return
-    this.stopLoop()
-    prefs.set('hostUninstalled', true)
-    await run(bin, ['uninstall'])
-    this.setLocal(null)
-    this.setState({ kind: 'notInstalled' })
+    if (!bin || devPort !== null) return false
+    try {
+      await this.verifyBinary(bin)
+      this.stopLoop()
+      const result = await run(bin, ['uninstall'])
+      if (result.status !== 0) throw new Error(result.output || 'Uninstall failed')
+      prefs.set('hostUninstalled', true)
+      this.setLocal(null)
+      this.setState({ kind: 'notInstalled' })
+      return true
+    } catch (error) {
+      this.setState({ kind: 'failed', message: error instanceof Error ? error.message : String(error) })
+      return false
+    }
   }
 
   /**
@@ -199,6 +230,7 @@ export class HostController extends EventEmitter {
     unregisterScreenAgent()
     const bin = this.binary
     if (!bin) throw new Error('The bundled host is missing.')
+    await this.verifyBinary(bin)
     const result = await run(bin, ['stop'])
     if (result.status !== 0) throw new Error(result.output || 'The old host could not be stopped.')
   }
@@ -252,9 +284,15 @@ export class HostController extends EventEmitter {
 
   /** Attaches the local host once it answers, and again when its token or identity changed. */
   private async attachLocal(): Promise<boolean> {
-    const token = await readToken()
     const health = await fetchHealth()
-    if (!token || !health?.computerId) return false
+    if (!health?.computerId) return false
+    const mismatch = hostEnvironmentError(identity.environment, health.environment)
+    if (mismatch) {
+      this.setState({ kind: 'failed', message: mismatch })
+      return false
+    }
+    const token = await readToken()
+    if (!token) return false
     if (devPort === null) {
       // A rebuild can change the host without changing the release version.
       const bin = this.binary
@@ -303,7 +341,7 @@ function serviceRuns(bin: string) {
   const service = serviceDefinition()
   if (service === null) return false
   // Windows' service starts the launcher next to the host (codync-hostw.exe).
-  const runs = (path: string) => service.includes(isWindows ? path.replace(/codync-host\.exe$/, 'codync-hostw.exe') : path)
+  const runs = (path: string) => service.includes(isWindows ? path.replace(/codync-host\.exe$/, identity.supervisor) : path)
   return runs(bin) || runs(resolved(bin))
 }
 

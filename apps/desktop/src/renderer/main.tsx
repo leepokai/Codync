@@ -8,6 +8,7 @@ import { applyTextSize, prefs } from './lib/prefs'
 import { account } from './store/account'
 
 const page = new URLSearchParams(location.search).get('window') ?? 'chat'
+document.title = window.codync.appName
 document.documentElement.dataset.platform = window.codync.platform
 applyTextSize(prefs.textSize.get())
 

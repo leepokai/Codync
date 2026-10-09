@@ -5,7 +5,8 @@ use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const LABEL: &str = "com.pokai.codync.host";
+const LABEL: &str = crate::environment::Environment::current().service_label();
+const UNIT: &str = crate::environment::Environment::current().systemd_unit();
 
 /// Stops the installed job, preserving its configuration for a later start.
 /// A manually started daemon is never mistaken for the service we own.
@@ -16,7 +17,7 @@ pub fn stop() -> Result<()> {
             .stderr(Stdio::null())
             .status()?;
     } else if installed() {
-        run("systemctl", &["--user", "stop", "codync-host.service"])?;
+        run("systemctl", &["--user", "stop", UNIT])?;
     }
     wait_for_host_exit()
 }
@@ -25,7 +26,7 @@ pub fn start() -> Result<()> {
     if cfg!(target_os = "macos") {
         run("launchctl", &["bootstrap", &format!("gui/{}", current_uid()), &launchd_plist().to_string_lossy()])
     } else {
-        run("systemctl", &["--user", "start", "codync-host.service"])
+        run("systemctl", &["--user", "start", UNIT])
     }
 }
 
@@ -58,7 +59,7 @@ fn launchd_plist() -> PathBuf {
 }
 
 fn systemd_unit() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| home().join(".config")).join("systemd/user/codync-host.service")
+    dirs::config_dir().unwrap_or_else(|| home().join(".config")).join("systemd/user").join(UNIT)
 }
 
 fn xml_escape(s: &str) -> String {
@@ -81,7 +82,7 @@ pub fn install(port: u16) -> Result<()> {
 <dict>
   <key>Label</key><string>{LABEL}</string>
   <key>ProgramArguments</key><array><string>{exe}</string><string>serve</string><string>--port</string><string>{port}</string></array>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>{path}</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>{path}</string><key>CODYNC_HOME</key><string>{data}</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>
@@ -92,6 +93,7 @@ pub fn install(port: u16) -> Result<()> {
 "#,
             exe = xml_escape(&exe),
             path = xml_escape(&path),
+            data = xml_escape(&data_dir().to_string_lossy()),
             log = xml_escape(&log.to_string_lossy()),
         );
         let file = launchd_plist();
@@ -105,15 +107,16 @@ pub fn install(port: u16) -> Result<()> {
         run("launchctl", &["bootstrap", &format!("gui/{uid}"), &file.to_string_lossy()])?;
     } else {
         let unit = format!(
-            "[Unit]\nDescription=Codync host\nAfter=network-online.target\n\n[Service]\nExecStart={exe} serve --port {port}\nEnvironment=PATH={path}\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=default.target\n"
+            "[Unit]\nDescription=Codync host\nAfter=network-online.target\n\n[Service]\nExecStart={exe} serve --port {port}\nEnvironment=PATH={path}\nEnvironment=\"CODYNC_HOME={data}\"\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=default.target\n",
+            data = data_dir().display(),
         );
         let file = systemd_unit();
         create_parent(&file)?;
         std::fs::write(&file, unit).with_context(|| format!("writing {}", file.display()))?;
         run("systemctl", &["--user", "daemon-reload"])?;
-        run("systemctl", &["--user", "stop", "codync-host.service"])?;
+        run("systemctl", &["--user", "stop", UNIT])?;
         wait_for_host_exit()?;
-        run("systemctl", &["--user", "enable", "--now", "codync-host.service"])?;
+        run("systemctl", &["--user", "enable", "--now", UNIT])?;
         println!("Tip: `loginctl enable-linger $USER` keeps the host running while you're logged out.");
     }
     Ok(())
@@ -128,7 +131,7 @@ pub fn uninstall() {
             .status();
         let _ = std::fs::remove_file(launchd_plist());
     } else {
-        let _ = run("systemctl", &["--user", "disable", "--now", "codync-host.service"]);
+        let _ = run("systemctl", &["--user", "disable", "--now", UNIT]);
         let _ = std::fs::remove_file(systemd_unit());
         let _ = run("systemctl", &["--user", "daemon-reload"]);
     }

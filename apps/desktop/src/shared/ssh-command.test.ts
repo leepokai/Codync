@@ -60,6 +60,35 @@ test('SSH reports command not found when no installation is reachable', { skip: 
   assert.equal(probe([]).status, 127)
 })
 
+for (const installed of ['mac', 'linux', 'production-only'] as const) {
+  test(`development SSH uses only its own host with ${installed} installed`, { skip: process.platform === 'win32' }, () => {
+    const root = mkdtempSync(join(tmpdir(), 'codync-dev-ssh-'))
+    try {
+      const home = join(root, 'user home')
+      const mac = join(root, 'Applications/Codync Dev.app/Contents/Resources/codync-host')
+      const linux = join(home, '.local/bin/codync-dev-host')
+      const prod = join(home, '.local/bin/codync-host')
+      for (const bin of [prod, ...(installed === 'mac' ? [mac] : installed === 'linux' ? [linux] : [])]) {
+        mkdirSync(join(bin, '..'), { recursive: true })
+        writeFileSync(bin, '#!/bin/sh\nprintf "%s\\n" "$0" "$CODYNC_HOME" "$@"\n')
+        chmodSync(bin, 0o755)
+      }
+      const command = remoteInfoCommand(19223, '.codync-dev')
+        .replace(/^sh -lc '/, '').replace(/'$/, '')
+        .replaceAll('/Applications/', `${root}/Applications/`)
+      const result = spawnSync('/bin/sh', ['-c', command], {
+        encoding: 'utf8', env: { HOME: home, PATH: join(home, '.local/bin') },
+      })
+      assert.equal(result.status, installed === 'production-only' ? 127 : 0)
+      if (installed !== 'production-only') {
+        assert.deepEqual(result.stdout.trim().split('\n'), [installed === 'mac' ? mac : linux, join(home, '.codync-dev'), 'info', '--json', '--port', '19223'])
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+}
+
 const profile: SSHProfile = {
   id: 'test', host: 'test-mini', user: null, port: null, identityFile: null,
   remotePort: 19222, computerId: null, name: 'Test mini',

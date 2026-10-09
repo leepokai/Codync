@@ -1,0 +1,56 @@
+.computer-access { overflow: auto; width: 100%; animation: computer-access-appear 180ms ease-out; }
+@keyframes computer-access-appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.computer-access.onboarding { height: 100%; padding: clamp(24px, 6vh, 56px) 24px 24px; }
+.settings-page > .computer-access { height: 100%; padding-bottom: 24px; }
+.modal-content > .computer-access { flex: 1; min-height: 0; height: auto; padding-top: 20px; }
+.computer-access-content { width: 100%; max-width: 520px; margin: 0 auto; }
+.computer-access-header { margin-bottom: 24px; }
+.computer-access-identity { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+.computer-access-identity img { flex: none; }
+.computer-access-identity div { display: grid; gap: 3px; min-width: 0; }
+.computer-access-identity span { color: var(--secondary); font-size: 11px; }
+.computer-access-identity strong { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.computer-access h1 { font-size: 26px; letter-spacing: -.65px; line-height: 1.2; font-weight: 600; margin: 0 0 10px; text-wrap: balance; }
+.computer-access p { color: var(--secondary); font-size: 12px; line-height: 1.6; margin: 5px 0 0; text-wrap: pretty; }
+.computer-access-header > p { font-size: 13px; max-width: 480px; }
+.computer-access-section-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 11px; color: var(--secondary); }
+.computer-access-section-label > :first-child { color: var(--text); font-weight: 500; }
+/* The requested outline matches the desktop toolbar/composer treatment. */
+.computer-access-steps { border: 1px solid var(--composer-stroke); border-radius: 16px; overflow: hidden; background: var(--surface); }
+.computer-access-row { display: flex; align-items: flex-start; gap: 12px; padding: 18px; transition: background var(--fade); }
+.computer-access-row + .computer-access-row { border-top: 1px solid var(--border); }
+.computer-access-row.current { background: var(--chrome-fill); }
+.computer-access-row-icon { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; color: var(--secondary); }
+.computer-access-row.current .computer-access-row-icon, .computer-access-row.granted .computer-access-row-icon { color: var(--text); }
+.computer-access-row-body { flex: 1; min-width: 0; }
+.computer-access-row-heading { display: flex; align-items: baseline; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+.computer-access h2 { font-size: 13px; line-height: 1.5; font-weight: 600; margin: 0; }
+.computer-access-status { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 10px; line-height: 1.5; white-space: nowrap; }
+.computer-access-row.current .computer-access-status, .computer-access-row.granted .computer-access-status { color: var(--text); }
+.computer-access-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.computer-access-actions:not(:empty) { margin-top: 12px; }
+.computer-access .styled-button { min-height: 30px; font-size: 11px; padding: 6px 12px; }
+.computer-access .styled-button.secondary { background: transparent; border: 1px solid var(--composer-stroke); }
+.computer-access .styled-button.secondary:hover:not(:disabled) { background: var(--chrome-fill); }
+.computer-access .styled-button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+.computer-access .computer-access-inline-note { flex-basis: 100%; margin: 0; }
+.computer-access-help, .computer-access-reassurance { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; color: var(--secondary); }
+.computer-access-help > :first-child, .computer-access-reassurance > :first-child { margin-top: 3px; }
+.computer-access-help p, .computer-access-reassurance p { margin: 0; font-size: 11px; }
+.computer-access-help strong { font-weight: 500; color: var(--text); }
+.computer-access-reassurance { margin-top: 20px; }
+.computer-access-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.computer-access .computer-access-phone-note { font-size: 10px; margin-top: 16px; }
+.computer-access-notice { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--composer-stroke); border-radius: 12px; padding: 12px 14px; margin-bottom: 20px; }
+.computer-access-notice > :first-child { margin-top: 2px; color: var(--secondary); }
+.computer-access-notice strong { font-size: 12px; font-weight: 500; }
+.computer-access-notice p { font-size: 11px; margin-top: 3px; }
+.computer-access-notice.error { border-color: var(--danger); }
+.computer-access-notice.error strong, .computer-access-notice.error > :first-child { color: var(--danger); }
+@media (max-width: 440px) {
+  .computer-access.onboarding { padding: 24px 16px; }
+  .computer-access-row { padding: 14px 12px; gap: 8px; }
+  .computer-access-row-heading { gap: 4px 8px; }
+  .computer-access h1 { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) { .computer-access { animation: none; } }

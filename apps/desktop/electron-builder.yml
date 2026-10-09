@@ -5,6 +5,7 @@
 #   build/native/codync-speech      macOS on-device speech helper
 #   build/native/CodyncScreen.app   macOS screen helper (Xcode `Screen` target, with cua-driver inside)
 #   build/native/cua-driver.exe     Windows: the computer-use driver and its UI Automation helper
+beforePack: tools/verify-build.cjs
 appId: com.pokai.Codync
 productName: Codync
 copyright: ""

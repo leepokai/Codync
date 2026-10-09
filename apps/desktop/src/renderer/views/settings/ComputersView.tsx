@@ -40,7 +40,7 @@ export function ComputersView() {
 
         <div>
           <SectionHeader title="Over SSH">
-            {sshBridge() ? <IconButton title="Add SSH computer" icon="plus" onClick={() => setEditing({ profile: newSSHProfile(), isNew: true })} /> : null}
+            {sshBridge() ? <IconButton title="Add SSH computer" icon="plus" onClick={() => setEditing({ profile: newSSHProfile(window.codync.hostPort), isNew: true })} /> : null}
           </SectionHeader>
           <Reveal show={sshState.state.profiles.length === 0}>
             <div style={{ ...font('callout'), color: 'var(--secondary)' }}>

@@ -7,10 +7,12 @@ use ashpd::desktop::PersistMode;
 use ashpd::desktop::Session;
 use ashpd::desktop::remote_desktop::{DeviceType, RemoteDesktop, SelectDevicesOptions};
 use ashpd::desktop::screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType};
+use futures_util::StreamExt;
 use serde_json::{Value, json};
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A monitor as the portal streams it. `width`/`height` are logical pixels: the
 /// coordinate space of input events and of the host's `Display` points.
@@ -33,12 +35,17 @@ struct Inner {
     session: Session<RemoteDesktop>,
     displays: Vec<Display>,
     input: bool,
+    active: AtomicBool,
 }
 
 impl Portal {
-    pub async fn start(data: &Path) -> Result<Self> {
+    pub async fn start(data: &Path, restore: bool) -> Result<Self> {
         let token_file = data.join("screen-restore-token");
-        let token = std::fs::read_to_string(&token_file).ok();
+        let token = if restore {
+            std::fs::read_to_string(&token_file).ok()
+        } else {
+            None
+        };
         let remote = RemoteDesktop::new()
             .await
             .context("the RemoteDesktop portal isn't available")?;
@@ -92,22 +99,46 @@ impl Portal {
         if displays.is_empty() {
             return Err(anyhow!("the portal shared no screen"));
         }
-        let input = started.devices().contains(DeviceType::Pointer);
-        Ok(Self(Arc::new(Inner {
+        let input = started
+            .devices()
+            .contains(DeviceType::Pointer | DeviceType::Keyboard);
+        let portal = Self(Arc::new(Inner {
             remote,
             screencast,
             session,
             displays,
             input,
-        })))
+            active: AtomicBool::new(true),
+        }));
+        // Ending sharing in the system UI must make setup available again.
+        let watched = portal.clone();
+        tokio::spawn(async move {
+            match watched.session().receive_closed().await {
+                Ok(mut closed) => {
+                    let _ = closed.next().await;
+                }
+                Err(error) => tracing::warn!(%error, "could not watch the screen sharing session"),
+            }
+            watched.0.active.store(false, Ordering::Relaxed);
+        });
+        Ok(portal)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.0.active.load(Ordering::Relaxed)
+    }
+
+    pub fn has_input(&self) -> bool {
+        self.is_active() && self.0.input
     }
 
     pub fn status(&self) -> Value {
         json!({
             "platform": "linux",
+            "permissionApp": "Codync Screen",
             "version": env!("CARGO_PKG_VERSION"),
-            "capture": true,
-            "input": self.0.input,
+            "capture": self.is_active(),
+            "input": self.has_input(),
             "displays": self.0.displays.iter().map(|d| json!({
                 "id": d.id,
                 "name": format!("Display {}", d.id + 1),

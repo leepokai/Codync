@@ -248,7 +248,7 @@ struct LeadBot: Sendable {
     let symbol: String
     let url: URL
 
-    static let home = URL(string: "codync://computers")!
+    static let home = AppEnvironment.current.link("computers")
 
     init(text: String, symbol: String, url: URL = LeadBot.home) {
         self.text = text; self.symbol = symbol; self.url = url
@@ -573,7 +573,7 @@ struct ProviderUsageView: View {
             }
         }
         .containerBackground(Palette.surface, for: .widget)
-        .widgetURL(URL(string: "codync://usage"))
+        .widgetURL(AppEnvironment.current.link("usage"))
     }
 }
 
@@ -590,7 +590,7 @@ struct BotLiveActivity: Widget {
                 indicator(context, state: state, size: 28)
             }
             .modifier(SurfaceTint())
-                .widgetURL(context.attributes.link ?? URL(string: "codync://computers"))
+                .widgetURL(context.attributes.link ?? AppEnvironment.current.link("computers"))
         } dynamicIsland: { context in
             let state = presentation(context)
             return DynamicIsland {
@@ -626,7 +626,7 @@ struct BotLiveActivity: Widget {
                     .accessibilityLabel("\(context.attributes.name), \(state.title)")
             }
             .keylineTint(state.tint)
-            .widgetURL(context.attributes.link ?? URL(string: "codync://computers"))
+            .widgetURL(context.attributes.link ?? AppEnvironment.current.link("computers"))
         }
     }
 

@@ -1,0 +1,45 @@
+# Overrides applied by tools/dev-builder.cjs (arrays replace, never merge).
+appId: com.pokai.Codync.dev
+productName: Codync Dev
+# Linux package managers and Windows installer caches also key on package.json's name.
+extraMetadata:
+  name: codync-desktop-dev
+  productName: Codync Dev
+  desktopName: codync-dev.desktop
+protocols:
+  - name: Codync Dev
+    schemes: [codync-dev, com.pokai.Codync.dev]
+publish: null
+mac:
+  signIgnore:
+    - CodyncDevScreen\.app/Contents/Helpers/cua-driver$
+  artifactName: codync-dev-macos.${ext}
+  notarize: false
+  extraFiles:
+    - from: build/native/CodyncDevScreen.app
+      to: Library/LoginItems/CodyncDevScreen.app
+    - from: resources/mac/com.pokai.Codync.dev.screen.plist
+      to: Library/LaunchAgents/com.pokai.Codync.dev.screen.plist
+dmg:
+  artifactName: codync-dev-macos.dmg
+linux:
+  executableName: codync-dev
+  artifactName: codync-dev-linux-${arch}.${ext}
+  desktop:
+    entry:
+      StartupWMClass: Codync Dev
+win:
+  artifactName: codync-dev-windows-x64.${ext}
+  extraResources:
+    - from: build/native/codync-host.exe
+      to: codync-host.exe
+    - from: build/native/codync-dev-hostw.exe
+      to: codync-dev-hostw.exe
+    - from: build/native/cua-driver.exe
+      to: cua-driver.exe
+    - from: build/native/cua-driver-uia.exe
+      to: cua-driver-uia.exe
+    - from: build/native/cua-driver.LICENSE
+      to: cua-driver.LICENSE
+    - from: resources/icon.png
+      to: icon.png

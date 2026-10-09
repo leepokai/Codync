@@ -15,11 +15,11 @@ npm run icons      # macOS only
 npm run dev
 ```
 
-Before launching a new build, quit running copies (the installed app and earlier `npm run dev` windows):
+Before launching a new build, quit only that variant. Production and Dev may coexist; see [Dev app isolation](dev-app.md). For a development rebuild:
 
 ```sh
-osascript -e 'tell application id "com.pokai.Codync" to quit'
-pkill -x Codync
+osascript -e 'tell application id "com.pokai.Codync.dev" to quit'
+pkill -x "Codync Dev"
 ```
 
 `pkill` can return nonzero when no process exists.
@@ -41,11 +41,10 @@ into their own sessions and unrelated hosts using other data directories are
 outside this cleanup.
 
 After rebuilding the host, restart the service (macOS launch agent shown; Linux
-uses the `codync-host` systemd user unit) and kill any `codync-host` still running
-from a different path. Test hosts you start yourself must be stopped when done:
+uses the environment-specific systemd user unit). Stop only test hosts you started; do not kill another environment's host. For Dev:
 
 ```sh
-launchctl kickstart -k gui/$(id -u)/com.pokai.codync.host
+launchctl kickstart -k gui/$(id -u)/com.pokai.codync.dev.host
 pgrep -fl codync-host
 ```
 
@@ -55,16 +54,16 @@ Install Xcode and XcodeGen, then generate the project from its source. The Xcode
 
 ```sh
 xcodegen generate --spec apps/project.yml
-xcodebuild build -project apps/Codync.xcodeproj -scheme iOS -configuration Debug -derivedDataPath build/dd -destination 'platform=iOS,id=<device-id>'
+xcodebuild build -project apps/Codync.xcodeproj -scheme "iOS Dev" -configuration DevDebug -derivedDataPath build/dd -destination 'platform=iOS,id=<device-id>'
 ```
 
-Use the `iOS` scheme with a connected device or simulator in Xcode. Do not edit `project.pbxproj` directly. Keep normal simulator signing: Clerk uses Keychain, and unsigned simulator builds can fail initialization with OSStatus -34018.
+Use `iOS Dev` for development and `iOS` for production, with a connected device or simulator in Xcode. Do not edit `project.pbxproj` directly. Keep normal simulator signing: Clerk uses Keychain, and unsigned simulator builds can fail initialization with OSStatus -34018.
 
 Install the device build and replace the old iPhone process (substitute its device ID):
 
 ```sh
-xcrun devicectl device install app --device <device-id> build/dd/Build/Products/Debug-iphoneos/Codync.app
-xcrun devicectl device process launch --terminate-existing --device <device-id> com.pokai.Codync.ios
+xcrun devicectl device install app --device <device-id> "build/dd/Build/Products/DevDebug-iphoneos/Codync Dev.app"
+xcrun devicectl device process launch --terminate-existing --device <device-id> com.pokai.Codync.ios.dev
 ```
 
 Unlock the phone when required. Build, install, launch, and visual inspection are separate checks; report which actually completed.

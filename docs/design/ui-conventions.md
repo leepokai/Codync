@@ -16,6 +16,12 @@ Sources: `apps/ios/Views/BotListView.swift`, `AccountSwitcherView.swift`, `apps/
 
 ## Desktop menu bar (tray)
 
+The iPhone App Store update reminder uses a hierarchical `arrow.down.circle.fill`
+symbol in the primary text color, keeping the download arrow clear against its
+softer circle in both appearances. Desktop updates live in Settings and the native
+tray menu; the TUI uses a text action and status message. Neither has this App Store
+reminder card, so its decorative icon treatment is iPhone-only.
+
 Release update controls live in the tray's Settings → Updates submenu; the chat
 window's Settings has the same controls on its Updates page (**Check for updates**,
 which becomes **Update to <version>** once a release is found). The TUI action list
@@ -200,3 +206,5 @@ The desktop sidebar computer filter shares the toolbar's subtle outline and 32px
 height, with a capsule enclosing both the computer glyph and its chevron. This
 applies in expanded and compact sidebars. iOS retains native toolbar treatment;
 terminal computer selection has no corresponding icon button.
+
+Dialog scrims cover the entire presentation surface, including the iPhone status-bar and home-indicator safe areas, throughout opening and closing. The shared iPhone overlay fades a full-screen canvas without scaling its backdrop; root in-place dialogs also extend the canvas beyond container safe areas. Desktop dialogs keep their viewport-sized backdrop fixed and scale only the card. Terminal dialogs already dim the complete terminal buffer.

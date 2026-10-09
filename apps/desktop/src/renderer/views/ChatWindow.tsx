@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
-import { draftOf, isGroup, type Bot, type BotDraft } from '@shared/models'
+import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, ChoicePicker, IconButton } from '../components/Controls'
-import { AnchoredMenu, Dialog, Sheet, type MenuItem } from '../components/Overlay'
+import { AnchoredMenu, Dialog, ModalHeader, Sheet, type MenuItem } from '../components/Overlay'
 import { font } from '../lib/fonts'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
 import { useApp, StoreContext } from '../store/context'
 import { refKey, sameRef, parseRef, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
-import { BotRow } from './BotRow'
+import { useComputerRoster } from '../store/computer-roster'
+import { BotRoster } from './BotRoster'
 import { SidebarFooter } from './SidebarFooter'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
@@ -20,9 +21,9 @@ import { BotEditorView } from './bots/BotEditorView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
-import { UpdateNeededCard } from './UpdateNeededCard'
 import { SearchPalette } from './SearchPalette'
 import { AccountWelcomeView } from './AccountWelcomeView'
+import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { HostStateView } from './HostStateView'
 import { StartupRecovery } from './StartupRecovery'
 export { EmptyState } from './HostStateView'
@@ -41,6 +42,8 @@ const isMac = window.codync.platform === 'darwin'
 export function ChatWindow() {
   const app = useApp()
   const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
+  const [accessSetup, setAccessSetup] = usePref(prefs.computerAccessSetup)
+  const [showAccess, setShowAccess] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   useTraySummary(app)
   useSSHAttachments(app)
@@ -51,6 +54,8 @@ export function ChatWindow() {
     () =>
       window.codync.app.onCommand((c: WindowCommand) => {
         switch (c.kind) {
+          case 'computerAccess':
+            return setShowAccess(true)
           case 'confirmReset':
             return setConfirmReset(true)
           case 'reviewApprovals':
@@ -83,7 +88,9 @@ export function ChatWindow() {
   return (
     <div className="chat-window">
       {onboarded ? (
-        showsChat ? (
+        accessSetup === null ? (
+          <ComputerAccessView onContinue={(ready) => setAccessSetup(ready ? 'ready' : 'later')} />
+        ) : showsChat ? (
           <ChatSplitView />
         ) : (
           <HostStateView />
@@ -91,8 +98,11 @@ export function ChatWindow() {
       ) : (
         <AccountWelcomeView onContinue={() => setOnboarded(true)} />
       )}
-      <AnalyticsPrompt />
-      <StarPrompt />
+      {onboarded && accessSetup !== null ? <><AnalyticsPrompt /><StarPrompt /></> : null}
+      <Sheet open={showAccess} onClose={() => setShowAccess(false)} width={660} height={Math.min(820, window.innerHeight - 80)}>
+        <ModalHeader title="Computer access" />
+        <ComputerAccessView onContinue={(ready) => { setAccessSetup(ready ? 'ready' : 'later'); setShowAccess(false) }} />
+      </Sheet>
       <Dialog
         open={confirmReset}
         title="Reset all data?"
@@ -133,7 +143,6 @@ function ChatSplitView() {
   const previousSelection = useRef<BotRef | null>(null)
   const [newMenu, setNewMenu] = useState(false)
   const [railNewMenu, setRailNewMenu] = useState(false)
-  const [hovered, setHovered] = useState<string | null>(null)
   const [contextBot, setContextBot] = useState<{ target: BotTarget; x: number; y: number } | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
@@ -163,7 +172,8 @@ function ChatSplitView() {
   const onlineStores = stores.filter((s) => shown.has(s.computer.id) && s.connection.kind === 'online' && !s.mismatch)
   const selectedStore = app.selectedStore
   const composeStore = composeComputer ? app.store(composeComputer) : null
-  const visibleRoster = app.roster.filter((item) => shown.has(item.ref.computerId))
+  const roster = useComputerRoster(app, shown)
+  const visibleRoster = roster.items
 
   const compose = (group = false) => {
     setComposingGroup(group)
@@ -233,7 +243,8 @@ function ChatSplitView() {
   // ↑/↓ in the roster move the selection.
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-    const refs = visibleRoster.map((i) => i.ref)
+    if (e.target instanceof HTMLElement && e.target.closest('.computer-roster-heading')) return
+    const refs = roster.navigable.map((i) => i.ref)
     if (!refs.length) return
     e.preventDefault()
     const current = refs.findIndex((r) => sameRef(r, app.selection))
@@ -324,42 +335,8 @@ function ChatSplitView() {
           </div>
         ) : null}
         <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
-          {!compact
-            ? mismatchStores.map((s) => (
-                <div key={s.computer.id} style={{ paddingBottom: 8 }}>
-                  <StoreContext.Provider value={s}>
-                    <UpdateNeededCard />
-                  </StoreContext.Provider>
-                </div>
-              ))
-            : null}
-          {visibleRoster.map((item) => {
-            const key = refKey(item.ref)
-            const isSelected = sameRef(item.ref, selected)
-            return (
-              <button
-                key={key}
-                className="roster-row"
-                style={{
-                  padding: compact ? 0 : '0 8px',
-                  background: isSelected ? 'var(--roster-selected)' : hovered === key ? 'var(--bubble-agent)' : 'transparent',
-                }}
-                aria-label={stores.length > 1 ? `${item.bot.name}, on ${item.store.hostName}` : item.bot.name}
-                aria-selected={isSelected}
-                title={stores.length > 1 ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name}
-                onMouseEnter={() => setHovered(key)}
-                onMouseLeave={() => setHovered((h) => (h === key ? null : h))}
-                onClick={() => app.select(item.ref)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  setContextBot({ target: { bot: item.bot, store: item.store }, x: e.clientX, y: e.clientY })
-                }}
-              >
-                <BotRow bot={item.bot} store={item.store} compact={compact} usingComputer={item.store.screen?.agentBot === item.bot.id} members={isGroup(item.bot) ? item.store.members(item.bot) : noMembers} />
-              </button>
-            )
-          })}
-          {visibleRoster.length === 0 && !compact && mismatchStores.length === 0 ? (
+          <BotRoster roster={roster} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} />
+          {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
               <div style={font(13, 'medium')}>{onlineStores.length ? 'No bots yet' : 'Waiting for a computer'}</div>
               {onlineStores.length ? <div style={{ ...font(12), color: 'var(--secondary)' }}>Use + to start a new chat.</div> : null}
@@ -447,8 +424,6 @@ function ChatSplitView() {
     </div>
   )
 }
-
-const noMembers: Bot[] = []
 
 /** Which computer a new chat goes to, when more than one is online. */
 function ComputerPicker({ stores, value, onChange }: { stores: BotStore[]; value: string; onChange: (id: string) => void }) {

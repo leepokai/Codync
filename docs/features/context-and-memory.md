@@ -1,8 +1,7 @@
 # Context and memory
 
-How a bot keeps its instructions, context and long-term memory. The mechanisms follow Grok Bot's design
-(`system-prompt-assembly`, `sand-memory`, `turn-memory`, `upgrade-recreate-resume`) and are adapted to ACP,
-where the harness owns the conversation.
+How a bot keeps its instructions, context and long-term memory. Engram owns durable memory; Codync manages
+capture, recall and the keeper. The ACP harness owns the conversation and compaction.
 
 ## Transcript, context and memory
 
@@ -10,7 +9,7 @@ where the harness owns the conversation.
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | Persistent main chat and flat reply threads per bot |
 | Model context | ACP session (`bots.session_id`) | The harness | Until *New session*, a failed resume, or an agent/command/folder change |
-| Long-term memory | `~/.codync/bots/<id>/memory/` | Codync (keeper) + the user | Forever, across sessions |
+| Long-term memory | `~/.codync/bots/<id>/engram/engram.db` | Engram + Codync keeper + the user | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps
 its own context and compacts it itself.
@@ -35,34 +34,20 @@ its own context and compacts it itself.
 
 ## Memory (`host/src/chat/memory/`)
 
-- Facts are plain markdown, one `- (YYYY-MM-DD) fact` per line:
-  - `profile.md` holds who the user is. All of it goes into the prompt, up to 100 facts. When it grows past
-    100, the keeper consolidates it to at most 60 (merging duplicates, dropping superseded facts); every fact it
-    drops moves to the log, so nothing is lost.
-  - `log/YYYY-MM.md` holds dated history, including `[note]` and `[episode]` lines. The newest 30 go into the
-    prompt, within 4,000 characters.
-- **Keeper:** after a turn ends normally, if the user's message is memorable (not "thanks"/"ok"), the exchange
-  is queued (`memory.unprocessed.<bot>`, so a restart keeps it). Once the bot has been quiet for 5 minutes, or 8
-  exchanges are queued, a one-shot agent of the bot's own harness extracts facts from all of them at once using
-  Grok Bot's extraction prompt (`profile:` / `log:` / `note:` / `remove:`). Running per exchange would buy
-  nothing: the frozen prompt only picks up new facts at the next compaction or session.
-  - On Claude it runs with a replaced system prompt, no tools, no settings, `persistSession: false` and the
-    `haiku` model.
-  - Other harnesses get the instructions inline, in `~/.codync/memory-keeper`.
-- **History search:** the built-in `memory` MCP server (`codync-host mcp memory`) gives the bot
-  `search_history`, a substring search (every word must appear) over its own chat: the user's messages and its
-  final replies, main chat and threads. Whatever the keeper didn't write down can still be found.
-- **Episodes:** every 6 remembered exchanges (pending turns in `memory.episode.<bot>`), the keeper writes one
-  `[episode]` journal sentence.
-- **Automatic names** (`chat/naming.rs`): a bot created without a name is called "New Bot" with `autoName` set;
-  clients don't ask for a name when creating one. From its 3rd remembered exchange the keeper shows the last 6
-  (`naming.turns.<bot>`) to the same one-shot agent and asks for a 1–4 word name in the user's language, retrying
-  after each exchange until the purpose is clear. The name goes through `updateBot`, so the agent gets it as a
-  profile update. The description is never touched (it holds standing instructions). Renaming the bot yourself
-  clears `autoName` for good.
-- The agent is told where its memory folder is so it can grep older facts. Facts learned mid-session reach its
-  prompt at the next compaction or session.
-- **API:** `memory`, `forgetMemory`, `clearMemory`. The Memory card in bot settings lists and removes facts.
+- Engram stores each bot's durable observations in an independent SQLite database. The old Markdown memory
+  imports automatically, with original dates and source references preserved.
+- The instruction snapshot includes up to 100 profile facts and 30 recent facts, within a 4,000-character
+  recent-memory budget. A keeper consolidates crowded profiles to at most 60 facts; demoted facts remain
+  searchable. Manual corrections invalidate snapshots and send a notice on the next turn.
+- Completed memorable exchanges queue durably. After five idle minutes or eight exchanges, the bot's own
+  harness extracts durable facts and saves a native Engram session summary. A new session or reported
+  compaction requests an early flush. Failed batches remain queued for retry.
+- Claude's keeper uses Haiku without tools, settings or persisted helper sessions; other harnesses use the
+  bot's selected model with inline instructions. Automatic naming still uses `chat/naming.rs`.
+- The built-in memory MCP server forwards native Engram tools for recall, saving, review and conflict
+  judgment, and retains `search_history` for the bot's original main-chat and thread messages.
+- iOS, desktop and terminal provide search, CRUD, pinning, review, history, timeline, export and import.
+  See [Engram memory integration](engram-memory.md) for storage, migration, deletion semantics, API and tests.
 
 ## Turns
 
@@ -81,8 +66,8 @@ its own context and compacts it itself.
   afterwards.
 - A session a harness has deleted (for example, one cleaned up after a month) can't be resumed. The bot
   starts fresh, but its memory remains.
-- User-level memory shared across bots and project memory are not implemented. Consolidation runs only when the
-  profile outgrows the prompt, not as Grok Bot's daily "dreaming" pass.
+- Memory scopes stay inside a bot's database; user-level sharing across bots is not implemented. Search uses
+  FTS5 rather than semantic vectors. Consolidation runs when the profile outgrows the prompt, not daily.
 - `search_history` covers the bot's own chat, not group chats it took part in.
 
 Reply threads have separate session/context lanes; see [groups and threads](groups-and-threads.md). Group/delegated requests do not become user facts in the memory keeper.

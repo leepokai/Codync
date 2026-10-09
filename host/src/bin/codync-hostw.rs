@@ -5,6 +5,11 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(windows)]
+#[path = "../environment.rs"]
+#[allow(dead_code)]
+mod environment;
+
+#[cfg(windows)]
 fn main() {
     use std::os::windows::process::CommandExt as _;
     use std::time::Duration;
@@ -16,7 +21,7 @@ fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let data = std::env::var_os("CODYNC_HOME")
         .map(std::path::PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".codync")));
+        .or_else(|| dirs::home_dir().map(|h| h.join(environment::Environment::current().data_folder())));
     loop {
         let mut command = std::process::Command::new(&host);
         command.args(&args).creation_flags(CREATE_NO_WINDOW);

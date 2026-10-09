@@ -18,9 +18,14 @@ packages:
   WebRTC:
     url: https://github.com/stasel/WebRTC
     exactVersion: 153.0.0
+configs:
+  Debug: debug
+  Release: release
+  DevDebug: debug
+  DevRelease: release
 settings:
   base:
-    MARKETING_VERSION: 2.11.3
+    MARKETING_VERSION: 2.12.0
     CURRENT_PROJECT_VERSION: 24
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
@@ -28,12 +33,75 @@ settings:
     DEVELOPMENT_TEAM: 7FUM8A8H72
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CODYNC_ENV: main
+    CODYNC_APP_NAME: Codync
+    CODYNC_IOS_BUNDLE_ID: com.pokai.Codync.ios
+    CODYNC_APP_GROUP: group.com.pokai.Codync
+    CODYNC_KEYCHAIN_GROUP: com.pokai.Codync
+    CODYNC_URL_SCHEME: codync
+    CODYNC_SCREEN_NAME: CodyncScreen
+    CODYNC_SCREEN_BUNDLE_ID: com.pokai.Codync.screen
+    CODYNC_DATA_FOLDER: .codync
   configs:
-    # Which Codync cloud a build talks to: shared/Config/<env>.plist becomes AccountConfig.plist.
     Debug:
-      CODYNC_ENV: dev
+      CODYNC_APNS_ENVIRONMENT: sandbox
     Release:
-      CODYNC_ENV: main
+      CODYNC_APNS_ENVIRONMENT: production
+    DevDebug:
+      CODYNC_ENV: dev
+      CODYNC_APP_NAME: Codync Dev
+      CODYNC_IOS_BUNDLE_ID: com.pokai.Codync.ios.dev
+      CODYNC_APP_GROUP: group.com.pokai.Codync.dev
+      CODYNC_KEYCHAIN_GROUP: com.pokai.Codync.dev
+      CODYNC_URL_SCHEME: codync-dev
+      CODYNC_SCREEN_NAME: CodyncDevScreen
+      CODYNC_SCREEN_BUNDLE_ID: com.pokai.Codync.dev.screen
+      CODYNC_DATA_FOLDER: .codync-dev
+      CODYNC_APNS_ENVIRONMENT: sandbox
+    DevRelease:
+      CODYNC_ENV: dev
+      CODYNC_APP_NAME: Codync Dev
+      CODYNC_IOS_BUNDLE_ID: com.pokai.Codync.ios.dev
+      CODYNC_APP_GROUP: group.com.pokai.Codync.dev
+      CODYNC_KEYCHAIN_GROUP: com.pokai.Codync.dev
+      CODYNC_URL_SCHEME: codync-dev
+      CODYNC_SCREEN_NAME: CodyncDevScreen
+      CODYNC_SCREEN_BUNDLE_ID: com.pokai.Codync.dev.screen
+      CODYNC_DATA_FOLDER: .codync-dev
+      CODYNC_APNS_ENVIRONMENT: production
+schemes:
+  iOS:
+    build:
+      targets:
+        iOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  iOS Dev:
+    build:
+      targets:
+        iOS: all
+    run:
+      config: DevDebug
+    archive:
+      config: DevRelease
+  Screen:
+    build:
+      targets:
+        Screen: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  Screen Dev:
+    build:
+      targets:
+        Screen: all
+    run:
+      config: DevDebug
+    archive:
+      config: DevRelease
 targets:
   # Screen capture, input and WebRTC for Remote screen. A separate signed bundle so
   # macOS's Screen Recording / Accessibility grants belong to it (see host/src/screen/).
@@ -42,15 +110,20 @@ targets:
     platform: macOS
     sources:
       - screen-macos
+      - path: desktop/resources/AppIcon.icon
+        buildPhase: resources
     dependencies:
       - package: WebRTC
     settings:
       base:
-        PRODUCT_NAME: CodyncScreen
-        PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.screen
+        INFOPLIST_FILE: screen-macos/Info.plist
+        PRODUCT_NAME: $(CODYNC_SCREEN_NAME)
+        PRODUCT_BUNDLE_IDENTIFIER: $(CODYNC_SCREEN_BUNDLE_ID)
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Codync Screen
+        INFOPLIST_KEY_CFBundleDisplayName: $(CODYNC_APP_NAME) Screen
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleIconName: AppIcon
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO
@@ -92,17 +165,17 @@ targets:
         basedOnDependencyAnalysis: false
         showEnvVars: false
         script: |
-          # Debug builds use dev (dev-api.codync.dev), Release builds use main (api.codync.dev).
+          # The scheme chooses an environment independently of Debug/Release optimization.
           cp "$SRCROOT/shared/Config/$CODYNC_ENV.plist" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AccountConfig.plist"
     settings:
       base:
-        PRODUCT_NAME: Codync
-        PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.ios
+        PRODUCT_NAME: $(CODYNC_APP_NAME)
+        PRODUCT_BUNDLE_IDENTIFIER: $(CODYNC_IOS_BUNDLE_ID)
         INFOPLIST_FILE: ios/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: ios/Resources/iOS.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        INFOPLIST_KEY_CFBundleDisplayName: Codync
+        INFOPLIST_KEY_CFBundleDisplayName: $(CODYNC_APP_NAME)
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -131,11 +204,11 @@ targets:
     settings:
       base:
         PRODUCT_NAME: CodyncWidgets
-        PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.ios.LiveActivity
+        PRODUCT_BUNDLE_IDENTIFIER: $(CODYNC_IOS_BUNDLE_ID).LiveActivity
         INFOPLIST_FILE: ios/Widgets/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: ios/Widgets/Resources/Widgets.entitlements
-        INFOPLIST_KEY_CFBundleDisplayName: Codync
+        INFOPLIST_KEY_CFBundleDisplayName: $(CODYNC_APP_NAME)
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
   # Opens end-to-end sealed alert text (spec §6.7) with this account's push key from the shared Keychain.
@@ -150,10 +223,10 @@ targets:
     settings:
       base:
         PRODUCT_NAME: CodyncNotificationService
-        PRODUCT_BUNDLE_IDENTIFIER: com.pokai.Codync.ios.NotificationService
+        PRODUCT_BUNDLE_IDENTIFIER: $(CODYNC_IOS_BUNDLE_ID).NotificationService
         INFOPLIST_FILE: ios/NotificationService/Info.plist
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: ios/NotificationService/NotificationService.entitlements
-        INFOPLIST_KEY_CFBundleDisplayName: Codync
+        INFOPLIST_KEY_CFBundleDisplayName: $(CODYNC_APP_NAME)
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES

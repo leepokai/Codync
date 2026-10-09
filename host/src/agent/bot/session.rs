@@ -116,10 +116,15 @@ impl Actor {
             composio.then_some("composio"),
         ];
         for name in builtin.into_iter().flatten() {
+            let env = if name == "memory" {
+                json!([{"name":"CODYNC_MEMORY_LANE", "value":self.slot(&self.lane).unwrap_or_default()}])
+            } else {
+                json!([])
+            };
             servers.push(json!({
                 "name": name, "command": exe,
                 "args": ["mcp", name, "--bot", self.cfg.id, "--port", port.to_string()],
-                "env": [],
+                "env": env,
             }));
         }
         Ok(Value::Array(servers))
@@ -128,6 +133,7 @@ impl Actor {
     /// Makes sure the agent runs and `slot`'s session (main, or a thread's) is live;
     /// sets `turn_session`. A thread without one forks the main session when it can.
     pub(super) async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
+        crate::chat::memory::prepare(&self.cfg.id).await?;
         if !self.cfg.connectors.is_empty()
             || self.hub.store.kv_read(&format!("agent-env:{}", self.cfg.backend))?.is_some()
         {

@@ -9,21 +9,17 @@ import os
 private let log = Logger(subsystem: "com.pokai.Codync.ios", category: "Push")
 
 private var apnsEnvironment: String {
-    #if DEBUG
-    "sandbox"
-    #else
-    "production"
-    #endif
+    Bundle.main.object(forInfoDictionaryKey: "CodyncAPNSEnvironment") as? String ?? "production"
 }
 
 /// Turns an APNs token into a relay ticket (see relay/src/index.ts).
 private func relayTicket(token: Data, kind: String) async throws -> String {
-    struct Body: Encodable { var token: String; var env: String; var kind: String }
+    struct Body: Encodable { var token: String; var env: String; var kind: String; var bundleId: String }
     struct Res: Decodable { var ticket: String }
     var req = URLRequest(url: URL(string: "\(SharedStore.relayURL)/register")!)
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    req.httpBody = try JSONEncoder().encode(Body(token: token.map { String(format: "%02x", $0) }.joined(), env: apnsEnvironment, kind: kind))
+    req.httpBody = try JSONEncoder().encode(Body(token: token.map { String(format: "%02x", $0) }.joined(), env: apnsEnvironment, kind: kind, bundleId: Bundle.main.bundleIdentifier ?? "com.pokai.Codync.ios"))
     req.timeoutInterval = 15
     let (data, response) = try await URLSession.shared.data(for: req)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -180,7 +176,7 @@ final class LiveActivities {
                 activity: status == "needsInput" || status == "multiple" ? "Review the proposed changes." : "Running the test suite.",
                 startedAt: .now - 154)
             do {
-                _ = try Activity.request(attributes: BotActivityAttributes(bot: bot, computerId: "preview", link: URL(string: "codync://computers")),
+                _ = try Activity.request(attributes: BotActivityAttributes(bot: bot, computerId: "preview", link: AppEnvironment.current.link("computers")),
                     content: .init(state: state, staleDate: status == "stale" ? .now - 1 : .now + 900), pushType: nil)
             } catch { log.error("Simulator activity preview: \(error.localizedDescription)") }
         }

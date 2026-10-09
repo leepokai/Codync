@@ -83,7 +83,14 @@ fn loopback_uri(port: u16) -> String {
 }
 
 fn app_uri(store: &Store) -> Option<String> {
-    crate::remote::cloud::url(store).map(|base| format!("{base}/v1/oauth/callback"))
+    crate::remote::cloud::url(store).map(|base| {
+        let suffix = if crate::environment::Environment::current() == crate::environment::Environment::Dev {
+            "/dev"
+        } else {
+            ""
+        };
+        format!("{base}/v1/oauth/callback{suffix}")
+    })
 }
 
 async fn get_json(url: &str) -> Result<Value> {

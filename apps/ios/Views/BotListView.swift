@@ -83,7 +83,7 @@ struct BotListView: View {
                             // Not synced while it needs an update: "No bots yet" wouldn't be true.
                             ComputerSection(store: store, empty: store.mismatch == nil && !roster.contains { $0.ref.computerId == id },
                                             collapsed: collapsed, toggle: { toggleCollapsed(id) }, move: move)
-                                .gesture(SectionLongPress { state, y in dragSection(id, state, y) })
+                                .modifier(ComputerSectionGesture(tap: { toggleCollapsed(id) }) { state, y in dragSection(id, state, y) })
                             updateCard(store)
                             if !collapsed {
                                 ForEach(roster.filter { $0.ref.computerId == id }) { row($0, store: store) }
@@ -205,15 +205,22 @@ struct BotListView: View {
             drag = SectionDrag(id: id, startY: y, y: y)
         case .changed:
             drag?.y = y
-        default:
-            guard let drag else { return }
+        case .ended:
+            guard var drag, drag.id == id else { return }
+            drag.y = y
             let ids = shownStores.map(\.computer.id)
             let to = landingIndex(ids, drag)
             // The order changes as the offsets drop, so everything settles where it's shown.
             withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
-                if ids[to] != id { accounts.move(id, to: ids[to]) }
+                if ids.contains(id), ids.indices.contains(to), ids[to] != id {
+                    accounts.move(id, to: ids[to])
+                }
                 self.drag = nil
             }
+        case .cancelled, .failed:
+            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { drag = nil }
+        default:
+            break
         }
     }
 
@@ -275,8 +282,9 @@ private struct ComputerSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Button(action: toggle) { heading }
-                .buttonStyle(.plain)
+            // The parent's tap/hold gesture owns touch input, so a release
+            // after dragging cannot also trigger a nested button's collapse action.
+            heading
             if empty && !collapsed {
                 Text("No bots yet")
                     .font(.footnote)
@@ -290,9 +298,12 @@ private struct ComputerSection: View {
         .padding(.bottom, 2)
         .padding(.horizontal, -8)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+        .accessibilityAddTraits([.isHeader, .isButton])
+        .accessibilityLabel("\(store.hostName), \(store.statusText)")
         .accessibilityValue(collapsed ? "Collapsed" : "Expanded")
+        .accessibilityHint("Double-tap to fold or expand. Touch and hold, then drag to reorder on this device.")
         .accessibilityAction(named: collapsed ? "Expand" : "Collapse", toggle)
+        .accessibilityAction(.default) { toggle() }
         .accessibilityActions {
             Button("Move up") { move(store.computer.id, -1) }
             Button("Move down") { move(store.computer.id, 1) }
@@ -332,22 +343,6 @@ private struct SectionDrag {
     let startY: CGFloat
     var y: CGFloat
     var translation: CGFloat { y - startY }
-}
-
-/// UIKit's long press: it waits for the hold, then reports the finger, and leaves the scroll
-/// view alone until then (a SwiftUI long-press-then-drag steals the scroll).
-private struct SectionLongPress: UIGestureRecognizerRepresentable {
-    let update: (UIGestureRecognizer.State, CGFloat) -> Void
-
-    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
-        let recognizer = UILongPressGestureRecognizer()
-        recognizer.minimumPressDuration = 0.35
-        return recognizer
-    }
-
-    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
-        update(recognizer.state, recognizer.location(in: nil).y)
-    }
 }
 
 private struct GroupTarget: Identifiable {

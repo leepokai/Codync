@@ -88,9 +88,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             market::passwords::set_token(&hub.store, b["token"].as_str().unwrap_or_default()).await?
         }
         "connectorRuntime" => {
+            let id = str_arg(&b, "id")?;
+            // Registry-backed packages may advance between background checks;
+            // refresh just before launch so the new version applies next run.
+            market::refresh_connector(&hub.store, id).await;
             let c = market::connectors(&hub.store)?
                 .into_iter()
-                .find(|c| Some(c.id.as_str()) == b["id"].as_str())
+                .find(|c| c.id == id)
                 .ok_or_else(|| anyhow!("Unknown connector"))?;
             let mut env = serde_json::Map::new();
             for (k, v) in &c.env {

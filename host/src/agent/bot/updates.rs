@@ -99,7 +99,10 @@ impl Actor {
                 let Some(sid) = &self.turn_session else { return };
                 let id = u["compactionId"].as_str().unwrap_or_default();
                 match context::bump_epoch(&self.hub.store, &self.cfg.id, sid, id) {
-                    Ok(true) => self.notice("Earlier context was summarized to make room.", NoticeStyle::Info),
+                    Ok(true) => {
+                        let _ = self.keeper.send(crate::chat::memory::KeeperEvent::Flush);
+                        self.notice("Earlier context was summarized to make room.", NoticeStyle::Info);
+                    }
                     Ok(false) => {}
                     Err(error) => {
                         tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the compaction");

@@ -228,7 +228,7 @@ private struct ScanPage: View {
                 viewfinder
 
                 HStack {
-                    TextField("Or paste a codync://pair link", text: $pasted)
+                    TextField("Or paste a \(AppEnvironment.current.urlScheme)://pair link", text: $pasted)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())
@@ -360,7 +360,7 @@ struct QRScanner: UIViewControllerRepresentable {
 
         func dataScanner(_ scanner: DataScannerViewController, didAdd items: [RecognizedItem], allItems: [RecognizedItem]) {
             for case let .barcode(code) in items {
-                if let value = code.payloadStringValue, value.hasPrefix("codync://"), !done {
+                if let value = code.payloadStringValue, value.hasPrefix(AppEnvironment.current.urlScheme + "://"), !done {
                     done = true
                     scanner.stopScanning()
                     onCode(value)

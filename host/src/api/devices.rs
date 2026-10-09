@@ -35,6 +35,7 @@ const LOCAL_ONLY: &[&str] = &[
     "installHostUpdate",
     "setHostAutomaticUpdates",
     "setScreenEnabled",
+    "requestScreenPermission",
     // Analytics is the computer owner's choice; phones decide only for themselves.
     "setAnalytics",
     "track",
@@ -46,6 +47,7 @@ const LOCAL_ONLY: &[&str] = &[
     "chatCall",
     "teamCall",
     "memoryCall",
+    "memoryTools",
     "routineCall",
     "composioCall",
     "connectorTarget",

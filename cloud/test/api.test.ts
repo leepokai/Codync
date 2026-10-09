@@ -90,6 +90,12 @@ describe("basics", () => {
     expect(res.headers.get("Location")).toBe("codync://oauth?code=abc&state=xyz");
   });
 
+  it("keeps development connector callbacks separate from production", async () => {
+    const res = await SELF.fetch(`${ORIGIN}/v1/oauth/callback/dev?code=abc&state=xyz`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("codync-dev://oauth?code=abc&state=xyz");
+  });
+
   it("health", async () => {
     expect(await call("GET", "/v1/health")).toEqual({ status: 200, body: { ok: true, version: "2.2.0" } });
   });

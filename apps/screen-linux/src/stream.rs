@@ -128,11 +128,14 @@ impl Session {
                                 .as_ref()
                                 .map(error_msg)
                         }
-                        _ => input::perform(&helper.portal, &display, &msg)
-                            .await
-                            .err()
-                            .as_ref()
-                            .map(error_msg),
+                        _ => match helper.portal().await {
+                            Ok(portal) => input::perform(&portal, &display, &msg)
+                                .await
+                                .err()
+                                .as_ref()
+                                .map(error_msg),
+                            Err(error) => Some(error_msg(&error)),
+                        },
                     };
                     if let Some(reply) = reply {
                         send(&channels, &reply);

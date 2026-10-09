@@ -1,7 +1,7 @@
 {
   "name": "codync-desktop",
   "productName": "Codync",
-  "version": "2.11.3",
+  "version": "2.12.0",
   "description": "Codync for macOS, Linux and Windows: your coding agents as teammates.",
   "author": {
     "name": "leepokai",
@@ -18,11 +18,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test --experimental-strip-types src/shared/*.test.ts src/renderer/lib/*.test.ts src/renderer/views/thread/*.test.ts",
     "icons": "swift tools/export-symbols.swift",
-    "dist:mac:dev": "node tools/account-config.mjs dev && node tools/native-host.mjs dev && node tools/native-screen.mjs && electron-vite build && CSC_NAME=\"Pokai Lee (6KFK5J2LB4)\" electron-builder --mac",
-    "dist:mac:main": "node tools/account-config.mjs main && node tools/native-host.mjs main && node tools/native-screen.mjs && electron-vite build && electron-builder --mac",
-    "dist:linux:dev": "node tools/account-config.mjs dev && electron-vite build && electron-builder --linux",
+    "dist:mac:dev": "node tools/account-config.mjs dev && node tools/native-host.mjs dev && node tools/native-screen.mjs dev && electron-vite build && CSC_NAME=\"Pokai Lee (6KFK5J2LB4)\" electron-builder --mac --config tools/dev-builder.cjs",
+    "dist:mac:main": "node tools/account-config.mjs main && node tools/native-host.mjs main && node tools/native-screen.mjs main && electron-vite build && electron-builder --mac",
+    "dist:linux:dev": "node tools/account-config.mjs dev && electron-vite build && electron-builder --linux --config tools/dev-builder.cjs",
     "dist:linux:main": "node tools/account-config.mjs main && electron-vite build && electron-builder --linux",
-    "dist:win:dev": "node tools/account-config.mjs dev && node tools/native-host.mjs dev && electron-vite build && electron-builder --win",
+    "dist:win:dev": "node tools/account-config.mjs dev && node tools/native-host.mjs dev && electron-vite build && electron-builder --win --config tools/dev-builder.cjs",
     "dist:win:main": "node tools/account-config.mjs main && node tools/native-host.mjs main && electron-vite build && electron-builder --win"
   },
   "devDependencies": {
@@ -42,7 +42,8 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^6.0.3",
-    "vite": "^7.3.6"
+    "vite": "^7.3.6",
+    "yaml": "^2.9.1"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"

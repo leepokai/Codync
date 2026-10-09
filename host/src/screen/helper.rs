@@ -10,7 +10,6 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
-#[cfg(unix)]
 use std::time::Duration;
 #[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -39,7 +38,9 @@ impl Link {
             self.pending.locked().remove(&id);
             bail!("the screen helper disconnected");
         }
-        match tokio::time::timeout(HELPER_TIMEOUT, rx).await {
+        // Permission dialogs wait for a person; normal helper calls should still fail quickly.
+        let timeout = if method == "requestPermission" { Duration::from_secs(120) } else { HELPER_TIMEOUT };
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(Ok(v))) => Ok(v),
             Ok(Ok(Err(message))) => Err(anyhow!(message)),
             Ok(Err(_)) => bail!("the screen helper disconnected"),

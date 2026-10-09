@@ -317,7 +317,7 @@ fn remove_other_versions(installed: &Path) {
 }
 
 /// Blocking: unpacks `archive` into `dir` and makes `cmd` executable.
-fn extract(archive: &Path, dir: &Path, cmd: &Path) -> Result<()> {
+pub(crate) fn extract(archive: &Path, dir: &Path, cmd: &Path) -> Result<()> {
     let name = archive.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
     // Multi-part extensions (`.tar.gz`) rule out `Path::extension`; `name` is already lowercased.
     #[allow(clippy::case_sensitive_file_extension_comparisons)]

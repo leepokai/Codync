@@ -41,7 +41,7 @@ function summary(connections: Connection[]) {
   return `${connections.length} offline`
 }
 
-/** The roster's only connection surface: a quiet summary, with details and filters on demand. */
+/** The roster's connection summary, with details and filters on demand. */
 export function ComputerFilterHeader({ hidden, setHidden, manage, compact = false }: { hidden: string; setHidden: (v: string) => void; manage: () => void; compact?: boolean }) {
   const app = useApp()
   const ssh = useSSH()

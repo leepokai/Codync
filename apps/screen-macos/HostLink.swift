@@ -21,7 +21,7 @@ final class HostLink {
     var onConnect: (@MainActor () -> Void)?
 
     static var socketPath: String {
-        let base = ProcessInfo.processInfo.environment["CODYNC_HOME"] ?? NSHomeDirectory() + "/.codync"
+        let base = ProcessInfo.processInfo.environment["CODYNC_HOME"] ?? NSHomeDirectory() + "/" + (Bundle.main.object(forInfoDictionaryKey: "CodyncDataFolder") as? String ?? ".codync")
         return base + "/screen.sock"
     }
 

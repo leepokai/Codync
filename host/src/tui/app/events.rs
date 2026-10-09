@@ -38,6 +38,7 @@ impl App {
         match v["type"].as_str() {
             Some("hello") if !v["usage"].is_null() => self.usage = v["usage"].clone(),
             Some("usage") => self.usage = v["usage"].clone(),
+            Some("screen") => self.screen = v["screen"].clone(),
             Some("bot") => self.upsert_bot(&v["bot"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"]) {
@@ -149,6 +150,7 @@ impl App {
                 v["home"].as_str().unwrap_or_default().clone_into(&mut self.home);
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
+                self.screen = v["screen"].clone();
             }
             After::Analytics => self.analytics_set(&v),
             After::Backends => {

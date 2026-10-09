@@ -68,10 +68,8 @@ impl Actor {
                     self.stop().await;
                 }
                 self.forget_session();
-                // Like Grok Bot's clearConversation: the half-written episode goes too; memory stays.
-                if let Err(error) = memory::set_pending_episode(&self.hub.store, &self.cfg.id, &[]) {
-                    tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't clear the pending episode");
-                }
+                // Retain and summarize completed exchanges even when the user starts afresh.
+                let _ = self.keeper.send(memory::KeeperEvent::Flush);
                 self.notice("New session — the agent starts with a fresh context.", NoticeStyle::Divider);
             }
             Cmd::Reconfigure(cfg) => {

@@ -26,9 +26,6 @@ final class ScreenHelper {
 
     func start() {
         let captureAtLaunch = CGPreflightScreenCaptureAccess()
-        if !captureAtLaunch { CGRequestScreenCaptureAccess() }
-        // `kAXTrustedCheckOptionPrompt` is a C global Swift 6 won't read; its value is this string.
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         link.start()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.sendStatus() }
@@ -51,6 +48,11 @@ final class ScreenHelper {
 
     private func handle(_ method: String, _ p: [String: Any]) async throws -> Any {
         switch method {
+        case "requestPermission":
+            guard let permission = p["permission"] as? String else { throw HelperError("permission is required") }
+            try ScreenPermissions.request(permission)
+            sendStatus()
+            return [String: Any]()
         case "answer":
             guard let id = p["session"] as? String, let sdp = p["sdp"] as? String else { throw HelperError("session and sdp are required") }
             if let s = sessions[id] { return ["sdp": try await s.answer(offer: sdp)] }
@@ -83,6 +85,9 @@ final class ScreenHelper {
         case "focusedField":
             return try AXTree.focusedField(pid: (p["pid"] as? NSNumber).map { pid_t($0.int32Value) })
         case "driver":
+            guard CGPreflightScreenCaptureAccess(), AXIsProcessTrusted() else {
+                throw HelperError("Set up Computer access in Codync → Settings on this computer first.")
+            }
             return ["socket": try await driver.socket()]
         default:
             throw HelperError("unknown method \(method)")
@@ -135,6 +140,7 @@ final class ScreenHelper {
         }
         let status: [String: AnyHashable] = [
             "platform": "macos",
+            "permissionApp": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Codync Screen",
             "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
             "displays": displays,
             "capture": CGPreflightScreenCaptureAccess(),

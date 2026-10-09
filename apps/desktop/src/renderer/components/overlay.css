@@ -61,11 +61,12 @@
   display: grid;
   place-items: center;
   opacity: 0;
-  transform: scale(0.98);
-  transition: opacity var(--fade), transform var(--fade);
+  transition: opacity var(--fade);
 }
 .dialog.shown {
   opacity: 1;
+}
+.dialog.shown .dialog-card {
   transform: none;
 }
 .dialog-dim {
@@ -75,6 +76,8 @@
 }
 .dialog-card {
   position: relative;
+  transform: scale(0.98);
+  transition: transform var(--fade);
   width: min(320px, calc(100vw - 48px));
   padding: 18px;
   background: var(--bubble-agent);

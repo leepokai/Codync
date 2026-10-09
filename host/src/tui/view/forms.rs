@@ -129,7 +129,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
             Field::Computer => {
                 let s = if f.computer { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
-                put(buf, vx, y, vw, s, t.text.patch(base));
+                let status = super::computer_access::status(&app.screen, app.online);
+                put(buf, vx, y, vw, &format!("{s}  · {status}"), t.text.patch(base));
             }
             Field::Notify => {
                 let s = if f.notify { "◉ Done and needs-you   ○ Off" } else { "○ Done and needs-you   ◉ Off" };
@@ -172,6 +173,15 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let by = inner.bottom() - 1;
     if let Some(e) = &f.error {
         put(buf, inner.x, by - 1, inner.width, e, t.red.patch(t.panel));
+    } else if f.current() == Field::Computer {
+        put(
+            buf,
+            inner.x,
+            by - 1,
+            inner.width,
+            "Set up on the computer: Codync → Settings → Computer access",
+            t.dim.patch(t.panel),
+        );
     }
     let save = if f.saving {
         " … Saving "

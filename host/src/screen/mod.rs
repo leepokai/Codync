@@ -35,6 +35,7 @@ mod cua;
 mod helper;
 #[cfg(target_os = "linux")]
 mod helper_tools;
+mod permissions;
 mod protocol;
 mod viewer;
 
@@ -137,6 +138,7 @@ impl Screen {
             "enabled": self.enabled(),
             "connected": connected,
             "platform": st.platform,
+            "permissionApp": st.permission_app,
             "capture": st.capture,
             "input": st.input,
             "displays": st.displays,

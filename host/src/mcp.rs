@@ -62,6 +62,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
             "ping" => Ok(json!({})),
             "tools/list" => Ok(match server {
                 Server::Computer => computer_tools(port, &token).await,
+                Server::Memory => memory_tools(port, &token, &bot).await?,
                 _ => json!({"tools": available_tools}),
             }),
             "tools/call" => Ok(call(port, &token, &bot, params, server).await),
@@ -77,6 +78,19 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         out.flush().await?;
     }
     Ok(())
+}
+
+async fn memory_tools(port: u16, token: &str, bot: &str) -> Result<Value> {
+    Ok(crate::http()
+        .post(format!("http://127.0.0.1:{port}/api/memoryTools"))
+        .bearer_auth(token)
+        .json(&json!({"botId": bot}))
+        .timeout(Duration::from_secs(240))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?)
 }
 
 /// The `computer` tools the host offers; none when it can't be reached.
@@ -98,6 +112,7 @@ async fn computer_tools(port: u16, token: &str) -> Value {
 async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server) -> Value {
     let body = json!({
         "botId": bot,
+        "memoryLane": std::env::var("CODYNC_MEMORY_LANE").ok(),
         "name": params["name"],
         "arguments": params.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({})),
     });
@@ -107,7 +122,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Computer => ("computerCall", Duration::from_secs(60)),
         Server::Chat => ("chatCall", Duration::from_secs(30)),
         Server::Team => ("teamCall", crate::chat::team::ASK_TIMEOUT + Duration::from_secs(30)),
-        Server::Memory => ("memoryCall", Duration::from_secs(30)),
+        Server::Memory => ("memoryCall", Duration::from_secs(120)),
         Server::Composio => ("composioCall", Duration::from_secs(120)),
     };
     let res = crate::http()
@@ -125,6 +140,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
                     return match server {
                         Server::Computer if v["isError"] == true => json!({"content": v["content"], "isError": true}),
                         Server::Computer => json!({"content": v["content"]}),
+                        Server::Memory if v["content"].is_array() => v,
                         Server::Chat | Server::Team | Server::Memory | Server::Routines | Server::Connectors => {
                             json!({"content": [{"type": "text", "text": v.to_string()}]})
                         }

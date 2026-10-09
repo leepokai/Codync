@@ -37,7 +37,7 @@ public struct Pairing: Hashable, Sendable {
     }
 
     public static func parse(_ url: URL) throws(Problem) -> Pairing {
-        guard url.scheme == "codync", url.host() == "pair",
+        guard url.scheme == AppEnvironment.current.urlScheme, url.host() == "pair",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { throw .notPairingLink }
         let q = Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         guard q["v"] == "3" else { throw .outdatedHost }

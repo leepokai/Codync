@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events'
-import { existsSync, promises as fs, readFileSync } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage, type BrowserWindow } from 'electron'
 import type { AccountState } from '../shared/ipc'
 import { authenticate } from './auth'
+import { buildConfig, identity } from './environment'
 
 /**
  * The Codync account through Clerk's Frontend API, the way ClerkKit drives it on the native
@@ -12,7 +13,7 @@ import { authenticate } from './auth'
  * keychain. An account never grants access to a computer by itself (spec §4.2).
  */
 
-const SCHEME = 'com.pokai.Codync'
+const SCHEME = identity.appId
 const REDIRECT = `${SCHEME}://callback`
 
 interface Config {
@@ -20,30 +21,11 @@ interface Config {
   cloudURL: string | null
 }
 
-/** The build's account config (`tools/account-config.mjs`). */
-function configFile(): Partial<Config> & { environment?: string } {
-  let file: Partial<Config> & { environment?: string } = {}
-  const candidates = [
-    app.isPackaged ? join(process.resourcesPath, 'account-config.json') : null,
-    join(__dirname, '../../resources/account-config.json'),
-  ]
-  for (const path of candidates) {
-    if (path && existsSync(path)) {
-      try {
-        file = JSON.parse(readFileSync(path, 'utf8')) as typeof file
-        break
-      } catch {}
-    }
-  }
-  return file
-}
-
-/** Release builds are made for `main`; a `dev` build never replaces itself with one. */
-export const isMainEnvironment = () => configFile().environment === 'main'
+export const isMainEnvironment = () => identity.releaseUpdates
 
 /** `CODYNC_CLERK_PUBLISHABLE_KEY` / `CODYNC_CLOUD_URL`, else the build's account config. */
 function loadConfig(): Config {
-  const file = configFile()
+  const file = buildConfig
   const key = (process.env.CODYNC_CLERK_PUBLISHABLE_KEY ?? file.clerkPublishableKey ?? '').trim()
   const cloud = (process.env.CODYNC_CLOUD_URL ?? file.cloudURL ?? '').trim()
   return {
@@ -164,7 +146,7 @@ export class AccountService extends EventEmitter {
     const url = new URL(`${this.base}${path}`)
     url.searchParams.set('_is_native', 'true')
     for (const [k, v] of Object.entries(query ?? {})) url.searchParams.set(k, v)
-    const headers: Record<string, string> = { 'x-device-type': process.platform === 'darwin' ? 'macos' : process.platform, 'x-app-version': app.getVersion(), 'x-bundle-id': 'com.pokai.Codync' }
+    const headers: Record<string, string> = { 'x-device-type': process.platform === 'darwin' ? 'macos' : process.platform, 'x-app-version': app.getVersion(), 'x-bundle-id': identity.appId }
     if (this.deviceToken) headers.Authorization = this.deviceToken
     let payload: string | undefined
     if (body) {

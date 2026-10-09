@@ -69,6 +69,7 @@ async fn health(State(hub): State<Arc<Hub>>) -> Json<Value> {
         "computerId": hub.identity.computer_id(),
         "version": env!("CARGO_PKG_VERSION"),
         "binaryPath": crate::service::binary_identity().map(|(path, _)| path),
+        "environment": crate::environment::Environment::current().name(),
         "binaryHash": crate::service::binary_identity().map(|(_, hash)| hash),
         "busy": hub.busy(),
     }))

@@ -7,7 +7,7 @@ use crate::remote::identity::Identity;
 use crate::remote::push;
 use crate::screen::Screen;
 use crate::service;
-use crate::store::{BotConfig, BotRow, Entry, EntryKind, Lane, ReadScope, Store};
+use crate::store::{BotConfig, Entry, EntryKind, Lane, ReadScope, Store};
 use crate::usage::Usage;
 use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
+
+mod sync;
 
 /// What a bot is doing right now (wire values: `idle` / `working` / `needsInput` / `error`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -159,35 +161,6 @@ impl Hub {
 
     // MARK: bots
 
-    pub fn bot_json(&self, row: &BotRow) -> Value {
-        let cfg = &row.config;
-        let mut v = serde_json::to_value(cfg).expect("BotConfig is plain data and always serializes");
-        v["managedWorkspace"] = crate::agent::workspace::is_managed(cfg).into();
-        let rt = if cfg.is_group() {
-            self.group_runtime(cfg)
-        } else {
-            self.runtime.locked().get(&cfg.id).cloned().unwrap_or_default()
-        };
-        let last = self.store.last_message(&cfg.id);
-        v["rev"] = row.rev.into();
-        v["deleted"] = row.deleted.into();
-        v["status"] = json!(rt.status);
-        v["activity"] = rt.activity.into();
-        v["startedAt"] = rt.started_at.into();
-        v["workingChat"] = rt.lane.as_ref().map(|l| l.chat.clone()).into();
-        v["workingThread"] = rt.lane.and_then(|l| l.thread).into();
-        v["unread"] = self.store.unread(&cfg.id, row.read_rev, ReadScope::All).into();
-        let preview = last.as_ref().map(|l| match &l.author {
-            // A group names who spoke.
-            Some(author) if cfg.is_group() => format!("{}: {}", self.bot_name(author), l.text),
-            Some(_) => l.text.clone(),
-            None => format!("You: {}", l.text),
-        });
-        v["lastMessage"] = preview.map(|p| crate::agent::acp::truncate(&p, 280)).into();
-        v["lastAt"] = last.map_or(cfg.created_at, |l| l.at).into();
-        v
-    }
-
     pub fn bot_name(&self, id: &str) -> String {
         self.store.bot(id).ok().flatten().map_or_else(|| "A deleted bot".into(), |b| b.config.name)
     }
@@ -206,16 +179,6 @@ impl Hub {
         let name = self.bot_name(&member);
         r.activity = if r.activity.is_empty() { name } else { format!("{name}: {}", r.activity) };
         r
-    }
-
-    pub fn bots_json(&self, since: i64) -> Result<Vec<Value>> {
-        Ok(self
-            .store
-            .bots()?
-            .iter()
-            .filter(|b| b.rev > since && !(since == 0 && b.deleted))
-            .map(|b| self.bot_json(b))
-            .collect())
     }
 
     pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {

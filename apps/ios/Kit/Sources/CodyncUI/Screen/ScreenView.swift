@@ -69,6 +69,9 @@ public struct ScreenView: View {
         .onChange(of: screen?.available) { _, available in
             if available == true, session == nil { start() }
         }
+        .onChange(of: screen?.input) { _, input in
+            if input != true { setInteractive(false) }
+        }
     }
 
     // MARK: lifecycle
@@ -92,12 +95,13 @@ public struct ScreenView: View {
     }
 
     private func setInteractive(_ on: Bool) {
-        interactive = on
-        if on != tookOver {
-            tookOver = on
-            model.screenTakeover(on)
+        let allowed = on && screen?.input == true
+        interactive = allowed
+        if allowed != tookOver {
+            tookOver = allowed
+            model.screenTakeover(allowed)
         }
-        if !on { keyboard = false }
+        if !allowed { keyboard = false }
     }
 
     // MARK: chrome
@@ -142,6 +146,7 @@ public struct ScreenView: View {
                 OverlayButton(interactive ? "Hand back to bots" : "Take over", interactive ? "hand.raised.slash" : "hand.raised") {
                     animate { setInteractive(!interactive) }
                 }
+                .disabled(screen?.input != true)
             }
         }
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: zoomed)
@@ -184,7 +189,12 @@ public struct ScreenView: View {
                 Task { await session.start() }
             }
         case .live, .closed:
-            if let error = session.lastError {
+            if screen?.input != true {
+                Text("View only. To allow control, open Codync → Settings → Computer access on the computer.")
+                    .font(.caption).padding(12)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 24)
+            } else if let error = session.lastError {
                 Text(error)
                     .font(.caption)
                     .padding(8)
@@ -200,9 +210,7 @@ public struct ScreenView: View {
         let (icon, text): (String, String) =
             if model.connection != .online { ("wifi.slash", "This computer is offline.") }
             else if s == nil { ("arrow.down.circle", "Update Codync on your computer to use its screen from here.") }
-            else if s?.enabled != true { ("lock.display", "Remote screen is off. Turn it on in Codync's menu on the computer.") }
-            else if s?.connected != true { ("display.trianglebadge.exclamationmark", "Codync Screen isn't running on the computer. Turn Remote screen off and on again in Codync's menu there.") }
-            else { ("record.circle", "Allow Codync Screen to record the screen: System Settings → Privacy & Security → Screen & System Audio Recording, on the computer.") }
+            else { ("lock.display", s?.accessGuidance ?? "Set up Computer access in Codync on the computer.") }
         Overlay(icon: icon, text: text)
     }
 }

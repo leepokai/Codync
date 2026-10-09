@@ -8,6 +8,7 @@ import { sshBridge } from './ssh-model'
 
 export function SSHRow({ profile, status, edit, attached = true }: { profile: SSHProfile; status: SSHStatus; attached?: boolean; edit: () => void }) {
   const bridge = sshBridge()
+  const dev = window.codync.appScheme === 'codync-dev'
   const target = `${profile.user ? `${profile.user}@` : ''}${profile.host}${profile.port !== null ? `:${profile.port}` : ''}`
   const line = (() => {
     switch (status.kind) {
@@ -24,7 +25,7 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
       case 'failed':
         return status.message
       case 'notInstalled':
-        return `codync-host isn't installed on ${profile.host}. Install it there:`
+        return dev ? `Install Codync Dev on ${profile.host} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.` : `codync-host isn't installed on ${profile.host}. Install it there:`
     }
   })()
   const problem = status.kind === 'retrying' || status.kind === 'failed' || status.kind === 'notInstalled'
@@ -64,7 +65,7 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
           </div>
         ) : null}
       </Reveal>
-      <Reveal show={status.kind === 'notInstalled'}>
+      <Reveal show={status.kind === 'notInstalled' && !dev}>
         <div className="settings-row" style={{ gap: 6 }}>
           <span className="settings-code selectable">{SSH_INSTALL_COMMAND}</span>
           <IconButton title="Copy install command" icon="doc.on.doc" onClick={() => window.codync.app.copy(SSH_INSTALL_COMMAND)} />

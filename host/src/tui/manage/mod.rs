@@ -12,6 +12,7 @@ mod memory;
 mod replies;
 mod routines;
 
+pub use memory::{MemoryMode, MemorySheet};
 pub use routines::local_zone;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -26,6 +27,9 @@ pub const REACTIONS: [&str; 6] = ["👍", "❤️", "😂", "🎉", "👀", "✅
 #[derive(Clone)]
 pub enum Reply {
     Memory(String),
+    MemorySaved(String),
+    MemoryDetail(String),
+    MemoryExport(String),
     Routines(String),
     RoutineSaved,
     /// A routine's webhook URL and key: copied as a ready-to-run curl.
@@ -42,18 +46,6 @@ pub enum Reply {
     Downloaded,
     /// Something changed: every open sheet loads again.
     Changed,
-}
-
-pub struct Fact {
-    pub id: String,
-    pub content: String,
-    pub profile: bool,
-}
-
-pub struct MemorySheet {
-    pub bot: String,
-    pub facts: Option<Vec<Fact>>,
-    pub cursor: usize,
 }
 
 pub struct RoutineList {

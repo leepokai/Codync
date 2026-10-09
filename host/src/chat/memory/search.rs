@@ -33,6 +33,29 @@ pub fn tools() -> Value {
 }
 
 pub async fn call(hub: &Arc<Hub>, bot_id: &str, name: &str, args: &Value) -> Result<Value> {
+    hub.store.bot(bot_id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+    if name.starts_with("mem_") {
+        let read_only = matches!(
+            name,
+            "mem_search"
+                | "mem_context"
+                | "mem_timeline"
+                | "mem_get_observation"
+                | "mem_stats"
+                | "mem_current_project"
+                | "mem_list_projects"
+                | "mem_doctor"
+                | "mem_suggest_topic_key"
+        ) || (name == "mem_review" && args["action"] == "list");
+        let mutation = super::maintenance::lock(bot_id);
+        let _guard = if read_only { None } else { Some(mutation.lock().await) };
+        let result = super::engram::call(bot_id, name, args).await?;
+        if matches!(name, "mem_update" | "mem_delete" | "mem_merge_projects") && result["isError"] != true {
+            super::maintenance::changed(&hub.store, bot_id)?;
+            super::maintenance::discard_pending(&hub.store, bot_id)?;
+        }
+        return Ok(result);
+    }
     if name != "search_history" {
         bail!("unknown memory tool: {name}");
     }
@@ -58,4 +81,12 @@ pub async fn call(hub: &Arc<Hub>, bot_id: &str, name: &str, args: &Value) -> Res
         })
         .collect();
     Ok(json!({"results": results}))
+}
+
+pub async fn available_tools(hub: &Arc<Hub>, bot_id: &str) -> Result<Value> {
+    hub.store.bot(bot_id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+    let mut native = super::engram::tools(bot_id).await?;
+    let list = native["tools"].as_array_mut().ok_or_else(|| anyhow!("Engram returned no tools"))?;
+    list.extend(tools().as_array().into_iter().flatten().cloned());
+    Ok(native)
 }

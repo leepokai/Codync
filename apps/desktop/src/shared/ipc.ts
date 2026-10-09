@@ -1,4 +1,5 @@
 import type { SSHBridge } from './ssh'
+import type { ScreenAgentState } from './computer-access'
 
 // The bridge between the main process (host lifecycle, loopback HTTP, tray, windows)
 // and the renderer (stores and UI). Exposed as `window.codync` by the preload script.
@@ -61,6 +62,7 @@ export type WindowCommand =
   | { kind: 'stepTextSize'; up: boolean | null }
   | { kind: 'setUsageIconStyle'; style: 'character' | 'original' }
   | { kind: 'setRemoteScreen'; on: boolean }
+  | { kind: 'computerAccess' }
   | { kind: 'newChat' }
   | { kind: 'search' }
   | { kind: 'toggleSidebar' }
@@ -102,6 +104,9 @@ export type SpeechEvent =
 
 export interface CodyncBridge {
   platform: 'darwin' | 'linux' | 'win32'
+  appName: string
+  appScheme: string
+  hostPort: number
   appVersion: string
   /** The computer's name ("Kevin's MacBook Pro"). */
   computerName: string
@@ -172,6 +177,7 @@ export interface CodyncBridge {
      */
     authenticate(url: string, scheme: string): Promise<string>
     /** macOS: registers or removes the Codync Screen agent (SMAppService). */
+    screenAgentState(): Promise<ScreenAgentState>
     setScreenAgent(on: boolean): Promise<{ needsApproval: boolean }>
     syncScreenAgent(enabled: boolean): Promise<{ needsApproval: boolean }>
   }

@@ -221,10 +221,11 @@ final class AppStore {
     }
 
     func open(_ url: URL) {
-        if url.scheme == "com.pokai.Codync.ios" {
+        if url.scheme == Bundle.main.bundleIdentifier {
             Task { await account.handle(url) }
             return
         }
+        guard url.scheme == AppEnvironment.current.urlScheme else { return }
         switch url.host() {
         case "pair":
             // Scanned with the Camera app: pair right away.

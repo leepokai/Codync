@@ -6,6 +6,21 @@ Bots with **Use the computer** on get the built-in `computer` MCP server (`codyn
 - `type_login` types a saved login only into its own site or app, and a password only into a password field. The agent never sees the value.
 - The harness's own approval rules still apply to each call.
 
+## Computer access setup
+
+Desktop onboarding includes **Computer access**, also available from **Settings → Computer access** and the tray's **Set up computer access…** action. Users can choose **Set up later** and keep using chat. Setup choices stay on this installation.
+
+The desktop setup uses a compact device header and one outlined permission group, matching the toolbar and composer outlines. Rows distinguish ready, current and waiting steps; host and setup errors appear before the checklist. This requested outline is an exception to the default borderless filled-card rule. The shared Electron layout applies to macOS, Linux and Windows. iOS and terminal retain their existing status and setup guidance: neither runs this local graphical permission onboarding, so their layout is unaffected.
+
+- macOS: explicitly enable the background helper, then request Screen Recording and computer control. Depending on macOS, control is listed as **Device Control and Data Access** or **Accessibility**. Setup identifies the exact helper name. Codync Screen includes the Codync icon for system permission lists. A fresh installation registers the helper only when enabled; existing registrations are maintained across updates.
+- Opening setup, starting the macOS helper and returning from System Settings only check grants. Native prompts require an explicit setup action through local-only `requestScreenPermission`. The helper refuses to start the embedded driver until both grants are present. Newly granted screen recording triggers the existing helper restart mechanism.
+- Linux: setup opens the system screen-sharing portal for a display, mouse and keyboard. Helper startup never opens a chooser. The session survives host reconnections; after the helper itself restarts, reopen setup to restore sharing explicitly. Denied or partial grants can be retried.
+- Windows: computer-use bots need no macOS-style grants. Setup explains that phone screen viewing is not yet supported.
+- iPhone: pair through QR / Ask Access, with no SSH configuration. The viewer explains missing permissions and points to setup on the computer. Capture-only access allows viewing; takeover remains disabled until input is allowed, and revoking input exits takeover.
+- Terminal UI: the bot editor shows current helper/permission status and points to **Computer access**. System Settings, background-service registration and portal choosers require the graphical desktop, so the terminal does not issue those prompts. Status follows host events.
+
+Desktop setup polls read-only status while open and checks again on focus. Opening Settings never counts as a grant. Failures retain retry and Settings actions; completion requires actual platform-specific status. Skipping grants no permissions. Older clients ignore the additive `permissionApp` status field.
+
 ## The driver
 
 The tools come from [cua-driver](https://github.com/trycua/cua) (MIT), which works on apps in the background: by accessibility element where it can (`element_token` from `get_window_state`), by pixels posted to the app otherwise, and in the foreground only when a call asks for `delivery_mode: "foreground"`. The user's cursor and front app stay theirs.

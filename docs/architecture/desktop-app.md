@@ -36,6 +36,18 @@ app restores the exact text. Submitting clears only that conversation's draft. D
 cleared when the host identity changes or the bot is deleted. iOS and the TUI keep drafts the
 same way; the shared desktop behavior covers macOS and Linux.
 
+When several computers are selected, the sidebar groups bots by computer, with connection
+status and update notices in each section. Drag a heading or press Alt+Up/Down on the
+heading to reorder sections. Click a heading to fold its bots.
+Order and folded sections stay on this device; the iPhone and other computers keep
+independent orders even when signed in to the same account. Filtering a computer out
+does not discard its position. One selected computer keeps a flat roster. Bot pin/activity
+ordering stays within each section, and arrow-key navigation skips folded sections.
+Search still includes their bots. The compact sidebar uses computer badges for the same
+section controls. Ordering is saved locally immediately and survives restart, with separate
+preferences per account and cloud environment. See [computer ordering](../features/computer-order.md).
+The TUI connects to one host at a time, so it keeps its single roster.
+
 ## Platform notes
 
 - **SSH startup** in the shared desktop UI keeps the workspace open whenever saved profiles
@@ -96,7 +108,7 @@ It uses port 19222 on the remote computer and leaves bots and settings unchanged
 cd apps/desktop
 npm ci
 npm run icons                       # macOS: SF Symbol masks
-npm run dev                         # dev config, against the installed host on 19222
+npm run dev                         # Codync Dev, separate host on 19223
 CODYNC_PORT=19333 CODYNC_HOME=/path/to/home npm run dev   # against a manually run host
 npm run typecheck && npm test
 ```
@@ -123,8 +135,7 @@ helper at the top of `electron-builder.yml` doesn't depend on the environment; p
 `package.json`): the Screen launch agent only runs code from that team, and the keychain holds
 another team's certificate electron-builder would otherwise pick. Update the name when it is
 renewed.
-Only one environment's host runs on a computer at a time (one `~/.codync`, port and service):
-switching environments means installing the other build.
+Codync and Codync Dev can run side by side: separate app identities, host services, ports, data and login callbacks. See [Dev app isolation](../guides/dev-app.md) for the resource map and external signing/account setup.
 
 For a local signed Mac build, explicitly select a development identity from the project's
 team with `-c.mac.identity="Apple Development: …"`; use `--dir --arm64` and

@@ -2,9 +2,7 @@
 //! prompts (as in Grok Bot), parsing its reply and applying it to the memory folder.
 
 use super::facts::{Fact, Kind, Memory, dedupe_key, normalize, ymd};
-use super::{
-    ARCHIVE_SCAN_LIMIT, NONE, NOTE_PREFIX, PROFILE_PROMPT_LIMIT, PROFILE_TARGET, RECENT_PROMPT_LIMIT, RELEVANT_LIMIT,
-};
+use super::{NONE, NOTE_PREFIX, PROFILE_PROMPT_LIMIT, PROFILE_TARGET, RECENT_PROMPT_LIMIT, RELEVANT_LIMIT};
 use crate::store::Store;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -163,44 +161,18 @@ fn strip_bullet(line: &str) -> &str {
     t
 }
 
-const STOPWORDS: &[&str] = &[
-    "that", "this", "with", "from", "they", "them", "then", "than", "what", "when", "where", "which", "will", "would",
-    "could", "should", "have", "been", "being", "about", "just", "like", "your", "does", "were", "also", "into",
-    "over", "only", "some", "more", "most", "very", "much", "here", "there", "their", "these", "those", "because",
-    "while", "after", "before", "user",
-];
-
-fn tokens(text: &str) -> HashSet<String> {
-    text.to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| w.chars().count() >= 4 && !STOPWORDS.contains(w))
-        .map(str::to_owned)
-        .collect()
-}
-
 /// What the keeper is shown as "existing memory": everything in the prompt plus
 /// archived facts that share words with the exchange.
-pub fn existing_for_extraction(mem: &Memory, exchange: &str) -> Vec<String> {
-    let recall = mem.recall(RECENT_PROMPT_LIMIT);
+pub fn existing_for_extraction(mem: &Memory, exchange: &str) -> Result<Vec<String>> {
+    let recall = mem.recall(RECENT_PROMPT_LIMIT)?;
     let in_prompt: Vec<&Fact> = recall.profile.iter().chain(&recall.recent).collect();
     let shown: HashSet<String> = in_prompt.iter().map(|f| dedupe_key(&f.content)).collect();
-    let query = tokens(exchange);
-    let mut relevant: Vec<(usize, Fact)> = if query.is_empty() {
-        Vec::new()
-    } else {
-        mem.list(ARCHIVE_SCAN_LIMIT)
-            .into_iter()
-            .filter(|f| !shown.contains(&dedupe_key(&f.content)))
-            .map(|f| (tokens(&f.content).intersection(&query).count(), f))
-            .filter(|(overlap, _)| *overlap > 0)
-            .collect()
-    };
-    relevant.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.created_at.cmp(&a.1.created_at)));
-    in_prompt
+    let relevant = mem.relevant(exchange, RELEVANT_LIMIT)?;
+    Ok(in_prompt
         .into_iter()
         .map(|f| f.content.clone())
-        .chain(relevant.into_iter().take(RELEVANT_LIMIT).map(|(_, f)| f.content))
-        .collect()
+        .chain(relevant.into_iter().filter(|f| !shown.contains(&dedupe_key(&f.content))).map(|f| f.content))
+        .collect())
 }
 
 pub fn apply(mem: &Memory, ex: &Extraction, known: &[String], now: i64) -> Result<(usize, usize)> {
@@ -220,20 +192,22 @@ pub fn apply(mem: &Memory, ex: &Extraction, known: &[String], now: i64) -> Resul
     Ok((added, removed))
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct EpisodeTurn {
     pub ts: i64,
     pub user: String,
     pub agent: String,
+    #[serde(default)]
+    pub session: String,
 }
 
 pub fn episode_system_prompt(bot_name: &str) -> String {
     [
         format!("You maintain the long-term memory of a personal assistant named {bot_name}."),
         format!("You are given the most recent turns of a conversation between the user and {bot_name}, in order, each tagged with its date."),
-        format!("Write ONE short journal-style sentence (two at most) capturing what the user and {bot_name} were actually working on across these turns — the throughline, key decisions, and outcomes — so it stays useful months from now."),
+        format!("Write a concise session summary of goals, decisions, outcomes and unfinished next steps capturing what the user and {bot_name} were actually working on across these turns — the throughline, key decisions, and outcomes — so it stays useful months from now."),
         "Anchor any time references with the absolute dates shown, never relative words like \"yesterday\". Drop greetings, acknowledgements, and anything ephemeral. Never invent details.".to_owned(),
-        "Output just the sentence(s), no preamble or bullets. Output exactly NONE if nothing in this stretch is worth remembering.".to_owned(),
+        "Output only the summary, no preamble. Output exactly NONE if nothing in this stretch is worth remembering.".to_owned(),
     ]
     .join("\n")
 }
@@ -270,7 +244,7 @@ pub fn set_pending_episode(store: &Store, bot_id: &str, turns: &[EpisodeTurn]) -
 
 #[cfg(test)]
 mod tests {
-    use super::super::facts::parse_ymd;
+    use super::super::dates::parse_ymd;
     use super::*;
 
     #[test]
@@ -296,8 +270,8 @@ mod tests {
     fn batched_exchanges_are_dated_in_order() {
         let t = parse_ymd("2026-09-30").expect("valid date");
         let turns = [
-            EpisodeTurn { ts: t, user: "I use Swift 6".into(), agent: "Noted".into() },
-            EpisodeTurn { ts: t, user: String::new(), agent: "Done".into() },
+            EpisodeTurn { ts: t, user: "I use Swift 6".into(), agent: "Noted".into(), session: String::new() },
+            EpisodeTurn { ts: t, user: String::new(), agent: "Done".into(), session: String::new() },
         ];
         let prompt = extraction_user_prompt(&turns, &[]);
         assert!(prompt.contains("Existing memory:\n(empty)"));

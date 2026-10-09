@@ -8,9 +8,12 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use serde_json::Value;
 
+mod memory_view;
+pub use memory_view::draw as memory;
+
 use super::app::{App, Editor};
 use super::manage::{
-    AgentSetup, Fields, Market, MemorySheet, RoutineField, RoutineForm, RoutineList, Row, SetupRow, Submit, TABS, Tab,
+    AgentSetup, Fields, Market, RoutineField, RoutineForm, RoutineList, Row, SetupRow, Submit, TABS, Tab,
 };
 use super::md::truncate;
 use super::view::{
@@ -49,39 +52,6 @@ fn footer(buf: &mut Buffer, inner: Rect, error: Option<&str>, keys: &str) {
 
 fn name_of(app: &App, bot: &str) -> String {
     app.bots.get(bot).map_or_else(String::new, |b| b.name.clone())
-}
-
-pub fn memory(buf: &mut Buffer, area: Rect, app: &App, m: &MemorySheet) {
-    let t = theme();
-    let r = centered(area, 84, 24);
-    let title = format!("{} remembers", name_of(app, &m.bot));
-    let inner = frame_box(buf, r, t.text, t.panel, Some((&title, t.text)));
-    let list_h = usize::from(inner.height.saturating_sub(3));
-    match &m.facts {
-        None => {
-            put(buf, inner.x, inner.y + 1, inner.width, "Loading…", t.dim.patch(t.panel));
-        }
-        Some(f) if f.is_empty() => {
-            put(
-                buf,
-                inner.x,
-                inner.y + 1,
-                inner.width,
-                "Nothing yet. The bot remembers who you are and what you work on as you chat.",
-                t.secondary.patch(t.panel),
-            );
-        }
-        Some(facts) => {
-            for (y, (i, f)) in (inner.y + 1..).zip(facts.iter().enumerate().skip(window(m.cursor, list_h)).take(list_h))
-            {
-                let base = row(buf, inner, y, i == m.cursor);
-                put(buf, inner.x, y, 2, if f.profile { "●" } else { "◷" }, t.dim.patch(base));
-                let room = usize::from(inner.width.saturating_sub(2));
-                put(buf, inner.x + 2, y, u(room), &truncate(&f.content, room), t.text.patch(base));
-            }
-        }
-    }
-    footer(buf, inner, None, "● about you  ◷ history · ↑↓ move · x forget · D forget everything · esc close");
 }
 
 pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {

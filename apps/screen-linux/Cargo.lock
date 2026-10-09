@@ -294,6 +294,7 @@ dependencies = [
  "atspi",
  "base64",
  "dirs",
+ "futures-util",
  "gstreamer",
  "gstreamer-app",
  "gstreamer-sdp",

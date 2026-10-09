@@ -123,6 +123,8 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         applied_system: None,
         keeper,
         turn_text: None,
+        memory_session: None,
+        turn_memory_revision: String::new(),
         announce: None,
         turn: None,
         queue: VecDeque::new(),
@@ -201,9 +203,11 @@ struct Actor {
     session_fresh: bool,
     /// (session, instructions) last handed to Claude as its system prompt by this process.
     applied_system: Option<(String, String)>,
-    keeper: mpsc::UnboundedSender<memory::Exchange>,
+    keeper: mpsc::UnboundedSender<memory::KeeperEvent>,
     /// The user's words for this turn (None for a hidden turn); feeds memory.
     turn_text: Option<String>,
+    memory_session: Option<String>,
+    turn_memory_revision: String,
     /// A profile update this turn carried, recorded once the agent got it.
     announce: Option<(Snapshot, Identity)>,
     turn: Option<i64>,

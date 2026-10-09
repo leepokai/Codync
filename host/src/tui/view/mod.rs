@@ -8,6 +8,7 @@
 
 mod buffer;
 mod chat;
+mod computer_access;
 mod consent;
 mod forms;
 mod goto;

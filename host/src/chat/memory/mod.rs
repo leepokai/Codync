@@ -1,38 +1,27 @@
-//! A bot's long-term memory, modeled on Grok Bot's: plain markdown facts in
-//! `~/.codync/bots/<id>/memory/`: `profile.md` (who the user is, kept in mind
-//! every turn) and `log/YYYY-MM.md` (dated history), one `- (YYYY-MM-DD) fact`
-//! per line, so the user and the agent can read, grep and edit them.
-//!
-//! Memorable exchanges queue up for the bot's *keeper*, which runs a one-shot agent
-//! of the same harness over them once the bot goes quiet and extracts facts
-//! (`profile:` / `log:` / `note:` / `remove:`); every [`EPISODE_INTERVAL`]
-//! exchanges it also writes a one-line `[episode]` journal entry, and a profile
-//! that outgrows the prompt is consolidated. The bot sees memory through its
-//! frozen prompt (`context`) and searches its full chat with `search_history`.
+//! Per-bot Engram memory with automatic extraction, recall and native MCP tools.
+//! Transcripts stay in Codync; all durable memory lives in Engram's SQLite database.
 
+mod dates;
+mod engram;
 mod extract;
 mod facts;
 mod keeper;
+pub(crate) mod lifecycle;
+pub(crate) mod maintenance;
+pub(crate) mod manage;
+mod read;
 mod search;
 
 pub use extract::{EpisodeTurn, is_memorable, set_pending_episode};
 pub use facts::Memory;
 pub(crate) use keeper::one_shot;
-pub use keeper::{Exchange, spawn_keeper};
-pub use search::{INSTRUCTIONS, call, tools};
+pub use keeper::{Exchange, KeeperEvent, spawn_keeper};
+pub use search::{INSTRUCTIONS, available_tools, call, tools};
 
 use anyhow::Result;
 use facts::{Fact, Recall, ymd};
-use serde_json::{Value, json};
 use std::path::Path;
-use std::sync::Mutex;
 use std::time::Duration;
-
-const PROFILE_FILE: &str = "profile.md";
-const LOG_DIR: &str = "log";
-const PROFILE_HEADER: &str =
-    "# About the user\n\n<!-- Enduring facts, one per line as \"- (YYYY-MM-DD) <fact>\". -->\n\n";
-const LOG_HEADER: &str = "# Memory log\n\n<!-- Dated facts, one per line as \"- (YYYY-MM-DD) <fact>\". -->\n\n";
 
 /// Profile facts shown in the prompt; past this the keeper consolidates the profile.
 const PROFILE_PROMPT_LIMIT: usize = 100;
@@ -42,11 +31,7 @@ const PROFILE_TARGET: usize = 60;
 pub const RECENT_PROMPT_LIMIT: usize = 30;
 const RECENT_CHAR_BUDGET: usize = 4_000;
 const MAX_FACT_CHARS: usize = 500;
-/// Archived facts scanned for ones relevant to an exchange (beyond those in the prompt).
-const ARCHIVE_SCAN_LIMIT: usize = 500;
 const RELEVANT_LIMIT: usize = 10;
-/// Exchanges per `[episode]` journal line.
-pub const EPISODE_INTERVAL: usize = 6;
 /// An exchange side is cut to this before it goes to the keeper.
 const EXCHANGE_CHARS: usize = 8_000;
 const KEEPER_TIMEOUT: Duration = Duration::from_secs(180);
@@ -55,13 +40,8 @@ const KEEPER_IDLE: Duration = Duration::from_secs(5 * 60);
 /// Queued exchanges that make the keeper run without waiting.
 const KEEPER_BATCH: usize = 8;
 
-const EPISODE_PREFIX: &str = "[episode] ";
 const NOTE_PREFIX: &str = "[note] ";
 const NONE: &str = "NONE";
-const DAY_MS: i64 = 86_400_000;
-
-/// Serializes writes to memory files (the keeper and the API both write).
-static WRITES: Mutex<()> = Mutex::new(());
 
 fn fact_line(f: &Fact) -> String {
     format!("- (learned {}) {}", ymd(f.created_at), f.content)
@@ -73,10 +53,11 @@ pub fn render(recall: &Recall, location: &Path) -> (String, bool) {
         "Memory: durable facts you have learned about the user and their world.".to_owned(),
         "These persist across every session with this bot, even after a new session starts. Rely on them so you stay consistent and avoid re-asking what you already know.".to_owned(),
         format!(
-            "Your memory lives in a folder at {}: {PROFILE_FILE} holds who the user is (kept in mind every turn) and {LOG_DIR}/ holds dated history.",
+            "Your memory is managed by Engram in {}. Use its memory tools to read and write it; do not edit the database or the legacy Markdown backup directly.",
             location.display()
         ),
-        "Read or grep those files when you need older facts that are not listed here, and use the search_history tool to find what was actually said in past chats. Memory is updated automatically in the background shortly after each conversation: when the user asks you to remember or forget something, just confirm it to them and it will be recorded.".to_owned(),
+        "At the start of related work, call mem_context and mem_search to recall prior knowledge; retrieve full observations before relying on previews. Save durable preferences, decisions, discoveries and fixes proactively with mem_save. Reuse a stable topic_key for evolving knowledge. When asked to remember or forget, perform the memory operation before confirming success. A background keeper also extracts durable facts from completed user conversations.".to_owned(),
+        "Before ending a session, save a mem_session_summary. After compaction, recover context with mem_context. Use mem_review, mem_judge and mem_compare to review stale or conflicting knowledge; never treat a proposed conflict as resolved until it has been judged. Use search_history for original chat messages. Only this bot's memory is available through these tools.".to_owned(),
     ];
     if !recall.profile.is_empty() {
         lines.push("About the user:".into());
@@ -97,7 +78,7 @@ pub fn render(recall: &Recall, location: &Path) -> (String, bool) {
         }
         let omitted = recall.recent.len() - shown;
         if omitted > 0 {
-            lines.push(format!("({omitted} more log facts on disk — grep the {LOG_DIR}/ folder for them.)"));
+            lines.push(format!("({omitted} more recent memories — use mem_search to retrieve them.)"));
         }
     }
     let has_facts = !recall.profile.is_empty() || !recall.recent.is_empty();
@@ -107,18 +88,7 @@ pub fn render(recall: &Recall, location: &Path) -> (String, bool) {
     (lines.join("\n"), has_facts)
 }
 
-/// `memory` API: the facts a bot has, for the Memory screen.
-pub fn describe(bot_id: &str) -> Result<Value> {
-    let mem = Memory::for_bot(bot_id)?;
-    Ok(json!({"location": mem.location(), "facts": mem.list(1_000)}))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    pub(super) fn temp() -> Memory {
-        let dir = std::env::temp_dir().join(format!("codync-memory-{}", uuid::Uuid::new_v4()));
-        Memory::at(dir)
-    }
+/// Ensure installation, migration and the native memory process before starting a session.
+pub async fn prepare(bot_id: &str) -> Result<()> {
+    engram::prepare(bot_id).await
 }

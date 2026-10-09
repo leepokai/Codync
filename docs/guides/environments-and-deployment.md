@@ -2,11 +2,13 @@
 
 Reviewed against repository configuration on 2026-09-26; migration log updated 2026-10-07. Checked-in configuration does not prove that a deployment is healthy or that an external dashboard is configured.
 
+See [side-by-side Dev and production apps](dev-app.md) for schemes, identifiers, data isolation and the running-host/Offline troubleshooting checklist.
+
 ## Configuration ownership
 
 | Layer | Source | Selection |
 | --- | --- | --- |
-| Apple app | `apps/shared/Config/dev.plist`, `main.plist` | `project.yml` copies the selected file to bundled `AccountConfig.plist`; Debug uses dev, Release uses main |
+| Apple app | `apps/shared/Config/dev.plist`, `main.plist` | `project.yml` copies the selected file to bundled `AccountConfig.plist`; `iOS Dev` uses dev; `iOS` uses main |
 | Account SDK | `apps/shared/AccountSession.swift` | Public Clerk configuration; development environment overrides are supported |
 | Host | `host/src/remote/cloud.rs` | `CODYNC_CLOUD=off` or stored disable wins; then `CODYNC_CLOUD_URL`, then the build's cloud (`CODYNC_ENV` at compile time) |
 | Cloud Worker / D1 / DO | `cloud/wrangler.toml` | Root production, `dev`, or `local` environment |
@@ -19,6 +21,27 @@ The environment is chosen when building, never stored: the host compiles in its 
 - **Development:** app configuration and Worker configuration target `https://dev-api.codync.dev`; dev Clerk issuer and D1 binding are configured in source. Exercise the live path before claiming readiness.
 - **Production:** `main.plist` targets `https://api.codync.dev` with the Clerk production instance (`clerk.codync.dev`, Google sign-in through the `codync-auth` Google Cloud project, published). The root Worker is deployed with D1 `codync`, `CLERK_SECRET_KEY` and `CLERK_WEBHOOK_SECRET` (Clerk webhook endpoint `https://api.codync.dev/v1/webhooks/clerk`, `user.deleted`).
 - **Local:** Wrangler's `local` environment supports the isolated integration test and its test issuer. It is not a real Google sign-in test.
+
+## Troubleshooting: a running host appears offline on another computer
+
+Check the environment before resetting keys, pairing again, or removing an account computer. A healthy local host and an active relay connection only prove connectivity to **that host's configured cloud**. Development and production have separate account directories, grants and presence; signing in with the same Apple account does not join those environments.
+
+Observed on 2026-10-09: MacBook-Pro-3 ran a local development build connected to `dev-api.codync.dev`, while the Mac mini ran a production build connected to `api.codync.dev`. Both hosts reported `registered: true` and `connected: true`. The MacBook's same `computerId` was online in development D1 and offline in production D1. The Mac mini's account list therefore correctly showed the old production record as **Offline**. This was an environment mismatch, not evidence of a stopped host or a duplicate identity.
+
+Before testing account discovery, access approval, or cross-device computer order:
+
+1. Run `codync-host cloud` on each computer and compare `url`, `registered`, `connected`, and `last error`. Use the installed app's bundled executable if the shell's host binary is not the one being tested.
+2. Check `http://127.0.0.1:19222/health` (or the configured development port) for the running binary path, version and `computerId`.
+3. Verify the desktop app and its host target the same environment, and the iPhone build targets that environment too. An identical version number or Apple login is not sufficient.
+4. Use matching builds across the devices participating in the test, then refresh the account list. Local or SSH access working does not establish that their account clouds match.
+
+### Separate Codync Dev app
+
+Development and production now use separate app identities, data directories,
+ports, service labels, URL schemes and notification destinations. They can run
+side by side without sharing credentials, pairing grants or host keys. See
+[Dev app isolation](dev-app.md) for build commands, resource names and signing
+requirements. Use matching environments on every device in a cross-device test.
 
 ## Deployment procedure
 

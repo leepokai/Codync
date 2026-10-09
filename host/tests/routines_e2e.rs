@@ -28,6 +28,7 @@ impl Host {
     async fn start() -> Self {
         let home = std::env::temp_dir().join(format!("codync-routines-e2e-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
+        common::seed_memory_runtime(&home);
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
         let child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
             .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])

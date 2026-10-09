@@ -24,7 +24,7 @@ export interface Env {
 
 type ApnsEnv = "sandbox" | "production";
 type Kind = "alert" | "liveactivity";
-interface TicketPayload { t: string; e: ApnsEnv; k: Kind }
+interface TicketPayload { t: string; e: ApnsEnv; k: Kind; b?: string }
 
 const BUNDLE_ID = "com.pokai.Codync.ios";
 
@@ -73,15 +73,22 @@ export async function openTicket(env: Env, ticket: string): Promise<TicketPayloa
 
 const clients = new Map<string, ApnsClient>();
 
-function client(env: Env, apnsEnv: ApnsEnv, kind: Kind): ApnsClient {
-  const id = `${env.APNS_KEY_ID}:${apnsEnv}:${kind}`;
+export function apnsTopic(bundleId: string | undefined, kind: Kind): string {
+  const bundle = bundleId ?? BUNDLE_ID;
+  if (bundle !== BUNDLE_ID && bundle !== `${BUNDLE_ID}.dev`) throw new Error("invalid bundle identifier");
+  return kind === "liveactivity" ? `${bundle}.push-type.liveactivity` : bundle;
+}
+
+function client(env: Env, apnsEnv: ApnsEnv, kind: Kind, bundleId?: string): ApnsClient {
+  const topic = apnsTopic(bundleId, kind);
+  const id = `${env.APNS_KEY_ID}:${apnsEnv}:${topic}`;
   let c = clients.get(id);
   if (!c) {
     c = new ApnsClient({
       team: env.APNS_TEAM_ID,
       keyId: env.APNS_KEY_ID,
       signingKey: env.APNS_SIGNING_KEY.replace(/\\n/g, "\n"),
-      defaultTopic: kind === "liveactivity" ? `${BUNDLE_ID}.push-type.liveactivity` : BUNDLE_ID,
+      defaultTopic: topic,
       host: apnsEnv === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com",
     });
     clients.set(id, c);
@@ -92,13 +99,14 @@ function client(env: Env, apnsEnv: ApnsEnv, kind: Kind): ApnsClient {
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 async function register(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { token?: string; env?: string; kind?: string } | null;
+  const body = (await req.json().catch(() => null)) as { token?: string; env?: string; kind?: string; bundleId?: string } | null;
   if (typeof body?.token !== "string" || !/^(?:[0-9a-fA-F]{2}){16,100}$/.test(body.token)) return json({ error: "invalid token" }, 400);
   if (body.env !== "production" && body.env !== "sandbox") return json({ error: "invalid environment" }, 400);
   if (body.kind !== "alert" && body.kind !== "liveactivity") return json({ error: "invalid kind" }, 400);
+  if (body.bundleId !== undefined && body.bundleId !== BUNDLE_ID && body.bundleId !== `${BUNDLE_ID}.dev`) return json({ error: "invalid bundle identifier" }, 400);
   const e: ApnsEnv = body.env;
   const k: Kind = body.kind === "liveactivity" ? "liveactivity" : "alert";
-  return json({ ticket: await sealTicket(env, { t: body.token, e, k }) });
+  return json({ ticket: await sealTicket(env, { t: body.token, e, k, ...(body.bundleId ? { b: body.bundleId } : {}) }) });
 }
 
 export interface PushBody {
@@ -171,14 +179,14 @@ async function push(req: Request, env: Env): Promise<Response> {
       if (new TextEncoder().encode(JSON.stringify(notification.buildApnsOptions())).length > 4096) {
         return json({ error: "payload too large" }, 413);
       }
-      await client(env, t.e, "alert").send(notification);
+      await client(env, t.e, "alert", t.b).send(notification);
     } else {
       const la = body.liveActivity;
       if (!la) return json({ error: "liveActivity required" }, 400);
       let aps: Record<string, unknown>;
       try { aps = liveActivityAps(la); }
       catch { return json({ error: "invalid liveActivity" }, 400); }
-      await client(env, t.e, "liveactivity").send(
+      await client(env, t.e, "liveactivity", t.b).send(
         new Notification(t.t, {
           type: PushType.liveactivity,
           priority: la.event === "end" || la.contentState?.status === "needsInput" ? Priority.immediate : Priority.throttled,
@@ -203,7 +211,7 @@ async function push(req: Request, env: Env): Promise<Response> {
 export function latestTicketIndices(tickets: Array<TicketPayload | null>): Set<number> {
   const latest = new Map<string, number>();
   tickets.forEach((ticket, index) => {
-    if (ticket) latest.set(`${ticket.e}:${ticket.k}:${ticket.t.toLowerCase()}`, index);
+    if (ticket) latest.set(`${ticket.b ?? BUNDLE_ID}:${ticket.e}:${ticket.k}:${ticket.t.toLowerCase()}`, index);
   });
   return new Set(latest.values());
 }

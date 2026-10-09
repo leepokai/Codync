@@ -303,6 +303,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 - `id`：device 端遞增 u32，連線內唯一。
 - 每條 channel 最多 32 個進行中的 request、4 個訂閱；超過回 `err 429`。
 - `events` 訂閱的語意與 SSE 完全相同（先 subscribe、再 catch-up、`hello` 在最前、落後時送 `{"type":"resync"}`）；`client == "ios"` 時計入 `hub.ios_clients`（推播抑制）。
+- Bot 刪除標記會保留在 host 資料庫；增量同步與 `since = 0` 的全量同步都傳送它們。手機及桌面在版本更新或解碼重試時會保留快取並重設同步游標，必須收到刪除標記才能移除舊 Bot、對話與草稿；終端使用相同的事件串流。
 - 串流沒有額外的 keep-alive；存活由 WebSocket ping（§7.6）負責。
 
 ### 6.6 方法權限（host 以 `Caller` 判斷）

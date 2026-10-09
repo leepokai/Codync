@@ -57,8 +57,11 @@ export const prefs = {
   sidebarCompact: pref('sidebarCompact', false),
   sidebarWidth: pref('desktopSidebarWidth', 266),
   hiddenComputers: pref('hiddenComputers', ''),
+  computerOrder: pref<string[]>('computerOrder', []),
+  collapsedComputers: pref<string[]>('collapsedComputerSections', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
+  computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
 }
 

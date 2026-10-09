@@ -22,7 +22,7 @@ struct ConnectorSignInFlow {
         }
         let back: URL
         do {
-            back = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: "codync", preferredBrowserSession: .shared)
+            back = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: AppEnvironment.current.urlScheme, preferredBrowserSession: .shared)
         } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
             return
         }

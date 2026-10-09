@@ -17,6 +17,8 @@ A custom connector is a command line (split like a shell), a URL, or a pasted MC
 
 A connector installed on the computer (or an app connected through Composio) is turned on for every existing bot, and a new bot starts with all of them on; each bot can turn one off in its settings. An enabled connector is passed to the agent as an MCP server when its session starts or resumes. Local connectors are spawned by the agent; remote ones always go through the host's stdio proxy (`codync-host mcp remote`, `host/src/mcp.rs`), so they work with agents that only speak stdio and always carry a fresh token. The proxy speaks streamable HTTP and falls back to the older HTTP+SSE transport when the first POST fails with 400/404/405, as the MCP spec suggests.
 
+Registry-backed package connectors follow their upstream release. The host checks the Registry periodically after credentials are unlocked and checks again immediately before a package process starts. If a newer pinned npm, PyPI, OCI or NuGet reference is available, only that package/image argument is replaced; the running process is not interrupted, and the new version applies on its next launch. Network failures, missing packages and attempted downgrades leave the installed reference unchanged. Custom command connectors are never updated automatically.
+
 ## Sign-in for remote connectors (`host/src/market/oauth.rs`)
 
 Installing a remote connector probes it; a 401 marks it `signedOut` and bots don't get it until someone signs in. Sign-in follows the MCP authorization spec: protected-resource metadata → authorization-server metadata → dynamic client registration (both redirect URIs at once) → PKCE. Tokens stay on the computer and are refreshed on use (or after a 401).

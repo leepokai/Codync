@@ -10,7 +10,7 @@ use serde_json::Value;
 pub const MIN_APP: &str = "2.3.0";
 
 /// The oldest host the terminal client works with.
-pub const MIN_HOST: &str = "2.3.0";
+pub const MIN_HOST: &str = "2.12.0";
 
 /// The iPhone app in the App Store, looked up to hold back host updates that need a newer
 /// app than the store has (still in review).

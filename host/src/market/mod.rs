@@ -27,10 +27,13 @@ pub mod verify;
 mod install;
 mod registry;
 mod skills;
+mod updates;
 
 pub use install::{add_custom_connector, import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
 pub use skills::{add_custom_skill, browse_skills, install_skill, list_skills, remove_skill, skills_brief};
+
+pub use updates::{automatic_loop, refresh_connector};
 
 use crate::LockExt;
 use anyhow::{Result, bail};

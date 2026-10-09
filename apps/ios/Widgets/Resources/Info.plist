@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CodyncEnvironment</key><string>$(CODYNC_ENV)</string>
+    <key>CodyncAppGroup</key><string>$(CODYNC_APP_GROUP)</string>
+    <key>CodyncURLScheme</key><string>$(CODYNC_URL_SCHEME)</string>
+    <key>CodyncAPNSEnvironment</key><string>$(CODYNC_APNS_ENVIRONMENT)</string>
 	<key>CodyncKeychainGroup</key>
-	<string>$(AppIdentifierPrefix)com.pokai.Codync</string>
+	<string>$(AppIdentifierPrefix)$(CODYNC_KEYCHAIN_GROUP)</string>
 	<!-- The Dynamic Island's animated bot faces and thinking orb (tools/timer-fonts.py). -->
 	<key>UIAppFonts</key>
 	<array>

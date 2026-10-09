@@ -84,7 +84,7 @@ export class Plugins extends Observable {
     }
     let back: string
     try {
-      back = await window.codync.app.authenticate(plan.url, 'codync')
+      back = await window.codync.app.authenticate(plan.url, window.codync.appScheme)
     } catch {
       return
     }

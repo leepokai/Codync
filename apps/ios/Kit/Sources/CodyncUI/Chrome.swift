@@ -226,11 +226,17 @@ private struct FadeLayer<Layer: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        layer(animateClose)
-            .environment(\.dismissModal, DismissModalAction { animateClose() })
-            .opacity(shown ? 1 : 0)
-            .scaleEffect(shown ? 1 : 0.98)
-            .onAppear { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { shown = true } }
+        GeometryReader { geometry in
+            layer(animateClose)
+                .environment(\.dismissModal, DismissModalAction { animateClose() })
+                // Preserve safe areas for controls (including the screen viewer's toolbar),
+                // but composite the fade over the whole screen so the scrim cannot be clipped.
+                .safeAreaPadding(geometry.safeAreaInsets)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(shown ? 1 : 0)
+                .ignoresSafeArea(.container)
+        }
+        .onAppear { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { shown = true } }
     }
 
     private func animateClose() {

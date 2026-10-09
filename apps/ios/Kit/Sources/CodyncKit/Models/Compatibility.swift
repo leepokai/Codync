@@ -11,7 +11,7 @@ public enum VersionMismatch: Equatable, Sendable {
 
     /// The oldest host this app works with. Raise it only when the app starts depending on
     /// something older hosts don't have (an optional feature hides its control instead).
-    public static let minHost = "2.3.0"
+    public static let minHost = "2.12.0"
 
     /// Checks this app (`app`) against a host's version and `minApp` (nil from hosts that predate it).
     public static func check(app: String, minHost: String = minHost, hostVersion: String, minApp: String?) -> VersionMismatch? {

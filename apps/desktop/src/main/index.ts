@@ -1,3 +1,4 @@
+import { identity } from './environment'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
@@ -62,7 +63,7 @@ function openChat() {
     height: 760,
     minWidth: 760,
     minHeight: 500,
-    title: 'Codync',
+    title: identity.name,
     show: false,
     backgroundColor: background(),
     titleBarStyle: isMac ? 'hidden' : 'default',
@@ -135,6 +136,9 @@ function menu() {
 
 function registerIPC(tray: Tray) {
   registerHostProxy()
+  ipcMain.on('app:hostPort', (e) => (e.returnValue = identity.port))
+  ipcMain.on('app:name', (e) => (e.returnValue = identity.name))
+  ipcMain.on('app:scheme', (e) => (e.returnValue = identity.scheme))
   ipcMain.on('app:version', (e) => (e.returnValue = app.getVersion()))
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))
   ipcMain.on('app:debugOpen', (e) => (e.returnValue = app.isPackaged ? null : (process.env.CODYNC_DEBUG_OPEN ?? null)))
@@ -180,7 +184,7 @@ function registerIPC(tray: Tray) {
     const devices = await host.call<{ devices: { key: string }[] }>('devices').catch(() => ({ devices: [] }))
     for (const device of devices.devices) await host.call('revokeDevice', { key: device.key }).catch(() => {})
     await account.signOutAll()
-    await host.uninstall()
+    if (!(await host.uninstall())) throw new Error('The host could not be safely uninstalled. Data was preserved.')
     const { rm } = await import('node:fs/promises')
     const { dataDir } = await import('./host-controller')
     await rm(dataDir, { recursive: true, force: true })

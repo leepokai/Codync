@@ -24,4 +24,19 @@ jobs:
       - name: Test on an iPhone simulator
         run: |
           DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+\(([0-9A-F-]{36})\)' | grep -oE '[0-9A-F-]{36}')
-          xcodebuild test -scheme CodyncKit-Package -destination "platform=iOS Simulator,id=$DEVICE" -quiet
+          xcodebuild test -scheme CodyncKit-Package -destination "platform=iOS Simulator,id=$DEVICE" \
+            -derivedDataPath ../../../build/dd -resultBundlePath ../../../build/dd/ios-kit.xcresult -quiet
+      - name: Summarize test results
+        if: always()
+        run: |
+          if [ -f ../../../build/dd/ios-kit.xcresult/Info.plist ]; then
+            xcrun xcresulttool get test-results summary --path ../../../build/dd/ios-kit.xcresult
+          fi
+      - name: Preserve failed test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-kit-test-results
+          path: build/dd/ios-kit.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

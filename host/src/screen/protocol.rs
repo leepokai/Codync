@@ -31,4 +31,7 @@ pub struct HelperStatus {
     /// Input injection (and the accessibility tree) is permitted.
     #[serde(default)]
     pub input: bool,
+    /// Both directions support incremental ICE candidates.
+    #[serde(default)]
+    pub trickle: bool,
 }

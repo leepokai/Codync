@@ -153,7 +153,13 @@ extension ChannelTransport {
               let rawId = obj["id"] as? NSNumber else { return }
         let id = rawId.uint32Value
         if let ev = obj["ev"] {
-            if let data = try? JSONSerialization.data(withJSONObject: ev, options: .fragmentsAllowed) { streams[id]?.yield(data) }
+            if let data = try? JSONSerialization.data(withJSONObject: ev, options: .fragmentsAllowed),
+               let continuation = streams[id], case .dropped = continuation.yield(data) {
+                continuation.finish(throwing: HostError.http(400, "Screen candidate stream overflow."))
+                streams[id] = nil
+                streamIds = streamIds.filter { $0.value != id }
+                do { try sendCancellation(id) } catch { link?.socket.close(code: 1000) }
+            }
         } else if obj["end"] as? Bool == true {
             streams.removeValue(forKey: id)?.finish()
             streamIds = streamIds.filter { $0.value != id }

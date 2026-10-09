@@ -6,19 +6,21 @@
 //! GStreamer `webrtcbin`, and the accessibility tree over AT-SPI.
 
 mod a11y;
+mod candidates;
 mod input;
+mod link;
+mod negotiation;
 mod portal;
+mod sessions;
 mod stream;
 
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 
 fn data_dir() -> PathBuf {
     std::env::var_os("CODYNC_HOME").map_or_else(
@@ -32,7 +34,7 @@ pub type Outbox = mpsc::UnboundedSender<Value>;
 
 pub struct Helper {
     portal: portal::Portal,
-    sessions: Mutex<HashMap<String, stream::Session>>,
+    sessions: sessions::Sessions,
     out: Outbox,
 }
 
@@ -63,51 +65,22 @@ async fn main() -> Result<()> {
 }
 
 async fn serve(sock: UnixStream, portal: &portal::Portal) -> Result<()> {
-    let (rd, mut wr) = sock.into_split();
-    let (out, mut outbox) = mpsc::unbounded_channel::<Value>();
-    let writer = tokio::spawn(async move {
-        while let Some(msg) = outbox.recv().await {
-            let mut line = msg.to_string();
-            line.push('\n');
-            if wr.write_all(line.as_bytes()).await.is_err() {
-                break;
-            }
-        }
-    });
+    let (out, outbox) = mpsc::unbounded_channel::<Value>();
     let helper = Arc::new(Helper {
         portal: portal.clone(),
-        sessions: Mutex::default(),
+        sessions: sessions::Sessions::default(),
         out: out.clone(),
     });
     let _ =
         out.send(json!({"jsonrpc": "2.0", "method": "status", "params": helper.portal.status()}));
-    let mut lines = BufReader::new(rd).lines();
-    while let Some(line) = lines.next_line().await? {
-        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        let (Some(method), Some(id)) = (
-            msg["method"].as_str().map(str::to_owned),
-            msg.get("id").cloned(),
-        ) else {
-            continue;
-        };
-        let helper = helper.clone();
-        tokio::spawn(async move {
-            let reply = match handle(&helper, &method, &msg["params"]).await {
-                Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-                Err(error) => {
-                    json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": format!("{error:#}")}})
-                }
-            };
-            let _ = helper.out.send(reply);
-        });
-    }
-    writer.abort();
-    for (_, s) in helper.sessions.lock().await.drain() {
-        s.close();
-    }
-    Ok(())
+    let serving = helper.clone();
+    let result = link::serve(sock, out, outbox, move |method, params| {
+        let helper = serving.clone();
+        async move { handle(&helper, &method, &params).await }
+    })
+    .await;
+    helper.sessions.close_all().await;
+    result
 }
 
 async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
@@ -121,29 +94,32 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
             let sdp = p["sdp"]
                 .as_str()
                 .ok_or_else(|| anyhow!("sdp is required"))?;
-            if let Some(s) = h.sessions.lock().await.get(&id) {
-                return Ok(json!({"sdp": s.answer(sdp).await?}));
-            }
-            let d = display()?;
-            let fd = h.portal.pipewire_fd().await?;
-            let session = stream::Session::new(id.clone(), &d, fd, h.clone(), p)?;
-            let answer = session.answer(sdp).await?;
-            h.sessions.lock().await.insert(id, session);
+            let creating = id.clone();
+            let answer = h
+                .sessions
+                .answer(id, sdp, async {
+                    let d = display()?;
+                    let fd = h.portal.pipewire_fd().await?;
+                    let session = stream::Session::new(creating, &d, fd, h.clone(), p)?;
+                    let answer = session.answer(sdp).await?;
+                    Ok((session, answer))
+                })
+                .await?;
             json!({"sdp": answer})
         }
+        "candidate" => {
+            let id = p["session"].as_str().context("missing session")?;
+            h.sessions.candidate(id, &p["candidate"]).await?;
+            json!({})
+        }
         "close" => {
-            if let Some(s) = p["session"]
-                .as_str()
-                .and_then(|id| h.sessions.try_lock().ok()?.remove(id))
-            {
-                s.close();
+            if let Some(id) = p["session"].as_str() {
+                h.sessions.close(id).await;
             }
             json!({})
         }
         "closeAll" => {
-            for (_, s) in h.sessions.lock().await.drain() {
-                s.close();
-            }
+            h.sessions.close_all().await;
             json!({})
         }
         "screenshot" => {
@@ -182,9 +158,7 @@ impl Helper {
         let this = self.clone();
         let id = id.to_owned();
         tokio::spawn(async move {
-            if let Some(s) = this.sessions.lock().await.remove(&id) {
-                s.close();
-            }
+            this.sessions.close(&id).await;
             let _ = this.out.send(json!({"jsonrpc": "2.0", "method": "session", "params": {"session": id, "state": "closed"}}));
         });
     }

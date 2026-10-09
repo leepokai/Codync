@@ -282,11 +282,11 @@ public extension HostClient {
 
     func screenPrepare() async throws -> ScreenConnection {
         let relay = if let channel = transport as? ChannelTransport { try await channel.screenRelayRequired() } else { false }
-        return try await call("screenPrepare", ["relay": relay])
+        return try await call("screenPrepare", ["relay": relay, "trickle": true])
     }
 
-    /// Sends a WebRTC offer (with all its ICE candidates); returns the session id and the answer.
-    /// Passing `session` restarts ICE on an existing session.
+    /// Sends the offer using the prepared session’s negotiated ICE mode.
+    /// Trickle negotiations use a fresh session for every connection attempt.
     func screenOffer(sdp: String, session: String?, display: UInt32?) async throws -> ScreenAnswer {
         struct Body: Encodable { var sdp: String; var session: String?; var display: UInt32? }
         return try await call("screenOffer", Body(sdp: sdp, session: session, display: display), timeout: 30)

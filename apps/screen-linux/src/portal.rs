@@ -107,6 +107,7 @@ impl Portal {
             "platform": "linux",
             "version": env!("CARGO_PKG_VERSION"),
             "capture": true,
+            "trickle": true,
             "input": self.0.input,
             "displays": self.0.displays.iter().map(|d| json!({
                 "id": d.id,

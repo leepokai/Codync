@@ -25,10 +25,15 @@ final class Session: NSObject {
     private var gatherTask: Task<Void, Never>?
     private let maxBitrate: Int
     private let maxFramerate: Int
+    private let candidates: SessionCandidates?
+    nonisolated private let candidateSink: AsyncThrowingStream<SessionCandidate, Error>.Continuation?
 
     var display: CGDirectDisplayID { capture.display }
 
-    init(id: String, display: CGDirectDisplayID, helper: ScreenHelper, iceServers: [RTCIceServer], maxBitrate: Int, maxFramerate: Int) {
+    init(id: String, display: CGDirectDisplayID, helper: ScreenHelper, iceServers: [RTCIceServer], maxBitrate: Int, maxFramerate: Int, trickle: Bool) {
+        let candidates = trickle ? SessionCandidates(helper: helper, session: id) : nil
+        self.candidates = candidates
+        candidateSink = candidates?.sink
         self.maxBitrate = maxBitrate
         self.maxFramerate = maxFramerate
         self.id = id
@@ -47,11 +52,11 @@ final class Session: NSObject {
         pc = Self.factory.peerConnection(with: config, constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil), delegate: self)
     }
 
-    /// Answers the phone's offer (first connect or an ICE restart). Non-trickle: waits
-    /// for local candidates so the answer carries them all.
+    /// Trickle returns the original answer; complete-SDP peers wait for local candidates.
     func answer(offer: String) async throws -> String {
         guard let pc else { throw HelperError("session closed") }
         try await pc.setRemoteDescription(RTCSessionDescription(type: .offer, sdp: offer))
+        guard self.pc === pc else { throw HelperError("session closed") }
         if !capturing, let video = pc.transceivers.first(where: { $0.mediaType == .video }) {
             video.sender.track = track
             video.sender.streamIds = ["screen"]
@@ -60,8 +65,10 @@ final class Session: NSObject {
             if let error { throw error }
         }
         let answer = try await pc.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
+        guard self.pc === pc else { throw HelperError("session closed") }
         try await pc.setLocalDescription(answer)
-        await waitForCandidates()
+        guard self.pc === pc else { throw HelperError("session closed") }
+        if candidates == nil { await waitForCandidates() }
         guard self.pc === pc else { throw HelperError("session closed") }
         if !capturing {
             tune()
@@ -74,7 +81,7 @@ final class Session: NSObject {
             keepAwake(true)
             watchClipboard()
         }
-        return pc.localDescription?.sdp ?? answer.sdp
+        return candidates == nil ? (pc.localDescription?.sdp ?? answer.sdp) : answer.sdp
     }
 
     /// Screen content: keep text sharp (drop frames before resolution), allow a high bitrate on fast links.
@@ -107,7 +114,14 @@ final class Session: NSObject {
         gathered = nil
     }
 
+    func candidate(_ value: [String: Any]) async throws {
+        guard let candidates, let pc else { throw HelperError("screen session is not ready for candidates") }
+        try await candidates.add(value, to: pc)
+        guard self.pc === pc else { throw HelperError("session closed") }
+    }
+
     func close() {
+        candidates?.stop()
         finishGathering()
         clipboardTask?.cancel()
         keepAwake(false)
@@ -164,6 +178,7 @@ final class Session: NSObject {
     // MARK: messages from the phone
 
     private func received(_ data: Data) {
+        guard pc != nil else { return }
         guard let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
         switch msg["type"] as? String {
         case "clipboard":
@@ -179,6 +194,7 @@ final class Session: NSObject {
             }
             let capture = capture
             Task {
+                guard self.pc != nil else { return }
                 do {
                     let applied = try await capture.view(display: display, crop: crop, long: InputInjector.number(msg["long"]), short: InputInjector.number(msg["short"]))
                     // Frames from here on show this region: the phone re-aligns its view on this.
@@ -192,6 +208,7 @@ final class Session: NSObject {
             guard let helper else { return }
             let display = self.display
             Task {
+                guard self.pc != nil else { return }
                 do {
                     try await helper.input.perform(msg, display: display)
                 } catch {
@@ -212,6 +229,7 @@ final class Session: NSObject {
     }
 
     private func opened(_ channel: RTCDataChannel) {
+        guard pc != nil else { channel.close(); return }
         channel.delegate = self
         channels.append(channel)
     }
@@ -222,7 +240,16 @@ extension Session: RTCPeerConnectionDelegate, RTCDataChannelDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     nonisolated func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
+    nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+        emitCandidate(SessionCandidate(sdp: candidate.sdp, index: candidate.sdpMLineIndex, mid: candidate.sdpMid))
+    }
+
+    nonisolated private func emitCandidate(_ candidate: SessionCandidate) {
+        guard let candidateSink else { return }
+        if case .dropped = candidateSink.yield(candidate) {
+            candidateSink.finish(throwing: HelperError("screen candidate queue overflow"))
+        }
+    }
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
 
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
@@ -231,6 +258,7 @@ extension Session: RTCPeerConnectionDelegate, RTCDataChannelDelegate {
 
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         guard newState == .complete else { return }
+        emitCandidate(.complete)
         Task { @MainActor in self.finishGathering() }
     }
 

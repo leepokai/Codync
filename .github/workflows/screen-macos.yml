@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "apps/screen-macos/**"
+      - "apps/screen-macos-tests/**"
       - "apps/project.yml"
       - "apps/ios/Kit/Package.swift"
       - "apps/ios/Kit/Package.resolved"
@@ -40,3 +41,6 @@ jobs:
           -destination 'generic/platform=macOS'
           -derivedDataPath build/screen-ci
           CODE_SIGNING_ALLOWED=NO
+
+      - name: Test helper socket lifecycle
+        run: swift test --package-path apps/screen-macos-tests --scratch-path build/dd/screen-macos-tests

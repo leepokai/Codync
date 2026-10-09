@@ -94,6 +94,12 @@ and parses the macOS Swift sources (on macOS). The platform builds remain in
 GitHub Actions: Linux requires GStreamer development packages, and macOS builds
 the `Screen` Xcode target against WebRTC.
 
+The macOS helper's socket lifecycle checks run independently of capture permissions:
+
+```sh
+swift test --package-path apps/screen-macos-tests --scratch-path build/dd/screen-macos-tests
+```
+
 Host development: `cargo run --manifest-path host/Cargo.toml -- serve`. Avoid competing with an installed host on port 19222; isolated tests should use a temporary `CODYNC_HOME` and another port. Stop test hosts when finished.
 
 ## Visual checks

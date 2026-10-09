@@ -142,7 +142,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             } else {
                 crate::screen::IceConfig::default()
             };
-            let result = hub.screen.prepare(caller.device_key(), ice)?;
+            let result = hub.screen.prepare(caller.device_key(), ice, b["trickle"].as_bool().unwrap_or(false))?;
             let session = result["session"].as_str().context("missing screen session")?.to_owned();
             tokio::spawn(crate::screen::watch_viewer(hub.clone(), session, caller.device_key().to_owned()));
             result
@@ -156,6 +156,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 tokio::spawn(crate::screen::watch_viewer(hub.clone(), session, caller.device_key().to_owned()));
             }
             result
+        }
+        "screenCandidate" => {
+            let candidate = serde_json::from_value(b["candidate"].clone())?;
+            hub.screen.candidate(str_arg(&b, "session")?, caller.device_key(), candidate).await?;
+            json!({})
         }
         "screenClose" => {
             let session = str_arg(&b, "session")?;

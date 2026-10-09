@@ -83,7 +83,7 @@ Codync/
 | SQLite transcript, bots, lanes and sessions | `host/src/store/` (`entries.rs`, `bots.rs`, `model.rs`, `devices.rs`, `schema.rs`) |
 | Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`queue.rs`, `session.rs`, `turn.rs`, `updates.rs`), `acp.rs` |
 | Group room turns / bot-to-bot requests | `host/src/chat/group.rs` / `team.rs` |
-| Prompt snapshots and memory keeper | `host/src/chat/context.rs`, `memory/` (`facts.rs`, `extract.rs`, `keeper.rs`, `search.rs`) |
+| Prompt snapshots and memory keeper | `host/src/chat/context.rs`, `memory/` (`engram/`, `manage.rs`, `read.rs`, `extract.rs`, `keeper.rs`, `search.rs`) |
 | Identity, encryption and direct channel | `host/src/remote/identity.rs`, `crypto.rs`, `channel.rs` |
 | Host cloud state and relay connection | `host/src/remote/cloud.rs`, `relay.rs` |
 | Agent discovery, sign-in, setup terminal | `host/src/agent/backends.rs`, `registry.rs`, `auth.rs`, `term.rs` |

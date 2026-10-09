@@ -141,6 +141,16 @@ Building the desktop app yourself: `cd apps/desktop && npm ci && npm run dev`.
 
 `codync-host install` also routes Claude Code's status line through `codync-host statusline` so live limits reach the host; an existing status line keeps working (it's wrapped, and restored on `uninstall`).
 
+### If an update fails
+
+Quit Codync completely and reopen it first; a downloaded update may still be waiting
+for the old app to exit. If updating still fails, uninstall the app and reinstall
+the latest version from [Releases](https://github.com/leepokai/Codync/releases/latest).
+On macOS, stop/remove the old host service before replacing `Codync.app`.
+**Keep `~/.codync` and Codync's settings folders** to retain your bots, conversations
+and computer identity; do not use **Reset all data**, a cleanup utility, or Homebrew
+`--zap` for this repair. Follow the [reinstallation steps](docs/guides/updates.md#recovering-from-a-failed-update).
+
 ## `codync-host`
 
 | Command | |

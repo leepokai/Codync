@@ -40,6 +40,59 @@ starts. An updater error during shutdown cancels that pending installation and
 restores the host after the stop finishes; an installer exception also restores
 the host and leaves the staged release available to retry.
 
+### Recovering from a failed update
+
+If **Update to …** appears to do nothing, first quit Codync completely (on macOS,
+**Codync → Quit Codync**, not just the window's close button). A downloaded update
+may finish installing when the old app exits. Reopen Codync if it does not relaunch,
+then check the version in **Settings → Updates**.
+
+If it still fails, uninstall and reinstall the application from the
+[latest release](https://github.com/leepokai/Codync/releases/latest).
+Replace the application while keeping its data and settings. **Do not use Reset
+all data, delete `~/.codync` (or a custom `CODYNC_HOME`), remove Codync's application
+support/settings folders, or use a cleanup utility.** Those are data resets, not
+update repairs; deleting the host's keys also changes its identity and requires
+devices to pair again.
+
+For a Mac installed from the DMG or one-line installer:
+
+1. Quit Codync. Before moving the old app, remove its background host service:
+
+   ```sh
+   /Applications/Codync.app/Contents/Resources/codync-host uninstall
+   ```
+
+   This removes the service and restores the wrapped Claude Code status line;
+   it does not delete the host's database or keys. If the app is installed
+   elsewhere, use that app's path.
+2. Move only `/Applications/Codync.app` to the Trash. Download `codync-macos.dmg`
+   from the latest release and drag the new Codync app into Applications.
+3. Open the new app. It reinstalls the host service. If the host remains stopped,
+   run the new bundled host explicitly:
+
+   ```sh
+   /Applications/Codync.app/Contents/Resources/codync-host install
+   /Applications/Codync.app/Contents/Resources/codync-host status
+   ```
+
+For a Homebrew app installation, quit Codync and use
+`brew reinstall --cask leepokai/codync/codync`, then open Codync. The cask removes
+the old service before replacement. Do **not** add `--zap`, which removes data.
+
+On Windows, quit Codync and stop its bundled `codync-host.exe` with the `stop`
+command before reinstalling the desktop app. On Linux, replace the AppImage or
+reinstall the desktop package using the original installation method. For a
+standalone host, run `codync-host stop`, reinstall using the original installer
+or `brew reinstall leepokai/codync/codync-host`, then run `codync-host install`.
+`codync-host uninstall` removes the background service, not the executable or
+saved bots, so it is not a complete application uninstall.
+
+After reinstalling, confirm the app version and that the computer reconnects.
+Existing bots and pairings should remain when the original data and keys are
+kept. Repair the app on the affected computer: an SSH-connected Mac mini must
+be reinstalled on the Mac mini, not on the computer displaying its SSH entry.
+
 ### Desktop updater regression tests
 
 Run `cd apps/desktop && npm run typecheck && npm test`. The updater tests load the

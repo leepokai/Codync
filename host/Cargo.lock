@@ -586,7 +586,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codync-host"
-version = "2.13.2"
+version = "2.14.0"
 dependencies = [
  "anyhow",
  "axum",

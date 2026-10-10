@@ -49,6 +49,8 @@ Stop only the variant being replaced. Avoid `pkill codync-host`, generic bundle 
 
 Register the development app identifiers, App Group and Sign in with Apple capability with the signing team. Configure the Clerk development instance to accept the new iOS identifier and desktop callback. These settings are external to the repository; a successful simulator build does not prove signing or sign-in works on a device.
 
+Since 2026-10-10 the Clerk development instance lists `7FUM8A8H72.com.pokai.Codync.ios.dev` and `7FUM8A8H72.com.pokai.Codync.dev` under Native applications, with their `://callback` redirects. Without the iOS entry, Clerk rejects the Dev app's native Apple token: the log shows `sign_up.failed` with "You are not authorized to perform this request", and the app shows only "Couldn't sign in". Check the instance's Logs page first when sign-in fails.
+
 The cloud adds `/v1/oauth/callback/dev` for connector sign-in, returning `codync-dev://oauth`. The existing callback keeps returning `codync://oauth`. Deploy the added route to the development Worker before testing connector sign-in from a Dev client.
 
 The push relay seals the app bundle identifier into new tickets and selects that APNs topic. Existing tickets and registrations without a bundle identifier retain the production topic. Only the production and Dev iOS identifiers are accepted; alert and Live Activity destinations stay separate. Deploy this additive relay change before testing Dev notifications. APNs sandbox/production is a signing/distribution choice, independent of which Codync cloud is used.
@@ -65,6 +67,8 @@ Before resetting keys or pairing again:
 4. Refresh the account list. Working SSH or local access does not prove the clouds match.
 
 An environment change is not a migration of the production account or host. The fresh Dev instance starts without production bots or permissions.
+
+A local build from before the Dev split (2.11.x and earlier) uses the development cloud even when it is named **Codync**. Its `~/.codync` identity stays claimed in the development account, so Codync Dev phones list it and request access to it. Replace such a build with a release build, then unclaim that identity from the development account. Observed on 2026-10-10: a 2.11.2 local build ran as this Mac's production host.
 
 ## Local verification (2026-10-09)
 

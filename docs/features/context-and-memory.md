@@ -37,11 +37,14 @@ its own context and compacts it itself.
 - Engram stores each bot's durable observations in an independent SQLite database. The old Markdown memory
   imports automatically, with original dates and source references preserved.
 - The instruction snapshot includes up to 100 profile facts and 30 recent facts, within a 4,000-character
-  recent-memory budget. A keeper consolidates crowded profiles to at most 60 facts; demoted facts remain
-  searchable. Manual corrections invalidate snapshots and send a notice on the next turn.
+  recent-memory budget (each recent fact or summary clipped to 500 characters). A keeper consolidates crowded
+  profiles to at most 60 facts; demoted facts remain searchable. Manual corrections invalidate snapshots and
+  send a notice on the next turn; pins and imports re-render them. A re-render keeps what the agent last heard
+  of its profile, so an update it missed is still announced.
 - Completed memorable exchanges queue durably. After five idle minutes or eight exchanges, the bot's own
   harness extracts durable facts and saves a native Engram session summary. A new session or reported
-  compaction requests an early flush. Failed batches remain queued for retry.
+  compaction requests an early flush. Failed batches remain queued and retry with backoff.
+- Memory is best-effort: a bot whose Engram can't start still answers, and says so once.
 - Claude's keeper uses Haiku without tools, settings or persisted helper sessions; other harnesses use the
   bot's selected model with inline instructions. Automatic naming still uses `chat/naming.rs`.
 - The built-in memory MCP server forwards native Engram tools for recall, saving, review and conflict
@@ -54,6 +57,10 @@ its own context and compacts it itself.
 - Messages sent while the agent works are folded into one next turn, joined by blank lines.
 - Bot-to-bot requests occupy separate turns in the same queue; user messages are only folded together up to the next request. Requests never feed the user-fact memory keeper. See [bot collaboration](bot-collaboration.md).
 - Delegated turns do not set the restart marker: their waiter disappears on restart. Pending delegation notices become interrupted errors instead of automatically replaying work.
+- Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
+  the next turn). `session/new`, `session/load` and `session/fork` get three minutes before the agent is
+  stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
+  that can't keeps its session, and its next new session gets them.
 - `turn.inflight.<bot>` records the running turn start and its thread lane. If the host stops mid-turn (update, crash, restart), the next
   start resumes that session with a hidden "you were interrupted, don't repeat finished steps" prompt. If the
   session can't be resumed, or the turn started over an hour ago, it does nothing.

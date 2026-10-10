@@ -119,7 +119,8 @@ impl App {
         let Some(new) = Bot::parse(v) else { return };
         // Marked read once per change: an open thread leaves the main chat's replies unread.
         if self.bots.get(&new.id).is_none_or(|old| old.unread != new.unread) {
-            self.reading.remove(&new.id);
+            let thread = format!("{}/", new.id);
+            self.reading.retain(|scope| *scope != new.id && !scope.starts_with(&thread));
         }
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
@@ -319,7 +320,10 @@ impl App {
                     self.files.remove(key);
                 }
                 self.sends.remove(key);
-                self.on_event(&json!({"type": "entry", "entry": value["entry"]}));
+                // The stream may already hold a newer copy (its delivery status).
+                if let Some((bot, e)) = Entry::parse(&value["entry"]) {
+                    self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
+                }
                 self.flash("Sent");
             }
             Err(error) => self.flash(&format!("{error} Draft kept; Enter retries, Ctrl+C clears text.")),

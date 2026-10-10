@@ -37,8 +37,10 @@ const EXCHANGE_CHARS: usize = 8_000;
 const KEEPER_TIMEOUT: Duration = Duration::from_secs(180);
 /// Quiet time after the last exchange before the keeper runs over the queued ones.
 const KEEPER_IDLE: Duration = Duration::from_secs(5 * 60);
-/// Queued exchanges that make the keeper run without waiting.
+/// Queued exchanges that make the keeper run without waiting, and the most one run takes.
 const KEEPER_BATCH: usize = 8;
+/// Exchanges kept waiting while the keeper fails; older ones are dropped.
+const KEEPER_QUEUE_LIMIT: usize = 4 * KEEPER_BATCH;
 
 const NOTE_PREFIX: &str = "[note] ";
 const NONE: &str = "NONE";
@@ -68,11 +70,16 @@ pub fn render(recall: &Recall, location: &Path) -> (String, bool) {
         let mut budget = RECENT_CHAR_BUDGET;
         let mut shown = 0;
         for f in &recall.recent {
-            let line = fact_line(f);
-            if shown > 0 && line.len() > budget {
+            // Characters, not bytes, so CJK facts get the same room; a long one (a session summary) is clipped.
+            let mut line = fact_line(f);
+            if line.chars().count() > MAX_FACT_CHARS {
+                line = line.chars().take(MAX_FACT_CHARS).chain(['…']).collect();
+            }
+            let size = line.chars().count();
+            if size > budget {
                 break;
             }
-            budget = budget.saturating_sub(line.len());
+            budget -= size;
             lines.push(line);
             shown += 1;
         }
@@ -91,4 +98,38 @@ pub fn render(recall: &Recall, location: &Path) -> (String, bool) {
 /// Ensure installation, migration and the native memory process before starting a session.
 pub async fn prepare(bot_id: &str) -> Result<()> {
     engram::prepare(bot_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fact(content: &str) -> Fact {
+        Fact {
+            id: "1".into(),
+            content: content.into(),
+            created_at: 0,
+            kind: facts::Kind::Log,
+            title: String::new(),
+            memory_type: "discovery".into(),
+            scope: "project".into(),
+            project: String::new(),
+            topic_key: None,
+            session_id: String::new(),
+            pinned: false,
+            review_after: None,
+            revision_count: 1,
+            source: None,
+        }
+    }
+
+    #[test]
+    fn recent_memories_share_a_character_budget() {
+        let mut recent = vec![fact(&"摘".repeat(9_000))];
+        recent.extend((0..20).map(|i| fact(&format!("使用者偏好繁體中文 {i}"))));
+        let (text, _) = render(&Recall { profile: vec![], recent }, Path::new("/tmp"));
+        let facts: Vec<&str> = text.lines().filter(|l| l.starts_with("- (learned")).collect();
+        assert!(facts.iter().all(|l| l.chars().count() <= MAX_FACT_CHARS + 1), "a long memory is clipped");
+        assert_eq!(facts.len(), 21, "short CJK facts still fit after a long summary");
+    }
 }

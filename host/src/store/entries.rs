@@ -3,7 +3,7 @@
 use super::model::{Entry, EntryKind, Lane, ReadScope};
 use super::{Store, logged, next_rev, now_ms};
 use crate::LockExt;
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 use std::fmt::Write as _;
@@ -25,6 +25,8 @@ fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
 }
 
 const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, updated_at, thread_id";
+/// A bot still winding down after its deletion can't leave lines behind (`?2` is the chat).
+const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND deleted = 1)";
 
 impl Store {
     pub fn insert_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Result<Entry> {
@@ -32,11 +34,14 @@ impl Store {
         let rev = next_rev(&c)?;
         let now = now_ms();
         let id = uuid::Uuid::new_v4().to_string();
-        c.execute(
-            "INSERT INTO entries(id, bot_id, thread_id, rev, kind, turn, data, created_at, updated_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        let added = c.execute(
+            &format!(
+                "INSERT INTO entries(id, bot_id, thread_id, rev, kind, turn, data, created_at, updated_at)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8 {LIVE_CHAT}"
+            ),
             params![id, lane.chat, lane.thread, rev, kind.as_str(), turn, data.to_string(), now],
         )?;
+        ensure!(added == 1, "the chat was deleted");
         Ok(Entry {
             id,
             seq: c.last_insert_rowid(),
@@ -62,8 +67,9 @@ impl Store {
         }
         let rev = next_rev(&tx)?;
         let now = now_ms();
-        tx.execute("INSERT INTO entries(id, bot_id, thread_id, rev, kind, turn, data, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?7)",
+        let added = tx.execute(&format!("INSERT INTO entries(id, bot_id, thread_id, rev, kind, turn, data, created_at, updated_at) SELECT ?1, ?2, ?3, ?4, ?5, 0, ?6, ?7, ?7 {LIVE_CHAT}"),
             params![id, lane.chat, lane.thread, rev, kind.as_str(), data.to_string(), now])?;
+        ensure!(added == 1, "the chat was deleted");
         let entry = tx.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?"), [id], row_entry)?;
         tx.commit()?;
         Ok((entry, true))

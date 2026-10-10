@@ -53,7 +53,8 @@ replies itself.
   told who's in the room and what was said since it last spoke there, framed as
   `[Group chat: "<name>" - with …]`. Its final reply is the one message the room sees; replying
   `(pass)` says nothing. A round where nobody speaks ends the room turn.
-- A new message in the same lane, or Stop, ends a running room turn before its next speaker.
+- A new message in the same lane, or Stop, ends a running room turn before its next speaker;
+  a member still busy elsewhere skips the old room turn's queued request.
 - Tool calls, thoughts and permission cards of a member's group turn are written to the
   group (with `author`), not to the member's own chat. One "done" push per room turn.
 - Files sent to a group are kept in the group's data folder (`~/.codync/bots/<group>/uploads`);

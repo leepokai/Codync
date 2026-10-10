@@ -1,6 +1,6 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
-use super::{Actor, Cmd, Done, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
+use super::{Actor, CANCEL_GRACE, Cmd, Done, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
 use crate::chat::memory;
 use crate::hub::BotStatus;
 use crate::store::{Lane, now_ms};
@@ -131,6 +131,7 @@ impl Actor {
             return;
         }
         self.stop_requested = true;
+        self.cancel_deadline.get_or_insert_with(|| Instant::now() + CANCEL_GRACE);
         self.files.cancel();
         let ids: Vec<String> = self.perms.keys().cloned().collect();
         for id in ids {
@@ -153,7 +154,6 @@ impl Actor {
                         Ok(Some(prepared)) => {
                             self.routine_deadline = Some(Instant::now() + prepared.timeout);
                             let result = self.start_turn(prepared.lane, &[], &prepared.prompt, false, done_tx).await;
-                            self.turn_text = None;
                             if let Err(error) = result {
                                 self.start_failed(&error);
                             }
@@ -184,8 +184,6 @@ impl Actor {
                     ask.mark_started();
                     self.active_request = Some(ask);
                     let result = self.start_turn(main.clone(), &ids, &prompt, false, done_tx).await;
-                    // Another bot's words are not facts learned from the user.
-                    self.turn_text = None;
                     if let Err(e) = result {
                         self.start_failed(&e);
                     }
@@ -195,14 +193,13 @@ impl Actor {
                     let Some(Queued::Group(turn)) = self.queue.pop_front() else {
                         unreachable!("front is a group turn")
                     };
-                    if turn.reply.is_closed() {
+                    // A newer message in the room (or Stop) ended the room turn that queued this.
+                    if turn.reply.is_closed() || !self.hub.groups.current(&turn.lane, turn.epoch) {
                         continue;
                     }
                     let (lane, prompt) = (turn.lane.clone(), turn.prompt.clone());
                     self.active_group = Some(turn);
                     let result = self.start_turn(lane, &[], &prompt, false, done_tx).await;
-                    // The room is not the user's private chat: nothing here feeds memory.
-                    self.turn_text = None;
                     if let Err(e) = result {
                         self.start_failed(&e);
                     }

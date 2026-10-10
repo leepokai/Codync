@@ -27,6 +27,9 @@ struct ConversationList: View {
     @Binding var following: Bool
     /// The reader scrolled up near the top: time to bring in earlier messages.
     var nearTop: (() -> Void)?
+    /// Letting go of a full pull past the top: the force refresh, its indicator held until it returns.
+    var refresh: (() async -> Void)?
+    @State private var pull = PullToRefresh()
     /// The safe area (under the bars, above the composer and the keyboard) and the whole screen.
     @State private var safeFrame = CGRect.zero
     @State private var fullFrame = CGRect.zero
@@ -39,10 +42,13 @@ struct ConversationList: View {
             .ignoresSafeArea()
             // The list itself stays inside the safe area (so its rows never see one) and
             // reaches out past it.
-            ConversationCollection(rows: rows, following: $following, nearTop: nearTop,
+            ConversationCollection(rows: rows, following: $following, nearTop: nearTop, refresh: refresh, pull: pull,
                                    outsets: UIEdgeInsets(top: max(0, safeFrame.minY - fullFrame.minY), left: 0,
                                                          bottom: max(0, fullFrame.maxY - safeFrame.maxY), right: 0))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { safeFrame = $0 }
+        }
+        .overlay(alignment: .top) {
+            if refresh != nil { PullIndicator(pull: pull).padding(.top, 8) }
         }
         .overlay(alignment: .bottom) {
             JumpToLatest(visible: !following && !rows.isEmpty) { following = true }
@@ -54,6 +60,8 @@ private struct ConversationCollection: UIViewRepresentable {
     let rows: [ConversationRow]
     @Binding var following: Bool
     let nearTop: (() -> Void)?
+    let refresh: (() async -> Void)?
+    let pull: PullToRefresh
     /// How far past its frame the list reaches: under the bars, the composer and the keyboard.
     let outsets: UIEdgeInsets
 
@@ -215,6 +223,7 @@ private struct ConversationCollection: UIViewRepresentable {
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             let y = scrollView.contentOffset.y
             defer { lastOffset = y }
+            trackPull(scrollView)
             // Only the reader's own scrolling changes following; layout never does.
             guard scrollView.isTracking || scrollView.isDecelerating else { return }
             setFollowing(view.followingAfterScroll(from: lastOffset))
@@ -223,8 +232,31 @@ private struct ConversationCollection: UIViewRepresentable {
             }
         }
 
+        func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint,
+                                       targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+            guard let parent, let refresh = parent.refresh, parent.pull.progress >= 1, !parent.pull.refreshing,
+                  let container = view.superview as? ConversationContainer else { return }
+            // The chat eases back to just below the indicator and stays there while it turns. UIKit's
+            // own bounce would fight the new inset (and snapshots applied meanwhile clamp it), so it's
+            // stopped and the chat is moved here instead.
+            targetContentOffset.pointee = scrollView.contentOffset
+            parent.pull.refreshing = true
+            container.hold = PullToRefresh.hold
+            container.layoutIfNeeded()
+            DispatchQueue.main.async { [self] in
+                view.setContentOffset(view.contentOffset, animated: false)
+                animate(PullToRefresh.settle) { [view] in
+                    guard let view else { return }
+                    view.contentOffset.y = -view.adjustedContentInset.top
+                }
+                settle()
+            }
+            Task { await finishRefresh(refresh, pull: parent.pull, container: container) }
+        }
+
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-            if !decelerate { settle() }
+            // Past the top isn't a resting place: the bounce (or a refresh) settles it.
+            if !decelerate, scrollView.contentOffset.y >= -scrollView.adjustedContentInset.top { settle() }
         }
 
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
@@ -243,6 +275,34 @@ private struct ConversationCollection: UIViewRepresentable {
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
             if view.following { view.pinToEnd() }
+        }
+
+        /// Long enough to read as a refresh even when the link comes back at once; then the chat
+        /// eases back up instead of jumping.
+        private func finishRefresh(_ refresh: () async -> Void, pull: PullToRefresh, container: ConversationContainer) async {
+            let start = ContinuousClock.now
+            await refresh()
+            try? await Task.sleep(until: start + .milliseconds(600))
+            pull.refreshing = false
+            pull.progress = 0
+            animate(PullToRefresh.settle) { [view] in
+                container.hold = 0
+                container.layoutIfNeeded()
+                guard let view else { return }
+                let top = -view.adjustedContentInset.top
+                if view.contentOffset.y < top { view.contentOffset.y = top }
+            }
+            settle()
+        }
+
+        /// The ring follows the pull past the top; a tap of feedback says letting go will refresh.
+        private func trackPull(_ scrollView: UIScrollView) {
+            guard let pull = parent?.pull, parent?.refresh != nil, !pull.refreshing else { return }
+            let distance = -(scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+            let progress = min(max(distance / PullToRefresh.distance, 0), 1)
+            guard progress != pull.progress else { return }
+            if progress == 1, scrollView.isTracking { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+            pull.progress = progress
         }
 
         /// The reader stopped scrolling: resting at the end follows again; anywhere else stays put.
@@ -285,6 +345,10 @@ private final class ConversationContainer: UIView {
     var outsets = UIEdgeInsets.zero {
         didSet { if outsets != oldValue { setNeedsLayout() } }
     }
+    /// Extra room above the rows while a pull refreshes.
+    var hold: CGFloat = 0 {
+        didSet { if hold != oldValue { setNeedsLayout() } }
+    }
 
     init(list: ConversationCollectionView) {
         self.list = list
@@ -298,8 +362,9 @@ private final class ConversationContainer: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         list.frame = bounds.inset(by: UIEdgeInsets(top: -outsets.top, left: 0, bottom: -outsets.bottom, right: 0))
-        if list.contentInset != outsets {
-            list.contentInset = outsets
+        let insets = UIEdgeInsets(top: outsets.top + hold, left: 0, bottom: outsets.bottom, right: 0)
+        if list.contentInset != insets {
+            list.contentInset = insets
             list.verticalScrollIndicatorInsets = outsets
             if list.following { list.pinToEnd() }
         }

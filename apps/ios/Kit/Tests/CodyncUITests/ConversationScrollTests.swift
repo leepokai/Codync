@@ -98,6 +98,8 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
     let view = ConversationCollectionView(frame: CGRect(x: 0, y: 0, width: 320, height: 600),
                                           collectionViewLayout: TallConversationLayout())
     view.layoutIfNeeded()
+    // Outside a window the layout's size never arrives; without it this chat would be short.
+    view.contentSize = TallConversationLayout().collectionViewContentSize
     let end = view.endOffset
     var previous = end
     for offset in [end + 80, end + 40, end + 10, end] {
@@ -115,6 +117,19 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
     #expect(view.followingAfterScroll(from: end - 80))
 }
 
+@MainActor @Test func pullingDownPastTheTopKeepsFollowing() {
+    let view = ConversationCollectionView(frame: CGRect(x: 0, y: 0, width: 320, height: 600),
+                                          collectionViewLayout: ShortConversationLayout())
+    view.layoutIfNeeded()
+    var previous = view.endOffset
+    for offset in [-40.0, -100, -160] {
+        view.contentOffset.y = offset
+        view.following = view.followingAfterScroll(from: previous)
+        #expect(view.following)
+        previous = offset
+    }
+}
+
 @MainActor private final class InteractingConversationView: ConversationCollectionView {
     var phase: String?
     override var isTracking: Bool { phase == "tracking" }
@@ -124,5 +139,10 @@ func bottomPinningPreservesNativeOverscrollDuringInteraction(_ phase: String) {
 
 @MainActor private final class TallConversationLayout: UICollectionViewLayout {
     override var collectionViewContentSize: CGSize { CGSize(width: 320, height: 5_000) }
+    override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? { [] }
+}
+
+@MainActor private final class ShortConversationLayout: UICollectionViewLayout {
+    override var collectionViewContentSize: CGSize { CGSize(width: 320, height: 200) }
     override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? { [] }
 }

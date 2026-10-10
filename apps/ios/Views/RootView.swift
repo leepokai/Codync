@@ -69,32 +69,25 @@ struct RootView: View {
         }
     }
 
-    /// Both tab stacks stay alive (scroll position, open thread); the tab bar hides while a thread is open.
+    /// The system tab bar; both tabs stay alive (scroll position, open thread) and the bar hides while a
+    /// thread is open.
     private var tabs: some View {
-        ZStack {
-            NavigationStack(path: path) {
-                BotListView()
-                    .navigationDestination(for: BotReference.self) { ref in ChatScreen(ref: ref) }
-            }
-            .tabLayer(app.tab == .bots)
-            StateTab()
-                .tabLayer(app.tab == .state)
-        }
-        .animation(Motion.reduced(Motion.fade, reduceMotion), value: app.tab)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if accounts.selection == nil {
-                VStack(spacing: 8) {
-                    AccessBanners()
-                    TabBar(selection: Bindable(app).tab, tabs: [
-                        (id: AppTab.bots, title: "Bots", icon: "bubble.left.and.bubble.right.fill"),
-                        (id: AppTab.state, title: "State", icon: "rectangle.stack.fill"),
-                    ])
-                    .padding(.bottom, 4)
+        TabView(selection: Bindable(app).tab) {
+            Tab("Bots", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
+                NavigationStack(path: path) {
+                    BotListView()
+                        .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
+                        .navigationDestination(for: BotReference.self) { ref in
+                            ChatScreen(ref: ref).toolbar(.hidden, for: .tabBar)
+                        }
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            Tab("State", systemImage: "rectangle.stack.fill", value: AppTab.state) {
+                StateTab()
+                    .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
         }
-        .animation(Motion.reduced(Motion.layout, reduceMotion), value: accounts.selection == nil)
+        .tint(Palette.text)
         // Opening a bot (notification, widget, link) always lands on the Bots tab.
         .onChange(of: accounts.selection) { _, ref in if ref != nil { app.tab = .bots } }
     }
@@ -349,6 +342,7 @@ private struct AccessBanners: View {
             }
         }
         .padding(.horizontal, 16)
+        .padding(.bottom, accounts.pendingAccess.isEmpty ? 0 : 8)
         .animation(Motion.layout, value: accounts.pendingAccess.keys.sorted())
         .accessibilityElement(children: .contain)
     }

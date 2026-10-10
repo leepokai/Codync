@@ -55,7 +55,7 @@ export function RepliesView({ botId, rootId, close }: { botId: string; rootId: s
               <ChatRow entry={root} groupStart chat={chat} openTrace={openTrace} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0' }}>
                 <span style={{ ...font('caption'), color: 'var(--tertiary)', whiteSpace: 'nowrap' }}>
-                  {replies.length === 0 ? 'No replies yet' : replies.length === 1 ? '1 reply' : `${replies.length} replies`}
+                  {replyCount(root.data.thread?.count ?? 0)}
                 </span>
                 <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
               </div>
@@ -90,4 +90,9 @@ export function RepliesView({ botId, rootId, close }: { botId: string; rootId: s
       </Sheet>
     </div>
   )
+}
+
+/** The host's count, as on the thread's chip: messages, not the agent's trace. */
+function replyCount(count: number) {
+  return count === 0 ? 'No replies yet' : count === 1 ? '1 reply' : `${count} replies`
 }

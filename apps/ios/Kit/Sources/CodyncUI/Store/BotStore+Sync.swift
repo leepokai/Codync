@@ -67,7 +67,7 @@ extension BotStore {
         let cached = cacheStamp.map { $0 != "\(Self.appBuild)/\(new.version)" } ?? false
         if cached || (hostVersion.map { $0.version != new.version } ?? false) {
             // A different host version or app build: data may carry new fields, so fetch it all again.
-            rev = 0
+            refetchAll()
             rewound = false
             unreadable = false
         }
@@ -142,7 +142,7 @@ extension BotStore {
             log.error("undecodable \(type) event")
             if !rewound {
                 rewound = true
-                rev = 0
+                refetchAll()
                 restartEvents()
             } else if !unreadable {
                 Motion.animate { unreadable = true }
@@ -172,6 +172,16 @@ extension BotStore {
         windowFloors = [:]
         screen = nil
         saveCache()
+    }
+
+    /// Fetches everything again from rev 0. That catch-up brings only each chat's newest entries, so
+    /// the main-chat ones held now go too: an older one kept would hide the gap from `loadOlder`, which
+    /// pages from the oldest one held. Threads (loaded whole when opened) and messages still sending stay.
+    private func refetchAll() {
+        rev = 0
+        entries = entries.mapValues { $0.filter { $0.threadId != nil || $0.id.hasPrefix("local-") } }
+            .filter { !$0.value.isEmpty }
+        historyComplete = []
     }
 
     /// Resubscribes from the current `rev` on the same link.

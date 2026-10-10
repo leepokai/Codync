@@ -608,6 +608,7 @@ dependencies = [
  "hmac 0.13.0",
  "if-addrs",
  "keyring",
+ "libc",
  "portable-pty",
  "qrcode",
  "ratatui",

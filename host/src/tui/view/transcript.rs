@@ -237,7 +237,22 @@ fn entry_lines(
                 Span::styled(format!(" {name}"), name_style(color)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ]));
-            out.lines.extend(md::render(e.text(), width, 1));
+            if let Some(files) = e.data["files"].as_array().filter(|files| !files.is_empty()) {
+                for file in files {
+                    let name = file["name"].as_str().unwrap_or("file");
+                    let size = file["size"].as_u64().unwrap_or(0);
+                    out.lines.push(Line::from(Span::styled(
+                        format!(" ▤ {} · {}", truncate(name, width.saturating_sub(18)), file_size(size)),
+                        t.text,
+                    )));
+                    out.lines.push(Line::from(Span::styled(
+                        "   Select this message, then f to download · f again cancels",
+                        t.dim,
+                    )));
+                }
+            } else {
+                out.lines.extend(md::render(e.text(), width, 1));
+            }
             reactions(out, e);
             out.messages.push((e.id.clone(), from, out.lines.len()));
             if let Some(ti) = info.get(&e.turn).filter(|ti| ti.steps > 0 && ti.last_message.as_ref() == Some(&e.id)) {
@@ -388,6 +403,23 @@ fn thread_summary(v: &serde_json::Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn generated_files_are_selectable_cards_without_duplicate_fallback_text() {
+        use crate::tui::app::Msg;
+        use serde_json::json;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(crate::tui::net::Client::new("http://127.0.0.1:1", Some("fixture")), tx, String::new());
+        app.on_msg(Msg::Event(json!({"type":"bot", "bot":{"id":"bot", "name":"Files", "cwd":"/workspace", "backend":"custom", "status":"idle"}})));
+        app.on_msg(Msg::Event(json!({"type":"entry", "entry":{"id":"file-entry", "botId":"bot", "seq":1, "kind":"agent", "turn":1, "data":{"author":"bot", "text":"fallback must stay hidden", "final":true, "files":[{"id":"file", "name":".empty", "size":0, "sha256":"hash"}]}}})));
+        let bot = app.bots.get("bot").unwrap();
+        let chat = build_chat(&app, bot, 80);
+        let text = chat.lines.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n");
+        assert!(text.contains(".empty"));
+        assert!(text.contains("f to download"));
+        assert!(!text.contains("fallback must stay hidden"));
+        assert!(chat.messages.iter().any(|(id, _, _)| id == "file-entry"));
+    }
 
     fn app_with_bots() -> App {
         let (tx, _) = tokio::sync::mpsc::unbounded_channel();

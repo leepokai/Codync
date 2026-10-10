@@ -11,6 +11,11 @@ pub enum Msg {
     Connected {
         since: i64,
     },
+    FileDownload {
+        id: String,
+        status: Result<String, String>,
+        done: bool,
+    },
     Event(Value),
     Reply(After, Result<Value, String>),
     /// The stream is starting over from rev 0: drop what we have.

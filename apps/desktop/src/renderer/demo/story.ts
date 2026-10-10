@@ -71,6 +71,9 @@ export const entries: SeedEntry[] = [
   { id: 's5', botId: 'scout', kind: 'tool', at: 56, data: { title: 'npm test', toolKind: 'execute', command: 'npm test', status: 'completed', output: '✓ isoWeek: mid year\n✓ isoWeek: first week\n✓ weeklyTotals: sums one week\n✓ weeklyTotals: week that crosses into 2027\n\n4 passing (12ms)', author: 'scout' } },
   reply('s6', 'scout', 'scout', 55, 'I added `weeklyTotals(runs)` to `src/pace.js`. It takes runs shaped like `{ date, distance, time }`, groups them by ISO week in UTC (keys like `"2026-W53"`) and sums distance and time. The new test covers the week that crosses into 2027. All 4 tests pass and nothing is committed yet.'),
 
+  { id: 'generated-file', botId: 'scout', kind: 'agent', at: 0, data: { text: 'report.pdf (1250000 bytes)', final: true, files: [{ id: 'demo-report', name: 'report.pdf', size: 1250000, sha256: '0'.repeat(64) }] } },
+  { id: 'generated-binary', botId: 'scout', kind: 'agent', at: 0, data: { text: 'binary-output.dat (2000000 bytes)', final: true, files: [{ id: 'demo-binary', name: 'binary-output.dat', size: 2000000, sha256: '0'.repeat(64) }] } },
+
   // Reviewer looks it over.
   user('r1', 'reviewer', 50, 'Review weeklyTotals before we ship it.'),
   tool('r2', 'reviewer', 49, 'Read src/pace.js', 'read'),

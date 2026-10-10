@@ -7,6 +7,7 @@ const map: Record<string, IconNode> = {
   'arrow.clockwise': L.RotateCw,
   'arrow.counterclockwise': L.RotateCcw,
   'arrow.down': L.ArrowDown,
+  'arrow.down.to.line': L.Download,
   'arrow.down.circle': L.CircleArrowDown,
   'arrow.down.right.and.arrow.up.left': L.Minimize2,
   'arrow.left': L.ArrowLeft,

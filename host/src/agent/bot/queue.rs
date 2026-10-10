@@ -61,6 +61,7 @@ impl Actor {
             Cmd::SendToUser { text, reply } => {
                 let _ = reply.send(self.send_to_user(text));
             }
+            Cmd::SendFile { path, name, cancelled, reply } => self.begin_file(path, name, cancelled, reply),
             Cmd::Stop => self.stop().await,
             Cmd::Permission { entry_id, option_id } => self.answer_permission(&entry_id, option_id).await,
             Cmd::NewSession => {
@@ -83,6 +84,7 @@ impl Actor {
                 // on the next message (see `context`).
                 self.cfg = cfg;
                 if restart {
+                    self.files.cancel();
                     if let Some(c) = self.conn.take() {
                         c.acp.kill().await;
                     }
@@ -129,6 +131,7 @@ impl Actor {
             return;
         }
         self.stop_requested = true;
+        self.files.cancel();
         let ids: Vec<String> = self.perms.keys().cloned().collect();
         for id in ids {
             self.answer_permission(&id, None).await;

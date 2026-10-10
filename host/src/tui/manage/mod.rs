@@ -224,7 +224,21 @@ impl App {
     }
 
     /// Saves a message's files to Downloads.
-    pub(super) fn save_files(&mut self, bot: &str, data: &Value) {
+    pub(super) fn save_files(&mut self, bot: &str, entry: &str, data: &Value) {
+        if self.download.take().is_some() {
+            self.flash("Download cancelled · f retries");
+            return;
+        }
+        if let Some(meta) = data["files"].as_array().and_then(|files| files.first()) {
+            match serde_json::from_value(meta.clone()) {
+                Ok(file) => {
+                    self.download = Some(self.client.download_file(entry.to_owned(), file, self.tx.clone()));
+                    self.flash("Downloading… · f cancels");
+                }
+                Err(error) => self.flash(&format!("Invalid file: {error}")),
+            }
+            return;
+        }
         let files: Vec<(String, String)> = data["attachments"]
             .as_array()
             .into_iter()

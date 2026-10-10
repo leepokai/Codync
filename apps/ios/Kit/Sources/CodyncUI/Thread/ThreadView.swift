@@ -74,6 +74,12 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
+            .codyncSheet(item: Binding<FileDownloads.Export?>(get: {
+                guard let item = model.fileDownloads.export, item.botId == botId, item.threadId == nil else { return nil }
+                return item
+            }, set: { if $0 == nil { model.fileDownloads.dismissExport() } })) { item in
+                FileExportSheet(url: item.url) { model.fileDownloads.dismissExport() }
+            }
             .codyncSheet(isPresented: $showTrace) {
                 TraceView(botId: botId)
             }

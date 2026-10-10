@@ -122,6 +122,8 @@ export interface Attachment {
   size: number
 }
 
+export interface SharedFile extends Attachment { sha256: string }
+
 export const isImageName = (name: string) =>
   ['png', 'jpg', 'jpeg', 'heic', 'gif', 'webp', 'tiff', 'bmp'].includes(name.split('.').pop()?.toLowerCase() ?? '')
 
@@ -169,6 +171,7 @@ export interface EntryData {
   thread?: ThreadSummary
   reactions?: string[]
   attachments?: Attachment[]
+  files?: SharedFile[]
   callSeconds?: number
 }
 

@@ -120,6 +120,10 @@ export function parseEvent(line: string): HostEvent | null {
 
 /** Typed host calls (host/src/api/); anything else goes through `call`. */
 export class HostClient {
+  readFile(entryId: string, fileId: string, offset: number): Promise<{ data: string; size: number }> {
+    return this.call('readFile', { entryId, fileId, offset })
+  }
+
   constructor(readonly transport: HostTransport) {}
 
   call<T>(method: string, body: unknown = {}, timeoutMs = 20_000): Promise<T> {

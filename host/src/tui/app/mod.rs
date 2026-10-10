@@ -60,6 +60,7 @@ pub struct App {
     pub drafts: HashMap<String, Editor>,
     /// Files dropped on the composer (pasted paths), per draft like the text.
     pub files: HashMap<String, Vec<std::path::PathBuf>>,
+    pub download: Option<super::net::files::Download>,
     sends: HashMap<String, PendingSend>,
     /// Lines scrolled up from the bottom of the chat (0 = follow new messages).
     pub chat_scroll: usize,
@@ -109,6 +110,7 @@ pub struct App {
 impl App {
     pub fn new(client: Client, tx: UnboundedSender<Msg>, url: String) -> Self {
         Self {
+            download: None,
             client,
             tx,
             url,

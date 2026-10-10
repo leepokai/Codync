@@ -69,6 +69,7 @@ public final class BotStore {
     public internal(set) var historyComplete: Set<String> = []
     var composerDrafts: [String: String] = [:]
     public var routineDrafts: [String: String] = [:]
+    public let fileDownloads = FileDownloads()
     public var lastError: String?
     /// The open conversation (iOS navigation path / Mac sidebar selection).
     public var selection: String?

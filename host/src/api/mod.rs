@@ -5,6 +5,7 @@
 mod bots;
 pub mod devices;
 mod events;
+mod files;
 mod host;
 mod http;
 mod marketplace;
@@ -77,6 +78,9 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv")
     {
         market::vault::unlock(hub.clone()).await?;
+    }
+    if method == "readFile" {
+        return files::read(hub, &b).await;
     }
     // Each method group answers its own methods and hands the body back otherwise.
     let b = match host::call(hub, caller, method, b).await? {

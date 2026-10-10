@@ -76,6 +76,12 @@ const bridge: CodyncBridge = {
     setAutoCheck: (on) => ipcRenderer.send('updates:autoCheck', on),
     setAutoDownload: (on) => ipcRenderer.send('updates:autoDownload', on),
   },
+  files: {
+    begin: (file) => ipcRenderer.invoke('files:begin', file),
+    write: (id, offset, data) => ipcRenderer.invoke('files:write', id, offset, data),
+    finish: (id) => ipcRenderer.invoke('files:finish', id),
+    cancel: (id) => ipcRenderer.invoke('files:cancel', id),
+  },
   app: {
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),
     copy: (text) => ipcRenderer.send('app:copy', text),

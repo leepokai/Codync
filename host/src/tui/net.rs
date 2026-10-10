@@ -1,5 +1,7 @@
 //! Host API over HTTP: JSON commands and the SSE event stream (same wire as the apps).
 
+pub mod files;
+
 use futures::StreamExt;
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -266,8 +268,15 @@ impl Client {
 
 /// `dir/name`, or `name (2)` … when that's taken. The name is only its last part (no `../`).
 fn free_path(dir: &std::path::Path, name: &str) -> PathBuf {
-    let name =
-        std::path::Path::new(name).file_name().map_or_else(|| "file".into(), |n| n.to_string_lossy().into_owned());
+    // Only the last plain component: a drive prefix ("C:x") or parent can't escape `dir`.
+    let name = std::path::Path::new(name)
+        .components()
+        .rev()
+        .find_map(|c| match c {
+            std::path::Component::Normal(n) => Some(n.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .unwrap_or_else(|| "file".into());
     let (stem, ext) = match name.rsplit_once('.') {
         Some((s, e)) if !s.is_empty() => (s.to_owned(), format!(".{e}")),
         _ => (name.clone(), String::new()),
@@ -301,6 +310,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("codync-dl-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(super::free_path(&dir, "../a.txt"), dir.join("a.txt"));
+        assert_eq!(super::free_path(&dir, "/etc/b.txt"), dir.join("b.txt"));
         std::fs::write(dir.join("a.txt"), "").unwrap();
         assert_eq!(super::free_path(&dir, "a.txt"), dir.join("a (2).txt"));
         std::fs::remove_dir_all(&dir).unwrap();

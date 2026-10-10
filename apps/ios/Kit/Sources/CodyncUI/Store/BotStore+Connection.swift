@@ -9,6 +9,7 @@ extension BotStore {
         voiceCalls.removeAll()
         setActive(false)
         retired = true
+        fileDownloads.retire()
         for call in calls { call.end() }
         saveTask?.cancel()
         dropTimer?.cancel()

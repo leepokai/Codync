@@ -44,6 +44,14 @@ impl App {
             }
             Msg::Event(v) => self.on_event(&v),
             Msg::Reply(after, r) => self.on_reply(after, r),
+            Msg::FileDownload { id, status, done } => {
+                if self.download.as_ref().is_some_and(|job| job.id == id) {
+                    self.flash(&status.unwrap_or_else(|error| format!("Download failed: {error}")));
+                    if done {
+                        self.download = None;
+                    }
+                }
+            }
             Msg::Term(id, v) => self.on_term(&id, &v),
         }
     }

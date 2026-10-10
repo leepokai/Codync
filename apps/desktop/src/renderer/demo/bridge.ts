@@ -72,6 +72,7 @@ const bridge: CodyncBridge = {
   },
   cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }) },
   updates: { state: async () => updates, onChange: none, check() {}, setAutoCheck() {}, setAutoDownload() {} },
+  files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
   app: {
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
     copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),

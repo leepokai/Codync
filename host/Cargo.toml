@@ -90,3 +90,6 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

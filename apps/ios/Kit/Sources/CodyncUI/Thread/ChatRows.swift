@@ -214,11 +214,16 @@ struct AgentBubble: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            MarkdownText(entry.data.text ?? "")
-                .equatable()
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            Group {
+                if let files = entry.data.files, !files.isEmpty {
+                    ForEach(files) { file in FileDownloadCard(entry: entry, file: file) }
+                } else {
+                    MarkdownText(entry.data.text ?? "").equatable()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+            }
                 .contextActions(reactions: model.reactionPick(entry)) {
                     var items = [
                         MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) },

@@ -61,6 +61,10 @@
   transition: background-color var(--hover);
   flex: none;
 }
+/* A selected row's fill doesn't touch its hovered neighbour's. */
+.roster-row + .roster-row {
+  margin-top: 4px;
+}
 .roster-empty {
   position: absolute;
   inset: 0;

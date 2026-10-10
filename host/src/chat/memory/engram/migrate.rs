@@ -24,7 +24,7 @@ pub(super) async fn run(binary: &Path, dir: &Path, project: &str) -> Result<()> 
         tokio::fs::rename(&staging, &backup).await?;
     }
     let files: BTreeMap<String, String> = serde_json::from_slice(&tokio::fs::read(&backup).await?)?;
-    let payload = bundle(project, &files)?;
+    let payload = bundle(project, &files);
     let count = payload["observations"].as_array().map_or(0, Vec::len);
     if count > 0 {
         let input = dir.join("markdown-import.json");
@@ -95,7 +95,7 @@ fn read_legacy(dir: &Path) -> Result<BTreeMap<String, String>> {
     Ok(files)
 }
 
-fn bundle(project: &str, files: &BTreeMap<String, String>) -> Result<Value> {
+fn bundle(project: &str, files: &BTreeMap<String, String>) -> Value {
     let session = format!("{project}:markdown-import");
     let mut observations = Vec::new();
     for (path, text) in files {
@@ -103,9 +103,15 @@ fn bundle(project: &str, files: &BTreeMap<String, String>) -> Result<Value> {
             let Some(rest) = raw.trim().strip_prefix("- (") else {
                 continue;
             };
-            let (date, content) = rest.split_once(") ").context("malformed dated memory; fix it before importing")?;
-            let date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").context("invalid date in memory")?;
-            ensure!(!content.trim().is_empty(), "empty memory in {path}:{}", line + 1);
+            // The backup is frozen, so a line that can't be read must not block the import forever:
+            // a malformed one is kept whole, dated by the import.
+            let dated = rest.split_once(')').and_then(|(date, content)| {
+                Some((chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?, content.trim()))
+            });
+            let (date, content) = dated.unwrap_or_else(|| (chrono::Utc::now().date_naive(), &raw.trim()[2..]));
+            if content.is_empty() {
+                continue;
+            }
             let timestamp = format!("{date} 00:00:00");
             let profile = path == "profile.md";
             let source = format!("{project}\n{path}\n{}\n{raw}", line + 1);
@@ -125,12 +131,12 @@ fn bundle(project: &str, files: &BTreeMap<String, String>) -> Result<Value> {
         }
     }
     let start = observations.first().and_then(|o| o["created_at"].as_str()).unwrap_or("1970-01-01 00:00:00");
-    Ok(json!({
+    json!({
         "version": "0.2.0", "exported_at": chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
         "sessions": [{"id": session, "project": project, "directory": "", "started_at": start,
             "ended_at": start, "summary": "Imported Codync Markdown memory; original files preserved in markdown-backup.json"}],
         "observations": observations, "prompts": [],
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -143,19 +149,23 @@ mod tests {
             ("profile.md".into(), "# Profile\n- (2026-01-01) 喜歡繁體中文\n".into()),
             ("log/2026-02.md".into(), "- (2026-02-02) 發布 Codync\n".into()),
         ]);
-        let a = bundle("bot-a", &files).unwrap();
-        let b = bundle("bot-a", &files).unwrap();
+        let a = bundle("bot-a", &files);
+        let b = bundle("bot-a", &files);
         assert_eq!(a["observations"], b["observations"]);
         let profile = &a["observations"][1];
         assert_eq!(profile["created_at"], "2026-01-01 00:00:00");
         assert_eq!(profile["content"], "喜歡繁體中文");
         assert_eq!(profile["tool_name"], "codync-import:profile.md:2");
-        assert_ne!(profile["sync_id"], bundle("bot-b", &files).unwrap()["observations"][1]["sync_id"]);
+        assert_ne!(profile["sync_id"], bundle("bot-b", &files)["observations"][1]["sync_id"]);
     }
 
     #[test]
-    fn malformed_dated_fact_stops_import_instead_of_disappearing() {
-        let files = BTreeMap::from([("profile.md".into(), "- (2026-02-31) fact".into())]);
-        assert!(bundle("bot", &files).is_err());
+    fn malformed_dated_fact_is_imported_whole_instead_of_blocking() {
+        let files =
+            BTreeMap::from([("profile.md".into(), "- (2026-02-31) fact\n- (no date\n- (2026-01-01) \n".into())]);
+        let payload = bundle("bot", &files);
+        let contents: Vec<&str> =
+            payload["observations"].as_array().unwrap().iter().filter_map(|o| o["content"].as_str()).collect();
+        assert_eq!(contents, ["(2026-02-31) fact", "(no date"]);
     }
 }

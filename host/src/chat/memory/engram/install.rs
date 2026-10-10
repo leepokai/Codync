@@ -1,13 +1,22 @@
 //! Install one checksum-pinned binary, shared by every bot on this host.
 
 use super::VERSION;
+use crate::LockExt;
 use anyhow::{Context, Result, bail, ensure};
 use sha2::{Digest, Sha256};
-use std::{fmt::Write as _, path::PathBuf, time::Duration};
+use std::{
+    fmt::Write as _,
+    path::PathBuf,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 const RELEASES: &str = "https://github.com/Gentleman-Programming/engram/releases/download";
 const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
 static INSTALL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// When the last download failed, and how long until another is tried.
+static FAILED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+const RETRY_AFTER: Duration = Duration::from_secs(5 * 60);
 
 pub(super) async fn binary() -> Result<PathBuf> {
     #[cfg(test)]
@@ -21,6 +30,18 @@ pub(super) async fn binary() -> Result<PathBuf> {
     if tokio::fs::try_exists(root.join(".installed")).await? && tokio::fs::try_exists(&binary).await? {
         return Ok(binary);
     }
+    // Every turn asks for memory: after a failed download (offline), don't make each one wait on another.
+    if FAILED_AT.locked().is_some_and(|at| at.elapsed() < RETRY_AFTER) {
+        bail!("Engram couldn't be downloaded; trying again in a few minutes");
+    }
+    let installed = install(root, name).await;
+    if installed.is_err() {
+        *FAILED_AT.locked() = Some(Instant::now());
+    }
+    installed.map(|()| binary)
+}
+
+async fn install(root: PathBuf, name: &str) -> Result<()> {
     let (platform, checksum) = distribution(std::env::consts::OS, std::env::consts::ARCH)?;
     let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
     let archive = format!("engram_{VERSION}_{platform}.{extension}");
@@ -37,7 +58,7 @@ pub(super) async fn binary() -> Result<PathBuf> {
     }
     verify(&bytes, &checksum)?;
     let staging = root.with_extension(format!("staging-{}", uuid::Uuid::new_v4()));
-    let (target, stage, executable) = (root.clone(), staging.clone(), name.to_owned());
+    let (target, stage, executable) = (root, staging.clone(), name.to_owned());
     let result = tokio::task::spawn_blocking(move || -> Result<()> {
         std::fs::create_dir_all(&stage)?;
         let file = stage.join(&archive);
@@ -64,8 +85,7 @@ pub(super) async fn binary() -> Result<PathBuf> {
     {
         tracing::warn!(%error, "could not remove incomplete Engram installation");
     }
-    result.context("installing Engram")?;
-    Ok(binary)
+    result.context("installing Engram")
 }
 
 fn verify(bytes: &[u8], expected: &str) -> Result<()> {

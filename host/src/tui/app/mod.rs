@@ -90,6 +90,7 @@ pub struct App {
     pub models: HashMap<String, Option<Vec<(String, String)>>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
+    /// Chats and threads (`bot` / `bot/root`) marked read since their bot's unread count last changed.
     reading: HashSet<String>,
     history_busy: HashSet<String>,
     /// Permission cards whose answer is on its way, with the chosen option.
@@ -353,11 +354,12 @@ impl App {
             && self.term_focused
             && let Some(b) = self.bot()
             && b.unread > 0
-            && !self.reading.contains(&b.id)
         {
             let id = b.id.clone();
-            self.reading.insert(id.clone());
-            self.call("markRead", json!({"botId": id, "threadId": self.thread}), After::Nothing);
+            let scope = self.thread.as_ref().map_or_else(|| id.clone(), |root| format!("{id}/{root}"));
+            if self.reading.insert(scope) {
+                self.call("markRead", json!({"botId": id, "threadId": self.thread}), After::Nothing);
+            }
         }
         if self.chat_top && self.chat_visible() && self.thread.is_none() {
             self.load_history();
@@ -484,5 +486,20 @@ mod tests {
         app.thread = Some("r".into());
         assert_eq!(ids(&app), ["e2"]);
         assert_eq!(app.lane_turns("g"), [2]);
+    }
+
+    #[tokio::test]
+    async fn a_thread_opened_after_its_chat_is_marked_read_too() {
+        let mut app = test_app();
+        let bot = Bot::parse(&json!({"id": "b", "name": "Bot", "unread": 2})).expect("a bot with an id parses");
+        app.bots.insert("b".into(), bot);
+        app.selected = Some("b".into());
+        (app.width, app.term_focused) = (Width::Wide, true);
+        app.tick();
+        assert!(app.reading.contains("b"));
+        // Reading the chat left the thread's replies unread: opening it reads them.
+        app.thread = Some("r".into());
+        app.tick();
+        assert!(app.reading.contains("b/r"));
     }
 }

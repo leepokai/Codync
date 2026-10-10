@@ -7,7 +7,9 @@ use super::extract::{
     pending_episode, set_pending_episode,
 };
 use super::facts::{Kind, Memory, dedupe_key};
-use super::{EXCHANGE_CHARS, KEEPER_BATCH, KEEPER_IDLE, KEEPER_TIMEOUT, NONE, PROFILE_PROMPT_LIMIT};
+use super::{
+    EXCHANGE_CHARS, KEEPER_BATCH, KEEPER_IDLE, KEEPER_QUEUE_LIMIT, KEEPER_TIMEOUT, NONE, PROFILE_PROMPT_LIMIT,
+};
 use crate::agent::acp::{self, Acp, Incoming};
 use crate::hub::Hub;
 use crate::store::{BotConfig, Store};
@@ -52,12 +54,19 @@ pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Keep
         let mut queued = unprocessed(&hub.store, &bot_id);
         let idle = tokio::time::sleep(KEEPER_IDLE);
         tokio::pin!(idle);
+        // After a failed run the next one waits, longer each time, instead of retrying on every exchange.
+        let mut failures = 0u32;
+        let mut retry_at: Option<tokio::time::Instant> = None;
+        let quiet_until = |retry_at: Option<tokio::time::Instant>| {
+            let after = tokio::time::Instant::now() + KEEPER_IDLE;
+            retry_at.map_or(after, |at| at.max(after))
+        };
         loop {
             let flush = tokio::select! {
                 x = rx.recv() => {
                     let Some(event) = x else { break };
                     let KeeperEvent::Exchange(x) = event else {
-                        idle.as_mut().reset(tokio::time::Instant::now());
+                        idle.as_mut().reset(retry_at.unwrap_or_else(tokio::time::Instant::now));
                         continue;
                     };
                     if x.revision != super::maintenance::revision(&hub.store, &bot_id) { continue; }
@@ -73,6 +82,10 @@ pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Keep
                     // Re-read: another keeper of this bot (before a restart) may have flushed.
                     queued = unprocessed(&hub.store, &bot_id);
                     queued.push(turn.clone());
+                    // ponytail: while the keeper can't run, only the newest exchanges wait for it (the
+                    // transcript keeps them all); keep a longer backlog if older ones must still be learned.
+                    let over = queued.len().saturating_sub(KEEPER_QUEUE_LIMIT);
+                    queued.drain(..over);
                     if let Err(e) = hub.store.kv_set(&unprocessed_key(&bot_id), &serde_json::to_string(&queued).unwrap_or_default()) {
                         tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "couldn't queue an exchange for memory");
                     }
@@ -80,8 +93,8 @@ pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Keep
                     if let Err(e) = crate::chat::naming::observe(&hub, &bot_id, turn.clone()).await {
                         tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "naming the bot failed");
                     }
-                    idle.as_mut().reset(tokio::time::Instant::now() + KEEPER_IDLE);
-                    queued.len() >= KEEPER_BATCH
+                    idle.as_mut().reset(quiet_until(retry_at));
+                    queued.len() >= KEEPER_BATCH && retry_at.is_none()
                 }
                 () = &mut idle, if !queued.is_empty() => true,
             };
@@ -90,13 +103,16 @@ pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Keep
             }
             let processing = super::maintenance::keeper_lock(&bot_id);
             let _processing = processing.lock().await;
-            queued = unprocessed(&hub.store, &bot_id);
-            match remember(&hub, &bot_id, queued.clone()).await {
+            // One batch per run keeps the keeper's prompt bounded; the rest follows right after.
+            let batch: Vec<EpisodeTurn> = unprocessed(&hub.store, &bot_id).into_iter().take(KEEPER_BATCH).collect();
+            match remember(&hub, &bot_id, batch.clone()).await {
                 Ok(()) => {
+                    failures = 0;
+                    retry_at = None;
                     let mutation = super::maintenance::lock(&bot_id);
                     let _guard = mutation.lock().await;
                     let mut current = unprocessed(&hub.store, &bot_id);
-                    acknowledge(&mut current, &queued);
+                    acknowledge(&mut current, &batch);
                     if let Err(e) = hub
                         .store
                         .kv_set(&unprocessed_key(&bot_id), &serde_json::to_string(&current).unwrap_or_default())
@@ -107,10 +123,17 @@ pub fn spawn_keeper(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Keep
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(bot = %bot_id, error = format!("{e:#}"), "memory keeper failed; batch retained for retry");
+                    failures += 1;
+                    retry_at = Some(tokio::time::Instant::now() + KEEPER_IDLE * 2u32.pow(failures.min(5)));
+                    tracing::warn!(bot = %bot_id, failures, error = format!("{e:#}"), "memory keeper failed; batch retained for retry");
                 }
             }
-            idle.as_mut().reset(tokio::time::Instant::now() + KEEPER_IDLE);
+            let next = if retry_at.is_none() && queued.len() >= KEEPER_BATCH {
+                tokio::time::Instant::now()
+            } else {
+                quiet_until(retry_at)
+            };
+            idle.as_mut().reset(next);
         }
     });
     tx

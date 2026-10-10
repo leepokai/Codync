@@ -95,10 +95,36 @@ fn save(store: &Store, bot_id: &str, s: &Snapshot) -> Result<()> {
 /// the stored one belongs to another session or an earlier epoch. Reads memory files.
 pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot> {
     let epoch = epoch(store, &cfg.id, session);
-    if let Some(s) = load(store, &cfg.id, session).filter(|s| s.epoch == epoch) {
-        return Ok(s);
+    let stored = load(store, &cfg.id, session);
+    if let Some(s) = stored.as_ref().filter(|s| s.epoch == epoch && !s.system.is_empty()) {
+        return Ok(s.clone());
     }
-    adopt(store, cfg, session, render(store, cfg))
+    let identity = Identity::of(cfg);
+    let s = Snapshot {
+        session: session.to_owned(),
+        epoch,
+        system: render(store, cfg),
+        system_identity: identity.clone(),
+        // A re-render reaches only Claude, as its system prompt (see `mark_announced`): the agent
+        // still knows the identity it last heard, so an update it missed is still announced.
+        announced: stored.map_or(identity, |old| old.announced),
+    };
+    save(store, &cfg.id, &s)?;
+    Ok(s)
+}
+
+/// Memory the instructions show changed: every session of the bot re-renders them on its next turn.
+pub fn invalidate(store: &Store, bot_id: &str) -> Result<()> {
+    for k in store.kv_prefix(&format!("context.{bot_id}.")) {
+        match store.kv_get(&k).and_then(|v| serde_json::from_str::<Snapshot>(&v).ok()) {
+            Some(mut s) => {
+                s.system.clear();
+                save(store, bot_id, &s)?;
+            }
+            None => store.kv_set(&k, "")?,
+        }
+    }
+    Ok(())
 }
 
 /// Records `system` (already handed to a new session) as that session's snapshot.
@@ -247,5 +273,17 @@ mod tests {
         assert!(folded.system.contains("Description: Fix bugs and write tests"));
         // A new session starts over at epoch 0.
         assert_eq!(epoch(&store, &a.id, "s2"), 0);
+    }
+
+    #[test]
+    fn a_memory_change_re_renders_but_keeps_what_the_agent_heard() {
+        let store = store();
+        let a = cfg("Fixer", "Fix bugs");
+        adopt(&store, &a, "s1", "SYSTEM v1".into()).expect("adopt");
+        let b = cfg("Fixer", "Fix bugs and write tests");
+        invalidate(&store, &a.id).expect("invalidate");
+        let snap = resolve(&store, &b, "s1").expect("resolve");
+        assert!(snap.system.contains("Description: Fix bugs and write tests"), "re-rendered");
+        assert!(profile_update(&store, &snap, &b).is_some(), "the agent never heard the new description");
     }
 }

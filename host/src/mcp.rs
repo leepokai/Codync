@@ -4,8 +4,9 @@
 
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
@@ -29,9 +30,21 @@ Don't approve payments: ask the user to do that from their phone.";
 /// Serves MCP on stdio until the agent closes it.
 pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
-    let token = token.trim().to_owned();
+    let token: Arc<str> = token.trim().into();
+    let bot: Arc<str> = bot.into();
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    let mut out = tokio::io::stdout();
+    // Requests run side by side (an ask_bot can take minutes); their replies share stdout.
+    let (replies, mut outbox) = mpsc::unbounded_channel::<Value>();
+    tokio::spawn(async move {
+        let mut out = tokio::io::stdout();
+        while let Some(msg) = outbox.recv().await {
+            let mut line = serde_json::to_vec(&msg)?;
+            line.push(b'\n');
+            out.write_all(&line).await?;
+            out.flush().await?;
+        }
+        anyhow::Ok(())
+    });
     let (name, instructions, available_tools) = match server {
         Server::Connectors => {
             ("codync-connectors", crate::market::requests::INSTRUCTIONS, crate::market::requests::tools())
@@ -51,32 +64,37 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         let Some(id) = msg.get("id").filter(|id| !id.is_null()).cloned() else {
             continue; // notifications (`notifications/initialized`, cancellations)
         };
-        let params = &msg["params"];
-        let reply = match msg["method"].as_str().unwrap_or_default() {
-            "initialize" => Ok(json!({
-                "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
-                "instructions": instructions,
-            })),
-            "ping" => Ok(json!({})),
-            "tools/list" => Ok(match server {
-                Server::Computer => computer_tools(port, &token).await,
-                Server::Memory => memory_tools(port, &token, &bot).await?,
-                _ => json!({"tools": available_tools}),
-            }),
-            "tools/call" => Ok(call(port, &token, &bot, params, server).await),
-            method => Err(json!({"code": -32601, "message": format!("unknown method {method}")})),
-        };
-        let msg = match reply {
-            Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-            Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
-        };
-        let mut line = serde_json::to_vec(&msg)?;
-        line.push(b'\n');
-        out.write_all(&line).await?;
-        out.flush().await?;
+        let (replies, token, bot, available_tools) =
+            (replies.clone(), token.clone(), bot.clone(), available_tools.clone());
+        tokio::spawn(async move {
+            let params = &msg["params"];
+            let reply = match msg["method"].as_str().unwrap_or_default() {
+                "initialize" => Ok(json!({
+                    "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")},
+                    "instructions": instructions,
+                })),
+                "ping" => Ok(json!({})),
+                "tools/list" => Ok(match server {
+                    Server::Computer => computer_tools(port, &token).await,
+                    // Without Engram, history search still works.
+                    Server::Memory => memory_tools(port, &token, &bot).await.unwrap_or_else(|error| {
+                        tracing::warn!(error = format!("{error:#}"), "memory tools unavailable");
+                        json!({"tools": available_tools})
+                    }),
+                    _ => json!({"tools": available_tools}),
+                }),
+                "tools/call" => Ok(call(port, &token, &bot, params, server).await),
+                method => Err(json!({"code": -32601, "message": format!("unknown method {method}")})),
+            };
+            let _ = replies.send(match reply {
+                Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+                Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
+            });
+        });
     }
+    // The agent is gone: replies still pending have no one to read them.
     Ok(())
 }
 
@@ -163,7 +181,7 @@ pub async fn serve_remote(connector: String, port: u16) -> Result<()> {
     let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
     let remote = Remote { port, token: token.trim().to_owned(), connector };
     // Both transports answer through one writer: the SSE one answers from its own stream.
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Value>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
     let writer = tokio::spawn(async move {
         let mut out = tokio::io::stdout();
         while let Some(reply) = rx.recv().await {
@@ -306,10 +324,7 @@ impl Remote {
 
     /// Opens the older transport's event stream, which carries every answer from now on
     /// (sent to `tx`); returns the URL messages are posted to and the task reading the stream.
-    async fn open_legacy(
-        &self,
-        tx: tokio::sync::mpsc::UnboundedSender<Value>,
-    ) -> Result<(String, tokio::task::JoinHandle<()>)> {
+    async fn open_legacy(&self, tx: mpsc::UnboundedSender<Value>) -> Result<(String, tokio::task::JoinHandle<()>)> {
         for stale in [false, true] {
             let (url, headers) = self.target(stale).await?;
             let res = crate::http()

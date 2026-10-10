@@ -73,13 +73,15 @@ extension RepliesView {
         let items = ChatItem.build(replies)
         var rows: [ConversationRow] = []
         if let root {
+            // The host's count, as on the thread's chip: messages, not the agent's trace.
+            let count = root.data.thread?.count ?? 0
             rows.append(ConversationRow("root") {
                 ChatRow(entry: root, groupStart: true, chat: chat) { showTrace = true }
                     .equatable()
             })
             rows.append(ConversationRow("count") {
                 HStack(spacing: 10) {
-                    Text(replies.isEmpty ? "No replies yet" : replies.count == 1 ? "1 reply" : "\(replies.count) replies")
+                    Text(count == 0 ? "No replies yet" : count == 1 ? "1 reply" : "\(count) replies")
                         .font(.caption)
                         .foregroundStyle(Palette.tertiary)
                         .fixedSize()

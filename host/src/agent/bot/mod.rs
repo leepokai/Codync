@@ -127,10 +127,11 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         routine_timed_out: false,
         routine_completion: None,
         session_fresh: false,
-        applied_system: None,
+        applied_system: HashMap::new(),
         keeper,
         turn_text: None,
         memory_session: None,
+        memory_warned: false,
         turn_memory_revision: String::new(),
         announce: None,
         turn: None,
@@ -144,6 +145,7 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         files: files::FileShares::default(),
         perms: HashMap::new(),
         stop_requested: false,
+        cancel_deadline: None,
         exit_tail: None,
         tools_changed: false,
     };
@@ -209,12 +211,14 @@ struct Actor {
     routine_completion: Option<RoutineCompletion>,
     /// True until the first prompt of a new ACP session has been sent.
     session_fresh: bool,
-    /// (session, instructions) last handed to Claude as its system prompt by this process.
-    applied_system: Option<(String, String)>,
+    /// Session -> the instructions this process last handed Claude as its system prompt.
+    applied_system: HashMap<String, String>,
     keeper: mpsc::UnboundedSender<memory::KeeperEvent>,
-    /// The user's words for this turn (None for a hidden turn); feeds memory.
+    /// The user's words for this turn (None for a hidden turn or one not from the user); feeds memory.
     turn_text: Option<String>,
     memory_session: Option<String>,
+    /// The user was told memory is unavailable.
+    memory_warned: bool,
     turn_memory_revision: String,
     /// A profile update this turn carried, recorded once the agent got it.
     announce: Option<(Snapshot, Identity)>,
@@ -231,6 +235,8 @@ struct Actor {
     /// permission entry id -> JSON-RPC request id
     perms: HashMap<String, Value>,
     stop_requested: bool,
+    /// A cancelled turn still running past this stops its agent process.
+    cancel_deadline: Option<Instant>,
     /// Last stderr lines of an agent process that just exited.
     exit_tail: Option<String>,
     /// Connectors changed: restart the agent before the next turn so the
@@ -295,6 +301,11 @@ impl Actor {
                         self.stop_requested = true;
                         if let Some(c) = self.conn.take() { c.acp.kill().await; }
                     }
+                    // The agent ignored the cancel: stop its process so the bot is free again.
+                    if self.turn.is_some() && self.cancel_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                        self.cancel_deadline = None;
+                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                    }
                 },
             }
         }
@@ -342,6 +353,9 @@ impl Actor {
 
 /// Told to a bot whose turn the previous host process cut off (Grok Bot's upgrade resume).
 const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted you mid-task. You've been resumed with your full conversation intact. Continue exactly where you left off and finish what you were doing. If your previous step already completed an action, do NOT repeat it — just carry on from there.]";
+
+/// How long a cancelled turn may take to wind down before its agent process is stopped.
+const CANCEL_GRACE: Duration = Duration::from_secs(15);
 
 /// An interrupted turn older than this isn't resumed.
 const STALE_RESUME_MS: i64 = 60 * 60 * 1000;

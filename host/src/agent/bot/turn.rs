@@ -44,10 +44,14 @@ impl Actor {
         }
         self.lane = lane.clone();
         self.turn = Some(turn);
-        self.turn_text = (!hidden).then(|| text.to_owned());
+        // Only the user's own words feed memory: not another bot's, a room's or a routine's.
+        let from_user =
+            !hidden && self.active_request.is_none() && self.active_group.is_none() && self.active_routine.is_none();
+        self.turn_text = from_user.then(|| text.to_owned());
         self.turn_memory_revision = memory::maintenance::revision(&self.hub.store, &self.cfg.id);
         self.announce = None;
         self.stop_requested = false;
+        self.cancel_deadline = None;
         self.hub.team.start_turn(&self.cfg.id, self.active_request.as_ref());
         self.exit_tail = None;
         self.seg = Seg::None;
@@ -111,9 +115,17 @@ impl Actor {
         }
         let claude = self.conn.as_ref().is_some_and(|c| c.claude);
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
-        let memory_session = memory::lifecycle::begin(&self.hub, &self.cfg.id, &sid).await?;
-        self.memory_session = Some(memory_session.clone());
-        if !hidden && let Err(error) = memory::lifecycle::capture_prompt(&self.cfg.id, &memory_session, text).await {
+        self.memory_session = match memory::lifecycle::begin(&self.hub, &self.cfg.id, &sid).await {
+            Ok(session) => Some(session),
+            Err(error) => {
+                self.memory_unavailable(&error);
+                None
+            }
+        };
+        if from_user
+            && let Some(session) = &self.memory_session
+            && let Err(error) = memory::lifecycle::capture_prompt(&self.cfg.id, session, text).await
+        {
             tracing::warn!(bot = %self.cfg.id, %error, "memory prompt capture failed");
         }
         let snapshot = self.snapshot(&sid).await?;

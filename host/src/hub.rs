@@ -308,11 +308,14 @@ impl Hub {
                 ReadScope::Chat => self.store.mark_read(id)?,
                 ReadScope::Thread(root) => self.store.mark_thread_read(id, root)?,
             };
+            // Before the summaries' later revs: a client resuming after them must not miss the row.
+            if let Some(v) = self.bot_value(id) {
+                let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
+            }
         }
         for root in roots {
             self.refresh_thread_summary(id, &root);
         }
-        self.emit_bot_row(id);
         Ok(())
     }
 
@@ -331,13 +334,6 @@ impl Hub {
         if self.store.touch_bot(id).is_ok()
             && let Some(v) = self.bot_value(id)
         {
-            let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
-        }
-    }
-
-    fn emit_bot_row(&self, id: &str) {
-        let _g = self.emit_lock.locked();
-        if let Some(v) = self.bot_value(id) {
             let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
         }
     }

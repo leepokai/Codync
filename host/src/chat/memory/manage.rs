@@ -9,9 +9,10 @@ use std::sync::Arc;
 pub async fn call(hub: &Arc<Hub>, method: &str, args: &Value) -> Result<Value> {
     let bot = args["botId"].as_str().context("botId is required")?.to_owned();
     let row = hub.store.bot(&bot)?.filter(|b| !b.deleted && !b.config.is_group()).context("unknown bot")?;
-    let mutates = !matches!(method, "memory" | "memoryDetail" | "exportMemory");
     let clears = method == "clearMemory";
     let corrects = matches!(method, "saveMemory" | "forgetMemory");
+    // Not corrections: the keeper's work stands, only what the instructions show changes.
+    let reorders = matches!(method, "pinMemory" | "importMemory");
     let mutation = maintenance::lock(&bot);
     let _guard = mutation.lock().await;
     if clears {
@@ -50,7 +51,7 @@ pub async fn call(hub: &Arc<Hub>, method: &str, args: &Value) -> Result<Value> {
             }
         };
         let result = super::engram::import(&bot, &data).await?;
-        maintenance::changed(&hub.store, &bot)?;
+        crate::chat::context::invalidate(&hub.store, &bot)?;
         return Ok(result);
     }
     let (method, args, id) = (method.to_owned(), args.clone(), bot.clone());
@@ -59,11 +60,11 @@ pub async fn call(hub: &Arc<Hub>, method: &str, args: &Value) -> Result<Value> {
         dispatch(&memory, &method, &args)
     })
     .await??;
-    if mutates {
-        maintenance::changed(&hub.store, &bot)?;
-    }
     if clears || corrects {
+        maintenance::changed(&hub.store, &bot)?;
         maintenance::discard_pending(&hub.store, &bot)?;
+    } else if reorders {
+        crate::chat::context::invalidate(&hub.store, &bot)?;
     }
     Ok(result)
 }

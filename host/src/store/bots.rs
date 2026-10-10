@@ -46,7 +46,7 @@ impl Store {
         let rev = next_rev(&c)?;
         c.execute(
             "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
-             ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3, deleted = 0",
+             ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0",
             params![cfg.id, rev, serde_json::to_string(cfg)?],
         )?;
         Ok(rev)
@@ -81,10 +81,17 @@ impl Store {
         Ok(())
     }
 
-    /// Main chat read: bumps the bot's `read_rev`.
+    /// Main chat read: bumps the bot's `read_rev`. A thread never opened counts from `read_rev`
+    /// (see `unread`), so it keeps the old one: reading the chat doesn't read its threads.
     pub fn mark_read(&self, id: &str) -> Result<i64> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
+        c.execute(
+            "INSERT OR IGNORE INTO kv(k, v)
+             SELECT DISTINCT 'read.' || thread_id, (SELECT read_rev FROM bots WHERE id = ?1)
+             FROM entries WHERE bot_id = ?1 AND thread_id IS NOT NULL",
+            [id],
+        )?;
         c.execute("UPDATE bots SET read_rev = ?2, rev = ?2 WHERE id = ?1", params![id, rev])?;
         Ok(rev)
     }
@@ -233,5 +240,18 @@ mod tests {
         assert_eq!(s.history("b1", a.seq, 10).unwrap().len(), 1);
         assert_eq!(s.bot("b1").unwrap().unwrap().config.permission, Permission::Ask);
         assert!(s.bot("missing").unwrap().is_none());
+
+        // Reading the chat leaves a thread nobody opened unread.
+        let reply = serde_json::json!({"text": "done", "final": true});
+        s.insert_entry(&Lane::in_thread("b1", &u.id), EntryKind::Agent, 2, &reply).unwrap();
+        let r = s.mark_read("b1").unwrap();
+        assert_eq!(s.unread("b1", r, ReadScope::Thread(&u.id)), 1);
+        assert_eq!(s.unread("b1", r, ReadScope::All), 1);
+
+        // A deleted bot stays deleted, and its winding-down actor leaves no lines behind.
+        s.delete_bot("b1").unwrap();
+        assert!(s.insert_entry(&Lane::main("b1"), EntryKind::Notice, 3, &reply).is_err());
+        s.save_bot(&cfg).unwrap();
+        assert!(s.bot("b1").unwrap().unwrap().deleted);
     }
 }

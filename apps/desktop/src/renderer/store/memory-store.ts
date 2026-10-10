@@ -75,6 +75,8 @@ export class MemoryStore extends Observable {
     this.query = query
     this.filter = filter
     ++this.request
+    // The search field shows `query`: re-render now, not when the debounced load lands.
+    this.changed()
     clearTimeout(this.searchTimer)
     this.searchTimer = setTimeout(() => { void this.load() }, 250)
   }

@@ -35,6 +35,8 @@ const PASS: &str = "(pass)";
 pub struct GroupTurn {
     pub lane: Lane,
     pub prompt: String,
+    /// The room turn that asked; a member skips it once a newer one started (see [`Rooms::current`]).
+    pub epoch: u64,
     /// The reply the room sees, or `None` for a pass.
     pub reply: oneshot::Sender<Result<Option<String>>>,
 }
@@ -51,7 +53,7 @@ impl Rooms {
         *epoch
     }
 
-    fn current(&self, lane: &Lane, epoch: u64) -> bool {
+    pub fn current(&self, lane: &Lane, epoch: u64) -> bool {
         self.0.locked().get(&lane.key()).copied() == Some(epoch)
     }
 
@@ -119,7 +121,7 @@ pub fn start(hub: &Arc<Hub>, group: &BotConfig, lane: Lane) {
 async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<()> {
     let mut replies = 0;
     let mut last_reply: Option<(String, String, String)> = None;
-    for round in 0..MAX_ROUNDS {
+    'rounds: for round in 0..MAX_ROUNDS {
         let group = hub.store.bot(group_id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("group deleted"))?.config;
         let members = members(hub, &group);
         let since_user = since_last_user_message(hub, lane)?;
@@ -131,12 +133,17 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
         }
         let mut spoke = 0;
         for member in &speakers {
-            if !hub.groups.current(lane, epoch) || replies >= MAX_REPLIES {
+            if !hub.groups.current(lane, epoch) {
                 return Ok(());
+            }
+            // A full room turn still reports its last reply.
+            if replies >= MAX_REPLIES {
+                break 'rounds;
             }
             let prompt = member_prompt(hub, &group, &members, member, lane)?;
             let (reply, answer) = oneshot::channel();
-            if hub.send_cmd(&member.id, Cmd::Group(GroupTurn { lane: lane.clone(), prompt, reply })).is_err() {
+            let turn = GroupTurn { lane: lane.clone(), prompt, epoch, reply };
+            if hub.send_cmd(&member.id, Cmd::Group(turn)).is_err() {
                 continue;
             }
             // A failed, cancelled or overdue member turn counts as a pass; its error shows in the room.

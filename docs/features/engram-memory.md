@@ -10,8 +10,10 @@ native tools plus Codync's `search_history`. ACP and MCP have different responsi
 Each bot has an independent `bots/<id>/engram/engram.db` under `CODYNC_HOME` (normally `~/.codync`).
 The host downloads the MIT-licensed release on first use, validates its SHA-256 against
 `packaging/engram/release.json`, and installs it with its license in `engram/3.2.1/`.
-First use requires network access; subsequent use works offline. Supported binaries are macOS, Linux and
-Windows, each on arm64 and x86_64. No global Engram install or HTTP listener is needed.
+First use requires network access; subsequent use works offline. A failed download is retried after five
+minutes. Memory is best-effort: while Engram can't start, bots answer without it and say so once.
+Supported binaries are macOS, Linux and Windows, each on arm64 and x86_64. No global Engram install or HTTP
+listener is needed.
 
 The host lazily starts one native MCP stdio process per active bot. Requests serialize within that process;
 an idle process stops after five minutes and restarts on demand. A failed request is reported, never silently
@@ -31,7 +33,8 @@ On a bot's first memory access, `memory/profile.md` and `memory/log/*.md` are co
 immutable `engram/markdown-backup.json` import journal. Each dated bullet receives a deterministic sync ID;
 its original date, content, profile/log scope and source path/line are imported through the native CLI.
 The host verifies every imported ID before writing `.codync-markdown-imported`. Interrupted imports retry
-without duplicating records. Malformed dated rows fail visibly instead of being silently discarded.
+without duplicating records. A bullet whose date can't be read is imported whole, dated by the import, rather
+than discarded or blocking the import (the journal is immutable, so editing the Markdown can't fix it).
 The original Markdown remains untouched as a backup and is no longer authoritative.
 
 The completion marker is retained by **Forget everything** so old Markdown cannot reappear. Removing the
@@ -54,10 +57,12 @@ consolidating a crowded profile, and saving native `session_summary` observation
 minutes or eight queued exchanges; new-session and compaction events request an early flush. Summaries are
 incremental batches of a session. The harness's compacted context is a separate artifact.
 
-Exchanges remain in the durable Codync queue until processing succeeds. Failures are logged and retried after
-five minutes. Explicit memory corrections invalidate prompt snapshots and pending old extraction work;
-in-progress extraction checks a revision before writing. Editing memory sends a correction notice on the
-next agent turn. It cannot remove text already held in a harness's context; start a new session when needed.
+Only the user's own messages feed it (and Engram's captured prompts): not bot requests, group rooms or
+routine runs. Exchanges remain in the durable Codync queue until processing succeeds; one run takes up to
+eight. A failure is logged and retried after ten minutes, doubling up to about two and a half hours; while it
+keeps failing, the newest 32 exchanges wait. Explicit memory corrections (edit, forget, clear) invalidate prompt
+snapshots and pending old extraction work; in-progress extraction checks a revision before writing. Editing
+memory sends a correction notice on the next agent turn. Pinning and importing only re-render the snapshots. It cannot remove text already held in a harness's context; start a new session when needed.
 The transcript is retained separately and is still searchable with `search_history`.
 
 **Forget** soft-deletes an observation through Engram. **Forget everything** invokes native hard project

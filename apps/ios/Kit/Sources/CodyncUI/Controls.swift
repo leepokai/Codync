@@ -193,7 +193,10 @@ private struct ContextActions: ViewModifier {
 @ViewBuilder private func systemMenuRow(_ item: MenuItem) -> some View {
     let role: ButtonRole? = item.destructive ? .destructive : nil
     if let selected = item.selected {
-        Toggle(isOn: Binding(get: { selected }, set: { _ in item.action() })) {
+        // The binding's setter must be Sendable, but SwiftUI only calls it from the menu, on the
+        // main thread where the action was made.
+        nonisolated(unsafe) let action = item.action
+        Toggle(isOn: Binding(get: { selected }, set: { _ in action() })) {
             if let icon = item.icon { SwiftUI.Label(item.title, systemImage: icon) } else { Text(item.title) }
         }
     } else if let icon = item.icon {

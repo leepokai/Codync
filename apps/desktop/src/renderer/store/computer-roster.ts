@@ -1,8 +1,8 @@
-import { computerSections, orderedComputers } from '../lib/computer-roster'
+import { computerSections, moveInOrder, orderedComputers } from '../lib/computer-roster'
 import { prefs, usePref } from '../lib/prefs'
 import { useModel } from '../lib/observable'
 import type { BotStore } from './bot-store'
-import type { AppModel } from './app-model'
+import type { AppModel, BotRef } from './app-model'
 
 /** Device-local section ordering and folding, matching the iPhone roster. */
 export function useComputerRoster(app: AppModel, shown: Set<string>) {
@@ -24,6 +24,15 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
     },
     move(id: string, target: string) {
       app.computerOrder.move(id, target, computers.map((c) => c.id))
+    },
+    /** One place up (-1) or down (+1) among its computer's bots with the same pin state. */
+    moveBot(ref: BotRef, offset: number) {
+      const section = sections.find((s) => s.computer.id === ref.computerId)
+      const items = section?.items ?? []
+      const index = items.findIndex((item) => item.bot.id === ref.botId)
+      const target = items[index + offset]
+      if (!section || index < 0 || !target || target.bot.pinned !== items[index]!.bot.pinned) return
+      section.store.reorder(moveInOrder(items.map((item) => item.bot.id), ref.botId, target.bot.id))
     },
   }
 }

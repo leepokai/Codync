@@ -13,6 +13,8 @@ struct BotListView: View {
     @State private var drag: SectionDrag?
     /// Each computer section's height, to work out where a dragged one lands.
     @State private var sectionHeights: [ComputerID: CGFloat] = [:]
+    /// The bot row being dragged among its computer's bots (see `BotRowDrop`).
+    @State private var draggingBot: BotReference?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Computers left out of the list on this device, comma-separated IDs.
     @AppStorage("hiddenComputers") private var hiddenComputers = ""
@@ -113,6 +115,7 @@ struct BotListView: View {
         .scrollDisabled(drag != nil)
         .sensoryFeedback(.impact(weight: .medium), trigger: drag?.id) { _, new in new != nil }
         .sensoryFeedback(.selection, trigger: drag.map { landingIndex(shownStores.map(\.computer.id), $0) })
+        .sensoryFeedback(.selection, trigger: roster.map(\.id)) { _, _ in draggingBot != nil }
         .background(Palette.background)
         .navigationTitle("Bots")
         .navigationBarTitleDisplayMode(.inline)
@@ -241,6 +244,10 @@ struct BotListView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accounts.computers.count > 1 ? "\(bot.name), on \(store.hostName)" : bot.name)
+        .accessibilityActions {
+            Button("Move up") { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
+            Button("Move down") { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
+        }
         .contextActions {
             [
                 MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) },
@@ -252,6 +259,12 @@ struct BotListView: View {
                 MenuItem("Delete", icon: "trash", destructive: true, divider: true) { confirmDelete = item },
             ]
         }
+        // Touch and hold, then drag: the menu gives way to the drag (iOS's usual pairing).
+        .onDrag {
+            draggingBot = item.ref
+            return NSItemProvider(object: bot.name as NSString)
+        }
+        .onDrop(of: [.text], delegate: BotRowDrop(target: item, store: store, dragging: $draggingBot, reduceMotion: reduceMotion))
     }
 
     /// A group chat gathers bots of one computer (the first one online; more computers are future work).

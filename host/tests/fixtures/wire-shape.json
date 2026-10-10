@@ -27,6 +27,7 @@
     "event:bot.bot.notify": "null",
     "event:bot.bot.permission": "string",
     "event:bot.bot.pinned": "bool",
+    "event:bot.bot.position": "number",
     "event:bot.bot.rev": "number",
     "event:bot.bot.skills": "array",
     "event:bot.bot.startedAt": "null",

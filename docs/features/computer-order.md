@@ -37,3 +37,18 @@ The account computer-order API has been removed. Migration
 unused. Updating clients stops them from reading or writing remote order immediately,
 without requiring a cloud deployment. Removing the endpoint from an existing Worker
 requires deploying the updated cloud code separately.
+
+## Bot order
+
+A computer's bots (and group chats) keep the order the user drags them into, on every
+device: the host stores it as each bot's `position` (`reorderBots`, `host/src/hub/order.rs`)
+and syncs it like any bot change. Pinned bots stay above the rest, and a bot moves only
+among bots with the same pin state. Until a computer's bots are first arranged, every
+position is 0 and they sort by recent activity; after that they stay put and a new bot
+appears on top. Hidden bots keep their position for when they return.
+
+- **iPhone:** touch and hold a row, then drag it (the row's menu gives way to the drag, as
+  elsewhere in iOS). Rows move out of the way as it passes; the drop saves the order
+  (`BotStore.move(_:onto:)`, `apps/ios/Views/BotRowDrop.swift`). VoiceOver: Move up / Move down.
+- **Desktop:** drag a row, or Alt+Up/Down on the selected bot (macOS, Linux, Windows).
+- **Terminal UI:** `J` / `K` move the selected bot down / up.

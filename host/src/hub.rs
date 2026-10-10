@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 
+mod order;
 mod sync;
 
 /// What a bot is doing right now (wire values: `idle` / `working` / `needsInput` / `error`).
@@ -184,6 +185,7 @@ impl Hub {
     pub fn create_bot(self: &Arc<Self>, mut cfg: BotConfig) -> Result<Value> {
         cfg.id = uuid::Uuid::new_v4().to_string();
         cfg.created_at = crate::store::now_ms();
+        cfg.position = self.new_bot_position()?;
         // No name yet (Grok Bot's flow): it gets one after its first few conversations.
         cfg.auto_name = !cfg.is_group() && cfg.name.trim().is_empty();
         if cfg.auto_name {

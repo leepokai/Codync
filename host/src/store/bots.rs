@@ -215,6 +215,7 @@ mod tests {
             permission: Permission::Ask,
             model: None,
             pinned: false,
+            position: 0,
             hidden: false,
             notify: None,
             connectors: vec![],

@@ -227,6 +227,16 @@ export class BotStore extends BotSync {
     this.patchBot(bot, { hidden })
   }
 
+  /** The roster as the user dragged it, top first: shown at once, then saved on the host. */
+  reorder(ids: string[]) {
+    ids.forEach((id, position) => {
+      const bot = this.bots.get(id)
+      if (bot) this.bots.set(id, { ...bot, position })
+    })
+    this.changed()
+    this.perform((c) => c.call('reorderBots', { ids }), true)
+  }
+
   delete(bot: Bot) {
     this.composerDrafts.removeBot(bot.id)
     this.bots.delete(bot.id)

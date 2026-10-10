@@ -48,6 +48,7 @@
 		8B78A34695AD94109AE82C0F /* CodyncBot-blob-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D0E552136D473567E0C25ED4 /* CodyncBot-blob-Tint.ttf */; };
 		8BB3FC79EB798CE4347E6FD3 /* CodyncKit in Frameworks */ = {isa = PBXBuildFile; productRef = 50F314172CC2AD1C5CDC916A /* CodyncKit */; };
 		921ED46A1643AB90BB3D4CF7 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = F99C11684BFBEB49006600A9 /* Session.swift */; };
+		9230B7E6BFE8FB9D6F547955 /* BotRowDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59AE5FF815ED4C3E61279E1 /* BotRowDrop.swift */; };
 		9638BAA981354C4CE72884A0 /* HostLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CC3E47D480A5F15CA95C504 /* HostLink.swift */; };
 		974A5D8D89758A61E7D8D1B6 /* Input.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA06CEE98A7CDED62678522 /* Input.swift */; };
 		980C29719BDE2E874C9AD53A /* CodyncBot-wedge-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C3BB9F034194450254CE14EC /* CodyncBot-wedge-Tint.ttf */; };
@@ -144,6 +145,7 @@
 		8D16AD9979C77D976BC832D1 /* Driver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Driver.swift; sourceTree = "<group>"; };
 		8E783FFF5EC2697C16FA2E1B /* CodyncOrb-Ghost.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncOrb-Ghost.ttf"; sourceTree = "<group>"; };
 		9AD0BD16672E128A4F26272B /* SignInButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInButtons.swift; sourceTree = "<group>"; };
+		A59AE5FF815ED4C3E61279E1 /* BotRowDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotRowDrop.swift; sourceTree = "<group>"; };
 		A65FE0504B741D0B44DB2516 /* CodyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodyncApp.swift; sourceTree = "<group>"; };
 		AAD970B8394F4EDFB85A8936 /* CodyncBot-cloud-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-cloud-Tint.ttf"; sourceTree = "<group>"; };
 		AD18A04CD014230F1B7B0535 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -289,6 +291,7 @@
 				4EB282B31FBC94EE70D07638 /* AccountSwitcherView.swift */,
 				DD3DE9A4EEB369C4F75C9448 /* ActivityGalleryView.swift */,
 				0582B6169BFC36E4BCD51C0D /* BotListView.swift */,
+				A59AE5FF815ED4C3E61279E1 /* BotRowDrop.swift */,
 				2A379E88F918744832CF0CB0 /* ComputerSectionGesture.swift */,
 				6BC00039A6C2C0D3F39A5F67 /* ComputerStatus.swift */,
 				6FC76D28AB02DF1427D530ED /* LaunchSplash.swift */,
@@ -667,6 +670,7 @@
 				9BBB2FAEDBD35A83EAB02981 /* AccountSwitcherView.swift in Sources */,
 				00F78E3DAAF66E8E0933D091 /* ActivityGalleryView.swift in Sources */,
 				01A1F820EFEE49A8FCCFC3F3 /* BotListView.swift in Sources */,
+				9230B7E6BFE8FB9D6F547955 /* BotRowDrop.swift in Sources */,
 				7C20764DC05D499075BC5E8C /* CodyncApp.swift in Sources */,
 				6BFFA8A75324425132F1FC2C /* ComputerSectionGesture.swift in Sources */,
 				2002C16E427B4E4E7279E1C4 /* ComputerStatus.swift in Sources */,

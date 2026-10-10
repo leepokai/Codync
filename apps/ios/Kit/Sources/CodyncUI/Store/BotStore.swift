@@ -68,6 +68,8 @@ public final class BotStore {
     /// Bots whose older history has been fully paged in.
     public internal(set) var historyComplete: Set<String> = []
     var composerDrafts: [String: String] = [:]
+    /// A dragged order not sent yet (see `reorder`).
+    var orderSave: Task<Void, Never>?
     public var routineDrafts: [String: String] = [:]
     public let fileDownloads = FileDownloads()
     public var lastError: String?
@@ -190,10 +192,11 @@ public final class BotStore {
         return nil
     }
 
-    /// Roster order: pinned first (manual order not tracked yet), then most recent activity.
+    /// Roster order: pinned first, then where the user dragged them, then most recent activity.
     public var roster: [Bot] {
         bots.values.filter { !$0.hidden }.sorted {
             if $0.pinned != $1.pinned { return $0.pinned }
+            if $0.position != $1.position { return $0.position < $1.position }
             return $0.lastAt > $1.lastAt
         }
     }

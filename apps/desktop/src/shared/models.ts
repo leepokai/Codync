@@ -21,6 +21,8 @@ export interface Bot {
   permission: string
   model?: string | null
   pinned: boolean
+  /** Where the user dragged it, lowest first (after pinned bots); ties sort by recent activity. */
+  position: number
   hidden: boolean
   notify?: boolean | null
   connectors: string[]
@@ -58,6 +60,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     permission: raw.permission ?? 'auto',
     model: raw.model ?? null,
     pinned: raw.pinned ?? false,
+    position: raw.position ?? 0,
     hidden: raw.hidden ?? false,
     notify: raw.notify ?? null,
     connectors: raw.connectors ?? [],

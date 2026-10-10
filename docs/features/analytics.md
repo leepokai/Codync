@@ -23,7 +23,7 @@ Settings anytime. The public promise lives in `web/app/privacy/page.tsx`: keep i
 
 - **Host** (`host/src/analytics.rs`): `api::dispatch` maps successful API calls to events
   (`analytics::observe`), so every client is covered once: `bot_created`, `bot_updated`,
-  `bot_deleted`, `message_sent`, `turn_stopped`, `session_reset`, `permission_answered`,
+  `bots_reordered`, `bot_deleted`, `message_sent`, `turn_stopped`, `session_reset`, `permission_answered`,
   `routine_saved`, `routine_deleted`, `routine_run`, `voice_call_finished`,
   `remote_screen_opened`, `connector_installed`, `skill_installed`. `client` is `local`
   (desktop app, terminal UI) or `remote` (phones). Batches go to `/batch/` every 30 s.

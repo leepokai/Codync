@@ -103,9 +103,9 @@ export class BotMirror extends Observable {
     return null
   }
 
-  /** Roster order: pinned first, then most recent activity. */
+  /** Roster order: pinned first, then where the user dragged them, then most recent activity. */
   get roster(): Bot[] {
-    return [...this.bots.values()].filter((b) => !b.hidden).sort((a, b) => (a.pinned !== b.pinned ? (a.pinned ? -1 : 1) : b.lastAt - a.lastAt))
+    return [...this.bots.values()].filter((b) => !b.hidden).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.position - b.position || b.lastAt - a.lastAt)
   }
 
   get hiddenBots(): Bot[] {

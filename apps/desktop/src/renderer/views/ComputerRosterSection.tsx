@@ -1,6 +1,6 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { Icon } from '../components/Icon'
-import { reduceMotion } from '../lib/theme'
+import { useSlide } from '../lib/slide'
 import type { BotStore } from '../store/bot-store'
 import { ComputerBadge } from './ComputerBadge'
 import './computer-roster.css'
@@ -21,17 +21,8 @@ interface Props {
 
 export function ComputerRosterSection({ store, compact, collapsed, previous, next, dragged, setDragged, toggle, move, notice, children }: Props) {
   const section = useRef<HTMLElement>(null)
-  const lastTop = useRef<number | null>(null)
   const id = store.computer.id
-  useLayoutEffect(() => {
-    const element = section.current
-    if (!element) return
-    const top = element.offsetTop
-    if (lastTop.current !== null && top !== lastTop.current && !reduceMotion()) {
-      element.animate([{ transform: `translateY(${lastTop.current - top}px)` }, { transform: 'translateY(0)' }], { duration: 300, easing: 'ease-out' })
-    }
-    lastTop.current = top
-  })
+  useSlide(section)
   return (
     <section ref={section} className={`computer-roster-section ${dragged === id ? 'dragging' : ''}`} aria-label={store.hostName}
       onDragOver={(event) => {

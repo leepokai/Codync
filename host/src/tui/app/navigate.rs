@@ -231,6 +231,24 @@ impl App {
         self.thread = Some(root);
     }
 
+    /// Moves the selected bot one place up (-1) or down (+1), staying among bots with its pin
+    /// state, and saves the order. Shown at once; the host's bot events confirm it.
+    pub(super) fn reorder_bot(&mut self, d: isize) {
+        let roster: Vec<(String, bool)> = self.roster().iter().map(|b| (b.id.clone(), b.pinned)).collect();
+        let Some(i) = self.selected.as_ref().and_then(|s| roster.iter().position(|(id, _)| id == s)) else { return };
+        let Some(j) = i.checked_add_signed(d).filter(|&j| j < roster.len() && roster[j].1 == roster[i].1) else {
+            return;
+        };
+        let mut ids: Vec<String> = roster.into_iter().map(|(id, _)| id).collect();
+        ids.swap(i, j);
+        for (position, id) in (0_i64..).zip(&ids) {
+            if let Some(b) = self.bots.get_mut(id) {
+                b.position = position;
+            }
+        }
+        self.call("reorderBots", json!({"ids": ids}), After::Nothing);
+    }
+
     pub(super) fn copy_last(&mut self) {
         let Some(id) = self.selected.clone() else { return };
         let Some(text) = self.lane(&id).into_iter().rev().find(|e| e.is_final()).map(|e| e.text().to_owned()) else {
@@ -239,5 +257,29 @@ impl App {
         };
         copy(&text);
         self.flash("Copied the last reply");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{Bot, test_app};
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn reordering_stays_among_bots_with_the_same_pin_state() {
+        let mut app = test_app();
+        for (id, pinned, last_at) in [("p", true, 0), ("a", false, 3), ("b", false, 2), ("c", false, 1)] {
+            let bot =
+                Bot::parse(&json!({"id": id, "pinned": pinned, "lastAt": last_at})).expect("a bot with an id parses");
+            app.bots.insert(id.into(), bot);
+        }
+        let order = |app: &super::App| app.roster().iter().map(|b| b.id.clone()).collect::<Vec<_>>();
+        assert_eq!(order(&app), ["p", "a", "b", "c"], "unarranged: recent activity");
+        app.selected = Some("c".into());
+        app.reorder_bot(-1);
+        assert_eq!(order(&app), ["p", "a", "c", "b"]);
+        app.selected = Some("a".into());
+        app.reorder_bot(-1);
+        assert_eq!(order(&app), ["p", "a", "c", "b"], "an unpinned bot can't move above a pinned one");
     }
 }

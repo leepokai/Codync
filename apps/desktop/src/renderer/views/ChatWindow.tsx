@@ -240,10 +240,15 @@ function ChatSplitView() {
     { title: 'Delete', icon: 'trash', destructive: true, action: () => setConfirmDelete({ bot, store }) },
   ]
 
-  // ↑/↓ in the roster move the selection.
+  // ↑/↓ in the roster move the selection; Alt+↑/↓ moves the selected bot itself.
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
     if (e.target instanceof HTMLElement && e.target.closest('.computer-roster-heading')) return
+    if (e.altKey) {
+      e.preventDefault()
+      if (app.selection) roster.moveBot(app.selection, e.key === 'ArrowUp' ? -1 : 1)
+      return
+    }
     const refs = roster.navigable.map((i) => i.ref)
     if (!refs.length) return
     e.preventDefault()

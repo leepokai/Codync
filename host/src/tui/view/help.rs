@@ -9,7 +9,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 54] = [
+const HELP: [(&str, &str, &str); 55] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -48,6 +48,7 @@ const HELP: [(&str, &str, &str); 54] = [
     ("BOTS", "m", "new group chat"),
     ("BOTS", "e", "edit bot or group"),
     ("BOTS", "p", "pin / unpin"),
+    ("BOTS", "J K", "move bot down / up"),
     ("BOTS", "S", "new session"),
     ("BOTS", "M", "memory"),
     ("BOTS", "R", "routines"),

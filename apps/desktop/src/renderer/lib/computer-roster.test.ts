@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { computerSections, moveComputer, orderedComputers } from './computer-roster.ts'
+import { computerSections, moveInOrder, orderedComputers } from './computer-roster.ts'
 
 test('saved computer order survives reconnect order and appends new computers', () => {
   const computers = [{ id: 'new' }, { id: 'a' }, { id: 'b' }]
@@ -10,11 +10,11 @@ test('saved computer order survives reconnect order and appends new computers', 
 
 test('moving a section works in either direction without losing hidden computers', () => {
   const order = ['a', 'hidden', 'b', 'c']
-  assert.deepEqual(moveComputer(order, 'a', 'b'), ['hidden', 'b', 'a', 'c'])
-  assert.deepEqual(moveComputer(order, 'c', 'a'), ['c', 'a', 'hidden', 'b'])
-  assert.deepEqual(moveComputer(order, 'a', 'a'), order)
-  assert.deepEqual(moveComputer(order, 'missing', 'b'), order)
-  assert.deepEqual(moveComputer(order, 'a', 'missing'), order)
+  assert.deepEqual(moveInOrder(order, 'a', 'b'), ['hidden', 'b', 'a', 'c'])
+  assert.deepEqual(moveInOrder(order, 'c', 'a'), ['c', 'a', 'hidden', 'b'])
+  assert.deepEqual(moveInOrder(order, 'a', 'a'), order)
+  assert.deepEqual(moveInOrder(order, 'missing', 'b'), order)
+  assert.deepEqual(moveInOrder(order, 'a', 'missing'), order)
   assert.deepEqual(order, ['a', 'hidden', 'b', 'c'])
 })
 

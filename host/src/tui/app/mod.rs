@@ -170,10 +170,16 @@ impl App {
 
     // ---------- derived ----------
 
-    /// Roster order: pinned first, then most recent (same as the phone).
+    /// Roster order: pinned first, then where the user put them, then most recent (same as the phone).
     pub fn roster(&self) -> Vec<&Bot> {
         let mut v: Vec<&Bot> = self.bots.values().filter(|b| !b.hidden).collect();
-        v.sort_by(|a, b| b.pinned.cmp(&a.pinned).then(b.last_at.cmp(&a.last_at)).then(a.name.cmp(&b.name)));
+        v.sort_by(|a, b| {
+            b.pinned
+                .cmp(&a.pinned)
+                .then(a.position.cmp(&b.position))
+                .then(b.last_at.cmp(&a.last_at))
+                .then(a.name.cmp(&b.name))
+        });
         v
     }
 

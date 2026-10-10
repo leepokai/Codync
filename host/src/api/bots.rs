@@ -93,6 +93,13 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             let hub = hub.clone();
             json!({"bot": tokio::task::spawn_blocking(move || hub.update_bot(&b)).await??})
         }
+        // The roster as the user dragged it, top first.
+        "reorderBots" => {
+            let ids: Vec<String> = serde_json::from_value(b["ids"].clone()).context("ids is required")?;
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || hub.reorder_bots(&ids)).await??;
+            json!({})
+        }
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;
             json!({})

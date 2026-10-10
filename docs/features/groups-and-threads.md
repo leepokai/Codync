@@ -37,6 +37,7 @@ replies itself.
 | `createBot` | `{kind:"group", name, description?, members}` | Returns the existing group when these exact bots already share one. |
 | `updateBot` | `{id, name?, members?, pinned?, hidden?}` | A group can't become a bot or the reverse. |
 | `deleteBot` | `botId` | A group's bots stay. A deleted bot leaves its groups. |
+| `reorderBots` | `ids` | The roster as the user dragged it, top first; groups count as rows. See [bot order](computer-order.md#bot-order). |
 | `stop` | `botId` | For a group: ends its room turns (main and threads) and stops members working in it. |
 | `react` | `entryId, emoji` | Toggles the user's reaction on a chat message (`data.reactions`, oldest first, at most 8). A reacted-to message never turns unread again. The bot isn't told. |
 | `respondPermission` | `entryId, optionId?` | Routed to `data.author`, so cards in a group reach the bot that asked. |

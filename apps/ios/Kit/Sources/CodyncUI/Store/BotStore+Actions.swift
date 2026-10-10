@@ -175,6 +175,47 @@ extension BotStore {
         perform(replay: true) { _ = try await $0.updateBot(d) }
     }
 
+    // MARK: roster order
+
+    /// Moves a dragged bot into `target`'s place, among bots with the same pin state. Shown at
+    /// once; sent when the drag is dropped (`saveOrder`), or once it has been still a moment.
+    @discardableResult
+    public func move(_ botId: String, onto target: String) -> Bool {
+        var ids = roster.map(\.id)
+        guard botId != target, bots[botId]?.pinned == bots[target]?.pinned,
+              let from = ids.firstIndex(of: botId), let to = ids.firstIndex(of: target) else { return false }
+        ids.remove(at: from)
+        ids.insert(botId, at: to)
+        reorder(ids)
+        orderSave = Task { [weak self] in
+            // ponytail: a pause mid-drag sends early; the host's echo can briefly undo a move made right after.
+            try? await Task.sleep(for: .seconds(1.5))
+            if !Task.isCancelled { self?.saveOrder() }
+        }
+        return true
+    }
+
+    /// One place up (-1) or down (+1) among bots with the same pin state (VoiceOver), sent now.
+    public func move(_ botId: String, by offset: Int) {
+        let ids = roster.map(\.id)
+        guard let i = ids.firstIndex(of: botId), ids.indices.contains(i + offset), move(botId, onto: ids[i + offset]) else { return }
+        saveOrder()
+    }
+
+    /// Sends a dragged order that hasn't been sent.
+    public func saveOrder() {
+        guard let pending = orderSave else { return }
+        pending.cancel()
+        orderSave = nil
+        let ids = roster.map(\.id)
+        perform(replay: true) { try await $0.reorderBots(ids) }
+    }
+
+    private func reorder(_ ids: [String]) {
+        orderSave?.cancel()
+        for (position, id) in ids.enumerated() { bots[id]?.position = position }
+    }
+
     public func delete(_ bot: Bot) {
         removeComposerDrafts(for: bot.id)
         bots[bot.id] = nil

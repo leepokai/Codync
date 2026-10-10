@@ -238,6 +238,13 @@ export class FakeHost {
       case 'createBot':
       case 'updateBot':
         return { bot: this.saveBot(b as unknown as BotDraft | GroupDraft) }
+      case 'reorderBots': {
+        ;(b.ids as string[]).forEach((id, position) => {
+          const bot = this.bots.get(id)
+          if (bot) this.emitBot(Object.assign(bot, { position }))
+        })
+        return {}
+      }
       case 'deleteBot': {
         const id = str('botId')
         this.bots.delete(id)

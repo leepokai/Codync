@@ -22,6 +22,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var permission: String
     public var model: String?
     public var pinned: Bool
+    /// Where the user dragged it, lowest first (after pinned bots); ties sort by recent activity.
+    public var position: Int = 0
     public var hidden: Bool
     public var notify: Bool?
     /// Installed connector / skill ids this bot uses (see `Market.swift`).
@@ -399,6 +401,7 @@ extension Bot {
         permission = try c.decodeIfPresent(String.self, forKey: .permission) ?? "auto"
         model = try c.decodeIfPresent(String.self, forKey: .model)
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        position = try c.decodeIfPresent(Int.self, forKey: .position) ?? 0
         hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
         notify = try c.decodeIfPresent(Bool.self, forKey: .notify)
         connectors = try c.decodeIfPresent([String].self, forKey: .connectors) ?? []

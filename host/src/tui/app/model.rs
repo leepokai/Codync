@@ -94,6 +94,8 @@ pub struct Bot {
     pub auto: bool,
     pub model: Option<String>,
     pub pinned: bool,
+    /// Where the user dragged it (see `App::roster`).
+    pub position: i64,
     pub hidden: bool,
     pub notify: bool,
     pub computer: bool,
@@ -137,6 +139,7 @@ impl Bot {
             auto: v["permission"] == "auto",
             model: v["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
             pinned: v["pinned"].as_bool().unwrap_or(false),
+            position: v["position"].as_i64().unwrap_or(0),
             hidden: v["hidden"].as_bool().unwrap_or(false),
             notify: v["notify"].as_bool().unwrap_or(true),
             computer: v["computer"].as_bool().unwrap_or(false),

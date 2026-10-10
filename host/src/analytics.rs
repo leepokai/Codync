@@ -34,6 +34,7 @@ pub enum Event {
     SignedOut,
     BotCreated,
     BotUpdated,
+    BotsReordered,
     BotDeleted,
     MessageSent,
     TurnStopped,
@@ -57,6 +58,7 @@ impl Event {
             Self::SignedOut => "signed_out",
             Self::BotCreated => "bot_created",
             Self::BotUpdated => "bot_updated",
+            Self::BotsReordered => "bots_reordered",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
             Self::TurnStopped => "turn_stopped",
@@ -136,6 +138,7 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
             Event::BotCreated
         }
         "updateBot" => Event::BotUpdated,
+        "reorderBots" => Event::BotsReordered,
         "deleteBot" => Event::BotDeleted,
         "send" => {
             let in_thread = b["threadId"].as_str().is_some_and(|t| !t.is_empty());

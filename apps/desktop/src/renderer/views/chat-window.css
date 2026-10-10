@@ -61,6 +61,9 @@
   transition: background-color var(--hover);
   flex: none;
 }
+.roster-row.dragging {
+  opacity: 0.45;
+}
 /* A selected row's fill doesn't touch its hovered neighbour's. */
 .roster-row + .roster-row {
   margin-top: 4px;

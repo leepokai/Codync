@@ -191,6 +191,11 @@ public extension HostClient {
         let _: Empty = try await call("deleteBot", ["botId": id])
     }
 
+    /// The roster as the user dragged it, top first.
+    func reorderBots(_ ids: [String]) async throws {
+        let _: Empty = try await call("reorderBots", ["ids": ids])
+    }
+
     /// The main chat, one thread (`threadId`), or everything (`all`).
     func markRead(_ id: String, threadId: String? = nil, all: Bool = false) async throws {
         struct Body: Encodable { var botId: String; var threadId: String?; var all: Bool }

@@ -1,6 +1,6 @@
 import { Observable } from '../lib/observable'
 import { pref, prefs, type Pref } from '../lib/prefs'
-import { moveComputer } from '../lib/computer-roster'
+import { moveInOrder } from '../lib/computer-roster'
 import { account } from './account'
 
 /** This device's order, kept separately for each account and cloud environment. */
@@ -21,7 +21,7 @@ export class DeviceComputerOrder extends Observable {
 
   move(id: string, target: string, computers: string[]) {
     const current = [...new Set([...this.ids, ...computers])]
-    const next = moveComputer(current, id, target)
+    const next = moveInOrder(current, id, target)
     if (next === current) return
     if (this.saved) this.saved.set({ ids: next })
     else prefs.computerOrder.set(next)

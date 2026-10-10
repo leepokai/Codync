@@ -187,6 +187,8 @@ impl App {
             KeyCode::Char('u') => self.jump(Mark::Unread),
             KeyCode::Char('[') => self.move_bot(-1),
             KeyCode::Char(']') => self.move_bot(1),
+            KeyCode::Char('K') => self.reorder_bot(-1),
+            KeyCode::Char('J') => self.reorder_bot(1),
             KeyCode::Char(c @ '1'..='9') => {
                 let i = (c as usize) - ('1' as usize);
                 let pending = if roster_page { None } else { self.pending().map(|e| (e.id.clone(), e.options())) };

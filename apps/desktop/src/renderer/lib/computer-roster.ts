@@ -4,8 +4,8 @@ export function orderedComputers<T extends { id: string }>(computers: T[], order
   return [...computers].sort((a, b) => (ranks.get(a.id) ?? order.length) - (ranks.get(b.id) ?? order.length))
 }
 
-/** Insert at the target's position, preserving hidden computers and unrelated ordering. */
-export function moveComputer(order: string[], id: string, target: string): string[] {
+/** Insert at the target's position, preserving hidden entries and unrelated ordering (computers, bots). */
+export function moveInOrder(order: string[], id: string, target: string): string[] {
   const from = order.indexOf(id)
   const to = order.indexOf(target)
   if (from < 0 || to < 0 || from === to) return order

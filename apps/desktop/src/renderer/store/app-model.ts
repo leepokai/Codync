@@ -141,7 +141,7 @@ export class AppModel extends Observable {
     return this.stores.get(id) ?? null
   }
 
-  /** Every computer's visible bots, pinned first, then most recent activity. */
+  /** Every computer's visible bots, computer by computer, each in its roster order. */
   get roster(): RosterItem[] {
     const items: RosterItem[] = []
     for (const computer of this.computers) {
@@ -149,7 +149,7 @@ export class AppModel extends Observable {
       if (!store) continue
       for (const bot of store.roster) items.push({ ref: { computerId: computer.id, botId: bot.id }, bot, computer: store.computer, store })
     }
-    return items.sort((a, b) => (a.bot.pinned !== b.bot.pinned ? (a.bot.pinned ? -1 : 1) : b.bot.lastAt - a.bot.lastAt))
+    return items
   }
 
   select(ref: BotRef | null) {

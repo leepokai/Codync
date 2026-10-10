@@ -25,7 +25,7 @@ configs:
   DevRelease: release
 settings:
   base:
-    MARKETING_VERSION: 2.11.2
+    MARKETING_VERSION: 2.12.0
     CURRENT_PROJECT_VERSION: 24
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
@@ -110,6 +110,8 @@ targets:
     platform: macOS
     sources:
       - screen-macos
+      - path: desktop/resources/AppIcon.icon
+        buildPhase: resources
     dependencies:
       - package: WebRTC
     settings:
@@ -120,6 +122,8 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_CFBundleDisplayName: $(CODYNC_APP_NAME) Screen
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleIconName: AppIcon
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO

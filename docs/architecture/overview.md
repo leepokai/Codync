@@ -28,7 +28,7 @@ The phone tries direct candidates first, with a 1.5-second connection race, then
 | Host signing and mailbox keys | `identity.json`, separate from SQLite |
 | Loopback API bearer token | Host `token` file |
 | Agent context and provider credentials | Coding harness on that computer |
-| Long-term bot memory | Host `bots/<botId>/memory/` |
+| Long-term bot memory | Host `bots/<botId>/engram/engram.db` (Engram) |
 | Account users, computer ownership, devices and grants | `cloud/` D1 |
 | Presence, host-signed ACL, offline encrypted mailbox | Per-computer `ComputerRelay` Durable Object |
 | Phone remote-device signing and push keys | Keychain, partitioned by account context |

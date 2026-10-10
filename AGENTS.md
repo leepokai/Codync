@@ -71,6 +71,7 @@ Use Swift Testing (`@Test`, `#expect`), Rust unit tests, `node --test` in the de
 - One logical change per commit. Don't mix unrelated work, and stage only your own hunks when others have uncommitted changes in the tree.
 - Breaking changes: `!` after the type/scope, or a `BREAKING CHANGE:` footer.
 - English only.
+- Thank external contributors when responding to their PRs. After merging an external PR, leave a brief thank-you comment acknowledging their contribution and confirming the merge.
 
 PRs should explain behavior changes, link relevant issues, list validation performed, and include screenshots for UI changes. Fill the template's *What's New* bullets (zh-Hant + en-US) for iOS changes users can see; they become the App Store notes when `apps/ios/WhatsNew.md` has no section for the release. Update affected documentation in the same change.
 

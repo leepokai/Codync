@@ -42,4 +42,9 @@ Full conversation sheet.
   `ConversationList.swift`; desktop: `.row-in` in `thread.css`; reduced motion: a 0.12 s fade).
 - The list stays pinned to the bottom while the reader is there; scrolling up releases it and the
   round "Jump to latest" button brings it back. Sending always returns to the bottom.
+- iPhone: earlier messages load when the top of the chat comes into view, so a short chat never
+  shows a lasting spinner. Pulling down past the top sweeps in the `arrow.clockwise` symbol; letting
+  go of a full sweep (`PullToRefresh.swift`) reconnects to the computer while the chat waits just
+  below the turning arrow, then eases back. A pull that isn't full refreshes nothing. The desktop
+  reconnects from the computer menu instead.
 - The terminal UI lists the same messages; its steps line goes under the turn's last message.

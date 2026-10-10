@@ -33,6 +33,9 @@ class ConversationCollectionView: UICollectionView {
     func followingAfterScroll(from previousOffset: CGFloat) -> Bool {
         // Returning from overscroll moves upward too, but is not reading older messages.
         if endOffset - contentOffset.y < Self.nearEnd { return true }
+        // Neither is pulling down past the top to refresh. Flipping here re-renders the list
+        // mid-pull, and every snapshot applied during a drag snaps the pull back.
+        if contentOffset.y < -adjustedContentInset.top { return following }
         if contentOffset.y < previousOffset - 0.5 { return false }
         return following
     }

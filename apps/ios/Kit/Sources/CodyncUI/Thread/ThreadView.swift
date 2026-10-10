@@ -379,7 +379,11 @@ extension ThreadView {
                     .padding(.top, 6)
             })
         }
-        return ConversationList(rows: rows, following: $following) { showEarlier() }
+        // Pull to refresh reconnects, like Reconnect in the computer menu, until the link is back.
+        return ConversationList(rows: rows, following: $following, nearTop: { showEarlier() }, refresh: {
+            model.restartStream()
+            _ = try? await model.ready()
+        })
     }
 
     private var moreOnComputer: Bool {

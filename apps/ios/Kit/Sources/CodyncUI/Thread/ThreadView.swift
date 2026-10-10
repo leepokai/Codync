@@ -362,6 +362,8 @@ extension ThreadView {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .accessibilityLabel("Loading earlier messages")
+                    // A chat shorter than the screen never scrolls, so showing the row is the trigger.
+                    .onAppear { showEarlier() }
             })
         }
         if items.isEmpty, let bot {

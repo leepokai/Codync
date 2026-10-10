@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, CardSection } from '../../components/Controls'
+import { Button, CardSection, ChoicePicker, DropdownMenu, IconButton, SearchField } from '../../components/Controls'
+import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet } from '../../components/Overlay'
 import { useModel } from '../../lib/observable'
 import { useStore } from '../../store/context'
 import { MemoryStore, type MemoryDraft, type MemoryFact } from '../../store/memory-store'
 import './memory.css'
+
+const FILTERS = [
+  { id: 'all', label: 'All' }, { id: 'profile', label: 'About you' },
+  { id: 'pinned', label: 'Pinned' }, { id: 'review', label: 'Needs review' },
+]
 
 export function MemoryCard({ botId }: { botId: string }) {
   const host = useStore()
@@ -22,37 +28,39 @@ export function MemoryCard({ botId }: { botId: string }) {
   })
 
   return <>
-    <CardSection title="Memory" accessory={<button className="press" onClick={() => edit()} disabled={memory.busy}>Add</button>}>
-      <div className="memory-actions">
-        <input aria-label="Search memories" placeholder="Search memories" value={memory.query} onChange={e => memory.search(e.target.value)} />
-        <button className="press" onClick={() => void memory.load()}>Refresh</button>
-      </div>
-      <div className="memory-actions" role="group" aria-label="Memory filter">
-        {(['all', 'profile', 'pinned', 'review'] as const).map(filter => <button key={filter} className="press" aria-pressed={memory.filter === filter}
-          onClick={() => memory.search(memory.query, filter)}>{({ all: 'All', profile: 'About you', pinned: 'Pinned', review: 'Needs review' })[filter]}</button>)}
+    <CardSection title="Memory" accessory={<div className="memory-header-actions">
+      <IconButton title="Add memory" icon="plus" onClick={() => edit()} disabled={memory.busy} />
+      <DropdownMenu className="icon-button memory-menu" title="More" items={() => [
+        { title: 'Refresh', icon: 'arrow.clockwise', action: () => void memory.load() },
+        { title: 'Export', icon: 'square.and.arrow.up', action: () => { setBackupMode('export'); void memory.export() } },
+        { title: 'Import', icon: 'arrow.down.circle', action: () => setBackupMode('import') },
+        { title: 'Forget everything', icon: 'trash', destructive: true, divider: true, action: () => setConfirmClear(true) },
+      ]}><Icon name="ellipsis" size={14} weight="medium" /></DropdownMenu>
+    </div>}>
+      <div className="memory-search">
+        <SearchField prompt="Search memories" value={memory.query} onChange={q => memory.search(q)} />
+        <ChoicePicker selection={memory.filter} options={FILTERS} fill="var(--bubble-agent)" onChange={f => memory.search(memory.query, f)} />
       </div>
       {memory.error && <p role="alert" className="memory-error">{memory.error}</p>}
-      {!memory.loaded && !memory.error && <p>Loading memory…</p>}
-      {memory.loaded && !memory.facts.length && <p className="memory-muted">{memory.query || memory.filter !== 'all' ? 'No matching memories.' : 'Nothing yet. Important details are remembered as you chat.'}</p>}
+      {!memory.loaded && !memory.error && <p className="memory-muted">Loading memory…</p>}
+      {memory.loaded && !memory.facts.length && <div className="memory-empty">
+        <Icon name="brain" size={20} color="var(--tertiary)" />
+        <span>{memory.query || memory.filter !== 'all' ? 'No matching memories.' : 'Nothing yet. Important details are remembered as you chat.'}</span>
+      </div>}
       {memory.facts.map(fact => <div className="memory-item fade-in" key={fact.id}>
         <button className="press memory-content" onClick={() => edit(fact)}>
-          <strong>{fact.pinned ? '● ' : ''}{fact.title}</strong>
+          <strong>{fact.pinned && <Icon name="pin.fill" size={10} color="var(--secondary)" />}{fact.title}</strong>
           <span>{fact.content}</span>
           <small>{fact.kind === 'profile' ? 'About you' : fact.memoryType} · {new Date(fact.createdAt).toLocaleDateString()} · {fact.revisionCount} revisions</small>
         </button>
-        <div className="memory-actions">
-          <button className="press" onClick={() => void memory.mutate('pinMemory', { id: fact.id, pinned: !fact.pinned })} disabled={memory.busy}>{fact.pinned ? 'Unpin' : 'Pin'}</button>
-          <button className="press" onClick={() => { setShowDetail(true); void memory.inspect(fact) }}>History</button>
-          {fact.reviewAfter && <button className="press" onClick={() => void memory.mutate('reviewMemory', { id: fact.id })} disabled={memory.busy}>Mark reviewed</button>}
-          <button className="press" onClick={() => void memory.mutate('forgetMemory', { id: fact.id })} disabled={memory.busy}>Forget</button>
-        </div>
+        <DropdownMenu className="icon-button memory-menu" title="Memory actions" items={() => [
+          { title: fact.pinned ? 'Unpin' : 'Pin', icon: fact.pinned ? 'pin.slash' : 'pin', action: () => void memory.mutate('pinMemory', { id: fact.id, pinned: !fact.pinned }) },
+          { title: 'History', icon: 'clock.arrow.circlepath', action: () => { setShowDetail(true); void memory.inspect(fact) } },
+          ...(fact.reviewAfter ? [{ title: 'Mark reviewed', icon: 'checkmark.circle', action: () => void memory.mutate('reviewMemory', { id: fact.id }) }] : []),
+          { title: 'Forget', icon: 'trash', destructive: true, divider: true, action: () => void memory.mutate('forgetMemory', { id: fact.id }) },
+        ]}><Icon name="ellipsis" size={14} weight="medium" /></DropdownMenu>
       </div>)}
-      {memory.nextOffset !== null && <button className="press" onClick={() => void memory.load(true)}>Load more ({memory.total})</button>}
-      <div className="memory-actions">
-        <button className="press" onClick={() => { setBackupMode('export'); void memory.export() }}>Export</button>
-        <button className="press" onClick={() => setBackupMode('import')}>Import</button>
-        <button className="press" onClick={() => setConfirmClear(true)} disabled={memory.busy}>Forget everything</button>
-      </div>
+      {memory.nextOffset !== null && <button className="press memory-more" onClick={() => void memory.load(true)}>Load more ({memory.total})</button>}
     </CardSection>
     <Sheet open={draft !== null} onClose={() => setDraft(null)} width={560}>
       <ModalHeader title={draft?.id ? 'Edit memory' : 'Add memory'} />

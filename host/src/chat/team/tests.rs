@@ -96,7 +96,8 @@ impl Fixture {
     }
 
     async fn until(&self, condition: impl Fn() -> bool) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        // Generous: Windows runners need several seconds to run 16 queued turns.
+        tokio::time::timeout(Duration::from_secs(30), async {
             while !condition() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }

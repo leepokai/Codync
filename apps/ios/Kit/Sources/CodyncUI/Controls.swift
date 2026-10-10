@@ -190,10 +190,10 @@ private struct ContextActions: ViewModifier {
 }
 
 /// A `MenuItem` inside a system `Menu` or `contextMenu`: choices as checkmarked toggles.
-@ViewBuilder private func systemMenuRow(_ item: MenuItem) -> some View {
+@MainActor @ViewBuilder private func systemMenuRow(_ item: MenuItem) -> some View {
     let role: ButtonRole? = item.destructive ? .destructive : nil
     if let selected = item.selected {
-        Toggle(isOn: Binding(get: { selected }, set: { _ in item.action() })) {
+        Toggle(isOn: Binding(get: { selected }, set: { @MainActor _ in item.action() })) {
             if let icon = item.icon { SwiftUI.Label(item.title, systemImage: icon) } else { Text(item.title) }
         }
     } else if let icon = item.icon {

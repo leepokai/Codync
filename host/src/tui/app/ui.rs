@@ -3,7 +3,7 @@
 use ratatui::layout::Rect;
 use std::time::Instant;
 
-use super::super::manage::{AgentSetup, Fields, Market, MemorySheet, RoutineForm, RoutineList};
+use super::super::manage::{AgentSetup, BotChatSheet, Fields, Market, MemorySheet, RoutineForm, RoutineList};
 use super::{Editor, Mark};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -238,6 +238,8 @@ pub enum Overlay {
     Usage,
     Pair(Option<String>),
     Memory(MemorySheet),
+    /// A read-only conversation between two bots.
+    BotChat(BotChatSheet),
     Routines(RoutineList),
     Routine(Box<RoutineForm>),
     Market(Box<Market>),
@@ -264,6 +266,8 @@ pub enum Click {
     Composer,
     /// The replies line under a message: opens its thread.
     Thread(String),
+    /// A bot-message row (entry id): opens the conversation.
+    BotChat(String),
 }
 
 #[derive(Default)]

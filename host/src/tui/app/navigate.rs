@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
-use super::{After, App, Focus, Msg, TraceMode, Width, copy};
+use super::{After, App, Focus, Item, Msg, TraceMode, Width, copy, group};
 
 impl App {
     /// `codync-host install` with this same binary, for when nothing is listening yet.
@@ -129,15 +129,26 @@ impl App {
     /// `r`: moves the pick through the main chat's messages (none picked: the newest).
     pub(super) fn step_pick(&mut self, d: isize) {
         let Some(id) = self.selected.clone() else { return };
-        let ids: Vec<String> = self.lane(&id).into_iter().filter(|e| e.is_message()).map(|e| e.id.clone()).collect();
-        if ids.is_empty() {
+        // A run of exchanges with one peer is one pick: its first entry.
+        let lane = self.lane(&id);
+        let picks: Vec<(String, bool)> = group(&id, &lane, self.thread.is_none())
+            .into_iter()
+            .filter_map(|item| match item {
+                Item::Entry(e) if e.is_message() || e.is_bot_message() => Some((e.id.clone(), e.is_message())),
+                Item::Group(g) => Some((g.first.id.clone(), false)),
+                Item::Entry(_) => None,
+            })
+            .collect();
+        if picks.is_empty() {
             self.pick = None;
             self.flash("No message to reply to yet");
             return;
         }
-        let at = self.pick.as_ref().and_then(|p| ids.iter().position(|x| x == p));
-        let i = at.map_or(ids.len() - 1, |i| i.saturating_add_signed(d).min(ids.len() - 1));
-        self.pick = Some(ids[i].clone());
+        let at = self.pick.as_ref().and_then(|p| picks.iter().position(|(x, _)| x == p));
+        // A fresh pick lands on the newest message, so `r` still replies to it; j/k reach bot rows.
+        let newest = picks.iter().rposition(|&(_, message)| message).unwrap_or(picks.len() - 1);
+        let i = at.map_or(newest, |i| i.saturating_add_signed(d).min(picks.len() - 1));
+        self.pick = Some(picks[i].0.clone());
     }
 
     /// Keys while a message is picked. Returns whether the key was used.
@@ -148,6 +159,28 @@ impl App {
             KeyCode::Char('j') | KeyCode::Down => self.step_pick(1),
             KeyCode::Char('k') | KeyCode::Up => self.step_pick(-1),
             KeyCode::Char('C') => self.open_connection(),
+            KeyCode::Enter if picked.as_ref().is_some_and(super::Entry::is_bot_message) => {
+                if let Some(e) = picked {
+                    self.open_bot_chat(&e.id);
+                }
+            }
+            KeyCode::Char('c') if picked.as_ref().is_some_and(super::Entry::is_bot_message) => {
+                if let Some(e) = picked {
+                    let lane = self.lane(&id);
+                    let grouped = group(&id, &lane, self.thread.is_none())
+                        .iter()
+                        .any(|i| matches!(i, Item::Group(g) if g.first.id == e.id));
+                    if grouped {
+                        self.flash("Bot conversations are read-only");
+                    } else {
+                        copy(&super::Exchange::of(&id, &e).map(|x| x.text).unwrap_or_default());
+                        self.flash("Copied");
+                    }
+                }
+            }
+            KeyCode::Char('r' | 'f' | '1'..='6') if picked.as_ref().is_some_and(super::Entry::is_bot_message) => {
+                self.flash("Bot conversations are read-only");
+            }
             KeyCode::Enter if picked.as_ref().is_some_and(|e| e.data["connectionRequest"]["status"] == "pending") => {
                 self.open_connection();
             }
@@ -168,7 +201,7 @@ impl App {
             }
             KeyCode::Char('f') => {
                 if let Some(e) = picked {
-                    self.save_files(&id, &e.data);
+                    self.save_files(&id, &e.id, &e.data);
                 }
             }
             KeyCode::Char('c') => {

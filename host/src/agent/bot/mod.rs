@@ -15,6 +15,7 @@
 //! forked from the main one when the agent can fork) and in group chats (turns in
 //! its main session, written to the group's transcript; see `group`).
 
+mod files;
 mod queue;
 mod session;
 mod turn;
@@ -58,6 +59,12 @@ pub enum Cmd {
     /// `send_message` from the bot's `chat` MCP server: a message for the user, now.
     SendToUser {
         text: String,
+        reply: tokio::sync::oneshot::Sender<Result<()>>,
+    },
+    SendFile {
+        path: String,
+        name: Option<String>,
+        cancelled: Arc<std::sync::atomic::AtomicBool>,
         reply: tokio::sync::oneshot::Sender<Result<()>>,
     },
     CancelAsk {
@@ -134,6 +141,7 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         plan_entry: None,
         last_text: None,
         sent: Vec::new(),
+        files: files::FileShares::default(),
         perms: HashMap::new(),
         stop_requested: false,
         exit_tail: None,
@@ -219,6 +227,7 @@ struct Actor {
     last_text: Option<String>,
     /// Messages the bot sent the user this turn (`send_message`); none: its last text is the reply.
     sent: Vec<String>,
+    files: files::FileShares,
     /// permission entry id -> JSON-RPC request id
     perms: HashMap<String, Value>,
     stop_requested: bool,
@@ -265,6 +274,7 @@ impl Actor {
                     let Some(cmd) = cmd else { break };
                     if !self.on_cmd(cmd, &done_tx).await { break }
                 }
+                Some(file) = self.files.rx.recv() => self.finish_file(file),
                 inc = recv_incoming(&mut self.conn) => self.on_incoming(inc).await,
                 Some(done) = done_rx.recv() => {
                     // Updates sent before the prompt response are already queued; apply them first.
@@ -288,6 +298,7 @@ impl Actor {
                 },
             }
         }
+        self.files.cancel();
         self.hub.team.cancel_from(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));

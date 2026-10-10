@@ -4,7 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::collections::{BTreeSet, HashMap};
 
-use super::super::app::{App, Bot, Click, Entry, Kind, Status};
+use super::super::app::{App, Bot, Click, Entry, Exchange, Item, Kind, Outcome, Status, group};
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
@@ -92,8 +92,15 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
         out.lines.push(Line::from(Span::styled(format!(" ───{label}{}", "─".repeat(side)), t.dim)));
     }
     // A bot's messages arrive whole (Grok Bot's `send_message`); what it writes along the way is trace.
-    for e in &entries {
-        entry_lines(&mut out, app, b, e, &info, thread.is_none(), width);
+    for item in group(&b.id, &entries, thread.is_none()) {
+        match item {
+            Item::Entry(e) => entry_lines(&mut out, app, b, e, &info, thread.is_none(), width),
+            Item::Group(g) => {
+                let from = out.lines.len();
+                let lead = format!("{} messages with ", g.count);
+                bot_message_line(&mut out, app, g.first, &g.peer, &lead, g.failed, from);
+            }
+        }
     }
     // A turn in flight: who's on it and what they're doing.
     let last_turn = entries.iter().map(|e| e.turn).max().unwrap_or(0);
@@ -230,7 +237,22 @@ fn entry_lines(
                 Span::styled(format!(" {name}"), name_style(color)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ]));
-            out.lines.extend(md::render(e.text(), width, 1));
+            if let Some(files) = e.data["files"].as_array().filter(|files| !files.is_empty()) {
+                for file in files {
+                    let name = file["name"].as_str().unwrap_or("file");
+                    let size = file["size"].as_u64().unwrap_or(0);
+                    out.lines.push(Line::from(Span::styled(
+                        format!(" ▤ {} · {}", truncate(name, width.saturating_sub(18)), file_size(size)),
+                        t.text,
+                    )));
+                    out.lines.push(Line::from(Span::styled(
+                        "   Select this message, then f to download · f again cancels",
+                        t.dim,
+                    )));
+                }
+            } else {
+                out.lines.extend(md::render(e.text(), width, 1));
+            }
             reactions(out, e);
             out.messages.push((e.id.clone(), from, out.lines.len()));
             if let Some(ti) = info.get(&e.turn).filter(|ti| ti.steps > 0 && ti.last_message.as_ref() == Some(&e.id)) {
@@ -259,6 +281,12 @@ fn entry_lines(
         }
         Kind::Notice => {
             let from = out.lines.len();
+            if let Some(x) = Exchange::of(&b.id, e) {
+                let lead = format!("{} ", x.verb());
+                let failed = matches!(x.outcome, Outcome::Failed(_));
+                bot_message_line(out, app, e, x.peer(), &lead, failed, from);
+                return;
+            }
             let text = if let Some(status) = e.data["connectionRequest"]["status"].as_str() {
                 format!(
                     "{} · {} · {}",
@@ -295,6 +323,30 @@ fn entry_lines(
         }
         _ => {}
     }
+}
+
+/// A bot-to-bot exchange, or a run of them, as one compact line ("· Messaged ▌O▐ Owen",
+/// "· 3 messages with ▌O▐ Owen"); click opens the conversation with `peer`.
+/// Only a failure is marked: its text lives in the conversation sheet.
+fn bot_message_line(out: &mut Built, app: &App, e: &Entry, peer: &str, lead: &str, failed: bool, from: usize) {
+    let t = theme();
+    gap(out);
+    let (name, color) = app.bots.get(peer).map_or(("A deleted bot", "gray"), |p| (p.name.as_str(), p.color.as_str()));
+    let mark = if failed { Span::styled(" × ", t.red) } else { Span::styled(" · ", t.dim) };
+    let mut line = vec![
+        Span::styled(lead.to_owned(), t.secondary),
+        person(app, peer),
+        Span::raw(" "),
+        Span::styled(name.to_owned(), name_style(color)),
+    ];
+    if failed {
+        line.push(Span::styled(" · failed", t.red));
+    }
+    let width = u(line.iter().map(|s| w(&s.content)).sum());
+    out.buttons.push((out.lines.len(), 3, width, Click::BotChat(e.id.clone())));
+    line.insert(0, mark);
+    out.lines.push(Line::from(line));
+    out.messages.push((e.id.clone(), from, out.lines.len()));
 }
 
 /// A message's reactions, under it.
@@ -351,6 +403,109 @@ fn thread_summary(v: &serde_json::Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn generated_files_are_selectable_cards_without_duplicate_fallback_text() {
+        use crate::tui::app::Msg;
+        use serde_json::json;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(crate::tui::net::Client::new("http://127.0.0.1:1", Some("fixture")), tx, String::new());
+        app.on_msg(Msg::Event(json!({"type":"bot", "bot":{"id":"bot", "name":"Files", "cwd":"/workspace", "backend":"custom", "status":"idle"}})));
+        app.on_msg(Msg::Event(json!({"type":"entry", "entry":{"id":"file-entry", "botId":"bot", "seq":1, "kind":"agent", "turn":1, "data":{"author":"bot", "text":"fallback must stay hidden", "final":true, "files":[{"id":"file", "name":".empty", "size":0, "sha256":"hash"}]}}})));
+        let bot = app.bots.get("bot").unwrap();
+        let chat = build_chat(&app, bot, 80);
+        let text = chat.lines.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n");
+        assert!(text.contains(".empty"));
+        assert!(text.contains("f to download"));
+        assert!(!text.contains("fallback must stay hidden"));
+        assert!(chat.messages.iter().any(|(id, _, _)| id == "file-entry"));
+    }
+
+    fn app_with_bots() -> App {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(super::super::super::net::Client::new("http://127.0.0.1:1", None), tx, String::new());
+        for (id, name) in [("a", "Egan"), ("b", "Owen")] {
+            app.on_msg(super::super::super::app::Msg::Event(
+                serde_json::json!({"type":"bot","bot":{"id":id,"name":name}}),
+            ));
+        }
+        app
+    }
+
+    fn exchange_entry(status: &str) -> Entry {
+        Entry {
+            id: "n".into(),
+            seq: 1,
+            turn: 1,
+            kind: Kind::Notice,
+            created_at: 0,
+            thread_id: None,
+            data: serde_json::json!({
+                "text": "Messaged b: Please review the secret plan\nCompleted.", "style": "info", "status": status,
+                "heading": "Messaged b: Please review the secret plan",
+                "botMessage": {"sourceBotId": "a", "targetBotId": "b", "text": "Please review the secret plan"},
+                "sourceBotId": "a", "targetBotId": "b", "delegationId": "r",
+            }),
+        }
+    }
+
+    #[test]
+    fn bot_message_is_one_line_with_a_click_and_marks_only_failure() {
+        let app = app_with_bots();
+        let bot = &app.bots["a"];
+        let render = |e: &Entry| {
+            let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
+            entry_lines(&mut out, &app, bot, e, &HashMap::new(), true, 80);
+            out
+        };
+        let ok = render(&exchange_entry("completed"));
+        let text = ok.lines.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("Messaged") && text.contains("Owen"));
+        assert!(!text.contains("secret plan") && !text.contains("failed"));
+        assert!(matches!(ok.buttons.as_slice(), [(_, 3, _, Click::BotChat(id))] if id == "n"));
+        assert_eq!(ok.messages.len(), 1);
+        let mut failed = exchange_entry("failed");
+        failed.data["text"] = "Messaged b: Please review the secret plan\nRecipient stopped.".into();
+        let bad = render(&failed);
+        let line = bad.lines.last().unwrap();
+        assert!(line.to_string().ends_with("Owen · failed"));
+        assert_eq!(line.spans[0].style, theme().red);
+    }
+
+    #[test]
+    fn a_run_of_exchanges_is_one_counted_line() {
+        let app = app_with_bots();
+        let bot = &app.bots["a"];
+        let mut entries = vec![];
+        for (i, status) in ["completed", "failed", "completed"].into_iter().enumerate() {
+            let mut e = exchange_entry(status);
+            e.id = format!("n{i}");
+            e.seq = i64::try_from(i).unwrap_or(0) + 1;
+            entries.push(e);
+        }
+        let refs: Vec<&Entry> = entries.iter().collect();
+        let build = |refs: &[&Entry]| {
+            let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
+            for item in group(&bot.id, refs, true) {
+                match item {
+                    Item::Entry(e) => entry_lines(&mut out, &app, bot, e, &HashMap::new(), true, 80),
+                    Item::Group(g) => {
+                        let lead = format!("{} messages with ", g.count);
+                        bot_message_line(&mut out, &app, g.first, &g.peer, &lead, g.failed, 0);
+                    }
+                }
+            }
+            out
+        };
+        let out = build(&refs);
+        assert_eq!(out.lines.len(), 1);
+        let line = &out.lines[0];
+        assert!(line.to_string().contains("3 messages with") && line.to_string().ends_with("Owen · failed"), "{line}");
+        assert_eq!(line.spans[0].style, theme().red);
+        assert!(matches!(out.buttons.as_slice(), [(_, 3, _, Click::BotChat(id))] if id == "n0"));
+        assert_eq!(out.messages.len(), 1);
+        assert!(build(&refs[..1]).lines[0].to_string().contains("Messaged"));
+    }
 
     #[test]
     fn thread_summary_counts_replies() {

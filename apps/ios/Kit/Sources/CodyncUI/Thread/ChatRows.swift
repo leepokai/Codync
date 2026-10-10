@@ -62,6 +62,20 @@ struct ChatRow: View {
     }
 }
 
+/// A chat's time separator: Today 3:27 AM.
+struct TimeSeparator: View {
+    let date: Date
+
+    var body: some View {
+        Text(RelativeTime.separator(date))
+            .font(.footnote)
+            .foregroundStyle(Palette.tertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 18)
+            .padding(.bottom, 6)
+    }
+}
+
 /// Who wrote a message in a group: their avatar and name in their color.
 struct AuthorLabel: View {
     let botId: String?
@@ -200,11 +214,16 @@ struct AgentBubble: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            MarkdownText(entry.data.text ?? "")
-                .equatable()
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            Group {
+                if let files = entry.data.files, !files.isEmpty {
+                    ForEach(files) { file in FileDownloadCard(entry: entry, file: file) }
+                } else {
+                    MarkdownText(entry.data.text ?? "").equatable()
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+            }
                 .contextActions(reactions: model.reactionPick(entry)) {
                     var items = [
                         MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) },
@@ -218,6 +237,7 @@ struct AgentBubble: View {
         .padding(.trailing, 40)
     }
 }
+
 
 struct NoticeRow: View {
     let entry: Entry

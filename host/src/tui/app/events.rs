@@ -1,8 +1,17 @@
 //! Host messages: the event stream and command replies.
 
+use std::collections::HashMap;
+
 use serde_json::{Value, json};
 
 use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, Status, merge_toggles};
+
+/// A main-chat entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
+/// connection began: `seq` grows with insertion, so it predates the window and only arrived because
+/// its rev was bumped (a rewrite, a reaction). History paging brings it.
+fn outside_window(floor: Option<i64>, held: bool, e: &Entry) -> bool {
+    e.thread_id.is_none() && !held && floor.is_some_and(|f| e.seq < f)
+}
 
 impl App {
     pub fn on_msg(&mut self, m: Msg) {
@@ -23,25 +32,45 @@ impl App {
                 self.bots.clear();
                 self.entries.clear();
                 self.history_done.clear();
+                self.floors.clear();
                 // Catch-up carries only recent thread replies: fetch the open thread whole again.
                 if let (Some(id), Some(root)) = (&self.selected, &self.thread) {
                     self.call("thread", json!({"botId": id, "rootId": root}), After::Thread);
                 }
             }
+            Msg::Connected { since } => {
+                self.stream_since = since;
+                self.floors.clear();
+            }
             Msg::Event(v) => self.on_event(&v),
             Msg::Reply(after, r) => self.on_reply(after, r),
+            Msg::FileDownload { id, status, done } => {
+                if self.download.as_ref().is_some_and(|job| job.id == id) {
+                    self.flash(&status.unwrap_or_else(|error| format!("Download failed: {error}")));
+                    if done {
+                        self.download = None;
+                    }
+                }
+            }
             Msg::Term(id, v) => self.on_term(&id, &v),
         }
     }
 
     fn on_event(&mut self, v: &Value) {
         match v["type"].as_str() {
-            Some("hello") if !v["usage"].is_null() => self.usage = v["usage"].clone(),
+            Some("hello") => {
+                self.snapshot_floors();
+                if !v["usage"].is_null() {
+                    self.usage = v["usage"].clone();
+                }
+            }
             Some("usage") => self.usage = v["usage"].clone(),
             Some("screen") => self.screen = v["screen"].clone(),
             Some("bot") => self.upsert_bot(&v["bot"]),
             Some("entry") => {
-                if let Some((bot, e)) = Entry::parse(&v["entry"]) {
+                if let Some((bot, e)) = Entry::parse(&v["entry"])
+                    && !self.outside_window(&bot, &e)
+                {
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }
@@ -49,11 +78,32 @@ impl App {
         }
     }
 
+    /// A catch-up from `since > 0` starts: remember where each bot's loaded main chat begins.
+    fn snapshot_floors(&mut self) {
+        self.floors = if self.stream_since > 0 {
+            self.entries
+                .iter()
+                .filter_map(|(bot, loaded)| {
+                    let oldest = loaded.values().filter(|e| e.thread_id.is_none() && e.seq > 0).map(|e| e.seq).min();
+                    Some((bot.clone(), oldest?))
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        };
+    }
+
+    fn outside_window(&self, bot: &str, e: &Entry) -> bool {
+        let held = self.entries.get(bot).is_some_and(|m| m.contains_key(&e.seq));
+        outside_window(self.floors.get(bot).copied(), held, e)
+    }
+
     fn upsert_bot(&mut self, v: &Value) {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
             self.bots.remove(id);
             self.entries.remove(id);
+            self.floors.remove(id);
             let prefix = format!("{id}#");
             self.drafts.retain(|key, _| key != id && !key.starts_with(&prefix));
             self.files.retain(|key, _| key != id && !key.starts_with(&prefix));
@@ -281,6 +331,84 @@ impl App {
 mod tests {
     use super::super::{Editor, FIELDS, Field, PendingSend, test_app};
     use super::*;
+
+    fn entry_event(seq: i64, thread: &Value) -> Value {
+        json!({"type": "entry", "entry": {"botId": "a", "id": format!("e{seq}"), "seq": seq, "turn": seq,
+            "kind": "user", "threadId": thread}})
+    }
+
+    fn seqs(app: &App) -> Vec<i64> {
+        app.entries.get("a").map(|m| m.keys().copied().collect()).unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn catch_up_with_only_replies_can_fetch_main_chat_history() {
+        fn entry_event(seq: i64, thread: &Value) -> Value {
+            json!({"type": "entry", "entry": {"botId": "a", "id": format!("e{seq}"), "seq": seq, "turn": seq,
+                "kind": "user", "threadId": thread}})
+        }
+        let mut app = test_app();
+        app.selected = Some("a".into());
+        app.on_event(&entry_event(100, &json!("root")));
+        assert!(!app.history_complete("a"));
+        app.load_history();
+        assert!(app.history_busy.contains("a"));
+        app.on_reply(After::History("a".into()), Ok(json!({"entries": [entry_event(90, &Value::Null)["entry"]]})));
+        assert_eq!(app.lane("a").iter().map(|e| e.seq).collect::<Vec<_>>(), [90]);
+        app.on_reply(After::History("a".into()), Ok(json!({"entries": []})));
+        assert!(app.history_complete("a"));
+    }
+
+    fn connect(app: &mut App, since: i64) {
+        app.on_msg(Msg::Connected { since });
+        app.on_event(&json!({"type": "hello"}));
+    }
+
+    #[test]
+    fn rewritten_entry_below_the_floor_waits_for_paging() {
+        let mut app = test_app();
+        for seq in [5, 6] {
+            app.on_event(&entry_event(seq, &Value::Null));
+        }
+        connect(&mut app, 40);
+        app.on_event(&entry_event(2, &Value::Null));
+        assert_eq!(seqs(&app), [5, 6], "below the floor: dropped");
+        app.on_event(&entry_event(2, &json!("root")));
+        assert_eq!(seqs(&app), [2, 5, 6], "thread replies are not paged");
+        let mut update = entry_event(5, &Value::Null);
+        update["entry"]["reactions"] = json!(["x"]);
+        app.on_event(&update);
+        app.on_event(&entry_event(7, &Value::Null));
+        assert_eq!(seqs(&app), [2, 5, 6, 7], "held updates and newer entries apply");
+        app.on_reply(After::History("a".into()), Ok(json!({"entries": [entry_event(3, &Value::Null)["entry"]]})));
+        assert_eq!(seqs(&app), [2, 3, 5, 6, 7], "history inserts older entries");
+    }
+
+    #[test]
+    fn a_full_catch_up_accepts_entries_in_rev_order() {
+        let mut app = test_app();
+        app.on_event(&entry_event(9, &Value::Null)); // a sent message's reply, before catch-up
+        connect(&mut app, 0);
+        for seq in [4, 2, 7] {
+            app.on_event(&entry_event(seq, &Value::Null));
+        }
+        assert_eq!(seqs(&app), [2, 4, 7, 9]);
+        connect(&mut app, 40);
+        app.on_event(&entry_event(1, &Value::Null));
+        assert_eq!(seqs(&app), [2, 4, 7, 9], "a later resume floors at the loaded window");
+        connect(&mut app, 0);
+        app.on_event(&entry_event(1, &Value::Null));
+        assert_eq!(seqs(&app), [1, 2, 4, 7, 9], "each connection replaces the floors");
+    }
+
+    #[test]
+    fn floor_rule_is_pure() {
+        let (_, e) = Entry::parse(&entry_event(3, &Value::Null)["entry"]).expect("parses");
+        assert!(outside_window(Some(5), false, &e));
+        assert!(!outside_window(Some(5), true, &e));
+        assert!(!outside_window(Some(3), false, &e));
+        assert!(!outside_window(None, false, &e));
+    }
 
     #[test]
     fn send_failure_keeps_text_files_and_nonce_for_retry() {

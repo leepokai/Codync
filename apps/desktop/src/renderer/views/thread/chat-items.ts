@@ -1,24 +1,33 @@
 import { useRef } from 'react'
 import { isChat, type Entry } from '@shared/models'
+import { groupExchanges, type BotExchange, type ChatSlot } from './bot-exchange'
 
 export type ChatItem =
   | { id: string; kind: 'separator'; date: number }
   | { id: string; kind: 'entry'; entry: Entry; groupStart: boolean }
+  | { id: string; kind: 'exchanges'; entry: Entry; exchanges: BotExchange[] }
 
 /**
  * Chat-visible entries plus time separators (gaps > 1 h) and author grouping. A bot's messages
- * arrive whole (Grok Bot's `send_message`); what it writes along the way is trace.
+ * arrive whole (Grok Bot's `send_message`); what it writes along the way is trace. `grouped`
+ * (the main transcript, not threads) folds runs of bot exchanges with one peer into one item.
  */
-export function buildChat(entries: Entry[]): ChatItem[] {
+export function buildChat(entries: Entry[], grouped = false): ChatItem[] {
   const out: ChatItem[] = []
   let lastDate: number | null = null
   let lastAuthor: string | null = null
-  for (const e of entries) {
-    if (!isChat(e)) continue
+  const slots: ChatSlot[] = grouped ? groupExchanges(entries) : entries.filter(isChat).map((entry) => ({ entry, exchanges: null }))
+  for (const { entry: e, exchanges } of slots) {
     const id = e.kind === 'user' && e.data.clientNonce ? `user-${e.data.clientNonce}` : e.id
     if (lastDate === null || e.createdAt - lastDate > 3_600_000) {
       out.push({ id: `sep-${id}`, kind: 'separator', date: e.createdAt })
       lastAuthor = null
+    }
+    if (exchanges) {
+      out.push({ id, kind: 'exchanges', entry: e, exchanges })
+      lastAuthor = null
+      lastDate = e.createdAt
+      continue
     }
     // In a group each bot is its own author.
     const author = e.kind === 'user' ? 'user' : e.kind === 'agent' ? `agent:${e.data.author ?? ''}` : e.kind

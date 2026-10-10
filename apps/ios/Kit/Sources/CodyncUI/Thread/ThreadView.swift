@@ -13,6 +13,7 @@ public struct ThreadView: View {
     @Environment(\.dismiss) var dismiss
     @State var showTrace = false
     @State var openThread: ThreadTarget?
+    @State var botChat: BotChatTarget?
     @State var editingGroup = false
     @State var editing: EditorRequest?
     @State var templateRequest: EditorRequest?
@@ -73,9 +74,16 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
+            .codyncSheet(item: Binding<FileDownloads.Export?>(get: {
+                guard let item = model.fileDownloads.export, item.botId == botId, item.threadId == nil else { return nil }
+                return item
+            }, set: { if $0 == nil { model.fileDownloads.dismissExport() } })) { item in
+                FileExportSheet(url: item.url) { model.fileDownloads.dismissExport() }
+            }
             .codyncSheet(isPresented: $showTrace) {
                 TraceView(botId: botId)
             }
+            .codyncSheet(item: $botChat) { BotConversationView(botId: botId, peerId: $0.id) }
             .codyncSheet(item: $templateRequest) { request in
                 BotTemplateView(draft: request.draft)
             }
@@ -104,12 +112,9 @@ public struct ThreadView: View {
     @ViewBuilder func row(_ item: ChatItem) -> some View {
         switch item.kind {
         case .separator(let date):
-            Text(RelativeTime.separator(date))
-                .font(.footnote)
-                .foregroundStyle(Palette.tertiary)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 18)
-                .padding(.bottom, 6)
+            TimeSeparator(date: date)
+        case .exchanges(let group):
+            BotMessageRow(group: group) { botChat = BotChatTarget(id: group.peerId) }
         case .entry(let e, let groupStart):
             if e.kind == "notice", let id = e.data.routineId {
                 Button {
@@ -228,6 +233,8 @@ struct ChatItem: Identifiable {
     enum Kind {
         case separator(Date)
         case entry(Entry, groupStart: Bool)
+        /// Main chat only: consecutive bot-to-bot exchanges with one peer.
+        case exchanges(BotExchangeGroup)
     }
 
     let id: String
@@ -235,24 +242,31 @@ struct ChatItem: Identifiable {
 
     /// Chat-visible entries plus time separators (gaps > 1 h) and author grouping. A bot's
     /// messages arrive whole (Grok Bot's `send_message`); what it writes along the way is trace.
-    static func build(_ entries: [Entry]) -> [ChatItem] {
+    static func build(_ entries: [Entry], groupingExchanges: Bool = false) -> [ChatItem] {
         var out: [ChatItem] = []
         var lastDate: Date?
         var lastAuthor: String?
-        for e in entries where e.isChat {
-            let date = e.date
+        let slots = groupingExchanges ? BotExchangeGroup.collapse(entries) : entries.filter(\.isChat).map(BotExchangeGroup.Item.entry)
+        for slot in slots {
+            let date = slot.date
             // Bot-originated messages carry an empty nonce. Their entry IDs
             // distinguish them; only real nonces identify optimistic echoes.
-            let id = if e.kind == "user", let nonce = e.data.clientNonce, !nonce.isEmpty { "user-\(nonce)" } else { e.id }
+            let id = if case .entry(let e) = slot, e.kind == "user", let nonce = e.data.clientNonce, !nonce.isEmpty { "user-\(nonce)" } else { slot.id }
             if lastDate.map({ date.timeIntervalSince($0) > 3600 }) ?? true {
                 out.append(ChatItem(id: "sep-\(id)", kind: .separator(date)))
                 lastAuthor = nil
             }
-            // In a group each bot is its own author.
-            let author = e.kind == "user" ? "user" : e.kind == "agent" ? "agent:\(e.data.author ?? "")" : e.kind
-            out.append(ChatItem(id: id, kind: .entry(e, groupStart: author != lastAuthor)))
-            lastAuthor = (author == "user" || e.kind == "agent") ? author : nil
             lastDate = date
+            switch slot {
+            case .exchanges(let group):
+                out.append(ChatItem(id: id, kind: .exchanges(group)))
+                lastAuthor = nil
+            case .entry(let e):
+                // In a group each bot is its own author.
+                let author = e.kind == "user" ? "user" : e.kind == "agent" ? "agent:\(e.data.author ?? "")" : e.kind
+                out.append(ChatItem(id: id, kind: .entry(e, groupStart: author != lastAuthor)))
+                lastAuthor = (author == "user" || e.kind == "agent") ? author : nil
+            }
         }
         return out
     }
@@ -340,7 +354,7 @@ extension ThreadView {
     /// revealed steadily as it's written.
     var transcript: some View {
         let thread = model.chat(botId)
-        let items = ChatItem.build(thread)
+        let items = ChatItem.build(thread, groupingExchanges: true)
         var rows: [ConversationRow] = []
         if moreOnComputer {
             rows.append(ConversationRow("earlier") {
@@ -367,7 +381,7 @@ extension ThreadView {
     }
 
     private var moreOnComputer: Bool {
-        !model.historyComplete.contains(botId) && model.chat(botId).count >= 50
+        model.canLoadOlder(botId)
     }
 
     /// The reader scrolled up to the top: fetch earlier messages from the computer.

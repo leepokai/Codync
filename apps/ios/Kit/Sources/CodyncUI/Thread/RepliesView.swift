@@ -48,6 +48,12 @@ struct RepliesView: View {
         .task(id: rootId) { await model.loadThread(botId, root: rootId) }
         // A thread is read on its own: having it open reads its replies.
         .readingConversation(botId, thread: rootId)
+        .codyncSheet(item: Binding<FileDownloads.Export?>(get: {
+            guard let item = model.fileDownloads.export, item.botId == botId, item.threadId == rootId else { return nil }
+            return item
+        }, set: { if $0 == nil { model.fileDownloads.dismissExport() } })) { item in
+            FileExportSheet(url: item.url) { model.fileDownloads.dismissExport() }
+        }
         .codyncSheet(isPresented: $showTrace) {
             TraceView(botId: botId, thread: rootId)
         }

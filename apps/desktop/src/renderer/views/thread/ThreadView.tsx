@@ -7,8 +7,9 @@ import { Sheet } from '../../components/Overlay'
 import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
 import { UpdateNeededCard } from '../UpdateNeededCard'
-import { buildChat, relativeTime, rowIn, useArrivals, type ChatItem } from './chat-items'
-import { ChatRow, WorkingIndicator } from './ChatRows'
+import { buildChat, rowIn, useArrivals, type ChatItem } from './chat-items'
+import { BotConversationView, BotMessageRow } from './BotConversation'
+import { ChatRow, TimeSeparator, WorkingIndicator } from './ChatRows'
 import { Composer } from './Composer'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel } from './DetailsPanel'
@@ -35,6 +36,7 @@ export function ThreadView({ botId }: { botId: string }) {
   const bot = store.bots.get(botId) ?? null
   const [showTrace, setShowTrace] = useState(false)
   const [openThread, setOpenThread] = useState<string | null>(null)
+  const [botChat, setBotChat] = useState<string | null>(null)
   const [editingGroup, setEditingGroup] = useState(false)
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -140,7 +142,7 @@ export function ThreadView({ botId }: { botId: string }) {
             {store.shownConnection.kind !== 'online' || store.mismatch ? <ConnectionSubtitle /> : null}
           </button>
         </div>
-        <Transcript botId={botId} openTrace={openTrace} openThread={openThreadOn} openRoutine={presentRoutine} />
+        <Transcript botId={botId} openTrace={openTrace} openThread={openThreadOn} openRoutine={presentRoutine} openBotChat={setBotChat} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
           {store.mismatch ? (
@@ -170,6 +172,9 @@ export function ThreadView({ botId }: { botId: string }) {
       </Sheet>
       <Sheet open={openThread !== null && !wide} onClose={closeThread} width={440} height={600}>
         {openThread ? <RepliesView botId={botId} rootId={openThread} close={closeThread} /> : null}
+      </Sheet>
+      <Sheet open={botChat !== null} onClose={() => setBotChat(null)} width={620} height={560}>
+        {botChat ? <BotConversationView botId={botId} peerId={botChat} /> : null}
       </Sheet>
       <Sheet open={showTrace} onClose={() => setShowTrace(false)} width={620} height={560}>
         <TraceView botId={botId} />
@@ -219,19 +224,19 @@ function ConnectionSubtitle() {
 /** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
 const PAGE = 40
 
-function Transcript({ botId, openTrace, openThread, openRoutine }: { botId: string; openTrace: () => void; openThread: (e: { id: string }) => void; openRoutine: (id: string | null) => void }) {
+function Transcript({ botId, openTrace, openThread, openRoutine, openBotChat }: { botId: string; openTrace: () => void; openThread: (e: { id: string }) => void; openRoutine: (id: string | null) => void; openBotChat: (peerId: string) => void }) {
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
   const thread = store.chat(botId)
   const live = !!bot && isWorkingIn(bot, botId, null) && !store.isOffline
-  const all = buildChat(thread)
+  const all = buildChat(thread, true)
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
   const found = firstShown ? all.findIndex((i) => i.id === firstShown) : -1
   const start = found >= 0 ? found : Math.max(0, all.length - PAGE)
   const items = all.slice(start)
-  const more = start > 0 || (!store.historyComplete.has(botId) && thread.length >= 50)
+  const more = start > 0 || store.canLoadOlder(botId)
   // Following the newest message, or reading history: scrolling up releases the bottom,
   // arriving back at the end (or Jump to latest) restores it. Content growth alone never changes it.
   const [following, setFollowing] = useState(true)
@@ -262,7 +267,7 @@ function Transcript({ botId, openTrace, openThread, openRoutine }: { botId: stri
     if (at === 0) {
       const anchor = list[0]?.id
       await store.loadOlder(botId)
-      list = buildChat(store.chat(botId))
+      list = buildChat(store.chat(botId), true)
       at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
     }
     if (at > 0) setFirstShown(list[Math.max(0, at - PAGE)]!.id)
@@ -320,7 +325,7 @@ function Transcript({ botId, openTrace, openThread, openRoutine }: { botId: stri
           {items.length === 0 && bot ? <div style={{ paddingTop: 40 }}>{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
           {items.map((item) => (
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
-              <Row item={item} chat={bot} openTrace={openTrace} openThread={openThread} openRoutine={openRoutine} />
+              <Row item={item} chat={bot} openTrace={openTrace} openThread={openThread} openRoutine={openRoutine} openBotChat={openBotChat} />
             </div>
           ))}
           {bot && live ? (
@@ -348,10 +353,11 @@ function Transcript({ botId, openTrace, openThread, openRoutine }: { botId: stri
   )
 }
 
-function Row({ item, chat, openTrace, openThread, openRoutine }: { item: ChatItem; chat: Bot | null; openTrace: () => void; openThread: (e: { id: string }) => void; openRoutine: (id: string | null) => void }) {
+function Row({ item, chat, openTrace, openThread, openRoutine, openBotChat }: { item: ChatItem; chat: Bot | null; openTrace: () => void; openThread: (e: { id: string }) => void; openRoutine: (id: string | null) => void; openBotChat: (peerId: string) => void }) {
   if (item.kind === 'separator') {
-    return <div style={{ ...font('footnote'), color: 'var(--tertiary)', textAlign: 'center', padding: '18px 0 6px' }}>{relativeTime.separator(item.date)}</div>
+    return <TimeSeparator date={item.date} />
   }
+  if (item.kind === 'exchanges') return <BotMessageRow exchanges={item.exchanges} open={openBotChat} />
   const e = item.entry
   if (e.kind === 'notice' && e.data.routineId) {
     return (

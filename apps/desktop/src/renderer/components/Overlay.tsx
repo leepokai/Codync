@@ -302,7 +302,7 @@ export function useContextMenu() {
 }
 
 /** A modal's title row: title, optional trailing actions, and a close button. */
-export function ModalHeader({ title, trailing }: { title: string; trailing?: ReactNode }) {
+export function ModalHeader({ title, trailing }: { title: ReactNode; trailing?: ReactNode }) {
   const dismiss = useDismiss()
   return (
     <div className="modal-header">

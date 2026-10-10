@@ -392,13 +392,19 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn raw_binary_extract_marks_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
         let dir = std::env::temp_dir().join(format!("codync-reg-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let archive = dir.join("tool-darwin");
-        std::fs::write(&archive, "#!/bin/sh\necho hi\n").unwrap();
+        let contents = b"#!/bin/sh\necho hi\n";
+        std::fs::write(&archive, contents).unwrap();
         extract(&archive, &dir, Path::new("./bin/tool")).unwrap();
-        let out = std::process::Command::new(dir.join("bin/tool")).output().unwrap();
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "hi\n");
+        let executable = dir.join("bin/tool");
+        assert_eq!(std::fs::read(&executable).unwrap(), contents);
+        assert_eq!(std::fs::metadata(&executable).unwrap().permissions().mode() & 0o111, 0o111);
+        assert!(!archive.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -96,7 +96,8 @@ impl Fixture {
     }
 
     async fn until(&self, condition: impl Fn() -> bool) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        // Generous: Windows runners need several seconds to run 16 queued turns.
+        tokio::time::timeout(Duration::from_secs(30), async {
             while !condition() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
@@ -150,6 +151,29 @@ async fn delegation_roundtrip_keeps_queued_user_messages_separate() {
     assert_eq!(f.prompts()[1], "thanks");
     assert_eq!(f.hub.store.entry(sent["entry"]["id"].as_str().unwrap()).unwrap().data["status"], "sent");
     assert_eq!(f.hub.store.entry(&request_entry.id).unwrap().data["status"], "completed");
+    for entry in f.notices(&result) {
+        assert_eq!(entry.data["botMessage"]["text"], "BLOCK review these changes");
+        assert_eq!(entry.data["botMessage"]["reply"], "reply: BLOCK review these changes");
+        // Existing clients still receive the base notice display fields.
+        let heading = entry.data["heading"].as_str().unwrap();
+        assert_eq!(entry.data["text"], format!("{heading}\nReply from b:\nreply: BLOCK review these changes"));
+    }
+    let conversation = |peer: &str| {
+        let hub = f.hub.clone();
+        let peer = peer.to_owned();
+        async move {
+            crate::api::dispatch(
+                &hub,
+                &crate::api::devices::Caller::Local,
+                "botConversation",
+                json!({"botId": "a", "peerId": peer}),
+            )
+            .await
+            .unwrap()
+        }
+    };
+    assert_eq!(conversation("b").await["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(conversation("c").await["entries"].as_array().unwrap().len(), 0);
     assert!(f.hub.team.0.locked().pending.is_empty());
     let servers: Value = serde_json::from_slice(&std::fs::read(f.dir.join("b/servers.json")).unwrap()).unwrap();
     assert!(servers.as_array().unwrap().iter().any(|s| s["name"] == "team"));
@@ -296,6 +320,9 @@ async fn message_returns_before_approval_and_survives_sender_stop() {
         assert_eq!(entry.data["sourceBotId"], "a");
         assert_eq!(entry.data["targetBotId"], "b");
         assert_eq!(entry.data["status"], "sent");
+        assert_eq!(entry.data["botMessage"]["sourceBotId"], "a");
+        assert_eq!(entry.data["botMessage"]["targetBotId"], "b");
+        assert!(entry.data["botMessage"]["text"].is_string());
     }
     assert!(notices.iter().any(|e| e.data["heading"].as_str().unwrap().starts_with("Messaged b:")));
     assert!(notices.iter().any(|e| e.data["heading"].as_str().unwrap().starts_with("Message from a:")));
@@ -575,6 +602,7 @@ fn restart_marks_requests_interrupted_without_replaying_them() {
             1,
             &json!({
                 "delegationId": "d", "status": "sent", "heading": "Request from a",
+                "botMessage": {"sourceBotId": "a", "targetBotId": "b", "text": "Work"},
             }),
         )
         .unwrap();
@@ -594,4 +622,6 @@ fn restart_marks_requests_interrupted_without_replaying_them() {
     assert!(interrupted.data["text"].as_str().unwrap().contains("Interrupted by host restart"));
     assert_eq!(store.entry(&complete.id).unwrap().data["status"], "completed");
     assert!(interrupted.rev > pending.rev);
+    assert_eq!(interrupted.data["botMessage"]["text"], "Work");
+    assert!(interrupted.data["botMessage"]["detail"].as_str().unwrap().contains("Interrupted by host restart"));
 }

@@ -11,6 +11,7 @@ import {
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import { FileDownloads } from './file-downloads'
 import { BotSync, sleep } from './bot-sync'
 
 export { builtInBackendName, type Connection } from './bot-mirror'
@@ -32,6 +33,10 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
  * `rev`, then live). Port of kit's `BotStore`.
  */
 export class BotStore extends BotSync {
+  readonly fileDownloads = new FileDownloads(() => this.changed())
+
+  override retire() { this.fileDownloads.retire(); super.retire() }
+
   private outgoingFiles = new Map<string, OutgoingFile[]>()
 
   send(text: string, botId: string, thread: string | null = null, files: OutgoingFile[] = [], nonce: string = crypto.randomUUID()) {
@@ -265,6 +270,11 @@ export class BotStore extends BotSync {
       for (const e of await this.client.thread(botId, root)) this.upsert(e)
       this.changed()
     } catch {}
+  }
+
+  /** The history between a bot and one peer. Never upserted: old notices would break `loadOlder`'s paging. */
+  async botConversation(botId: string, peerId: string): Promise<Entry[]> {
+    return (await this.ready()).botConversation(botId, peerId)
   }
 
   async save(draft: BotDraft) {

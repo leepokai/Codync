@@ -6,7 +6,7 @@ use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{Lane, now_ms};
+use crate::store::{EntryKind, Lane, now_ms};
 use anyhow::{Context, Result, anyhow};
 use serde_json::json;
 use std::time::Duration;
@@ -36,7 +36,8 @@ impl Actor {
             |e| e.turn,
         );
         for id in entry_ids {
-            if let Some(mut e) = self.hub.store.entry(id) {
+            // Bot-message notices belong to `chat::team`; writing them here would race its final status.
+            if let Some(mut e) = self.hub.store.entry(id).filter(|e| e.kind == EntryKind::User.as_str()) {
                 e.data["status"] = json!(crate::chat::team::RequestStatus::Sent);
                 self.hub.set_entry(id, &e.data);
             }
@@ -54,6 +55,8 @@ impl Actor {
         self.plan_entry = None;
         self.last_text = None;
         self.sent.clear();
+        self.files.summary = None;
+        self.files.cancel();
         // A delegated or group turn has no live waiter after a host restart. Its persisted
         // notices are marked interrupted instead of silently repeating work.
         self.set_inflight(
@@ -114,6 +117,7 @@ impl Actor {
             tracing::warn!(bot = %self.cfg.id, %error, "memory prompt capture failed");
         }
         let snapshot = self.snapshot(&sid).await?;
+        let remind_files = !snapshot.system.contains("send_file");
         let mut prompt = text.to_owned();
         if let Some(notice) = memory::lifecycle::change_notice(&self.hub, &self.cfg.id, &sid) {
             prompt = format!("{notice}\n\n{prompt}");
@@ -131,6 +135,10 @@ impl Actor {
         if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
+        }
+        if remind_files && self.active_group.is_none() && self.active_request.is_none() && self.active_routine.is_none()
+        {
+            prompt.push_str("\n\n[Codync: send_file(path, name?) shares any regular file up to 100 MiB as a downloadable card. Use it instead of sending a local path.]");
         }
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
         let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
@@ -159,6 +167,7 @@ impl Actor {
         if self.turn.is_none() {
             return;
         }
+        self.files.cancel();
         self.flush(true);
         self.seg = Seg::None;
         // Unanswered permission cards can't be answered after the turn.
@@ -182,6 +191,7 @@ impl Actor {
         let mut final_text = None;
         let routine = self.active_routine.is_some();
         let grouped = self.active_group.is_some() || routine;
+        let delegated = self.active_request.as_ref().is_some_and(crate::chat::team::BotRequest::expects_reply);
         let sent = std::mem::take(&mut self.sent);
         if !sent.is_empty() {
             // The bot talked through send_message: what it wrote as its reply stays in the trace.
@@ -194,10 +204,17 @@ impl Actor {
             let text = e.data["text"].as_str().map(str::to_owned);
             // A pass in a room stays in the trace; the room doesn't see it.
             if !(grouped && text.as_deref().is_none_or(crate::chat::group::is_pass)) {
-                e.data["final"] = true.into();
-                self.hub.set_entry(&id, &e.data);
+                // An ask's answer belongs to its requesting bot and exchange notice.
+                // Independent messages still report to the user in this chat.
+                if !delegated {
+                    e.data["final"] = true.into();
+                    self.hub.set_entry(&id, &e.data);
+                }
                 final_text = text;
             }
+        }
+        if final_text.is_none() {
+            final_text = self.files.summary.take();
         }
         let stop_reason = match &done {
             Ok(v) => v["stopReason"].as_str().unwrap_or("end_turn").to_owned(),
@@ -216,7 +233,6 @@ impl Actor {
             _ => {}
         }
         let failed = done.is_err() && !self.stop_requested;
-        let delegated = self.active_request.as_ref().is_some_and(crate::chat::team::BotRequest::expects_reply);
         let reply = if stopped {
             Err(anyhow!("recipient was stopped; partial work may have happened"))
         } else if stop_reason != "end_turn" {

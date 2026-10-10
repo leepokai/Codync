@@ -1,4 +1,5 @@
 import { isChat, type AccessRequest, type CloudStatus, type Entry } from '@shared/models'
+import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { BotMirror, type Connection } from './bot-mirror'
 
@@ -20,6 +21,9 @@ export class BotSync extends BotMirror {
   private closeEvents: (() => void) | null = null
   private eventsLoop = 0
   private rewound = false
+  /** The `since` the current events connection asked for, and the per-bot floors snapshotted at its `hello`. */
+  private requestedSince = 0
+  private floors = new Map<string, number>()
   private readingViews = new Map<string, { botId: string; thread: string | null }>()
 
   // MARK: lifecycle
@@ -115,8 +119,10 @@ export class BotSync extends BotMirror {
         }
         if (!alive()) return
         await new Promise<void>((resolve, reject) => {
+          this.requestedSince = this.rev
+          this.floors = new Map()
           this.closeEvents = client.events(
-            this.rev,
+            this.requestedSince,
             this.clientKind,
             (event) => {
               if (!alive()) return
@@ -177,6 +183,7 @@ export class BotSync extends BotMirror {
         this.usage = event.usage
         this.screen = event.screen
         if (event.rev < this.rev) this.rev = 0
+        this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
       case 'bot':
         this.bots.set(event.bot.id, event.bot)
@@ -188,12 +195,14 @@ export class BotSync extends BotMirror {
         this.composerDrafts.removeBot(event.id)
         this.bots.delete(event.id)
         this.entries.delete(event.id)
+        this.floors.delete(event.id)
         this.bump(event.rev)
         if (this.selection === event.id) this.selection = null
         this.onRosterChanged?.()
         break
       case 'entry':
-        this.upsert(event.entry)
+        // Old entries re-stamped by the host (new rev) belong to history paging, not the live window.
+        if (!this.isBelowFloor(event.entry)) this.upsert(event.entry)
         this.bump(event.entry.rev)
         this.acknowledgeVisible(event.entry.botId, event.entry)
         break
@@ -242,8 +251,14 @@ export class BotSync extends BotMirror {
     this.rev = 0
     this.hostId = null
     this.historyComplete = new Set()
+    this.floors = new Map()
     this.screen = null
     this.saveCache()
+  }
+
+  private isBelowFloor(e: Entry) {
+    const held = this.allEntries(e.botId).some((x) => x.id === e.id)
+    return isOutsideLoadedWindow(this.floors.get(e.botId), held, e)
   }
 
   private bump(r: number) {

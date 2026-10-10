@@ -7,6 +7,15 @@ use super::tilde;
 
 pub enum Msg {
     Online(bool),
+    /// A new events connection asked for everything after `since`; its `hello` starts the catch-up.
+    Connected {
+        since: i64,
+    },
+    FileDownload {
+        id: String,
+        status: Result<String, String>,
+        done: bool,
+    },
     Event(Value),
     Reply(After, Result<Value, String>),
     /// The stream is starting over from rev 0: drop what we have.
@@ -197,7 +206,7 @@ pub struct Entry {
 }
 
 impl Entry {
-    pub(super) fn parse(v: &Value) -> Option<(String, Self)> {
+    pub(in crate::tui) fn parse(v: &Value) -> Option<(String, Self)> {
         let kind = match v["kind"].as_str()? {
             "user" => Kind::User,
             "agent" => Kind::Agent,
@@ -251,6 +260,13 @@ impl Entry {
     /// What the chat shows as a message: the user's, and each turn's final reply.
     pub fn is_message(&self) -> bool {
         self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
+    }
+
+    /// A notice for a bot-to-bot message or request (`chat::team`).
+    pub fn is_bot_message(&self) -> bool {
+        self.kind == Kind::Notice
+            && self.data["botMessage"].is_object()
+            && ["sourceBotId", "targetBotId", "text"].iter().all(|k| self.data["botMessage"][k].is_string())
     }
 
     pub fn pending(&self) -> bool {

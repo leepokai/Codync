@@ -38,6 +38,12 @@ public final class BotStore {
     /// The first catch-up has arrived: everything up to the host's rev when this app connected.
     public internal(set) var caughtUp = false
     var catchUpRev = Int64.max
+    /// The `since` this connection's events stream was opened with; the `hello` that opens its
+    /// catch-up reads it (after a mirror reset `rev` no longer says what was requested).
+    var requestedSince: Int64 = 0
+    /// Per bot, the lowest synced main-chat `seq` held when this connection's catch-up began
+    /// (empty when it began from rev 0). See `isOutsideLoadedWindow`.
+    var windowFloors: [String: Int64] = [:]
     static let dropGrace: Duration = .seconds(5)
     static let initialConnectionGrace: Duration = .seconds(1)
     var heldDrop: Connection?
@@ -63,6 +69,7 @@ public final class BotStore {
     public internal(set) var historyComplete: Set<String> = []
     var composerDrafts: [String: String] = [:]
     public var routineDrafts: [String: String] = [:]
+    public let fileDownloads = FileDownloads()
     public var lastError: String?
     /// The open conversation (iOS navigation path / Mac sidebar selection).
     public var selection: String?
@@ -203,6 +210,11 @@ public final class BotStore {
 
     /// Everything in a chat, threads included (the full conversation).
     public func allEntries(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+
+    /// A catch-up full of thread replies can leave only a few main-chat entries, or none.
+    public func canLoadOlder(_ botId: String) -> Bool {
+        !historyComplete.contains(botId) && allEntries(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+    }
 
     /// The replies in the thread on `root`, oldest first.
     public func replies(_ botId: String, root: String) -> [Entry] { (entries[botId] ?? []).filter { $0.threadId == root } }

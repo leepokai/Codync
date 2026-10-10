@@ -4,6 +4,11 @@ Codync's computer-side app is one Electron app in `apps/desktop/` for macOS, Lin
 replaced the SwiftUI Mac app (`apps/macos/`) and the GTK 4 Linux app (`apps/linux/`) in 2.7.0.
 The iPhone app stays native SwiftUI; its package moved from `kit/` into `apps/ios/Kit/`.
 
+Conversation history stays available even when the recent snapshot contains mostly thread
+replies. The desktop, iPhone and terminal clients page the main conversation independently
+of the number of main-chat entries in that snapshot; reaching the end of a history response
+determines when there are no earlier messages.
+
 ## Why
 
 - **The chat was too slow.** Long transcripts with Markdown, variable-height rows and

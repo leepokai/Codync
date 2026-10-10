@@ -1,3 +1,4 @@
+import { FileDownloadCard } from './FileDownloadCard'
 import { memo, useEffect, useRef, useState } from 'react'
 import { isGroup, isWorking, needsInput, type Bot, type Entry, type ThreadSummary } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
@@ -114,7 +115,7 @@ export function ThreadChip({ summary, open }: { summary: ThreadSummary; open: ()
 }
 
 /** A message's text with a right-click menu (with quick reactions on top). */
-function Bubble({ className, items, reactions, children }: { className: string; items: () => MenuItem[]; reactions: ReactionPick; children: React.ReactNode }) {
+export function Bubble({ className, items, reactions, children }: { className: string; items: () => MenuItem[]; reactions?: ReactionPick; children: React.ReactNode }) {
   const menu = useContextMenu()
   return (
     <>
@@ -124,6 +125,11 @@ function Bubble({ className, items, reactions, children }: { className: string; 
       <AnchoredMenu open={menu.open} onClose={menu.close} point={menu.point} items={items} reactions={reactions} />
     </>
   )
+}
+
+/** The centered time label between runs of messages. */
+export function TimeSeparator({ date }: { date: number }) {
+  return <div style={{ ...font('footnote'), color: 'var(--tertiary)', textAlign: 'center', padding: '18px 0 6px' }}>{relativeTime.separator(date)}</div>
 }
 
 const fullDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -203,7 +209,7 @@ export function AgentBubble({ entry, openTrace, reply }: { entry: Entry; openTra
     <div className="message agent" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
       <div className="message-body">
         <Bubble
-          className="bubble agent"
+          className={entry.data.files?.length ? "file-message" : "bubble agent"}
           reactions={reactionPick(store, entry)}
           items={() => [
             { title: 'Copy', icon: 'square.on.square', action: copy },
@@ -211,7 +217,7 @@ export function AgentBubble({ entry, openTrace, reply }: { entry: Entry; openTra
             { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
           ]}
         >
-          <MarkdownText text={entry.data.text ?? ''} />
+          {entry.data.files?.length ? <div style={{ display: 'grid', gap: 6 }}>{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} />)}</div> : <MarkdownText text={entry.data.text ?? ''} />}
         </Bubble>
         <MessageActions className="trailing" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} trace={openTrace} copy={copy} />
       </div>

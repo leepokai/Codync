@@ -155,6 +155,13 @@ public extension HostClient {
         return res.entries
     }
 
+    /// The newest 200 bot-to-bot notices between a bot's chat and a peer, oldest first.
+    func botConversation(botId: String, peerId: String) async throws -> [Entry] {
+        struct Res: Decodable { var entries: [Entry] }
+        let res: Res = try await call("botConversation", ["botId": botId, "peerId": peerId])
+        return res.entries
+    }
+
     /// Creates a group chat (or returns the one these bots already share).
     func createGroup(_ draft: GroupDraft) async throws -> Bot {
         struct Res: Decodable { var bot: Bot }

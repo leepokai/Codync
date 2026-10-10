@@ -190,6 +190,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Usage => usage(buf, area, app),
         Overlay::Pair(url) => pair(buf, area, url.as_deref()),
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
+        Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
         Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),
         Overlay::Market(m) => super::super::sheets::market(buf, area, app, m),

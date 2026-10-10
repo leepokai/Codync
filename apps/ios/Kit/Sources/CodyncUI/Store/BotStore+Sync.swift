@@ -19,7 +19,9 @@ extension BotStore {
                     try await Task.sleep(for: Self.mismatchRecheck)
                     continue
                 }
-                for try await event in client.events(since: rev, client: clientKind) {
+                requestedSince = rev
+                windowFloors = [:]
+                for try await event in client.events(since: requestedSince, client: clientKind) {
                     guard !Task.isCancelled, !retired else { return }
                     setConnection(.online)
                     backoff = 1
@@ -84,7 +86,9 @@ extension BotStore {
             hostId = id
             setUsage(newUsage)
             screen = newScreen
-            if hostRev < rev { rev = 0 }
+            let hostRewound = hostRev < rev
+            if hostRewound { rev = 0 }
+            windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
             bump(rev)
         case let .bot(bot):
@@ -103,10 +107,15 @@ extension BotStore {
             removeComposerDrafts(for: id)
             bots[id] = nil
             entries[id] = nil
+            windowFloors[id] = nil
             bump(r)
             if selection == id { selection = nil }
             onRosterChanged?()
         case let .entry(e):
+            if Self.isOutsideLoadedWindow(e, floor: windowFloors[e.botId], held: entries[e.botId]?.contains { $0.id == e.id } == true) {
+                bump(e.rev)
+                break
+            }
             let known = entries[e.botId]?.first(where: { $0.id == e.id })
             upsert(e)
             bump(e.rev)
@@ -160,6 +169,7 @@ extension BotStore {
         rev = 0
         hostId = nil
         historyComplete = []
+        windowFloors = [:]
         screen = nil
         saveCache()
     }
@@ -174,6 +184,25 @@ extension BotStore {
     private func bump(_ r: Int64) {
         rev = max(rev, r)
         if !caughtUp && rev >= catchUpRev { caughtUp = true }
+    }
+
+    /// Per bot, the lowest synced main-chat `seq` in the mirror (optimistic entries don't count).
+    /// Only entries the mirror had at `requestedSince`: newer ones (a send's RPC response landing
+    /// before this hello) come again in this catch-up and say nothing about the window.
+    private func loadedFloors() -> [String: Int64] {
+        entries.compactMapValues { list in
+            list.filter { $0.threadId == nil && $0.seq > 0 && $0.seq != .max && $0.rev <= requestedSince }.map(\.seq).min()
+        }
+    }
+
+    /// An entry event the mirror doesn't hold, in the main chat, below the floor the mirror had
+    /// when this connection started: it existed before the window and arrives only because its
+    /// rev was bumped (a rewrite, a reaction). Inserting it would hide the gap from `loadOlder`,
+    /// which pages from the oldest loaded `seq`; history paging brings it. `seq` follows insert
+    /// order, so anything created since the mirror was last synced sits above the floor.
+    static func isOutsideLoadedWindow(_ e: Entry, floor: Int64?, held: Bool) -> Bool {
+        guard e.threadId == nil, !held, let floor else { return false }
+        return e.seq < floor
     }
 
     func upsert(_ e: Entry) {

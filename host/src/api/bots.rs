@@ -64,6 +64,10 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
         }
         // A thread's replies (its newest 500); the root is in the main chat.
         "thread" => json!({"entries": hub.store.thread(str_arg(&b, "botId")?, str_arg(&b, "rootId")?, 500)?}),
+        // Notices between a bot and one peer (the newest 200), for the read-only bot conversation sheet.
+        "botConversation" => {
+            json!({"entries": hub.store.bot_conversation(str_arg(&b, "botId")?, str_arg(&b, "peerId")?, 200)?})
+        }
         "createBot" => {
             let mut b = b;
             b["id"] = "".into();

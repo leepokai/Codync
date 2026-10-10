@@ -12,6 +12,7 @@ import {
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
 import { ComposerDrafts } from '@shared/composer-drafts'
+import { canLoadHistory } from '@shared/mirror-window'
 
 export type Connection =
   | { kind: 'unpaired' }
@@ -122,6 +123,10 @@ export class BotMirror extends Observable {
 
   allEntries(botId: string) {
     return this.entries.get(botId) ?? []
+  }
+
+  canLoadOlder(botId: string) {
+    return canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
   }
 
   replies(botId: string, root: string) {

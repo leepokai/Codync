@@ -122,6 +122,8 @@ export interface Attachment {
   size: number
 }
 
+export interface SharedFile extends Attachment { sha256: string }
+
 export const isImageName = (name: string) =>
   ['png', 'jpg', 'jpeg', 'heic', 'gif', 'webp', 'tiff', 'bmp'].includes(name.split('.').pop()?.toLowerCase() ?? '')
 
@@ -129,7 +131,21 @@ export interface ConnectionRequest {
   [key: string]: unknown
 }
 
+export interface BotMessage {
+  sourceBotId: string
+  targetBotId: string
+  text: string
+  reply?: string
+  detail?: string
+}
+
 export interface EntryData {
+  /** Structured conversation data added to the existing team-tool notice. */
+  botMessage?: BotMessage
+  heading?: string
+  delegationId?: string
+  sourceBotId?: string
+  targetBotId?: string
   connectionRequest?: ConnectionRequest
   routineId?: string
   runId?: string
@@ -155,6 +171,7 @@ export interface EntryData {
   thread?: ThreadSummary
   reactions?: string[]
   attachments?: Attachment[]
+  files?: SharedFile[]
   callSeconds?: number
 }
 

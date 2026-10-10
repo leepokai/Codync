@@ -406,6 +406,7 @@ impl App {
                     }
                     Some(Click::Composer) => self.start_typing(),
                     Some(Click::Thread(root)) => self.open_thread(root),
+                    Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
                     None => {
                         if self.overlays.is_empty() {
                             if self.hits.trace.contains(at) {

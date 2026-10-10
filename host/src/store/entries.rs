@@ -163,6 +163,21 @@ impl Store {
         Ok(rows)
     }
 
+    /// The newest `limit` bot-to-bot notices in `bot_id`'s main chat that involve `peer_id`, oldest first.
+    pub fn bot_conversation(&self, bot_id: &str, peer_id: &str, limit: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND thread_id IS NULL AND kind = 'notice'
+               AND json_type(data, '$.botMessage') = 'object'
+               AND ?2 IN (json_extract(data, '$.botMessage.sourceBotId'), json_extract(data, '$.botMessage.targetBotId'))
+             ORDER BY seq DESC LIMIT ?3"
+        ))?;
+        let mut rows: Vec<Entry> =
+            st.query_map(params![bot_id, peer_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
+        rows.reverse();
+        Ok(rows)
+    }
+
     /// Chat-visible messages (the user's, final replies) in `lane` after `after_seq`, oldest first.
     pub fn messages_after(&self, lane: &Lane, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
@@ -237,6 +252,13 @@ impl Store {
                         "{heading}\nInterrupted by host restart. Partial work may have happened; check before retrying."
                     )
                     .into();
+                    if let Some(message) = e.data.get_mut("botMessage").and_then(Value::as_object_mut) {
+                        message.insert(
+                            "detail".into(),
+                            "Interrupted by host restart. Partial work may have happened; check before retrying."
+                                .into(),
+                        );
+                    }
                     e.data["style"] = "error".into();
                     "failed"
                 } else if e.kind == EntryKind::User.as_str() {
@@ -290,5 +312,39 @@ mod tests {
         assert_eq!(s.expire_pending().unwrap(), 2);
         assert_eq!(s.entry(&q.id).unwrap().data["status"], "failed");
         assert_eq!(s.expire_pending().unwrap(), 0, "idempotent");
+    }
+
+    #[test]
+    fn bot_conversation_lists_one_peers_notices_oldest_first() {
+        let s = temp_store();
+        let notice = |bot: &str, source: &str, target: &str, text: &str| {
+            let data = json!({"text": text, "sourceBotId": source, "targetBotId": target,
+                "botMessage": {"sourceBotId": source, "targetBotId": target, "text": text}});
+            s.insert_entry(&Lane::main(bot), EntryKind::Notice, 1, &data).unwrap();
+        };
+        notice("a", "a", "b", "first");
+        notice("a", "a", "c", "other peer");
+        notice("a", "b", "a", "second");
+        notice("b", "a", "b", "other chat");
+        s.insert_entry(&Lane::main("a"), EntryKind::Notice, 1, &json!({"text": "plain"})).unwrap();
+        let old = s
+            .insert_entry(
+                &Lane::main("a"),
+                EntryKind::Notice,
+                1,
+                &json!({"text": "Messaged b: old", "heading": "Messaged b: old", "delegationId": "old",
+                "sourceBotId": "a", "targetBotId": "b", "status": "completed"}),
+            )
+            .unwrap();
+        let old_data = old.data.clone();
+        let texts: Vec<_> = s
+            .bot_conversation("a", "b", 10)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.data["text"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(texts, ["first", "second"]);
+        assert_eq!(s.entry(&old.id).unwrap().data, old_data, "existing notice is untouched");
+        assert_eq!(s.bot_conversation("a", "b", 1).unwrap().len(), 1, "limit keeps the newest");
     }
 }

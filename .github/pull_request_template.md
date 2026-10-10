@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- What changes for the user, and why. -->
+<!-- What changes for the user, and why. On a release PR into main, this section becomes the GitHub release description. -->
 
 ## Validation
 

@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   tag:
@@ -25,7 +26,9 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Detected version: $VERSION"
 
-      - name: Create tag if not exists
+      - name: Create tag and release if not exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v${{ steps.version.outputs.version }}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -34,4 +37,7 @@ jobs:
             echo "Creating tag $TAG"
             git tag "$TAG"
             git push origin "$TAG"
+            # Created here, before the build jobs upload to it, so it carries a description.
+            tools/release-notes.sh "$TAG" > notes.md
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md --generate-notes
           fi

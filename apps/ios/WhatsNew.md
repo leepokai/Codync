@@ -5,6 +5,16 @@ listing what iPhone users notice. tools/asc-submit.py reads the released version
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.12.1
+
+### zh-Hant
+
+- 重新整理記憶卡片：搜尋與篩選並排，新增、匯出、匯入等操作收進選單，每則記憶的動作改由右側選單開啟。
+
+### en-US
+
+- A cleaner Memory card: search and filter share one row, add, export and import live in a menu, and each memory's actions open from its own menu.
+
 ## 2.12.0
 
 ### zh-Hant

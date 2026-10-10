@@ -1,14 +1,21 @@
+.memory-header-actions { display: flex; align-items: center; gap: 2px; }
+.memory-menu { width: 28px; height: 28px; border-radius: 8px; }
+.memory-search { display: flex; align-items: center; gap: 8px; }
+.memory-search .search-field { flex: 1; min-width: 0; }
+.memory-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 12px; text-align: center; color: var(--secondary); line-height: 1.45; }
+.memory-item { display: flex; align-items: flex-start; gap: 8px; }
+.memory-item .memory-menu { margin: -4px -6px 0 0; }
+.memory-content { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; text-align: left; }
+.memory-content strong { display: flex; align-items: center; gap: 6px; }
+.memory-content span { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.memory-content small, .memory-muted { color: var(--secondary); }
+.memory-more { color: var(--secondary); text-align: center; }
 .memory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .memory-actions button { color: var(--secondary); font-size: 12px; }
 .memory-actions button[aria-pressed="true"] { color: var(--text); font-weight: 650; }
-.memory-actions input { flex: 1; min-width: 100px; }
-.memory-item { padding: 8px 0; }
-.memory-content { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; margin-bottom: 8px; }
-.memory-content span { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.memory-content small, .memory-muted { color: var(--secondary); }
 .memory-editor { display: flex; flex-direction: column; gap: 16px; padding: 20px; max-height: 70vh; overflow: auto; }
 .memory-editor label { display: flex; flex-direction: column; gap: 6px; }
-.memory-editor input, .memory-editor textarea, .memory-actions input { padding: 10px; background: var(--surface); color: var(--text); border: 0; border-radius: 8px; font: inherit; }
+.memory-editor input, .memory-editor textarea { padding: 10px; background: var(--surface); color: var(--text); border: 0; border-radius: 8px; font: inherit; }
 .memory-editor textarea { resize: vertical; }
 .memory-history { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; user-select: text; }
 .memory-error { color: var(--danger, #df665e); white-space: pre-wrap; }

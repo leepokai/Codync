@@ -12,6 +12,7 @@ struct AgentModelPicker: View {
     @State private var loading = false
     @State private var failure: String?
     @State private var retry = 0
+    @State private var searchText: String = ""
 
     private var requestKey: String {
         "\(store.computer.id)/\(backend)/\(store.connection == .online)/\(retry)"
@@ -25,11 +26,12 @@ struct AgentModelPicker: View {
 
     private var options: [(String, String)] {
         let available = (catalog?.models ?? []).filter { $0.id != agentDefault?.id }
-        let current = available.first { $0.id == catalog?.currentModelId }?.name
+        let filtered = available.filter { searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText) }
+        let current = filtered.first { $0.id == catalog?.currentModelId }?.name
         var result = [("", agentDefault?.name ?? current.map { "Default · \($0)" } ?? "Default")]
-        result += available.map { ($0.id, $0.name) }
+        result += filtered.map { ($0.id, $0.name) }
         if let selection, !selection.isEmpty, selection != agentDefault?.id,
-           !available.contains(where: { $0.id == selection }) {
+           !filtered.contains(where: { $0.id == selection }) {
             result.append((selection, selection))
         }
         return result
@@ -44,7 +46,7 @@ struct AgentModelPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Model")
                     .foregroundStyle(Palette.text)
                     .fixedSize()
@@ -62,6 +64,15 @@ struct AgentModelPicker: View {
                         ChoicePicker(selection: value, options: options, fitsAvailableWidth: true)
                     }
                 }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                TextField("Search models...", text: $searchText)
+                    .plainTextInput()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(height: 30)
+                    .foregroundStyle(Palette.secondary)
+                    .accessibilityLabel("Search models")
+                    .onSubmit { searchText = searchText }
             }
             if backend != "custom", !loading {
                 if let failure {

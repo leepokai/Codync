@@ -60,13 +60,11 @@ impl App {
         let half = (s.page.get() / 2).max(1);
         match k.code {
             KeyCode::Esc | KeyCode::Char('q') => return None,
-            KeyCode::Enter => match s.source.clone().filter(|_| !self.skill_installed(&s)) {
-                Some(source) => {
-                    self.flash("Installing the skill…");
-                    self.sheet("installSkill", json!({"source": source}), Reply::FieldsSaved);
-                }
-                None => return None,
-            },
+            KeyCode::Enter => {
+                let source = s.source.clone().filter(|_| !self.skill_installed(&s))?;
+                self.flash("Installing the skill…");
+                self.sheet("installSkill", json!({"source": source}), Reply::FieldsSaved);
+            }
             KeyCode::Down | KeyCode::Char('j') => s.scroll = (s.scroll + 1).min(max),
             KeyCode::Up | KeyCode::Char('k') => s.scroll = s.scroll.saturating_sub(1),
             KeyCode::PageDown => s.scroll = (s.scroll + half).min(max),

@@ -9,6 +9,7 @@ mod a11y;
 mod input;
 mod portal;
 mod stream;
+mod video;
 
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};

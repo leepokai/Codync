@@ -2,6 +2,7 @@
 //! `webrtcbin` (non-trickle, like the macOS helper), plus one-off JPEG stills.
 
 use crate::portal::Display;
+use crate::video::{h264_format, h264_payload};
 use crate::{Helper, input};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
@@ -36,11 +37,14 @@ impl Session {
         helper: Arc<Helper>,
         config: &Value,
     ) -> Result<Self> {
+        let payload = h264_payload(config["sdp"].as_str().context("missing offer")?)?;
         let pipeline = gst::Pipeline::new();
         let src = gst::ElementFactory::make("pipewiresrc")
             .property("fd", fd.into_raw_fd())
             .property("path", display.node.to_string())
             .property("do-timestamp", true)
+            // Use the system clock for capture and keepalive timestamps.
+            .property("provide-clock", false)
             .build()
             .context("GStreamer's PipeWire plugin (gstreamer1.0-pipewire) is missing")?;
         if src.has_property("keepalive-time") {
@@ -56,6 +60,7 @@ impl Session {
         rate.set_property("max-rate", i32::try_from(fps)?);
         rate.set_property("drop-only", true);
         let convert2 = make("videoconvert")?;
+        let format = h264_format()?;
         let queue = make("queue")?;
         queue.set_property_from_str("leaky", "downstream");
         queue.set_property("max-size-buffers", 2u32);
@@ -68,14 +73,14 @@ impl Session {
         let pay = make("rtph264pay")?;
         pay.set_property("config-interval", -1i32);
         pay.set_property_from_str("aggregate-mode", "zero-latency");
-        pay.set_property("pt", 96u32);
+        pay.set_property("pt", u32::try_from(payload)?);
         let rtp_caps = make("capsfilter")?;
         rtp_caps.set_property(
             "caps",
             gst::Caps::builder("application/x-rtp")
                 .field("media", "video")
                 .field("encoding-name", "H264")
-                .field("payload", 96i32)
+                .field("payload", payload)
                 .field("clock-rate", 90000i32)
                 .build(),
         );
@@ -99,8 +104,8 @@ impl Session {
             }
         }
         let chain = [
-            &src, &convert, &crop, &scale, &size, &rate, &convert2, &queue, &encoder, &parse, &pay,
-            &rtp_caps, &webrtc,
+            &src, &convert, &crop, &scale, &size, &rate, &convert2, &format, &queue, &encoder,
+            &parse, &pay, &rtp_caps, &webrtc,
         ];
         pipeline.add_many(chain)?;
         gst::Element::link_many(chain)?;
@@ -176,8 +181,8 @@ impl Session {
             }
         });
         pipeline
-            .set_state(gst::State::Playing)
-            .context("starting the video pipeline")?;
+            .set_state(gst::State::Ready)
+            .context("preparing the video pipeline")?;
         Ok(Self { pipeline, webrtc })
     }
 
@@ -194,7 +199,8 @@ impl Session {
         let (p, done) = promise();
         self.webrtc
             .emit_by_name::<()>("create-answer", &[&None::<gst::Structure>, &p]);
-        let reply = done.await?.ok_or_else(|| anyhow!("no answer"))?;
+        let reply = done.await?;
+        let reply = reply.ok_or_else(|| anyhow!("no answer"))?;
         let answer = reply
             .get::<gst_webrtc::WebRTCSessionDescription>("answer")
             .map_err(|_| anyhow!("no answer"))?;
@@ -202,6 +208,10 @@ impl Session {
         self.webrtc
             .emit_by_name::<()>("set-local-description", &[&answer, &p]);
         done.await?;
+        // Negotiate the profile before the encoder fixes its output caps.
+        self.pipeline
+            .set_state(gst::State::Playing)
+            .context("starting the video pipeline")?;
         for _ in 0..200 {
             if self
                 .webrtc
@@ -456,3 +466,7 @@ mod ice_tests {
         assert!(ice_uri("turn:turn.cloudflare.com:3478", None, None).is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "video_tests.rs"]
+mod video_tests;

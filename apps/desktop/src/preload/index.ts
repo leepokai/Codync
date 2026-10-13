@@ -31,8 +31,6 @@ const bridge: CodyncBridge = {
     onChange: (cb) => listen('host:change', cb),
     install: () => ipcRenderer.send('host:install'),
     restart: () => ipcRenderer.send('host:restart'),
-    uninstall: () => ipcRenderer.send('host:uninstall'),
-    openLog: () => ipcRenderer.send('host:openLog'),
     async call(baseURL, token, method, body, timeoutMs) {
       const result = (await ipcRenderer.invoke('host:call', baseURL, token, method, body, timeoutMs)) as
         | { ok: true; value: unknown }
@@ -49,7 +47,6 @@ const bridge: CodyncBridge = {
         ipcRenderer.send('host:stream:close', id)
       }
     },
-    health: (baseURL) => ipcRenderer.invoke('host:health', baseURL),
   },
   account: {
     state: () => ipcRenderer.invoke('account:state'),
@@ -66,6 +63,25 @@ const bridge: CodyncBridge = {
     onEvent: (cb) => listen('speech:event', cb),
   },
   ssh: sshBridge,
+  island: {
+    supported: ipcRenderer.sendSync('island:supported') as boolean,
+    enabled: () => ipcRenderer.invoke('island:enabled'),
+    setEnabled: (on) => ipcRenderer.invoke('island:setEnabled', on),
+    setSummary: (summary) => ipcRenderer.send('island:summary', summary),
+    state: () => ipcRenderer.invoke('island:state'),
+    onSummary: (cb) => listen('island:summary', cb),
+    onScreen: (cb) => listen('island:screen', cb),
+    onHover: (cb) => listen('island:hover', cb),
+    setShape: (rect) => ipcRenderer.send('island:shape', rect),
+    setFocusable: (on) => ipcRenderer.send('island:focusable', on),
+    setKeys: (on) => ipcRenderer.send('island:keys', on),
+    onKey: (cb) => listen('island:key', cb),
+    respond: (ref, entryId, optionId) => ipcRenderer.send('island:respond', ref, entryId, optionId),
+    send: (ref, text) => ipcRenderer.send('island:send', ref, text),
+    openBot: (ref) => ipcRenderer.send('island:openBot', ref),
+    newBot: () => ipcRenderer.send('island:newBot'),
+    openApp: () => ipcRenderer.send('island:openApp'),
+  },
   cloud: {
     request: (method, path, body, signed) => ipcRenderer.invoke('cloud:request', method, path, body, signed),
   },
@@ -89,8 +105,6 @@ const bridge: CodyncBridge = {
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),
     setTraySummary: (summary: TraySummary) => ipcRenderer.send('app:traySummary', summary),
     onCommand: (cb: (c: WindowCommand) => void) => listen('app:command', cb),
-    openPairing: () => ipcRenderer.send('app:openPairing'),
-    quit: () => ipcRenderer.send('app:quit'),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
     setLaunchAtLogin: (on) => ipcRenderer.invoke('app:setLaunchAtLogin', on),
     showInDock: () => ipcRenderer.invoke('app:showInDock'),

@@ -13,7 +13,7 @@ struct SettingsView: View {
     @Environment(\.openURL) private var openURL
     @State private var notificationsAllowed: Bool?
     @AppStorage("notificationsEnabled") private var notificationsEnabled = true
-    @AppStorage(Analytics.enabledKey) private var analyticsEnabled: Bool?
+    @AppStorage(Analytics.enabledKey) private var analyticsEnabled = true
     @State private var addingComputer = false
     @State private var confirmForget: Computer?
     @State private var confirmRevoke: CloudComputer?
@@ -77,8 +77,8 @@ struct SettingsView: View {
                 notificationsRow
             }
 
-            CardSection(footer: "Which features you use, never your messages, code or files. Private, used only to improve Codync.") {
-                Toggle("Share usage analytics", isOn: Binding(get: { analyticsEnabled == true },
+            CardSection(footer: "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
+                Toggle("Share usage analytics", isOn: Binding(get: { analyticsEnabled },
                                                              set: { Analytics.shared.setEnabled($0) }))
                     .toggleStyle(.codync)
             }

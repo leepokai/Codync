@@ -11,7 +11,6 @@ public enum AppEnvironment: String, Sendable {
 
     public var appGroup: String { self == .dev ? "group.com.pokai.Codync.dev" : "group.com.pokai.Codync" }
     public var urlScheme: String { self == .dev ? "codync-dev" : "codync" }
-    public var appName: String { self == .dev ? "Codync Dev" : "Codync" }
 
     public func link(_ destination: String) -> URL {
         // All callers supply a fixed app route.

@@ -3,18 +3,16 @@ import CodyncUI
 import SwiftUI
 
 /// The roster: every bot on every computer is a person you can message (Grok Bot sidebar, phone-sized).
+/// A `List` with its styling taken away, for the system's reordering: touch and hold opens a bot's
+/// menu, and dragging it (before or after the menu shows) moves it.
 struct BotListView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountStore.self) private var accounts
     @State private var editing: EditTarget?
     @State private var editingGroup: GroupTarget?
     @State private var confirmDelete: RosterItem?
-    /// The computer section being dragged by its long-pressed heading.
-    @State private var drag: SectionDrag?
-    /// Each computer section's height, to work out where a dragged one lands.
-    @State private var sectionHeights: [ComputerID: CGFloat] = [:]
-    /// The bot row being dragged among its computer's bots (see `BotRowDrop`).
-    @State private var draggingBot: BotReference?
+    /// The bot whose row is lifted, to drag or for its menu.
+    @State private var lifted: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Computers left out of the list on this device, comma-separated IDs.
     @AppStorage("hiddenComputers") private var hiddenComputers = ""
@@ -56,10 +54,21 @@ struct BotListView: View {
         accounts.computers.compactMap { accounts.store(for: $0.id) }
     }
 
+    /// The rows the user can drag: each shown computer's heading (with several computers), in the
+    /// order they were dragged into, followed by its bots unless it's folded away.
+    private var lines: [RosterLine] {
+        shownStores.flatMap { store -> [RosterLine] in
+            let id = store.computer.id
+            let bots = grouped && collapsedIDs.contains(id)
+                ? [] : accounts.roster.filter { $0.ref.computerId == id }.map { RosterLine.bot($0, store) }
+            return grouped ? [.computer(id, store)] + bots : bots
+        }
+    }
+
     var body: some View {
         let roster = accounts.roster.filter { shownIDs.contains($0.ref.computerId) }
-        ScrollView {
-            LazyVStack(spacing: 0) {
+        List {
+            Group {
                 // A newer app release (dismissible; everything still works). Computers update
                 // themselves, so a newer host gets no reminder here.
                 AppUpdateReminder()
@@ -72,50 +81,21 @@ struct BotListView: View {
                     EmptyRoster(canCreate: allStores.contains { $0.mismatch == nil }, hasComputer: !accounts.computers.isEmpty,
                                 create: newBot, showComputers: { app.showComputers = true })
                 }
-
-                if grouped {
-                    // A light heading per computer, in the order the user dragged them into.
-                    let ids = shownStores.map(\.computer.id)
-                    let landing = drag.map { landingIndex(ids, $0) }
-                    ForEach(shownStores, id: \.computer.id) { store in
-                        let id = store.computer.id
-                        let collapsed = collapsedIDs.contains(id)
-                        let lifted = drag?.id == id
-                        VStack(spacing: 0) {
-                            // Not synced while it needs an update: "No bots yet" wouldn't be true.
-                            ComputerSection(store: store, empty: store.mismatch == nil && !roster.contains { $0.ref.computerId == id },
-                                            collapsed: collapsed, toggle: { toggleCollapsed(id) }, move: move)
-                                .modifier(ComputerSectionGesture(tap: { toggleCollapsed(id) }) { state, y in dragSection(id, state, y) })
-                            updateCard(store)
-                            if !collapsed {
-                                ForEach(roster.filter { $0.ref.computerId == id }) { row($0, store: store) }
-                            }
-                        }
-                        .background(lifted ? Palette.background : .clear, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .scaleEffect(lifted ? 0.94 : 1)
-                        .shadow(color: .black.opacity(lifted ? 0.18 : 0), radius: 16, y: 6)
-                        .animation(Motion.reduced(Motion.layout, reduceMotion), value: lifted)
-                        .offset(y: sectionOffset(id, ids: ids, landing: landing))
-                        .zIndex(lifted ? 1 : 0)
-                        // The lifted section follows the finger; the others slide out of its way.
-                        .transaction { if lifted { $0.animation = nil } }
-                        .animation(Motion.reduced(Motion.layout, reduceMotion), value: landing)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sectionHeights[id] = $0 }
-                    }
-                } else {
-                    ForEach(roster) { item in
-                        if let store = accounts.store(for: item.ref.computerId) {
-                            row(item, store: store)
-                        }
+                ForEach(lines) { line in
+                    switch line {
+                    case let .computer(_, store): computerHeading(store, roster: roster)
+                    case let .bot(item, store): row(item, store: store)
                     }
                 }
+                .onMove(perform: moveLines)
             }
-            .padding(.horizontal, 16)
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
-        .scrollDisabled(drag != nil)
-        .sensoryFeedback(.impact(weight: .medium), trigger: drag?.id) { _, new in new != nil }
-        .sensoryFeedback(.selection, trigger: drag.map { landingIndex(shownStores.map(\.computer.id), $0) })
-        .sensoryFeedback(.selection, trigger: roster.map(\.id)) { _, _ in draggingBot != nil }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 0)
         .background(Palette.background)
         .navigationTitle("Bots")
         .navigationBarTitleDisplayMode(.inline)
@@ -184,46 +164,24 @@ struct BotListView: View {
         }
     }
 
-    /// Where the dragged section would land: past a neighbour once it's dragged over half of it.
-    private func landingIndex(_ ids: [ComputerID], _ drag: SectionDrag) -> Int {
-        guard let from = ids.firstIndex(of: drag.id) else { return 0 }
-        var to = from, rest = drag.translation
-        while to + 1 < ids.count, let h = sectionHeights[ids[to + 1]], rest > h / 2 { rest -= h; to += 1 }
-        while to > 0, let h = sectionHeights[ids[to - 1]], rest < -h / 2 { rest += h; to -= 1 }
-        return to
-    }
-
-    private func sectionOffset(_ id: ComputerID, ids: [ComputerID], landing: Int?) -> CGFloat {
-        guard let drag, let landing, let from = ids.firstIndex(of: drag.id), let i = ids.firstIndex(of: id) else { return 0 }
-        if id == drag.id { return drag.translation }
-        let h = sectionHeights[drag.id] ?? 0
-        if from < i && i <= landing { return -h }
-        if landing <= i && i < from { return h }
-        return 0
-    }
-
-    private func dragSection(_ id: ComputerID, _ state: UIGestureRecognizer.State, _ y: CGFloat) {
-        switch state {
-        case .began:
-            drag = SectionDrag(id: id, startY: y, y: y)
-        case .changed:
-            drag?.y = y
-        case .ended:
-            guard var drag, drag.id == id else { return }
-            drag.y = y
-            let ids = shownStores.map(\.computer.id)
-            let to = landingIndex(ids, drag)
-            // The order changes as the offsets drop, so everything settles where it's shown.
-            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
-                if ids.contains(id), ids.indices.contains(to), ids[to] != id {
-                    accounts.move(id, to: ids[to])
-                }
-                self.drag = nil
-            }
-        case .cancelled, .failed:
-            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { drag = nil }
-        default:
-            break
+    /// A row the system's reordering dropped. A heading moves its computer (an order kept on this
+    /// device); a bot moves among its computer's bots, an order the host syncs to every device.
+    /// A bot dropped among another computer's bots goes back.
+    private func moveLines(from source: IndexSet, to destination: Int) {
+        let before = lines
+        guard let from = source.first, before.indices.contains(from) else { return }
+        var after = before
+        after.move(fromOffsets: source, toOffset: destination)
+        switch before[from] {
+        case let .computer(id, _):
+            let old = before.compactMap(\.computerId), new = after.compactMap(\.computerId)
+            guard let to = new.firstIndex(of: id), old[to] != id else { return }
+            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { accounts.move(id, to: old[to]) }
+        case let .bot(item, store):
+            let computerId = item.ref.computerId
+            let at = after.firstIndex { $0.id == before[from].id } ?? 0
+            if grouped, after[..<at].last(where: { $0.computerId != nil })?.computerId != computerId { return }
+            store.reorder(after.compactMap { $0.botId(on: computerId) })
         }
     }
 
@@ -235,14 +193,35 @@ struct BotListView: View {
         }
     }
 
+    /// A light heading per computer, with its update notice. Dragging it moves the computer; its
+    /// bots follow when it's dropped.
+    private func computerHeading(_ store: BotStore, roster: [RosterItem]) -> some View {
+        let id = store.computer.id
+        return VStack(spacing: 0) {
+            // Not synced while it needs an update: "No bots yet" wouldn't be true.
+            ComputerSection(store: store, empty: store.mismatch == nil && !roster.contains { $0.ref.computerId == id },
+                            collapsed: collapsedIDs.contains(id), toggle: { toggleCollapsed(id) }, move: move)
+                .contentShape(Rectangle())
+                .onTapGesture { toggleCollapsed(id) }
+            updateCard(store)
+        }
+    }
+
     private func row(_ item: RosterItem, store: BotStore) -> some View {
         let bot = item.bot
+        let card = RoundedRectangle(cornerRadius: 16, style: .continuous)
         // A plain button instead of a NavigationLink: same push, no chevron.
         return Button { accounts.selection = item.ref } label: {
             BotRow(bot: bot)
                 .environment(store)
         }
         .buttonStyle(.plain)
+        // Lifted, it's a rounded card with room around the avatar.
+        .padding(.horizontal, 8)
+        .background(lifted == bot.id ? Palette.surface : .clear, in: card)
+        .contentShape([.dragPreview, .contextMenuPreview], card)
+        .padding(.horizontal, -8)
+        .itemProvider { lift(bot.id) }
         .accessibilityLabel(accounts.computers.count > 1 ? "\(bot.name), on \(store.hostName)" : bot.name)
         .accessibilityActions {
             Button("Move up") { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
@@ -259,12 +238,12 @@ struct BotListView: View {
                 MenuItem("Delete", icon: "trash", destructive: true, divider: true) { confirmDelete = item },
             ]
         }
-        // Touch and hold, then drag: the menu gives way to the drag (iOS's usual pairing).
-        .onDrag {
-            draggingBot = item.ref
-            return NSItemProvider(object: bot.name as NSString)
-        }
-        .onDrop(of: [.text], delegate: BotRowDrop(target: item, store: store, dragging: $draggingBot, reduceMotion: reduceMotion))
+    }
+
+    /// The system asks for a row's item as it lifts; the row shows as lifted until it lets go.
+    private func lift(_ id: String) -> NSItemProvider {
+        lifted = id
+        return LiftItem { Task { @MainActor in if lifted == id { lifted = nil } } }
     }
 
     /// A group chat gathers bots of one computer (the first one online; more computers are future work).
@@ -284,8 +263,43 @@ struct BotListView: View {
     }
 }
 
+/// One row the user can drag in the roster: a computer's heading or a bot.
+/// The item a lifted bot row carries (nothing): the system lets go of it when the drag or the
+/// menu ends.
+private final class LiftItem: NSItemProvider {
+    private let ended: @Sendable () -> Void
+
+    init(ended: @escaping @Sendable () -> Void) {
+        self.ended = ended
+        super.init()
+    }
+
+    deinit { ended() }
+}
+
+private enum RosterLine: Identifiable {
+    case computer(ComputerID, BotStore)
+    case bot(RosterItem, BotStore)
+
+    var id: String {
+        switch self {
+        case let .computer(id, _): "computer:\(id)"
+        case let .bot(item, _): "bot:\(item.ref.computerId):\(item.bot.id)"
+        }
+    }
+
+    /// The computer a heading stands for.
+    var computerId: ComputerID? {
+        if case let .computer(id, _) = self { id } else { nil }
+    }
+
+    func botId(on computerId: ComputerID) -> String? {
+        if case let .bot(item, _) = self, item.ref.computerId == computerId { item.bot.id } else { nil }
+    }
+}
+
 /// A computer's heading above its bots: badge, name and connection. Tap folds its bots away;
-/// long-press lifts the whole section to drag it up or down.
+/// touch and hold, then drag, moves the computer (on this device).
 private struct ComputerSection: View {
     let store: BotStore
     let empty: Bool
@@ -295,8 +309,6 @@ private struct ComputerSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // The parent's tap/hold gesture owns touch input, so a release
-            // after dragging cannot also trigger a nested button's collapse action.
             heading
             if empty && !collapsed {
                 Text("No bots yet")
@@ -349,13 +361,6 @@ private struct ComputerSection: View {
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
     }
-}
-
-private struct SectionDrag {
-    let id: ComputerID
-    let startY: CGFloat
-    var y: CGFloat
-    var translation: CGFloat { y - startY }
 }
 
 private struct GroupTarget: Identifiable {

@@ -6,7 +6,7 @@ a device token kept encrypted with Electron `safeStorage`, OAuth in the system b
 
 ## Configuration
 
-The iOS app uses `apps/ios/App/AccountSession.swift`. Public keys and cloud URLs come from `apps/shared/Config/<env>.plist`, copied into the bundle as `AccountConfig.plist` by `project.yml`; Debug selects dev and Release selects main. The desktop app reads the same plist through `node apps/desktop/tools/account-config.mjs <env>` (run by `npm run dev` and `npm run dist:*:<env>`), which writes `resources/account-config.json` (`CODYNC_CLERK_PUBLISHABLE_KEY` / `CODYNC_CLOUD_URL` override it). See [environments](environments-and-deployment.md).
+The iOS app uses `apps/ios/App/AccountSession.swift`. Public keys and cloud URLs come from `apps/shared/Config/<env>.plist`, copied into the bundle as `AccountConfig.plist` by `project.yml`; `iOS Dev` (`DevDebug` / `DevRelease`) selects dev and `iOS` (`Debug` / `Release`) selects main. The desktop app reads the same plist through `node apps/desktop/tools/account-config.mjs <env>` (run by `npm run dev` and `npm run dist:*:<env>`), which writes `resources/account-config.json` (`CODYNC_CLERK_PUBLISHABLE_KEY` / `CODYNC_CLOUD_URL` override it). See [environments](environments-and-deployment.md).
 
 Confirm Apple and Google sign-in, Native API and the native app registrations in the intended Clerk instance. The desktop app uses `com.pokai.Codync`, iOS uses `com.pokai.Codync.ios`, with their matching `://callback` URLs. Dashboard configuration and actual OAuth consent must be verified independently of the checked-in plist. Do not bundle Clerk secret keys.
 
@@ -37,15 +37,13 @@ the computer's web sign-in and the iPhone's native sign-in got different Apple u
 and became two Clerk users; don't switch development back to shared credentials.
 
 To check cross-device discovery, sign in with the same Apple Account on both
-devices of one environment (Debug ↔ Debug, Release ↔ Release) and verify that
+devices of one environment (Dev ↔ Dev, production ↔ production) and verify that
 Clerk has one user ID. Then verify that the computer joins the account and the phone
 requests access with the existing approval flow. Hide My Email does not change the
 device approval requirement.
 
-Verified on 2026-09-30 with the SwiftUI Mac app that preceded the desktop app:
-Apple OAuth completed and showed the signed-in private relay address. The desktop
-app's Apple sign-in and production cross-device identity matching still need to be
-checked on a release build.
+The desktop app's Apple sign-in and production cross-device identity matching
+still need to be checked on a release build.
 
 ### iOS Sign in with Apple
 

@@ -185,17 +185,6 @@ function UserStatus({ entry, botWorking, hovering }: { entry: Entry; botWorking:
       )
     case 'cancelled':
       return <span style={caption}>Not sent — stopped</span>
-    case 'waiting':
-      return (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 10, ...font('caption2') }}>
-          <span style={{ color: 'var(--tertiary)' }}>Waiting for the computer to come online</span>
-          <button title="Don't send" aria-label="Don't send" style={{ display: 'flex' }} onClick={() => store.cancelQueued(entry)}>
-            <Icon name="xmark.circle" size={10} />
-          </button>
-        </span>
-      )
-    case 'delivering':
-      return <span style={caption}>Delivered to the computer</span>
     default:
       return <span style={{ ...font(10), color: 'var(--tertiary)', opacity: hovering ? 1 : 0, transition: 'opacity var(--hover)' }}>{relativeTime.time(entry.createdAt)}</span>
   }

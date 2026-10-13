@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import path from 'node:path'
 import * as compat from '../compat.ts'
 import type { UpdateState } from '../ipc.ts'
 import { loadMainModule, settle } from './main-module.ts'
@@ -13,6 +14,7 @@ interface UpdatesInstance extends EventEmitter {
 
 export function updaterFixture(options: { packaged?: boolean; main?: boolean; prefs?: Record<string, unknown> } = {}) {
   const calls = { check: 0, download: 0, install: 0, prepare: 0, resume: 0, quit: 0, fetch: 0 }
+  const opened: string[] = []
   const preferences = new Map(Object.entries(options.prefs ?? {}))
   const timers = new Map<number, { callback: () => unknown; ms: number }>()
   let nextTimer = 0
@@ -33,6 +35,7 @@ export function updaterFixture(options: { packaged?: boolean; main?: boolean; pr
   const app = Object.assign(new EventEmitter(), {
     isPackaged: options.packaged ?? true,
     quit: () => { calls.quit++ },
+    getPath: () => '/Applications/Codync.app/Contents/MacOS/Codync',
   })
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
   const ipc = Object.assign(new EventEmitter(), {
@@ -61,13 +64,15 @@ export function updaterFixture(options: { packaged?: boolean; main?: boolean; pr
   }
   const { Updates } = loadMainModule<{ Updates: new (host: unknown) => UpdatesInstance }>('updates', {
     'node:events': { EventEmitter },
-    electron: { app, ipcMain: ipc, BrowserWindow: { getFocusedWindow: () => behavior.focused }, powerMonitor: { getSystemIdleTime: () => behavior.idleSeconds } },
+    'node:path': path,
+    electron: { app, ipcMain: ipc, shell: { openPath: async (target: string) => { opened.push(target); return '' } }, BrowserWindow: { getFocusedWindow: () => behavior.focused }, powerMonitor: { getSystemIdleTime: () => behavior.idleSeconds } },
     'electron-updater': { autoUpdater: updater },
     '../shared/compat': compat,
     './account': { isMainEnvironment: () => options.main ?? true },
     './host-controller': { prefs: { get: (key: string) => preferences.get(key), set: (key: string, value: unknown) => preferences.set(key, value) } },
   }, {
     Date: class extends Date { static override now() { return now } },
+    process: { platform: 'darwin' },
     setTimeout: timer, setInterval: timer, clearInterval: (id: number) => timers.delete(id),
     fetch: async () => {
       calls.fetch++
@@ -85,5 +90,5 @@ export function updaterFixture(options: { packaged?: boolean; main?: boolean; pr
     }
     await settle()
   }
-  return { updates, app, ipc, handlers, updater, calls, behavior, preferences, sent, timers, emit, tick, advance: (ms: number) => { now += ms } }
+  return { updates, app, ipc, handlers, updater, calls, opened, behavior, preferences, sent, timers, emit, tick, advance: (ms: number) => { now += ms } }
 }

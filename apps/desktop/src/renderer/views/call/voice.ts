@@ -14,8 +14,7 @@ import {
   type VoiceProvider,
 } from '../settings/voice-settings'
 
-// Calls use the voice settings the settings view keeps (views/settings/voice-settings.ts: the
-// same keys as the Mac's UserDefaults, kit VoiceSettings).
+// Calls use the voice settings the settings view keeps (views/settings/voice-settings.ts).
 
 export type { VoiceProvider, VoiceStatus } from '../settings/voice-settings'
 

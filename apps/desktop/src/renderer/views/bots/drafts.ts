@@ -42,13 +42,14 @@ export const normalized = (d: BotDraft): BotDraft => (d.backend === 'custom' ? d
  * Picks an installed agent we know (a registry agent nobody chose is never the default);
  * empty cwd requests a personal workspace from the host.
  */
-export function fillDefaults(store: BotStore, draft: BotDraft, connectors: InstalledConnector[]): BotDraft {
+export function fillDefaults(store: BotStore, draft: BotDraft, plugins: Plugins): BotDraft {
   const next = { ...draft }
   const backends = store.hello?.backends ?? []
   const first = backends.find((b) => b.available && b.curated === true)
   if (backends.find((b) => b.id === next.backend)?.available !== true && first) next.backend = first.id
-  // Connectors start on; left unset, the host turns on every one.
-  if (next.connectors === undefined && connectors.length) next.connectors = connectors.map((c) => c.id)
+  // Connectors and skills start on; left unset, the host turns on every one.
+  if (next.connectors === undefined && plugins.connectors.length) next.connectors = plugins.connectors.map((c) => c.id)
+  if (next.skills === undefined && plugins.skills.length) next.skills = plugins.skills.map((s) => s.id)
   return next
 }
 
@@ -78,8 +79,7 @@ export function usePlugins(store: BotStore): Plugins | null {
 
 /** Creates an unnamed bot with sensible defaults and opens it (desktop compose flow). */
 export async function createDefaultBot(store: BotStore): Promise<Bot> {
-  const { connectors } = await loadPlugins(store)
-  const bot = await store.save(fillDefaults(store, newDraft(), connectors))
+  const bot = await store.save(fillDefaults(store, newDraft(), await loadPlugins(store)))
   store.setSelection(bot.id)
   return bot
 }

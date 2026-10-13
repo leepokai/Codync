@@ -11,7 +11,7 @@ use std::sync::atomic::Ordering;
 use tokio_stream::wrappers::BroadcastStream;
 
 /// Entries a fresh client receives per bot before paging with `history`.
-pub(super) const CATCH_UP_PER_BOT: i64 = 200;
+const CATCH_UP_PER_BOT: i64 = 200;
 
 /// A setup terminal's output: everything so far, then live, ending after `exit`.
 pub fn term_events(hub: &Hub, id: &str) -> Option<impl Stream<Item = Value> + Send + use<>> {

@@ -145,7 +145,7 @@ impl App {
             Custom,
             Install(Value),
             More,
-            Skill(String),
+            Skill(Value, bool),
             None,
         }
         let act = match self.market_rows(&m).get(m.cursor) {
@@ -154,7 +154,8 @@ impl App {
             Some(Row::Custom) => Act::Custom,
             Some(Row::Registry(c)) => Act::Install((*c).clone()),
             Some(Row::More) => Act::More,
-            Some(Row::Skill(v)) => Act::Skill(s(v, "source")),
+            Some(Row::Skill(v)) => Act::Skill((*v).clone(), true),
+            Some(Row::OwnSkill(v)) => Act::Skill((*v).clone(), false),
             _ => Act::None,
         };
         match act {
@@ -238,9 +239,10 @@ impl App {
                     Reply::Registry { more: true },
                 );
             }
-            Act::Skill(source) => {
-                self.flash("Installing the skill…");
-                self.sheet("installSkill", json!({"source": source}), Reply::FieldsSaved);
+            Act::Skill(v, catalog) => {
+                self.overlays.push(Overlay::Market(m));
+                self.open_skill(&v, catalog);
+                return None;
             }
             Act::None => {}
         }

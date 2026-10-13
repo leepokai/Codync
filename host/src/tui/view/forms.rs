@@ -194,7 +194,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {
         Field::Folder => "↵ project folder · backspace personal · tab next field",
-        Field::Connectors | Field::Skills => "←→ move · space toggle · tab next",
+        Field::Connectors => "←→ move · space toggle · tab next",
+        Field::Skills => "←→ move · space toggle · i details · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::Model => "←→ pick a model · or type its id",
         Field::Color | Field::Shape | Field::Approvals | Field::Notify | Field::Computer => {

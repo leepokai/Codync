@@ -105,6 +105,8 @@ interface CharacterProps {
   tint?: string
   size?: number
   mood?: Mood
+  /** Draws for a dark ground whatever the system appearance (the notch island is always black). */
+  dark?: boolean
   style?: CSSProperties
 }
 
@@ -112,9 +114,9 @@ interface CharacterProps {
  * Grok-Bot-style character drawn like the app icon: an even grid of dots shaded as if the
  * silhouette were a ball, with hollow eyes that glance while it works and blink now and then.
  */
-export const CharacterAvatar = memo(function CharacterAvatar({ shape, color, tint, size = 40, mood = 'idle', style }: CharacterProps) {
+export const CharacterAvatar = memo(function CharacterAvatar({ shape, color, tint, size = 40, mood = 'idle', dark: forceDark, style }: CharacterProps) {
   const canvas = useRef<HTMLCanvasElement>(null)
-  const dark = useDark()
+  const dark = useDark() || forceDark === true
   const reduce = useReduceMotion()
   const fill = tint ?? avatarColor(color)
 

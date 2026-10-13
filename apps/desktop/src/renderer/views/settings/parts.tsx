@@ -5,7 +5,7 @@ import type { BotStore } from '../../store/bot-store'
 import './settings.css'
 
 export const isMac = window.codync.platform === 'darwin'
-/** "Mac" in the Mac app's copy; "computer" elsewhere. */
+/** "this Mac" on macOS; "this computer" elsewhere. */
 export const thisMac = isMac ? 'this Mac' : 'this computer'
 
 /** The icon for a device by its account platform: phones, Macs, and other desktops. */

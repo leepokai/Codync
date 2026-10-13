@@ -113,6 +113,15 @@ struct ToolRow: View {
         }
     }
 
+    private var orb: ThinkingOrb.State {
+        switch data.toolKind {
+        case "search": .searching
+        case "fetch": .connecting
+        case "edit": .shaping
+        default: .working
+        }
+    }
+
     private var hasBody: Bool {
         !(data.output ?? "").isEmpty || !(data.diffs ?? []).isEmpty
     }
@@ -138,7 +147,7 @@ struct ToolRow: View {
             switch data.status {
             case "completed": Image(systemName: "checkmark").foregroundStyle(Palette.accent)
             case "failed": Image(systemName: "xmark").foregroundStyle(Palette.danger)
-            default: ThinkingOrb(state: data.toolKind == "search" ? .searching : data.toolKind == "fetch" ? .connecting : .working, size: 16, color: Palette.secondary)
+            default: ThinkingOrb(state: orb, size: 16, color: Palette.secondary)
             }
         }
         .font(.caption)

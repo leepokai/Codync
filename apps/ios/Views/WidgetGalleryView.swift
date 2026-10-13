@@ -120,7 +120,7 @@ struct WidgetGalleryView: View {
                         get: { usageIconStyle },
                         set: { usageIconStyle = $0; WidgetCenter.shared.reloadTimelines(ofKind: "CodyncProviderUsage") }
                     ), options: [(UsageIconStyle.character.rawValue, "Character"), (UsageIconStyle.original.rawValue, "Original icon")])
-                    Text("Applies to Usage on iPhone and in the Mac menu bar.")
+                    Text("Applies to Usage in the app and in widgets.")
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
 

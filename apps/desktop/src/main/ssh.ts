@@ -9,7 +9,7 @@ import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import type { SSHAttachment, SSHProfile, SSHState, SSHStatus } from '../shared/ssh'
 import { infoArguments, knownHostsFiles, resolveArguments, tunnelArguments } from './ssh-command'
 
-// SSH computers (port of the Mac app's SSHTunnel.swift): profiles, host key checks and one
+// SSH computers: profiles, host key checks and one
 // OpenSSH tunnel per connected profile. Arguments are always an argv array, never a shell string.
 
 const SSH = '/usr/bin/ssh'

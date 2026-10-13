@@ -173,12 +173,7 @@ impl App {
                 .iter()
                 .map(|t| Toggle { id: t.id.clone(), name: t.name.clone(), on: true })
                 .collect(),
-            skills: self
-                .market
-                .1
-                .iter()
-                .map(|t| Toggle { id: t.id.clone(), name: t.name.clone(), on: false })
-                .collect(),
+            skills: self.market.1.iter().map(|t| Toggle { id: t.id.clone(), name: t.name.clone(), on: true }).collect(),
             field: 0,
             sub: 0,
             error: None,
@@ -223,6 +218,15 @@ impl App {
                 let backend = f.backend.clone();
                 self.overlays.push(Overlay::Form(f));
                 self.open_agent(&backend);
+                return None;
+            }
+            KeyCode::Char('i') if field == Field::Skills => {
+                let id = f.skills.get(f.sub).map(|t| t.id.clone());
+                let skill = self.plugins.1.iter().find(|v| v["id"].as_str() == id.as_deref()).cloned();
+                self.overlays.push(Overlay::Form(f));
+                if let Some(v) = skill {
+                    self.open_skill(&v, false);
+                }
                 return None;
             }
             KeyCode::Left | KeyCode::Right if field == Field::Model => {

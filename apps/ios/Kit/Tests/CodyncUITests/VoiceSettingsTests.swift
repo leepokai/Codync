@@ -14,7 +14,7 @@ import Testing
     #expect(VoiceSettings.transcribeModel(p) == p.transcribeModel)
 
     let status = try JSONDecoder().decode(VoiceStatus.self, from: Data("""
-    {"providers":[{"provider":"gemini","configured":true,"defaultModel":"gemini-9-live",
+    {"providers":[{"provider":"gemini","configured":true,
       "defaults":{"realtime":"gemini-9-live","transcribe":"gemini-9-flash","speech":"gemini-9-flash-tts"}}]}
     """.utf8))
     VoiceSettings.remember(status)

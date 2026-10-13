@@ -1,19 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { isBelow } from '@shared/compat'
 import { isGroup, isWorkingIn, type Bot } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { usePresence } from '../../components/Overlay'
 import { font } from '../../lib/fonts'
+import { useModel } from '../../lib/observable'
 import { useStore } from '../../store/context'
 import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/bot-store'
+import { pluginsFor } from '../marketplace/plugins'
 import { composerEnter } from './composer-keyboard'
 import { ComposerAttachment } from './ComposerAttachment'
+import { matchingSkills, SKILLS_HOST, skillQuery } from './skill-command'
 
 type Trailing = 'interrupt' | 'stop' | 'call' | 'send'
 
 /**
  * The message box under a chat or a thread: send, or stop while the bot (or the group) is
- * working there. In a group, typing `@` suggests its bots.
+ * working there. In a group, typing `@` suggests its bots; with one bot, a leading `/` suggests its skills.
  */
 export function Composer({ botId, thread = null, onCall, onInterrupt }: {
   botId: string
@@ -33,6 +37,7 @@ function DestinationComposer({ botId, thread, onCall, onInterrupt }: {
   botId: string; thread: string | null; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
 }) {
   const store = useStore()
+  const plugins = useModel(pluginsFor(store))
   const bot = store.bots.get(botId) ?? null
   const drafts = store.composerDrafts
   const draft = useSyncExternalStore(drafts.subscribe, () => drafts.get(botId, thread))
@@ -96,6 +101,16 @@ function DestinationComposer({ botId, thread, onCall, onInterrupt }: {
     field.current?.focus()
   }
 
+  // Not in a group: each member has its own skills.
+  const skillsShown = !!bot && !isGroup(bot) && !isBelow(store.hello?.version ?? '', SKILLS_HOST)
+  const typedSkill = skillsShown ? skillQuery(draft) : null
+  const skills = typedSkill === null || !bot ? [] : matchingSkills(plugins.installedSkills, bot.skills, typedSkill)
+
+  const pickSkill = (id: string) => {
+    setDraft(`/${id} `)
+    field.current?.focus()
+  }
+
   const append = (incoming: { name: string; data: Uint8Array }[]) => {
     if (!canAttach) return
     const accepted: OutgoingFile[] = []
@@ -130,12 +145,18 @@ function DestinationComposer({ botId, thread, onCall, onInterrupt }: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      <ComposerReveal open={suggestions.length > 0}>
+      <ComposerReveal open={suggestions.length > 0 || skills.length > 0}>
         <div className="mentions">
           {suggestions.map((m) => (
             <button key={m.id} className="press mention" onClick={() => mention(m)}>
               <BotAvatar bot={m} size={18} animated={false} />
               <span style={{ ...font('subheadline'), color: 'var(--text)' }}>{m.name}</span>
+            </button>
+          ))}
+          {skills.map((s) => (
+            <button key={s.id} className="press mention" title={s.description || s.name} onClick={() => pickSkill(s.id)}>
+              <Icon name="book.pages" size={12} color="var(--secondary)" />
+              <span style={{ ...font('subheadline'), color: 'var(--text)' }}>{s.name}</span>
             </button>
           ))}
         </div>
@@ -178,7 +199,11 @@ function DestinationComposer({ botId, thread, onCall, onInterrupt }: {
                 aria-keyshortcuts="Enter Shift+Enter"
                 onCompositionStart={() => { composing.current = true }}
                 onCompositionEnd={() => { composing.current = false }}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  setDraft(e.target.value)
+                  // Starting a skill name: list the computer's skills again.
+                  if (skillsShown && e.target.value === '/') void plugins.refresh()
+                }}
                 onKeyDown={(e) => {
                   // Return sends, Shift-Return adds a line; an input method's Return picks its candidate.
                   const action = composerEnter({ key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, repeat: e.repeat, isComposing: composing.current || e.nativeEvent.isComposing, keyCode: e.keyCode })

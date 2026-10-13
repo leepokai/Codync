@@ -26,6 +26,7 @@ Key facts:
 - [Free AI agent app](https://www.codync.dev/free-ai-agent-app): what free means and what the bots do
 - [Comparisons](https://www.codync.dev/compare): Codync side by side with similar apps
 - [Source code on GitHub](https://github.com/leepokai/Codync): README, install guide and docs
+- [Discord](https://discord.gg/KBAX3Qznxh): community, help and feedback
 - [Group chats and threads](https://github.com/leepokai/Codync/blob/main/docs/features/groups-and-threads.md)
 - [Bot collaboration](https://github.com/leepokai/Codync/blob/main/docs/features/bot-collaboration.md)
 - [Remote access and relay](https://github.com/leepokai/Codync/blob/main/docs/reference/remote-relay.md)

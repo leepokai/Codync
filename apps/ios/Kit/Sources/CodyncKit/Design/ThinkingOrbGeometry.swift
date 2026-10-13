@@ -1,7 +1,7 @@
 import Foundation
 
 // Native port of thinking-orbs 0.3.1, commit de85557 (MIT, Jakub Antalik).
-// Source: src/engine/{core,orbits,lattice,web}.ts and resolved 20/64 pt presets.
+// Source: src/engine/{core,orbits,lattice,web,morph}.ts and resolved 20/64 pt presets.
 // See Resources/ThirdPartyNotices/thinking-orbs-LICENSE.txt.
 // Keep geometry independent of SwiftUI so upstream golden vectors can verify it.
 enum ThinkingOrbGeometry {
@@ -17,6 +17,7 @@ enum ThinkingOrbGeometry {
         var lines: [Line] = []
     }
     typealias Point = SIMD3<Double>
+    typealias Point2 = SIMD2<Double>
 
     static func speed(state: ThinkingOrb.State, size: Double) -> Double {
         let small = size < 40
@@ -25,6 +26,7 @@ enum ThinkingOrbGeometry {
         case .searching: return small ? 2.665 : 2.015
         case .listening: return small ? 3.998 : 4.388
         case .connecting: return small ? 6.63 : 3.315
+        case .shaping: return small ? 2.08 : 2.405
         }
     }
 
@@ -37,6 +39,7 @@ enum ThinkingOrbGeometry {
         case .searching: frame = lattice(size, time, listening: false)
         case .listening: frame = lattice(size, time, listening: true)
         case .connecting: frame = web(size, time)
+        case .shaping: frame = morph(size, time)
         }
         frame.dots = frame.dots.filter { $0.alpha >= 0.02 }.map {
             var dot = $0; dot.radius = max(0.3, dot.radius); return dot
@@ -183,5 +186,62 @@ enum ThinkingOrbGeometry {
                                   white: 0.05, alpha: 0.5 + 0.5 * depth))
         }
         return frame
+    }
+
+    /// A dotted outline that holds a circle, triangle and square in turn, morphing between them.
+    private static func morph(_ size: Double, _ t: Double) -> Frame {
+        let small = size < 40, spread = 1.45, hold = 1.4, change = 0.9, segment = hold + change
+        let cycle = t.truncatingRemainder(dividingBy: segment * Double(shapes.count))
+        let k = min(shapes.count - 1, Int(cycle / segment)), local = cycle - Double(k) * segment
+        let x = (local - hold) / change, m = local > hold ? x * x * (3 - 2 * x) : 0
+        let from = shapes[k], to = shapes[(k + 1) % shapes.count]
+        let samples = 160
+        let points = (0..<samples).map { i -> Point2 in
+            let f = Double(i) / Double(samples), a = from(f), b = to(f)
+            return (a + (b - a) * m) * spread
+        }
+        let lengths = (0..<samples).map { i in
+            hypot(points[(i + 1) % samples].x - points[i].x, points[(i + 1) % samples].y - points[i].y)
+        }
+        let total = lengths.reduce(0, +)
+        let count = small ? 18 : 24
+        let radius = max(0.35, (small ? 0.021231 : 0.008295) * 1.35 * spread * size)
+        let pulse = 1 + 0.02 * sin(local * 3.1)
+        var frame = Frame(), i = 0, walked = 0.0
+        for n in 0..<count {
+            let target = Double(n) / Double(count) * total
+            while walked + lengths[i] < target, i < samples - 1 {
+                walked += lengths[i]
+                i += 1
+            }
+            let a = points[i], b = points[(i + 1) % samples]
+            let f = lengths[i] > 0 ? min(1, (target - walked) / lengths[i]) : 0
+            let p = (a + (b - a) * f) * pulse
+            frame.dots.append(Dot(x: size / 2 + p.x * size, y: size / 2 + p.y * size, z: 0, radius: radius, white: 0.1))
+        }
+        return frame
+    }
+
+    private static let shapes: [@Sendable (Double) -> Point2] = [
+        { f in Point2(cos(-.pi / 2 + f * 2 * .pi), sin(-.pi / 2 + f * 2 * .pi)) * 0.24 },
+        polygon([Point2(0, -0.26), Point2(0.24, 0.16), Point2(-0.24, 0.16)]),
+        polygon([Point2(0, -0.2), Point2(0.2, -0.2), Point2(0.2, 0.2), Point2(-0.2, 0.2), Point2(-0.2, -0.2)]),
+    ]
+
+    /// The closed outline through `vertices`, parameterized by arc length (0...1).
+    private static func polygon(_ vertices: [Point2]) -> @Sendable (Double) -> Point2 {
+        let lengths = vertices.indices.map { i in
+            hypot(vertices[(i + 1) % vertices.count].x - vertices[i].x, vertices[(i + 1) % vertices.count].y - vertices[i].y)
+        }
+        let total = lengths.reduce(0, +)
+        return { f in
+            var target = f * total, i = 0
+            while target > lengths[i], i < vertices.count - 1 {
+                target -= lengths[i]
+                i += 1
+            }
+            let a = vertices[i], b = vertices[(i + 1) % vertices.count]
+            return a + (b - a) * (lengths[i] > 0 ? min(1, target / lengths[i]) : 0)
+        }
     }
 }

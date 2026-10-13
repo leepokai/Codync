@@ -198,8 +198,8 @@ private struct ConversationCollection: UIViewRepresentable {
         }
 
         private func animate(_ animation: Animation?, _ changes: @escaping () -> Void) {
-            if #available(iOS 18, *), animation != nil, !reduceMotion {
-                UIView.animate(animation ?? .default, changes: changes)
+            if let animation, !reduceMotion {
+                UIView.animate(animation, changes: changes)
             } else {
                 changes()
             }

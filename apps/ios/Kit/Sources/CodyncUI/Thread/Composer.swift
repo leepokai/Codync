@@ -4,7 +4,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The message box under a chat or a thread: send, or stop while the bot (or the
-/// group) is working there. In a group, typing `@` suggests its bots.
+/// group) is working there. In a group, typing `@` suggests its bots; with one bot, a
+/// leading `/` suggests its skills.
 struct Composer: View {
     let botId: String
     /// Replies go to the thread on this message.
@@ -61,22 +62,34 @@ struct Composer: View {
         }
     }
 
+    /// The bot's skills while the draft is `/partial`; not in a group, where each member has its own.
+    private var skillSuggestions: [InstalledSkill] {
+        guard let bot, !bot.isGroup, !AppVersion.isBelow(model.hello?.version ?? "", SkillCommand.minHost),
+              let query = SkillCommand.query(draft) else { return [] }
+        return SkillCommand.matches(model.installedSkills, enabled: bot.skills, query: query)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !suggestions.isEmpty {
+            if !suggestions.isEmpty || !skillSuggestions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(suggestions) { member in
-                            Button { mention(member) } label: {
-                                HStack(spacing: 6) {
-                                    CharacterAvatar(bot: member, size: 18, animated: false)
-                                    Text(member.name).font(.subheadline).foregroundStyle(Palette.text)
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Palette.surface, in: Capsule())
+                            SuggestionChip(title: member.name) {
+                                CharacterAvatar(bot: member, size: 18, animated: false)
+                            } action: {
+                                mention(member)
                             }
-                            .buttonStyle(PressScale())
+                        }
+                        ForEach(skillSuggestions) { skill in
+                            SuggestionChip(title: skill.name) {
+                                Image(systemName: "book.pages").font(.caption).foregroundStyle(Palette.secondary)
+                            } action: {
+                                draft = "/\(skill.id) "
+                                focused = true
+                            }
+                            .help(skill.description)
+                            .accessibilityHint(skill.description)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -86,6 +99,7 @@ struct Composer: View {
             field
         }
         .animation(Motion.layout, value: suggestions.map(\.id))
+        .animation(Motion.layout, value: skillSuggestions.map(\.id))
     }
 
     private var fieldPadding: CGFloat { 10 }
@@ -204,7 +218,11 @@ struct Composer: View {
         .onChange(of: [botId, thread], initial: true) {
             draft = model.composerDraft(for: botId, thread: thread)
         }
-        .onChange(of: draft) { _, value in model.setComposerDraft(value, for: botId, thread: thread) }
+        .onChange(of: draft) { _, value in
+            model.setComposerDraft(value, for: botId, thread: thread)
+            // Starting a skill name: list the computer's skills again.
+            if value == "/", bot?.isGroup == false { Task { await model.refreshPlugins() } }
+        }
         .onChange(of: model.routineDrafts[botId]) { _, value in
             guard thread == nil, let value else { return }
             draft = draft.isEmpty ? value : draft + "\n" + value
@@ -301,5 +319,25 @@ struct Composer: View {
             draft = ""
             files = []
         }
+    }
+}
+
+/// One suggestion above the box: a bot to @mention or a skill to start with.
+private struct SuggestionChip<Icon: View>: View {
+    let title: String
+    @ViewBuilder let icon: Icon
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                icon
+                Text(title).font(.subheadline).foregroundStyle(Palette.text)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Palette.surface, in: Capsule())
+        }
+        .buttonStyle(PressScale())
     }
 }

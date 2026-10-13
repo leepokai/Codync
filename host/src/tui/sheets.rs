@@ -239,7 +239,7 @@ pub fn market(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
     let keys = match m.tab {
         Tab::Agents => "tab switch · ↵ install / sign in · ^r refresh · esc close",
         Tab::Connectors => "tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc",
-        Tab::Skills => "tab switch · ↵ install · ^x remove · esc close",
+        Tab::Skills => "tab switch · ↵ details · ^x remove · esc close",
     };
     let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();
     footer(buf, inner, m.error.as_deref().or(loading.then_some("Loading the registry…")), keys);

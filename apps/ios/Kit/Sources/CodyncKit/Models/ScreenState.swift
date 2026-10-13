@@ -38,7 +38,7 @@ public struct ScreenState: Codable, Equatable, Sendable {
         displays = try c.decodeIfPresent([ScreenDisplay].self, forKey: .displays) ?? []
         userControl = try c.decodeIfPresent(Bool.self, forKey: .userControl) ?? false
         agentBot = try c.decodeIfPresent(String.self, forKey: .agentBot)
-        computerUse = try c.decodeIfPresent(Bool.self, forKey: .computerUse) ?? enabled
+        computerUse = try c.decodeIfPresent(Bool.self, forKey: .computerUse) ?? false
         viewers = try c.decodeIfPresent(Int.self, forKey: .viewers) ?? 0
     }
 }

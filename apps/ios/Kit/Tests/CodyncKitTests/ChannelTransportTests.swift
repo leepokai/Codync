@@ -130,7 +130,7 @@ private func fakeDialer() -> (Dialer, AsyncStream<FakeSocket>) {
 private func helloBody() -> [String: Any] { [
     "hostId": "h1", "name": "Studio", "version": "3.0.0", "os": "macos", "backends": [], "rev": 0,
     "computerId": v.str("keys", "computerId"), "signKey": v.str("keys", "hostSignPub"), "boxKey": v.str("keys", "hostBoxPub"),
-    "urls": ["http://10.0.0.2:19222"], "cloud": "https://cloud.example.dev", "device": "macstudio", "protocol": 1,
+    "urls": ["http://10.0.0.2:19222"], "cloud": "https://cloud.example.dev", "device": "macstudio",
 ] }
 
 private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> Bool) async -> LinkState? {

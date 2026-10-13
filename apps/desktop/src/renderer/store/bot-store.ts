@@ -94,10 +94,6 @@ export class BotStore extends BotSync {
     this.scheduleSave()
   }
 
-  cancelQueued(_entry: Entry) {
-    // Loopback never queues in a relay mailbox.
-  }
-
   private markLocal(nonce: string, botId: string, status: string) {
     const list = this.entries.get(botId)
     const i = list?.findIndex((e) => e.id === `local-${nonce}`) ?? -1
@@ -149,7 +145,7 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
-  /** Product analytics consent: null until the owner chose, undefined before hello or on older hosts. */
+  /** Product analytics on this computer; undefined before hello. */
   get analytics() {
     return this.hello?.analytics
   }

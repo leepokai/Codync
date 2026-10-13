@@ -207,6 +207,8 @@ export const market = {
   installSkill: (c: HostClient, source: string) => c.call('installSkill', { source }, s(60)),
   addSkill: (c: HostClient, name: string, description: string, instructions: string) => c.call('installSkill', { name, description, instructions }),
   removeSkill: (c: HostClient, id: string) => c.call('removeSkill', { id }),
+  /** A skill's `SKILL.md` without its front matter: an installed one by `id`, a catalog one by `source`. */
+  skillDetails: async (c: HostClient, which: { id: string } | { source: string }) => (await c.call<{ markdown: string }>('skillDetails', which, s(60))).markdown,
   connectorInfo: (c: HostClient, registryName: string) => c.call<MarketConnector>('connectorInfo', { registryName }, s(60)),
   verifyConnector: (c: HostClient, id: string) => c.call<{ status: string }>('connectorVerify', { id }, s(120)),
   finishConnectionRequest: (c: HostClient, entryId: string, opts: { connectorId?: string; value?: string; username?: string; cancel?: boolean } = {}) =>

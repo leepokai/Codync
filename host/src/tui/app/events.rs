@@ -296,11 +296,11 @@ impl App {
                 }
                 for o in &mut self.overlays {
                     if let Overlay::Form(f) = o {
+                        // Connectors and skills start on for a new bot.
                         if connectors {
-                            // Connectors start on for a new bot.
                             merge_toggles(&mut f.connectors, &self.market.0, f.bot_id.is_none());
                         } else {
-                            merge_toggles(&mut f.skills, &self.market.1, false);
+                            merge_toggles(&mut f.skills, &self.market.1, f.bot_id.is_none());
                         }
                     }
                 }

@@ -10,7 +10,7 @@ Codync/
 │   ├── src/
 │   │   ├── main.rs            # CLI entry, shared helpers (LockExt, http)
 │   │   ├── hub.rs, store/     # Shared state + event fan-out / SQLite persistence (schema, model, bots, entries, devices)
-│   │   ├── service.rs         # Data dir, launchd/systemd install, keep-awake
+│   │   ├── service/           # Data dir, launchd/systemd/Windows install, keep-awake
 │   │   ├── usage.rs, mcp.rs
 │   │   ├── screen/            # Remote screen: helper protocol, helper socket, phone viewers, bot computer use (cua-driver)
 │   │   ├── api/               # Dispatch (mod.rs), HTTP/SSE routes (http.rs, events.rs), method groups (bots.rs, host.rs, marketplace.rs, remote.rs), caller permissions (devices.rs)
@@ -56,7 +56,7 @@ Codync/
 │   └── test/                  # workerd tests; e2e/ runs against a real test host
 ├── relay/                     # Separate APNs push Worker; src/ and test/
 ├── docs/                      # Architecture, guides, reference, features, design, archive
-├── tools/                     # Widget rendering utilities
+├── tools/                     # Release, App Store submission and font scripts
 ├── packaging/                 # Distribution templates
 ├── marketing/app-store-screenshots/ # App Store screenshot editor (bun dev; Export bundle → out/)
 ├── web/                       # Website (Next.js static export)
@@ -78,7 +78,7 @@ Codync/
 
 | Responsibility | Source entry points |
 |---|---|
-| CLI and background service | `host/src/main.rs`, `service.rs` |
+| CLI and background service | `host/src/main.rs`, `service/` |
 | API, caller permissions, event ordering | `host/src/api/`, `hub.rs` |
 | SQLite transcript, bots, lanes and sessions | `host/src/store/` (`entries.rs`, `bots.rs`, `model.rs`, `devices.rs`, `schema.rs`) |
 | Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`queue.rs`, `session.rs`, `turn.rs`, `updates.rs`), `acp.rs` |

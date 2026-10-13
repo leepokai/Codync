@@ -20,9 +20,25 @@ pub(super) fn connector_ids(store: &crate::store::Store) -> Result<Vec<String>> 
         .collect())
 }
 
-/// A connector installed on the computer is on for every bot; each bot can turn it off.
-fn enable_new_connectors(hub: &Hub, before: &[String]) -> Result<()> {
-    let new: Vec<String> = connector_ids(&hub.store)?.into_iter().filter(|id| !before.contains(id)).collect();
+/// What the computer installs for its bots.
+#[derive(Clone, Copy)]
+enum Installed {
+    Connectors,
+    Skills,
+}
+
+impl Installed {
+    fn ids(self, store: &crate::store::Store) -> Result<Vec<String>> {
+        match self {
+            Self::Connectors => connector_ids(store),
+            Self::Skills => Ok(market::skills(store).into_iter().map(|s| s.id).collect()),
+        }
+    }
+}
+
+/// A connector or skill installed on the computer is on for every bot; each bot can turn it off.
+fn enable_new(hub: &Hub, kind: Installed, before: &[String]) -> Result<()> {
+    let new: Vec<String> = kind.ids(&hub.store)?.into_iter().filter(|id| !before.contains(id)).collect();
     if new.is_empty() {
         return Ok(());
     }
@@ -30,13 +46,16 @@ fn enable_new_connectors(hub: &Hub, before: &[String]) -> Result<()> {
         if row.deleted || row.config.is_group() {
             continue;
         }
-        let mut on = row.config.connectors;
+        let (key, mut on) = match kind {
+            Installed::Connectors => ("connectors", row.config.connectors),
+            Installed::Skills => ("skills", row.config.skills),
+        };
         for id in &new {
             if !on.contains(id) {
                 on.push(id.clone());
             }
         }
-        hub.update_bot(&json!({"id": row.config.id, "connectors": on}))?;
+        hub.update_bot(&json!({"id": row.config.id, key: on}))?;
     }
     Ok(())
 }
@@ -132,13 +151,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 fields,
             )
             .await?;
-            enable_new_connectors(hub, &before)?;
+            enable_new(hub, Installed::Connectors, &before)?;
             r
         }
         "composioConnection" => {
             let before = connector_ids(&hub.store)?;
             let r = market::composio::connection(&hub.store, str_arg(&b, "id")?).await?;
-            enable_new_connectors(hub, &before)?;
+            enable_new(hub, Installed::Connectors, &before)?;
             r
         }
         "marketConnectors" => {
@@ -154,7 +173,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "importConnectors" => {
             let before = connector_ids(&hub.store)?;
             let added = market::import_connectors(&hub.store, str_arg(&b, "config")?).await?;
-            enable_new_connectors(hub, &before)?;
+            enable_new(hub, Installed::Connectors, &before)?;
             added
         }
         "installConnector" => {
@@ -170,7 +189,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             } else {
                 market::add_custom_connector(&hub.store, &b).await?
             };
-            enable_new_connectors(hub, &before)?;
+            enable_new(hub, Installed::Connectors, &before)?;
             json!({"connector": c})
         }
         "connectorSignIn" => {
@@ -187,7 +206,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .await?;
             json!({"connector": c.public()})
         }
-        "connectorSignOut" => json!({"connector": market::oauth::sign_out(&hub.store, str_arg(&b, "id")?)?.public()}),
         "connectorTarget" => {
             market::oauth::target(&hub.store, str_arg(&b, "id")?, b["stale"].as_bool().unwrap_or(false)).await?
         }
@@ -200,12 +218,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "skills" => market::list_skills(&hub.store),
+        "skillDetails" => market::skill_details(&hub.store, &b).await?,
         "installSkill" => {
+            let before = Installed::Skills.ids(&hub.store)?;
             let s = if b["source"].is_string() {
                 market::install_skill(&hub.store, str_arg(&b, "source")?).await?
             } else {
                 market::add_custom_skill(&hub.store, &b)?
             };
+            enable_new(hub, Installed::Skills, &before)?;
             json!({"skill": s})
         }
         "removeSkill" => {
@@ -222,7 +243,7 @@ mod tests {
     use crate::store::BotConfig;
 
     #[tokio::test]
-    async fn new_connectors_turn_on_for_every_bot() {
+    async fn new_installs_turn_on_for_every_bot() {
         let dir = std::env::temp_dir().join(format!("codync-connectors-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
@@ -247,10 +268,14 @@ mod tests {
         hub.start().expect("start");
         let before = connector_ids(&hub.store).expect("ids");
         market::save_connectors(&hub.store, &[connector("old"), connector("linear")]).expect("save");
-        enable_new_connectors(&hub, &before).expect("enable");
+        enable_new(&hub, Installed::Connectors, &before).expect("enable");
         let on = |id: &str| hub.store.bot(id).expect("read").expect("bot").config.connectors;
         assert_eq!(on("a"), ["linear"], "the new connector is on; one turned off stays off");
         assert_eq!(on("b"), ["old", "linear"]);
+        hub.store.kv_set("skills", r#"[{"id":"pdf","name":"PDF"}]"#).expect("install a skill");
+        enable_new(&hub, Installed::Skills, &[]).expect("enable");
+        let skills = |id: &str| hub.store.bot(id).expect("read").expect("bot").config.skills;
+        assert_eq!((skills("a"), skills("b")), (vec!["pdf".to_owned()], vec!["pdf".to_owned()]), "new skills too");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

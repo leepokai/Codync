@@ -1,13 +1,10 @@
 import { useEffect } from 'react'
 import type { Computer } from '@shared/models'
-import type { SSHBridge, SSHState } from '@shared/ssh'
+import type { SSHState } from '@shared/ssh'
 import { LoopbackTransport } from '../../client/host-client'
 import { Observable, useModel } from '../../lib/observable'
 import type { AppModel } from '../../store/app-model'
 import { BotStore } from '../../store/bot-store'
-
-/** `window.codync.ssh` (preload/ssh.ts); missing in a build that doesn't wire it. */
-export const sshBridge = (): SSHBridge | null => window.codync.ssh ?? null
 
 /** The main process's SSH computers, mirrored for views. */
 class SSHModel extends Observable {
@@ -15,11 +12,10 @@ class SSHModel extends Observable {
   private started = false
 
   start() {
-    const bridge = sshBridge()
-    if (this.started || !bridge) return
+    if (this.started) return
     this.started = true
-    bridge.onChange((s) => this.apply(s))
-    void bridge.state().then((s) => this.apply(s))
+    window.codync.ssh.onChange((s) => this.apply(s))
+    void window.codync.ssh.state().then((s) => this.apply(s))
   }
 
   private apply(s: SSHState) {
@@ -45,7 +41,7 @@ export function useSSH() {
 
 /**
  * Attaches each connected SSH computer to the window's model as a loopback store, and detaches
- * it when its tunnel ends (the Mac app's `ssh.onAttach` / `onDetach`). Call once, from ChatWindow.
+ * it when its tunnel ends. Call once, from ChatWindow.
  */
 export function useSSHAttachments(app: AppModel) {
   useEffect(() => {

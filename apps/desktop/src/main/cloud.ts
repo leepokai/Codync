@@ -94,5 +94,4 @@ export function registerCloud(account: AccountService) {
       return { ok: false, error: { status: 0, code: 'unreachable', message: "Can't reach the Codync cloud. Check your connection." } }
     }
   })
-  ipcMain.handle('cloud:deviceKey', async () => (account.state.user ? (await identity(account.state.user.userId)).publicKey : null))
 }

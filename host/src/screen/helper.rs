@@ -244,7 +244,8 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        let res = screen.offer("local", "offer", None, None).await.unwrap();
+        let local = screen.prepare("local", IceConfig::default()).unwrap();
+        let res = screen.offer("local", "offer", local["session"].as_str().unwrap(), None).await.unwrap();
         assert_eq!(res["sdp"], "answer to offer");
         assert_eq!(screen.state()["viewers"], 1);
         assert_eq!(screen.state()["displays"][0]["name"], "Built-in");
@@ -264,13 +265,13 @@ mod tests {
         screen.session_closed(res["session"].as_str().unwrap());
         assert_eq!(screen.state()["userControl"], true, "renewal keeps takeover while the replacement is pending");
         let id = prepared["session"].as_str().unwrap();
-        assert!(screen.offer("other", "offer", Some(id), None).await.is_err());
-        screen.offer("phone", "offer", Some(id), None).await.unwrap();
+        assert!(screen.offer("other", "offer", id, None).await.is_err());
+        screen.offer("phone", "offer", id, None).await.unwrap();
         let remote = observed_rx.recv().await.unwrap();
         assert_eq!(remote["params"]["iceServers"], prepared["iceServers"]);
         assert_eq!(remote["params"]["maxBitrateBps"], 4_000_000);
         assert_eq!(remote["params"]["maxFramerate"], 30);
         screen.sessions.locked().get_mut(id).unwrap().ice.expires_at = 0;
-        assert!(screen.offer("phone", "offer", Some(id), None).await.is_err());
+        assert!(screen.offer("phone", "offer", id, None).await.is_err());
     }
 }

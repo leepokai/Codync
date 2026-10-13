@@ -4,7 +4,7 @@ import SwiftUI
 /// Supply an adjacent status label; this decorative view is hidden from VoiceOver.
 public struct ThinkingOrb: View {
     public enum State: String, CaseIterable, Sendable {
-        case working, searching, listening, connecting
+        case working, searching, listening, connecting, shaping
     }
 
     let state: State

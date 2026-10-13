@@ -118,6 +118,7 @@ impl Hub {
         // Approval cards and queued sends from a previous run can't be honored anymore.
         self.store.expire_pending()?;
         self.routines.restore(&self.store)?;
+        crate::market::turn_on_installed_once(&self.store)?;
         for row in self.store.bots()? {
             if row.deleted {
                 self.routines.disable_bot(&self.store, &row.config.id)?;

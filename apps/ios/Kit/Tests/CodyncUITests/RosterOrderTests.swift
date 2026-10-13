@@ -3,11 +3,11 @@ import Testing
 @testable import CodyncKit
 @testable import CodyncUI
 
-@MainActor @Test func draggingKeepsBotsAmongTheSamePinState() throws {
+@MainActor @Test func reorderingKeepsPinnedBotsOnTop() throws {
     let suite = "RosterOrderTests.\(UUID().uuidString)"
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let storage = SharedStore.Context(accountID: UUID().uuidString, suite: suite)
-    let store = BotStore(computer: Computer(id: UUID().uuidString, name: "Mac", signKey: "test"), clientKind: "ios", storage: storage) {
+    let store = BotStore(computer: Computer(id: UUID().uuidString, name: "Mac", signKey: "test"), storage: storage) {
         FakeRemote(.connecting)
     }
     defer { store.retire() }
@@ -17,11 +17,12 @@ import Testing
     }
     let order = { store.roster.map(\.id) }
     #expect(order() == ["p", "a", "b", "c"]) // Never arranged: recent activity.
-    #expect(store.move("c", onto: "a"))
+    store.reorder(["p", "c", "a", "b"])
     #expect(order() == ["p", "c", "a", "b"])
-    #expect(store.orderSave != nil) // Sent on drop, not on every pass.
-    #expect(!store.move("a", onto: "p")) // An unpinned bot stays below the pinned ones.
-    store.move("b", by: -1)
-    #expect(order() == ["p", "c", "b", "a"])
-    #expect(store.orderSave == nil)
+    store.move("a", by: -1)
+    #expect(order() == ["p", "a", "c", "b"])
+    store.move("a", by: -1) // An unpinned bot stays below the pinned ones.
+    #expect(order() == ["p", "a", "c", "b"])
+    store.reorder(["c", "p", "a", "b"]) // Dropped above a pinned bot: still listed below it.
+    #expect(order() == ["p", "c", "a", "b"])
 }

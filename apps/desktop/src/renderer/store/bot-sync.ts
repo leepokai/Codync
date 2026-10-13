@@ -133,7 +133,7 @@ export class BotSync extends BotMirror {
           this.floors = new Map()
           this.closeEvents = client.events(
             this.requestedSince,
-            this.clientKind,
+            'desktop',
             (event) => {
               if (!alive()) return
               this.setConnection({ kind: 'online' })

@@ -24,8 +24,7 @@ On every (re)connect the client reads `hello` and decides, in this order:
 
 Versions compare as `major.minor.patch` (a leading `v` and any `-pre`/`+build` suffix are
 ignored). An unreadable version, or a `hello` without one, never blocks: an unknown is not a
-reason to lock someone out. Hosts from before 2.4.0 send no `minApp`; only the client's
-floor applies to them.
+reason to lock someone out.
 
 ## What each client does
 
@@ -109,7 +108,7 @@ trails them (App Store review), so nudging a computer from it would only be nois
 | Client | This app is behind |
 |---|---|
 | iPhone | Card at the top of the bot list (App Store version from the lookup), *Update* opens the App Store |
-| Desktop | *Update to <version>* in the menu bar's Settings → Updates and on the Settings Updates page |
+| Desktop | *Update to <version>*, then *Restart to update*, on the update card, in the menu bar's Settings → Updates and on the Settings Updates page |
 | Terminal client | — (it is the host binary) |
 
 ### Wire shape snapshot

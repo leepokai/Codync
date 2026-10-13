@@ -1,9 +1,7 @@
 import SwiftUI
 
 import UIKit
-private typealias PlatformColor = UIColor
-
-private extension PlatformColor {
+private extension UIColor {
     convenience init(hex: UInt32, alpha: CGFloat = 1) {
         self.init(
             red: CGFloat((hex >> 16) & 0xFF) / 255,

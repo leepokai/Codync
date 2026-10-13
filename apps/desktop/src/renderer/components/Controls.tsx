@@ -216,3 +216,12 @@ export function Pill({ children, fill = 'var(--background)', outlined = false, s
     </span>
   )
 }
+
+/** Determinate progress (`value` 0...1): a thin capsule track that fills from the left. */
+export function ProgressBar({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="progress-track" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value * 100)}>
+      <div className="progress-fill" style={{ transform: `scaleX(${value})` }} />
+    </div>
+  )
+}

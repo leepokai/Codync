@@ -82,8 +82,7 @@ public struct DeviceIdentity: Sendable {
 }
 
 /// Generic-password items holding 32-byte raw keys (§3.2): this device only, never synced,
-/// readable after first unlock (pushes arrive while locked). macOS uses the login keychain:
-/// the Mac app has no entitlements, so the data protection keychain would fail with -34018.
+/// readable after first unlock (pushes arrive while locked).
 enum Keychain {
     struct Failure: LocalizedError {
         let status: OSStatus

@@ -44,6 +44,9 @@ jobs:
 
   macos:
     needs: check
+    # Fork PRs get no signing secrets, so they stop at check, Windows and Linux; the release PR into main
+    # builds the Mac app before the tag.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -83,7 +86,6 @@ jobs:
           cp "$(swift build -c release --arch arm64 --arch x86_64 --package-path apps/desktop/native/speech-macos --show-bin-path)/codync-speech" \
             apps/desktop/build/native/codync-speech
           # Codync Screen is built by `npm run dist:mac:main` (tools/native-screen.mjs).
-          xcodebuild -downloadComponent MetalToolchain || true
           command -v xcodegen >/dev/null || brew install xcodegen
           xcodegen generate --spec apps/project.yml
           swift packaging/dmg/background.swift apps/desktop/build/dmg-background.tiff
@@ -243,7 +245,6 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
       # The Linux app uses the installed codync-host (codync-host-linux-*.tar.gz, host.yml).
-      - run: sudo apt-get update && sudo apt-get install -y rpm
       - name: Build
         working-directory: apps/desktop
         run: |

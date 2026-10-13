@@ -41,6 +41,10 @@ public struct BotEditorView: View {
         }
         .background(Palette.background)
         .onAppear { if isNew { model.fillDefaults(&draft) } }
+        // A new bot's connectors and skills start on once the computer has listed them.
+        .onChange(of: model.installedConnectors.map(\.id) + model.installedSkills.map(\.id)) {
+            if isNew { model.fillDefaults(&draft) }
+        }
         .onChange(of: model.computer.id) {
             // Folders, models and connectors belong to the old computer.
             draft.cwd = ""
@@ -77,6 +81,7 @@ struct BotSettingsForm: View {
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pickingFolder = false
+    @State private var viewingSkill: SkillRef?
 
     var body: some View {
         ScrollView {
@@ -189,7 +194,8 @@ struct BotSettingsForm: View {
                     title: "Skills",
                     empty: "No skills yet. Get some from Plugins, or write your own.",
                     items: model.installedSkills.map { ($0.id, $0.name, $0.description) },
-                    selection: Binding(get: { draft.skills ?? [] }, set: { draft.skills = $0 })
+                    selection: Binding(get: { draft.skills ?? [] }, set: { draft.skills = $0 }),
+                    info: { id in viewingSkill = model.installedSkills.first { $0.id == id }.map(SkillRef.init) }
                 )
                 if let id = draft.id {
                     MemoryCard(botId: id)
@@ -205,6 +211,7 @@ struct BotSettingsForm: View {
         .scrollDismissesKeyboard(.interactively)
         .background(Palette.background)
         .task { await model.refreshPlugins() }
+        .codyncSheet(item: $viewingSkill) { SkillSheet(skill: $0) }
         .codyncSheet(isPresented: $pickingFolder) {
             FolderPicker(start: draft.cwd.isEmpty ? model.hello?.home : draft.cwd) {
                 draft.cwd = $0
@@ -266,31 +273,6 @@ struct SwitchRow: View {
     }
 }
 
-/// A card of on/off switches for the connectors or skills installed on the computer.
-private struct PluginToggles: View {
-    let title: String
-    let empty: String
-    let items: [(id: String, name: String, detail: String)]
-    @Binding var selection: [String]
-
-    var body: some View {
-        CardSection(title) {
-            if items.isEmpty {
-                Text(empty).foregroundStyle(Palette.secondary)
-            }
-            ForEach(items, id: \.id) { item in
-                SwitchRow(item.name, detail: item.detail.isEmpty ? nil : item.detail, isOn: Binding(
-                    get: { selection.contains(item.id) },
-                    set: { on in
-                        selection.removeAll { $0 == item.id }
-                        if on { selection.append(item.id) }
-                    }
-                ))
-            }
-        }
-    }
-}
-
 extension View {
     /// A rounded input box.
     func fieldBox(fill: Color = Palette.background) -> some View {
@@ -321,9 +303,12 @@ public extension BotStore {
            let first = hello?.backends.first(where: { $0.available && $0.curated == true }) {
             draft.backend = first.id
         }
-        // Connectors start on; left unset, the host turns on every one.
+        // Connectors and skills start on; left unset, the host turns on every one.
         if draft.connectors == nil, !installedConnectors.isEmpty {
             draft.connectors = installedConnectors.map(\.id)
+        }
+        if draft.skills == nil, !installedSkills.isEmpty {
+            draft.skills = installedSkills.map(\.id)
         }
     }
 }

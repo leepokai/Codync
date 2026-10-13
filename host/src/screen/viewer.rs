@@ -52,22 +52,15 @@ impl Screen {
         self.sessions.locked().get(session).is_some_and(|v| v.owner == owner)
     }
 
-    /// Answers a prepared session or a direct offer from an older client.
-    pub async fn offer(&self, owner: &str, sdp: &str, session: Option<&str>, display: Option<u32>) -> Result<Value> {
+    /// Answers an offer on a session `prepare` reserved.
+    pub async fn offer(&self, owner: &str, sdp: &str, session: &str, display: Option<u32>) -> Result<Value> {
         let link = self.link()?;
         if !self.status.locked().capture {
             bail!("Codync isn't allowed to record this computer's screen yet. Allow it in System Settings there.");
         }
-        let session = match session {
-            Some(id) => id.to_owned(),
-            None => self.prepare(owner, IceConfig::default())?["session"]
-                .as_str()
-                .context("missing screen session")?
-                .to_owned(),
-        };
         let ice = {
             let sessions = self.sessions.locked();
-            let viewer = sessions.get(&session).filter(|v| v.owner == owner).context("unknown screen session")?;
+            let viewer = sessions.get(session).filter(|v| v.owner == owner).context("unknown screen session")?;
             let now = crate::store::now_ms();
             if viewer.ice.expires_at <= now || (!viewer.started && viewer.pending_until <= now) {
                 bail!("screen connection expired; reconnect to continue");
@@ -89,10 +82,10 @@ impl Screen {
             Ok(res) => res,
             Err(error) => {
                 // A helper can finish after the RPC times out. Keep retrying close until it acknowledges.
-                if let Some(viewer) = self.sessions.locked().get_mut(&session) {
+                if let Some(viewer) = self.sessions.locked().get_mut(session) {
                     viewer.ice.expires_at = 0;
                 }
-                if let Err(close_error) = self.close(&session).await {
+                if let Err(close_error) = self.close(session).await {
                     tracing::warn!(error = format!("{close_error:#}"), "couldn't close failed screen session");
                 }
                 return Err(error);
@@ -101,7 +94,7 @@ impl Screen {
         let answer = res["sdp"].as_str().ok_or_else(|| anyhow!("the screen helper sent no answer"))?;
         let accepted = {
             let mut sessions = self.sessions.locked();
-            if let Some(viewer) = sessions.get_mut(&session) {
+            if let Some(viewer) = sessions.get_mut(session) {
                 viewer.started = true;
                 true
             } else {
@@ -109,7 +102,7 @@ impl Screen {
             }
         };
         if !accepted || !self.enabled() {
-            self.close(&session).await?;
+            self.close(session).await?;
             bail!("screen session closed while connecting");
         }
         self.emit();

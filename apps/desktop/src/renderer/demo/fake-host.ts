@@ -20,7 +20,7 @@ export class FakeHost {
   private turns = new Map<string, number>()
   private nextReply = new Map<string, number>()
   /** Already chosen, so the demo never asks for consent. */
-  private analytics = false
+  private analytics = true
 
   constructor(
     readonly version: string,

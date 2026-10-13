@@ -1,6 +1,6 @@
-//! Opt-in product analytics (`PostHog`), decided once per computer by its owner
-//! (`setAnalytics`; nothing is sent until then). Events name the feature that was used
-//! and never carry content: no message text, prompts, file names, paths or bot names.
+//! Product analytics (`PostHog`), on unless the computer's owner turned it off
+//! (`setAnalytics`). Events name the feature that was used and never carry content:
+//! no message text, prompts, file names, paths or bot names.
 //! What is collected and why: docs/features/analytics.md.
 
 use crate::LockExt as _;
@@ -83,8 +83,7 @@ impl Event {
 }
 
 pub struct Analytics {
-    /// `None` until the owner has chosen.
-    enabled: Mutex<Option<bool>>,
+    enabled: Mutex<bool>,
     tx: mpsc::UnboundedSender<Msg>,
     rx: Mutex<Option<mpsc::UnboundedReceiver<Msg>>>,
 }
@@ -97,23 +96,18 @@ enum Msg {
 
 impl Analytics {
     pub fn load(store: &Store) -> Self {
-        let enabled = match store.kv_get(KV_ENABLED).as_deref() {
-            Some("1") => Some(true),
-            Some("0") => Some(false),
-            _ => None,
-        };
+        let enabled = store.kv_get(KV_ENABLED).as_deref() != Some("0");
         let (tx, rx) = mpsc::unbounded_channel();
         Self { enabled: Mutex::new(enabled), tx, rx: Mutex::new(Some(rx)) }
     }
 
-    /// `null` until asked, which is when the computer's apps ask.
-    pub fn state(&self) -> Option<bool> {
+    pub fn state(&self) -> bool {
         *self.enabled.locked()
     }
 
     pub fn set_enabled(&self, store: &Store, on: bool) -> Result<()> {
         store.kv_set(KV_ENABLED, if on { "1" } else { "0" })?;
-        *self.enabled.locked() = Some(on);
+        *self.enabled.locked() = on;
         Ok(())
     }
 }
@@ -245,17 +239,15 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
     Some((event, p))
 }
 
-/// Queues one event unless the owner said no. Until they answer, events wait in memory
-/// and leave only after a yes (see `start`). Signed in to a Codync account, events are
-/// linked to that account; otherwise to this install's random id, with no person profile.
+/// Queues one event unless the owner turned analytics off. Signed in to a Codync account,
+/// events are linked to that account; otherwise to this install's random id. Both get a
+/// person profile.
 pub fn capture(hub: &Hub, event: Event, mut properties: Map<String, Value>) {
-    let consent = hub.analytics.state();
-    if consent == Some(false) {
+    if !hub.analytics.state() {
         return;
     }
     let account = hub.cloud.status().owner.map(|o| o.user_id);
-    if consent == Some(true)
-        && let Some(user) = &account
+    if let Some(user) = &account
         && hub.store.kv_get(KV_IDENTIFIED).as_deref() != Some(user.as_str())
     {
         // Merges this install's earlier, anonymous events into the account.
@@ -265,7 +257,7 @@ pub fn capture(hub: &Hub, event: Event, mut properties: Map<String, Value>) {
             tracing::warn!(error = format!("{e:#}"), "couldn't save the analytics identity");
         }
     }
-    properties.insert("$process_person_profile".into(), account.is_some().into());
+    properties.insert("$process_person_profile".into(), true.into());
     queue(hub, event.name(), account.as_deref().unwrap_or(&hub.host_id), properties);
 }
 
@@ -276,7 +268,6 @@ fn queue(hub: &Hub, event: &str, distinct_id: &str, mut properties: Map<String, 
         ("env".into(), (if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" }).into()),
         ("$os".into(), std::env::consts::OS.into()),
         ("arch".into(), std::env::consts::ARCH.into()),
-        ("$geoip_disable".into(), true.into()),
         // Joins this computer's events across accounts and with its phones' `computer_paired`.
         ("computer".into(), computer_tag(&hub.identity.computer_id()).into()),
     ]);
@@ -302,8 +293,7 @@ pub fn computer_tag(computer_id: &str) -> String {
     })
 }
 
-/// Sends queued events in batches every `FLUSH_EVERY`; until the owner answers they wait,
-/// and a no drops them.
+/// Sends queued events in batches every `FLUSH_EVERY`; turning analytics off drops them.
 pub fn start(hub: &Arc<Hub>) {
     let Some(mut rx) = hub.analytics.rx.locked().take() else { return };
     let hub = hub.clone();
@@ -330,9 +320,9 @@ pub fn start(hub: &Arc<Hub>) {
 }
 
 async fn flush(hub: &Hub, pending: &mut Vec<Value>) {
-    let consent = hub.analytics.state();
-    let sent = consent == Some(true) && !pending.is_empty() && send(pending).await;
-    if sent || consent == Some(false) {
+    let on = hub.analytics.state();
+    let sent = on && !pending.is_empty() && send(pending).await;
+    if sent || !on {
         pending.clear();
     }
 }
@@ -403,6 +393,14 @@ mod tests {
             .unwrap();
         assert!(observe_call(&hub, &Caller::Local, "send", &send).is_none(), "a replay is the same message");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn on_until_the_owner_turns_it_off() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        assert!(Analytics::load(&store).state());
+        Analytics::load(&store).set_enabled(&store, false).unwrap();
+        assert!(!Analytics::load(&store).state(), "an off stays off");
     }
 
     #[test]

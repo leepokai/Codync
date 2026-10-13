@@ -21,7 +21,7 @@ extension BotStore {
                 }
                 requestedSince = rev
                 windowFloors = [:]
-                for try await event in client.events(since: requestedSince, client: clientKind) {
+                for try await event in client.events(since: requestedSince, client: "ios") {
                     guard !Task.isCancelled, !retired else { return }
                     setConnection(.online)
                     backoff = 1
@@ -133,8 +133,6 @@ extension BotStore {
             setUsage(u)
         case let .screen(s):
             screen = s
-        case .accessRequests, .cloud:
-            break // The computer's own screens only (loopback).
         case .resync:
             restartEvents()
         case let .undecodable(type):

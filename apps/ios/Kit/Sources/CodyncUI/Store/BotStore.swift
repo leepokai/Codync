@@ -68,17 +68,11 @@ public final class BotStore {
     /// Bots whose older history has been fully paged in.
     public internal(set) var historyComplete: Set<String> = []
     var composerDrafts: [String: String] = [:]
-    /// A dragged order not sent yet (see `reorder`).
-    var orderSave: Task<Void, Never>?
     public var routineDrafts: [String: String] = [:]
     public let fileDownloads = FileDownloads()
     public var lastError: String?
-    /// The open conversation (iOS navigation path / Mac sidebar selection).
+    /// The open conversation (navigation path).
     public var selection: String?
-    /// The phone's profile sheet (computers, usage); `codync://computers` opens it.
-    public var showProfile = false
-    /// The Plugins screen on its own; `codync://plugins` opens it.
-    public var showPlugins = false
     /// The remote screen viewer (iPhone); `codync://screen` opens it.
     public var screenRequest: ScreenRequest?
 
@@ -94,8 +88,6 @@ public final class BotStore {
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
 
-    /// `ios` clients suppress pushes while connected; others don't.
-    let clientKind: String
     public let storage: SharedStore.Context
     let makeTransport: @MainActor () async throws -> any HostTransport
     var transport: (any HostTransport)?
@@ -135,18 +127,17 @@ public final class BotStore {
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.
-    public convenience init(computer: Computer, clientKind: String, storage: SharedStore.Context) {
-        self.init(computer: computer, clientKind: clientKind, storage: storage) {
+    public convenience init(computer: Computer, storage: SharedStore.Context) {
+        self.init(computer: computer, storage: storage) {
             try await HostConnector.connect(computer, identity: try DeviceIdentity.load(context: storage))
         }
     }
 
-    init(computer: Computer, clientKind: String, storage: SharedStore.Context,
+    init(computer: Computer, storage: SharedStore.Context,
          appVersion: String = AppVersion.current,
          transport: @escaping @MainActor () async throws -> any HostTransport) {
         self.appVersion = appVersion
         self.computer = computer
-        self.clientKind = clientKind
         self.storage = storage
         makeTransport = transport
         usage = storage.usage[computer.id] ?? Usage()

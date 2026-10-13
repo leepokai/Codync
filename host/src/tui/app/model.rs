@@ -33,7 +33,7 @@ pub enum After {
     Sent(String),
     Connection(String, super::super::connections::Step),
     Hello,
-    /// `track`: fire and forget (an older host doesn't know it).
+    /// `track`: fire and forget; analytics never surfaces an error.
     Tracked,
     Analytics,
     History(String),

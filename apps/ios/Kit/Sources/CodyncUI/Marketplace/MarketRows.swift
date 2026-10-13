@@ -67,9 +67,13 @@ struct MarketRow<Icon: View>: View {
     let added: Bool
     var busy = false
     var addLabel = "Add"
+    /// The whole row opens the item's details; without it the row does what its button does.
+    var open: (() -> Void)?
     @ViewBuilder let icon: Icon
     let add: () -> Void
     @State private var hovering = false
+
+    private var rowAction: (() -> Void)? { open ?? (added || busy ? nil : add) }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -100,7 +104,10 @@ struct MarketRow<Icon: View>: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(hovering ? Palette.bubbleAgent.opacity(0.6) : .clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(hovering && rowAction != nil ? Palette.bubbleAgent.opacity(0.6) : .clear, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture { rowAction?() }
+        .accessibilityAddTraits(rowAction == nil ? [] : .isButton)
         .onHover { h in withAnimation(Motion.hover) { hovering = h } }
     }
 }

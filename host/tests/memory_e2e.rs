@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use std::{
     fmt::Write as _,
     path::PathBuf,
-    process::{Child, Command, Stdio},
+    process::Child,
     time::{Duration, Instant},
 };
 
@@ -33,21 +33,7 @@ impl Host {
         assert!(std::env::var_os("CODYNC_TEST_ENGRAM").is_some(), "set CODYNC_TEST_ENGRAM to the pinned binary");
         let home = std::env::temp_dir().join(format!("codync-memory-e2e-{}", uuid::Uuid::new_v4()));
         common::seed_memory_runtime(&home);
-        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        let child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
-            .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
-            .env("CODYNC_HOME", &home)
-            .env("CODYNC_CLOUD", "off")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let base = format!("http://127.0.0.1:{port}");
-        let deadline = Instant::now() + Duration::from_secs(20);
-        while reqwest::get(format!("{base}/health")).await.is_err() {
-            assert!(Instant::now() < deadline, "host did not start");
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
+        let (child, base) = common::serve(&home).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
         Self { child, home, base, token }
     }

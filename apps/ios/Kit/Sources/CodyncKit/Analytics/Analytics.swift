@@ -11,8 +11,8 @@ public enum AnalyticsEvent: String, Sendable {
     case voiceCallStarted = "voice_call_started"
 }
 
-/// Opt-in product analytics: batches events to PostHog. Nothing is recorded until this iPhone
-/// says yes. Only the app calls it; widgets and the notification extension never do.
+/// Product analytics: batches events to PostHog, on unless turned off in Settings.
+/// Only the app calls it; widgets and the notification extension never do.
 @MainActor
 public final class Analytics {
     public static let shared = Analytics()
@@ -45,7 +45,7 @@ public final class Analytics {
 
     nonisolated static let endpoint = URL(string: "https://us.i.posthog.com/batch/")!
     static let apiKey = "phc_rQHvxdSFKnMquPfMjmiMhXhM4tqJ5qCYsWuVEoFxCCWX"
-    /// `Bool?`: nil until asked.
+    /// `Bool`, absent = on.
     public static let enabledKey = "analyticsEnabled"
     private static let installKey = "analyticsInstallID"
     private static let identifiedKey = "analyticsIdentifiedUsers"
@@ -67,27 +67,24 @@ public final class Analytics {
         self.upload = upload
     }
 
-    /// nil until this iPhone answers the question.
-    public var isEnabled: Bool? { defaults.object(forKey: Self.enabledKey) as? Bool }
+    public var isEnabled: Bool { defaults.object(forKey: Self.enabledKey) as? Bool ?? true }
 
-    /// A yes sends what waited for the answer; turning it off (or back to "not asked") drops
-    /// everything not yet sent.
-    public func setEnabled(_ enabled: Bool?) {
+    /// Turning it off drops everything not yet sent.
+    public func setEnabled(_ enabled: Bool) {
         defaults.set(enabled, forKey: Self.enabledKey)
-        guard enabled != true else { return flush() }
+        guard !enabled else { return flush() }
         pending = []
         timer?.cancel()
         timer = nil
     }
 
-    /// Until this iPhone answers, events wait in memory (setup and pairing come before the
-    /// question) and leave only after a yes. `properties` are public names, never content.
+    /// `properties` are public names, never content.
     public func capture(_ event: AnalyticsEvent, _ properties: [String: String] = [:]) {
-        guard isEnabled != false else { return }
+        guard isEnabled else { return }
         let extra = properties.mapValues(Value.string)
         if let user = userID() {
             var identified = defaults.stringArray(forKey: Self.identifiedKey) ?? []
-            if isEnabled == true, !identified.contains(user) {
+            if !identified.contains(user) {
                 enqueue("$identify", user, ["$anon_distinct_id": .string(installID)])
                 identified.append(user)
                 defaults.set(identified, forKey: Self.identifiedKey)
@@ -119,7 +116,7 @@ public final class Analytics {
     func flush() {
         timer?.cancel()
         timer = nil
-        guard !sending, !pending.isEmpty, isEnabled == true,
+        guard !sending, !pending.isEmpty, isEnabled,
               let body = try? JSONEncoder().encode(Batch(api_key: Self.apiKey, batch: pending)) else { return }
         let sent = Set(pending.map(\.uuid))
         sending = true
@@ -140,7 +137,7 @@ public final class Analytics {
 
     private func enqueue(_ name: String, _ distinctID: String, _ extra: [String: Value]) {
         var properties = Self.common.merging(extra) { $1 }
-        properties["$process_person_profile"] = .bool(distinctID != installID)
+        properties["$process_person_profile"] = .bool(true)
         pending.append(Event(event: name, distinct_id: distinctID,
                              timestamp: Date.now.ISO8601Format(), properties: properties))
         if pending.count > Self.maxPending { pending.removeFirst(pending.count - Self.maxPending) }
@@ -171,7 +168,6 @@ public final class Analytics {
             "env": .string(env),
             "$os": .string("iOS"),
             "$os_version": .string("\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"),
-            "$geoip_disable": .bool(true),
         ]
     }()
 

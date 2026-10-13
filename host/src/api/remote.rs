@@ -127,15 +127,10 @@ async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
         urls: &urls,
         cloud: cloud.as_deref(),
     });
-    let svg = qrcode::QrCode::new(url.as_bytes())?
-        .render::<qrcode::render::svg::Color>()
-        .quiet_zone(false)
-        .min_dimensions(200, 200)
-        .build();
-    Ok(json!({"pairingUrl": url, "urls": urls, "svg": svg, "expiresAt": issued.expires_at}))
+    Ok(json!({"pairingUrl": url, "urls": urls, "expiresAt": issued.expires_at}))
 }
 
-/// Signs this computer into an account claim (§4.2 A) for the signed-in Mac app to complete.
+/// Signs this computer into an account claim (§4.2 A) for the signed-in desktop app to complete.
 async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
     let field = |k: &str| -> Result<&str> {
         let v = str_arg(b, k)?;

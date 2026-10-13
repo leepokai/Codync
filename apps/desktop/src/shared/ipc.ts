@@ -1,6 +1,7 @@
 import type { SharedFile } from './models'
 import type { SSHBridge } from './ssh'
 import type { ScreenAgentState } from './computer-access'
+import type { IslandRect, IslandScreen, IslandSummary } from './island'
 
 // The bridge between the main process (host lifecycle, loopback HTTP, tray, windows)
 // and the renderer (stores and UI). Exposed as `window.codync` by the preload script.
@@ -42,9 +43,6 @@ export interface TraySummary {
   screen: {
     enabled: boolean
     subtitle: string
-    needsLoginItem: boolean
-    needsCapture: boolean
-    needsInput: boolean
     error: string | null
   } | null
   version: string | null
@@ -68,15 +66,20 @@ export type WindowCommand =
   | { kind: 'search' }
   | { kind: 'toggleSidebar' }
   | { kind: 'toggleDetails' }
+  | { kind: 'respondPermission'; ref: string; entryId: string; optionId: string }
+  | { kind: 'sendMessage'; ref: string; text: string }
 
 /** The app's own updates (electron-updater, release builds only). */
 export interface UpdateState {
   supported: boolean
-  canCheck: boolean
   checking: boolean
   availableVersion: string | null
+  /** Downloading: percent done (0–100); null when nothing is downloading. */
+  downloadPercent: number | null
   /** Downloaded and ready: installs on restart. */
   staged: boolean
+  /** Restarting into the staged release (the host stops first). */
+  installing: boolean
   autoCheck: boolean
   autoDownload: boolean
   lastCheck: number | null
@@ -118,13 +121,10 @@ export interface CodyncBridge {
     onChange(cb: (s: HostSnapshot) => void): () => void
     install(): void
     restart(): void
-    uninstall(): void
-    openLog(): void
     /** POST /api/<method> on a loopback host. Rejects with a `CallError`. */
     call(baseURL: string, token: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>
     /** SSE on a loopback host: each `data:` line, then `onEnd` (with an error when it failed). */
     stream(url: string, token: string, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
-    health(baseURL: string): Promise<{ computerId?: string; busy?: boolean } | null>
   }
   account: {
     state(): Promise<AccountState>
@@ -145,6 +145,30 @@ export interface CodyncBridge {
     onEvent(cb: (e: SpeechEvent) => void): () => void
   }
   ssh: SSHBridge
+  /** The notch island (shared/island.ts): its setting, the chat window's summary, and the island window's side. */
+  island: {
+    /** False where a window can't place itself at the top of the screen (Linux on Wayland). */
+    supported: boolean
+    enabled(): Promise<boolean>
+    setEnabled(on: boolean): Promise<boolean>
+    setSummary(summary: IslandSummary): void
+    state(): Promise<{ screen: IslandScreen; summary: IslandSummary }>
+    onSummary(cb: (summary: IslandSummary) => void): () => void
+    onScreen(cb: (screen: IslandScreen) => void): () => void
+    /** The pointer reached or left the shape. */
+    onHover(cb: (inside: boolean) => void): () => void
+    setShape(rect: IslandRect): void
+    /** The message field takes the keyboard (the island never does otherwise). */
+    setFocusable(on: boolean): void
+    /** ⌥Y / ⌥N answer the approval on screen, from any app, while it shows. */
+    setKeys(on: boolean): void
+    onKey(cb: (answer: 'allow' | 'deny') => void): () => void
+    respond(ref: string, entryId: string, optionId: string): void
+    send(ref: string, text: string): void
+    openBot(ref: string): void
+    newBot(): void
+    openApp(): void
+  }
   /** The Codync cloud's `/v1` API with the signed-in session (and the device key for `signed`). */
   cloud: {
     request(method: string, path: string, body: unknown, signed: boolean): Promise<{ ok: true; value: unknown } | { ok: false; error: { status: number; code: string; message: string | null } }>
@@ -170,8 +194,6 @@ export interface CodyncBridge {
     readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
     setTraySummary(summary: TraySummary): void
     onCommand(cb: (command: WindowCommand) => void): () => void
-    openPairing(): void
-    quit(): void
     resetAllData(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<boolean>
     showInDock(): Promise<boolean>

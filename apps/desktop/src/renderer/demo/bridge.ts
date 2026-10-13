@@ -18,7 +18,7 @@ const snapshot: HostSnapshot = {
 }
 const account: AccountState = { ready: true, configured: false, busy: false, error: null, user: null, cloudURL: null }
 const updates: UpdateState = {
-  supported: false, canCheck: false, checking: false, availableVersion: null, staged: false,
+  supported: false, checking: false, availableVersion: null, downloadPercent: null, staged: false, installing: false,
   autoCheck: false, autoDownload: false, lastCheck: null, error: null, waitingForApp: null,
 }
 
@@ -36,8 +36,6 @@ const bridge: CodyncBridge = {
     onChange: none,
     install() {},
     restart() {},
-    uninstall() {},
-    openLog() {},
     async call(_baseURL, _token, method, body) {
       await new Promise((r) => setTimeout(r, 30))
       try {
@@ -50,7 +48,6 @@ const bridge: CodyncBridge = {
       const since = Number(new URL(url).searchParams.get('since') ?? 0)
       return host.subscribe(since, onData)
     },
-    health: async () => ({ computerId: COMPUTER_ID, busy: false }),
   },
   account: {
     state: async () => account,
@@ -70,6 +67,25 @@ const bridge: CodyncBridge = {
     trustHostKey() {},
     chooseKey: async () => null,
   },
+  island: {
+    supported: false,
+    enabled: async () => false,
+    setEnabled: async () => false,
+    setSummary() {},
+    state: async () => ({ screen: { notch: null }, summary: { bots: [], permissions: [], usage: [] } }),
+    onSummary: none,
+    onScreen: none,
+    onHover: none,
+    setShape() {},
+    setFocusable() {},
+    setKeys() {},
+    onKey: none,
+    respond() {},
+    send() {},
+    openBot() {},
+    newBot() {},
+    openApp() {},
+  },
   cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }) },
   updates: { state: async () => updates, onChange: none, check() {}, setAutoCheck() {}, setAutoDownload() {} },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
@@ -80,8 +96,6 @@ const bridge: CodyncBridge = {
     readClipboardFiles: async () => [],
     setTraySummary() {},
     onCommand: none,
-    openPairing() {},
-    quit() {},
     resetAllData: async () => {},
     setLaunchAtLogin: async () => false,
     showInDock: async () => true,

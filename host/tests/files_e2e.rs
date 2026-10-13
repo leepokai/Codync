@@ -6,7 +6,7 @@ mod common;
 
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::time::Duration;
 
 struct Host {
@@ -28,53 +28,15 @@ impl Host {
         let home = std::env::temp_dir().join(format!("codync-files-e2e-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
         common::seed_memory_runtime(&home);
-        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        let child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
-            .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
-            .env("CODYNC_CLOUD", "off")
-            .env("CODYNC_HOME", &home)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let mut host = Self { child, home, base: format!("http://127.0.0.1:{port}"), token: String::new() };
-        let waited = tokio::time::timeout(Duration::from_secs(20), async {
-            loop {
-                let response = reqwest::get(format!("{}/health", host.base)).await;
-                if response.is_ok() {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        })
-        .await;
-        waited.unwrap();
+        let (child, base) = common::serve(&home).await;
+        let mut host = Self { child, home, base, token: String::new() };
         std::fs::read_to_string(host.home.join("token")).unwrap().trim().clone_into(&mut host.token);
         host
     }
 
     async fn restart(&mut self) {
         common::stop(&mut self.child);
-        let port = self.base.rsplit(':').next().unwrap();
-        self.child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
-            .args(["serve", "--bind", "127.0.0.1", "--port", port])
-            .env("CODYNC_CLOUD", "off")
-            .env("CODYNC_HOME", &self.home)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let waited = tokio::time::timeout(Duration::from_secs(20), async {
-            loop {
-                let response = reqwest::get(format!("{}/health", self.base)).await;
-                if response.is_ok() {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        })
-        .await;
-        waited.unwrap();
+        (self.child, self.base) = common::serve(&self.home).await;
     }
 
     async fn call(&self, method: &str, body: Value) -> Value {
@@ -307,7 +269,7 @@ async fn files_only_turns_finish_without_duplicate_text_and_input_uploads_still_
                 .iter()
                 .filter(|e| e["kind"] == "agent" && e["data"]["final"] == true)
                 .collect();
-            let sync = host.call("sync", json!({"since":0})).await;
+            let sync = common::snapshot(&host.base, &host.token).await;
             if final_entries.len() == 4
                 && sync["bots"].as_array().unwrap().iter().any(|b| b["id"] == bot && b["status"] == "idle")
             {

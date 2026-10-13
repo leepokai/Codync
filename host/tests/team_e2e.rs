@@ -7,7 +7,7 @@ mod common;
 
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::time::Duration;
 
 struct Host {
@@ -29,23 +29,8 @@ impl Host {
         let home = std::env::temp_dir().join(format!("codync-team-e2e-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
         common::seed_memory_runtime(&home);
-        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        let child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
-            .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
-            .env("CODYNC_CLOUD", "off")
-            .env("CODYNC_HOME", &home)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let mut host = Self { child, home, base: format!("http://127.0.0.1:{port}"), token: String::new() };
-        tokio::time::timeout(Duration::from_secs(20), async {
-            while reqwest::get(format!("{}/health", host.base)).await.is_err() {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        })
-        .await
-        .unwrap();
+        let (child, base) = common::serve(&home).await;
+        let mut host = Self { child, home, base, token: String::new() };
         std::fs::read_to_string(host.home.join("token")).unwrap().trim().clone_into(&mut host.token);
         host
     }
@@ -98,7 +83,7 @@ impl Host {
     async fn wait_finished(&self) -> Value {
         let completed = tokio::time::timeout(Duration::from_secs(20), async {
             loop {
-                let sync = self.call("sync", json!({"since": 0})).await;
+                let sync = common::snapshot(&self.base, &self.token).await;
                 let mut notices =
                     sync["entries"].as_array().unwrap().iter().filter(|e| e["data"]["delegationId"].is_string());
                 if sync["bots"].as_array().unwrap().iter().all(|b| b["status"] == "idle")
@@ -134,7 +119,7 @@ async fn agent_uses_team_mcp_and_returns_the_reviewers_answer() {
     host.call("respondPermission", json!({"entryId": permission["id"], "optionId": "allow"})).await;
     let final_reply = host.wait_for(&lead, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
     assert_eq!(final_reply["data"]["text"], "Team reply: reply: PERMISSION review the changes");
-    let sync = host.call("sync", json!({"since": 0})).await;
+    let sync = common::snapshot(&host.base, &host.token).await;
     let requests: Vec<_> =
         sync["entries"].as_array().unwrap().iter().filter(|e| e["data"]["delegationId"].is_string()).collect();
     assert_eq!(requests.len(), 2);
@@ -175,7 +160,7 @@ async fn agent_messages_another_bot_then_finishes_before_recipient_approval() {
     let report = host.wait_for(&reviewer, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
     assert_eq!(report["data"]["text"], "reply: PERMISSION review the changes");
     host.wait_for(&reviewer, |e| e["kind"] == "notice" && e["data"]["status"] == "completed").await;
-    let sync = host.call("sync", json!({"since": 0})).await;
+    let sync = common::snapshot(&host.base, &host.token).await;
     let notices: Vec<_> =
         sync["entries"].as_array().unwrap().iter().filter(|e| e["data"]["delegationId"].is_string()).collect();
     assert_eq!(notices.len(), 2);

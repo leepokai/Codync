@@ -40,7 +40,7 @@ private actor DelayedFileTransport: HostTransport {
     guard let directory = ProcessInfo.processInfo.environment["CODYNC_RENDER_DIR"] else { return }
     let suite = "CodyncFileCardRender.\(UUID().uuidString)"
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-    let store = BotStore(computer: Computer(id: "render", name: "Computer", signKey: "", boxKey: "", cloud: nil), clientKind: "ios", storage: SharedStore.Context(accountID: "render", suite: suite)) { FakeRemote(.connecting) }
+    let store = BotStore(computer: Computer(id: "render", name: "Computer", signKey: "", boxKey: "", cloud: nil), storage: SharedStore.Context(accountID: "render", suite: suite)) { FakeRemote(.connecting) }
     defer { store.retire() }
     func entry(_ name: String, size: Int64) -> Entry {
         var data = EntryData(text: "\(name) (\(size) bytes)")

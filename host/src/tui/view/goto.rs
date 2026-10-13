@@ -86,7 +86,7 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                     let hint = match (a, app.analytics) {
                         (Action::Analytics, Some(true)) => "on",
                         (Action::Analytics, Some(false)) => "off",
-                        (Action::Analytics, None) => "not set",
+                        (Action::Analytics, None) => "",
                         _ => key,
                     };
                     rput(buf, inner.right(), y, hint, t.dim.patch(base));

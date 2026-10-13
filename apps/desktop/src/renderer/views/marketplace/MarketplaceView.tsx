@@ -10,6 +10,7 @@ import { AgentSheet, AgentTile } from './AgentSheet'
 import { ComposioSection } from './ComposioViews'
 import { CredentialsView } from './CredentialsView'
 import { CustomConnectorSheet, InstallConnectorSheet, NewSkillSheet } from './ConnectorSheets'
+import { SkillSheet, type SkillRef } from './SkillSheet'
 import {
   appendPage, emptyPage, errorText, hasHiddenItems, market, needsSignIn, replacePage, revealMore, visible,
   type MarketConnector, type MarketSkill,
@@ -44,6 +45,7 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
   const [busySkill, setBusySkill] = useState<string | null>(null)
   const [addingConnector, setAddingConnector] = useState(false)
   const [writingSkill, setWritingSkill] = useState(false)
+  const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const [agent, setAgent] = useState<Backend | null>(null)
   /** Agents shown before "Load more agents" (two rows of the grid). */
   const [agentLimit, setAgentLimit] = useState(10)
@@ -267,6 +269,7 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
                     busy={busySkill === s.source}
                     icon={<SkillGlyph />}
                     onAdd={() => void installSkill(s)}
+                    onOpen={() => setViewingSkill(s)}
                   />
                 ))}
               </ItemGrid>
@@ -317,6 +320,9 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
       <FormSheet open={writingSkill} onClose={() => setWritingSkill(false)}>
         <NewSkillSheet />
       </FormSheet>
+      <FormSheet open={viewingSkill !== null} onClose={() => setViewingSkill(null)}>
+        {viewingSkill ? <SkillSheet key={viewingSkill.name} skill={viewingSkill} /> : null}
+      </FormSheet>
       <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560}>
         {agent ? <AgentSheet key={agent.id} initial={agent} /> : null}
       </FormSheet>
@@ -348,6 +354,7 @@ function InstalledView({ back }: { back: () => void }) {
   const plugins = usePlugins(store)
   const [removing, setRemoving] = useState<{ id: string; name: string; isSkill: boolean } | null>(null)
   const [signingIn, setSigningIn] = useState<string | null>(null)
+  const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const empty = plugins.installedConnectors.length === 0 && plugins.installedSkills.length === 0
 
   const signIn = async (id: string) => {
@@ -397,6 +404,7 @@ function InstalledView({ back }: { back: () => void }) {
                   title={s.name}
                   subtitle={s.description}
                   icon={<SkillGlyph size={32} />}
+                  onOpen={() => setViewingSkill({ id: s.id, name: s.name, description: s.description })}
                   onRemove={() => setRemoving({ id: s.id, name: s.name, isSkill: true })}
                 />
               ))}
@@ -411,6 +419,9 @@ function InstalledView({ back }: { back: () => void }) {
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void remove(removing) }] : []}
         onClose={() => setRemoving(null)}
       />
+      <FormSheet open={viewingSkill !== null} onClose={() => setViewingSkill(null)}>
+        {viewingSkill ? <SkillSheet key={viewingSkill.name} skill={viewingSkill} /> : null}
+      </FormSheet>
     </div>
   )
 }
@@ -426,14 +437,28 @@ function EmptyState({ icon, title, detail }: { icon: string; title: string; deta
   )
 }
 
-function InstalledRow({ title, subtitle, icon, accessory, onRemove }: { title: string; subtitle: string; icon: ReactNode; accessory?: ReactNode; onRemove: () => void }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} title={subtitle}>
+function InstalledRow({ title, subtitle, icon, accessory, onOpen, onRemove }: {
+  title: string; subtitle: string; icon: ReactNode; accessory?: ReactNode
+  /** Opens the item's details from its name. */
+  onOpen?: () => void
+  onRemove: () => void
+}) {
+  const label = (
+    <>
       {icon}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0, textAlign: 'left' }}>
         <span style={{ color: 'var(--text)', ...ellipsis }}>{title}</span>
         <span style={{ ...font('caption'), color: 'var(--secondary)', ...ellipsis }}>{subtitle}</span>
       </div>
+    </>
+  )
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} title={subtitle}>
+      {onOpen ? (
+        <button className="press" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }} onClick={onOpen}>
+          {label}
+        </button>
+      ) : label}
       <span style={{ minWidth: 12 }} />
       {accessory}
       <button

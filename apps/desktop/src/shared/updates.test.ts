@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { EventEmitter } from 'node:events'
 import { QuitLifecycle } from '../main/quit-lifecycle.ts'
+import { updateAction } from './update-action.ts'
 import { deferred, settle } from './test-support/main-module.ts'
 import { updaterFixture } from './test-support/updater.ts'
 
@@ -13,37 +14,56 @@ for (const options of [{ packaged: false }, { main: false }]) {
     f.updates.check()
     await f.emit('update-downloaded', release)
     assert.equal(f.updates.state.supported, false)
-    assert.equal(f.updates.state.canCheck, false)
     assert.equal(f.calls.check + f.calls.download + f.calls.install, 0)
     assert.equal(f.timers.size, 0)
   })
 }
 
-test('manual check broadcasts checking, release, staged states to every window', async () => {
+test('manual check downloads with progress, then waits for Restart to update', async () => {
   const f = updaterFixture()
   const stopped = deferred()
   f.behavior.prepare = () => stopped.promise
   f.ipc.emit('updates:check')
   assert.equal(f.updates.state.checking, true)
+  assert.equal(updateAction(f.updates.state).label, 'Checking…')
   assert.equal(f.handlers.get('updates:state')?.(), f.updates.state)
   await f.emit('update-available', release)
   assert.equal(f.calls.download, 1)
   assert.equal(f.updates.state.availableVersion, release.version)
   assert.equal(f.updates.state.checking, false)
+  assert.equal(f.updates.state.downloadPercent, 0, 'the download shows at once')
+  await f.emit('download-progress', { percent: 42.7 })
+  assert.deepEqual(updateAction(f.updates.state), { label: 'Downloading… 42%', enabled: false })
+  f.updates.check()
+  assert.equal(f.calls.check, 1, 'a click while downloading does nothing')
   await f.emit('update-downloaded', release)
   assert.equal(f.updates.state.staged, true)
-  assert.equal(f.calls.prepare, 1)
-  assert.equal(f.calls.install, 0, 'must wait until the host stops')
+  assert.equal(f.updates.state.downloadPercent, null)
+  assert.deepEqual(updateAction(f.updates.state), { label: 'Restart to update', enabled: true })
+  assert.equal(f.calls.prepare, 0, 'a finished download never quits on its own')
   for (const window of [0, 1]) {
     const states = f.sent.filter((s) => s.window === window)
     assert.ok(states.every((s) => s.channel === 'updates:change'))
     assert.ok(states.some((s) => s.state.checking))
-    assert.ok(states.some((s) => s.state.availableVersion === release.version))
+    assert.ok(states.some((s) => s.state.downloadPercent === 42))
     assert.ok(states.some((s) => s.state.staged))
   }
+  f.updates.check()
+  assert.equal(f.calls.prepare, 1)
+  assert.equal(f.updates.state.installing, true)
+  assert.equal(updateAction(f.updates.state).label, 'Restarting…')
+  assert.equal(f.calls.install, 0, 'must wait until the host stops')
   stopped.resolve()
   await settle()
   assert.equal(f.calls.install, 1)
+  assert.equal(f.preferences.get('updateRelaunchInFront'), true)
+})
+
+test('the app relaunched by a chosen restart opens its own bundle once to come forward', () => {
+  const relaunched = updaterFixture({ prefs: { updateRelaunchInFront: true } })
+  assert.deepEqual(relaunched.opened, ['/Applications/Codync.app'])
+  assert.equal(relaunched.preferences.get('updateRelaunchInFront'), false)
+  assert.deepEqual(updaterFixture().opened, [])
 })
 
 test('latest version records the last check without downloading or stopping the host', async () => {
@@ -59,8 +79,9 @@ test('latest version records the last check without downloading or stopping the 
 test('host stop failure preserves the staged release, reports an error and permits retry', async () => {
   const f = updaterFixture()
   f.behavior.prepare = async () => { throw new Error('stop failed') }
-  f.updates.check()
   await f.emit('update-downloaded', release)
+  f.updates.check()
+  await settle()
   assert.equal(f.calls.install, 0)
   assert.equal(f.calls.resume, 1)
   assert.equal(f.updates.state.error, 'Update paused: stop failed')
@@ -76,11 +97,14 @@ test('host stop failure preserves the staged release, reports an error and permi
 
 test('installer error restarts the stopped host and retry prepares it again', async () => {
   const f = updaterFixture()
-  f.updates.check()
   await f.emit('update-downloaded', release)
+  f.updates.check()
+  await settle()
   await f.emit('error', new Error('signature rejected'))
   assert.equal(f.calls.resume, 1)
   assert.equal(f.updates.state.error, 'signature rejected')
+  assert.equal(f.updates.state.installing, false)
+  assert.equal(f.preferences.get('updateRelaunchInFront'), false)
   f.updates.check()
   await settle()
   assert.equal(f.calls.prepare, 2)
@@ -243,8 +267,8 @@ test('an updater error during host shutdown cancels installation and restores th
   const f = updaterFixture()
   const stopped = deferred()
   f.behavior.prepare = () => stopped.promise
-  f.updates.check()
   await f.emit('update-downloaded', release)
+  f.updates.check()
   await f.emit('error', new Error('invalid archive'))
   stopped.resolve()
   await settle()
@@ -256,8 +280,9 @@ test('an updater error during host shutdown cancels installation and restores th
 test('a synchronous installer failure restores the host and permits retry', async () => {
   const f = updaterFixture()
   f.behavior.install = () => { throw new Error('installer unavailable') }
-  f.updates.check()
   await f.emit('update-downloaded', release)
+  f.updates.check()
+  await settle()
   assert.equal(f.calls.resume, 1)
   assert.equal(f.updates.state.error, 'installer unavailable')
   f.behavior.install = () => {}
@@ -297,8 +322,9 @@ test('manual installation crosses the native quit boundary after stopping the ho
     closed = true
     f.app.emit('before-quit', { preventDefault: () => assert.fail('host has already stopped') })
   }
-  f.updates.check()
   await f.emit('update-downloaded', release)
+  f.updates.check()
+  await settle()
   assert.equal(closed, false)
   stopped.resolve()
   await settle()

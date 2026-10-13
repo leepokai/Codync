@@ -24,9 +24,13 @@ Run from the repository root unless a command changes directories:
 
 ## Installing a new build: kill the old one first
 
-Always stop the old desktop app, host and iPhone process for the variant being rebuilt before running a new build (old host = old protocol, old app = old UI); commands in [docs/guides/development.md](docs/guides/development.md#apple-apps).
+Always stop the old desktop app, host and iPhone process for the variant being rebuilt before running a new build (old host = old protocol, old app = old UI); commands in [development: desktop app](docs/guides/development.md#desktop-app) and [iOS app](docs/guides/development.md#ios-app).
 
 Keep only the latest build: in this checkout, Apple builds go to `build/dd` only (no other `-derivedDataPath`, no copies in scratchpads, `/tmp` or Xcode's DerivedData); delete any older Codync build right away, so macOS never launches a stale copy. A git worktree may keep its own single build inside that worktree.
+
+## End-to-end test every change
+
+After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Computer Use, and the iPhone app on an iOS Simulator through Device Hub (Xcode's `DeviceHub.app`). Report any check that could not run and why.
 
 ## Versioning & releases
 

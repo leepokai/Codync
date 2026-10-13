@@ -128,34 +128,10 @@ Deployment order: Worker → host → iOS. The optional encrypted subtitle remai
 | Provider credentials expire | Device ticket is retained for credential repair |
 | Worker receives private activity text / oversized alert | Rejected before APNs |
 
-Local tests cover payload generation, error classification, request validation, ticket replacement, Swift payload decoding and crypto vectors. The signed device checks below cover extension execution and background ActivityKit delivery. Focus behavior, pre-first-unlock behavior, action navigation and OS-driven token rotation still need separate acceptance scenarios.
+Local tests cover payload generation, error classification, request validation, ticket replacement, Swift payload decoding and crypto vectors. The Debug diagnostics below check extension execution and background ActivityKit delivery on a device. Focus behavior, pre-first-unlock behavior, action navigation and OS-driven token rotation still need separate acceptance scenarios.
 
-### Local verification — 2026-09-27
-
-- Host: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and all 148 unit/integration tests passed.
-- Swift: `swift test --package-path kit` passed, 51 tests including encrypted push vectors and the optional notification subtitle.
-- Relay: `npm test` and `npm run typecheck` passed, including malformed requests and activity payload checks.
-- iOS: Debug simulator build passed with both extensions embedded. The built notification extension has the expected service entry point. Signing and device Keychain access were not verified by this unsigned build.
-- Design document relative links and `git diff --check` passed. This initial check preceded deployment; see the device verification below.
-
-
-### Deployment and device verification — 2026-09-27
-
-- Deployed `codync-relay`, version `2ba1d27c-116c-423d-87e4-2a7749575bd3`; `/health` returned HTTP 200.
-- Built and restarted the signed Mac app and its launchd host. The running host includes the new notification implementation; its health endpoint returned success.
-- Built and installed the signed Debug iOS app on the paired iPhone 16 Pro Max. App and notification extension both resolve their shared Keychain group to `7FUM8A8H72.com.pokai.Codync`, with the matching App Group. The app uses the development APNs environment.
-- The live host contained 191 tickets across five device identities. The active phone's group shrank from ten rows to one on reconnect. Added regression coverage ensures older groups also send through only their newest stored ticket.
-- Two encrypted test alerts returned HTTP 200 from the deployed Worker/APNs path. Device logs confirm the notification service extension executed, with no recorded decryption failure for those tests.
-- Debug device diagnostics read iOS-delivered notifications for the temporary verification bot and confirmed the decrypted title `Push verification`, subtitle `Task complete`, and final result body. The same inspection identified the four obsolete-identity fallbacks, leading to physical-destination deduplication in the Worker.
-- A task started from the iPhone created a real Live Activity. While the app was on the Home Screen, an APNs needs-input update changed the Dynamic Island indicator to amber. Releasing the controlled host task ended the activity and removed its host ticket. The stale-date payload passed automated checks, but its delayed visual transition was not conclusively observed on the device.
-
+### Debug push diagnostics
 
 For repeatable Debug-only acceptance, launch the app with `CODYNC_PUSH_VERIFY_BOT` set to the temporary test bot ID. The console's `CODYNC_PUSH_VERIFICATION` line reports only that bot's delivered notifications, current activities and authorization state. It does not expose keys, tickets, account IDs or other bots' notifications. Release builds do not include this diagnostic.
 
-- The deployed batch endpoint received five tickets for one physical phone and returned four superseded results plus one successful delivery. Device diagnostics confirmed exactly one new decrypted notification and no additional generic fallbacks. The user also confirmed the complete title and body were visible.
-- The updated running host executed controlled failure and success tasks. Its next delivery automatically removed obsolete identity rows, leaving one valid alert ticket in the live database.
-- Final signed iOS and macOS Debug builds passed after the batch fix.
-
 Set `CODYNC_PUSH_CLEAR_TEST_NOTIFICATIONS=1` alongside the Debug verification bot ID to remove only that bot's delivered test notifications after reporting them.
-
-- Final device diagnostics confirmed one decrypted failure (`Push verification / Task failed / The agent failed.`), one additional decrypted success, no new generic fallback, and no remaining test activity. The temporary bot was deleted and its delivered notifications were cleared.

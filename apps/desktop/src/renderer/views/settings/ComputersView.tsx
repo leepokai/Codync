@@ -12,7 +12,7 @@ import type { BotStore } from '../../store/bot-store'
 import { StoreContext, useApp } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
 import { deviceIcon, errorText, liveClient, relativeDay, Reveal, SectionHeader, statusText, thisMac } from './parts'
-import { sshBridge, useSSH } from './ssh-model'
+import { useSSH } from './ssh-model'
 import { SSHRow } from './SSHRow'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 
@@ -40,7 +40,7 @@ export function ComputersView() {
 
         <div>
           <SectionHeader title="Over SSH">
-            {sshBridge() ? <IconButton title="Add SSH computer" icon="plus" onClick={() => setEditing({ profile: newSSHProfile(window.codync.hostPort), isNew: true })} /> : null}
+            <IconButton title="Add SSH computer" icon="plus" onClick={() => setEditing({ profile: newSSHProfile(window.codync.hostPort), isNew: true })} />
           </SectionHeader>
           <Reveal show={sshState.state.profiles.length === 0}>
             <div style={{ ...font('callout'), color: 'var(--secondary)' }}>
@@ -390,7 +390,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
   const [remotePort, setRemotePort] = useState(String(initial.remotePort))
   const [user, setUser] = useState(initial.user ?? '')
   const [problem, setProblem] = useState<string | null>(null)
-  const bridge = sshBridge()
+  const bridge = window.codync.ssh
 
   const save = async () => {
     const isInt = (s: string) => /^-?\d+$/.test(s)
@@ -407,7 +407,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
       port: portText ? Number(portText) : null,
       remotePort: Number(remote),
     }
-    const found = bridge ? await bridge.save(p) : 'SSH computers need a newer build of Codync.'
+    const found = await bridge.save(p)
     if (found) return setProblem(found)
     dismiss()
   }
@@ -436,7 +436,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
             <IconButton
               title="Choose key file"
               icon="key"
-              onClick={() => void bridge?.chooseKey().then((path) => path && setProfile((p) => ({ ...p, identityFile: path })))}
+              onClick={() => void bridge.chooseKey().then((path) => path && setProfile((p) => ({ ...p, identityFile: path })))}
             />
             {profile.identityFile ? (
               <span className="settings-appear" style={{ display: 'flex' }}>

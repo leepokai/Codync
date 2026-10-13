@@ -16,7 +16,7 @@ determines when there are no earlier messages.
   as it streams needed an AppKit scroll view with hand-managed row hosting to stay usable. A
   browser engine lays out and scrolls long text natively.
 - **Two desktop apps were too much to keep in step.** Every UI change had to land in SwiftUI
-  and in GTK. One TypeScript app now covers both platforms (and Windows later, if wanted).
+  and in GTK. One TypeScript app now covers macOS, Linux and Windows.
 - The iPhone app has no such alternative and keeps SwiftUI, so `kit/` lost its second
   platform and became the iPhone app's own package.
 
@@ -24,7 +24,7 @@ determines when there are no earlier messages.
 
 | Path | |
 |---|---|
-| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`), browser sign-in callbacks (`auth.ts`) |
+| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`) |
 | `src/preload/` | The `window.codync` bridge (types in `src/shared/ipc.ts`) |
 | `src/renderer/store/` | `BotStore` (port of kit's; `bot-store.ts` actions over `bot-sync.ts` events stream and `bot-mirror.ts` state), `AppModel` (window state, approvals), `CloudModel` (claims, cloud default), `AccountSession` |
 | `src/renderer/components/` | Design system: controls, overlays (sheets, dialogs, menus), SF Symbol icons, character avatars, thinking orbs |
@@ -153,22 +153,7 @@ a certificate is still trusted: verify its exported public certificate with
 If Gatekeeper reports `CSSMERR_TP_CERT_REVOKED`, fix the signing identity rather than
 disabling security checks. Distributed builds still require Developer ID signing and notarization.
 
-## Parity with the SwiftUI app
-
-The port follows the Swift sources view by view (metrics, fonts, colors, motion), including the
-Mac chat redesign that was in progress at the time (larger chat text, actions beside messages,
-one composer capsule, circular chat controls, Jump to latest). It was checked side by side with
-the SwiftUI build against the same host using screenshots from Computer Use.
+## Composer checks
 
 Composer keyboard behavior, animation and durable draft storage, with a host-free
 regression fixture: [composer checks](../guides/composer.md).
-
-## The SwiftUI apps in the history
-
-`apps/macos/`, `apps/linux/` and the Mac code paths in `kit/` are in Git. The commit that
-removed them is `git log --oneline -1 -- apps/macos`; its parent is the last SwiftUI version:
-
-```sh
-git show <commit>^:apps/macos/Views/ChatWindow.swift
-git worktree add ../codync-swiftui <commit>^
-```

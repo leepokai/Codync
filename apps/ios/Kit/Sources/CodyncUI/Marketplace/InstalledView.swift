@@ -9,6 +9,7 @@ struct InstalledView: View {
     @Environment(\.openURL) private var openURL
     @State private var removing: Removal?
     @State private var signingIn: String?
+    @State private var viewingSkill: SkillRef?
 
     private struct Removal: Identifiable {
         let id: String
@@ -28,6 +29,7 @@ struct InstalledView: View {
             list
         }
         .background(Palette.background)
+        .codyncSheet(item: $viewingSkill) { SkillSheet(skill: $0) }
     }
 
     private var list: some View {
@@ -61,7 +63,7 @@ struct InstalledView: View {
             if !model.installedSkills.isEmpty {
                 CardSection("Skills") {
                     ForEach(model.installedSkills) { s in
-                        InstalledRow(title: s.name, subtitle: s.description) {
+                        InstalledRow(title: s.name, subtitle: s.description, open: { viewingSkill = SkillRef(s) }) {
                             SkillGlyph().frame(width: 32, height: 32)
                         } accessory: {
                             EmptyView()
@@ -123,16 +125,18 @@ private struct EmptyState: View {
 private struct InstalledRow<Icon: View, Accessory: View>: View {
     let title: String
     let subtitle: String
+    /// Opens the item's details from its name.
+    var open: (() -> Void)?
     @ViewBuilder let icon: Icon
     @ViewBuilder let accessory: Accessory
     let remove: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            icon
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundStyle(Palette.text).lineLimit(1)
-                Text(subtitle).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1)
+            if let open {
+                Button(action: open) { label }.buttonStyle(.plain)
+            } else {
+                label
             }
             Spacer(minLength: 12)
             accessory
@@ -145,5 +149,16 @@ private struct InstalledRow<Icon: View, Accessory: View>: View {
                 .help("Remove")
         }
         .help(subtitle)
+    }
+
+    private var label: some View {
+        HStack(spacing: 12) {
+            icon
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundStyle(Palette.text).lineLimit(1)
+                Text(subtitle).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1)
+            }
+        }
+        .contentShape(Rectangle())
     }
 }

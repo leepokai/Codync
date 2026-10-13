@@ -72,8 +72,8 @@ function serviceDefinition(): string | null {
 const serviceInstalled = () => serviceDefinition() !== null
 
 /**
- * Manages the local codync-host (binary, background service, health) the way the native
- * apps did: bundled next to the app, else a Homebrew / cargo install.
+ * Manages the local codync-host (binary, background service, health): bundled with the app,
+ * else a Homebrew / cargo install.
  */
 export class HostController extends EventEmitter {
   state: HostState = { kind: 'starting' }

@@ -63,7 +63,6 @@ export class BotMirror extends Observable {
     computer: Computer,
     readonly isLoopback: boolean,
     protected makeTransport: () => HostTransport,
-    protected clientKind = 'mac',
     protected appVersion = window.codync.appVersion,
     readonly contextId = 'local',
   ) {

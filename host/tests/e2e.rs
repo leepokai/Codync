@@ -14,7 +14,7 @@ use ed25519_dalek::SigningKey;
 use futures::{SinkExt as _, StreamExt as _};
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
 struct Host {
@@ -31,29 +31,11 @@ impl Drop for Host {
     }
 }
 
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
-}
-
 async fn start_host() -> Host {
     let home = std::env::temp_dir().join(format!("codync-e2e-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
     common::seed_memory_runtime(&home);
-    let port = free_port();
-    let child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
-        .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
-        .env("CODYNC_HOME", &home)
-        .env("CODYNC_CLOUD", "off")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let base = format!("http://127.0.0.1:{port}");
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while reqwest::get(format!("{base}/health")).await.is_err() {
-        assert!(Instant::now() < deadline, "host didn't start");
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    let (child, base) = common::serve(&home).await;
     let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
     Host { child, base, token, home }
 }
@@ -146,7 +128,7 @@ async fn turn_with_approval_reaches_a_final_reply() {
 
     let card = host.wait_for(&bot, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
     assert_eq!(card["data"]["title"], "Edit a.txt");
-    let bots = host.call("sync", json!({"since": 0})).await;
+    let bots = common::snapshot(&host.base, &host.token).await;
     assert_eq!(bots["bots"][0]["status"], "needsInput");
 
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
@@ -163,7 +145,7 @@ async fn turn_with_approval_reaches_a_final_reply() {
     assert_eq!(tool["data"]["status"], "completed");
     assert_eq!(tool["data"]["diffs"][0]["added"], 1);
 
-    let synced = host.call("sync", json!({"since": 0})).await;
+    let synced = common::snapshot(&host.base, &host.token).await;
     assert_eq!(synced["bots"][0]["status"], "idle");
     assert_eq!(synced["bots"][0]["unread"], 1);
 }
@@ -210,7 +192,7 @@ async fn sent_messages_are_the_reply() {
 
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     let deadline = Instant::now() + Duration::from_secs(20);
-    while host.call("sync", json!({"since": 0})).await["bots"][0]["status"] != "idle" {
+    while common::snapshot(&host.base, &host.token).await["bots"][0]["status"] != "idle" {
         assert!(Instant::now() < deadline, "turn didn't finish");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }

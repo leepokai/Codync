@@ -4,7 +4,7 @@
 
 use serde_json::Value;
 
-/// The oldest client (iPhone, Mac, Linux app, terminal client) this host still serves correctly.
+/// The oldest client (iPhone, desktop app, terminal client) this host still serves correctly.
 /// Raise it only after that client version is out (App Store included), and only when this
 /// host stops sending or accepting something older clients depend on.
 pub const MIN_APP: &str = "2.3.0";

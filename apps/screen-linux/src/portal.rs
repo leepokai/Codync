@@ -136,7 +136,6 @@ impl Portal {
         json!({
             "platform": "linux",
             "permissionApp": "Codync Screen",
-            "version": env!("CARGO_PKG_VERSION"),
             "capture": self.is_active(),
             "input": self.has_input(),
             "displays": self.0.displays.iter().map(|d| json!({

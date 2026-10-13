@@ -47,7 +47,7 @@
 .top-fade {
   /* Placed in grid area 1/1 its box would start inside the chrome's padding and leave hard
      edges; auto placement makes it cover the whole chrome. It fades out 24px below the
-     chrome, as the Mac app did. */
+     chrome. */
   grid-area: auto !important;
   position: absolute;
   inset: 0 0 -24px;

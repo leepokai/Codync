@@ -27,16 +27,12 @@ they return. Computer names and bots never become ordering keys, and an ordering
 entry never grants access to a computer or imports another device's SSH connection.
 
 On iOS, touch and hold a computer heading, then drag up or down and release to save
-the order. Cancelling a drag leaves the saved order unchanged. A tap folds or expands
+the order; its bots follow when it's dropped. Cancelling a drag leaves the saved order unchanged. A tap folds or expands
 the section; Move up/down accessibility actions are also available. The desktop
 app supports heading drags and Alt+Up/Down on macOS, Linux and Windows.
 The terminal UI connects to one host, so it has no cross-computer ordering.
 
-The account computer-order API has been removed. Migration
-`0004_computer_order.sql` remains as already-deployed schema history; its column is
-unused. Updating clients stops them from reading or writing remote order immediately,
-without requiring a cloud deployment. Removing the endpoint from an existing Worker
-requires deploying the updated cloud code separately.
+The order never leaves the device: the cloud stores no computer order.
 
 ## Bot order
 
@@ -47,8 +43,12 @@ among bots with the same pin state. Until a computer's bots are first arranged, 
 position is 0 and they sort by recent activity; after that they stay put and a new bot
 appears on top. Hidden bots keep their position for when they return.
 
-- **iPhone:** touch and hold a row, then drag it (the row's menu gives way to the drag, as
-  elsewhere in iOS). Rows move out of the way as it passes; the drop saves the order
-  (`BotStore.move(_:onto:)`, `apps/ios/Views/BotRowDrop.swift`). VoiceOver: Move up / Move down.
+- **iPhone:** touch and hold a row, then drag it. The roster is a `List` with its styling
+  removed, so the system does the reordering: holding still opens the row's menu, and dragging
+  the lifted row moves it, also once the menu shows, unless the finger goes into the menu. Lifted,
+  the row is a rounded card: it fills while the system holds its drag item (`BotListView.lift`). A bot
+  dropped among another computer's bots goes back. The drop saves the order (`BotListView.moveLines`,
+  `BotStore.reorder`). VoiceOver: Move up / Move down. SwiftUI's own drag and drop can't do this:
+  with a context menu on the row, a drag never starts on iPhone.
 - **Desktop:** drag a row, or Alt+Up/Down on the selected bot (macOS, Linux, Windows).
 - **Terminal UI:** `J` / `K` move the selected bot down / up.

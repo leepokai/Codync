@@ -3,7 +3,7 @@ import type { Entry, EntryData } from '@shared/models'
 import { CardSection, Disclosure } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
-import { ThinkingOrb } from '../../components/ThinkingOrb'
+import { ThinkingOrb, type OrbState } from '../../components/ThinkingOrb'
 import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
 import { MarkdownText } from './Markdown'
@@ -130,6 +130,8 @@ function TraceRow({ entry }: { entry: Entry }) {
 const toolIcon = (kind?: string) =>
   ({ read: 'doc.text', edit: 'pencil', delete: 'trash', move: 'arrow.right.doc.on.clipboard', search: 'magnifyingglass', execute: 'terminal', think: 'brain', fetch: 'globe' })[kind ?? ''] ?? 'wrench.and.screwdriver'
 
+const toolOrb = (kind?: string): OrbState => ({ search: 'searching', fetch: 'connecting', edit: 'shaping' } as const)[kind ?? ''] ?? 'working'
+
 export function ToolRow({ data }: { data: EntryData }) {
   const [expanded, setExpanded] = useState(false)
   const hasBody = !!data.output || !!data.diffs?.length
@@ -144,7 +146,7 @@ export function ToolRow({ data }: { data: EntryData }) {
       ) : data.status === 'failed' ? (
         <Icon name="xmark" size={10} color="var(--danger)" />
       ) : (
-        <ThinkingOrb state={data.toolKind === 'search' ? 'searching' : data.toolKind === 'fetch' ? 'connecting' : 'working'} size={16} color="var(--secondary)" />
+        <ThinkingOrb state={toolOrb(data.toolKind)} size={16} color="var(--secondary)" />
       )}
     </span>
   )

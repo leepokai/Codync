@@ -8,7 +8,6 @@ use ratatui::style::{Modifier, Style};
 use super::super::app::{App, Editor, NEW_GROUP, Overlay, tilde};
 use super::super::md::{truncate, width as w};
 use super::buffer::{centered, dim_all, frame_box, put, restyle, rput, u};
-use super::consent::consent;
 use super::forms::{form_view, group_view};
 use super::goto::goto;
 use super::help::help;
@@ -196,7 +195,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Market(m) => super::super::sheets::market(buf, area, app, m),
         Overlay::Agent(a) => super::super::sheets::agent(buf, area, app, a),
         Overlay::Fields(f) => super::super::sheets::fields(buf, area, f),
-        Overlay::Consent(share) => consent(buf, area, *share),
+        Overlay::Skill(s) => super::skill::skill(buf, area, app, s),
     }
 }
 

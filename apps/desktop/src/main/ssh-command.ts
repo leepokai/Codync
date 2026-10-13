@@ -1,8 +1,7 @@
 import type { SSHProfile } from '../shared/ssh.ts'
 
-// Preserve the login shell's PATH, then try the supported installers and Mac app layouts.
-// Resources is the Electron bundle; MacOS keeps older native app installs reachable.
-const REMOTE_PATH = '$PATH:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/Applications/Codync.app/Contents/Resources:/Applications/Codync.app/Contents/MacOS'
+// Preserve the login shell's PATH, then try the supported installers and the Mac app bundle.
+const REMOTE_PATH = '$PATH:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/Applications/Codync.app/Contents/Resources'
 
 /** The caller validates the port before constructing the remote shell command. */
 export const remoteInfoCommand = (port: number, folder = '.codync') => {

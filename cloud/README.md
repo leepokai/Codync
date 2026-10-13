@@ -5,7 +5,7 @@ Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/reference/remo
 - **`/v1` API** (`src/api.ts`, route groups in `src/routes/`): Clerk-authenticated account routes (devices, claims, computers, access
   requests, grants), `Codync-Sig`-authenticated host routes (`/v1/host/*`), the Clerk webhook, and a
   15-minute cron that expires requests and prunes nonces, and the public routine webhook route
-  `POST /v1/hooks/:computerId/:routineId` (spec §7.8). D1 schema: `migrations/0001_init.sql`.
+  `POST /v1/hooks/:computerId/:routineId` (spec §7.8). D1 schema: `migrations/` (later files rebuild some tables).
 - **`ComputerRelay`** (`src/relay.ts`): one Durable Object per computer (SQLite storage, WebSocket
   Hibernation). It admits device sockets against the host-signed ACL, forwards channel frames it can't
   read, reports presence, holds the offline mailbox, and queues routine webhook deliveries (`hookbox`,

@@ -4,7 +4,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell } from 'electron'
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
-import { devPort, fetchHealth, HostController } from './host-controller'
+import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
 import { registerHostProxy } from './host-proxy'
 import { readClipboardFiles, readFiles } from './files'
@@ -18,6 +18,7 @@ import { registerScreenIPC } from './screen'
 import { registerCloud } from './cloud'
 import { registerSSH } from './ssh'
 import { QuitLifecycle } from './quit-lifecycle'
+import { Island } from './island'
 
 /** macOS's user-facing computer name, else the host name. */
 function computerName() {
@@ -145,11 +146,8 @@ function registerIPC(tray: Tray) {
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))
   ipcMain.on('app:debugOpen', (e) => (e.returnValue = app.isPackaged ? null : (process.env.CODYNC_DEBUG_OPEN ?? null)))
   ipcMain.handle('host:snapshot', () => snapshot())
-  ipcMain.handle('host:health', (_e, url: string) => fetchHealth(url))
   ipcMain.on('host:install', () => void host.install())
   ipcMain.on('host:restart', () => host.restart())
-  ipcMain.on('host:uninstall', () => void host.uninstall())
-  ipcMain.on('host:openLog', () => void shell.openPath(host.logPath))
   ipcMain.on('app:openExternal', (_e, url: string) => {
     if (/^(https?|mailto|x-apple\.systempreferences):/.test(url)) void shell.openExternal(url)
   })
@@ -166,8 +164,6 @@ function registerIPC(tray: Tray) {
   })
   ipcMain.handle('app:clipboardFiles', () => readClipboardFiles())
   ipcMain.on('app:traySummary', (_e, summary) => tray.update(summary))
-  ipcMain.on('app:openPairing', () => openPairing())
-  ipcMain.on('app:quit', () => app.quit())
   ipcMain.handle('app:showInDock', () => showInDock())
   ipcMain.handle('app:setShowInDock', (_e, on: boolean) => {
     const visible = setShowInDock(on)
@@ -215,9 +211,11 @@ if (!app.requestSingleInstanceLock()) {
     // would otherwise show Electron's.
     if (isMac && !app.isPackaged) app.dock?.setIcon(join(__dirname, '../../resources/icon.png'))
     applyDockVisibility()
-    const tray = new Tray({ openChat, openPairing, send, host, updates })
+    const island = new Island({ url: rendererURL('island'), preload: join(__dirname, '../preload/index.js'), send, openApp: openChat, changed: () => tray.hostChanged() })
+    const tray = new Tray({ openChat, openPairing, send, host, updates, island })
     updates.on('change', () => tray.hostChanged())
     registerIPC(tray)
+    island.register()
     registerAuthIPC()
     registerSpeech()
     registerScreenIPC()
@@ -234,7 +232,8 @@ if (!app.requestSingleInstanceLock()) {
       tray.hostChanged()
     })
     nativeTheme.on('updated', () => {
-      for (const w of BrowserWindow.getAllWindows()) w.setBackgroundColor(background())
+      // Only the opaque windows: a color on the transparent notch island paints its whole panel.
+      for (const w of [chat, pairing]) w?.setBackgroundColor(background())
     })
     host.start()
     openChat()

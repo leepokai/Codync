@@ -8,7 +8,7 @@ import Testing
     let storage = SharedStore.Context(accountID: UUID().uuidString, suite: suite)
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let computer = Computer(id: "history", name: "Test", signKey: "")
-    let store = BotStore(computer: computer, clientKind: "ios", storage: storage) { throw HostError.unreachable }
+    let store = BotStore(computer: computer, storage: storage) { throw HostError.unreachable }
     defer { store.retire() }
     store.entries["b"] = (0..<200).map { index in
         Entry(id: "e\(index)", seq: Int64(index + 100), botId: "b", threadId: index < 6 ? nil : "root",
@@ -28,7 +28,7 @@ import Testing
     let storage = SharedStore.Context(accountID: UUID().uuidString, suite: suite)
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let computer = Computer(id: "history", name: "Test", signKey: "")
-    let store = BotStore(computer: computer, clientKind: "ios", storage: storage) { throw HostError.unreachable }
+    let store = BotStore(computer: computer, storage: storage) { throw HostError.unreachable }
     defer { store.retire() }
     #expect(!store.canLoadOlder("b"))
     store.entries["b"] = [Entry(id: "local-draft", seq: Int64.max, botId: "b", rev: 1, kind: "user", turn: 0,

@@ -108,7 +108,7 @@ impl App {
             Overlay::Market(m) => self.market_key(m, k),
             Overlay::Agent(a) => self.agent_key(a, k),
             Overlay::Fields(f) => self.fields_key(f, k),
-            Overlay::Consent(share) => self.consent_key(share, k),
+            Overlay::Skill(s) => self.skill_key(s, k),
             o @ (Overlay::Usage | Overlay::Pair(_)) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None

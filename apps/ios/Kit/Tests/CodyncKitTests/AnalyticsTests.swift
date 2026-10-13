@@ -3,27 +3,28 @@ import Testing
 @testable import CodyncKit
 
 @MainActor
-@Test func analyticsRecordsOnlyWhenEnabledAndIdentifiesAccountsOnce() throws {
+@Test func analyticsIsOnByDefaultAndIdentifiesAccountsOnce() throws {
     let defaults = try #require(UserDefaults(suiteName: "AnalyticsTests-\(UUID())"))
     let analytics = Analytics(defaults: defaults) { _ in false }
 
-    // Not asked yet: held until the answer. Declined: dropped, and nothing more recorded.
+    // On until turned off; off drops what's queued and records nothing more.
+    #expect(analytics.isEnabled)
     analytics.capture(.appOpened)
     #expect(analytics.pending.map(\.event) == ["app_opened"])
     analytics.setEnabled(false)
     analytics.capture(.appOpened)
     #expect(analytics.pending.isEmpty)
 
-    // Anonymous: the install ID, no person profile, the common properties.
+    // Signed out: the install ID with its own person profile, the common properties.
     analytics.setEnabled(true)
     analytics.capture(.computerPaired, ["via": "qr"])
     let anon = try #require(analytics.pending.first)
     #expect(anon.event == "computer_paired")
     #expect(anon.properties["via"] == .string("qr"))
-    #expect(anon.properties["$process_person_profile"] == .bool(false))
+    #expect(anon.properties["$process_person_profile"] == .bool(true))
     #expect(anon.properties["$lib"] == .string("codync-ios"))
     #expect(anon.properties["$os"] == .string("iOS"))
-    #expect(anon.properties["$geoip_disable"] == .bool(true))
+    #expect(anon.properties["$geoip_disable"] == nil)
     #expect(anon.properties["env"] != nil && anon.properties["app_version"] != nil)
 
     // Signed in: $identify links the install ID once, then events carry the user ID.

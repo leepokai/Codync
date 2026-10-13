@@ -74,6 +74,15 @@ impl App {
                     }
                 }
             }
+            Reply::SkillDetails(id) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Skill(s) = o
+                        && s.id == id
+                    {
+                        s.markdown = Some(v["markdown"].as_str().unwrap_or_default().to_owned());
+                    }
+                }
+            }
             Reply::BotChat { bot, peer } => {
                 let entries: Vec<Entry> =
                     v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect();
@@ -261,6 +270,15 @@ impl App {
                     }
                 }
                 self.flash(&e);
+            }
+            Reply::SkillDetails(id) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Skill(s) = o
+                        && s.id == *id
+                    {
+                        s.error = Some(e.clone());
+                    }
+                }
             }
             Reply::Memory(_)
             | Reply::MemorySaved(_)

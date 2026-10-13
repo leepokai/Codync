@@ -75,8 +75,7 @@ const claimedComputerIds = pref<string[]>('claimedComputerIds', [])
 const keptOut = (userId: string) => pref<string[]>(`keptOutOfAccount.${userId}`, [])
 
 /**
- * The signed-in account's side of this computer (ports of the Mac `HostController` account code
- * and kit `CloudClient`): registering this device, the account's computers, claiming this
+ * The signed-in account's side of this computer (mirrors kit's `CloudClient`): registering this device, the account's computers, claiming this
  * computer's host, and turning its cloud on by default.
  */
 export class CloudModel extends Observable {

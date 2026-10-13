@@ -14,7 +14,7 @@ pub enum Method {
 
 pub fn method(executable: &Path) -> Method {
     let path = executable.to_string_lossy();
-    // The Mac app's bundle, or the Windows app's `resources` folder.
+    // The desktop app's macOS bundle, or its Windows `resources` folder.
     if path.contains(".app/Contents/") || (cfg!(windows) && path.contains("\\resources\\")) {
         Method::AppBundle
     } else if path.contains("/Cellar/") || path.contains("/linuxbrew/") {

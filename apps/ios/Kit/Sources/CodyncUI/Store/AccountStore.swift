@@ -32,9 +32,6 @@ public final class AccountStore {
     /// Access requests waiting for approval on the computer, with the SAS to show.
     public private(set) var pendingAccess: [ComputerID: AccessTicket] = [:]
     public var lastError: String?
-    /// Signed in, ask every account computer this device can't use yet for access, without a tap.
-    /// Computers set to auto-approve let it straight in; the others show the code to check.
-    public var asksForAccess = false
     public var selection: BotReference? {
         didSet { if let id = selection?.computerId, !retired { storage.lastComputerId = id } }
     }
@@ -45,7 +42,6 @@ public final class AccountStore {
     /// The combined roster changed: a bot came, changed or went, or a computer did.
     public var onRosterChanged: (@MainActor ([RosterItem]) -> Void)?
 
-    private let clientKind: String
     private let cloud: CloudClient?
     private let computerOrder: ComputerOrderStore
     private let makeStore: @MainActor (Computer) -> BotStore
@@ -57,16 +53,15 @@ public final class AccountStore {
     /// Asked once per launch: a denied or cancelled request isn't repeated behind the user's back.
     private var asked: Set<ComputerID> = []
 
-    public convenience init(storage: SharedStore.Context, clientKind: String, cloud: CloudClient?) {
-        self.init(storage: storage, clientKind: clientKind, cloud: cloud) { computer in
-            BotStore(computer: computer, clientKind: clientKind, storage: storage)
+    public convenience init(storage: SharedStore.Context, cloud: CloudClient?) {
+        self.init(storage: storage, cloud: cloud) { computer in
+            BotStore(computer: computer, storage: storage)
         }
     }
 
-    init(storage: SharedStore.Context, clientKind: String, cloud: CloudClient?,
+    init(storage: SharedStore.Context, cloud: CloudClient?,
          makeStore: @escaping @MainActor (Computer) -> BotStore) {
         self.storage = storage
-        self.clientKind = clientKind
         self.cloud = cloud
         computerOrder = ComputerOrderStore(storage: storage)
         self.makeStore = makeStore
@@ -147,7 +142,9 @@ public final class AccountStore {
             let list = try await cloud.computers()
             guard !retired else { return }
             if list != cloudComputers { Motion.animate { cloudComputers = list } }
-            if asksForAccess { await askForAccess() }
+            // Signed in, ask every account computer this device can't use yet for access, without
+            // a tap. Computers set to auto-approve let it straight in; the others show the code.
+            await askForAccess()
         } catch let error as CloudError where !error.isTransient {
             lastError = error.localizedDescription
         } catch {

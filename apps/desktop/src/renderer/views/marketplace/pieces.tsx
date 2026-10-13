@@ -25,7 +25,7 @@ export function ItemGrid({ children }: { children: ReactNode }) {
 const oneLine: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
 export const lineClamp = (n: number): CSSProperties => ({ display: '-webkit-box', WebkitLineClamp: n, WebkitBoxOrient: 'vertical', overflow: 'hidden' })
 
-export function MarketRow({ title, subtitle, added, busy = false, addLabel = 'Add', icon, onAdd }: {
+export function MarketRow({ title, subtitle, added, busy = false, addLabel = 'Add', icon, onAdd, onOpen }: {
   title: string
   subtitle: string
   added: boolean
@@ -33,9 +33,23 @@ export function MarketRow({ title, subtitle, added, busy = false, addLabel = 'Ad
   addLabel?: string
   icon: ReactNode
   onAdd: () => void
+  /** The whole row opens the item's details; without it the row does what its button does. */
+  onOpen?: () => void
 }) {
+  const open = onOpen ?? (added || busy ? undefined : onAdd)
   return (
-    <div className="market-row">
+    <div
+      className={`market-row ${open ? 'openable' : ''}`}
+      role={open ? 'button' : undefined}
+      tabIndex={open ? 0 : undefined}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (open && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault()
+          open()
+        }
+      }}
+    >
       <div style={{ width: 46, height: 46, flex: 'none', display: 'grid' }}>{icon}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
         <span style={{ ...font('body', 'medium'), color: 'var(--text)', ...oneLine }} title={title}>{title}</span>
@@ -50,7 +64,14 @@ export function MarketRow({ title, subtitle, added, busy = false, addLabel = 'Ad
           <Icon name="checkmark" size={11} weight="semibold" />
         </span>
       ) : (
-        <button className="capsule-action" style={font('subheadline', 'semibold')} onClick={onAdd}>
+        <button
+          className="capsule-action"
+          style={font('subheadline', 'semibold')}
+          onClick={(e) => {
+            e.stopPropagation()
+            onAdd()
+          }}
+        >
           {addLabel}
         </button>
       )}
@@ -243,7 +264,7 @@ export function useWindowHeight() {
   return height
 }
 
-/** A Marketplace form in its own modal card (`.codyncSheet`), sized like the Mac's. */
+/** A Marketplace form in its own modal card (`.codyncSheet`). */
 export function FormSheet({ open, onClose, width = 520, height = 600, children }: { open: boolean; onClose: () => void; width?: number; height?: number; children: ReactNode }) {
   const windowHeight = useWindowHeight()
   return (

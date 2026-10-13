@@ -186,6 +186,27 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         let s = format!(" ↓ {} more ", app.chat_scroll);
         rput(buf, r.right() - 1, box_top.saturating_sub(1), &s, t.btn);
     }
+    if typing {
+        skill_menu(buf, body, app);
+    }
+}
+
+/// The `/` menu over the bottom of the transcript: the bot's skills matching what's typed.
+fn skill_menu(buf: &mut Buffer, body: Rect, app: &App) {
+    let t = theme();
+    let matches = app.skill_matches();
+    let n = u(matches.len().min(5)).min(body.height);
+    for (i, m) in matches.iter().take(usize::from(n)).enumerate() {
+        let y = body.bottom() - n + u(i);
+        fill(buf, Rect::new(body.x, y, body.width, 1), t.panel);
+        let name = if i == 0 { t.bold } else { t.text };
+        let x = put(buf, body.x + 3, y, 26, &truncate(&format!("/{}", m.id), 26), name.patch(t.panel)) + 2;
+        let hint = if i == 0 { "tab fills in" } else { "" };
+        let rx = rput(buf, body.right() - 1, y, hint, t.dim.patch(t.panel));
+        let about = if m.description.is_empty() { &m.name } else { &m.description };
+        let room = usize::from(rx.saturating_sub(x + 1));
+        put(buf, x, y, u(room), &truncate(&about.replace('\n', " "), room), t.secondary.patch(t.panel));
+    }
 }
 
 /// Wraps the draft; returns display lines and the cursor's (column, line).

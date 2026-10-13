@@ -2,7 +2,6 @@
 //! terminals, usage, folders, voice and the remote screen.
 
 use super::devices::Caller;
-use super::events::CATCH_UP_PER_BOT;
 use super::str_arg;
 use crate::LockExt;
 use crate::agent::backends;
@@ -79,16 +78,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
             })
         }
-        "sync" => {
-            let since = b["since"].as_i64().unwrap_or(0);
-            json!({
-                "hostId": hub.host_id,
-                "rev": hub.store.current_rev(),
-                "bots": hub.bots_json(since)?,
-                "entries": hub.store.entries_since(since, CATCH_UP_PER_BOT)?,
-                "usage": hub.usage.locked().clone(),
-            })
-        }
         "refreshBackends" => {
             tokio::task::spawn_blocking(backends::hydrate_path).await?;
             backends::refresh_sign_in().await;
@@ -150,13 +139,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "screenOffer" => {
             let display = b["display"].as_u64().and_then(|d| u32::try_from(d).ok());
-            let result =
-                hub.screen.offer(caller.device_key(), str_arg(&b, "sdp")?, b["session"].as_str(), display).await?;
-            if b["session"].as_str().is_none() {
-                let session = result["session"].as_str().context("missing screen session")?.to_owned();
-                tokio::spawn(crate::screen::watch_viewer(hub.clone(), session, caller.device_key().to_owned()));
-            }
-            result
+            hub.screen.offer(caller.device_key(), str_arg(&b, "sdp")?, str_arg(&b, "session")?, display).await?
         }
         "screenClose" => {
             let session = str_arg(&b, "session")?;

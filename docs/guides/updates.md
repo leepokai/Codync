@@ -12,6 +12,13 @@ and installation (both on by default). The chat window's Settings has the same *
 action on its Updates page. Only packaged `main` builds update: `npm run dev` and builds made
 with `tools/account-config.mjs dev` never replace themselves with a release.
 
+A check the person starts downloads right away and shows **Downloading… N%** with a
+progress bar. A finished download never quits the app by itself: the button becomes
+**Restart to update**, and choosing it shows **Restarting…** while the host stops and the
+installer takes over. The relaunched app comes to the front (macOS doesn't activate an app
+the installer relaunches from the background, so a one-shot `updateRelaunchInFront`
+preference asks for it).
+
 The app checks daily (hourly while a release waits for the iPhone app, below).
 Automatic installation waits until no Codync window is focused, there has been no
 keyboard/mouse input for ten minutes, and the local host reports that it is idle.
@@ -30,9 +37,7 @@ it is enabled. Ordinary Quit keeps the host running when no update is staged.
 The desktop window's close-to-background handler also listens to Electron's native
 `before-quit-for-update` event. On macOS, `quitAndInstall()` closes windows before
 `app.before-quit`, so waiting for the latter blocks installation after the host has
-already stopped. If an older release is stuck on **Update to …** after downloading,
-choose **Codync → Quit Codync**: the staged installer can finish and relaunch the app.
-This lifecycle fix is desktop-only; iOS uses the App Store, and the terminal client
+already stopped. This lifecycle fix is desktop-only; iOS uses the App Store, and the terminal client
 uses the independent host updater without Electron windows.
 
 Installation requests are single-flight while the host stops and the installer
@@ -42,7 +47,7 @@ the host and leaves the staged release available to retry.
 
 ### Recovering from a failed update
 
-If **Update to …** appears to do nothing, first quit Codync completely (on macOS,
+If **Restart to update** appears to do nothing, first quit Codync completely (on macOS,
 **Codync → Quit Codync**, not just the window's close button). A downloaded update
 may finish installing when the old app exits. Reopen Codync if it does not relaunch,
 then check the version in **Settings → Updates**.
@@ -105,9 +110,9 @@ quit event ordering has a separate regression test and an updater integration te
 
 The macOS and Windows bundled-host branches and Linux's externally managed host
 branch run against simulated OS boundaries. These tests do not replace a signed
-release upgrade on each OS, nor do they verify download progress rendering: the
-current Updates page exposes checking, available/staged and error states but has
-no download percentage or installation progress UI yet.
+release upgrade on each OS. They cover the state the UI renders (checking, download
+percentage, staged, restarting, errors) and the labels of the shared update action,
+not the rendering itself.
 
 The release workflow publishes `latest-mac.yml` and `latest-linux*.yml` with the
 app archives. macOS build versions follow the marketing version; the iOS build
@@ -123,8 +128,9 @@ move to the desktop app; 2.7.1 is the first release they accept. Support ends
 need a manual download of the desktop app. Remove together:
 
 - the Sparkle part of **Update feeds** in `.github/workflows/release-desktop.yml`
-  (`generate_appcast`, `annotate-appcast.py`, `verify-appcast.py`) and `appcast.xml`
-  in **Publish**
+  (`generate_appcast`, `annotate-appcast.py`, `verify-appcast.py`) and `build/appcast.xml`
+  in the macOS artifact upload and in **Publish** (keep the step's `minApp` line for
+  `latest-mac.yml`, electron-updater reads it)
 - `SUPublicEDKey` in `apps/desktop/electron-builder.yml`
 - `packaging/updates/annotate-appcast.py`, `verify-appcast.py`, `macos-public-key.txt`
 - the `SPARKLE_PRIVATE_KEY` secret (row below) and the appcast mentions in

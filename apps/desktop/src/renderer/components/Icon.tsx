@@ -10,7 +10,7 @@ interface Metrics {
 }
 
 // SF Symbols masks exported at build time on macOS (tools/export-symbols.swift); elsewhere
-// (Linux) the Lucide fallbacks draw instead.
+// (Linux, Windows) the Lucide fallbacks draw instead.
 let manifest: Record<string, Metrics> | null = null
 const listeners = new Set<() => void>()
 if (window.codync?.platform === 'darwin') {

@@ -1,8 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
-import { GithubLogo } from "@phosphor-icons/react/ssr";
+import { DiscordLogo, GithubLogo } from "@phosphor-icons/react/ssr";
 import DownloadButton from "./download-button";
-import { GITHUB } from "../links";
+import { DISCORD, GITHUB } from "../links";
 
 const nav: [href: string, label: string][] = [
   ["/#product", "Product"],
@@ -29,6 +29,14 @@ export function SiteHeader() {
         </div>
         <div className="flex items-center justify-end gap-2">
           <a
+            href={DISCORD}
+            aria-label="Codync on Discord"
+            title="Discord"
+            className="hidden rounded-full p-2 text-neutral-400 transition hover:text-neutral-100 sm:block"
+          >
+            <DiscordLogo size={20} />
+          </a>
+          <a
             href={GITHUB}
             aria-label="Codync on GitHub"
             title="GitHub"
@@ -50,6 +58,7 @@ const footerLinks: [label: string, href: string][] = [
   ["Compare", "/compare"],
   ["Terms", "/terms"],
   ["Privacy", "/privacy"],
+  ["Discord", DISCORD],
   ["Contact", `${GITHUB}/issues`],
 ];
 

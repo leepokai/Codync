@@ -106,7 +106,7 @@
   min-width: 0;
   transition: background-color var(--hover);
 }
-.market-row:hover {
+.market-row.openable:hover {
   background: color-mix(in srgb, var(--bubble-agent) 60%, transparent);
 }
 

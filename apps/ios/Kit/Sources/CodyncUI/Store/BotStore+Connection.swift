@@ -22,8 +22,6 @@ extension BotStore {
         client = nil
         selection = nil
         screenRequest = nil
-        showProfile = false
-        showPlugins = false
     }
 
     public func setActive(_ active: Bool) {

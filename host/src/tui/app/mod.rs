@@ -9,6 +9,7 @@ mod input;
 mod model;
 mod navigate;
 mod overlay_keys;
+mod slash;
 mod ui;
 
 pub use editor::Editor;
@@ -102,9 +103,9 @@ pub struct App {
     /// (empty when it asked for everything): unknown entries below it are rewrites of old ones.
     floors: HashMap<String, i64>,
     pub hint: Option<(String, Instant)>,
-    /// Whether this computer shares usage analytics (`None`: nobody decided yet).
+    /// Whether this computer shares usage analytics (`None`: before the first `hello`).
     pub analytics: Option<bool>,
-    /// The first `hello` of this run was handled (`app_opened`, the analytics question).
+    /// The first `hello` of this run was handled (`app_opened`).
     opened: bool,
 }
 

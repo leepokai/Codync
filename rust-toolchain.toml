@@ -1,4 +1,4 @@
-# One Rust for every crate here (host, apps/linux, apps/screen-linux) and CI,
+# One Rust for every crate here (host, apps/screen-linux) and CI,
 # so a new stable release can't break clippy -D warnings overnight.
 # Bump deliberately: change the version, run clippy on every crate, commit.
 [toolchain]

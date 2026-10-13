@@ -15,8 +15,6 @@ struct CodyncApp: App {
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     /// Cold launch with a computer to reach: the splash covers its connect and catch-up.
     @State private var launching = !AppStore.shared.accounts.computers.isEmpty
-    /// nil until this iPhone answers "Help improve Codync".
-    @AppStorage(Analytics.enabledKey) private var analyticsEnabled: Bool?
     init() {
         // A tapped widget bot arrives as an intent, not a URL.
         OpenBotIntent.open = { AppStore.shared.open($0) }
@@ -46,20 +44,6 @@ struct CodyncApp: App {
                         .environment(app.account)
                         .tint(Palette.accent)
                 }
-                // Asked once per iPhone after setup, once the splash and the account sheet are gone.
-                .codyncDialog("Help improve Codync", isPresented: Binding(
-                    get: { onboardingCompleted && analyticsEnabled == nil && !launching && !app.account.showSwitcher },
-                    // Closing without choosing is a no. The dialog closes before a button's action
-                    // runs, so this waits for it: a yes must not first drop the waiting events.
-                    set: { shown in
-                        guard !shown else { return }
-                        Task { @MainActor in if Analytics.shared.isEnabled == nil { Analytics.shared.setEnabled(false) } }
-                    }
-                ), message: Self.analyticsQuestion, cancel: "Don't share", inPlace: true) {
-                    [DialogAction("Share usage") {
-                        Analytics.shared.setEnabled(true)
-                    }]
-                }
                 .onChange(of: app.account.userID, initial: true) { _, userID in
                     app.switchAccount(to: userID)
                 }
@@ -71,7 +55,6 @@ struct CodyncApp: App {
                     }
                 }
                 .onOpenURL { url in app.open(url) }
-                // Waits for the analytics answer, which is asked right after setup.
                 .onChange(of: onboardingCompleted) { _, done in if done { Analytics.shared.capture(.onboardingCompleted) } }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     switch phase {
@@ -110,16 +93,6 @@ struct CodyncApp: App {
                 #endif
         }
     }
-}
-
-extension CodyncApp {
-    static let analyticsQuestion = """
-        Codync can record which features you use on this iPhone, like creating a bot or sending a message.
-
-        Never your messages, code, files, prompts or bot names.
-        Never sold or used for ads. Linked to your Codync account when you're signed in.
-        Turn it off anytime in Settings.
-        """
 }
 
 enum AppTab: Hashable { case bots, state }
@@ -204,7 +177,6 @@ final class AppStore {
         storage.bots = []
         SharedStore.activeAccountID = nil
         UserDefaults.standard.set(false, forKey: "onboardingCompleted")
-        Analytics.shared.setEnabled(nil)
         showComputers = false
         account.showSwitcher = false
         marketplace = nil
@@ -261,8 +233,7 @@ final class AppStore {
     private static func makeAccounts(_ storage: SharedStore.Context, session: AccountSession) -> (AccountStore, CloudClient?) {
         let identity = storage.accountID == nil ? nil : try? DeviceIdentity.load(context: storage)
         let cloud = session.cloudClient(for: storage.accountID, identity: identity)
-        let accounts = AccountStore(storage: storage, clientKind: "ios", cloud: cloud)
-        accounts.asksForAccess = true
+        let accounts = AccountStore(storage: storage, cloud: cloud)
         accounts.onConnected = { store in
             PushRegistrar.shared.syncDevice(with: store)
             store.onUsageChanged = { _, _ in WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage") }

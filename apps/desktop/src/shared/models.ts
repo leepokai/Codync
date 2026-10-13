@@ -276,7 +276,7 @@ export function normalizeScreen(raw: Partial<ScreenState> | undefined | null): S
     displays: raw.displays ?? [],
     userControl: raw.userControl ?? false,
     agentBot: raw.agentBot ?? null,
-    computerUse: raw.computerUse ?? raw.enabled ?? false,
+    computerUse: raw.computerUse ?? false,
     viewers: raw.viewers ?? 0,
   }
 }
@@ -297,8 +297,8 @@ export interface Hello {
   boxKey?: string
   minApp?: string
   cloud?: string | null
-  /** Product analytics on this computer; null until its owner chose (absent on older hosts). */
-  analytics?: boolean | null
+  /** Product analytics on this computer: on unless its owner turned it off. */
+  analytics?: boolean
 }
 
 /** Events only the desktop app knows about; the host records everything else from API calls. */
@@ -307,7 +307,6 @@ export type AnalyticsEvent = 'app_opened' | 'onboarding_completed' | 'signed_in'
 export interface PairingInfo {
   pairingUrl: string
   urls: string[]
-  svg?: string
   expiresAt?: number
 }
 

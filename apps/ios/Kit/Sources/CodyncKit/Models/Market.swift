@@ -224,6 +224,14 @@ public extension HostClient {
     func removeSkill(_ id: String) async throws {
         let _: Empty = try await call("removeSkill", ["id": id])
     }
+
+    /// A skill's `SKILL.md` without its front matter. `which` is `["id": …]` for an installed
+    /// skill or `["source": …]` for one from the catalog.
+    func skillDetails(_ which: [String: String]) async throws -> String {
+        struct Details: Decodable { var markdown: String }
+        let res: Details = try await call("skillDetails", which, timeout: 60)
+        return res.markdown
+    }
 }
 
 public struct ConnectionRequest: Codable, Hashable, Sendable {

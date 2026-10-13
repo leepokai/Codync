@@ -85,6 +85,10 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
                     }
                 };
             }
+            // Skills too: every installed one is on unless the client picked them.
+            if b["skills"].is_null() && b["kind"] != "group" {
+                b["skills"] = json!(market::skills(&hub.store).into_iter().map(|s| s.id).collect::<Vec<_>>());
+            }
             let cfg: BotConfig = serde_json::from_value(b).context("invalid bot")?;
             let hub = hub.clone();
             json!({"bot": tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??})
@@ -177,10 +181,13 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
                     attachments.push(meta);
                 }
             }
+            // `/skill …` reaches the agent as "read this skill first"; the chat keeps what was typed.
+            let asked = market::expand_command(&hub.store, &row.config.skills, text);
+            let asked = asked.as_deref().unwrap_or(text);
             let prompt = if paths.is_empty() {
-                text.to_owned()
+                asked.to_owned()
             } else {
-                format!("{text}{}", crate::chat::uploads::prompt_suffix(&paths))
+                format!("{asked}{}", crate::chat::uploads::prompt_suffix(&paths))
             };
             let turn = hub.store.max_turn(bot) + 1;
             // A group has no agent of its own to queue behind: its message is simply sent.

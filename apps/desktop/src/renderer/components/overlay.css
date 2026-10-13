@@ -32,6 +32,12 @@
   opacity: 1;
   transform: none;
 }
+/* A layer fading away stays mounted until its exit timer fires (late in a background window):
+   it must never take the clicks meant for what's under it. */
+.modal-card:not(.shown),
+.dialog:not(.shown) {
+  pointer-events: none;
+}
 
 .modal-header {
   display: flex;
@@ -42,9 +48,12 @@
   flex: none;
 }
 
-/* Dialogs */
+/* Sheets, dialogs and menus: one subtle outline over the fill. */
 .modal-content::after,
-.dialog-card::after {
+.dialog-card::after,
+.anchored-panel::after,
+.account-panel::after,
+.action-menu::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -54,6 +63,7 @@
   z-index: 1;
 }
 
+/* Dialogs */
 .dialog {
   position: fixed;
   inset: 0;
@@ -120,6 +130,15 @@
 .dialog-button:active {
   transform: scale(0.98);
   opacity: 0.85;
+}
+
+/* Floating layers cover the title bar's drag regions (sidebar header, thread chrome), which
+   would turn clicks on them into window drags. A menu takes the whole window, so a click
+   anywhere closes it; sheets and dialogs only their card, so the window still moves. */
+.anchored,
+.modal-content,
+.dialog-card {
+  -webkit-app-region: no-drag;
 }
 
 /* Menus */
@@ -229,7 +248,7 @@
   opacity: 0.35;
 }
 
-/* SwiftUI centers modals below the hidden title bar (28 pt on macOS). */
+/* Modals center below the hidden title bar (28 pt on macOS). */
 html[data-platform="darwin"] .modal-card,
 html[data-platform="darwin"] .dialog {
   padding-top: 28px;

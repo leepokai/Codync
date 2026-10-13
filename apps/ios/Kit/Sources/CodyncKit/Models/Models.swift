@@ -281,14 +281,6 @@ public struct Hello: Codable, Sendable {
     public var cloud: String?
 }
 
-public struct SyncResponse: Codable, Sendable {
-    public var hostId: String
-    public var rev: Int64
-    public var bots: [Bot]
-    public var entries: [Entry]
-    public var usage: Usage
-}
-
 public struct DirListing: Codable, Sendable {
     public var path: String
     public var parent: String?

@@ -24,9 +24,9 @@ func phoneRosterUsesItsOwnPairingsNotUnavailableOrderEntries(hasIndependentAcces
     storage.computerOrder = ComputerOrder(ids: [b.id, a.id])
     var opened: [ComputerID] = []
     let bot = try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"same-bot-id","name":"Local bot","rev":1}"#.utf8))
-    let accounts = AccountStore(storage: storage, clientKind: "ios", cloud: nil) { computer in
+    let accounts = AccountStore(storage: storage, cloud: nil) { computer in
         opened.append(computer.id)
-        let store = BotStore(computer: computer, clientKind: "ios", storage: storage) { FakeRemote(.connecting) }
+        let store = BotStore(computer: computer, storage: storage) { FakeRemote(.connecting) }
         store.bots[bot.id] = bot
         return store
     }
@@ -50,8 +50,8 @@ func phoneRosterUsesItsOwnPairingsNotUnavailableOrderEntries(hasIndependentAcces
     let b = isolationComputer("B", keyByte: 2)
     storage.computers = [a, b]
     storage.computerOrder = ComputerOrder(ids: [b.id, a.id])
-    let accounts = AccountStore(storage: storage, clientKind: "ios", cloud: nil) { computer in
-        BotStore(computer: computer, clientKind: "ios", storage: storage) { FakeRemote(.connecting) }
+    let accounts = AccountStore(storage: storage, cloud: nil) { computer in
+        BotStore(computer: computer, storage: storage) { FakeRemote(.connecting) }
     }
     defer { accounts.retire() }
     accounts.setActive(false)

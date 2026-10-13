@@ -3,7 +3,9 @@
 use ratatui::layout::Rect;
 use std::time::Instant;
 
-use super::super::manage::{AgentSetup, BotChatSheet, Fields, Market, MemorySheet, RoutineForm, RoutineList};
+use super::super::manage::{
+    AgentSetup, BotChatSheet, Fields, Market, MemorySheet, RoutineForm, RoutineList, SkillSheet,
+};
 use super::{Editor, Mark};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -245,8 +247,7 @@ pub enum Overlay {
     Market(Box<Market>),
     Agent(AgentSetup),
     Fields(Box<Fields>),
-    /// The one-time analytics question; `true` highlights Share usage.
-    Consent(bool),
+    Skill(SkillSheet),
 }
 
 pub struct Toast {

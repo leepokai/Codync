@@ -1,0 +1,706 @@
+/* The island window is a transparent panel: only the black shape is drawn. */
+html[data-window='island'],
+html[data-window='island'] body,
+html[data-window='island'] #root {
+  background: transparent;
+}
+
+/* Always black like the notch, so always the dark palette, at the default text size. */
+.island {
+  --text: #f5f6f8;
+  --text-rgb: 245, 246, 248;
+  --secondary: #8e939c;
+  --tertiary: #5f646d;
+  --accent-fill: #f5f6f8;
+  --on-accent: #0b0c0e;
+  --bubble-user: rgba(255, 255, 255, 0.09);
+  --danger: #ff8d97;
+  --island-card: #141518;
+  --bubble-agent: rgba(255, 255, 255, 0.12);
+  --warning: #f0a030;
+  --scale: 1;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text);
+  font-size: 13px;
+  /* A spring with a little overshoot to open, none to close. */
+  transition: width 0.52s cubic-bezier(0.32, 1.22, 0.42, 1), height 0.52s cubic-bezier(0.32, 1.22, 0.42, 1), opacity 0.2s var(--ease);
+}
+.island.shrinking {
+  transition: width 0.34s cubic-bezier(0.45, 0, 0.2, 1), height 0.34s cubic-bezier(0.45, 0, 0.2, 1), opacity 0.2s var(--ease);
+}
+/* Resting over the notch (or as a strip at a plain top edge): nothing to see. Folding into it,
+   the shape shrinks first and only then fades, so it visibly goes back into the notch. */
+.island[data-mode='hidden'] {
+  opacity: 0;
+}
+.island.shrinking[data-mode='hidden'] {
+  transition: width 0.34s cubic-bezier(0.45, 0, 0.2, 1), height 0.34s cubic-bezier(0.45, 0, 0.2, 1), opacity 0.16s var(--ease) 0.3s;
+}
+
+/* The wings or the open views; leaving, they blur away while the shape folds. */
+.island-layer {
+  position: absolute;
+  inset: 0;
+}
+.island-layer.leaving {
+  opacity: 0;
+  filter: blur(8px);
+  transform: scale(0.97);
+  transition: opacity 0.16s var(--ease), filter 0.16s var(--ease), transform 0.16s var(--ease);
+  pointer-events: none;
+}
+
+.island-body {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  transition: border-radius 0.34s var(--ease);
+}
+
+/* Concave corners where the shape meets the top edge, so it flows out of the screen's border. */
+.island-ear {
+  position: absolute;
+  top: 0;
+  width: 14px;
+  height: 14px;
+}
+.island-ear.left {
+  left: -14px;
+  background: radial-gradient(circle at 0 100%, transparent 13.5px, #000 14px);
+}
+.island-ear.right {
+  right: -14px;
+  background: radial-gradient(circle at 100% 100%, transparent 13.5px, #000 14px);
+}
+.island.edge .island-ear {
+  width: 10px;
+  height: 10px;
+}
+.island.edge .island-ear.left {
+  left: -10px;
+  background: radial-gradient(circle at 0 100%, transparent 9.5px, #000 10px);
+}
+.island.edge .island-ear.right {
+  right: -10px;
+  background: radial-gradient(circle at 100% 100%, transparent 9.5px, #000 10px);
+}
+
+/* Bare buttons; :where keeps this below each element's own padding. */
+:where(.island button) {
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+
+/* Closed: the wings on each side of the notch. */
+.island-wings {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.island-wing-left,
+.island-wing-right {
+  position: relative;
+  width: 52px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+/* Peeking, the notch is only 32 pt wider on each side: the whole character sits in that strip,
+   never half behind the camera. */
+.island-wings.peeking .island-wing-left {
+  width: 32px;
+}
+.island-wings-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  color: var(--secondary);
+}
+.island-wing-avatar {
+  position: relative;
+  display: block;
+}
+.island-cluster {
+  display: grid;
+  grid-template-columns: repeat(2, 11px);
+  gap: 1px;
+  justify-items: center;
+}
+.island-cluster-bot {
+  position: relative;
+}
+
+/* Open: the header beside the notch. */
+.island-header {
+  animation: island-in 0.3s 0.3s var(--ease) backwards;
+  position: absolute;
+  top: 2px;
+  left: 14px;
+  right: 14px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.island-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.island-tab {
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--secondary);
+  transition: background-color var(--hover), color var(--hover);
+}
+.island-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.island-tab.selected {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+.island-count {
+  font-size: 12px;
+  color: var(--secondary);
+  margin-right: 4px;
+}
+
+/* Another bot takes a slot (or joins a row): it springs in out of a blur. */
+.island-swap {
+  animation: island-swap 0.38s cubic-bezier(0.32, 1.22, 0.42, 1) both;
+}
+@keyframes island-swap {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(6px) scale(0.92);
+  }
+}
+/* The bot's part of a card, as one piece that can swap. */
+.island-swap-slot {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: inherit;
+}
+.island-message-bot {
+  display: block;
+  flex: none;
+}
+
+/* Opening, the views arrive once the shape has grown; switching tabs, the next view fades in
+   over the one leaving (the shape keeps its size). */
+.island-views {
+  animation: island-in 0.3s 0.16s var(--ease) backwards;
+}
+.island-content {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  animation: island-switch 0.24s var(--ease) backwards;
+}
+.island-content.leaving {
+  opacity: 0;
+  filter: blur(3px);
+  transition: opacity 0.14s var(--ease), filter 0.14s var(--ease);
+  pointer-events: none;
+}
+@keyframes island-switch {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+  }
+}
+@keyframes island-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: scale(0.97);
+  }
+}
+
+.island-card {
+  position: relative;
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: 20px;
+  background: var(--island-card);
+  overflow: hidden;
+  color: var(--text);
+}
+.island-row-cards,
+.island-with-minis {
+  display: flex;
+  height: 100%;
+  gap: 10px;
+}
+.island-with-minis {
+  gap: 0;
+}
+.island-with-minis > .island-card {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The big character: glow behind, badge on its top left. */
+.island-big {
+  position: relative;
+  flex: none;
+  background: none;
+}
+.island-big canvas {
+  position: relative;
+}
+.island-glow {
+  position: absolute;
+  inset: -18px;
+  border-radius: 50%;
+}
+.island-badge {
+  position: absolute;
+  left: -5px;
+  top: 3px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2.5px #000;
+  display: grid;
+  place-items: center;
+  color: #0b0c0e;
+}
+.island-badge.orb {
+  left: -7px;
+  top: 1px;
+  width: 22px;
+  height: 22px;
+  background: #000;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.14);
+}
+.island-badge.dots {
+  left: -6px;
+  top: 4px;
+  width: auto;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #f5f6f8;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.island-badge.dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #0b0c0e;
+}
+.island-badge.small {
+  left: -4px;
+  top: -3px;
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 1.5px #000;
+}
+.island-badge.dots.small {
+  width: auto;
+  height: 7px;
+  padding: 0 2px;
+  gap: 1px;
+}
+.island-badge.dots.small i {
+  width: 1.5px;
+  height: 1.5px;
+}
+
+.island-agent {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 26px;
+}
+.island-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.island-agent-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.island-agent-subtitle {
+  font-size: 13px;
+  color: var(--secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.island-ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Overview: the bot in focus and its steps, the others as pills. */
+.island-focus {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0 14px 0 19px;
+  text-align: left;
+  font: inherit;
+}
+.island-focus-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.island-step {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--tertiary);
+  min-width: 0;
+}
+.island-step.current {
+  font-size: 15px;
+  font-weight: 500;
+  color: #e8eaed;
+}
+.island-pills {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-content: center;
+  padding: 0 8px;
+}
+.island-pill {
+  height: 34px;
+  border-radius: 17px;
+  padding: 0 10px 0 5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  min-width: 0;
+  transition: filter var(--hover);
+}
+.island-pill:hover {
+  filter: brightness(1.25);
+}
+.island-pill-bot,
+.island-mini {
+  position: relative;
+  flex: none;
+  background: none;
+}
+.island-status-dot {
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px #000;
+}
+.island-cluster .island-status-dot {
+  width: 4px;
+  height: 4px;
+  left: -2px;
+  top: -2px;
+}
+
+/* Alerts: approval, done, failed. */
+.island-alert {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 20px 0 24px;
+}
+.island-alert-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.island-alert .island-agent-name {
+  font-size: 15px;
+}
+.island-alert .island-agent-subtitle {
+  font-size: 14px;
+}
+.island-code {
+  align-self: flex-start;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #22242a;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: #e8eaed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.island-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.island-error {
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--danger);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.island-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.island .styled-button {
+  height: 32px;
+  border-radius: 16px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+  gap: 8px;
+}
+.island-key {
+  min-width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  padding: 0 3px;
+  border-radius: 5px;
+  border: 1.5px solid;
+  opacity: 0.55;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+}
+.island-minis {
+  width: 42px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+/* Codync's own: the plan limits. */
+.island-meter {
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--hover), color var(--hover);
+}
+.island-meter:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.island-meter-bar {
+  width: 28px;
+  display: flex;
+}
+.island-usage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+}
+.island-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.island-usage-title {
+  width: 56px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.island-usage-value {
+  width: 34px;
+  flex: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.island-usage-reset {
+  width: 66px;
+  flex: none;
+  text-align: right;
+  color: var(--secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Nothing running. */
+.island-empty {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 0 22px 0 29px;
+}
+.island-empty-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.island-empty .island-title {
+  font-size: 16px;
+}
+.island-subtitle {
+  font-size: 13.5px;
+  line-height: 1.35;
+  color: var(--secondary);
+}
+
+/* Message a bot. */
+.island-message {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 18px 0 20px;
+}
+.island-message-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.island-chip {
+  height: 26px;
+  border-radius: 13px;
+  padding: 0 9px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  flex: none;
+}
+.island-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  border-radius: 20px;
+  background: #22242a;
+  padding: 0 5px 0 16px;
+  margin: 0;
+}
+.island-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  user-select: text;
+}
+.island-field input::placeholder {
+  color: #6b7079;
+}
+.island-send {
+  width: 30px;
+  height: 30px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  background: #f5f6f8;
+  color: #0b0c0e;
+}
+.island-send:disabled {
+  opacity: 0.35;
+}
+
+/* Folding soon: a line that runs out. */
+.island-countdown {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.35);
+  animation: island-countdown linear forwards;
+}
+@keyframes island-countdown {
+  from {
+    width: 160px;
+  }
+  to {
+    width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island,
+  .island.shrinking,
+  .island-body {
+    transition: none;
+  }
+  .island-views,
+  .island-content,
+  .island-header,
+  .island-swap {
+    animation: none;
+  }
+  .island-layer.leaving,
+  .island-content.leaving {
+    transition: none;
+  }
+}

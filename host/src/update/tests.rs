@@ -189,7 +189,7 @@ async fn a_healthy_update_replaces_the_binary_and_removes_its_backup() {
 #[test]
 fn app_and_homebrew_binaries_keep_their_installation_owner() {
     assert_eq!(
-        install::method(std::path::Path::new("/Applications/Codync.app/Contents/MacOS/codync-host")),
+        install::method(std::path::Path::new("/Applications/Codync.app/Contents/Resources/codync-host")),
         install::Method::AppBundle
     );
     assert_eq!(

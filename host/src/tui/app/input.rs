@@ -89,6 +89,9 @@ impl App {
             self.typing = false;
             return;
         };
+        if self.complete_skill(k) {
+            return;
+        }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let newline = k.modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::ALT);
         let thread = self.thread.clone();
@@ -157,6 +160,7 @@ impl App {
                 draft.key(k);
             }
         }
+        self.slash_typed();
     }
 
     pub(super) fn scroll_chat(&mut self, delta: isize) {

@@ -12,9 +12,11 @@ mod market;
 mod memory;
 mod replies;
 mod routines;
+mod skill;
 
 pub use memory::{MemoryMode, MemorySheet};
 pub use routines::local_zone;
+pub use skill::SkillSheet;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
@@ -46,6 +48,8 @@ pub enum Reply {
         more: bool,
     },
     Skills,
+    /// A skill's instructions, for the details sheet with that id.
+    SkillDetails(String),
     Auth(String),
     Setup,
     FieldsSaved,

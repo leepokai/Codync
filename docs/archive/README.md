@@ -7,6 +7,7 @@ These documents retain decisions and observations from before the current refact
 | [Cloudflare account/device plan](cloudflare-account-device-plan-2026-09-25.md) | 2026-09-25 | [Architecture](../architecture/overview.md), [protocol](../reference/remote-relay.md), [environments](../guides/environments-and-deployment.md) |
 | [Bot/computer/SSH plan](bot-computer-ssh-plan-2026-09-25.md) | 2026-09-25 | [Accounts and SSH](../guides/accounts-and-ssh.md), [file structure](../architecture/file-structure.md) |
 | [UI audit](ui-audit-2026-09-25.md) | 2026-09-25 | [UI conventions](../design/ui-conventions.md), [widgets](../design/mobile-widgets.md) |
+| [SwiftUI Mac chat](macos-chat-swiftui.md) | 2026-10-05 | [Desktop app](../architecture/desktop-app.md) |
 
 Do not interpret old “not implemented” statements, delegation assignments, version numbers or test reports as the state of the current checkout. Reassess an audit finding against source before turning it into work.
 

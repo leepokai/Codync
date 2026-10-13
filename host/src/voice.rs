@@ -206,7 +206,7 @@ pub fn status(store: &Store) -> Result<Value> {
         .iter()
         .map(|&p| {
             let defaults = defaults(store, p);
-            json!({"provider": p.id(), "configured": !keys.get(p).is_empty(), "defaultModel": defaults.realtime, "defaults": defaults})
+            json!({"provider": p.id(), "configured": !keys.get(p).is_empty(), "defaults": defaults})
         })
         .collect();
     Ok(json!({"providers": providers}))

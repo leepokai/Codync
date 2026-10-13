@@ -141,7 +141,6 @@ final class ScreenHelper {
         let status: [String: AnyHashable] = [
             "platform": "macos",
             "permissionApp": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Codync Screen",
-            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
             "displays": displays,
             "capture": CGPreflightScreenCaptureAccess(),
             "input": AXIsProcessTrusted(),

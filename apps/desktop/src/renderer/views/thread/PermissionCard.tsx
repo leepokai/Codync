@@ -4,7 +4,8 @@ import { Disclosure, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { font, px } from '../../lib/fonts'
 
-const headline = (toolKind?: string) => {
+/** What the agent wants, from the tool's kind (also the notch island's headline). */
+export const permissionHeadline = (toolKind?: string) => {
   switch (toolKind) {
     case 'execute':
       return 'Wants to run a command'
@@ -24,7 +25,10 @@ const headline = (toolKind?: string) => {
 
 const rank: Record<string, number> = { allow_once: 0, allow_always: 1, reject_once: 2, reject_always: 3 }
 
-function optionLabel(o: PermissionOption) {
+/** Allow before deny, once before always. */
+export const sortedOptions = (options: PermissionOption[]) => [...options].sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9))
+
+export function optionLabel(o: PermissionOption) {
   switch (o.kind) {
     case 'allow_once':
       return 'Allow once'
@@ -45,13 +49,13 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
   const d = entry.data
   const pending = d.status === 'pending'
   const hasDetail = !!d.command || !!d.detail || !!d.diffs?.length
-  const options = [...(d.options ?? [])].sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9))
+  const options = sortedOptions(d.options ?? [])
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
   return (
     <div style={{ paddingRight: 40 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 16, background: 'var(--bubble-agent)', borderRadius: 22 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ ...font('headline'), color: 'var(--text)' }}>{headline(d.toolKind)}</span>
+          <span style={{ ...font('headline'), color: 'var(--text)' }}>{permissionHeadline(d.toolKind)}</span>
           {pending ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--warning)' }} /> : null}
         </div>
         <div

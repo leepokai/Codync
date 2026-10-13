@@ -50,6 +50,11 @@ function avatarIcon(bot: Bot) {
   })
 }
 
+/** A bot's line under its name: that it needs you, what it's doing, or its last message. */
+export function botDetail(bot: Bot) {
+  return needsInput(bot) ? 'Needs your response' : isWorking(bot) ? bot.activity || 'Working…' : (bot.lastMessage ?? folderName(bot))
+}
+
 /** One usage limit's bar in the provider's color: amber from 70%, red from 90%. */
 function barIcon(providerId: string, window: UsageWindow) {
   const percent = Math.round(window.percent)
@@ -99,7 +104,7 @@ export function useTraySummary(app: AppModel) {
         bots: roster.map((i) => ({
           ref: `${i.ref.computerId}/${i.ref.botId}`,
           name: app.computers.length > 1 ? `${i.bot.name} · ${i.computer.name}` : i.bot.name,
-          detail: needsInput(i.bot) ? 'Needs your response' : isWorking(i.bot) ? i.bot.activity || 'Working…' : (i.bot.lastMessage ?? folderName(i.bot)),
+          detail: botDetail(i.bot),
           working: isWorking(i.bot),
           avatar: avatarIcon(i.bot),
         })),
@@ -112,9 +117,6 @@ export function useTraySummary(app: AppModel) {
           ? {
               enabled: screen.enabled,
               subtitle: screenSubtitle(app),
-              needsLoginItem: app.screenNeedsApproval,
-              needsCapture: screen.enabled && screen.connected && !screen.capture,
-              needsInput: screen.enabled && screen.connected && !screen.input,
               error: app.screenError,
             }
           : null,

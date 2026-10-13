@@ -23,10 +23,14 @@ tray menu; the TUI uses a text action and status message. Neither has this App S
 reminder card, so its decorative icon treatment is iPhone-only.
 
 Release update controls live in the tray's Settings → Updates submenu; the chat
-window's Settings has the same controls on its Updates page (**Check for updates**,
-which becomes **Update to <version>** once a release is found). The TUI action list
-has **Check for updates**. Download and install go through electron-updater
-(`apps/desktop/src/main/updates.ts`); there is no separate update window.
+window's Settings has the same controls on its Updates page. One action carries the
+whole flow (`apps/desktop/src/shared/update-action.ts`, the same label in the tray, the
+Updates page and the update-needed card): **Check for updates** → **Update to <version>**
+→ **Downloading… N%** (the Updates page adds a progress bar) → **Restart to update** →
+**Restarting…**. A finished download never quits the app on its own; the person restarts,
+or it installs once idle. The TUI action list has **Check for updates**. Download and
+install go through electron-updater (`apps/desktop/src/main/updates.ts`); there is no
+separate update window.
 
 The tray menu is Electron's native `Menu` (`apps/desktop/src/main/tray.ts`), the only system menu in the desktop app. Its commands, submenus, checkboxes, usage-icon radio items, separators and keyboard navigation use system styling. Do not add custom cards, hover backgrounds, icon buttons or a window-style menu panel here.
 
@@ -61,7 +65,7 @@ Other custom iPhone screens use `Chrome.swift` and `Controls.swift`. The desktop
 | Toggle | `ToggleStyle.codync` |
 | Form-like content | `CardForm`, `CardSection` (a small bold heading over a filled, rounded group; rows split by inset hairlines; a row is `ValueRow` with an optional one-line `detail`, and its picker is an outlined `ChoicePicker`) |
 
-Avoid adding stock `Menu`, `Picker`, `Form`/`List` styling, switch toggles, alerts, `ProgressView` or system sheets to these flows. System presentation APIs inside the shared chrome implementation are implementation details, not permission to bypass the components in feature screens. Native WidgetKit/ActivityKit containers and OS authentication/permission flows remain system integrations.
+Avoid adding stock `Menu`, `Picker`, `Form`/`List` styling, switch toggles, alerts, `ProgressView` or system sheets to these flows. The iPhone bot list is a `List` with its styling removed (plain, no separators or row backgrounds), only for the system's drag-to-reorder alongside each row's context menu ([bot order](../features/computer-order.md#bot-order)). System presentation APIs inside the shared chrome implementation are implementation details, not permission to bypass the components in feature screens. Native WidgetKit/ActivityKit containers and OS authentication/permission flows remain system integrations.
 
 No scroll bars: scroll indicators never show (`.scrollIndicators(.never)` on the iPhone app's root, so every scroll view inherits it; hidden scrollbars in `apps/desktop/src/renderer/styles/theme.css`).
 
@@ -107,8 +111,7 @@ The iPhone conversation navigation title includes a compact second line with the
 UI changes apply to iOS SwiftUI (`apps/ios/`, `apps/ios/Kit/Sources/CodyncUI/`), the
 desktop app (`apps/desktop/src/renderer/`) and the terminal client (`host/src/tui/`)
 together. Use each platform's controls while preserving the same actions, information
-and states. The desktop app was ported view by view from the SwiftUI Mac app and
-carries its behavior; the October 2026 parity changes brought the TUI up to it.
+and states.
 
 - Chat and threads show the latest non-final agent segment only while that lane is
   working and connected. Earlier narration, tools, empty text and `(pass)` stay out
@@ -210,12 +213,13 @@ show persistent labels; the TUI has no credential-manager page or modal-card lay
 so this desktop presentation change does not affect its keyboard workflow.
 Desktop styling is shared across macOS, Linux and Windows.
 
-Desktop modal sheets and confirmation dialogs use one subtle 1px outer outline,
-including Apps, Credentials, and Settings. The outline follows the existing corner
-radius and overlays the content without changing layout or intercepting input.
-This is an explicit exception to the filled-surface border rule. iOS keeps the
-system sheet's own edge treatment; terminal dialogs retain their existing character
-borders. Neither receives an extra desktop-style outline.
+Desktop modal sheets, confirmation dialogs and menus (dropdown and right-click
+menus, the account and action panels) use one subtle 1px outer outline, including
+Apps, Credentials, and Settings. The outline follows the existing corner radius and
+overlays the content without changing layout or intercepting input. This is an
+explicit exception to the filled-surface border rule. iOS keeps the system sheet's
+and system menu's own edge treatment; terminal dialogs retain their existing
+character borders. Neither receives an extra desktop-style outline.
 
 The desktop sidebar computer filter shares the toolbar's subtle outline and 32px
 height, with a capsule enclosing both the computer glyph and its chevron. This

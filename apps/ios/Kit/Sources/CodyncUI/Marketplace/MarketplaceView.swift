@@ -23,6 +23,7 @@ public struct MarketplaceView: View {
     @State private var busySkill: String?
     @State private var addingConnector = false
     @State private var writingSkill = false
+    @State private var viewingSkill: SkillRef?
     @State private var agent: Backend?
     /// Agents shown before "Load more agents".
     @State private var agentLimit = 10
@@ -78,6 +79,7 @@ public struct MarketplaceView: View {
         }
         .codyncSheet(isPresented: $showCredentials) { CredentialsView() }
         .codyncSheet(isPresented: $addingConnector) { CustomConnectorSheet() }
+        .codyncSheet(item: $viewingSkill) { SkillSheet(skill: $0) }
         .codyncSheet(isPresented: $writingSkill) { NewSkillSheet() }
         .codyncSheet(item: $agent) { b in AgentSheet(initial: b) }
     }
@@ -137,7 +139,8 @@ public struct MarketplaceView: View {
                         ItemGrid {
                             ForEach(shownSkills) { s in
                                 let added = s.installed || model.installedSkills.contains { $0.id == s.source.lowercased() }
-                                MarketRow(title: s.name, subtitle: s.description, added: added, busy: busySkill == s.source) {
+                                MarketRow(title: s.name, subtitle: s.description, added: added, busy: busySkill == s.source,
+                                          open: { viewingSkill = SkillRef(s, installed: added) }) {
                                     SkillGlyph()
                                 } add: {
                                     busySkill = s.source

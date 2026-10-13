@@ -1,17 +1,70 @@
 #!/bin/sh
+# Runs CI's checks for the parts of the repo a commit touches, on the staged files only: other
+# agents' uncommitted edits in this checkout don't count. Skip with `git commit --no-verify`.
 set -eu
 
-staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+staged_files=$(git diff --cached --name-only)
+touches() { printf '%s\n' "$staged_files" | grep -Eq "$1"; }
 
-if printf '%s\n' "$staged_files" | grep -q '^apps/screen-linux/'; then
-    echo "Checking Linux screen helper formatting..."
-    cargo fmt --manifest-path apps/screen-linux/Cargo.toml -- --check
+repo=$(git rev-parse --show-toplevel)
+git_dir=$(git rev-parse --absolute-git-dir)
+# A fixed path keeps cargo's build cache; the lock keeps two commits from sharing it at once.
+snapshot="$git_dir/precommit-snapshot"
+lock="$git_dir/precommit.lock"
+locked=""
+
+staged_copy() {
+    [ -n "$locked" ] && return
+    until mkdir "$lock" 2>/dev/null; do
+        echo "Waiting for another commit's checks..."
+        sleep 5
+    done
+    locked=1
+    trap 'rm -rf "$lock"' EXIT
+    trap 'exit 1' INT TERM
+    rm -rf "$snapshot"
+    mkdir -p "$snapshot"
+    git archive "$(git write-tree)" | tar -x -C "$snapshot"
+}
+
+if touches '^(host/|packaging/(updates|engram)/|docs/reference/fixtures/remote-relay-vectors\.json)'; then
+    staged_copy
+    echo "Checking the host (cargo fmt, clippy, test)..."
+    # CI's pinned memory runtime (fetched once): without it every test turn waits on installing one.
+    engram=$(python3 "$repo/packaging/engram/test-runtime.py")
+    (cd "$snapshot/host" && export CARGO_TARGET_DIR="$repo/host/target/precommit" CODYNC_TEST_ENGRAM="$engram" &&
+        cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test &&
+        cargo test --test memory_e2e -- --ignored &&
+        cargo test --bin codync-host native_memory_survives_restart -- --ignored)
 fi
 
-if printf '%s\n' "$staged_files" | grep -q '^apps/screen-macos/'; then
+if touches '^apps/desktop/'; then
+    staged_copy
+    echo "Checking the desktop app (typecheck, test)..."
+    ln -s "$repo/apps/desktop/node_modules" "$snapshot/apps/desktop/node_modules"
+    (cd "$snapshot/apps/desktop" && npm run typecheck && npm test)
+fi
+
+for dir in cloud relay; do
+    if touches "^(cloud/|relay/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
+        staged_copy
+        echo "Checking $dir (typecheck, test)..."
+        ln -s "$repo/$dir/node_modules" "$snapshot/$dir/node_modules"
+        (cd "$snapshot/$dir" && npm run typecheck && npm test)
+    fi
+done
+
+if touches '^apps/screen-linux/'; then
+    staged_copy
+    echo "Checking Linux screen helper formatting..."
+    cargo fmt --manifest-path "$snapshot/apps/screen-linux/Cargo.toml" -- --check
+fi
+
+if touches '^apps/screen-macos/'; then
     if [ "$(uname -s)" = "Darwin" ]; then
+        staged_copy
         echo "Checking macOS screen helper syntax..."
-        xcrun swiftc -parse apps/screen-macos/*.swift
+        xcrun swiftc -parse "$snapshot"/apps/screen-macos/*.swift
     else
         echo "Skipping macOS screen helper syntax check (requires macOS)."
     fi

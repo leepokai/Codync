@@ -7,10 +7,6 @@ public enum HostEvent: Sendable {
     case entry(Entry)
     case usage(Usage)
     case screen(ScreenState)
-    /// Loopback only: devices asking this computer for access.
-    case accessRequests([AccessRequest])
-    /// Loopback only: the host's cloud connection.
-    case cloud(CloudStatus)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -100,8 +96,6 @@ public struct HostClient: Sendable {
         struct EntryWrap: Decodable { var entry: Entry }
         struct UsageWrap: Decodable { var usage: Usage }
         struct ScreenWrap: Decodable { var screen: ScreenState }
-        struct RequestsWrap: Decodable { var requests: [AccessRequest] }
-        struct CloudWrap: Decodable { var cloud: CloudStatus }
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
@@ -120,10 +114,6 @@ public struct HostClient: Sendable {
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
         case "screen":
             return (try? d.decode(ScreenWrap.self, from: data)).map { .screen($0.screen) }
-        case "accessRequests":
-            return (try? d.decode(RequestsWrap.self, from: data)).map { .accessRequests($0.requests) }
-        case "cloud":
-            return (try? d.decode(CloudWrap.self, from: data)).map { .cloud($0.cloud) }
         case "resync":
             return .resync
         default:
@@ -136,10 +126,6 @@ public struct HostClient: Sendable {
 
 public extension HostClient {
     func hello() async throws -> Hello { try await call("hello") }
-
-    func sync(since: Int64) async throws -> SyncResponse {
-        try await call("sync", ["since": since])
-    }
 
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
         struct Body: Encodable { var botId: String; var beforeSeq: Int64; var limit: Int }

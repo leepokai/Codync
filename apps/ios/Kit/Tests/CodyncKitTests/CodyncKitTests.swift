@@ -62,13 +62,6 @@ import Testing
     #expect(v.zoom == v.maxZoom && v.scale == 4)
 }
 
-@Test func tailscaleAddresses() {
-    #expect(Tailscale.isAddress("http://100.101.2.3:19222"))
-    #expect(Tailscale.isAddress("http://mac.tail1234.ts.net:19222"))
-    #expect(!Tailscale.isAddress("http://100.200.2.3:19222"))
-    #expect(!Tailscale.isAddress("http://192.168.1.5:19222"))
-}
-
 @Test func parsesClaudeResetText() throws {
     let taipei = try #require(TimeZone(identifier: "Asia/Taipei"))
     var cal = Calendar(identifier: .gregorian)

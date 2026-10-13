@@ -61,7 +61,7 @@ Shared deterministic [vectors](fixtures/remote-relay-vectors.json) and their [ge
 | Host cloud / relay | `host/src/remote/cloud.rs`, `relay.rs` |
 | Swift transports / identity | `apps/ios/Kit/Sources/CodyncKit/Client/` |
 | Account and per-computer state | `apps/ios/Kit/Sources/CodyncUI/` |
-| iOS account integration | `apps/shared/AccountSession.swift` |
+| iOS account integration | `apps/ios/App/AccountSession.swift` |
 | Desktop account, device key, cloud API | `apps/desktop/src/main/account.ts`, `cloud.ts` |
 
 See [architecture](../architecture/overview.md) and [file structure](../architecture/file-structure.md). Application/host compatibility follows mutual minimum versions ([compatibility](compatibility.md)); channel `v`, QR version and Worker package version are separate values.
@@ -313,7 +313,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 | loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `teamCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud` | `Caller::Local`（loopback + token） |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
 | screen scope | `screenPrepare`, `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
-| control scope | 其餘所有既有方法（`hello`, `sync`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
+| control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
 
 v1 發出的 grant 一律 `["control","screen"]`。
 
@@ -534,7 +534,7 @@ Verify pairing and approval, same-computer direct/relay connectivity, encrypted 
 
 ## 14. Environments and deployment
 
-See [environments and deployment](../guides/environments-and-deployment.md) and [cloud setup](../../cloud/README.md). Debug builds target development (`dev-api.codync.dev`); Release builds target production (`api.codync.dev`).
+See [environments and deployment](../guides/environments-and-deployment.md) and [cloud setup](../../cloud/README.md). `iOS Dev` / `dist:*:dev` builds target development (`dev-api.codync.dev`); `iOS` / `dist:*:main` builds target production (`api.codync.dev`).
 
 ## Implementation clarifications
 

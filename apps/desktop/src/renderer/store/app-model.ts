@@ -37,8 +37,7 @@ export interface Approval {
 
 /**
  * The window's model: this computer's own host (from the main process), one `BotStore` per
- * computer, the selection, and what the menu bar shows. Ports the Mac app's `HostController`
- * (renderer side) and kit's `AccountStore`.
+ * computer, the selection, and what the menu bar shows. Mirrors kit's `AccountStore`.
  */
 export class AppModel extends Observable {
   host: HostSnapshot = { state: { kind: 'starting' }, local: null, dev: false, logPath: '' }

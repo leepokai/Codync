@@ -2,8 +2,7 @@ import type { HostClient } from '../../client/host-client'
 import { pref, type Pref } from '../../lib/prefs'
 
 // Realtime voice on the user's own provider keys (host/src/voice.rs, kit Voice.swift +
-// VoiceSettings). The keys stay on the computer; these are this device's choices, under the
-// same keys as the Swift apps.
+// VoiceSettings). The keys stay on the computer; these are this device's choices.
 
 export type VoiceProvider = 'openai' | 'gemini'
 export const VOICE_PROVIDERS: VoiceProvider[] = ['openai', 'gemini']

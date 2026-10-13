@@ -22,8 +22,8 @@ const copy = {
 }
 
 /**
- * Asks for a GitHub star twice at most: once after setup (after the analytics question, so the
- * two never stack), and once more a week later. Starring ends it.
+ * Asks for a GitHub star twice at most: once after setup, and once more a week later.
+ * Starring ends it.
  */
 export function StarPrompt() {
   const app = useApp()
@@ -32,7 +32,7 @@ export function StarPrompt() {
   const [state, setState] = usePref(prefs.starAsk)
   const [closed, setClosed] = useState(false)
   const due = dueStarAsk(state, Date.now())
-  const open = due !== null && onboarded && !closed && local?.connection.kind === 'online' && local.analytics !== null
+  const open = due !== null && onboarded && !closed && local?.connection.kind === 'online'
 
   const finish = (starred: boolean) => {
     if (closed) return

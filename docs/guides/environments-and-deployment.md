@@ -9,12 +9,12 @@ See [side-by-side Dev and production apps](dev-app.md) for schemes, identifiers,
 | Layer | Source | Selection |
 | --- | --- | --- |
 | Apple app | `apps/shared/Config/dev.plist`, `main.plist` | `project.yml` copies the selected file to bundled `AccountConfig.plist`; `iOS Dev` uses dev; `iOS` uses main |
-| Account SDK | `apps/shared/AccountSession.swift` | Public Clerk configuration; development environment overrides are supported |
+| Account SDK | `apps/ios/App/AccountSession.swift` | Public Clerk configuration; development environment overrides are supported |
 | Host | `host/src/remote/cloud.rs` | `CODYNC_CLOUD=off` or stored disable wins; then `CODYNC_CLOUD_URL`, then the build's cloud (`CODYNC_ENV` at compile time) |
 | Cloud Worker / D1 / DO | `cloud/wrangler.toml` | Root production, `dev`, or `local` environment |
 | APNs Worker | `relay/wrangler.toml` | Separate deployment and secrets; see [relay README](../../relay/README.md) |
 
-The environment is chosen when building, never stored: the host compiles in its cloud from `CODYNC_ENV` (`main` → `https://api.codync.dev`, unset or anything else → `https://dev-api.codync.dev`, debug or release alike), and the only cloud setting a host saves is on/off (**Reach from anywhere**, `codync-host cloud --enable|--disable`). `CODYNC_CLOUD_URL` points a host at a cloud you're developing (https, or http to this computer). `npm run dist:mac:dev` / `dist:mac:main` build the bundled host for the app's environment, so the script name picks the environment of a whole desktop build ([desktop app](../architecture/desktop-app.md#development)); the release workflows set `CODYNC_ENV=main`.
+The environment is chosen when building, never stored: the host compiles in its cloud from `CODYNC_ENV` (`main` → `https://api.codync.dev`, unset or anything else → `https://dev-api.codync.dev`, debug or release alike), and the only cloud setting a host saves is on/off (**Reach from anywhere**, `codync-host cloud --enable|--disable`). `CODYNC_CLOUD_URL` points a host at a cloud you're developing (https, or http to this computer). `npm run dist:<platform>:dev` / `dist:<platform>:main` build the bundled host for the app's environment, so the script name picks the environment of a whole desktop build ([desktop app](../architecture/desktop-app.md#development)); the release workflows set `CODYNC_ENV=main`.
 
 ## Checked-in readiness
 
@@ -28,7 +28,7 @@ Check the environment before resetting keys, pairing again, or removing an accou
 
 Observed on 2026-10-09: MacBook-Pro-3 ran a local development build connected to `dev-api.codync.dev`, while the Mac mini ran a production build connected to `api.codync.dev`. Both hosts reported `registered: true` and `connected: true`. The MacBook's same `computerId` was online in development D1 and offline in production D1. The Mac mini's account list therefore correctly showed the old production record as **Offline**. This was an environment mismatch, not evidence of a stopped host or a duplicate identity.
 
-Before testing account discovery, access approval, or cross-device computer order:
+Before testing account discovery or access approval:
 
 1. Run `codync-host cloud` on each computer and compare `url`, `registered`, `connected`, and `last error`. Use the installed app's bundled executable if the shell's host binary is not the one being tested.
 2. Check `http://127.0.0.1:19222/health` (or the configured development port) for the running binary path, version and `computerId`.
@@ -62,9 +62,9 @@ A migration that changes what the database accepts goes out before the Worker co
 
 The repository is public, so its whole history counts as published. Last scan: 2026-10-07 (`gitleaks git .` plus pattern grep over `git log -p --all`).
 
-- **Rotated:** the `codync-push` Worker (`codync-push.kevin2005ha.workers.dev`) bearer secret, hard-coded in `Codync-macOS/Services/APNsPushService.swift` from 2026-03-19 (`96f7118`) until 2026-03-25 (`72837e2`). The value in history is dead; rotated by the owner before 2026-10-07.
+- **Rotated:** a push Worker bearer secret committed from 2026-03-19 (`96f7118`) until 2026-03-25 (`72837e2`). The value in history is dead; rotated by the owner before 2026-10-07.
 - **Public by design:** the PostHog project key (`phc_…`, ingest only) and Clerk publishable keys (`pk_test_…`, `pk_live_…`).
-- **Not secrets:** test vectors in `docs/remote-relay-vectors.json` and keys in test fixtures.
+- **Not secrets:** test vectors in `docs/reference/fixtures/remote-relay-vectors.json` and keys in test fixtures.
 - No PostHog personal keys (`phx_…`), Clerk secret keys, cloud provider keys or private key files were ever committed.
 
 ## Migration log
@@ -77,9 +77,11 @@ The repository is public, so its whole history counts as published. Last scan: 2
 
 `0002` lets `computers.platform` be `windows` (Windows hosts register with `std::env::consts::OS`). SQLite can't change a CHECK, so it rebuilds `computers` together with `access_requests` and `grants`, the tables that reference it: dropping a referenced table while foreign keys are enforced would count every referencing row as a violation. Live schemas matched `0001` beforehand; row counts were unchanged afterwards (dev 24 computers, 8 grants, 14 access requests; main 101, 38, 48) with no orphaned rows. A signed `POST /v1/host/register` with `platform: "windows"` returned 200 on both (the probe rows were deleted). Main's Worker answered with the previous version for about 20 seconds after `deploy`.
 
-The Worker accepting `windows` was deployed to both environments from the `windows` branch on 2026-10-07, ahead of its merge; its cloud code differed from `main` only in that platform list. Until the branch reaches `main`, deploying cloud from `main` turns Windows registration off again (the database keeps accepting it).
+The Worker accepting `windows` was deployed to both environments from the `windows` branch on 2026-10-07, ahead of its merge; its cloud code differed from `main` only in that platform list.
 
 `0003` lets `devices.platform` be `linux` or `windows`. Accounts were built when only the iPhone and the SwiftUI Mac app signed in; the Electron app brought sign-in to Linux (and later Windows), whose device registration the cloud rejected (`400 Invalid platform`), so main held no Linux devices at all. It rebuilds `devices` with `access_requests` and `grants` the same way as `0002`. Row counts were unchanged (dev 14 devices, 8 grants, 14 access requests; main 128, 41, 53) with no orphaned rows; a `windows` device row inserted on dev was accepted and removed. The Worker accepting both platforms was deployed to dev and main the same day from the `device-platforms` branch, which differed from `main` only there. Windows apps up to 2.9.0 register as `linux`; later ones send `windows`.
+
+A `0004_computer_order.sql` (an account-wide computer order) reached only dev before ordering became device-local. On 2026-10-11 its column was dropped from `codync-dev` and its row deleted from `d1_migrations` (restore point `00001447-00000002-00005101-ce9dbb4b6e3847fef79f63887a5d89af`), and the file was removed, so both environments match `0001`–`0003`.
 
 Rolling back a migration restores the whole database to that point, losing every write since: `wrangler d1 time-travel restore <db> --bookmark=<restore point>`.
 

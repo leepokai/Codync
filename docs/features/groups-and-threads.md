@@ -25,7 +25,7 @@ replies itself.
 - Read state (Slack's): the main chat and each thread are read separately. A bot's `unread`
   badge is the sum. Reading the main chat leaves a thread's new replies unread; opening the
   thread (or replying in it) reads them. A root doesn't turn unread when its summary changes.
-- `sync` / `events` catch-up carries recent entries of chats *and* threads. Paging:
+- The `events` catch-up carries recent entries of chats *and* threads. Paging:
   `history` (main chat only), `thread` (a whole thread).
 
 ## Methods (`POST /api/<method>`, same on the E2E channel)

@@ -1,22 +1,26 @@
 # Usage analytics
 
-Opt-in product analytics in PostHog (US Cloud, project "Codync App", id 649427). Every
-device asks once and sends nothing until the user agrees; the answer can be changed in
-Settings anytime. The public promise lives in `web/app/privacy/page.tsx`: keep it true.
+Product analytics in PostHog (US Cloud, project "Codync App", id 649427), on by default on
+every device; *Share usage analytics* in Settings turns it off. It exists to spot bugs sooner
+(failed or stopped turns per agent and platform) and to serve users better. The public promise
+lives in `web/app/privacy/page.tsx`: keep it true.
 
 ## Rules
 
 - **Only feature use, never content.** No message text, prompts, code, file names, paths,
   bot names, credentials or agent output. Properties are counts, booleans and public
   catalog names (agent, model, connector catalog name; a custom connector is just `custom`).
-- **Consent per device.** The computer's owner decides for that computer (host kv
-  `analytics_enabled`, `null` until asked); each iPhone decides for itself
-  (`UserDefaults` `analyticsEnabled`). Turning it off drops anything still queued.
-- **Identity.** Signed in to a Codync account: the Clerk user id, with a person profile.
-  Otherwise a random install id (the host id on a computer, a UUID on the iPhone) and no
-  person profile. The first signed-in event sends `$identify` with `$anon_distinct_id` so
-  earlier events join the account.
-- **No IP or location**: the project discards client IPs and every event sets `$geoip_disable`.
+- **Setting per device.** The computer's owner decides for that computer (host kv
+  `analytics_enabled`, on unless `0`); each iPhone decides for itself (`UserDefaults`
+  `analyticsEnabled`, on unless `false`). Turning it off drops anything still queued. A
+  device that said no to the earlier opt-in question stays off.
+- **Identity.** Every device gets a person profile. Signed in to a Codync account: the Clerk
+  user id. Otherwise a random install id (the host id on a computer, a UUID on the iPhone).
+  The first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events join
+  the account.
+- **Location, never the IP.** The project's GeoIP transformation turns the sender's IP into an
+  approximate location (`$geoip_country_name`, `$geoip_city_name`, …), then the project's
+  *Discard client IP data* drops the IP before storage.
 - `env` is `main` or `dev`; filter dev out in PostHog.
 
 ## Where events come from
@@ -33,14 +37,11 @@ Settings anytime. The public promise lives in `web/app/privacy/page.tsx`: keep i
   host stops.
 - **Desktop** reports app-level events through the loopback-only `track` method
   (`app_opened`, `onboarding_completed` when the welcome screen is finished, `signed_in`,
-  `signed_out`) and sets consent with `setAnalytics`; `hello` carries `analytics: true | false | null`.
+  `signed_out`) and turns sharing on or off with `setAnalytics`; `hello` carries `analytics: true | false`.
   The **terminal UI** reports only `app_opened` (it has no welcome screen or sign-in).
 - **iPhone** (`CodyncKit` analytics client, no SDK) sends its own app-level events
   (`app_opened`, `onboarding_completed`, `computer_paired`, `signed_in`, `signed_out`,
   `voice_call_started`) straight to PostHog. Widgets and the notification extension never send.
-- **Before the answer**: setup and pairing come before the question, so every client holds
-  events in memory until the device answers; a yes sends them, a no drops them. Nothing leaves
-  the device before a yes.
 
 ## Event properties
 
@@ -68,7 +69,7 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 | Metric | Definition |
 |---|---|
 | Active user (DAU/WAU/MAU) | Sent ≥1 `message_sent` in the period. Any event at all counts as *present*, not active (`app_opened` on the iPhone fires on every return to the foreground). |
-| New user | First event of any kind in the period (the first event after the device said yes, not the install). |
+| New user | First event of any kind in the period. |
 | Activated | Sent ≥1 message from a phone (`message_sent`, `client = remote`) within 7 days of first seen. In the first week of data, 4 of 5 such users came back after 24 h and none of the 6 computer-only ones did. |
 | Successful turn rate | `turn_finished` with `outcome = done` ÷ all `turn_finished` with `source = user`, per agent and per `$os`. |
 | Frustration rate | (`turn_stopped` + `session_reset`) ÷ `message_sent`, per `$os`. |
@@ -77,9 +78,9 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 | Feature adoption | Share of WAU with ≥1 of: `voice_call_finished`, `remote_screen_opened`, `connector_installed`, `routine_saved`, `bot_created` with `kind = group`. |
 | Up to date | Share of computers active in the period whose last `app_version` is the latest release. |
 
-## Asking
+## Turning it off
 
-All clients show the same prompt ("Help improve Codync", *Share usage* / *Don't share*)
-when onboarding is done and the device hasn't answered, which covers new users right after
-the welcome screen and existing users once after updating. The App Store privacy label
-declares *Product Interaction*, linked to the user, not used for tracking.
+No client asks: sharing starts with the first launch. Every client has the same switch,
+*Share usage analytics* (iPhone and desktop Settings → Privacy, terminal UI `^k`). The App
+Store privacy label declares *Product Interaction* and *Coarse Location*, linked to the user, not used
+for tracking (the same two in `apps/ios/Resources/PrivacyInfo.xcprivacy`).

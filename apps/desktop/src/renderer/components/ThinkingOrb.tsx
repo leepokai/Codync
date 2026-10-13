@@ -1,14 +1,15 @@
 import { useEffect, useRef } from 'react'
 import { useDark, useReduceMotion } from '../lib/theme'
 
-// thinking-orbs 0.3.1, commit de85557 (MIT, Jakub Antalik): src/engine/{core,orbits,lattice,web}.ts
+// thinking-orbs 0.3.1, commit de85557 (MIT, Jakub Antalik): src/engine/{core,orbits,lattice,web,morph}.ts
 // with the resolved 20/64 pt presets, as ported in kit's ThinkingOrbGeometry.
 
-export type OrbState = 'working' | 'searching' | 'listening' | 'connecting'
+export type OrbState = 'working' | 'searching' | 'listening' | 'connecting' | 'shaping'
 
 interface Dot { x: number; y: number; z: number; radius: number; white: number; alpha: number }
 interface Line { x1: number; y1: number; x2: number; y2: number; white: number; alpha: number; width: number }
 type P3 = [number, number, number]
+type P2 = [number, number]
 
 function speed(state: OrbState, size: number) {
   const small = size < 40
@@ -17,6 +18,7 @@ function speed(state: OrbState, size: number) {
     case 'searching': return small ? 2.665 : 2.015
     case 'listening': return small ? 3.998 : 4.388
     case 'connecting': return small ? 6.63 : 3.315
+    case 'shaping': return small ? 2.08 : 2.405
   }
 }
 
@@ -150,8 +152,60 @@ function web(size: number, t: number) {
   return { dots, lines }
 }
 
+/** The closed outline through `vertices`, parameterized by arc length (0...1). */
+function polygon(vertices: P2[]) {
+  const lengths = vertices.map((a, i) => {
+    const b = vertices[(i + 1) % vertices.length]!
+    return Math.hypot(b[0] - a[0], b[1] - a[1])
+  })
+  const total = lengths.reduce((sum, l) => sum + l, 0)
+  return (f: number): P2 => {
+    let target = f * total, i = 0
+    while (target > lengths[i]! && i < vertices.length - 1) target -= lengths[i++]!
+    const a = vertices[i]!, b = vertices[(i + 1) % vertices.length]!, k = lengths[i] ? Math.min(1, target / lengths[i]!) : 0
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]
+  }
+}
+const SHAPES = [
+  (f: number): P2 => [Math.cos(-Math.PI / 2 + f * 2 * Math.PI) * 0.24, Math.sin(-Math.PI / 2 + f * 2 * Math.PI) * 0.24],
+  polygon([[0, -0.26], [0.24, 0.16], [-0.24, 0.16]]),
+  polygon([[0, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2], [-0.2, -0.2]]),
+]
+
+/** A dotted outline that holds a circle, triangle and square in turn, morphing between them. */
+function morph(size: number, t: number) {
+  const small = size < 40, spread = 1.45, hold = 1.4, change = 0.9, segment = hold + change
+  const cycle = t % (segment * SHAPES.length)
+  const k = Math.min(SHAPES.length - 1, Math.floor(cycle / segment)), local = cycle - k * segment
+  const x = (local - hold) / change, m = local > hold ? x * x * (3 - 2 * x) : 0
+  const from = SHAPES[k]!, to = SHAPES[(k + 1) % SHAPES.length]!
+  const samples = 160
+  const points: P2[] = []
+  for (let i = 0; i < samples; i++) {
+    const a = from(i / samples), b = to(i / samples)
+    points.push([(a[0] + (b[0] - a[0]) * m) * spread, (a[1] + (b[1] - a[1]) * m) * spread])
+  }
+  const lengths = points.map((a, i) => {
+    const b = points[(i + 1) % samples]!
+    return Math.hypot(b[0] - a[0], b[1] - a[1])
+  })
+  const total = lengths.reduce((sum, l) => sum + l, 0)
+  const count = small ? 18 : 24
+  const radius = Math.max(0.35, (small ? 0.021231 : 0.008295) * 1.35 * spread * size)
+  const pulse = 1 + 0.02 * Math.sin(local * 3.1)
+  const dots: Dot[] = []
+  let i = 0, walked = 0
+  for (let n = 0; n < count; n++) {
+    const target = (n / count) * total
+    while (walked + lengths[i]! < target && i < samples - 1) walked += lengths[i++]!
+    const a = points[i]!, b = points[(i + 1) % samples]!, f = lengths[i] ? Math.min(1, (target - walked) / lengths[i]!) : 0
+    dots.push({ x: size / 2 + (a[0] + (b[0] - a[0]) * f) * pulse * size, y: size / 2 + (a[1] + (b[1] - a[1]) * f) * pulse * size, z: 0, radius, white: 0.1, alpha: 1 })
+  }
+  return { dots, lines: [] as Line[] }
+}
+
 export function orbFrame(state: OrbState, size: number, time: number) {
-  const f = state === 'working' ? orbits(size, time) : state === 'connecting' ? web(size, time) : lattice(size, time, state === 'listening')
+  const f = state === 'working' ? orbits(size, time) : state === 'connecting' ? web(size, time) : state === 'shaping' ? morph(size, time) : lattice(size, time, state === 'listening')
   return {
     dots: f.dots.filter((d) => d.alpha >= 0.02).map((d) => ({ ...d, radius: Math.max(0.3, d.radius) })).sort((a, b) => a.z - b.z),
     lines: f.lines.filter((l) => l.alpha >= 0.02),

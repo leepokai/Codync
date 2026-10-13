@@ -5,10 +5,15 @@
   inset: 0 0 auto;
   isolation: isolate;
 }
+.sidebar:not(.compact) {
+  timeline-scope: --roster;
+}
 .sidebar:not(.compact) .roster {
   padding-top: 54px;
   scroll-padding-top: 54px;
+  scroll-timeline: --roster block;
 }
+/* The fade comes in as the roster scrolls under the header; at rest it stays off the first row. */
 .sidebar:not(.compact) .sidebar-header::before {
   content: '';
   position: absolute;
@@ -19,6 +24,15 @@
   backdrop-filter: blur(16px);
   -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent);
   mask-image: linear-gradient(to bottom, black 65%, transparent);
+  opacity: 0;
+  animation: header-fade linear both;
+  animation-timeline: --roster;
+  animation-range: 0 24px;
+}
+@keyframes header-fade {
+  to {
+    opacity: 1;
+  }
 }
 .sidebar-header .sidebar-header-action {
   border-radius: 50% !important;

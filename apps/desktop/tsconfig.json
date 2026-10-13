@@ -14,9 +14,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "types": ["node"],
-    "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
-    "paths": { "@shared/*": ["src/shared/*"] }
+    "paths": { "@shared/*": ["./src/shared/*"] }
   },
   "include": ["src", "electron.vite.config.ts", "vite.demo.config.ts"]
 }

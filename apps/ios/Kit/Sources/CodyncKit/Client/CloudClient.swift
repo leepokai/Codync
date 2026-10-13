@@ -50,7 +50,6 @@ public struct CloudClient: Sendable {
 
     // MARK: account and devices
 
-    public func me() async throws -> CloudAccount { try await request("GET", "v1/me") }
 
     /// Registers this device key with the account (Clerk + proof of the key).
     public func registerDevice(name: String, platform: String) async throws {

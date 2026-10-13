@@ -5,14 +5,6 @@ import Foundation
 public enum Tailscale {
     public static let downloadURL = URL(string: "https://tailscale.com/download")!
 
-    /// A host address that only works over Tailscale (its IP range or MagicDNS name).
-    public static func isAddress(_ url: String) -> Bool {
-        guard let host = URL(string: url)?.host() else { return false }
-        if host.hasSuffix(".ts.net") { return true }
-        let o = host.split(separator: ".").compactMap { UInt8($0) }
-        return o.count == 4 && isRange(o[0], o[1])
-    }
-
     /// Tailscale is connected on this device right now.
     public static var isConnected: Bool {
         var head: UnsafeMutablePointer<ifaddrs>?

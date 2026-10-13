@@ -4,10 +4,9 @@ import { Icon } from '../../components/Icon'
 import { font } from '../../lib/fonts'
 import { Reveal } from './parts'
 import { sshStatusDetail } from '@shared/ssh-startup'
-import { sshBridge } from './ssh-model'
 
 export function SSHRow({ profile, status, edit, attached = true }: { profile: SSHProfile; status: SSHStatus; attached?: boolean; edit: () => void }) {
-  const bridge = sshBridge()
+  const bridge = window.codync.ssh
   const dev = window.codync.appScheme === 'codync-dev'
   const target = `${profile.user ? `${profile.user}@` : ''}${profile.host}${profile.port !== null ? `:${profile.port}` : ''}`
   const line = (() => {
@@ -41,12 +40,12 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
           <span style={{ ...font('caption'), color: problem ? 'var(--warning)' : 'var(--secondary)' }}>{line}</span>
         </div>
         {active ? (
-          <IconButton title="Disconnect" icon="stop.circle" onClick={() => bridge?.disconnect(profile.id)} />
+          <IconButton title="Disconnect" icon="stop.circle" onClick={() => bridge.disconnect(profile.id)} />
         ) : (
-          <IconButton title="Connect" icon="arrow.clockwise" onClick={() => bridge?.connect(profile.id)} />
+          <IconButton title="Connect" icon="arrow.clockwise" onClick={() => bridge.connect(profile.id)} />
         )}
         <IconButton title="Edit" icon="pencil" onClick={edit} />
-        <IconButton title="Remove" icon="trash" onClick={() => bridge?.remove(profile.id)} />
+        <IconButton title="Remove" icon="trash" onClick={() => bridge.remove(profile.id)} />
       </div>
       <Reveal show={status.kind === 'confirmHostKey'}>
         {status.kind === 'confirmHostKey' ? (
@@ -59,8 +58,8 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
               <span key={f} className="selectable" style={font('caption', undefined, 'monospaced')}>{f}</span>
             ))}
             <div style={{ display: 'flex', gap: 8 }}>
-              <Button onClick={() => bridge?.trustHostKey(profile.id)}>Trust and connect</Button>
-              <Button kind="secondary" onClick={() => bridge?.disconnect(profile.id)}>Cancel</Button>
+              <Button onClick={() => bridge.trustHostKey(profile.id)}>Trust and connect</Button>
+              <Button kind="secondary" onClick={() => bridge.disconnect(profile.id)}>Cancel</Button>
             </div>
           </div>
         ) : null}

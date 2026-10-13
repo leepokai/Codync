@@ -1,11 +1,11 @@
 # Testing the Cloudflare path
 
-The remote channel, account approval and relay implementation exist. You can begin testing the **development** path after the prerequisites below. A successful iOS build/install is not an end-to-end relay result. Production configuration remains incomplete; see [environments](environments-and-deployment.md).
+The remote channel, account approval and relay implementation exist. You can begin testing the **development** path after the prerequisites below. A successful iOS build/install is not an end-to-end relay result. See [environments](environments-and-deployment.md).
 
 ## Prerequisites
 
 - Run app/host versions within each other's `minApp` / `minHost` floors ([compatibility](../reference/compatibility.md)) and replace old running processes after installation ([development](development.md)).
-- Point both app and host at the intended cloud. Debug app configuration uses `https://dev-api.codync.dev`; check `codync-host cloud` on the computer. Enable/configure it through **Reach from anywhere** or the CLI when needed.
+- Point both app and host at the intended cloud. `iOS Dev` and `dist:*:dev` builds use `https://dev-api.codync.dev`; check `codync-host cloud` on the computer. Enable/configure it through **Reach from anywhere** or the CLI when needed.
 - Keep the computer awake, online, and its host running. Ensure the selected agent works locally first.
 - Pair through a fresh QR, or sign in and approve device access by comparing the six-digit code on the computer. A Google login alone does not authorize access.
 

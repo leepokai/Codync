@@ -30,7 +30,7 @@ export function UsageLimits({ usage }: { usage: Usage }) {
 }
 
 /** A capsule filled to `percent`: the provider's tint below 70%, then amber, red from 90%. */
-function UsageBar({ percent, tint }: { percent: number; tint: string }) {
+export function UsageBar({ percent, tint }: { percent: number; tint: string }) {
   const fill = percent >= 90 ? 'var(--danger)' : percent >= 70 ? 'var(--warning)' : tint
   return (
     <span style={{ flex: 1, minWidth: 0, height: 6, borderRadius: 3, background: 'var(--bubble-agent)', overflow: 'hidden' }}>

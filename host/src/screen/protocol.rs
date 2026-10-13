@@ -21,8 +21,6 @@ pub struct Display {
 pub struct HelperStatus {
     #[serde(default)]
     pub platform: String,
-    #[serde(default)]
-    pub version: String,
     /// Name to look for in the operating system's permission settings.
     #[serde(default)]
     pub permission_app: String,

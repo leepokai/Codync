@@ -76,6 +76,10 @@ extension BotStore {
         await refreshPlugins()
     }
 
+    func skillDetails(_ skill: SkillRef) async throws -> String {
+        try await ready().skillDetails(skill.request)
+    }
+
     /// Re-detects agents on the computer (after an install or sign-in).
     public func refreshBackends() async {
         guard let client, let backends = try? await client.refreshBackends() else { return }

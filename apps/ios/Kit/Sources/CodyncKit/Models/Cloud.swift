@@ -1,15 +1,7 @@
 import Foundation
 
-// Wire types for the Codync cloud (`/v1`, cloud/src/api.ts), the host's loopback-only
-// account methods (host/src/api/) and the relay mailbox. Times are epoch milliseconds.
+// Wire types for the Codync cloud (`/v1`, cloud/src/api.ts) and the relay mailbox. Times are epoch milliseconds.
 // Decoding is lenient: unknown fields are ignored and anything the server may omit is optional.
-
-/// `GET /v1/me`.
-public struct CloudAccount: Codable, Hashable, Sendable {
-    public var userId: String
-    public var email: String?
-    public var createdAt: Int64?
-}
 
 /// A computer in the account (`GET /v1/computers`). Its `boxKey` is for display only.
 public struct CloudComputer: Codable, Hashable, Sendable, Identifiable {
@@ -68,49 +60,6 @@ public struct AccessStatus: Codable, Hashable, Sendable {
     public var expiresAt: Int64?
     public var hostNonce: String?
     public var grantId: String?
-}
-
-/// A pending request as the computer shows it (loopback `accessRequests`).
-public struct AccessRequest: Codable, Hashable, Sendable, Identifiable {
-    public var requestId: String
-    public var deviceKey: String
-    public var deviceName: String
-    public var platform: String?
-    public var email: String?
-    /// The SAS; nil until the phone revealed its nonce (Approve stays disabled).
-    public var code: String?
-    public var createdAt: Int64?
-    public var expiresAt: Int64?
-    public var id: String { requestId }
-}
-
-public struct CloudOwner: Codable, Hashable, Sendable {
-    public var userId: String
-    public var email: String?
-}
-
-/// The host's cloud connection (loopback `cloudStatus`, `setCloud`, `cloud` events).
-public struct CloudStatus: Codable, Hashable, Sendable {
-    public var enabled: Bool
-    public var url: String?
-    public var registered: Bool?
-    public var connected: Bool?
-    public var owner: CloudOwner?
-    public var lastError: String?
-    /// Missing from older hosts: they always ask for the code.
-    public var approval: AccountApproval?
-}
-
-/// How devices on the computer's account get in (loopback `setApproval`).
-public enum AccountApproval: String, Codable, Hashable, Sendable {
-    /// Compare the 6-digit code and approve each device at the computer.
-    case code
-    /// Let them in without anyone comparing the code.
-    case auto
-
-    public init(from decoder: any Decoder) throws {
-        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .code
-    }
 }
 
 /// `GET /v1/devices`.

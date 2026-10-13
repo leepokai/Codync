@@ -27,7 +27,7 @@ struct AgentModelPicker: View {
     private var options: [(String, String)] {
         let available = (catalog?.models ?? []).filter { $0.id != agentDefault?.id }
         let filtered = available.filter { searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText) }
-        let current = filtered.first { $0.id == catalog?.currentModelId }?.name
+        let current = available.first { $0.id == catalog?.currentModelId }?.name
         var result = [("", agentDefault?.name ?? current.map { "Default · \($0)" } ?? "Default")]
         result += filtered.map { ($0.id, $0.name) }
         if let selection, !selection.isEmpty, selection != agentDefault?.id,
@@ -61,18 +61,10 @@ struct AgentModelPicker: View {
                             .frame(minWidth: 0, maxWidth: 180)
                             .outlinedPill()
                     } else {
-                        ChoicePicker(selection: value, options: options, fitsAvailableWidth: true)
+                        SearchableChoicePicker(selection: value, options: options, title: "Model",
+                                               query: $searchText, fitsAvailableWidth: true)
                     }
                 }
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                TextField("Search models...", text: $searchText)
-                    .plainTextInput()
-                    .textFieldStyle(.roundedBorder)
-                    .frame(height: 30)
-                    .foregroundStyle(Palette.secondary)
-                    .accessibilityLabel("Search models")
-                    .onSubmit { searchText = searchText }
             }
             if backend != "custom", !loading {
                 if let failure {

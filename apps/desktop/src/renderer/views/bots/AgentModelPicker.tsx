@@ -61,7 +61,7 @@ export function AgentModelPicker({ backend, selection, onChange }: { backend: st
   const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
   const available = (catalog?.models ?? []).filter((m) => m.id !== agentDefault?.id)
   const current = available.find((m) => m.id === catalog?.currentModelId)?.name
-  const matching = available.filter((m) => search.toLowerCase().includes(m.name.toLowerCase()))
+  const matching = available.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()))
   const options = [{ id: '', label: agentDefault?.name ?? (current ? `Default · ${current}` : 'Default') }, ...matching.map((m) => ({ id: m.id, label: m.name }))]
   if (selection && selection !== agentDefault?.id && !matching.some((m) => m.id === selection)) options.push({ id: selection, label: selection })
   const value = selection === agentDefault?.id ? '' : (selection ?? '')
@@ -74,12 +74,6 @@ export function AgentModelPicker({ backend, selection, onChange }: { backend: st
         <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>Model</span>
         <span style={{ flex: 1 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--text)', minWidth: 0, flex: 1 }}
-            placeholder="Search models..."
-            />
           {custom ? null : (
             // Loading and refresh share one fixed slot, so the row never grows for loading.
             <div style={{ width: 28, height: 28, display: 'grid', placeItems: 'center', flex: 'none' }}>
@@ -99,7 +93,7 @@ export function AgentModelPicker({ backend, selection, onChange }: { backend: st
             </Pill>
           ) : (
             <div style={{ display: 'flex', minWidth: 0 }}>
-              <ChoicePicker selection={value} options={options} onChange={set} />
+              <ChoicePicker selection={value} options={options} onChange={set} search={{ value: search, onChange: setSearch, placeholder: 'Search models...' }} />
             </div>
           )}
         </div>

@@ -185,7 +185,7 @@ export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick
 }
 
 /** The floating panel of menu rows. */
-export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number }) {
+export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number; search?: { value: string; onChange: (v: string) => void; placeholder?: string } }) {
   const [highlight, setHighlight] = useState(-1)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -206,6 +206,30 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
       {reactions ? (
         <div style={{ paddingBottom: items.length ? 4 : 0 }}>
           <ReactionStrip pick={reactions} dismiss={dismiss} />
+        </div>
+      ) : null}
+      {search ? (
+        <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
+          <div className="search-field" style={{ margin: 0 }}>
+            <Icon name="magnifyingglass" size={12} color="var(--secondary)" />
+            <input
+              value={search.value}
+              placeholder={search.placeholder || 'Search'}
+              spellCheck={false}
+              autoFocus
+              onChange={(e) => search.onChange(e.target.value)}
+              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text)' }}
+            />
+            {search.value ? (
+              <button
+                aria-label="Clear search"
+                onClick={() => search.onChange('')}
+                style={{ display: 'flex', color: 'var(--tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                <Icon name="xmark.circle.fill" size={12} />
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {items.map((item, i) => (
@@ -242,13 +266,14 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
  * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
  * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
  */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }: {
+export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, search }: {
   open: boolean
   onClose: () => void
   anchor?: RefObject<HTMLElement | null>
   point?: { x: number; y: number } | null
   items: () => MenuItem[]
   reactions?: ReactionPick
+  search?: { value: string; onChange: (v: string) => void; placeholder?: string }
 }) {
   const { mounted, shown } = usePresence(open, 120)
   const [rect, setRect] = useState<DOMRect | null>(null)
@@ -279,7 +304,7 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   return createPortal(
     <div className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
       <div className="anchored-panel" style={style}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, below ? roomBelow : roomAbove)} />
+        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, below ? roomBelow : roomAbove)} search={search} />
       </div>
     </div>,
     document.body,

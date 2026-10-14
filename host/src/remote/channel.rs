@@ -755,6 +755,7 @@ mod tests {
             "setScreenEnabled",
             "setAnalytics",
             "track",
+            "reportError",
             "pairing",
             "devices",
             "revokeDevice",

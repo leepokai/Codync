@@ -23,6 +23,7 @@
     "event:bot.bot.managedWorkspace": "bool",
     "event:bot.bot.members": "array",
     "event:bot.bot.model": "null",
+    "event:bot.bot.modelOptions": "object",
     "event:bot.bot.name": "string",
     "event:bot.bot.notify": "null",
     "event:bot.bot.permission": "string",

@@ -1,6 +1,7 @@
 //! What the host sends: bots, transcript entries, and the messages that carry them.
 
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 use super::super::manage::Reply;
 use super::tilde;
@@ -93,6 +94,8 @@ pub struct Bot {
     pub managed_workspace: bool,
     pub auto: bool,
     pub model: Option<String>,
+    /// The model's own settings (effort, fast…): option id → value.
+    pub model_options: BTreeMap<String, String>,
     pub pinned: bool,
     /// Where the user dragged it (see `App::roster`).
     pub position: i64,
@@ -119,6 +122,36 @@ fn strs(v: &Value) -> Vec<String> {
     v.as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect()
 }
 
+/// A model an agent offers (`agentModels`), with its own settings.
+pub struct AgentModel {
+    pub id: String,
+    pub name: String,
+    pub options: Vec<ModelOption>,
+}
+
+/// A model setting (effort, fast…) and its values as `(id, name)`.
+pub struct ModelOption {
+    pub id: String,
+    pub name: String,
+    pub values: Vec<(String, String)>,
+}
+
+impl AgentModel {
+    pub fn parse(v: &Value) -> Option<Self> {
+        let pair = |v: &Value| {
+            let id = v["id"].as_str()?.to_owned();
+            Some((v["name"].as_str().unwrap_or(&id).to_owned(), id))
+        };
+        let (name, id) = pair(v)?;
+        let options = v["options"].as_array().into_iter().flatten().filter_map(|o| {
+            let (name, id) = pair(o)?;
+            let values = o["values"].as_array()?.iter().filter_map(|v| pair(v).map(|(n, i)| (i, n))).collect();
+            Some(ModelOption { id, name, values })
+        });
+        Some(Self { id, name, options: options.collect() })
+    }
+}
+
 impl Bot {
     /// Where it works, as the header shows it.
     pub fn folder(&self, home: &str) -> String {
@@ -138,6 +171,12 @@ impl Bot {
             managed_workspace: v["managedWorkspace"] == true,
             auto: v["permission"] == "auto",
             model: v["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
+            model_options: v["modelOptions"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+                .collect(),
             pinned: v["pinned"].as_bool().unwrap_or(false),
             position: v["position"].as_i64().unwrap_or(0),
             hidden: v["hidden"].as_bool().unwrap_or(false),

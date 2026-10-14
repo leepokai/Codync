@@ -6,10 +6,11 @@ import { Dialog, useDismiss } from '../../components/Overlay'
 import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
-import { AgentSheet, AgentTile } from './AgentSheet'
+import { AgentSheet, AgentTile, NodeNotice } from './AgentSheet'
 import { ComposioSection } from './ComposioViews'
 import { CredentialsView } from './CredentialsView'
 import { CustomConnectorSheet, InstallConnectorSheet, NewSkillSheet } from './ConnectorSheets'
+import { SetupTerminalView } from './SetupTerminal'
 import { SkillSheet, type SkillRef } from './SkillSheet'
 import {
   appendPage, emptyPage, errorText, hasHiddenItems, market, needsSignIn, replacePage, revealMore, visible,
@@ -47,6 +48,7 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
   const [writingSkill, setWritingSkill] = useState(false)
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const [agent, setAgent] = useState<Backend | null>(null)
+  const [addingNode, setAddingNode] = useState(false)
   /** Agents shown before "Load more agents" (two rows of the grid). */
   const [agentLimit, setAgentLimit] = useState(10)
   const [showInstalled, setShowInstalled] = useState(false)
@@ -142,7 +144,7 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
         <ComputerBadge computer={store.computer} size={32} />
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, whiteSpace: 'nowrap' }}>
-          <span style={{ ...font('title', 'semibold'), color: 'var(--text)' }}>{appsFirst ? 'Connect apps' : 'Marketplace'}</span>
+          <span style={{ ...font('title', 'semibold'), color: 'var(--text)' }}>Extensions</span>
           {computers.length > 1 ? (
             <DropdownMenu
               title="Switch computer"
@@ -168,7 +170,10 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
               </span>
             ))}
           </span>
-          <span style={{ color: 'var(--secondary)', whiteSpace: 'nowrap' }}>{installedCount} installed</span>
+          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', color: 'var(--secondary)', whiteSpace: 'nowrap' }}>
+            <span>{installedCount} installed</span>
+            <span style={font('caption')}>Connectors & skills</span>
+          </span>
           <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />
         </button>
       ) : null}
@@ -219,6 +224,7 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
           {appsFirst ? <ComposioSection query={query} searchToken={searchToken} /> : null}
           {agents.length > 0 ? (
             <MarketSection title={query ? `Agents matching “${query}”` : 'Agents'}>
+              {allAgents.some((b) => b.node === 'missing') ? <NodeNotice onAdd={() => setAddingNode(true)} /> : null}
               <div className="agent-grid">
                 {agents.slice(0, agentLimit).map((b) => <AgentCard key={b.id} backend={b} onClick={() => setAgent(b)} />)}
               </div>
@@ -323,6 +329,9 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
       <FormSheet open={viewingSkill !== null} onClose={() => setViewingSkill(null)}>
         {viewingSkill ? <SkillSheet key={viewingSkill.name} skill={viewingSkill} /> : null}
       </FormSheet>
+      <FormSheet open={addingNode} onClose={() => setAddingNode(false)} width={560} height={560}>
+        {addingNode ? <SetupTerminalView backend={null} step="node" back={() => setAddingNode(false)} /> : null}
+      </FormSheet>
       <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560}>
         {agent ? <AgentSheet key={agent.id} initial={agent} /> : null}
       </FormSheet>
@@ -331,12 +340,14 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
 }
 
 function AgentCard({ backend, onClick }: { backend: Backend; onClick: () => void }) {
-  const status = backend.installed === true
-    ? (backend.signedIn === false ? 'Not signed in' : 'Installed')
-    : backend.curated === true ? 'Not installed' : 'Sets up on first use'
+  const status = backend.installed !== true && backend.curated === true ? 'Not installed'
+    : backend.node === 'missing' ? 'Needs Node.js'
+    : backend.installed !== true ? 'Sets up on first use'
+    : backend.signedIn === false ? 'Not signed in'
+    : 'Installed'
   return (
     <button className="agent-card" title={backend.name} onClick={onClick}>
-      <AgentTile registry={backend.registry} icon={24} tile={40} radius={11} />
+      <AgentTile registry={backend.registry ?? backend.id} icon={24} tile={40} radius={11} />
       <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3, minWidth: 0 }}>
         <span style={{ ...font('subheadline', 'semibold'), color: 'var(--text)', ...ellipsis }}>{backend.name}</span>
         <span style={{ ...font('caption'), color: 'var(--secondary)', ...ellipsis }}>{status}</span>
@@ -378,7 +389,7 @@ function InstalledView({ back }: { back: () => void }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
-      <ScreenHeader title="Installed" onBack={back} />
+      <ScreenHeader title="Connectors & skills" onBack={back} />
       <div style={{ flex: 1, minHeight: 0 }}>
         <CardForm>
           {empty ? <EmptyState icon="shippingbox" title="Nothing installed" detail="Connectors and skills you add show up here." /> : null}

@@ -69,7 +69,7 @@ fn save(store: &Store, c: &Config) -> Result<()> {
 }
 
 fn config(store: &Store) -> Result<Config> {
-    load(store)?.ok_or_else(|| anyhow!("Set up Composio in Marketplace first."))
+    load(store)?.ok_or_else(|| anyhow!("Set up Composio in Extensions first."))
 }
 
 /// Cached connected apps (possibly stale; `refresh` updates them).
@@ -95,7 +95,7 @@ async fn request(
     let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     if !status.is_success() {
         if status.as_u16() == 401 {
-            bail!("Composio did not accept the API key. Reconnect in Marketplace.");
+            bail!("Composio did not accept the API key. Reconnect in Extensions.");
         }
         bail!("Composio request failed ({status}). Check the connection and try again.");
     }

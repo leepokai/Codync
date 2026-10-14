@@ -14,6 +14,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Test a phone over Cloudflare instead of LAN | [Cloudflare testing](guides/cloudflare-testing.md) |
 | Configure dev/main or deploy the services | [Environments and deployment](guides/environments-and-deployment.md) |
 | Run the host on a Linux server or cloud VM | [Linux servers](guides/linux-servers.md) |
+| Reproduce or check something on Windows (UTM VM) | [Windows testing](guides/windows-testing.md) |
 | Set up accounts, approvals or desktop SSH | [Accounts and SSH](guides/accounts-and-ssh.md) |
 | Change transport or cryptography | [Remote protocol](reference/remote-relay.md) and [shared vectors](reference/fixtures/README.md) |
 | Change what the host and clients exchange | [Client and host compatibility](reference/compatibility.md) |
@@ -30,7 +31,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [File attachments](features/file-attachments.md)
 - [Remote screen](features/remote-screen.md)
 - [Notch island (desktop)](features/notch-island.md)
-- [Marketplace and agent setup](features/marketplace.md)
+- [Extensions and agent setup](features/marketplace.md)
 - [Connector setup and credentials](features/connector-credentials.md)
 - [Routines](features/routines.md)
 - [Widgets, Live Activities and onboarding](design/mobile-widgets.md)

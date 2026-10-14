@@ -14,7 +14,7 @@ mod ui;
 
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
-pub use model::{After, Bot, Entry, Kind, Mark, Msg, Status};
+pub use model::{After, AgentModel, Bot, Entry, Kind, Mark, ModelOption, Msg, Status};
 pub use ui::{
     ACTIONS, Action, AgentPicker, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderPicker,
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NEW_GROUP, Overlay, SHAPES, Toast, Toggle, TraceMode, Width,
@@ -88,7 +88,7 @@ pub struct App {
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
     /// Models each agent offers (`None` while loading).
-    pub models: HashMap<String, Option<Vec<(String, String)>>>,
+    pub models: HashMap<String, Option<Vec<AgentModel>>>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
     /// Chats and threads (`bot` / `bot/root`) marked read since their bot's unread count last changed.

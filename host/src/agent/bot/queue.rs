@@ -78,7 +78,8 @@ impl Actor {
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
                     || cfg.cwd != self.cfg.cwd
-                    || cfg.model != self.cfg.model;
+                    || cfg.model != self.cfg.model
+                    || cfg.model_options != self.cfg.model_options;
                 self.tools_changed |= cfg.connectors != self.cfg.connectors || cfg.computer != self.cfg.computer;
                 // Name, description and skill changes reach the agent as a profile update
                 // on the next message (see `context`).
@@ -229,17 +230,17 @@ impl Actor {
 
     pub(super) fn start_failed(&mut self, e: &anyhow::Error) {
         if self.turn.is_some() {
-            self.report_turn(false, true, "start_failed");
+            self.report_turn(false, Some(e), "start_failed");
         }
         self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
         self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
         // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
         let mut msg = format!("Couldn't start the agent: {e:#}");
-        if e.to_string().to_lowercase().contains("auth")
+        if crate::agent::acp::needs_sign_in(e)
             && let Some(h) = crate::agent::backends::harness(&self.cfg.backend)
         {
-            msg = format!("{0} needs you to sign in. Open {0} in Marketplace to sign in.", h.name);
+            msg = format!("{0} needs you to sign in. Open {0} in Extensions to sign in.", h.name);
         }
         self.notice(&msg, NoticeStyle::Error);
         self.turn = None;

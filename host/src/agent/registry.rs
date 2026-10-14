@@ -101,6 +101,12 @@ pub fn launch_kind(agent: &Value) -> Option<Launch> {
     None
 }
 
+/// The agent runs through `npx` here (no build of its own for this platform).
+pub fn needs_node(agent: &Value) -> bool {
+    let d = &agent["distribution"];
+    d["npx"].is_object() && !platform().is_some_and(|p| d["binary"][p].is_object())
+}
+
 fn args_of(v: &Value) -> String {
     v["args"]
         .as_array()
@@ -171,10 +177,8 @@ pub async fn command(agent: &Value, progress: impl Fn(&str)) -> Result<Cmd> {
             ),
             args: args_of(&d["uvx"]),
         }),
-        None => bail!(
-            "{name} has no build for this computer (needs {})",
-            if d["uvx"].is_object() { "uv" } else { "Node.js" }
-        ),
+        None if needs_node(agent) => bail!("{name} needs Node.js on this computer: add it in Extensions"),
+        None => bail!("{name} has no build for this computer (needs uv)"),
     }
 }
 
@@ -204,7 +208,8 @@ async fn prepare_npx(package: &str, name: &str, progress: &impl Fn(&str)) -> Res
     let _ = tokio::fs::remove_dir_all(&dir).await;
     progress(&format!("Downloading {name}…"));
     let install = tokio::process::Command::new(shell::program("npm"))
-        .args(["exec", "--yes", "--package", package, "-c", "true"])
+        // `exit 0`, not `true`: on Windows npm runs `-c` in cmd.exe, which has no `true`.
+        .args(["exec", "--yes", "--package", package, "-c", "exit 0"])
         // Away from any project, so npx doesn't settle for a local node_modules.
         .current_dir(crate::service::data_dir())
         .stdin(std::process::Stdio::null())
@@ -212,12 +217,18 @@ async fn prepare_npx(package: &str, name: &str, progress: &impl Fn(&str)) -> Res
         .output();
     let failure = match tokio::time::timeout(Duration::from_secs(20 * 60), install).await {
         Ok(Ok(out)) if out.status.success() => return Ok(()),
-        Ok(Ok(out)) => String::from_utf8_lossy(&out.stderr).trim().lines().last().unwrap_or_default().to_owned(),
+        Ok(Ok(out)) => npm_error(&String::from_utf8_lossy(&out.stderr)).to_owned(),
         Ok(Err(e)) => format!("{e}"),
         Err(_) => "timed out".to_owned(),
     };
     let _ = tokio::fs::remove_dir_all(&dir).await;
     bail!("couldn't download {name} with npm: {failure}")
+}
+
+/// The line of npm's stderr that says what went wrong: its own `npm notice` lines (a newer npm
+/// is out) come after the error.
+fn npm_error(stderr: &str) -> &str {
+    stderr.lines().map(str::trim).rfind(|l| !l.is_empty() && !l.starts_with("npm notice")).unwrap_or_default()
 }
 
 /// `npm config get cache`, asked once.
@@ -250,7 +261,7 @@ fn npx_hash(package: &str) -> String {
     })
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     Sha256::digest(bytes).iter().fold(String::with_capacity(64), |mut s, b| {
         let _ = write!(s, "{b:02x}");
@@ -370,6 +381,15 @@ mod tests {
         let expected =
             if cfg!(windows) { "K=v npx -y @s/x@1.0.0 --acp \"a b\"" } else { "env K=v npx -y @s/x@1.0.0 --acp 'a b'" };
         assert_eq!(npx_cmd(&npx).acp(), expected);
+    }
+
+    #[test]
+    fn npm_errors_skip_its_update_notice() {
+        let stderr = "'true' is not recognized as an internal or external command\n\
+                      npm notice New major version of npm available! 10.9.2 -> 11.6.2\n\
+                      npm notice To update run: npm install -g npm@11.6.2\n";
+        assert_eq!(npm_error(stderr), "'true' is not recognized as an internal or external command");
+        assert_eq!(npm_error(""), "");
     }
 
     #[test]

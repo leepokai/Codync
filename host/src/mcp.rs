@@ -319,7 +319,7 @@ impl Remote {
             }
             return Ok(Some(got));
         }
-        anyhow::bail!("{} still refuses the sign-in; sign in again in Marketplace", self.connector)
+        anyhow::bail!("{} still refuses the sign-in; sign in again in Extensions", self.connector)
     }
 
     /// Opens the older transport's event stream, which carries every answer from now on
@@ -365,7 +365,7 @@ impl Remote {
             });
             return Ok((endpoint, reader));
         }
-        anyhow::bail!("{} still refuses the sign-in; sign in again in Marketplace", self.connector)
+        anyhow::bail!("{} still refuses the sign-in; sign in again in Extensions", self.connector)
     }
 
     /// Posts one message on the older transport. Answers normally arrive on the stream;
@@ -390,7 +390,7 @@ impl Remote {
             let body = res.bytes().await?;
             return Ok(json_replies(&body).unwrap_or_default());
         }
-        anyhow::bail!("{} still refuses the sign-in; sign in again in Marketplace", self.connector)
+        anyhow::bail!("{} still refuses the sign-in; sign in again in Extensions", self.connector)
     }
 }
 

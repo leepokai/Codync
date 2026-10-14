@@ -97,7 +97,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let step: crate::agent::term::Step =
                 serde_json::from_value(b["step"].clone()).context("`step` is install or login")?;
             let (cols, rows) = term_size(&b);
-            json!({"term": hub.terms.start(str_arg(&b, "backend")?, step, b["method"].as_str(), cols, rows).await?})
+            // Node.js belongs to the computer, not to one agent.
+            let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
+            json!({"term": hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?})
         }
         "agentModels" => crate::agent::auth::models(&hub.store, str_arg(&b, "backend")?).await?,
         "agentAuth" => crate::agent::auth::check(&hub.store, str_arg(&b, "backend")?).await?,
@@ -158,6 +160,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "track" => {
             crate::analytics::track(hub, &b)?;
+            json!({})
+        }
+        "reportError" => {
+            crate::analytics::errors::report(hub, &b)?;
             json!({})
         }
         "setScreenEnabled" => {

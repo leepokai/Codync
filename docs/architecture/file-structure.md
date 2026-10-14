@@ -55,6 +55,7 @@ Codync/
 │   ├── migrations/            # D1 migrations
 │   └── test/                  # workerd tests; e2e/ runs against a real test host
 ├── relay/                     # Separate APNs push Worker; src/ and test/
+├── discord/                   # Discord GitHub-role Worker (discord.codync.dev)
 ├── docs/                      # Architecture, guides, reference, features, design, archive
 ├── tools/                     # Release, App Store submission and font scripts
 ├── packaging/                 # Distribution templates
@@ -86,7 +87,7 @@ Codync/
 | Prompt snapshots and memory keeper | `host/src/chat/context.rs`, `memory/` (`engram/`, `manage.rs`, `read.rs`, `extract.rs`, `keeper.rs`, `search.rs`) |
 | Identity, encryption and direct channel | `host/src/remote/identity.rs`, `crypto.rs`, `channel.rs` |
 | Host cloud state and relay connection | `host/src/remote/cloud.rs`, `relay.rs` |
-| Agent discovery, sign-in, setup terminal | `host/src/agent/backends.rs`, `registry.rs`, `auth.rs`, `term.rs` |
+| Agent discovery, sign-in, setup terminal, Node.js for npm agents | `host/src/agent/backends.rs`, `registry.rs`, `auth.rs`, `term.rs`, `node.rs` |
 | Marketplace, Composio, connector OAuth | `host/src/market/` |
 | Screen bridge and built-in MCP tools | `host/src/screen/`, `mcp.rs` |
 | Swift transport and cloud API | `apps/ios/Kit/Sources/CodyncKit/Client/` |

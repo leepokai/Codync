@@ -22,6 +22,23 @@ fn main() {
     let data = std::env::var_os("CODYNC_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| dirs::home_dir().map(|h| h.join(environment::Environment::current().data_folder())));
+    // One supervisor per data folder: the Run key and the app can both start one, and the second's
+    // host could only fail on the data folder's lock, forever. It waits a little first, since
+    // `install` starts the new supervisor right after stopping the old one.
+    let lock = data.as_ref().and_then(|d| {
+        std::fs::create_dir_all(d).ok()?;
+        std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(d.join("hostw.lock")).ok()
+    });
+    if let Some(lock) = &lock {
+        let mut tries = 0;
+        while fs2::FileExt::try_lock_exclusive(lock).is_err() {
+            tries += 1;
+            if tries == 20 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    }
     loop {
         let mut command = std::process::Command::new(&host);
         command.args(&args).creation_flags(CREATE_NO_WINDOW);

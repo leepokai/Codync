@@ -1,0 +1,39 @@
+name: contributor
+
+# A contributor's first merged pull request or first issue gets a thank-you with the link that adds them to the
+# Discord with the Contributor / Reporter role. pull_request_target runs this file from the default branch and never
+# checks out the PR's code.
+on:
+  pull_request_target:
+    types: [closed]
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  discord:
+    if: >-
+      (github.event_name == 'issues' || github.event.pull_request.merged) &&
+      (github.event.pull_request.user.login || github.event.issue.user.login) != github.repository_owner &&
+      (github.event.pull_request.user.type || github.event.issue.user.type) != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login || github.event.issue.user.login }}
+        run: |
+          # At most one: the search index may not list this one yet.
+          if [ "$GITHUB_EVENT_NAME" = issues ]; then
+            count=$(gh issue list --repo "$REPO" --author "$AUTHOR" --state all --limit 2 --json number --jq length)
+            role=Reporter; what="opening your first issue"
+          else
+            count=$(gh pr list --repo "$REPO" --author "$AUTHOR" --state merged --limit 2 --json number --jq length)
+            role=Contributor; what="your first merged contribution"
+          fi
+          [ "$count" -le 1 ] || exit 0
+          gh api "repos/$REPO/issues/$NUMBER/comments" -f body="Thanks for $what, @$AUTHOR! Join the Codync Discord with the **$role** role in one step: https://discord.codync.dev"

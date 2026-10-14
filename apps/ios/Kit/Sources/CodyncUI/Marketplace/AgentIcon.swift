@@ -2,7 +2,8 @@ import CodyncKit
 import SwiftUI
 import UIKit
 
-/// A coding agent's logo from the ACP registry, tinted like text; a terminal glyph otherwise.
+/// A coding agent's logo, by ACP registry id or by Codync's id for agents outside the registry,
+/// tinted like text; a terminal glyph otherwise.
 public struct AgentIcon: View {
     let registry: String?
     let size: CGFloat
@@ -35,6 +36,7 @@ public struct AgentIcon: View {
         case "amp-acp": AnyShapeStyle(Color(red: 0.95, green: 0.31, blue: 0.25))
         case "kiro": AnyShapeStyle(Color(red: 0.56, green: 0.27, blue: 1.0))
         case "cortex-code": AnyShapeStyle(Color(red: 0.16, green: 0.71, blue: 0.91))
+        case "omp": AnyShapeStyle(LinearGradient(colors: [Color(red: 0.93, green: 0.29, blue: 0.75), Color(red: 0.61, green: 0.30, blue: 1.0), Color(red: 0.35, green: 0.85, blue: 0.90)], startPoint: .topLeading, endPoint: .bottomTrailing))
         default: AnyShapeStyle(Palette.text)
         }
     }

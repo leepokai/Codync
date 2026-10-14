@@ -14,7 +14,7 @@ use super::style::{FACE, avatar, bot_color, face_style, theme};
 
 pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let t = theme();
-    let r = centered(area, 88, 30);
+    let r = centered(area, 88, 32);
     let title = match &f.bot_id {
         Some(_) => format!("Edit {}", f.name.text),
         None => "New bot · 2/2 name and looks".into(),
@@ -48,6 +48,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Instructions => "Instructions",
             Field::Agent => "Agent",
             Field::Model => "Model",
+            Field::ModelOptions => "Options",
             Field::Folder => "Workspace",
             Field::Approvals => "Approvals",
             Field::Notify => "Notify",
@@ -95,13 +96,33 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     Some(Some(list)) if !list.is_empty() => {
                         let id = f.model.text.trim();
                         list.iter()
-                            .find(|(m, _)| m == id)
-                            .map_or_else(|| format!("‹ › {} models", list.len()), |(_, name)| format!("‹ {name} ›"))
+                            .find(|m| m.id == id)
+                            .map_or_else(|| format!("‹ › {} models", list.len()), |m| format!("‹ {} ›", m.name))
                     }
                     _ => String::new(),
                 };
                 if !hint.is_empty() && w(&f.model.text) + w(&hint) + 2 < usize::from(vw) {
                     rput(buf, inner.right(), y, &hint, t.dim.patch(base));
+                }
+            }
+            Field::ModelOptions => {
+                let offered = app.model_settings(&f.backend, f.model.text.trim());
+                if offered.is_empty() {
+                    put(buf, vx, y, vw, "none for this model", t.dim.patch(base));
+                }
+                let mut x = vx;
+                for (j, o) in offered.iter().enumerate() {
+                    let picked = f.model_options().and_then(|p| p.get(&o.id));
+                    let value = picked.map_or("default", |v| {
+                        o.values.iter().find(|(id, _)| id == v).map_or(v.as_str(), |(_, name)| name.as_str())
+                    });
+                    let item = format!("{} ‹{value}›", o.name);
+                    let s = if active && j == f.sub { t.bold.add_modifier(Modifier::UNDERLINED) } else { t.text };
+                    if x + u(w(&item)) >= inner.right() {
+                        put(buf, x, y, 2, "…", t.dim.patch(base));
+                        break;
+                    }
+                    x = put(buf, x, y, u(w(&item)), &item, s.patch(base)) + 2;
                 }
             }
             Field::Agent => {
@@ -195,6 +216,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let hint = match f.current() {
         Field::Folder => "↵ project folder · backspace personal · tab next field",
         Field::Connectors => "←→ move · space toggle · tab next",
+        Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::Model => "←→ pick a model · or type its id",

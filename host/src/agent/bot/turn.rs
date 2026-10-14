@@ -245,8 +245,9 @@ impl Actor {
             (_, "refusal") => self.notice("The agent declined to continue.", NoticeStyle::Info),
             _ => {}
         }
-        let failed = done.is_err() && !self.stop_requested;
-        self.report_turn(stopped, failed, &stop_reason);
+        let failure = done.as_ref().err().filter(|_| !self.stop_requested);
+        let failed = failure.is_some();
+        self.report_turn(stopped, failure, &stop_reason);
         let reply = if stopped {
             Err(anyhow!("recipient was stopped; partial work may have happened"))
         } else if stop_reason != "end_turn" {
@@ -330,10 +331,10 @@ impl Actor {
 
 impl Actor {
     /// `turn_finished`, while the turn's start time is still in the runtime.
-    pub(super) fn report_turn(&self, stopped: bool, failed: bool, stop_reason: &str) {
+    pub(super) fn report_turn(&self, stopped: bool, failure: Option<&anyhow::Error>, stop_reason: &str) {
         let outcome = if stopped {
             TurnOutcome::Stopped
-        } else if failed {
+        } else if failure.is_some() {
             TurnOutcome::Failed
         } else if stop_reason == "end_turn" {
             TurnOutcome::Done
@@ -350,7 +351,8 @@ impl Actor {
             TurnSource::User
         };
         let started = self.hub.runtime(&self.id()).started_at.unwrap_or_else(now_ms);
-        analytics::turn_finished(&self.hub, &self.cfg.backend, outcome, stop_reason, source, now_ms() - started);
+        let ms = now_ms() - started;
+        analytics::turn_finished(&self.hub, &self.cfg.backend, outcome, stop_reason, failure, source, ms);
     }
 }
 

@@ -88,6 +88,23 @@ impl Client {
         if ok { Ok(v) } else { Err(v["error"].as_str().unwrap_or("The host refused that.").to_owned()) }
     }
 
+    /// Sends a panic of this terminal UI to the host (`reportError`) before the process ends:
+    /// from a thread and runtime of its own, since the panicking thread may be driving this one.
+    pub fn report_panic(&self, info: &std::panic::PanicHookInfo<'_>) {
+        use crate::analytics::errors::{Process, Report};
+        let (Some(token), Ok(body)) = (self.token(), serde_json::to_value(Report::panic(info, Process::Tui))) else {
+            return;
+        };
+        let url = format!("{}/api/reportError", self.base);
+        let _ = std::thread::spawn(move || {
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else { return };
+            let sent =
+                reqwest::Client::new().post(url).bearer_auth(token).json(&body).timeout(Duration::from_secs(3)).send();
+            let _ = rt.block_on(sent);
+        })
+        .join();
+    }
+
     /// Runs a command in the background; the reply comes back as `Msg::Reply`.
     pub fn spawn_call(&self, method: &'static str, body: Value, after: After, tx: UnboundedSender<Msg>) {
         let c = self.clone();

@@ -25,6 +25,8 @@ const LINGER: Duration = Duration::from_secs(10 * 60);
 #[serde(rename_all = "camelCase")]
 pub enum Step {
     Install,
+    /// Codync's Node.js, for agents that run on it (one terminal for every agent).
+    Node,
     Login,
 }
 
@@ -103,6 +105,7 @@ impl Terms {
         let h = backends::harness(backend);
         let name = h.map_or(backend, |h| h.name);
         let command = match step {
+            Step::Node => format!("{} node", crate::shell::quote(&crate::service::current_exe()?.to_string_lossy())),
             Step::Install => {
                 let h = h.ok_or_else(|| anyhow!("Codync downloads {name} by itself"))?;
                 h.install.and_then(backends::Install::command).ok_or_else(|| anyhow!("{}", h.setup))?

@@ -83,6 +83,7 @@ Build targets, folder layout, file naming and shared terms: [docs/architecture/f
 ## Several agents share `dev`
 
 - Several agents often work in this checkout on `dev` at once. When you start a task, name your session after its area (`/rename kit-markdown`, `host-voice`, …; ask the user if you can't rename yourself) so others can find you in `ListAgents`.
+- Before starting any task, sync with origin: `git pull --rebase --autostash origin dev`, then push any finished local commits that aren't on `origin/dev` yet (`git push origin dev`). The pull is tree-wide, so the next rule applies; if the autostash conflicts, keep both sides' intent and never drop another agent's hunk.
 - Before touching files with someone else's uncommitted changes, or anything tree-wide (renames, `xcodegen`, version bump, `git stash`/`reset`/`checkout`), `SendMessage` the agents involved with what you'll change and wait for or answer their replies. Never discard, revert or reformat hunks that aren't yours.
 - External contributors open PRs against `dev`, never `main`. Retarget a contributor PR aimed at `main` to `dev` before reviewing or merging it.
 - An external PR is merged only after its author has verified it end to end locally (real host + the clients it touches, not just builds/tests) and says so in the PR's *Validation*; ask for it in the review if missing.

@@ -323,6 +323,7 @@ function ChatSplitView() {
   } else {
     detail = (
       <div className="empty-detail">
+        <div className="detail-drag drag" />
         <div style={{ display: 'flex' }}>
           <CharacterAvatar shape="blob" color="blue" size={60} mood="working" />
           <CharacterAvatar shape="squircle" color="orange" size={60} style={{ marginLeft: -10 }} />
@@ -371,13 +372,13 @@ function ChatSplitView() {
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
             <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
             <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
-            <IconButton title="Connect apps" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
+            <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
             <button className="rail-profile" style={{ background: showAccount ? 'var(--bubble-agent)' : undefined }} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
               <ProfileAvatar />
             </button>
           </div>
         ) : (
-          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onConnectApps={openMarketplace} />
+          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={openMarketplace} />
         )}
       </aside>
       <div className="sidebar-divider" onPointerDown={onDividerDown} onPointerMove={onDividerMove} onPointerUp={() => (dragStart.current = null)} role="separator" aria-label="Resize sidebar" aria-valuenow={width} />

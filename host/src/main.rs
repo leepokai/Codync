@@ -181,6 +181,16 @@ enum Sub {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
     },
+    /// npm on this computer's Node, else on Codync's own (downloaded first): what setup
+    /// terminals install npm CLIs with.
+    #[command(hide = true)]
+    Npm {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Add Codync's own Node.js, for agents that run on it (an agent's setup step).
+    #[command(hide = true)]
+    Node,
     /// Built-in MCP servers that bots are started with (stdio).
     #[command(hide = true)]
     Mcp {
@@ -465,6 +475,8 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
+        Sub::Node => agent::node::add().await,
+        Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
         Sub::Statusline { port, wrapped } => {
             statusline(port, wrapped.join(" ")).await;
             Ok(())

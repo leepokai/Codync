@@ -28,7 +28,7 @@ export function ComputerAccessView({ onContinue }: { onContinue?: (ready: boolea
         <header className="computer-access-header">
           <div className="computer-access-identity">
             <img src={appIcon} width={40} height={40} alt="Codync" />
-            <div><span>This computer</span><strong>{window.codync.computerName || 'Your computer'}</strong></div>
+            <div><span>This computer</span><strong>{access.computerName}</strong></div>
           </div>
           <h1>{ready ? 'Your computer is ready' : 'Computer access'}</h1>
           <p>{windows ? 'Let a bot work in your apps. You choose which bots can use this computer.' : 'Work in your apps with a bot, or access your screen from your phone. You choose which bots can use this computer.'}</p>

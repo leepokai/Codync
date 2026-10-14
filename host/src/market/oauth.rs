@@ -389,7 +389,7 @@ pub async fn target(store: &Store, id: &str, stale: bool) -> Result<Value> {
 }
 
 async fn fresh(store: &Store, c: &Connector, o: &OAuth, stale: bool) -> Result<OAuth> {
-    let signed_out = || anyhow!("Sign in to {} in Marketplace first.", c.name);
+    let signed_out = || anyhow!("Sign in to {} in Extensions first.", c.name);
     if !o.signed_in() {
         return Err(signed_out());
     }

@@ -229,6 +229,10 @@ impl Hub {
         if cfg.name != row.config.name && patch.get("autoName").is_none() {
             cfg.auto_name = false;
         }
+        // Options belong to one model; an app that doesn't know them can't clear them itself.
+        if (cfg.model != row.config.model || cfg.backend != row.config.backend) && patch.get("modelOptions").is_none() {
+            cfg.model_options.clear();
+        }
         if cfg.kind != row.config.kind {
             bail!("a bot can't become a group, or a group a bot");
         }

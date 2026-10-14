@@ -28,17 +28,16 @@ struct AgentCard: View {
     @State private var hovering = false
 
     private var status: String {
-        switch (backend.installed == true, backend.signedIn) {
-        case (true, false?): "Not signed in"
-        case (true, _): "Installed"
-        case (false, _): backend.curated == true ? "Not installed" : "Sets up on first use"
-        }
+        if backend.installed != true, backend.curated == true { return "Not installed" }
+        if backend.needsNode { return "Needs Node.js" }
+        if backend.installed != true { return "Sets up on first use" }
+        return backend.signedIn == false ? "Not signed in" : "Installed"
     }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 12) {
-                AgentIcon(registry: backend.registry, size: 34)
+                AgentIcon(registry: backend.registry ?? backend.id, size: 34)
                     .frame(width: 64, height: 64)
                     .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 VStack(spacing: 2) {

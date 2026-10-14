@@ -9,7 +9,7 @@
 | x86_64 or arm64 Linux | Release builds exist for both architectures |
 | `ca-certificates` | HTTPS to the ACP registry, push relay and cloud. Every normal VM image has it; bare container images (`debian`, `ubuntu`) need `apt-get install ca-certificates`. Without it every command exits with `TLS setup failed: install the ca-certificates package` |
 | systemd | Only for `codync-host install` (background service). Without systemd, run `codync-host serve` under your own supervisor |
-| Node.js | Claude Code, Codex and Pi run through ACP adapters fetched with `npx` |
+| Node.js (optional) | Claude Code, Codex and Pi run through ACP adapters fetched with `npx`. Without Node, an agent's setup offers to add Codync's own copy (glibc distros; over SSH: `codync-host node`); on musl distros (Alpine) install Node.js |
 | The agents you want, signed in | The host drives the CLIs installed on this machine with their own credentials. Sign in over SSH (`claude`, `codex login`…) as the same user that runs the host |
 
 Distro and C library don't matter. From the first release built by the updated workflow, Linux release binaries are static musl builds with no glibc dependency. Earlier releases (≤ 2.1.0) were built against glibc 2.39 and only start on Ubuntu 24.04 or newer. On older distros they fail with `GLIBC_2.39 not found`; build from source or use a newer release there.

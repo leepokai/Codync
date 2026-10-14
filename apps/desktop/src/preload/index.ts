@@ -99,6 +99,7 @@ const bridge: CodyncBridge = {
     cancel: (id) => ipcRenderer.invoke('files:cancel', id),
   },
   app: {
+    reportError: (report) => ipcRenderer.send('app:reportError', report),
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),
     copy: (text) => ipcRenderer.send('app:copy', text),
     pickFiles: () => ipcRenderer.invoke('app:pickFiles'),

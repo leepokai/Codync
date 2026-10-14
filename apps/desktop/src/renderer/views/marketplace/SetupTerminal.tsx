@@ -18,11 +18,12 @@ const openLink = (uri: string) => {
 }
 
 /**
- * Installing or signing in to an agent, live: the command runs in a terminal
- * on the computer and this screen is that terminal (links open here).
+ * Installing or signing in to an agent, or adding Node.js, live: the command runs in a
+ * terminal on the computer and this screen is that terminal (links open here).
  */
 export function SetupTerminalView({ backend, step, method, back }: {
-  backend: Backend
+  /** Null only for the `node` step, which belongs to the computer. */
+  backend: Backend | null
   step: SetupStep
   /** A terminal sign-in method the agent offered; null runs Codync's own command. */
   method?: AuthMethod | null
@@ -132,7 +133,7 @@ export function SetupTerminalView({ backend, step, method, back }: {
     void (async () => {
       try {
         const client = await store.ready()
-        const id = await market.agentSetup(client, backend.id, step, method?.id ?? null, size.cols, size.rows)
+        const id = await market.agentSetup(client, backend?.id ?? '', step, method?.id ?? null, size.cols, size.rows)
         if (cancelled) {
           void market.termClose(client, id).catch(() => {})
           return
@@ -162,9 +163,10 @@ export function SetupTerminalView({ backend, step, method, back }: {
       if (exited === null && client && termId) void market.termClose(client, termId).catch(() => {})
       term.dispose()
     }
-  }, [store, backend.id, step, method?.id])
+  }, [store, backend?.id, step, method?.id])
 
-  const title = step === 'install' ? `Install ${backend.name}` : (method?.name ?? `Sign in to ${backend.name}`)
+  const name = backend?.name ?? 'the agent'
+  const title = step === 'node' ? 'Add Node.js' : step === 'install' ? `Install ${name}` : (method?.name ?? `Sign in to ${name}`)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
       <ScreenHeader title={title} onBack={back} />

@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use super::super::app::{After, App, Entry, Overlay, Toggle};
+use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle};
 use super::{MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
@@ -198,15 +198,7 @@ impl App {
                 }
             }
             Reply::Models(backend) => {
-                let list = v["models"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|m| {
-                        let id = m["id"].as_str()?.to_owned();
-                        Some((id.clone(), m["name"].as_str().unwrap_or(&id).to_owned()))
-                    })
-                    .collect();
+                let list = v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
                 self.models.insert(backend, Some(list));
             }
             Reply::Downloaded => {

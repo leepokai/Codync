@@ -1,0 +1,19 @@
+name = "codync-discord"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+routes = [{ pattern = "discord.codync.dev", custom_domain = true }]
+
+# Secrets: DISCORD_CLIENT_SECRET, DISCORD_BOT_TOKEN, GITHUB_CLIENT_SECRET, GITHUB_TOKEN, GITHUB_WEBHOOK_SECRET,
+# SESSION_SECRET (see README.md).
+[vars]
+DISCORD_CLIENT_ID = "1559877519933440084"
+GITHUB_CLIENT_ID = "Ov23lihjSv0zqUceCMcV"
+GUILD_ID = "1559449720315973682"
+CONTRIBUTOR_ROLE_ID = "1559453466894663680"
+REPORTER_ROLE_ID = "1559885097535148133"
+STAFF_CHANNEL_ID = "1559451211860672512"
+REPO = "leepokai/Codync"
+
+[[kv_namespaces]]
+binding = "LINKS"
+id = "93ad47c1274b421bbb733eb06e41d9a9"

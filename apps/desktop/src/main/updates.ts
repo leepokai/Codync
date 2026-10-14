@@ -1,10 +1,14 @@
+import { execFile } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, powerMonitor, shell } from 'electron'
 import electronUpdater, { type UpdateInfo } from 'electron-updater'
 import { isBelow, parseVersion } from '../shared/compat'
 import type { UpdateState } from '../shared/ipc'
 import { isMainEnvironment } from './account'
+import { identity } from './environment'
 import { prefs, type HostController } from './host-controller'
 
 const { autoUpdater } = electronUpdater
@@ -52,6 +56,7 @@ export class Updates extends EventEmitter {
     this.on('change', () => {
       for (const w of windows()) w.webContents.send('updates:change', this.state)
     })
+    removeStuckShipIt()
     if (!enabled) return
     // macOS relaunches the updated app from the background, behind the app in front, and ignores
     // `app.focus` there (cooperative activation); opening its own bundle brings it forward.
@@ -84,7 +89,10 @@ export class Updates extends EventEmitter {
     })
 
     setTimeout(() => this.scheduled(), 30_000)
-    setInterval(() => this.scheduled(), 3600_000)
+    setInterval(() => {
+      removeStuckShipIt()
+      this.scheduled()
+    }, 3600_000)
   }
 
   setAutoCheck(on: boolean) {
@@ -228,6 +236,22 @@ export class Updates extends EventEmitter {
       this.failed(error)
     }
   }
+}
+
+/**
+ * macOS's installer job (Squirrel's ShipIt) restarts every 2 s until it exits cleanly, so once its
+ * update request is gone (a cleaned Caches folder) it fails forever and its log grows without
+ * bound. An idle job without a request can't install anything: remove it.
+ */
+function removeStuckShipIt() {
+  if (process.platform !== 'darwin') return
+  const label = `${identity.appId}.ShipIt`
+  if (existsSync(join(homedir(), 'Library/Caches', label, 'ShipItState.plist'))) return
+  execFile('/bin/launchctl', ['list', label], (error, stdout) => {
+    // Not submitted, or running right now (the next check finds it idle).
+    if (error || stdout.includes('"PID" =')) return
+    execFile('/bin/launchctl', ['remove', label], () => {})
+  })
 }
 
 /** The iPhone app's version live in the App Store (iTunes lookup); null when unknown. */

@@ -8,6 +8,12 @@ import { AppModel } from './store/app-model'
 import { AppContext } from './store/context'
 import { applyTextSize, prefs } from './lib/prefs'
 import { account } from './store/account'
+import { errorReport } from '@shared/error-report'
+
+// Error tracking: this window's uncaught errors go to the host (shared/error-report.ts).
+const report = (error: unknown, mechanism: string) => window.codync.app.reportError(errorReport(error, 'desktop-renderer', mechanism))
+window.addEventListener('error', (e) => report(e.error, 'onerror'))
+window.addEventListener('unhandledrejection', (e) => report(e.reason, 'unhandledrejection'))
 
 const page = new URLSearchParams(location.search).get('window') ?? 'chat'
 document.title = window.codync.appName

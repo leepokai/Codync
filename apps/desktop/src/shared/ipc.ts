@@ -2,6 +2,7 @@ import type { SharedFile } from './models'
 import type { SSHBridge } from './ssh'
 import type { ScreenAgentState } from './computer-access'
 import type { IslandRect, IslandScreen, IslandSummary } from './island'
+import type { ErrorReport } from './error-report'
 
 // The bridge between the main process (host lifecycle, loopback HTTP, tray, windows)
 // and the renderer (stores and UI). Exposed as `window.codync` by the preload script.
@@ -187,6 +188,8 @@ export interface CodyncBridge {
     cancel(id: string): Promise<void>
   }
   app: {
+    /** Error tracking: an uncaught error in this window (shared/error-report.ts). */
+    reportError(report: ErrorReport): void
     openExternal(url: string): void
     copy(text: string): void
     /** Files picked in the system dialog: name and bytes. */

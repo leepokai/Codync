@@ -19,6 +19,17 @@ for (const options of [{ packaged: false }, { main: false }]) {
   })
 }
 
+test('an idle macOS installer job whose update request is gone is removed, at launch and hourly', async () => {
+  assert.equal(updaterFixture({ shipIt: { request: false, job: 'idle' } }).shipIt.removed, 1)
+  for (const shipIt of [{ request: true, job: 'idle' }, { request: false, job: 'running' }, { request: false, job: 'none' }] as const) {
+    assert.equal(updaterFixture({ shipIt }).shipIt.removed, 0, JSON.stringify(shipIt))
+  }
+  const f = updaterFixture()
+  f.shipIt.request = false
+  await f.tick(3600_000)
+  assert.equal(f.shipIt.removed, 1)
+})
+
 test('manual check downloads with progress, then waits for Restart to update', async () => {
   const f = updaterFixture()
   const stopped = deferred()

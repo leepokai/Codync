@@ -9,7 +9,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 55] = [
+const HELP: [(&str, &str, &str); 56] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -52,7 +52,7 @@ const HELP: [(&str, &str, &str); 55] = [
     ("BOTS", "S", "new session"),
     ("BOTS", "M", "memory"),
     ("BOTS", "R", "routines"),
-    ("BOTS", "A", "marketplace, sign-in"),
+    ("BOTS", "A", "extensions, sign-in"),
     ("BOTS", "x", "delete bot or group"),
     ("VIEW", "t", "trace pane"),
     ("VIEW", "T", "trace full screen"),
@@ -61,6 +61,7 @@ const HELP: [(&str, &str, &str); 55] = [
     ("VIEW", "U", "usage"),
     ("VIEW", "P", "pair a phone"),
     ("VIEW", "^k share", "share usage analytics on / off"),
+    ("VIEW", "^k about", "what usage analytics include"),
     ("VIEW", "esc", "close / go back"),
     ("VIEW", "q", "quit; bots keep going"),
     ("MOUSE", "click", "open, press a button"),

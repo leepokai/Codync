@@ -113,9 +113,9 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
     let result = tokio::time::timeout(Duration::from_secs(60), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
         tokio::pin!(request);
-        loop {
+        let session = loop {
             tokio::select! {
-                result = &mut request => break result,
+                result = &mut request => break result?,
                 incoming = inbox.recv() => match incoming {
                     Some(Incoming::Request { id, .. }) => {
                         acp.respond_error(id, -32601, "not supported during model discovery").await?;
@@ -124,12 +124,19 @@ pub async fn models(store: &Store, backend: &str) -> Result<Value> {
                     Some(Incoming::Closed { .. }) | None => bail!("agent closed during model discovery"),
                 }
             }
-        }
+        };
+        // Cursor lists each model's options (effort, fast…) only through its own method.
+        let options = if backend == "cursor" {
+            acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default()
+        } else {
+            Value::Null
+        };
+        Ok((session, options))
     })
     .await;
     acp.kill().await;
-    let session = result.context("the agent's model list timed out")??;
-    Ok(model_catalog(&session))
+    let (session, options) = result.context("the agent's model list timed out")??;
+    Ok(model_catalog(&session, &options))
 }
 
 /// IDs are agent-defined: use the category, with legacy conventional IDs as a fallback.
@@ -143,7 +150,15 @@ pub(crate) fn model_config(session: &Value) -> Option<&Value> {
         .or_else(|| options.iter().filter(is_select).find(|v| v["id"] == "model" || v["id"] == "models"))
 }
 
-fn model_catalog(session: &Value) -> Value {
+/// The model ids the agent lists, in its order.
+pub(crate) fn model_ids(session: &Value) -> Vec<String> {
+    let catalog = model_catalog(session, &Value::Null);
+    catalog["models"].as_array().into_iter().flatten().filter_map(|m| text(&m["id"])).collect()
+}
+
+/// `{models: [{id, name, description, options}], currentModelId}`; `options` is Cursor's
+/// `cursor/list_available_models` answer (`Null` for other agents).
+fn model_catalog(session: &Value, options: &Value) -> Value {
     fn collect(options: &Value, out: &mut Vec<Value>) {
         for option in options.as_array().into_iter().flatten() {
             if option["options"].is_array() {
@@ -171,7 +186,35 @@ fn model_catalog(session: &Value) -> Value {
         }
         text(&session["models"]["currentModelId"])
     };
+    for model in &mut models {
+        model["options"] = json!(model_options(options, model["id"].as_str().unwrap_or_default()));
+    }
     json!({"models": models, "currentModelId": current})
+}
+
+/// One model's options as `[{id, name, values: [{id, name}], default}]`, from Cursor's
+/// `{models: [{value, configOptions}]}` (ACP select config options).
+fn model_options(options: &Value, model: &str) -> Vec<Value> {
+    let entry = options["models"].as_array().into_iter().flatten().find(|m| m["value"] == model);
+    entry
+        .and_then(|m| m["configOptions"].as_array())
+        .into_iter()
+        .flatten()
+        .filter(|o| o["type"] == "select")
+        .filter_map(|o| {
+            let id = text(&o["id"])?;
+            let values: Vec<Value> = o["options"]
+                .as_array()?
+                .iter()
+                .filter_map(|v| {
+                    let value = text(&v["value"])?;
+                    Some(json!({"id": value, "name": text(&v["name"]).unwrap_or(value)}))
+                })
+                .collect();
+            Some(json!({"id": id, "name": text(&o["name"]).unwrap_or(id), "values": values,
+                "default": text(&o["currentValue"])}))
+        })
+        .collect()
 }
 
 async fn probe(store: &Store, backend: &str) -> Result<Status> {
@@ -228,9 +271,10 @@ async fn start(store: &Store, backend: &str) -> Result<Started> {
                 "clientCapabilities": {
                     "fs": {"readTextFile": false, "writeTextFile": false},
                     "terminal": false,
-                    // Ask for terminal sign-in methods (spec field and the older `_meta` flag).
+                    // Ask for terminal sign-in methods (spec field and the older `_meta` flag),
+                    // and for plain models with options, as bot sessions do (`bot::start_agent`).
                     "auth": {"terminal": true},
-                    "_meta": {"terminal-auth": true},
+                    "_meta": {"terminal-auth": true, "parameterizedModelPicker": true},
                 },
                 "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
             }),
@@ -378,24 +422,52 @@ mod tests {
             ]}]
         }], "models": {"availableModels": [{"modelId": "legacy", "name": "Legacy"}]}});
         assert_eq!(model_config(&session).unwrap()["id"], "provider-model");
-        let result = model_catalog(&session);
+        let result = model_catalog(&session, &Value::Null);
         assert_eq!(result["currentModelId"], "m2");
         assert_eq!(result["models"].as_array().unwrap().len(), 2);
         assert_eq!(result["models"][0]["id"], "m1");
         assert_eq!(result["models"][1]["name"], "Second");
+        assert_eq!(result["models"][1]["options"], json!([]));
+        assert_eq!(model_ids(&session), ["m1", "m2"]);
     }
 
     #[test]
     fn model_catalog_reads_legacy_and_missing_lists() {
-        let result = model_catalog(&json!({"models": {
-            "currentModelId": "a", "availableModels": [
-                {"modelId": "a", "name": "Agent model", "description": "Available here"},
-                {"name": "No ID"}
-            ]
-        }}));
+        let result = model_catalog(
+            &json!({"models": {
+                "currentModelId": "a", "availableModels": [
+                    {"modelId": "a", "name": "Agent model", "description": "Available here"},
+                    {"name": "No ID"}
+                ]
+            }}),
+            &Value::Null,
+        );
         assert_eq!(result["models"].as_array().unwrap().len(), 1);
         assert_eq!(result["models"][0]["description"], "Available here");
-        assert_eq!(model_catalog(&json!({})), json!({"models": [], "currentModelId": null}));
+        assert_eq!(model_catalog(&json!({}), &Value::Null), json!({"models": [], "currentModelId": null}));
+    }
+
+    #[test]
+    fn model_catalog_adds_cursor_model_options() {
+        let session = json!({"configOptions": [{"id": "model", "category": "model", "type": "select",
+            "currentValue": "grok-4.7", "options": [{"value": "grok-4.7", "name": "Grok 4.7"}, {"value": "auto"}]}]});
+        let listed = json!({"models": [{"value": "grok-4.7", "name": "Grok 4.7", "configOptions": [
+            {"id": "reasoning_effort", "name": "Reasoning", "category": "thought_level", "type": "select",
+             "currentValue": "high", "options": [{"value": "medium", "name": "Medium"}, {"value": "high", "name": "High"}]},
+            {"id": "fast", "type": "select", "currentValue": "true", "options": [{"value": "false", "name": "Off"}, {"value": "true"}]},
+            {"id": "verbose", "type": "boolean"}
+        ]}]});
+        let result = model_catalog(&session, &listed);
+        assert_eq!(
+            result["models"][0]["options"],
+            json!([
+                {"id": "reasoning_effort", "name": "Reasoning", "default": "high",
+                 "values": [{"id": "medium", "name": "Medium"}, {"id": "high", "name": "High"}]},
+                {"id": "fast", "name": "fast", "default": "true",
+                 "values": [{"id": "false", "name": "Off"}, {"id": "true", "name": "true"}]}
+            ])
+        );
+        assert_eq!(result["models"][1]["options"], json!([]));
     }
 
     #[test]

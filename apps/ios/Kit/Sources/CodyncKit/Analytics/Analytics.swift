@@ -26,14 +26,17 @@ public final class Analytics {
         let properties: [String: Value]
     }
 
-    enum Value: Encodable, Equatable {
-        case string(String), bool(Bool)
+    enum Value: Encodable, Equatable, Sendable {
+        case string(String), bool(Bool), int(Int), array([Value]), object([String: Value])
 
         func encode(to encoder: Encoder) throws {
             var c = encoder.singleValueContainer()
             switch self {
             case .string(let s): try c.encode(s)
             case .bool(let b): try c.encode(b)
+            case .int(let i): try c.encode(i)
+            case .array(let a): try c.encode(a)
+            case .object(let o): try c.encode(o)
             }
         }
     }
@@ -80,8 +83,12 @@ public final class Analytics {
 
     /// `properties` are public names, never content.
     public func capture(_ event: AnalyticsEvent, _ properties: [String: String] = [:]) {
+        record(event.rawValue, properties.mapValues(Value.string))
+    }
+
+    /// One event for the signed-in account (merging the install ID into it once), else the install ID.
+    func record(_ name: String, _ extra: [String: Value]) {
         guard isEnabled else { return }
-        let extra = properties.mapValues(Value.string)
         if let user = userID() {
             var identified = defaults.stringArray(forKey: Self.identifiedKey) ?? []
             if !identified.contains(user) {
@@ -89,9 +96,9 @@ public final class Analytics {
                 identified.append(user)
                 defaults.set(identified, forKey: Self.identifiedKey)
             }
-            enqueue(event.rawValue, user, extra)
+            enqueue(name, user, extra)
         } else {
-            enqueue(event.rawValue, installID, extra)
+            enqueue(name, installID, extra)
         }
     }
 

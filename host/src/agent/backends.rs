@@ -7,7 +7,7 @@
 //! back to the official ACP registry build (npx / uvx / downloaded binary).
 
 use crate::LockExt;
-use crate::agent::registry;
+use crate::agent::{acp, node, registry};
 use crate::shell;
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -40,7 +40,7 @@ pub enum Install {
     Script(&'static str),
     /// Vendor install scripts for Unix and for Windows (PowerShell).
     Scripts { unix: &'static str, windows: &'static str },
-    /// A global npm package.
+    /// A global npm package, installed on the computer's Node or else Codync's (`codync-host npm`).
     Npm(&'static str),
 }
 
@@ -51,12 +51,9 @@ impl Install {
             Self::Script(s) | Self::Scripts { unix: s, .. } if cfg!(unix) => Some(s.to_owned()),
             Self::Script(_) => None,
             Self::Scripts { windows, .. } => Some(windows.to_owned()),
-            Self::Npm(pkg) if cfg!(windows) => Some(format!(
-                "where npm >nul 2>nul || (echo This needs Node.js first: https://nodejs.org & exit /b 1) & npm install -g {pkg}"
-            )),
-            Self::Npm(pkg) => Some(format!(
-                "command -v npm >/dev/null || {{ echo 'This needs Node.js first: https://nodejs.org'; exit 1; }}; npm install -g {pkg}"
-            )),
+            Self::Npm(pkg) => crate::service::current_exe()
+                .ok()
+                .map(|exe| format!("{} npm install -g {pkg}", shell::quote(&exe.to_string_lossy()))),
         }
     }
 }
@@ -107,7 +104,10 @@ pub const HARNESSES: &[Harness] = &[
         local: None,
         registry: Some("codex-acp"),
         setup: "Install Codex CLI and run `codex login --device-auth`.",
-        install: Some(Install::Script("curl -fsSL https://chatgpt.com/codex/install.sh | sh")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://chatgpt.com/codex/install.ps1 | iex\"",
+        }),
         login: "{bin} login --device-auth",
         signed_in: Some(SignInCheck { args: "login status", ok: exit_ok }),
     },
@@ -118,7 +118,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("cursor"),
         setup: "Install Cursor CLI (curl https://cursor.com/install -fsS | bash) and run `cursor-agent login`.",
-        install: Some(Install::Script("curl https://cursor.com/install -fsS | bash")),
+        install: Some(Install::Scripts {
+            unix: "curl https://cursor.com/install -fsS | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm 'https://cursor.com/install?win32=true' | iex\"",
+        }),
         login: "NO_OPEN_BROWSER=1 {bin} login",
         signed_in: Some(SignInCheck { args: "status", ok: says_logged_in }),
     },
@@ -131,6 +134,21 @@ pub const HARNESSES: &[Harness] = &[
         setup: "Install pi (npm install -g @earendil-works/pi-coding-agent), run `pi` and type /login.",
         install: Some(Install::Npm("@earendil-works/pi-coding-agent")),
         login: "{bin}",
+        signed_in: None,
+    },
+    Harness {
+        id: "omp",
+        name: "oh-my-pi",
+        bins: &["omp"],
+        local: Some("{bin} acp"),
+        registry: None,
+        setup: "Install oh-my-pi (curl -fsSL https://omp.sh/install | sh -s -- --binary) and run `omp login`.",
+        install: Some(Install::Scripts {
+            // The prebuilt binary: by default the scripts build through any Bun on PATH and stop when it's older than they need.
+            unix: "curl -fsSL https://omp.sh/install | sh -s -- --binary",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& ([scriptblock]::Create((irm https://omp.sh/install.ps1))) -Binary\"",
+        }),
+        login: "{bin} login",
         signed_in: None,
     },
     Harness {
@@ -151,7 +169,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} agent stdio"),
         registry: Some("grok-build"),
         setup: "Install Grok Build (curl -fsSL https://x.ai/cli/install.sh | bash) and run `grok login --device-auth`.",
-        install: Some(Install::Npm("@xai-official/grok")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://x.ai/cli/install.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://x.ai/cli/install.ps1 | iex\"",
+        }),
         login: "{bin} login --device-auth",
         signed_in: None,
     },
@@ -172,8 +193,11 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["copilot"],
         local: Some("{bin} --acp --stdio"),
         registry: Some("github-copilot-cli"),
-        setup: "Install Copilot CLI (npm install -g @github/copilot) and run `copilot login`.",
-        install: Some(Install::Npm("@github/copilot")),
+        setup: "Install Copilot CLI (curl -fsSL https://gh.io/copilot-install | bash) and run `copilot login`.",
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://gh.io/copilot-install | bash",
+            windows: "winget install --id GitHub.Copilot -e",
+        }),
         login: "{bin} login --device-code",
         signed_in: None,
     },
@@ -183,8 +207,11 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["qwen"],
         local: Some("{bin} --acp"),
         registry: Some("qwen-code"),
-        setup: "Install Qwen Code (npm install -g @qwen-code/qwen-code), run `qwen` and type /auth.",
-        install: Some(Install::Npm("@qwen-code/qwen-code")),
+        setup: "Install Qwen Code (its standalone installer), run `qwen` and type /auth.",
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.ps1 | iex\"",
+        }),
         login: "{bin}",
         signed_in: None,
     },
@@ -208,7 +235,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("kimi"),
         setup: "Install Kimi Code (curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash) and run `kimi login`.",
-        install: Some(Install::Script("curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://code.kimi.com/kimi-code/install.ps1 | iex\"",
+        }),
         login: "{bin} login",
         signed_in: None,
     },
@@ -219,7 +249,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} exec --output-format acp-daemon"),
         registry: Some("factory-droid"),
         setup: "Install Droid (curl -fsSL https://app.factory.ai/cli | sh) and sign in with `droid`.",
-        install: Some(Install::Npm("droid")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://app.factory.ai/cli | sh",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://app.factory.ai/cli/windows | iex\"",
+        }),
         login: "{bin}",
         signed_in: None,
     },
@@ -230,7 +263,10 @@ pub const HARNESSES: &[Harness] = &[
         local: None,
         registry: Some("amp-acp"),
         setup: "Install Amp (curl -fsSL https://ampcode.com/install.sh | bash) and run `amp login`.",
-        install: Some(Install::Script("curl -fsSL https://ampcode.com/install.sh | bash")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://ampcode.com/install.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://ampcode.com/install.ps1 | iex\"",
+        }),
         login: "{bin} login",
         signed_in: None,
     },
@@ -285,7 +321,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: None,
         setup: "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.",
-        install: Some(Install::Script("curl -fsSL https://cli.kiro.dev/install | bash")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://cli.kiro.dev/install | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm 'https://cli.kiro.dev/install.ps1' | iex\"",
+        }),
         login: "{bin} login",
         signed_in: None,
     },
@@ -296,7 +335,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("devin"),
         setup: "Install the Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash) and run `devin auth login`.",
-        install: Some(Install::Script("curl -fsSL https://cli.devin.ai/install.sh | bash")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://cli.devin.ai/install.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://cli.devin.ai/install.ps1 | iex\"",
+        }),
         login: "{bin} auth login",
         signed_in: None,
     },
@@ -306,8 +348,11 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["qodercli"],
         local: Some("{bin} --acp"),
         registry: Some("qoder"),
-        setup: "Install Qoder CLI (npm install -g @qoder-ai/qodercli) and run `qodercli login`.",
-        install: Some(Install::Npm("@qoder-ai/qodercli")),
+        setup: "Install Qoder CLI (curl -fsSL https://qoder.com/install | bash) and run `qodercli login`.",
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://qoder.com/install | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://qoder.com/install.ps1 | iex\"",
+        }),
         login: "{bin} login",
         signed_in: Some(SignInCheck { args: "status -o json", ok: qoder_signed_in }),
     },
@@ -340,7 +385,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} --acp=true"),
         registry: Some("junie"),
         setup: "Install Junie (curl -fsSL https://junie.jetbrains.com/install.sh | bash) and sign in with `junie`.",
-        install: Some(Install::Script("curl -fsSL https://junie.jetbrains.com/install.sh | bash")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://junie.jetbrains.com/install.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"iex (irm 'https://junie.jetbrains.com/install.ps1')\"",
+        }),
         login: "{bin}",
         signed_in: None,
     },
@@ -351,7 +399,10 @@ pub const HARNESSES: &[Harness] = &[
         local: None,
         registry: Some("antigravity-acp"),
         setup: "Install the Antigravity CLI (curl -fsSL https://antigravity.google/cli/install.sh | bash) and sign in with `agy`.",
-        install: Some(Install::Script("curl -fsSL https://antigravity.google/cli/install.sh | bash")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://antigravity.google/cli/install.ps1 | iex\"",
+        }),
         login: "{bin}",
         signed_in: None,
     },
@@ -362,7 +413,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp serve"),
         registry: Some("cortex-code"),
         setup: "Install Cortex Code (curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh) and set up a connection with `cortex`.",
-        install: Some(Install::Script("curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh")),
+        install: Some(Install::Scripts {
+            unix: "curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://ai.snowflake.com/static/cc-scripts/install.ps1 | iex\"",
+        }),
         login: "{bin}",
         signed_in: None,
     },
@@ -373,7 +427,10 @@ pub const HARNESSES: &[Harness] = &[
         local: Some("{bin} acp"),
         registry: Some("poolside"),
         setup: "Install Poolside (curl -fsSL https://downloads.poolside.ai/pool/install.sh | sh) and run `pool login`.",
-        install: Some(Install::Script("curl -fsSL https://downloads.poolside.ai/pool/install.sh | sh")),
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://downloads.poolside.ai/pool/install.sh | sh",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://downloads.poolside.ai/pool/install.ps1 | iex\"",
+        }),
         login: "{bin} login",
         signed_in: None,
     },
@@ -386,40 +443,6 @@ pub fn harness(id: &str) -> Option<&'static Harness> {
 // MARK: PATH hydration
 
 static SEARCH_PATH: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
-
-/// Login-shell PATH, via `$SHELL -ilc` with a timeout (nvm/conda can make shells slow).
-/// The shell writes it to a file: a background job started by an rc file can hold a stdout
-/// pipe open long after the shell exits. Windows has no login shell: every process already
-/// gets the user's PATH.
-fn login_shell_path() -> Option<String> {
-    if cfg!(windows) {
-        return None;
-    }
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let file = std::env::temp_dir().join(format!("codync-path-{}", uuid::Uuid::new_v4()));
-    let target = file.to_string_lossy().replace('\'', r"'\''");
-    let mut child = std::process::Command::new(shell)
-        .args(["-ilc", &format!("printf '%s' \"$PATH\" > '{target}'")])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let deadline = std::time::Instant::now() + Duration::from_secs(8);
-    let exited = loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break true,
-            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
-            _ => {
-                let _ = child.kill();
-                break false;
-            }
-        }
-    };
-    let path = std::fs::read_to_string(&file).ok().filter(|p| exited && !p.is_empty());
-    let _ = std::fs::remove_file(&file);
-    path
-}
 
 /// `…/v22.1.0` → `[22, 1, 0]` (unparseable parts count as 0).
 fn node_version(dir: &Path) -> Vec<u32> {
@@ -440,6 +463,8 @@ fn well_known_dirs() -> Vec<PathBuf> {
         // Global npm CLIs (%APPDATA%\npm), and Node itself.
         dirs.extend(dirs::data_dir().map(|d| d.join("npm")));
         dirs.extend(std::env::var_os("ProgramFiles").map(|d| PathBuf::from(d).join("nodejs")));
+        // oh-my-pi's binary install (%LOCALAPPDATA%\omp); a Bun install lands in ~/.bun/bin below.
+        dirs.extend(dirs::data_local_dir().map(|d| d.join("omp")));
     }
     for rel in [
         ".local/bin",
@@ -474,11 +499,18 @@ pub fn hydrate_path() {
     let mut seen = HashSet::new();
     let mut path: Vec<PathBuf> = vec![];
     let current = std::env::var("PATH").unwrap_or_default();
-    let login = login_shell_path().unwrap_or_default();
+    let login = shell::user_path().unwrap_or_default();
     for p in std::env::split_paths(&current).chain(std::env::split_paths(&login)).chain(well_known_dirs()) {
         if p.as_os_str().is_empty() || !p.is_dir() {
             continue;
         }
+        if seen.insert(p.clone()) {
+            path.push(p);
+        }
+    }
+    // Codync's Node last, so the computer's own comes first; listed even before it exists, so
+    // adding it (a separate `codync-host node` process) counts without another refresh.
+    for p in node::search_dirs() {
         if seen.insert(p.clone()) {
             path.push(p);
         }
@@ -535,8 +567,9 @@ pub fn list() -> Vec<Value> {
         .map(|h| {
             let path = h.bins.iter().find_map(|b| which(b));
             let reg = h.registry.and_then(|id| registry.iter().find(|a| a["id"] == id));
-            let runnable =
-                (path.is_some() && h.local.is_some()) || reg.is_some_and(|a| registry::launch_kind(a).is_some());
+            let native = path.is_some() && h.local.is_some();
+            let runnable = native || reg.is_some_and(|a| registry::launch_kind(a).is_some());
+            let node = if native { None } else { reg.filter(|a| registry::needs_node(a)).and_then(|_| node::state()) };
             json!({
                 "id": h.id,
                 "name": h.name,
@@ -547,6 +580,7 @@ pub fn list() -> Vec<Value> {
                 "installHint": h.setup,
                 "signedIn": signed_in(h.id),
                 "canInstall": h.install.and_then(Install::command).is_some(),
+                "node": node.map(node::State::name),
                 "command": h.local.unwrap_or_default(),
                 "registry": h.registry,
                 "curated": true,
@@ -569,6 +603,7 @@ pub fn list() -> Vec<Value> {
             "description": a["description"],
             "installHint": format!("Codync installs it automatically. Sign in to {} on this computer first if it needs an account.", a["name"].as_str().unwrap_or(id)),
             "signedIn": signed_in(id),
+            "node": node::state().filter(|_| registry::needs_node(a)).map(node::State::name),
             "command": "",
             "registry": id,
             "curated": false,
@@ -652,7 +687,11 @@ pub async fn launch_candidates(id: &str, progress: impl Fn(&str)) -> anyhow::Res
     }
     if out.is_empty() {
         let hint = h.map_or("Check that it's installed on this computer.", |h| h.setup);
-        anyhow::bail!("{} isn't set up on this computer. {hint}", h.map_or(id, |h| h.name));
+        let name = h.map_or(id, |h| h.name);
+        return Err(acp::Failure::error(
+            acp::FailureKind::NotSetUp,
+            format!("{name} isn't set up on this computer. {hint}"),
+        ));
     }
     Ok(out)
 }

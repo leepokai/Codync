@@ -154,15 +154,15 @@ connection-request API flows. These checks do not authenticate real third-party 
 ### Desktop app connections footer
 
 The expanded desktop roster ends in one floating row: the account avatar and a
-“Connect apps” capsule with example service logos. A masked, layered blur softens
+“Extensions” capsule with example service logos. A masked, layered blur softens
 roster content behind it; bottom scroll padding keeps the last bot reachable. The
 compact rail exposes the same action by tooltip and accessible name. This entry
-opens the existing marketplace with Apps first, retaining agents, MCP connectors,
+opens Extensions with Apps first, retaining agents, MCP connectors,
 skills and computer switching. Logos represent examples, not connected status.
 
 This is a desktop sidebar treatment across macOS, Linux and Windows. iOS keeps its
-native navigation and existing per-computer Marketplace entry in Settings; the TUI
-keeps its keyboard Marketplace action and connector tabs. Neither has this persistent
+native navigation and per-computer Extensions entry in Settings; the TUI
+keeps its keyboard Extensions action and connector tabs. Neither has this persistent
 desktop footer or supports the same layered backdrop material; no capabilities or
 connection permissions change.
 
@@ -188,7 +188,7 @@ medium-weight roster names (semibold for unread), 12-point previews and chat tex
 at the selected text size, without the former extra two-point offset. The default
 sidebar is 266 points; existing custom widths and font preferences are respected.
 Reference surfaces: dark canvas #070707, sidebar #111111, capsule #181818, composer
-#2f2f2f. Search/new buttons, the title pill, Connect apps and composer use subtle
+#2f2f2f. Search/new buttons, the title pill, Extensions and composer use subtle
 one-point outlines. **These reference-matched desktop controls are an explicit
 exception to the filled-controls-without-borders rule.** Retain visible keyboard
 focus, computer filters, connection/error states, and original Bot artwork.

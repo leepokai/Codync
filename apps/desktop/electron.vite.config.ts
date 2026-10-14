@@ -14,5 +14,7 @@ export default defineConfig({
   renderer: {
     resolve: { alias: { '@shared': resolve('src/shared') } },
     plugins: [react()],
+    // Readable function names in error reports; the files are local, so size doesn't matter.
+    build: { minify: false },
   },
 })

@@ -2,7 +2,7 @@ name: codync-cloud
 
 on:
   pull_request:
-    paths: ["cloud/**", "relay/**", "docs/reference/fixtures/remote-relay-vectors.json", ".github/workflows/cloud.yml"]
+    paths: ["cloud/**", "relay/**", "discord/**", "docs/reference/fixtures/remote-relay-vectors.json", ".github/workflows/cloud.yml"]
 
 # A newer push to the same PR supersedes the run in progress; tag runs always finish.
 concurrency:
@@ -38,6 +38,22 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: relay/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  discord:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: discord
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: discord/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

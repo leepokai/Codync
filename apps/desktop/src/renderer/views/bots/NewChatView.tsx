@@ -138,9 +138,9 @@ export function NewChatView({ group, onClose }: { group: boolean; onClose: () =>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 22px', ...font('title3') }}>
+      <div className="drag" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 22px', ...font('title3') }}>
         <span style={{ color: 'var(--secondary)', flex: 'none' }}>To:</span>
-        <div ref={chips} className="chip-row" style={{ flex: 1 }}>
+        <div ref={chips} className="chip-row no-drag" style={{ flex: 1 }}>
           {picked.map((bot) => (
             <BotChip key={bot.id} bot={bot} onRemove={() => remove(bot.id)} />
           ))}
@@ -163,7 +163,7 @@ export function NewChatView({ group, onClose }: { group: boolean; onClose: () =>
             }}
           />
         </div>
-        <IconButton title="Close" icon="xmark" onClick={onClose} />
+        <IconButton title="Close" icon="xmark" className="no-drag" onClick={onClose} />
       </div>
       <div className="hairline" />
 

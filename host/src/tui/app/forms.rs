@@ -2,6 +2,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 use super::{
     After, AgentPicker, App, Bot, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, Overlay, SHAPES, Toggle,
@@ -127,6 +128,7 @@ impl App {
             instructions: Editor::with(&b.description),
             backend: b.backend.clone(),
             model: Editor::with(b.model.as_deref().unwrap_or_default()),
+            model_options: (b.model.clone().unwrap_or_default(), b.model_options.clone()),
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
             auto: b.auto,
             notify: b.notify,
@@ -161,6 +163,7 @@ impl App {
             instructions: Editor::default(),
             backend,
             model: Editor::default(),
+            model_options: (String::new(), BTreeMap::new()),
             cwd: String::new(),
             auto: true,
             notify: true,
@@ -246,6 +249,7 @@ impl App {
                         | Field::Computer
                         | Field::Color
                         | Field::Shape
+                        | Field::ModelOptions
                         | Field::Connectors
                         | Field::Skills
                 ) =>
@@ -269,6 +273,27 @@ impl App {
                     Field::Computer => f.computer = !f.computer,
                     Field::Color if !space => f.color = cycle(f.color, d, COLORS.len()),
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
+                    Field::ModelOptions => {
+                        let model = f.model.text.trim().to_owned();
+                        let offered = self.model_settings(&f.backend, &model);
+                        if !space {
+                            f.sub = cycle(f.sub, d, offered.len().max(1));
+                        } else if let Some(o) = offered.get(f.sub) {
+                            if f.model_options.0 != model {
+                                f.model_options = (model, BTreeMap::new());
+                            }
+                            // Default, then each value.
+                            let ids: Vec<&str> =
+                                std::iter::once("").chain(o.values.iter().map(|(id, _)| id.as_str())).collect();
+                            let now = f.model_options.1.get(&o.id).map_or("", String::as_str);
+                            let next = ids[cycle(ids.iter().position(|i| *i == now).unwrap_or(0), 1, ids.len())];
+                            if next.is_empty() {
+                                f.model_options.1.remove(&o.id);
+                            } else {
+                                f.model_options.1.insert(o.id.clone(), next.to_owned());
+                            }
+                        }
+                    }
                     Field::Connectors | Field::Skills => {
                         let list = if field == Field::Connectors { &mut f.connectors } else { &mut f.skills };
                         if space {
@@ -313,6 +338,7 @@ impl App {
             "cwd": f.cwd,
             "permission": if f.auto { "auto" } else { "ask" },
             "model": if model.is_empty() { Value::Null } else { model.into() },
+            "modelOptions": f.model_options().cloned().unwrap_or_default(),
             "notify": f.notify,
             "computer": f.computer,
             "avatarColor": COLORS[f.color],
@@ -336,3 +362,30 @@ const NAMES: [&str; 24] = [
     "Ada", "Rex", "Mia", "Sol", "Kit", "Oli", "Ivy", "Max", "Zoe", "Leo", "Ari", "Bea", "Cal", "Dot", "Eli", "Fay",
     "Gus", "Hal", "Ida", "Jin", "Kai", "Lux", "Nia", "Otto",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::super::{AgentModel, test_app};
+    use super::*;
+
+    #[tokio::test]
+    async fn model_options_cycle_and_belong_to_their_model() {
+        let mut app = test_app();
+        let grok = json!({"id": "grok", "name": "Grok", "options": [
+            {"id": "fast", "name": "Fast", "values": [{"id": "false", "name": "Off"}, {"id": "true", "name": "On"}]}]});
+        app.models.insert("cursor".into(), Some(AgentModel::parse(&grok).into_iter().collect()));
+        let bot = json!({"id": "b", "backend": "cursor", "model": "grok", "modelOptions": {"fast": "false"}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::ModelOptions).expect("an options field");
+        let space = KeyEvent::from(KeyCode::Char(' '));
+        let Some(Overlay::Form(f)) = app.form_key(f, space) else { panic!("the editor stays") };
+        assert_eq!(f.model_options().and_then(|o| o.get("fast")).map(String::as_str), Some("true"));
+        let Some(Overlay::Form(mut f)) = app.form_key(f, space) else { panic!("the editor stays") };
+        assert!(f.model_options().is_some_and(BTreeMap::is_empty), "back to the agent's default");
+        f.model = Editor::with("other");
+        assert!(f.model_options().is_none(), "another model starts without settings");
+    }
+}

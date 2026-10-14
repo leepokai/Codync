@@ -12,3 +12,4 @@ These documents retain decisions and observations from before the current refact
 Do not interpret old “not implemented” statements, delegation assignments, version numbers or test reports as the state of the current checkout. Reassess an audit finding against source before turning it into work.
 
 - [Widget verification record, 2026-09-26](mobile-widgets-verification-2026-09-26.md): historical observations and remaining system integration checks.
+- [npm agents failing to start on Windows, 2026-10-14](windows-npm-agents-2026-10-14.md): PostHog signal, VM reproduction, root cause and fix (2.16.1).

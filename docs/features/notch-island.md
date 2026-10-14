@@ -2,7 +2,8 @@
 
 The desktop app shows working bots in a black shape at the top center of the screen. On a
 MacBook it grows out of the notch; on a Mac without a notch, and on Windows and Linux, it hangs
-from the top edge. It draws Codync's own bot characters.
+from the top edge. It draws Codync's own bot characters. Design inspired by
+[@novra.design](https://www.instagram.com/novra.design/).
 
 Turn it on or off in **Settings → General → System** (*Show in notch* on macOS, *Show at top
 of screen* elsewhere) or the menu bar / tray menu's **Settings**. It is off by default while it

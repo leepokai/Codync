@@ -4,14 +4,28 @@ import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
 import { errorText } from './drafts'
 
+/** A model's own setting (effort, fast…) and the values the agent accepts. */
+interface ModelOption {
+  id: string
+  name: string
+  values: { id: string; name: string }[]
+  default?: string | null
+}
+
 /** Model identifiers and display names advertised by the selected computer's ACP agent. */
 interface AgentModels {
-  models: { id: string; name: string; description?: string | null }[]
+  models: { id: string; name: string; description?: string | null; options?: ModelOption[] }[]
   currentModelId?: string | null
 }
 
 /** Models come from the selected computer's agent, never a bundled provider list. */
-export function AgentModelPicker({ backend, selection, onChange }: { backend: string; selection: string | null | undefined; onChange: (model: string | null) => void }) {
+export function AgentModelPicker({ backend, selection, onChange, options: chosen, onOptionsChange }: {
+  backend: string
+  selection: string | null | undefined
+  onChange: (model: string | null) => void
+  options: Record<string, string>
+  onOptionsChange: (options: Record<string, string>) => void
+}) {
   const store = useStore()
   const online = store.connection.kind === 'online'
   const [catalog, setCatalog] = useState<AgentModels | null>(null)
@@ -67,6 +81,11 @@ export function AgentModelPicker({ backend, selection, onChange }: { backend: st
   const value = selection === agentDefault?.id ? '' : (selection ?? '')
   const set = (v: string) => onChange(v ? v : null)
   const empty = catalog?.models.length === 0
+  const modelOptions = available.find((m) => m.id === value)?.options ?? []
+  const setOption = (id: string, v: string) => {
+    const { [id]: _, ...rest } = chosen
+    onOptionsChange(v ? { ...rest, [id]: v } : rest)
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -98,6 +117,17 @@ export function AgentModelPicker({ backend, selection, onChange }: { backend: st
           )}
         </div>
       </div>
+      {modelOptions.map((o) => {
+        const fallback = o.values.find((v) => v.id === o.default)?.name
+        const choices = [{ id: '', label: fallback ? `Default · ${fallback}` : 'Default' }, ...o.values.map((v) => ({ id: v.id, label: v.name }))]
+        return (
+          <div key={o.id} className="fade-in" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{o.name}</span>
+            <span style={{ flex: 1 }} />
+            <ChoicePicker selection={chosen[o.id] ?? ''} options={choices} onChange={(v) => setOption(o.id, v)} />
+          </div>
+        )
+      })}
       {!custom && !loading && failure ? (
         <span style={{ ...font('caption'), color: 'var(--warning)' }}>{failure}</span>
       ) : !custom && !loading && empty ? (

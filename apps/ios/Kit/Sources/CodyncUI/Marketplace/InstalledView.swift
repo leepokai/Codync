@@ -22,7 +22,7 @@ struct InstalledView: View {
             ScreenHeader {
                 BackButton(action: back).keyboardShortcut(.cancelAction)
             } title: {
-                Text("Installed").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text("Connectors & skills").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
                 EmptyView()
             }

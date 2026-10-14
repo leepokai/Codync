@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 
-use super::super::manage::Reply;
+use super::super::manage::{AnalyticsSheet, Reply};
 use super::{
     ACTIONS, Action, After, AgentPicker, App, Bot, ConfirmAct, Dir, Editor, FILTERS, FolderPicker, Goto, GotoItem,
     NEW_GROUP, Overlay, contains, fuzzy,
@@ -55,6 +55,7 @@ impl App {
             Action::Usage => self.overlays.push(Overlay::Usage),
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
+            Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
             Action::Keys => self.overlays.push(Overlay::Help(Editor::default())),
         }
     }
@@ -109,6 +110,7 @@ impl App {
             Overlay::Agent(a) => self.agent_key(a, k),
             Overlay::Fields(f) => self.fields_key(f, k),
             Overlay::Skill(s) => self.skill_key(s, k),
+            Overlay::Analytics(s) => s.key(k),
             o @ (Overlay::Usage | Overlay::Pair(_)) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None

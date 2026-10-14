@@ -13,6 +13,21 @@ registerHooks({ resolve(specifier, context, nextResolve) {
   return nextResolve(specifier, context)
 } })
 
+test('permission setup uses the local host identity even when a remote computer is selected', async () => {
+  Object.assign(globalThis, { window: { codync: { computerName: 'OS computer name' } } })
+  const local = { hostName: 'Local host' }
+  const state = { local: local as typeof local | null, selectedStore: { hostName: 'Remote host' } }
+  const { ComputerAccess } = await import('../store/computer-access.ts')
+  const access = new ComputerAccess(state as unknown as AppModel)
+  assert.equal(access.computerName, 'Local host')
+  local.hostName = 'Renamed local host'
+  assert.equal(access.computerName, 'Renamed local host')
+  state.local = null
+  assert.equal(access.computerName, 'OS computer name')
+  window.codync.computerName = ''
+  assert.equal(access.computerName, 'Your computer')
+})
+
 test('repeated checks never request permissions; explicit actions and failures stay reviewable', async () => {
   const calls: string[] = []
   let fail = false

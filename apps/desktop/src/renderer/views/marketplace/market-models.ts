@@ -170,7 +170,7 @@ export interface AgentAuth {
 }
 
 /** What a setup terminal on the computer runs. */
-export type SetupStep = 'install' | 'login'
+export type SetupStep = 'install' | 'node' | 'login'
 
 const s = (n: number) => n * 1000
 

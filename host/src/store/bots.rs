@@ -214,6 +214,7 @@ mod tests {
             cwd: "/tmp".into(),
             permission: Permission::Ask,
             model: None,
+            model_options: std::collections::BTreeMap::new(),
             pinned: false,
             position: 0,
             hidden: false,

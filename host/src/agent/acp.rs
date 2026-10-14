@@ -3,7 +3,7 @@
 //! newer adapter adding a variant never breaks parsing.
 
 use crate::LockExt;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
@@ -43,9 +43,49 @@ impl std::fmt::Display for RpcError {
 
 impl std::error::Error for RpcError {}
 
+/// Whether an agent's error asks for signing in: ACP's code, or adapters that only say so.
+pub fn needs_sign_in(e: &anyhow::Error) -> bool {
+    let rpc = |c: &(dyn std::error::Error + 'static)| {
+        c.downcast_ref::<RpcError>()
+            .is_some_and(|r| r.code == AUTH_REQUIRED || r.message.to_lowercase().contains("auth"))
+    };
+    e.chain().any(rpc) || e.to_string().to_lowercase().contains("auth")
+}
+
+/// A way an agent fails that the host itself recognizes, kept as a type so usage
+/// analytics can count it (`turn_finished.error`) without its text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailureKind {
+    /// No way to start the agent on this computer.
+    NotSetUp,
+    /// The agent stopped answering.
+    Timeout,
+    /// The agent process went away mid-request.
+    Exited,
+}
+
+#[derive(Debug)]
+pub struct Failure {
+    pub kind: FailureKind,
+    message: String,
+}
+
+impl Failure {
+    pub fn error(kind: FailureKind, message: impl Into<String>) -> anyhow::Error {
+        Self { kind, message: message.into() }.into()
+    }
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Failure {}
+
 /// A request already written to the agent, waiting for its response.
 pub struct Answer {
-    method: String,
     rx: oneshot::Receiver<std::result::Result<Value, Value>>,
 }
 
@@ -61,7 +101,8 @@ impl Answer {
                 };
                 Err(RpcError { code: e["code"].as_i64().unwrap_or_default(), message }.into())
             }
-            Err(_) => bail!("{}: connection closed", self.method),
+            // The reader drops every waiter when the process goes away.
+            Err(_) => Err(Failure::error(FailureKind::Exited, "agent process exited")),
         }
     }
 }
@@ -148,10 +189,8 @@ impl Acp {
                         _ => {}
                     }
                 }
-                // Process gone: fail everyone still waiting.
-                for (_, w) in pending.locked().drain() {
-                    let _ = w.send(Err(json!({"message": "agent process exited"})));
-                }
+                // Process gone: dropping the waiters fails them as `FailureKind::Exited`.
+                pending.locked().clear();
                 let stderr_tail = tail.locked().iter().cloned().collect::<Vec<_>>().join("\n");
                 let _ = tx.send(Incoming::Closed { stderr_tail });
             });
@@ -186,7 +225,7 @@ impl Acp {
         let (tx, rx) = oneshot::channel();
         self.pending.locked().insert(id, tx);
         self.write(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).await?;
-        Ok(Answer { method: method.to_owned(), rx })
+        Ok(Answer { rx })
     }
 
     pub async fn notify(&self, method: &str, params: Value) -> Result<()> {

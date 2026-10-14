@@ -15,6 +15,7 @@ export function StartupRecovery({ manage }: { manage: () => void }) {
   const connecting = ssh.state.profiles.some((p) => isSSHConnecting(ssh.status(p.id)))
   return (
     <div className="startup-recovery">
+      <div className="detail-drag drag" />
       <div className="startup-recovery-content">
         <div className="startup-recovery-title" role="status">
           {connecting ? <Spinner size={22} /> : <Icon name="desktopcomputer" size={22} color="var(--secondary)" />}

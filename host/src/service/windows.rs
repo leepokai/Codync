@@ -33,7 +33,17 @@ pub fn stop() -> Result<()> {
 
 pub fn start() -> Result<()> {
     let (program, args) = configured()?;
-    let spawn = |flags| Command::new(&program).args(&args).creation_flags(flags).spawn();
+    // No inherited pipes: the supervisor never exits, and whoever ran `install` (the app) would
+    // wait on them forever.
+    let spawn = |flags| {
+        Command::new(&program)
+            .args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(flags)
+            .spawn()
+    };
     let detached = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     spawn(detached | CREATE_BREAKAWAY_FROM_JOB)
         .or_else(|_| spawn(detached))

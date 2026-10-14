@@ -22,6 +22,7 @@ export class ComputerAccess extends Observable {
   }
 
   get helperName() { return this.screen?.permissionApp || 'Codync Screen' }
+  get computerName() { return this.app.local?.hostName || window.codync.computerName || 'Your computer' }
   get error() { return this.checkError ?? this.actionError }
 
   async refresh() {

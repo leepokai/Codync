@@ -101,7 +101,9 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
-  const setModel = useCallback((model: string | null) => onChange((d) => ({ ...d, model })), [onChange])
+  // Options belong to one model.
+  const setModel = useCallback((model: string | null) => onChange((d) => (d.model === model ? d : { ...d, model, modelOptions: {} })), [onChange])
+  const setModelOptions = useCallback((modelOptions: Record<string, string>) => onChange((d) => ({ ...d, modelOptions })), [onChange])
 
   const backends = store.hello?.backends ?? []
   const backend = backends.find((b) => b.id === draft.backend)
@@ -158,7 +160,7 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
               />
             ) : null}
           </div>
-          <AgentModelPicker backend={draft.backend} selection={draft.model} onChange={setModel} />
+          <AgentModelPicker backend={draft.backend} selection={draft.model} onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions} />
           <ValueRow
             label="Workspace"
             detail={
@@ -221,14 +223,14 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
 
         <PluginToggles
           title="Connectors"
-          empty="No connectors yet. Add GitHub, Linear, Notion and more from Plugins."
+          empty="No connectors yet. Add GitHub, Linear, Notion and more from Extensions."
           items={connectors.map((c) => ({ id: c.id, name: c.name, detail: c.command ?? c.url ?? '' }))}
           selection={draft.connectors ?? []}
           onChange={(ids) => set('connectors', ids)}
         />
         <PluginToggles
           title="Skills"
-          empty="No skills yet. Get some from Plugins, or write your own."
+          empty="No skills yet. Get some from Extensions, or write your own."
           items={skills.map((s) => ({ id: s.id, name: s.name, detail: s.description }))}
           selection={draft.skills ?? []}
           onChange={(ids) => set('skills', ids)}

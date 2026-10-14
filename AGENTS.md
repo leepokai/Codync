@@ -66,6 +66,7 @@ Use Swift Testing (`@Test`, `#expect`), Rust unit tests, `node --test` in the de
 ## Several agents share `dev`
 
 - Several agents often work in this checkout on `dev` at once. Before touching files with someone else's uncommitted changes, or anything tree-wide (renames, `xcodegen`, version bump, `git stash`/`reset`/`checkout`), tell the other agents what you'll change if your tool can message them; otherwise ask the user first. Never discard, revert or reformat hunks that aren't yours.
+- Before starting any task, sync with origin: `git pull --rebase --autostash origin dev`, then push any finished local commits that aren't on `origin/dev` yet (`git push origin dev`). The pull is tree-wide, so the rule above applies; if the autostash conflicts, keep both sides' intent and never drop another agent's hunk.
 
 ## Commit & Pull Request Guidelines
 

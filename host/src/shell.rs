@@ -52,6 +52,57 @@ pub fn exec(command: &str) -> Shell {
     if cfg!(windows) { line(command) } else { line(&format!("exec {command}")) }
 }
 
+/// The PATH a fresh login would get, for finding CLIs installed after this process started.
+/// Unix: the login shell's, via `$SHELL -ilc` with a timeout (nvm/conda can make shells
+/// slow); the shell writes it to a file, since a background job started by an rc file can hold
+/// a stdout pipe open long after the shell exits.
+#[cfg(unix)]
+pub fn user_path() -> Option<String> {
+    use std::time::{Duration, Instant};
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let file = std::env::temp_dir().join(format!("codync-path-{}", uuid::Uuid::new_v4()));
+    let target = file.to_string_lossy().replace('\'', r"'\''");
+    let mut child = std::process::Command::new(shell)
+        .args(["-ilc", &format!("printf '%s' \"$PATH\" > '{target}'")])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let exited = loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break true,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
+            _ => {
+                let _ = child.kill();
+                break false;
+            }
+        }
+    };
+    let path = std::fs::read_to_string(&file).ok().filter(|p| exited && !p.is_empty());
+    let _ = std::fs::remove_file(&file);
+    path
+}
+
+/// Windows: the user's and the machine's PATH from the registry. A running process keeps the
+/// PATH it started with, so a CLI whose installer just added its folder is only seen there.
+#[cfg(windows)]
+pub fn user_path() -> Option<String> {
+    use std::os::windows::process::CommandExt as _;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let read = "[Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')";
+    let out = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", read])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    (out.status.success() && !path.is_empty()).then_some(path)
+}
+
 /// Quotes one word for [`line`].
 pub fn quote(s: &str) -> String {
     let plain = |c: char| c.is_ascii_alphanumeric() || "-_./=@:+,".contains(c) || (cfg!(windows) && c == '\\');

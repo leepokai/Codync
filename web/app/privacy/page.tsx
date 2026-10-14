@@ -33,6 +33,7 @@ export default function Privacy() {
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>What we record:</strong> which features you use, such as opening the app, creating or deleting a bot, sending a message (with the number of attachments, not the files), starting a routine or a voice call, and installing a connector from the catalog. Each event carries the app version, the platform and the agent and model a bot uses.</li>
+            <li><strong>Crash and error reports:</strong> when an app crashes or hits an unexpected error, or an agent fails to answer, we record what kind of error it was and where in Codync&apos;s own code it happened (type, function names and line numbers). The error&apos;s message is never sent, and file paths are cut down to Codync&apos;s own files.</li>
             <li><strong>What we never record:</strong> your messages, prompts, code, files, file names or paths, bot names, credentials or anything your agents produce. We don&apos;t store your IP address: it is only used to look up your approximate location (country and city), which is kept with the events.</li>
             <li><strong>Who it&apos;s linked to:</strong> your Codync account when you&apos;re signed in; otherwise a random ID created on that device.</li>
             <li><strong>Why:</strong> to spot bugs sooner and serve you better, by seeing which features work and where people get stuck. It is never sold, never shared for advertising and never used to track you across other apps or websites.</li>

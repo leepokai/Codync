@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
+pub mod errors;
+
 const KV_ENABLED: &str = "analytics_enabled";
 /// The account the install id was last merged into (one `$identify` per account).
 const KV_IDENTIFIED: &str = "analytics_identified";
@@ -48,6 +50,8 @@ pub enum Event {
     RemoteScreenOpened,
     ConnectorInstalled,
     SkillInstalled,
+    /// Error tracking (`errors`): a panic or an uncaught error.
+    Exception,
 }
 
 impl Event {
@@ -73,6 +77,7 @@ impl Event {
             Self::RemoteScreenOpened => "remote_screen_opened",
             Self::ConnectorInstalled => "connector_installed",
             Self::SkillInstalled => "skill_installed",
+            Self::Exception => "$exception",
         }
     }
 
@@ -90,6 +95,8 @@ pub struct Analytics {
 
 enum Msg {
     Event(Value),
+    /// A panic, captured off the panicking thread (`errors::report_panics`).
+    Report(errors::Report),
     /// Send what's queued now and answer when done.
     Flush(oneshot::Sender<()>),
 }
@@ -194,8 +201,17 @@ pub enum TurnSource {
     Bot,
 }
 
-/// `turn_finished`: the agent, how the turn ended and how long it ran; never its text or error.
-pub fn turn_finished(hub: &Hub, agent: &str, outcome: TurnOutcome, stop_reason: &str, source: TurnSource, ms: i64) {
+/// `turn_finished`: the agent, how the turn ended, why it failed and how long it ran;
+/// never its text or the error's.
+pub fn turn_finished(
+    hub: &Hub,
+    agent: &str,
+    outcome: TurnOutcome,
+    stop_reason: &str,
+    failure: Option<&anyhow::Error>,
+    source: TurnSource,
+    ms: i64,
+) {
     let outcome = match outcome {
         TurnOutcome::Done => "done",
         TurnOutcome::Stopped => "stopped",
@@ -215,8 +231,41 @@ pub fn turn_finished(hub: &Hub, agent: &str, outcome: TurnOutcome, stop_reason: 
         TurnSource::Group => "group",
         TurnSource::Bot => "bot",
     };
-    let p = json!({"agent": agent, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
+    let mut p = json!({"agent": agent, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
+    if let Some(e) = failure {
+        let (kind, rpc_code) = failure_kind(e);
+        p["error"] = kind.into();
+        if let Some(code) = rpc_code {
+            p["rpc_code"] = code.into();
+        }
+    }
     capture(hub, Event::TurnFinished, p.as_object().cloned().unwrap_or_default());
+}
+
+/// Why a turn failed, as a category (plus the agent's JSON-RPC code): never the error's text,
+/// which can hold paths and agent output.
+fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<i64>) {
+    use crate::agent::acp::{Failure, FailureKind, RpcError};
+    if let Some(f) = e.chain().find_map(|c| c.downcast_ref::<Failure>()) {
+        let kind = match f.kind {
+            FailureKind::NotSetUp => "not_installed",
+            FailureKind::Timeout => "timeout",
+            FailureKind::Exited => "exited",
+        };
+        return (kind, None);
+    }
+    if crate::agent::acp::needs_sign_in(e) {
+        return ("sign_in", None);
+    }
+    for cause in e.chain() {
+        if let Some(r) = cause.downcast_ref::<RpcError>() {
+            return ("agent_error", Some(r.code));
+        }
+        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+            return (if io.kind() == std::io::ErrorKind::NotFound { "not_installed" } else { "io" }, None);
+        }
+    }
+    ("other", None)
 }
 
 /// `observe` plus what only the store knows: a resent message (same `clientNonce`) is
@@ -296,6 +345,7 @@ pub fn computer_tag(computer_id: &str) -> String {
 /// Sends queued events in batches every `FLUSH_EVERY`; turning analytics off drops them.
 pub fn start(hub: &Arc<Hub>) {
     let Some(mut rx) = hub.analytics.rx.locked().take() else { return };
+    errors::report_panics(hub);
     let hub = hub.clone();
     tokio::spawn(async move {
         let mut pending: Vec<Value> = Vec::new();
@@ -304,6 +354,7 @@ pub fn start(hub: &Arc<Hub>) {
             tokio::select! {
                 msg = rx.recv() => match msg {
                     Some(Msg::Event(e)) => pending.push(e),
+                    Some(Msg::Report(r)) => errors::capture_report(&hub, r),
                     Some(Msg::Flush(done)) => {
                         flush(&hub, &mut pending).await;
                         let _ = done.send(());
@@ -336,6 +387,11 @@ pub async fn flush_before_exit(hub: &Hub) {
 }
 
 async fn send(batch: &[Value]) -> bool {
+    // Debug builds (`cargo test`, `cargo run`) are throwaway hosts: each e2e test's fresh
+    // home would count as a new user, and one built with `CODYNC_ENV=main` lands in production.
+    if cfg!(debug_assertions) {
+        return true;
+    }
     let body = json!({"api_key": TOKEN, "batch": batch});
     match crate::http().post(BATCH_URL).json(&body).timeout(Duration::from_secs(15)).send().await {
         Ok(r) if r.status().is_success() => true,
@@ -407,6 +463,24 @@ mod tests {
     fn computer_tag_matches_the_iphone() {
         // Same vector as the iPhone's AnalyticsTests.
         assert_eq!(computer_tag("AAECAwQFBgcICQoLDA0ODw"), "2d6878bee20aba04");
+    }
+
+    #[test]
+    fn a_failed_turn_names_its_kind_not_its_text() {
+        use crate::agent::acp::{Failure, FailureKind, RpcError};
+        use anyhow::Context as _;
+        let setup = Failure::error(FailureKind::NotSetUp, "Codex isn't set up on this computer.");
+        assert_eq!(failure_kind(&setup), ("not_installed", None));
+        let hung = Err::<(), _>(Failure::error(FailureKind::Timeout, "no answer")).context("starting");
+        assert_eq!(failure_kind(&hung.expect_err("failed")), ("timeout", None));
+        let missing = std::io::Error::new(std::io::ErrorKind::NotFound, "/Users/me/bin/agent");
+        let spawn = Err::<(), _>(missing).context("starting `/Users/me/bin/agent`");
+        assert_eq!(failure_kind(&spawn.expect_err("failed")), ("not_installed", None));
+        let auth = anyhow::Error::new(RpcError { code: -32000, message: "Authentication required".into() });
+        assert_eq!(failure_kind(&auth), ("sign_in", None));
+        let rpc = anyhow::Error::new(RpcError { code: -32603, message: "Internal error: /Users/me".into() });
+        assert_eq!(failure_kind(&rpc), ("agent_error", Some(-32603)));
+        assert_eq!(failure_kind(&anyhow::anyhow!("something else")), ("other", None));
     }
 
     #[test]

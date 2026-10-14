@@ -20,6 +20,8 @@ export interface Bot {
   /** `ask` or `auto`. */
   permission: string
   model?: string | null
+  /** The model's own settings (effort, fast…): agent option id → value. */
+  modelOptions: Record<string, string>
   pinned: boolean
   /** Where the user dragged it, lowest first (after pinned bots); ties sort by recent activity. */
   position: number
@@ -59,6 +61,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     managedWorkspace: raw.managedWorkspace ?? false,
     permission: raw.permission ?? 'auto',
     model: raw.model ?? null,
+    modelOptions: raw.modelOptions ?? {},
     pinned: raw.pinned ?? false,
     position: raw.position ?? 0,
     hidden: raw.hidden ?? false,
@@ -238,6 +241,8 @@ export interface Backend {
   curated?: boolean
   signedIn?: boolean
   canInstall?: boolean
+  /** Only for an agent that runs on Node.js, on a computer without its own: Codync's copy is missing or added. */
+  node?: 'missing' | 'added'
 }
 
 export interface ScreenDisplay {
@@ -403,6 +408,7 @@ export interface BotDraft {
   cwd: string
   permission: string
   model?: string | null
+  modelOptions?: Record<string, string>
   pinned?: boolean
   hidden?: boolean
   notify?: boolean | null
@@ -423,6 +429,7 @@ export function draftOf(bot: Bot): BotDraft {
     cwd: bot.managedWorkspace ? '' : bot.cwd,
     permission: bot.permission,
     model: bot.model ?? null,
+    modelOptions: bot.modelOptions,
     pinned: bot.pinned,
     hidden: bot.hidden,
     notify: bot.notify ?? null,

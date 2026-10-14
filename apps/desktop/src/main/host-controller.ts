@@ -40,9 +40,10 @@ export async function fetchHealth(url = baseURL, timeoutMs = 2000): Promise<Heal
 
 export function run(bin: string, args: string[]): Promise<{ status: number; output: string }> {
   return new Promise((resolve) => {
-    execFile(bin, args, { maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+    // A command that never finishes would leave the window on "Starting the host…" for good.
+    execFile(bin, args, { maxBuffer: 8 * 1024 * 1024, windowsHide: true, timeout: 120_000 }, (error, stdout, stderr) => {
       const status = error ? (typeof error.code === 'number' ? error.code : 1) : 0
-      resolve({ status, output: `${stdout}${stderr}`.trim() })
+      resolve({ status, output: `${stdout}${stderr}`.trim() || (error?.killed ? `codync-host ${args[0]} didn't finish within 2 minutes.` : '') })
     })
   })
 }

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// How a bot handles the agent's permission requests (wire values `ask` / `auto`).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -80,6 +81,9 @@ pub struct BotConfig {
     pub permission: Permission,
     #[serde(default)]
     pub model: Option<String>,
+    /// The model's own settings (effort, fast…): ACP config option id → value.
+    #[serde(default)]
+    pub model_options: BTreeMap<String, String>,
     #[serde(default)]
     pub pinned: bool,
     /// Place in the roster, lowest first (after pinned bots). All 0 until the user drags one:

@@ -49,6 +49,7 @@ public struct BotEditorView: View {
             // Folders, models and connectors belong to the old computer.
             draft.cwd = ""
             draft.model = nil
+            draft.modelOptions = [:]
             draft.connectors = nil
             draft.skills = nil
             model.fillDefaults(&draft)
@@ -139,7 +140,7 @@ struct BotSettingsForm: View {
                                 .fieldBox()
                         }
                     }
-                    AgentModelPicker(backend: draft.backend, selection: $draft.model)
+                    AgentModelPicker(backend: draft.backend, selection: $draft.model, options: $draft.modelOptions)
                     ValueRow("Workspace", detail: draft.cwd.isEmpty
                              ? "This bot has its own space for files. It can work in other folders when you ask."
                              : "This project is the default starting folder. The bot can work elsewhere when you ask.") {
@@ -186,13 +187,13 @@ struct BotSettingsForm: View {
 
                 PluginToggles(
                     title: "Connectors",
-                    empty: "No connectors yet. Add GitHub, Linear, Notion and more from Plugins.",
+                    empty: "No connectors yet. Add GitHub, Linear, Notion and more from Extensions.",
                     items: model.installedConnectors.map { ($0.id, $0.name, $0.command ?? $0.url ?? "") },
                     selection: Binding(get: { draft.connectors ?? [] }, set: { draft.connectors = $0 })
                 )
                 PluginToggles(
                     title: "Skills",
-                    empty: "No skills yet. Get some from Plugins, or write your own.",
+                    empty: "No skills yet. Get some from Extensions, or write your own.",
                     items: model.installedSkills.map { ($0.id, $0.name, $0.description) },
                     selection: Binding(get: { draft.skills ?? [] }, set: { draft.skills = $0 }),
                     info: { id in viewingSkill = model.installedSkills.first { $0.id == id }.map(SkillRef.init) }

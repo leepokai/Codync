@@ -78,6 +78,16 @@
   row-gap: 4px;
 }
 
+/* Node.js missing for some agents: one filled row above the grid (no border on a fill). */
+.node-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bubble-agent);
+}
+
 .agent-card {
   display: flex;
   flex-direction: row;

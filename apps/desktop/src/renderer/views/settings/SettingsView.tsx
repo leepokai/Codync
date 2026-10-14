@@ -15,6 +15,8 @@ import { errorText, isMac, thisMac } from './parts'
 import { UsageLimits } from './UsageLimits'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
 import { ComputerAccessView } from '../computer-access/ComputerAccessView'
+import { FormSheet } from '../marketplace/pieces'
+import { AnalyticsSheet } from './AnalyticsSheet'
 
 /** The chat window's Settings: pages in a sidebar, ChatGPT's settings layout. */
 export type SettingsPage = 'general' | 'computers' | 'access' | 'voice' | 'usage' | 'updates'
@@ -177,13 +179,21 @@ function PrivacySettings() {
   const app = useApp()
   const local = useModel(app.local)
   const running = local !== null && local.connection.kind === 'online'
+  const [about, setAbout] = useState(false)
   const setShared = (on: boolean) => void local?.setAnalytics(on).catch((e: unknown) => app.setError(errorText(e)))
   return (
-    <CardSection title="Privacy" footer="Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.">
-      <Switch on={local?.analytics === true} onChange={setShared} disabled={!running}>
-        Share usage analytics
-      </Switch>
-    </CardSection>
+    <>
+      <CardSection title="Privacy" footer="Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ opacity: running ? 1 : 0.4 }}>Share usage analytics</span>
+          <IconButton title="About usage analytics" icon="info.circle" onClick={() => setAbout(true)} />
+          <Switch on={local?.analytics === true} onChange={setShared} disabled={!running} label="Share usage analytics" style={{ flex: 1, justifyContent: 'flex-end' }} />
+        </div>
+      </CardSection>
+      <FormSheet open={about} onClose={() => setAbout(false)}>
+        <AnalyticsSheet />
+      </FormSheet>
+    </>
   )
 }
 

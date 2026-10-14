@@ -3,10 +3,11 @@ import SwiftTerm
 import SwiftUI
 import UIKit
 
-/// Installing or signing in to an agent, live: the command runs in a terminal
-/// on the computer and this screen is that terminal (links open here).
+/// Installing or signing in to an agent, or adding Node.js, live: the command runs in a
+/// terminal on the computer and this screen is that terminal (links open here).
 struct SetupTerminalView: View {
-    let backend: Backend
+    /// Nil only for the `node` step, which belongs to the computer.
+    let backend: Backend?
     let step: SetupStep
     /// A terminal sign-in method the agent offered; nil runs Codync's own command.
     var method: AuthMethod?
@@ -16,12 +17,21 @@ struct SetupTerminalView: View {
     @Environment(\.openURL) private var openURL
     @State private var session = TermSession()
 
+    private var title: String {
+        let name = backend?.name ?? "the agent"
+        switch step {
+        case .node: return "Add Node.js"
+        case .install: return "Install \(name)"
+        case .login: return method?.name ?? "Sign in to \(name)"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ScreenHeader {
                 BackButton(action: back).keyboardShortcut(.cancelAction)
             } title: {
-                Text(step == .install ? "Install \(backend.name)" : method?.name ?? "Sign in to \(backend.name)")
+                Text(title)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
@@ -36,7 +46,7 @@ struct SetupTerminalView: View {
         .background(Palette.background)
         .task {
             guard let client = model.client else { return }
-            await session.run(client, backend: backend.id, step: step, method: method?.id)
+            await session.run(client, backend: backend?.id ?? "", step: step, method: method?.id)
             await model.refreshBackends()
         }
         .onDisappear { session.close() }

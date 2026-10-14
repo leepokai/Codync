@@ -170,7 +170,7 @@ function AgentSummary({ bot }: { bot: Bot }) {
   return (
     <CardSection title="Agent" footer={bot.description || null}>
       <InfoRow label="Runtime">
-        <AgentIcon registry={store.hello?.backends.find((b) => b.id === bot.backend)?.registry} size={14} />
+        <AgentIcon registry={store.hello?.backends.find((b) => b.id === bot.backend)?.registry ?? bot.backend} size={14} />
         <span>{store.backendName(bot.backend)}</span>
       </InfoRow>
       <InfoRow label={bot.managedWorkspace ? 'Workspace' : 'Folder'} title={bot.managedWorkspace ? 'Personal workspace, managed by Codync' : bot.cwd}>

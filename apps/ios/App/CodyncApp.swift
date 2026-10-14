@@ -123,6 +123,7 @@ final class AppStore {
         SharedStore.activeAccountID = session.userID
         account = session
         Analytics.shared.userID = { [session] in session.userID }
+        CrashReports.shared.start()
         contextID = storage.id
         (accounts, cloud) = Self.makeAccounts(storage, session: session)
     }

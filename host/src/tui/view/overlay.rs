@@ -196,6 +196,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Agent(a) => super::super::sheets::agent(buf, area, app, a),
         Overlay::Fields(f) => super::super::sheets::fields(buf, area, f),
         Overlay::Skill(s) => super::skill::skill(buf, area, app, s),
+        Overlay::Analytics(s) => super::analytics::analytics(buf, area, s),
     }
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Backend } from '@shared/models'
 import { agentIconURL } from '../../components/AgentIcon'
-import { CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
+import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
@@ -11,7 +11,7 @@ import { errorText, market, type AgentAuth, type AuthMethod } from './market-mod
 import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled, lineClamp } from './pieces'
 import { SetupTerminalView } from './SetupTerminal'
 
-type SetupRoute = { kind: 'install' } | { kind: 'terminal'; method: AuthMethod | null } | { kind: 'keys'; method: AuthMethod }
+type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null } | { kind: 'keys'; method: AuthMethod }
 
 /** Registry logos are one-color; paint the ones with a known brand color in it. */
 export function agentTint(registry: string | null | undefined) {
@@ -24,6 +24,7 @@ export function agentTint(registry: string | null | undefined) {
     case 'amp-acp': return 'rgb(242, 79, 64)'
     case 'kiro': return 'rgb(143, 69, 255)'
     case 'cortex-code': return 'rgb(41, 181, 232)'
+    case 'omp': return 'linear-gradient(to bottom right, rgb(237, 74, 191), rgb(155, 77, 255), rgb(90, 216, 230))'
     default: return 'var(--text)'
   }
 }
@@ -53,7 +54,26 @@ function TintedAgentIcon({ registry, size }: { registry?: string | null; size: n
 }
 
 /**
- * Getting an agent ready on the computer: install it, then sign in. Sign-in
+ * Above the agents while some of them run on Node.js and the computer has none: one place to
+ * add Codync's copy for all of them.
+ */
+export function NodeNotice({ onAdd }: { onAdd: () => void }) {
+  const store = useStore()
+  return (
+    <div className="node-notice fade-in">
+      <Icon name="shippingbox" size={15} color="var(--secondary)" />
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+        <span style={{ ...font('subheadline', 'semibold'), color: 'var(--text)' }}>Node.js isn't on {store.hostName}</span>
+        <span style={{ ...font('caption'), color: 'var(--secondary)' }}>Some agents need it to run. Codync can add a copy just for them.</span>
+      </span>
+      <Button onClick={onAdd}>Add Node.js</Button>
+    </div>
+  )
+}
+
+/**
+ * Getting an agent ready on the computer: install it, add Node.js when it runs on Node and
+ * the computer has none, then sign in. Sign-in
  * options come from the agent itself (ACP), plus Codync's own command for
  * CLIs it knows. Bots are made from New chat, not here.
  */
@@ -71,6 +91,7 @@ export function AgentSheet({ initial }: { initial: Backend }) {
   const installed = backend.installed === true
   const curated = backend.curated === true
   const signedIn = auth?.signedIn ?? backend.signedIn ?? null
+  const nodeMissing = backend.node === 'missing'
   const host = store.hostName
 
   const check = async () => {
@@ -103,9 +124,10 @@ export function AgentSheet({ initial }: { initial: Backend }) {
     await store.refreshBackends()
   }
 
-  // A known "signed in" needs no agent start; everything else asks the agent.
+  // A known "signed in" needs no agent start; everything else asks the agent (which can't
+  // start without its Node.js).
   useEffect(() => {
-    if (backend.signedIn !== true) void check()
+    if (backend.signedIn !== true && !nodeMissing) void check()
   }, [])
 
   // Back from a terminal or key form: see what changed.
@@ -118,12 +140,14 @@ export function AgentSheet({ initial }: { initial: Backend }) {
   const back = () => setRoute(null)
   const routed = route === null ? null
     : route.kind === 'install' ? <SetupTerminalView backend={backend} step="install" back={back} />
+    : route.kind === 'node' ? <SetupTerminalView backend={backend} step="node" back={back} />
     : route.kind === 'terminal' ? <SetupTerminalView backend={backend} step="login" method={route.method} back={back} />
     : <AgentKeysForm backend={backend} method={route.method} saved={auth?.savedEnv ?? []} back={back} done={setAuth} />
 
   const statusText = checking
     ? (auth === null ? `Checking with ${backend.name}… The first check can download it.` : 'Checking…')
     : signedIn === true ? 'Signed in.'
+    : nodeMissing ? 'Add Node.js first.'
     : signedIn === false ? 'Not signed in yet.'
     : `Couldn't tell. Skip this if you've already signed in on ${host}.`
 
@@ -167,7 +191,7 @@ export function AgentSheet({ initial }: { initial: Backend }) {
       <CardForm>
         <CardSection>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 0' }}>
-            <AgentTile registry={backend.registry} icon={30} tile={52} radius={14} />
+            <AgentTile registry={backend.registry ?? backend.id} icon={30} tile={52} radius={14} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
               <span style={font('title3', 'semibold')}>{backend.name}</span>
               {backend.description ? <span style={{ ...font('subheadline'), color: 'var(--secondary)', ...lineClamp(3) }}>{backend.description}</span> : null}
@@ -185,6 +209,17 @@ export function AgentSheet({ initial }: { initial: Backend }) {
             />
           </CardSection>
         ) : null}
+        {backend.node ? (
+          <CardSection>
+            <SetupStepRow
+              number={curated ? 2 : 1}
+              title="Node.js"
+              detail={nodeMissing ? `${backend.name} runs on Node.js. Codync adds its own copy.` : `Added on ${host}.`}
+              done={!nodeMissing}
+              action={nodeMissing ? { label: 'Add', run: () => setRoute({ kind: 'node' }) } : null}
+            />
+          </CardSection>
+        ) : null}
         <CardSection
           footer={signedIn !== true && auth?.methods.some((m) => m.kind === 'agent')
             ? `Browser sign-ins open on ${host} itself. Away from it? Use Remote screen to finish there.`
@@ -192,7 +227,7 @@ export function AgentSheet({ initial }: { initial: Backend }) {
         >
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <SetupStepRow number={curated ? 2 : 1} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
+              <SetupStepRow number={1 + Number(curated) + Number(backend.node !== undefined)} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
             </div>
             {checking ? (
               <ThinkingOrb state="connecting" size={16} color="var(--secondary)" />

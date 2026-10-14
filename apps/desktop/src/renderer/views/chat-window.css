@@ -135,6 +135,15 @@
   flex-direction: column;
   height: 100%;
 }
+/* The title bar strip of detail views that draw no top chrome of their own, so the window
+   still moves from there. */
+.detail-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 54px;
+}
 .empty-detail {
   height: 100%;
   padding: 32px;

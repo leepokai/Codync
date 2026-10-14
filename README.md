@@ -244,6 +244,10 @@ For release-by-release changes, see [GitHub Releases](https://github.com/leepoka
 
 Clients and the host each name the oldest version of the other they still work with (`minApp` in the host's `hello`, `minHost` in each client), so an app can meet an older or newer host. Details: [compatibility](docs/reference/compatibility.md).
 
+## Credits
+
+The desktop notch island's design is inspired by the work of [@novra.design](https://www.instagram.com/novra.design/).
+
 ## License
 
 Apache 2.0 for the code (see [NOTICE](NOTICE)); versions up to 2.11.0 were MIT. The Codync name, logo and the Codync Cloud relay are not covered, and hosted or multi-tenant services must run their own relay and accounts: see [TRADEMARK.md](TRADEMARK.md).

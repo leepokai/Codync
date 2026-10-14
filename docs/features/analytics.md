@@ -3,13 +3,17 @@
 Product analytics in PostHog (US Cloud, project "Codync App", id 649427), on by default on
 every device; *Share usage analytics* in Settings turns it off. It exists to spot bugs sooner
 (failed or stopped turns per agent and platform) and to serve users better. The public promise
-lives in `web/app/privacy/page.tsx`: keep it true.
+lives in `web/app/privacy/page.tsx`: keep it true. The info button beside the switch (terminal
+UI: *About usage analytics…*) shows the same promise in the app, in one text per client
+(desktop `views/settings/AnalyticsSheet.tsx`, `CodyncUI/AnalyticsSheet.swift`,
+`host/src/tui/view/analytics.rs`): change all three with the policy.
 
 ## Rules
 
 - **Only feature use, never content.** No message text, prompts, code, file names, paths,
   bot names, credentials or agent output. Properties are counts, booleans and public
   catalog names (agent, model, connector catalog name; a custom connector is just `custom`).
+  Errors are categories and code locations, never an error's message (see *Error tracking*).
 - **Setting per device.** The computer's owner decides for that computer (host kv
   `analytics_enabled`, on unless `0`); each iPhone decides for itself (`UserDefaults`
   `analyticsEnabled`, on unless `false`). Turning it off drops anything still queued. A
@@ -21,7 +25,8 @@ lives in `web/app/privacy/page.tsx`: keep it true.
 - **Location, never the IP.** The project's GeoIP transformation turns the sender's IP into an
   approximate location (`$geoip_country_name`, `$geoip_city_name`, …), then the project's
   *Discard client IP data* drops the IP before storage.
-- `env` is `main` or `dev`; filter dev out in PostHog.
+- `env` is `main` or `dev`; filter dev out in PostHog. Debug host builds (`cargo test`, `cargo run`)
+  send nothing: every e2e test starts a fresh host that would count as a new user.
 
 ## Where events come from
 
@@ -51,12 +56,41 @@ Besides `env`, `app_version`, `$os`, `$lib`:
 |---|---|
 | `bot_created` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
 | `message_sent` | `kind`, `agent`, `in_thread`, `attachments` (count) |
-| `turn_finished` | `agent`, `outcome` (`done`/`stopped`/`failed`/`incomplete`), `stop_reason` (ACP's, else `other`), `source` (`user`/`routine`/`group`/`bot`), `seconds` |
+| `turn_finished` | `agent`, `outcome` (`done`/`stopped`/`failed`/`incomplete`), `stop_reason` (ACP's, else `other`), `source` (`user`/`routine`/`group`/`bot`), `seconds`; when failed, `error` (`not_installed`/`sign_in`/`timeout`/`exited`/`agent_error`/`io`/`other`) and, for `agent_error`, the agent's JSON-RPC `rpc_code` |
 | `voice_call_finished` | `seconds` |
 | `connector_installed` | `connector` (catalog name or `custom`) |
 | `skill_installed` | `custom` |
 | `computer_paired` | `via` (`qr`/`account`), `computer` |
 | every host event | `client` (`local`/`remote`), `computer`, `arch` |
+
+## Error tracking
+
+Crashes and uncaught errors go to PostHog Error Tracking as `$exception` events with the same
+switch, identity and common properties as everything else, plus `process`. No SDK: each client
+builds PostHog's generic `custom` frames (oldest first, the failing one last).
+
+- **Host** (`host/src/analytics/errors.rs`): its own panics (a panic hook queues them for the
+  analytics task), and `reportError`, loopback only, for the computer's apps. Process `host`.
+- **Terminal UI**: its panics, through `reportError` from the panic hook. Process `tui`.
+- **Desktop** (`apps/desktop/src/main/error-reports.ts`, `shared/error-report.ts`): uncaught
+  errors and rejections in the main process and every window, and windows or helpers that
+  crashed (`RendererGone`, `GPUGone`, … with Electron's reason), through `reportError`.
+  Processes `desktop-main`, `desktop-renderer`. The renderer is built unminified so function
+  names stay readable.
+- **iPhone** (`CodyncKit` `CrashReports`): MetricKit's crash diagnostics, delivered on the next
+  launch, straight to PostHog with the version that crashed. Frames are `binary + offset`
+  (unsymbolicated; Xcode Organizer has the symbolicated crash). Process `ios`.
+
+What leaves the device: the error's type (`Panic`, `TypeError`, `EXC_BAD_ACCESS`), how it was
+caught, function names, and file names and line numbers inside Codync's code; an absolute path
+keeps only its file name. Never the error's message: only a panic message written as a literal
+in the code, an Electron crash reason or a signal name. Release host builds are stripped, so a
+host panic is its location only.
+
+Alerts email the owner, from insights on the *Codync users* dashboard (production only): *Any
+crash or error in a day* (`$exception` > 0, checked daily) and *Failed agent turns over 15 in an
+hour* (`turn_finished` with `outcome = failed`, checked hourly; a normal hour has a few). Error
+tracking's own issue alerts (new, reopened, spiking) need a Slack or Discord destination.
 
 ## Metrics
 

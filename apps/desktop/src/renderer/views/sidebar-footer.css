@@ -53,7 +53,7 @@
 .sidebar-account:hover,
 .sidebar-account.active { background: var(--bubble-agent); }
 
-.connect-apps {
+.extensions {
   flex: 1;
   min-width: 0;
   height: 34px;
@@ -70,15 +70,15 @@
   border: 1px solid var(--chrome-stroke);
   transition: background-color var(--hover), transform var(--hover);
 }
-.connect-apps:hover { background: color-mix(in srgb, var(--text) 10%, var(--surface)); }
-.connect-apps:active,
+.extensions:hover { background: color-mix(in srgb, var(--text) 10%, var(--surface)); }
+.extensions:active,
 .sidebar-account:active { transform: scale(.97); }
-.connect-apps-logos { display: flex; flex: none; }
-.connect-apps-logos img { width: 14px; height: 16px; padding: 1px; background: #fff; border-radius: 3px; object-fit: contain; }
-.connect-apps-logos > * + * { margin-left: -3px; }
+.extensions-logos { display: flex; flex: none; }
+.extensions-logos img { width: 14px; height: 16px; padding: 1px; background: #fff; border-radius: 3px; object-fit: contain; }
+.extensions-logos > * + * { margin-left: -3px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .connect-apps:active, .sidebar-account:active { transform: none; }
+  .extensions:active, .sidebar-account:active { transform: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .sidebar-footer-fade { background: var(--surface); inset: 0; }

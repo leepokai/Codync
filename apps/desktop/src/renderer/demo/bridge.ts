@@ -90,6 +90,7 @@ const bridge: CodyncBridge = {
   updates: { state: async () => updates, onChange: none, check() {}, setAutoCheck() {}, setAutoDownload() {} },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
   app: {
+    reportError() {},
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
     copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
     pickFiles: async () => [],

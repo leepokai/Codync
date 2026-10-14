@@ -19,6 +19,7 @@ import { registerCloud } from './cloud'
 import { registerSSH } from './ssh'
 import { QuitLifecycle } from './quit-lifecycle'
 import { Island } from './island'
+import { registerErrorReports } from './error-reports'
 
 /** macOS's user-facing computer name, else the host name. */
 function computerName() {
@@ -34,6 +35,7 @@ function computerName() {
 if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) app.commandLine.appendSwitch('remote-debugging-port', process.env.CODYNC_REMOTE_DEBUG)
 
 const host = new HostController()
+registerErrorReports(host)
 const account = new AccountService()
 const updates = new Updates(host)
 let chat: BrowserWindow | null = null

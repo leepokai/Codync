@@ -85,6 +85,10 @@ undocumented_unsafe_blocks = "warn"
 
 # perf-release-profile / opt-lto-release. Unwinding stays on: a panic in one
 # bot's task must not take down the whole daemon.
+# Optimize sha2 even in dev build to avoid 25s+ hash stalls on unstripped binaries
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { draftOf, type BotDraft, type DirListing } from '@shared/models'
+import { draftOf, type BotDraft, type DirListing, type AgentAccount } from '@shared/models'
 import { CharacterAvatar } from '../../components/Avatar'
 import { CardSection, ChoicePicker, DropdownMenu, IconButton, Pill, SearchField, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -13,6 +13,7 @@ import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { MemoryCard } from './MemoryView'
 import { AnchoredPanel, AutoTextArea, Field, SwitchRow } from './parts'
+import { market } from '../marketplace/market-models'
 import './bots.css'
 
 /** Create or edit a bot in a modal: the settings form plus Close / Save. */
@@ -103,6 +104,33 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
   const setModel = useCallback((model: string | null) => onChange((d) => ({ ...d, model })), [onChange])
 
+  const [accounts, setAccounts] = useState<AgentAccount[]>([])
+  const [authenticatingAccount, setAuthenticatingAccount] = useState(false)
+  const [accountError, setAccountError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (draft.backend === 'antigravity' && store.client) {
+      market.listAccounts(store.client, 'antigravity')
+        .then(setAccounts)
+        .catch(() => {})
+    }
+  }, [draft.backend, store.client])
+
+  const handleAddAccount = async () => {
+    if (!store.client || authenticatingAccount) return
+    setAuthenticatingAccount(true)
+    setAccountError(null)
+    try {
+      const res = await market.accountAuthenticate(store.client, 'antigravity')
+      setAccounts((prev) => [...prev.filter((a) => a.id !== res.account.id), res.account])
+      set('account', res.account.id)
+    } catch (e: unknown) {
+      setAccountError(errorText(e))
+    } finally {
+      setAuthenticatingAccount(false)
+    }
+  }
+
   const backends = store.hello?.backends ?? []
   const backend = backends.find((b) => b.id === draft.backend)
   const connectors = plugins?.connectors ?? []
@@ -159,6 +187,53 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
             ) : null}
           </div>
           <AgentModelPicker backend={draft.backend} selection={draft.model} onChange={setModel} />
+          {draft.backend === 'antigravity' ? (
+            <ValueRow
+              label="Google Account"
+              detail={
+                draft.account
+                  ? 'Using a dedicated Google account for this bot.'
+                  : 'Using the default Google Antigravity account from this computer.'
+              }
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <DropdownMenu
+                  title={
+                    draft.account
+                      ? (accounts.find((a) => a.id === draft.account)?.name ?? 'Custom Account')
+                      : 'Default account (Computer)'
+                  }
+                  items={() => [
+                    {
+                      title: 'Default account (Computer)',
+                      selected: !draft.account,
+                      action: () => set('account', null),
+                    },
+                    ...accounts.map((acc) => ({
+                      title: acc.name,
+                      selected: draft.account === acc.id,
+                      action: () => set('account', acc.id),
+                    })),
+                    {
+                      title: '+ Sign in with another Google account…',
+                      action: () => void handleAddAccount(),
+                    },
+                  ]}
+                >
+                  <Pill outlined style={{ gap: 6, color: 'var(--text)' }}>
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>
+                      {draft.account
+                        ? (accounts.find((a) => a.id === draft.account)?.name ?? 'Custom Account')
+                        : 'Default (Computer)'}
+                    </span>
+                    <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
+                  </Pill>
+                </DropdownMenu>
+                {authenticatingAccount ? <Spinner size={16} /> : null}
+              </div>
+            </ValueRow>
+          ) : null}
+          {accountError ? <span className="fade-in" style={{ ...font('footnote'), color: 'var(--danger)' }}>{accountError}</span> : null}
           <ValueRow
             label="Workspace"
             detail={

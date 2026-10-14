@@ -16,6 +16,47 @@ const SERVICE: &str = match crate::environment::Environment::current() {
     crate::environment::Environment::Dev => "dev.codync.development.credentials",
 };
 
+fn save_file_key(key: &[u8]) -> Result<()> {
+    let key_path = crate::service::data_dir().join("vault.key");
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&key_path)
+            .map_err(|e| anyhow!("Failed to create vault.key: {e}"))?;
+        file.write_all(key).map_err(|e| anyhow!("Failed to write vault.key: {e}"))?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(&key_path, key).map_err(|e| anyhow!("Failed to write vault.key: {e}"))?;
+    }
+    Ok(())
+}
+
+fn load_or_create_file_key(store: &Store) -> Result<Vec<u8>> {
+    let key_path = crate::service::data_dir().join("vault.key");
+    if key_path.exists() {
+        let bytes = std::fs::read(&key_path).map_err(|e| anyhow!("Failed to read vault.key: {e}"))?;
+        if bytes.len() == 32 {
+            return Ok(bytes);
+        }
+    }
+    if store.kv_read("vault.initialized")?.is_some() && !key_path.exists() {
+        bail!(
+            "The credential key is missing. Restore this computer's keychain or vault.key; encrypted credentials were preserved."
+        );
+    }
+    let mut key = vec![0; 32];
+    getrandom::fill(&mut key).map_err(|_| anyhow!("Could not generate credential key"))?;
+    save_file_key(&key)?;
+    Ok(key)
+}
+
 pub async fn unlock(hub: Arc<crate::hub::Hub>) -> Result<()> {
     if hub.store.secret_key.locked().is_some() {
         return Ok(());
@@ -23,31 +64,43 @@ pub async fn unlock(hub: Arc<crate::hub::Hub>) -> Result<()> {
     tokio::task::spawn_blocking(move || {
         let store = &hub.store;
         let mut cache = store.secret_key.locked();
-        if cache.is_some() { return Ok(()); }
-        let id = if let Some(id) = store.kv_read("vault.id")? { id } else {
+        if cache.is_some() {
+            return Ok(());
+        }
+        let id = if let Some(id) = store.kv_read("vault.id")? {
+            id
+        } else {
             let id = uuid::Uuid::new_v4().to_string();
             store.kv_set("vault.id", &id)?;
             id
         };
-        let entry = keyring::Entry::new(SERVICE, &id).map_err(|_| unavailable())?;
-        let key = match entry.get_secret() {
-            Ok(key) => key,
-            Err(keyring::Error::NoEntry) => {
-                if store.kv_read("vault.initialized")?.is_some() {
-                    bail!("The credential key is missing. Restore this computer's keychain; encrypted credentials were preserved.");
+        let key = match keyring::Entry::new(SERVICE, &id) {
+            Ok(entry) => match entry.get_secret() {
+                Ok(key) => key,
+                Err(keyring::Error::NoEntry) => {
+                    if store.kv_read("vault.initialized")?.is_some() {
+                        load_or_create_file_key(store)?
+                    } else {
+                        let mut key = vec![0; 32];
+                        getrandom::fill(&mut key).map_err(|_| anyhow!("Could not generate credential key"))?;
+                        if entry.set_secret(&key).is_err() {
+                            save_file_key(&key)?;
+                        }
+                        key
+                    }
                 }
-                let mut key = vec![0; 32];
-                getrandom::fill(&mut key).map_err(|_| anyhow!("Could not generate credential key"))?;
-                entry.set_secret(&key).map_err(|_| unavailable())?;
-                key
-            }
-            Err(_) => return Err(unavailable()),
+                Err(_) => load_or_create_file_key(store)?,
+            },
+            Err(_) => load_or_create_file_key(store)?,
         };
-        if key.len() != 32 { bail!("Invalid credential key; restore this computer's keychain."); }
+        if key.len() != 32 {
+            bail!("Invalid credential key; restore this computer's keychain.");
+        }
         store.kv_set("vault.initialized", "true")?;
         *cache = Some(Zeroizing::new(key));
         Ok(())
-    }).await??;
+    })
+    .await??;
     Ok(())
 }
 

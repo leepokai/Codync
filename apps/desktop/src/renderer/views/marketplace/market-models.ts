@@ -1,3 +1,4 @@
+import type { AgentAccount } from '@shared/models'
 import type { HostClient } from '../../client/host-client'
 
 // Marketplace wire types (host/src/market/): connectors are MCP servers,
@@ -227,6 +228,12 @@ export const market = {
   agentAuth: (c: HostClient, backend: string) => c.call<AgentAuth>('agentAuth', { backend }, s(300)),
   agentAuthenticate: (c: HostClient, backend: string, method: string) => c.call<AgentAuth>('agentAuthenticate', { backend, method }, s(660)),
   setAgentEnv: (c: HostClient, backend: string, vars: Record<string, string>) => c.call<AgentAuth>('setAgentEnv', { backend, vars }, s(300)),
+  listAccounts: async (c: HostClient, backend?: string) =>
+    (await c.call<{ accounts: AgentAccount[] }>('listAccounts', { backend: backend ?? null }, s(30))).accounts,
+  accountAuthenticate: (c: HostClient, backend: string, name?: string) =>
+    c.call<{ account: AgentAccount }>('accountAuthenticate', { backend, name: name ?? null }, s(660)),
+  deleteAccount: (c: HostClient, accountId: string) =>
+    c.call('deleteAccount', { accountId }, s(30)),
   termInput: (c: HostClient, term: string, data: string) => c.call('termInput', { term, data }),
   termResize: (c: HostClient, term: string, cols: number, rows: number) => c.call('termResize', { term, cols, rows }),
   termClose: (c: HostClient, term: string) => c.call('termClose', { term }),

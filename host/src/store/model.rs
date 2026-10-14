@@ -80,6 +80,8 @@ pub struct BotConfig {
     pub permission: Permission,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
     #[serde(default)]
     pub pinned: bool,
     /// Place in the roster, lowest first (after pinned bots). All 0 until the user drags one:

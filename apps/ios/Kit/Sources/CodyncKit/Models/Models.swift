@@ -21,6 +21,7 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// `ask` or `auto`.
     public var permission: String
     public var model: String?
+    public var account: String?
     public var pinned: Bool
     /// Where the user dragged it, lowest first (after pinned bots); ties sort by recent activity.
     public var position: Int = 0
@@ -332,6 +333,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var cwd: String
     public var permission: String
     public var model: String?
+    public var account: String?
     public var pinned: Bool?
     public var hidden: Bool?
     public var notify: Bool?
@@ -362,6 +364,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         cwd = bot.managedWorkspace ? "" : bot.cwd
         permission = bot.permission
         model = bot.model
+        account = bot.account
         pinned = bot.pinned
         hidden = bot.hidden
         notify = bot.notify

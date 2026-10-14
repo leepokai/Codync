@@ -140,6 +140,15 @@ struct BotSettingsForm: View {
                         }
                     }
                     AgentModelPicker(backend: draft.backend, selection: $draft.model)
+                    if draft.backend == "antigravity" {
+                        ValueRow("Google Account", detail: draft.account != nil
+                                 ? "Using a dedicated Google account for this bot."
+                                 : "Using the default Google Antigravity account from this computer.") {
+                            Text(draft.account != nil ? "Dedicated Account" : "Default (Computer)")
+                                .font(.callout)
+                                .foregroundStyle(Palette.secondary)
+                        }
+                    }
                     ValueRow("Workspace", detail: draft.cwd.isEmpty
                              ? "This bot has its own space for files. It can work in other folders when you ask."
                              : "This project is the default starting folder. The bot can work elsewhere when you ask.") {

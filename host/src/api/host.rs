@@ -108,6 +108,20 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
             crate::agent::auth::set_env(&hub.store, str_arg(&b, "backend")?, vars).await?
         }
+        "listAccounts" => {
+            let backend = b["backend"].as_str();
+            json!({"accounts": crate::agent::account::list(backend)?})
+        }
+        "accountAuthenticate" => {
+            let backend = str_arg(&b, "backend")?;
+            let name = b["name"].as_str().map(str::to_owned);
+            json!({"account": crate::agent::account::authenticate(&hub.store, backend, name).await?})
+        }
+        "deleteAccount" => {
+            let account_id = str_arg(&b, "accountId")?;
+            crate::agent::account::delete(account_id)?;
+            json!({})
+        }
         "termInput" => {
             hub.terms.write(str_arg(&b, "term")?, str_arg(&b, "data")?)?;
             json!({})

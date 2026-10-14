@@ -158,7 +158,14 @@ impl Actor {
             .await?;
             self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
             // Keys saved from an "environment variable" sign-in.
-            let env = crate::agent::auth::env(&self.hub.store, &self.cfg.backend)?;
+            let mut env = crate::agent::auth::env(&self.hub.store, &self.cfg.backend)?;
+            if let Some(ref account_id) = self.cfg.account {
+                let acc_env = crate::agent::account::env(account_id, &self.cfg.backend);
+                for (k, v) in acc_env {
+                    env.retain(|(ek, _)| ek != &k);
+                    env.push((k, v));
+                }
+            }
             let mut last_err = None;
             for (i, command) in candidates.iter().enumerate() {
                 let fallback_left = i + 1 < candidates.len();

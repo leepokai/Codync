@@ -13,6 +13,22 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
+/// The PipeWire source for one portal stream. Only properties every supported PipeWire has
+/// (Ubuntu 24.04's 1.0 onward) go in the builder: an unknown one panics there.
+fn capture_source(fd: OwnedFd, node: u32) -> Result<gst::Element> {
+    let src = gst::ElementFactory::make("pipewiresrc")
+        .property("fd", fd.into_raw_fd())
+        .property("path", node.to_string())
+        .property("do-timestamp", true)
+        .build()
+        .context("GStreamer's PipeWire plugin (gstreamer1.0-pipewire) is missing")?;
+    if src.has_property("keepalive-time") {
+        // A still screen keeps sending frames now and then, so keyframe requests get answered.
+        src.set_property("keepalive-time", 1000i32);
+    }
+    Ok(src)
+}
+
 /// Hardware encoders first; x264 is the always-there fallback.
 const ENCODERS: &[&str] = &[
     "vah264lpenc",
@@ -39,18 +55,10 @@ impl Session {
     ) -> Result<Self> {
         let payload = h264_payload(config["sdp"].as_str().context("missing offer")?)?;
         let pipeline = gst::Pipeline::new();
-        let src = gst::ElementFactory::make("pipewiresrc")
-            .property("fd", fd.into_raw_fd())
-            .property("path", display.node.to_string())
-            .property("do-timestamp", true)
-            // Use the system clock for capture and keepalive timestamps.
-            .property("provide-clock", false)
-            .build()
-            .context("GStreamer's PipeWire plugin (gstreamer1.0-pipewire) is missing")?;
-        if src.has_property("keepalive-time") {
-            // A still screen keeps sending frames now and then, so keyframe requests get answered.
-            src.set_property("keepalive-time", 1000i32);
-        }
+        // Capture and keepalive timestamps use the system clock. pipewiresrc only gained a
+        // switch for this (`provide-clock`) in PipeWire 1.6; Ubuntu 24.04 ships 1.0.
+        pipeline.use_clock(Some(&gst::SystemClock::obtain()));
+        let src = capture_source(fd, display.node)?;
         let convert = make("videoconvert")?;
         let crop = make("videocrop")?;
         let scale = make("videoscale")?;

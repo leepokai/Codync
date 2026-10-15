@@ -5,3 +5,4 @@ dist/
 src/renderer/public/symbols/
 native/speech-macos/.build/
 resources/account-config.json
+resources/icon-512.png

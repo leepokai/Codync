@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { folderName, isGroup, isWorking, type Bot } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar } from '../../components/Avatar'
@@ -6,6 +6,8 @@ import { CardSection, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
+import { openComputerScreen } from '../screen/open'
+import { useSSH } from '../settings/ssh-model'
 import { BotSettingsPanel } from '../bots/BotEditorView'
 import { ComputerBadge } from '../ComputerBadge'
 import { RoutinesView } from '../routines/RoutinesView'
@@ -121,8 +123,9 @@ function GroupMembersList({ group, editGroup }: { group: Bot; editGroup: () => v
 
 function ComputerSummary({ botId }: { botId: string }) {
   const store = useStore()
+  const ssh = useSSH()
   const screen = store.screen
-  const ready = !store.isOffline && !!screen?.enabled && screen.connected && screen.capture
+  const tunnel = ssh.state.attachments.find((item) => item.computer.id === store.computer.id) ?? null
   const symbol = !screen?.enabled ? 'power' : !screen.connected ? 'arrow.triangle.2.circlepath' : !screen.capture ? 'exclamationmark.circle' : screen.agentBot === botId ? 'cursorarrow.motionlines' : 'checkmark.circle'
   const status = !screen?.enabled
     ? 'Remote screen is off'
@@ -133,8 +136,8 @@ function ComputerSummary({ botId }: { botId: string }) {
         : screen.agentBot === botId
           ? `This bot is using your ${isMac ? 'Mac' : 'computer'}`
           : 'Ready to connect'
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16, background: 'var(--surface)', borderRadius: 16 }}>
+  const card = (
+    <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <ComputerBadge computer={store.computer} size={32} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
@@ -148,8 +151,15 @@ function ComputerSummary({ botId }: { botId: string }) {
           {status}
         </span>
       ) : null}
-      {ready ? <div style={{ ...font(12), color: 'var(--secondary)', marginTop: -8 }}>View and control this {isMac ? 'Mac' : 'computer'} from your iPhone.</div> : null}
-    </div>
+      {tunnel ? <div style={{ ...font(12), color: 'var(--secondary)', marginTop: -8 }}>View screen</div> : null}
+    </>
+  )
+  const style: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 16, padding: 16, background: 'var(--surface)', borderRadius: 16, border: 'none', color: 'inherit', textAlign: 'left', width: '100%' }
+  if (!tunnel) return <div style={style}>{card}</div>
+  return (
+    <button type="button" className="press" title="View screen" style={{ ...style, cursor: 'pointer' }} onClick={() => openComputerScreen(store, tunnel)}>
+      {card}
+    </button>
   )
 }
 

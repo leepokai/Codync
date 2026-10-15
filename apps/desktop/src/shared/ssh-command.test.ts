@@ -165,6 +165,12 @@ for (const kind of ['info', 'tunnel', 'resolve'] as const) {
   })
 }
 
+test('the tunnel also forwards the remote VNC server', () => {
+  const args = tunnelArguments(profile, 19333, '/tmp/home', '.codync', 5901)
+  assert.ok(args.includes('127.0.0.1:19333:127.0.0.1:19222'))
+  assert.ok(args.includes('127.0.0.1:5901:127.0.0.1:5900'))
+})
+
 for (const [preferred, fallback] of [
   ['/opt/homebrew/bin', '/Applications/Codync.app/Contents/Resources'],
 ]) {

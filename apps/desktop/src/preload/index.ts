@@ -118,6 +118,10 @@ const bridge: CodyncBridge = {
     setScreenAgent: (on) => ipcRenderer.invoke('screen:setAgent', on),
     syncScreenAgent: (enabled) => ipcRenderer.invoke('screen:syncAgent', enabled),
   },
+  screen: {
+    open: (target) => ipcRenderer.invoke('screen:open', target),
+    target: (computerId) => ipcRenderer.invoke('screen:target', computerId),
+  },
 }
 
 contextBridge.exposeInMainWorld('codync', bridge)

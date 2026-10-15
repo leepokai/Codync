@@ -18,6 +18,21 @@ const KEYSCAN = '/usr/bin/ssh-keyscan'
 const LSOF = ['/usr/sbin/lsof', '/usr/bin/lsof'].find((p) => existsSync(p)) ?? null
 const home = homedir()
 
+/** Loopback VNC ports this app's SSH tunnels are forwarding right now. */
+const vncPorts = new Set<number>()
+
+export function isTunnelVncPort(port: number) {
+  return vncPorts.has(port)
+}
+
+function rememberVncPort(port: number) {
+  vncPorts.add(port)
+}
+
+function forgetVncPort(port: number) {
+  vncPorts.delete(port)
+}
+
 // MARK: pure helpers
 
 /** A reason the profile can't be used, or null. */
@@ -401,9 +416,10 @@ class SSHComputers {
     let lastProblem = ''
     for (let attempt = 0; attempt < 3; attempt++) {
       const port = await freeLocalPort()
-      if (port === null) return { kind: 'retry', message: 'No free local port for the tunnel.' }
+      const vncPort = await freeLocalPort()
+      if (port === null || vncPort === null) return { kind: 'retry', message: 'No free local port for the tunnel.' }
       this.setStatus(id, { kind: 'connecting', step: 'Opening the tunnel…' })
-      const tunnel = this.startTunnel(profile, port)
+      const tunnel = this.startTunnel(profile, port, vncPort)
       if (!tunnel) return stop({ kind: 'failed', message: "Couldn't start ssh." })
       const { child, tail } = tunnel
       const alive = () => child.exitCode === null && child.signalCode === null
@@ -429,7 +445,7 @@ class SSHComputers {
       }
       // /health is public, so the answer alone doesn't prove it came through ssh: another
       // local user could have taken the port. Only a listener ssh owns gets the token.
-      const listens = child.pid !== undefined && (await sshListens(child.pid, port))
+      const listens = child.pid !== undefined && (await sshListens(child.pid, port)) && (await sshListens(child.pid, vncPort))
       // Disconnected, removed or edited meanwhile: this attempt must not register its tunnel.
       if (token.cancelled) {
         child.kill()
@@ -449,7 +465,9 @@ class SSHComputers {
         computer: { id: info.computerId, name: info.name, signKey: info.signKey, boxKey: info.boxKey ?? null },
         baseURL,
         token: info.token,
+        vncPort,
       })
+      rememberVncPort(vncPort)
       this.setStatus(id, { kind: 'connected', localPort: port })
       return { kind: 'attached' }
     }
@@ -468,12 +486,12 @@ class SSHComputers {
   }
 
   /** ssh's stderr is read as it arrives: left unread, the pipe fills and ssh blocks mid-write, freezing the tunnel. */
-  private startTunnel(profile: SSHProfile, localPort: number) {
+  private startTunnel(profile: SSHProfile, localPort: number, vncPort: number) {
     let text = ''
     let done = false
     let child: ChildProcess
     try {
-      child = spawn(SSH, tunnelArguments(profile, localPort, home, identity.dataFolder), { stdio: ['ignore', 'ignore', 'pipe'] })
+      child = spawn(SSH, tunnelArguments(profile, localPort, home, identity.dataFolder, vncPort), { stdio: ['ignore', 'ignore', 'pipe'] })
     } catch {
       return null
     }
@@ -511,6 +529,8 @@ class SSHComputers {
     this.tunnels.delete(id)
     child?.kill()
     this.connectedAt.delete(id)
+    const attachment = this.attachments.get(id)
+    if (attachment) forgetVncPort(attachment.vncPort)
     if (this.attachments.delete(id)) this.changed()
   }
 

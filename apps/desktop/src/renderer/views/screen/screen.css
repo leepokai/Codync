@@ -1,0 +1,76 @@
+html[data-window='screen'],
+html[data-window='screen'] body,
+html[data-window='screen'] #root {
+  height: 100%;
+  margin: 0;
+  background: #000;
+  color: #fafafa;
+  color-scheme: dark;
+}
+
+.screen-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #000;
+  color: var(--text);
+  user-select: none;
+}
+
+.screen-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  flex: none;
+  background: var(--surface);
+}
+
+.screen-display {
+  border: none;
+  background: var(--chrome-fill);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.screen-display[aria-pressed='true'] {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.screen-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.screen-rfb {
+  width: 100%;
+  height: 100%;
+}
+
+.screen-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #fafafa;
+  text-align: center;
+  padding: 24px;
+}
+
+.screen-note {
+  flex: none;
+  padding: 6px 12px 8px;
+  color: var(--secondary);
+  background: var(--surface);
+}

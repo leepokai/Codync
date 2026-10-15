@@ -23,9 +23,34 @@ held and the system rotation lock. The Rotate button remains available for an
 explicit override. Closing the last viewer restores the app's portrait layout.
 The video fits the available bounds, and touch coordinates use the resized viewport.
 
-The iPad already supports all orientations. The desktop app and the TUI do not
-use the iPhone viewer or its orientation policy; the capture helpers stream the
-computer display without choosing the phone's orientation.
+The iPad already supports all orientations. The desktop viewer and the TUI do not
+use the iPhone orientation policy; the capture helpers stream the computer display
+without choosing a phone orientation. The TUI has no video surface.
+
+## Desktop viewer
+
+On a computer connected Over SSH, the bot Details card (and Computers) opens a
+screen window. The SSH tunnel forwards that computer's VNC port, `127.0.0.1:5900`,
+to a loopback port on this machine. The window embeds noVNC, which sends clicks,
+drags, scrolling and keys as RFB. The picture does not use the iPhone WebRTC
+session, and the terminal UI has no video.
+
+The VNC server has to be plain RFB with no password, bound to `127.0.0.1` only.
+SSH is the only way in. On GNOME Wayland, wayvnc does this:
+
+```
+address=127.0.0.1
+port=5900
+enable_auth=false
+```
+
+```
+wayvnc --config /path/to/that-file
+```
+
+Do not publish port 5900 on the Docker host. gnome-remote-desktop's VNC server
+is a fit only when it can be set to the same plain RFB with authentication and
+TLS off. A password or a TLS handshake will not connect.
 
 ## Boundaries
 

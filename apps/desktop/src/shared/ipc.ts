@@ -1,3 +1,4 @@
+import type { ScreenView, ScreenWindowTarget } from './screen-viewer'
 import type { SharedFile } from './models'
 import type { SSHBridge } from './ssh'
 import type { ScreenAgentState } from './computer-access'
@@ -214,5 +215,11 @@ export interface CodyncBridge {
     screenAgentState(): Promise<ScreenAgentState>
     setScreenAgent(on: boolean): Promise<{ needsApproval: boolean }>
     syncScreenAgent(enabled: boolean): Promise<{ needsApproval: boolean }>
+  }
+  /** A window that shows one SSH computer's screen. Input is RFB, through the tunnel. */
+  screen: {
+    open(target: ScreenWindowTarget): Promise<void>
+    /** The computer this screen window was opened for. Null when the window is stale. */
+    target(computerId: string): Promise<ScreenView | null>
   }
 }

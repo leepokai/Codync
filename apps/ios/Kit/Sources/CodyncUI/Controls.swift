@@ -307,38 +307,44 @@ public struct SearchableChoicePicker<ID: Hashable>: View {
         .codyncSheet(isPresented: $presenting) {
             VStack(spacing: 0) {
                 ModalHeader(title)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 22) {
-                        SearchField("Search", text: $query)
-                        if options.isEmpty {
-                            Text("No matches.").foregroundStyle(Palette.secondary)
-                        } else {
-                            CardSection {
-                                ForEach(options, id: \.id) { option in
-                                    Button {
-                                        selection = option.id
-                                        presenting = false
-                                    } label: {
-                                        HStack(spacing: 10) {
-                                            Text(option.label).foregroundStyle(Palette.text)
-                                            Spacer(minLength: 8)
-                                            Image(systemName: "checkmark")
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundStyle(Palette.text)
-                                                .opacity(option.id == selection ? 1 : 0)
+                // The search field stays pinned above the list so it is always reachable, matching
+                // the desktop menu; only the choices scroll.
+                VStack(alignment: .leading, spacing: 0) {
+                    SearchField("Search", text: $query)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 22) {
+                            if options.isEmpty {
+                                Text("No matches.").foregroundStyle(Palette.secondary)
+                            } else {
+                                CardSection {
+                                    ForEach(options, id: \.id) { option in
+                                        Button {
+                                            selection = option.id
+                                            presenting = false
+                                        } label: {
+                                            HStack(spacing: 10) {
+                                                Text(option.label).foregroundStyle(Palette.text)
+                                                Spacer(minLength: 8)
+                                                Image(systemName: "checkmark")
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(Palette.text)
+                                                    .opacity(option.id == selection ? 1 : 0)
+                                            }
+                                            .contentShape(Rectangle())
                                         }
-                                        .contentShape(Rectangle())
+                                        .buttonStyle(.plain)
+                                        .accessibilityAddTraits(option.id == selection ? .isSelected : [])
                                     }
-                                    .buttonStyle(.plain)
-                                    .accessibilityAddTraits(option.id == selection ? .isSelected : [])
                                 }
                             }
                         }
+                        .font(.body)
+                        .padding(20)
                     }
-                    .font(.body)
-                    .padding(20)
+                    .scrollDismissesKeyboard(.interactively)
                 }
-                .scrollDismissesKeyboard(.interactively)
             }
             .background(Palette.background)
         }

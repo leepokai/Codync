@@ -201,8 +201,10 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { it
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [items, highlight, dismiss])
-  return (
-    <div className="menu-panel" style={{ maxHeight }}>
+  // The search field stays pinned: only the rows scroll, so the field is always reachable no
+  // matter how long the list is. Without a pinned header the whole panel scrolls, as before.
+  const header = (
+    <>
       {reactions ? (
         <div style={{ paddingBottom: items.length ? 4 : 0 }}>
           <ReactionStrip pick={reactions} dismiss={dismiss} />
@@ -232,32 +234,42 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { it
           </div>
         </div>
       ) : null}
-      {items.map((item, i) => (
-        <div key={`${item.title}-${i}`}>
-          {item.divider ? <div className="menu-divider" /> : null}
-          <button
-            className={`menu-row ${item.destructive ? 'destructive' : ''} ${highlight === i ? 'highlight' : ''}`}
-            title={item.title}
-            onMouseEnter={() => setHighlight(i)}
-            onClick={() => {
-              dismiss()
-              item.action()
-            }}
-          >
-            {item.icon ? (
-              <span className="menu-icon">
-                <Icon name={item.icon} size={12} />
-              </span>
-            ) : null}
-            <span className="menu-title">{item.title}</span>
-            {item.selected !== undefined ? (
-              <span style={{ opacity: item.selected ? 1 : 0, display: 'flex' }}>
-                <Icon name="checkmark" size={10} weight="semibold" />
-              </span>
-            ) : null}
-          </button>
-        </div>
-      ))}
+    </>
+  )
+  // Pin only when the panel is actually height-capped — a short menu fills itself and scrolling
+  // the header away can't happen, so it keeps the old single-scroller behavior.
+  const pinned = maxHeight !== undefined && (Boolean(search) || Boolean(reactions))
+  return (
+    <div className={`menu-panel ${pinned ? 'has-header' : ''}`} style={{ maxHeight }}>
+      {header}
+      <div className="menu-rows">
+        {items.map((item, i) => (
+          <div key={`${item.title}-${i}`}>
+            {item.divider ? <div className="menu-divider" /> : null}
+            <button
+              className={`menu-row ${item.destructive ? 'destructive' : ''} ${highlight === i ? 'highlight' : ''}`}
+              title={item.title}
+              onMouseEnter={() => setHighlight(i)}
+              onClick={() => {
+                dismiss()
+                item.action()
+              }}
+            >
+              {item.icon ? (
+                <span className="menu-icon">
+                  <Icon name={item.icon} size={12} />
+                </span>
+              ) : null}
+              <span className="menu-title">{item.title}</span>
+              {item.selected !== undefined ? (
+                <span style={{ opacity: item.selected ? 1 : 0, display: 'flex' }}>
+                  <Icon name="checkmark" size={10} weight="semibold" />
+                </span>
+              ) : null}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

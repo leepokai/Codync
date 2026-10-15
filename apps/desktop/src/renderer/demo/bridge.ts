@@ -108,6 +108,10 @@ const bridge: CodyncBridge = {
     setScreenAgent: unavailable,
     syncScreenAgent: async () => ({ needsApproval: false }),
   },
+  screen: {
+    open: async () => {},
+    target: async () => null,
+  },
 }
 
 // Every visit starts from the story: no mirror cache or drafts from a previous visit, onboarding done,

@@ -174,6 +174,57 @@ jobs:
           git commit -m "Update Codync to $VERSION" || exit 0
           git push
 
+  macos-arm64:
+    name: Unsigned Apple Silicon
+    needs: check
+    # A fork has no Apple signing secrets, so the signed macos job does not run there.
+    # This job still produces a downloadable unsigned arm64 dmg and zip. It is not published on tags.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - run: rustup target add aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+          shared-key: desktop-macos-arm64
+
+      - name: Build the arm64 host
+        working-directory: host
+        env:
+          CODYNC_ENV: main
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Package unsigned zip
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CODYNC_MAC_DMG: "1"
+        run: |
+          mkdir -p build/native
+          cp ../../host/target/aarch64-apple-darwin/release/codync-host build/native/codync-host
+          npm ci
+          npm run icons
+          sips -z 512 512 resources/icon.png --out resources/icon-512.png
+          node tools/account-config.mjs main
+          npx electron-vite build
+          npx electron-builder --mac dmg zip --arm64 --publish never --config tools/unsigned-mac.cjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codync-macos-arm64
+          if-no-files-found: error
+          path: |
+            apps/desktop/dist/codync-macos-arm64.dmg
+            apps/desktop/dist/codync-macos-arm64.zip
+
   windows:
     needs: check
     runs-on: windows-latest

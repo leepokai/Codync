@@ -15,6 +15,7 @@ import { Updates } from './updates'
 import { handleURL, registerAuthIPC, registerSchemes, urlFromArgv } from './auth'
 import { registerSpeech } from './speech'
 import { registerScreenIPC } from './screen'
+import { registerScreenViewer } from './screen-viewer'
 import { registerCloud } from './cloud'
 import { registerSSH } from './ssh'
 import { QuitLifecycle } from './quit-lifecycle'
@@ -221,6 +222,7 @@ if (!app.requestSingleInstanceLock()) {
     registerAuthIPC()
     registerSpeech()
     registerScreenIPC()
+    registerScreenViewer(rendererURL)
     registerCloud(account)
     registerSSH(() => BrowserWindow.getAllWindows())
     // Calls use the microphone (realtime voice); nothing else asks for permissions.

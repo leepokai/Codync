@@ -1,18 +1,9 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { registerHooks } from 'node:module'
+import { register } from 'node:module'
 import { test } from 'node:test'
 
 // Run the actual renderer store with a browser's local storage and account events.
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier.startsWith('.') && context.parentURL && !/\.[a-z]+$/.test(specifier)) {
-      const url = new URL(`${specifier}.ts`, context.parentURL)
-      if (existsSync(url)) return nextResolve(url.href, context)
-    }
-    return nextResolve(specifier, context)
-  },
-})
+await register(new URL('./resolve-hook.mjs', import.meta.url))
 
 test('computer ordering stays on each device, survives restart, and isolates accounts', async () => {
   let disk = new Map<string, string>()

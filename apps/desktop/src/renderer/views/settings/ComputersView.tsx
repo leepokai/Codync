@@ -15,6 +15,7 @@ import { deviceIcon, errorText, liveClient, relativeDay, Reveal, SectionHeader, 
 import { useSSH } from './ssh-model'
 import { SSHRow } from './SSHRow'
 import { VoiceChatSettingsView } from './VoiceChatSettingsView'
+import { openComputerScreen } from '../screen/open'
 
 /**
  * Computers this app manages (itself and SSH), with their account, relay and authorized devices;
@@ -78,6 +79,7 @@ export function ComputersView() {
                   </div>
                   <RouteIcon store={store} />
                   <span style={{ flex: 1 }} />
+                  <ViewScreenButton store={store} />
                   <IconButton title={`Remove from ${thisMac}`} icon="minus.circle" onClick={() => app.detach(computer.id)} />
                 </div>
               </div>
@@ -103,6 +105,15 @@ export function ComputersView() {
       </Sheet>
     </div>
   )
+}
+
+/** Opens the live screen when this remote computer is ready to view. */
+function ViewScreenButton({ store }: { store: BotStore }) {
+  const ssh = useSSH()
+  useModel(store)
+  const tunnel = ssh.state.attachments.find((item) => item.computer.id === store.computer.id) ?? null
+  if (!tunnel) return null
+  return <Button kind="secondary" onClick={() => openComputerScreen(store, tunnel)}>View screen</Button>
 }
 
 /** How this app reaches a computer: direct LAN or the encrypted relay. */
@@ -200,6 +211,7 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
                 {overSSH ? 'Over SSH' : isMacLabel} · {statusText(store)}
               </span>
             </div>
+            {overSSH ? <ViewScreenButton store={store} /> : null}
             {overSSH ? (
               // This computer's voice settings are their own Settings page.
               <IconButton title="Voice chat" icon="waveform" selected={showVoice} disabled={!online} onClick={() => setShowVoice((s) => !s)} />

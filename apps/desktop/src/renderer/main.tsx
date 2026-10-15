@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import './styles/theme.css'
 import { ChatWindow } from './views/ChatWindow'
+import { ScreenWindow } from './views/screen/ScreenWindow'
 import { PairingWindow } from './views/PairingWindow'
 import { IslandWindow } from './views/island/IslandWindow'
 import { IslandModel } from './views/island/island-model'
@@ -22,7 +23,9 @@ document.documentElement.dataset.window = page
 applyTextSize(prefs.textSize.get())
 const root = createRoot(document.getElementById('root')!)
 
-if (page === 'island') {
+if (page === 'screen') {
+  root.render(<ScreenWindow />)
+} else if (page === 'island') {
   // The island only draws what the chat window sends it: no host connection of its own.
   const island = new IslandModel()
   island.start()

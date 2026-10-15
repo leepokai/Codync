@@ -86,6 +86,9 @@ The TUI connects to one host at a time, so it keeps its single roster.
   work). The tray icon is the app icon; left-click opens the chat, right-click the menu.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)
   as an SMAppService agent; Linux starts its helper from the host, as before.
+  A bot's Details card (and Computers) opens a noVNC window for an SSH computer.
+  The tunnel forwards `127.0.0.1:5900` on that computer; clicks and keys are RFB.
+  The iPhone viewer stays on WebRTC. The TUI has no video.
 - **Other computers in the account** are reached through this computer's own host and SSH
   tunnels only. The encrypted channel to account computers (`ChannelTransport`) wasn't ported:
   the product targets one computer, so "Ask for access" rows show status only.

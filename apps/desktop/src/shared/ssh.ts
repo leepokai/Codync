@@ -27,12 +27,21 @@ export type SSHStatus =
   | { kind: 'failed'; message: string }
   | { kind: 'notInstalled' }
 
+/**
+ * The VNC server on an SSH computer. The tunnel forwards it to a loopback port on
+ * this Mac. The server must listen on 127.0.0.1 only, speak plain RFB, and require
+ * no password: SSH is the only way in.
+ */
+export const VNC_REMOTE_PORT = 5900
+
 /** A connected tunnel: the computer behind it, as a loopback host. */
 export interface SSHAttachment {
   profileId: string
   computer: { id: string; name: string; signKey: string; boxKey: string | null }
   baseURL: string
   token: string
+  /** Loopback port of the forwarded VNC server (`VNC_REMOTE_PORT` on the computer). */
+  vncPort: number
 }
 
 export interface SSHState {

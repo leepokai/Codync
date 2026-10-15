@@ -32,9 +32,11 @@ struct AgentModelPicker: View {
         let current = available.first { $0.id == catalog?.currentModelId }?.name
         var result = [("", agentDefault?.name ?? current.map { "Default · \($0)" } ?? "Default")]
         result += filtered.map { ($0.id, $0.name) }
+        // The selected model stays listed while the query hides it, under its name from the full
+        // list — the pill reads this label, so a raw id would show there.
         if let selection, !selection.isEmpty, selection != agentDefault?.id,
            !filtered.contains(where: { $0.id == selection }) {
-            result.append((selection, selection))
+            result.append((selection, available.first { $0.id == selection }?.name ?? selection))
         }
         return result
     }

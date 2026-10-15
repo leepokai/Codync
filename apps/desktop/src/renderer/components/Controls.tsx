@@ -54,9 +54,14 @@ export function Switch({ on, onChange, children, label, disabled, style }: { on:
 export function DropdownMenu({ items, children, className, style, title, search }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string; search?: { value: string; onChange: (v: string) => void; placeholder?: string } }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
+  // A menu opens unfiltered: a query left over from the last open would hide choices at rest.
+  const toggle = () => {
+    if (!open) search?.onChange('')
+    setOpen(!open)
+  }
   return (
     <>
-      <button ref={ref} className={className} style={style} title={title} onClick={() => setOpen((o) => !o)}>
+      <button ref={ref} className={className} style={style} title={title} onClick={toggle}>
         {children}
       </button>
       <AnchoredMenu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} search={search} />

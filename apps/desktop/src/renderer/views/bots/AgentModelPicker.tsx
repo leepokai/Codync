@@ -77,7 +77,11 @@ export function AgentModelPicker({ backend, selection, onChange, options: chosen
   const current = available.find((m) => m.id === catalog?.currentModelId)?.name
   const matching = available.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()))
   const options = [{ id: '', label: agentDefault?.name ?? (current ? `Default · ${current}` : 'Default') }, ...matching.map((m) => ({ id: m.id, label: m.name }))]
-  if (selection && selection !== agentDefault?.id && !matching.some((m) => m.id === selection)) options.push({ id: selection, label: selection })
+  // The selected model stays listed while the query hides it, under its name from the full list —
+  // the pill reads this label, so a raw id would show there.
+  if (selection && selection !== agentDefault?.id && !matching.some((m) => m.id === selection)) {
+    options.push({ id: selection, label: available.find((m) => m.id === selection)?.name ?? selection })
+  }
   const value = selection === agentDefault?.id ? '' : (selection ?? '')
   const set = (v: string) => onChange(v ? v : null)
   const empty = catalog?.models.length === 0

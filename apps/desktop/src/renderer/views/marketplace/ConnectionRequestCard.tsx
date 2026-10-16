@@ -66,7 +66,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
 
   const pending = request.status === 'pending'
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 480, boxSizing: 'border-box', alignSelf: 'flex-start', padding: '14px 16px', border: '1px solid var(--border)', borderRadius: 20 }}>
+    <div className="request-card" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 480, boxSizing: 'border-box', alignSelf: 'flex-start', padding: '14px 16px', border: '1px solid var(--border)', borderRadius: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <RequestLogo request={request} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>

@@ -32,11 +32,14 @@ struct ConnectionRequestCard: View {
                 Spacer(minLength: 8)
                 trailing
             }
+            // The card has no fill, so each field gets one.
             if pending, request.kind == "login" {
                 TextField("Username or email", text: $username)
                     .plainTextInput()
+                    .pill(fill: Palette.bubbleAgent)
                 SecureField("Password or op:// reference", text: $value)
                     .plainTextInput()
+                    .pill(fill: Palette.bubbleAgent)
                 Text("Saved securely on this computer. The bot types it into the sign-in page but never sees it.")
                     .font(.caption).foregroundStyle(Palette.secondary)
             } else if pending, request.kind == "secret" {
@@ -44,6 +47,7 @@ struct ConnectionRequestCard: View {
                     .font(.caption).foregroundStyle(Palette.secondary)
                 SecureField("Credential or op:// reference", text: $value)
                     .plainTextInput()
+                    .pill(fill: Palette.bubbleAgent)
                 Text("Saved securely on this computer. Never added to the conversation.")
                     .font(.caption).foregroundStyle(Palette.secondary)
             }

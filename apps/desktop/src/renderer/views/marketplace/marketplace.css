@@ -179,6 +179,13 @@
 textarea.market-field {
   field-sizing: content;
 }
+/* A chat request card has no fill, so each of its fields gets one (fill, no border). */
+.request-card .market-field {
+  padding: 7px 12px;
+  border-radius: 10px;
+  background: var(--bubble-agent);
+  box-sizing: border-box;
+}
 
 .setup-terminal {
   flex: 1;

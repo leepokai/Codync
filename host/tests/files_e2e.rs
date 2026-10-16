@@ -188,8 +188,10 @@ async fn rejects_invalid_sources_without_a_file_entry() {
 async fn rejected(path: &std::path::Path) {
     let waited = tokio::time::timeout(Duration::from_secs(20), async {
         loop {
-            if let Ok(data) = std::fs::read(path) {
-                let results: Value = serde_json::from_slice(&data).unwrap();
+            // A file that doesn't parse yet is still being written by the agent.
+            if let Ok(data) = std::fs::read(path)
+                && let Ok(results) = serde_json::from_slice::<Value>(&data)
+            {
                 assert!(
                     results.as_array().unwrap().iter().all(|result| result["isError"] == true
                         && result["content"][0]["text"].as_str().unwrap().contains("own chat and threads")),

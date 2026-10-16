@@ -49,6 +49,7 @@ Codync/
 │   │   ├── src/renderer/      # React UI: store/, components/, views/
 │   │   └── native/            # codync-speech (macOS on-device speech helper)
 │   ├── screen-macos/          # macOS screen helper (Xcode Screen target)
+│   ├── screen-macos-tests/    # Swift package for helper socket lifecycle regressions
 │   └── screen-linux/          # Linux portal/GStreamer screen helper
 ├── cloud/                     # Account API + encrypted relay Worker and Durable Object
 │   ├── src/
@@ -71,6 +72,7 @@ Codync/
 - `apps/desktop/` — desktop app for macOS, Linux and Windows (Electron; `npm run dev`, packaged by `.github/workflows/release-desktop.yml`)
 - `iOS` (`apps/ios/`) — iOS app
 - `Screen` (`apps/screen-macos/`) — Codync Screen: capture, input and WebRTC for Remote screen, embedded in the macOS desktop app (`Contents/Library/LoginItems`); starts the computer-use driver it carries in `Contents/Helpers`
+- `apps/screen-macos-tests/` — native helper socket lifecycle tests (`swift test --package-path apps/screen-macos-tests --scratch-path build/dd/screen-macos-tests`)
 - `apps/screen-linux/` — `codync-screen` (Rust, GStreamer + xdg portals), the Linux Remote screen helper
 - `Widgets` (`apps/ios/Widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
 - `CodyncKit` (`apps/ios/Kit/`) — the iPhone app's Swift package: `CodyncKit` + `CodyncUI` libraries (tests: `xcodebuild test -scheme CodyncKit-Package` on an iOS simulator)

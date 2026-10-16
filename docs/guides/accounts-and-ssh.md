@@ -232,8 +232,12 @@ A changed host key or a different computer ID blocks the connection. Sign-in is 
 ssh-agent only (`BatchMode`: nothing prompts for a password or passphrase); a refused key
 stops with a message instead of retrying. The remote command searches Homebrew,
 `~/.local/bin` and the Mac app bundle for `codync-host` too, since `sh -l` doesn't read
-`~/.zprofile`. At launch the app kills tunnels a crashed or force-quit copy left behind
-(`pkill` on the `.codync/ssh_known_hosts` argument only Codync's tunnels carry).
+`~/.zprofile`. At launch the app removes tunnels a crashed or force-quit copy left behind.
+Unix uses `pkill` with this app’s exact data directory and `ssh_known_hosts` path,
+so development sandboxes stay separate. Windows inspects native OpenSSH
+processes and terminates only tunnels whose executable and quoted known-hosts
+path match this app. It uses Windows’ OpenSSH Client feature and the device’s
+existing SSH config and agent.
 
 *Over SSH* also offers the `Host` entries of `~/.ssh/config` and the files it `Include`s
 (`main/ssh-config.ts`, parser in `shared/ssh-config.ts`): named hosts only, not patterns, `Match`

@@ -14,7 +14,9 @@ export const remoteInfoCommand = (port: number, folder = '.codync') => {
 }
 
 /** `dir` is this app's host data folder (`~/.codync`, or a development sandbox's). */
-export const knownHostsFiles = (h: string, dir = `${h}/.codync`) => [`${h}/.ssh/known_hosts`, `${dir}/ssh_known_hosts`]
+export const knownHostsFiles = (h: string, dir = `${h}/.codync`) => [
+  `${h.replaceAll('\\', '/')}/.ssh/known_hosts`, `${dir.replaceAll('\\', '/')}/ssh_known_hosts`,
+]
 
 /** `pkill -f` pattern for the tunnels that use `dir`'s known_hosts file: this copy's own, never another copy's. */
 export const orphanTunnelPattern = (dir: string) => `^/usr/bin/ssh -N .*${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/ssh_known_hosts`

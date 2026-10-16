@@ -123,6 +123,8 @@ export interface ConnectionRequest {
   location?: string | null
   /** Login requests: the website's domain or the app's name. */
   site?: string | null
+  /** Agent sign-in requests: the agent (backend id) to sign in to. */
+  backend?: string | null
 }
 
 /** A saved website or app login; the password stays on the computer. */

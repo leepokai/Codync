@@ -11,6 +11,7 @@ struct ConnectionRequestCard: View {
     @Environment(\.openURL) private var openURL
     @State private var app: ComposioApp?
     @State private var item: MarketConnector?
+    @State private var agent: Backend?
     @State private var value = ""
     @State private var username = ""
     @State private var busy = false
@@ -38,14 +39,14 @@ struct ConnectionRequestCard: View {
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 HStack {
-                    Button(request.kind == "login" ? "Save login" : request.kind == "secret" ? "Save and connect" : "Connect") { connect() }
+                    Button(connectTitle) { connect() }
                         .buttonStyle(PrimaryButtonStyle())
                         .disabled(busy || (["secret", "login"].contains(request.kind) && value.isEmpty))
                     Button("Cancel") { cancel() }.buttonStyle(SecondaryButtonStyle()).disabled(busy)
                     if busy { Spinner() }
                 }
             } else {
-                Text(request.status == "ready" ? (request.kind == "login" ? "Saved" : "Connected") : "Cancelled").foregroundStyle(Palette.secondary)
+                Text(request.status == "ready" ? doneTitle : "Cancelled").foregroundStyle(Palette.secondary)
             }
             if let error { Text(error).font(.footnote).foregroundStyle(Palette.danger) }
         }
@@ -58,7 +59,25 @@ struct ConnectionRequestCard: View {
         .codyncSheet(item: $app) { app in
             ComposioConnectSheet(app: app, requestId: entry.id) { self.app = nil }
         }
+        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: true) }
         .onDisappear { value = ""; username = "" }
+    }
+
+    private var connectTitle: String {
+        switch request.kind {
+        case "agent": "Sign in"
+        case "login": "Save login"
+        case "secret": "Save and connect"
+        default: "Connect"
+        }
+    }
+
+    private var doneTitle: String {
+        switch request.kind {
+        case "agent": "Signed in"
+        case "login": "Saved"
+        default: "Connected"
+        }
     }
 
     private func connect() {
@@ -68,7 +87,14 @@ struct ConnectionRequestCard: View {
         Task {
             defer { busy = false }
             do {
-                if request.kind == "app", let toolkit = request.toolkit {
+                if request.kind == "agent" {
+                    // The host completes the card and resends the messages once the sheet finds it signed in.
+                    if let backend = model.hello?.backends.first(where: { $0.id == request.backend }) {
+                        withAnimation(Motion.layout) { agent = backend }
+                    } else {
+                        error = "Open \(request.title) in Extensions to sign in."
+                    }
+                } else if request.kind == "app", let toolkit = request.toolkit {
                     withAnimation(Motion.layout) { app = ComposioApp(slug: toolkit, name: request.title) }
                 } else if request.kind == "login" {
                     try await client.finishConnectionRequest(entry.id, value: value, username: username)

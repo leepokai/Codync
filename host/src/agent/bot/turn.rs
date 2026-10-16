@@ -49,6 +49,7 @@ impl Actor {
         let from_user =
             !hidden && self.active_request.is_none() && self.active_group.is_none() && self.active_routine.is_none();
         self.turn_text = from_user.then(|| text.to_owned());
+        self.turn_entries = if from_user { entry_ids.to_vec() } else { Vec::new() };
         self.turn_memory_revision = memory::maintenance::revision(&self.hub.store, &self.cfg.id);
         self.announce = None;
         self.stop_requested = false;
@@ -244,11 +245,10 @@ impl Actor {
         match (&done, stop_reason.as_str()) {
             (Err(e), _) if !self.stop_requested => {
                 let tail = self.exit_tail.take().filter(|t| !t.is_empty());
-                let msg = self.ask_to_sign_in(e).unwrap_or_else(|| {
+                if !self.invite_sign_in(e) {
                     let detail = tail.map(|t| format!("\n\n{}", acp::truncate(&t, 1200))).unwrap_or_default();
-                    format!("The agent failed: {e}{detail}")
-                });
-                self.notice(&msg, NoticeStyle::Error);
+                    self.notice(&format!("The agent failed: {e}{detail}"), NoticeStyle::Error);
+                }
             }
             (_, "cancelled") | (Err(_), _) => self.notice("Stopped.", NoticeStyle::Info),
             (_, "max_tokens") => self.notice("The agent hit its output limit.", NoticeStyle::Info),

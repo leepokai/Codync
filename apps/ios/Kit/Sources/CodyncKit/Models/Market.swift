@@ -246,6 +246,8 @@ public struct ConnectionRequest: Codable, Hashable, Sendable {
     public var location: String?
     /// Login requests: the website's domain or the app's name.
     public var site: String?
+    /// Agent sign-in requests: the agent (backend id) to sign in to.
+    public var backend: String?
 }
 
 /// A saved website or app login; the password stays on the computer.

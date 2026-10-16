@@ -126,7 +126,9 @@ and states.
 - TUI **C** opens a pending connection request in the current lane; selecting a request
   and pressing Enter opens that request. Credentials, connector installation/sign-in
   and hosted apps use the secure setup APIs. Ctrl+X cancels the request; Escape closes
-  the editor without cancelling. Secrets are masked and never sent as chat text.
+  the editor without cancelling. Secrets are masked and never sent as chat text. An
+  agent sign-in request opens that agent's sign-in sheet instead (it always checks the
+  sign-in again); Ctrl+X there cancels the request.
 - A bot-to-bot exchange is a compact centered row ("Messaged [avatar] Owen" / "Message from
   [avatar] Egan"; same verbs for asks; the TUI draws one ` · ` line), never a bubble. Only a
   failure is marked: danger color, a warning mark (triangle icon; the TUI uses a

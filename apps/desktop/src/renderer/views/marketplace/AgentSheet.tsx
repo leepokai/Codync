@@ -77,7 +77,9 @@ export function NodeNotice({ onAdd }: { onAdd: () => void }) {
  * options come from the agent itself (ACP), plus Codync's own command for
  * CLIs it knows. Bots are made from New chat, not here.
  */
-export function AgentSheet({ initial }: { initial: Backend }) {
+/** `recheck`: opened from a chat's sign-in request, whose agent refused a turn, so the agent is
+ *  asked again however signed in it looked. */
+export function AgentSheet({ initial, recheck = false }: { initial: Backend; recheck?: boolean }) {
   const store = useStore()
   const [route, setRoute] = useState<SetupRoute | null>(null)
   const [auth, setAuth] = useState<AgentAuth | null>(null)
@@ -127,7 +129,7 @@ export function AgentSheet({ initial }: { initial: Backend }) {
   // A known "signed in" needs no agent start; everything else asks the agent (which can't
   // start without its Node.js).
   useEffect(() => {
-    if (backend.signedIn !== true && !nodeMissing) void check()
+    if ((recheck || backend.signedIn !== true) && !nodeMissing) void check()
   }, [])
 
   // Back from a terminal or key form: see what changed.

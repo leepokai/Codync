@@ -7,11 +7,14 @@ use super::super::app::{After, App, Editor, Overlay};
 use super::{AgentSetup, Fields, Input, Reply, SetupRow, Submit, ctrl, s};
 
 impl App {
-    pub fn open_agent(&mut self, backend: &str) {
+    /// `request`: the chat's sign-in request it's opened from, whose agent refused a turn: that
+    /// always asks the agent again, however signed in it looked.
+    pub fn open_agent(&mut self, backend: &str, request: Option<String>) {
         let b = self.backends.iter().find(|b| b["id"] == backend);
         // An agent without its Node.js can't start, so there's nothing to ask it yet.
-        let known = b.is_some_and(|b| b["signedIn"] == true || b["node"] == "missing");
-        let mut a = AgentSetup { backend: backend.to_owned(), auth: None, busy: false, cursor: 0, error: None };
+        let known = b.is_some_and(|b| (b["signedIn"] == true && request.is_none()) || b["node"] == "missing");
+        let mut a =
+            AgentSetup { backend: backend.to_owned(), auth: None, busy: false, cursor: 0, error: None, request };
         if !known {
             a.busy = true;
             self.sheet("agentAuth", json!({"backend": backend}), Reply::Auth(backend.to_owned()));
@@ -46,6 +49,12 @@ impl App {
         let rows = self.agent_rows(&a);
         match k.code {
             KeyCode::Esc | KeyCode::Char('q') => return None,
+            KeyCode::Char('x') if ctrl(k) && a.request.is_some() => {
+                let entry = a.request.take();
+                self.call("connectorRequestFinish", json!({"entryId": entry, "cancel": true}), After::Nothing);
+                self.flash("Sign-in request cancelled");
+                return None;
+            }
             KeyCode::Down | KeyCode::Char('j') => a.cursor = (a.cursor + 1).min(rows.len().saturating_sub(1)),
             KeyCode::Up | KeyCode::Char('k') => a.cursor = a.cursor.saturating_sub(1),
             KeyCode::Enter if !a.busy => {

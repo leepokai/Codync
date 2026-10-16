@@ -3,6 +3,7 @@
 use super::{Actor, CANCEL_GRACE, Cmd, Done, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
 use crate::chat::memory;
 use crate::hub::BotStatus;
+use crate::market::requests;
 use crate::store::{Lane, now_ms};
 use anyhow::{Result, anyhow};
 use serde_json::json;
@@ -240,9 +241,10 @@ impl Actor {
         self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
         self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
-        // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
-        let msg = self.ask_to_sign_in(e).unwrap_or_else(|| format!("Couldn't start the agent: {e:#}"));
-        self.notice(&msg, NoticeStyle::Error);
+        if !self.invite_sign_in(e) {
+            // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
+            self.notice(&format!("Couldn't start the agent: {e:#}"), NoticeStyle::Error);
+        }
         self.turn = None;
         if self.routine_completion.is_none() {
             self.set_inflight(false);
@@ -256,15 +258,21 @@ impl Actor {
         self.hub.team.cancel_from(&self.cfg.id);
     }
 
-    /// When `e` asks for signing in: marks the harness signed out, so Extensions offers to sign
-    /// in again, and returns what to tell the user.
-    pub(super) fn ask_to_sign_in(&self, e: &anyhow::Error) -> Option<String> {
-        if !crate::agent::acp::needs_sign_in(e) {
-            return None;
-        }
-        let h = crate::agent::backends::harness(&self.cfg.backend)?;
-        crate::agent::backends::set_signed_in(&self.cfg.backend, Some(false));
-        Some(format!("{0} needs you to sign in. Open {0} in Extensions to sign in.", h.name))
+    /// When `e` asks for signing in: marks the harness signed out and puts a sign-in card in the
+    /// chat, which sends this turn's messages again once the user has signed in. Whether it did.
+    pub(super) fn invite_sign_in(&self, e: &anyhow::Error) -> bool {
+        let backend = &self.cfg.backend;
+        let Some(h) = crate::agent::backends::harness(backend).filter(|_| crate::agent::acp::needs_sign_in(e)) else {
+            return false;
+        };
+        crate::agent::backends::set_signed_in(backend, Some(false));
+        let invited =
+            requests::invite_agent_sign_in(&self.hub, &self.cfg.id, &self.lane, backend, h.name, &self.turn_entries);
+        invited
+            .inspect_err(
+                |error| tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't ask to sign in"),
+            )
+            .is_ok()
     }
 
     pub(super) fn complete_request(&mut self, result: Result<String>, cancelled: bool) {

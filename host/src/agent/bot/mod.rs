@@ -136,6 +136,7 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         applied_system: HashMap::new(),
         keeper,
         turn_text: None,
+        turn_entries: Vec::new(),
         memory_session: None,
         memory_warned: false,
         turn_memory_revision: String::new(),
@@ -229,6 +230,8 @@ struct Actor {
     keeper: mpsc::UnboundedSender<memory::KeeperEvent>,
     /// The user's words for this turn (None for a hidden turn or one not from the user); feeds memory.
     turn_text: Option<String>,
+    /// The user messages this turn answers (none when it isn't the user's).
+    turn_entries: Vec<String>,
     memory_session: Option<String>,
     /// The user was told memory is unavailable.
     memory_warned: bool,

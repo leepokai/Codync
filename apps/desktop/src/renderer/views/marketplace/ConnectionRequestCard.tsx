@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import type { Entry } from '@shared/models'
+import type { Backend, Entry } from '@shared/models'
 import { Button, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
+import { AgentSheet } from './AgentSheet'
 import { ComposioConnectSheet } from './ComposioViews'
 import { InstallConnectorSheet } from './ConnectorSheets'
 import {
@@ -21,12 +22,14 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
   const request = entry.data.connectionRequest as unknown as ConnectionRequest
   const [app, setApp] = useState<ComposioApp | null>(null)
   const [item, setItem] = useState<MarketConnector | null>(null)
+  const [agent, setAgent] = useState<Backend | null>(null)
   const [value, setValue] = useState('')
   const [username, setUsername] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isLogin = request.kind === 'login'
   const isSecret = request.kind === 'secret'
+  const isAgent = request.kind === 'agent'
 
   const connect = async () => {
     const client = store.client
@@ -34,7 +37,12 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
     setBusy(true)
     setError(null)
     try {
-      if (request.kind === 'app' && request.toolkit) {
+      if (isAgent) {
+        // The host completes the card and resends the messages once the sheet finds it signed in.
+        const backend = store.hello?.backends.find((b) => b.id === request.backend)
+        if (backend) setAgent(backend)
+        else setError(`Open ${request.title} in Extensions to sign in.`)
+      } else if (request.kind === 'app' && request.toolkit) {
         setApp({ slug: request.toolkit, name: request.title })
       } else if (isLogin) {
         await market.finishConnectionRequest(client, entry.id, { value, username })
@@ -93,14 +101,14 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
           ) : null}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Button disabled={busy || ((isSecret || isLogin) && !value)} onClick={() => void connect()}>
-              {isLogin ? 'Save login' : isSecret ? 'Save and connect' : 'Connect'}
+              {isAgent ? 'Sign in' : isLogin ? 'Save login' : isSecret ? 'Save and connect' : 'Connect'}
             </Button>
             <Button kind="secondary" disabled={busy} onClick={() => void cancel()}>Cancel</Button>
             {busy ? <Spinner /> : null}
           </div>
         </>
       ) : (
-        <span style={{ color: 'var(--secondary)' }}>{request.status === 'ready' ? (isLogin ? 'Saved' : 'Connected') : 'Cancelled'}</span>
+        <span style={{ color: 'var(--secondary)' }}>{request.status === 'ready' ? (isAgent ? 'Signed in' : isLogin ? 'Saved' : 'Connected') : 'Cancelled'}</span>
       )}
       {error ? <span style={{ ...font('footnote'), color: 'var(--danger)' }}>{error}</span> : null}
       <FormSheet open={item !== null} onClose={() => setItem(null)}>
@@ -108,6 +116,9 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
       </FormSheet>
       <FormSheet open={app !== null} onClose={() => setApp(null)}>
         {app ? <ComposioConnectSheet app={app} requestId={entry.id} done={() => setApp(null)} /> : null}
+      </FormSheet>
+      <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560}>
+        {agent ? <AgentSheet key={agent.id} initial={agent} recheck /> : null}
       </FormSheet>
     </div>
   )

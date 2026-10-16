@@ -325,7 +325,12 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         );
         y += 1;
     }
-    footer(buf, inner, a.error.as_deref(), "↑↓ move · ↵ run · esc back");
+    let keys = if a.request.is_some() {
+        "↑↓ move · ↵ run · ^x cancel request · esc back"
+    } else {
+        "↑↓ move · ↵ run · esc back"
+    };
+    footer(buf, inner, a.error.as_deref(), keys);
 }
 
 pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {

@@ -102,13 +102,23 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"term": hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?})
         }
         "agentModels" => crate::agent::auth::models(&hub.store, str_arg(&b, "backend")?).await?,
-        "agentAuth" => crate::agent::auth::check(&hub.store, str_arg(&b, "backend")?).await?,
-        "agentAuthenticate" => {
-            crate::agent::auth::authenticate(&hub.store, str_arg(&b, "backend")?, str_arg(&b, "method")?).await?
-        }
-        "setAgentEnv" => {
-            let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
-            crate::agent::auth::set_env(&hub.store, str_arg(&b, "backend")?, vars).await?
+        "agentAuth" | "agentAuthenticate" | "setAgentEnv" => {
+            let backend = str_arg(&b, "backend")?;
+            let status = match method {
+                "agentAuth" => crate::agent::auth::check(&hub.store, backend).await?,
+                "agentAuthenticate" => {
+                    crate::agent::auth::authenticate(&hub.store, backend, str_arg(&b, "method")?).await?
+                }
+                _ => {
+                    let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
+                    crate::agent::auth::set_env(&hub.store, backend, vars).await?
+                }
+            };
+            // Chats that asked the user to sign in get their messages answered now.
+            if status["signedIn"] == true {
+                crate::market::requests::agent_signed_in(hub, backend)?;
+            }
+            status
         }
         "termInput" => {
             hub.terms.write(str_arg(&b, "term")?, str_arg(&b, "data")?)?;

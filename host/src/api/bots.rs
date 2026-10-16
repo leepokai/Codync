@@ -172,23 +172,15 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
                 None => None,
             };
             let lane = Lane { chat: bot.to_owned(), thread };
-            let (mut paths, mut attachments) = (Vec::new(), Vec::new());
+            let mut attachments = Vec::new();
             if !uploads.is_empty() {
                 let root = crate::chat::uploads::root(&row.config);
                 for id in uploads {
-                    let (path, meta) = crate::chat::uploads::resolve(&root, id)?;
-                    paths.push(path);
-                    attachments.push(meta);
+                    attachments.push(crate::chat::uploads::resolve(&root, id)?.1);
                 }
             }
             // `/skill …` reaches the agent as "read this skill first"; the chat keeps what was typed.
-            let asked = market::expand_command(&hub.store, &row.config.skills, text);
-            let asked = asked.as_deref().unwrap_or(text);
-            let prompt = if paths.is_empty() {
-                asked.to_owned()
-            } else {
-                format!("{asked}{}", crate::chat::uploads::prompt_suffix(&paths))
-            };
+            let prompt = crate::chat::prompt::of_message(&hub.store, &row.config, text, &attachments);
             let turn = hub.store.max_turn(bot) + 1;
             // A group has no agent of its own to queue behind: its message is simply sent.
             let status = if row.config.is_group() { "sent" } else { "queued" };

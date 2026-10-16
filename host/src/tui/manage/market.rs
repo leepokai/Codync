@@ -168,7 +168,7 @@ impl App {
             }
             Act::Agent(id) => {
                 self.overlays.push(Overlay::Market(m));
-                self.open_agent(&id);
+                self.open_agent(&id, None);
                 return None;
             }
             Act::SignIn(id) => {

@@ -138,6 +138,20 @@ impl Store {
         Ok(rows)
     }
 
+    /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
+    // ponytail: scans notices without an index; sign-ins are rare, add one if it shows up in profiles.
+    pub fn pending_sign_ins(&self, backend: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE kind = 'notice'
+               AND json_extract(data, '$.connectionRequest.kind') = 'agent'
+               AND json_extract(data, '$.connectionRequest.status') = 'pending'
+               AND json_extract(data, '$.connectionRequest.backend') = ?1
+             ORDER BY rev"
+        ))?;
+        Ok(st.query_map([backend], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Chat-visible messages (the user's, final replies) in any of `bot_id`'s lanes that
     /// contain every term (case-insensitive for ASCII), newest first.
     // ponytail: substring scan, no index (CJK needs no tokenizer this way); an FTS5 trigram table if it gets slow.

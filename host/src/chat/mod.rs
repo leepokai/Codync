@@ -7,5 +7,6 @@ pub mod group;
 pub mod memory;
 pub mod naming;
 pub mod outbox;
+pub mod prompt;
 pub mod team;
 pub mod uploads;

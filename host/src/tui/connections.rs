@@ -99,7 +99,13 @@ impl App {
             })
             .cloned();
         if let Some(entry) = entry {
-            self.overlays.push(Overlay::Fields(Box::new(fields(&entry))));
+            let request = &entry.data["connectionRequest"];
+            if request["kind"] == "agent" {
+                // The host completes the request and resends the messages once a check finds it signed in.
+                self.open_agent(request["backend"].as_str().unwrap_or_default(), Some(entry.id.clone()));
+            } else {
+                self.overlays.push(Overlay::Fields(Box::new(fields(&entry))));
+            }
         } else {
             self.flash("No pending connection request here");
         }
@@ -390,6 +396,41 @@ mod tests {
         reply(&mut app, &mut rx).await;
         assert!(app.overlays.is_empty());
         assert_eq!(calls.lock().unwrap()[2]["body"]["connectorId"], "composio-fixture");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_sign_in_request_opens_the_agent_sheet_and_cancels_from_it() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let (mut app, mut rx, calls, server) = fixture().await;
+        let request = json!({"kind":"agent","status":"pending","title":"Claude Code","backend":"claude"});
+        let e = Entry {
+            id: "card".into(),
+            seq: 1,
+            turn: 1,
+            kind: Kind::Notice,
+            data: json!({"connectionRequest":request}),
+            created_at: 0,
+            thread_id: None,
+        };
+        app.entries.entry("bot".into()).or_default().insert(1, e);
+        app.selected = Some("bot".into());
+        // Looking signed in doesn't skip the check: this agent just refused a turn.
+        app.backends = vec![json!({"id":"claude","signedIn":true})];
+        app.open_connection();
+        let Some(Overlay::Agent(a)) = app.overlays.last() else { panic!("agent sheet") };
+        assert_eq!((a.backend.as_str(), a.request.as_deref(), a.busy), ("claude", Some("card"), true));
+        reply(&mut app, &mut rx).await;
+        key(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL);
+        assert!(app.overlays.is_empty());
+        let cancel = json!({"method":"connectorRequestFinish","body":{"entryId":"card","cancel":true}});
+        let sent = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while !calls.lock().unwrap().contains(&cancel) {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        });
+        sent.await.expect("the request is cancelled");
+        assert_eq!(calls.lock().unwrap()[0], json!({"method":"agentAuth","body":{"backend":"claude"}}));
         server.abort();
     }
 

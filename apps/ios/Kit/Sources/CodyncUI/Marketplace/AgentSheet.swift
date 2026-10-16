@@ -44,6 +44,9 @@ struct NodeNotice: View {
 /// plus Codync's own command for CLIs it knows. Bots are made from New chat, not here.
 struct AgentSheet: View {
     let initial: Backend
+    /// Opened from a chat's sign-in request, whose agent refused a turn: the agent is asked
+    /// again however signed in it looked.
+    var recheck = false
     @Environment(BotStore.self) private var model
     @State private var route: SetupRoute?
     @State private var auth: AgentAuth?
@@ -72,7 +75,7 @@ struct AgentSheet: View {
         .frame(minWidth: 0, minHeight: 0)
         // A known "signed in" needs no agent start; everything else asks the agent (which
         // can't start without its Node.js).
-        .task { if backend.signedIn != true, !backend.needsNode { await check() } }
+        .task { if recheck || backend.signedIn != true, !backend.needsNode { await check() } }
         .onChange(of: route) { old, new in
             // Back from a terminal or key form: see what changed.
             if new == nil, old != nil { Task { await check() } }

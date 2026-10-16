@@ -124,7 +124,7 @@ and states.
   send can be retried with Enter; it reuses the nonce. A late response must not erase
   a draft edited while the request was running.
 - Connection requests in the chat are cards shaped like an Extensions row (logo, name,
-  reason, one action on the right; at most 480 pt wide), with no dismiss button: a
+  reason, one action on the right; at most 400 pt wide), with no dismiss button: a
   request just stays until it's done. TUI **C** opens a pending connection request in
   the current lane; selecting a request and pressing Enter opens that request.
   Credentials, connector installation/sign-in and hosted apps use the secure setup

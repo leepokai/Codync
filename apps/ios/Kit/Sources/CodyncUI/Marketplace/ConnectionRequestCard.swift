@@ -57,7 +57,7 @@ struct ConnectionRequestCard: View {
         .padding(.vertical, 14)
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Palette.border))
         // A card, not a banner: full width on a phone, capped on wider screens.
-        .frame(maxWidth: 480, alignment: .leading)
+        .frame(maxWidth: 400, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .textFieldStyle(.plain)
         .codyncSheet(item: $item) { item in

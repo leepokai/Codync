@@ -1,8 +1,9 @@
 //! Signing agents in the ACP way, so every agent that speaks ACP can be set up
 //! from Codync, not just the ones we know by name.
 //!
-//! A check starts the agent, reads the `authMethods` it advertises and tries
-//! `session/new`: `-32000` means it needs signing in. Methods come in three kinds:
+//! A check starts the agent, reads the `authMethods` it advertises and takes the
+//! login it reports (`_auth/status_update`), or else tries `session/new`: `-32000`
+//! means it needs signing in. Methods come in three kinds:
 //! - terminal: a command (the agent's `_meta.terminal-auth`, or its own binary
 //!   with `args`), run in a setup terminal (`term`);
 //! - agent: the agent signs itself in on `authenticate` (usually a browser on
@@ -219,8 +220,16 @@ fn model_options(options: &Value, model: &str) -> Vec<Value> {
 }
 
 async fn probe(store: &Store, backend: &str) -> Result<Status> {
-    let (acp, _inbox, init, cmd) = start(store, backend).await?;
+    let (acp, mut inbox, init, cmd) = start(store, backend).await?;
     let methods = methods(backend, &init, &cmd);
+    // An agent that reports its login is believed over a session: Claude's adapter opens one
+    // without checking the login, which then fails at the first prompt.
+    if init["agentCapabilities"]["_meta"]["authStatus"].is_object()
+        && let Some(signed_in) = reported_login(&mut inbox).await
+    {
+        acp.kill().await;
+        return Ok(Status { signed_in: Some(signed_in), detail: None, methods });
+    }
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
     let res = tokio::time::timeout(
@@ -238,6 +247,24 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
         Err(_) => (None, None),
     };
     Ok(Status { signed_in, detail, methods })
+}
+
+/// The agent's first `_auth/status_update` (ACP `authStatus` extension): `kind: "none"` is signed
+/// out, any other kind signed in. `None`: it can't tell (it stays silent then).
+async fn reported_login(inbox: &mut mpsc::UnboundedReceiver<Incoming>) -> Option<bool> {
+    // Claude's adapter gives its `claude auth status` 5 s.
+    let report = async {
+        while let Some(incoming) = inbox.recv().await {
+            if let Incoming::Notification { method, params } = incoming
+                && method == "_auth/status_update"
+                && let Some(kind) = params["authStatus"]["kind"].as_str()
+            {
+                return Some(kind != "none");
+            }
+        }
+        None
+    };
+    tokio::time::timeout(Duration::from_secs(8), report).await.ok().flatten()
 }
 
 /// Starts `backend` and completes `initialize`, trying each way to launch it.
@@ -518,6 +545,22 @@ mod tests {
         assert_eq!(m.len(), 5);
         // Commands stay on the host.
         assert!(serde_json::to_value(&m[0]).unwrap().get("command").is_none());
+    }
+
+    #[tokio::test]
+    async fn takes_the_first_login_the_agent_reports() {
+        let report = |kind: &str| Incoming::Notification {
+            method: "_auth/status_update".into(),
+            params: json!({"authStatus": {"kind": kind, "label": "x"}}),
+        };
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(Incoming::Notification { method: "session/update".into(), params: json!({}) }).unwrap();
+        tx.send(report("none")).unwrap();
+        tx.send(report("account")).unwrap();
+        assert_eq!(reported_login(&mut rx).await, Some(false));
+        assert_eq!(reported_login(&mut rx).await, Some(true));
+        drop(tx);
+        assert_eq!(reported_login(&mut rx).await, None, "an agent that goes quiet can't tell");
     }
 
     #[test]

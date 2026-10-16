@@ -9,12 +9,19 @@ use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot};
+use tokio::time::Instant;
 
 /// stderr lines kept to explain a crash.
 const STDERR_TAIL_LINES: usize = 12;
+/// How long a stopped agent gets to exit by itself before what's left of it is killed.
+const EXIT_GRACE: Duration = Duration::from_secs(10);
+
+/// Agents [`Acp::kill`] is still stopping, for the host to wait for before it exits.
+static STOPPING: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> = std::sync::Mutex::new(Vec::new());
 
 pub enum Incoming {
     Notification { method: String, params: Value },
@@ -108,10 +115,12 @@ impl Answer {
 }
 
 pub struct Acp {
-    stdin: tokio::sync::Mutex<ChildStdin>,
+    /// `None` once stopped: the closed pipe tells the agent to exit.
+    stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     next_id: AtomicI64,
     pending: Pending,
-    child: tokio::sync::Mutex<Child>,
+    /// `None` once stopped (handed to [`reap`]).
+    child: tokio::sync::Mutex<Option<Child>>,
     /// The process (and, on Unix, process group) leader.
     pid: Option<u32>,
 }
@@ -200,10 +209,10 @@ impl Acp {
 
         let pid = child.id();
         let acp = Arc::new(Self {
-            stdin: tokio::sync::Mutex::new(stdin),
+            stdin: tokio::sync::Mutex::new(Some(stdin)),
             next_id: AtomicI64::new(1),
             pending,
-            child: tokio::sync::Mutex::new(child),
+            child: tokio::sync::Mutex::new(Some(child)),
             pid,
         });
         Ok((acp, rx))
@@ -217,6 +226,7 @@ impl Acp {
         let mut line = serde_json::to_vec(&msg)?;
         line.push(b'\n');
         let mut stdin = self.stdin.lock().await;
+        let stdin = stdin.as_mut().ok_or_else(|| Failure::error(FailureKind::Exited, "agent stopped"))?;
         stdin.write_all(&line).await?;
         stdin.flush().await?;
         Ok(())
@@ -248,29 +258,69 @@ impl Acp {
         self.write(json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})).await
     }
 
+    /// Stops the agent and everything it started, without waiting for it. Closing its stdin
+    /// lets it exit by itself first: Claude Code killed during an OAuth refresh loses the new
+    /// refresh token, and the user's login with it.
     pub async fn kill(&self) {
-        let mut child = self.child.lock().await;
-        // ACP adapters spawn MCP servers and tools. Stop the adapter's whole
-        // process group (Windows: process tree) before reaping its leader.
-        if let Some(pid) = child.id() {
-            let mut tree = if cfg!(windows) {
-                let mut c = Command::new("taskkill");
-                c.args(["/T", "/F", "/PID", &pid.to_string()]);
-                c
-            } else {
-                let mut c = Command::new("/bin/kill");
-                c.args(["-KILL", "--", &format!("-{pid}")]);
-                c
-            };
-            let _ = tree.stdout(Stdio::null()).stderr(Stdio::null()).status().await;
-        }
-        // Already exited is fine; anything else is worth a log line.
-        if let Err(error) = child.kill().await
-            && error.kind() != std::io::ErrorKind::InvalidInput
-        {
-            tracing::debug!(%error, "couldn't kill agent process");
+        self.stdin.lock().await.take();
+        if let Some(child) = self.child.lock().await.take() {
+            let mut stopping = STOPPING.locked();
+            stopping.retain(|task| !task.is_finished());
+            stopping.push(tokio::spawn(reap(child)));
         }
     }
+}
+
+/// Waits until every agent being stopped has exited or been killed (at most [`EXIT_GRACE`]).
+pub async fn stopped() {
+    let tasks = std::mem::take(&mut *STOPPING.locked());
+    futures::future::join_all(tasks).await;
+}
+
+/// Gives the agent [`EXIT_GRACE`] to exit with everything it started (ACP adapters spawn
+/// CLIs, MCP servers and tools), then kills its process group (Windows: process tree).
+async fn reap(mut child: Child) {
+    let Some(pid) = child.id() else { return };
+    let deadline = Instant::now() + EXIT_GRACE;
+    let exited = tokio::time::timeout_at(deadline, child.wait()).await.is_ok();
+    if !exited || outlived(pid, deadline).await {
+        let mut tree = if cfg!(windows) {
+            let mut c = Command::new("taskkill");
+            c.args(["/T", "/F", "/PID", &pid.to_string()]);
+            c
+        } else {
+            let mut c = Command::new("/bin/kill");
+            c.args(["-KILL", "--", &format!("-{pid}")]);
+            c
+        };
+        let _ = tree.stdout(Stdio::null()).stderr(Stdio::null()).status().await;
+    }
+    // Already exited is fine; anything else is worth a log line.
+    if let Err(error) = child.kill().await
+        && error.kind() != std::io::ErrorKind::InvalidInput
+    {
+        tracing::debug!(%error, "couldn't kill agent process");
+    }
+}
+
+/// Whether part of the exited agent's process group is still running at `deadline`.
+#[cfg(unix)]
+async fn outlived(pid: u32, deadline: Instant) -> bool {
+    let Ok(group) = libc::pid_t::try_from(pid) else { return true };
+    // SAFETY: signal 0 sends nothing; it only checks that the group still has a process.
+    let running = || unsafe { libc::killpg(group, 0) } == 0;
+    while running() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    running()
+}
+
+/// Windows has no process groups: what the agent started got the same closed pipes, and its
+/// tree can't be found once it's gone.
+#[cfg(windows)]
+#[allow(clippy::unused_async)] // the Unix check's signature
+async fn outlived(_pid: u32, _deadline: Instant) -> bool {
+    false
 }
 
 /// Plain-text rendering of an ACP content block list / tool-call content list.
@@ -325,12 +375,28 @@ mod tests {
             &[],
         )
         .unwrap();
-        let ready = tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv()).await.unwrap();
+        let ready = tokio::time::timeout(Duration::from_secs(3), rx.recv()).await.unwrap();
         assert!(matches!(ready, Some(Incoming::Notification { .. })));
         acp.kill().await;
         // Killing only the shell leaves sleep holding stdout for 60 seconds.
-        let closed = tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv()).await.unwrap();
+        let closed = tokio::time::timeout(EXIT_GRACE + Duration::from_secs(3), rx.recv()).await.unwrap();
         assert!(matches!(closed, Some(Incoming::Closed { .. })));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_stopped_agent_finishes_by_itself_first() {
+        // The adapter exits on its closed stdin; the CLI it started saves its login a second later.
+        let (acp, mut rx) = Acp::spawn(
+            r#"sh -c 'read line; (sleep 1; echo "{\"jsonrpc\":\"2.0\",\"method\":\"saved\"}") &'"#,
+            "/tmp",
+            &[],
+        )
+        .unwrap();
+        acp.kill().await;
+        let saved = tokio::time::timeout(EXIT_GRACE, rx.recv()).await.unwrap();
+        assert!(matches!(saved, Some(Incoming::Notification { method, .. }) if method == "saved"));
+        assert!(acp.notify("x", json!({})).await.is_err(), "a stopped agent takes no more messages");
     }
 
     #[cfg(unix)]

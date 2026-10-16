@@ -35,10 +35,12 @@ successful restart; stop that host in its terminal and retry. Hosts attached usi
 `CODYNC_PORT` are managed manually.
 
 On SIGTERM the host stops its bots without waiting for open SSE or WebSocket
-connections. ACP adapters run in separate process groups; stopping an adapter
-also kills tools and MCP servers that remain in its group. Processes that detach
-into their own sessions and unrelated hosts using other data directories are
-outside this cleanup.
+connections. ACP adapters run in separate process groups. Stopping an adapter
+closes its stdin and gives its group 10 seconds to exit by itself, so a Claude
+Code CLI can finish saving a refreshed login. Tools and MCP servers still left
+in the group after that are killed, and the host waits for this before it exits.
+Processes that detach into their own sessions and unrelated hosts using other
+data directories are outside this cleanup.
 
 After rebuilding the host, restart the service (macOS launch agent shown; Linux
 uses the environment-specific systemd user unit). Stop only test hosts you started; do not kill another environment's host. For Dev:

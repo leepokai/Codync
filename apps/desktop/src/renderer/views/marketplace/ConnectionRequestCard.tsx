@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Backend, Entry } from '@shared/models'
-import { Button, IconButton, Spinner } from '../../components/Controls'
+import { Button, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
@@ -64,19 +64,6 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
     setBusy(false)
   }
 
-  const cancel = async () => {
-    const client = store.client
-    if (!client) return
-    setBusy(true)
-    try {
-      await market.finishConnectionRequest(client, entry.id, { cancel: true })
-      setValue('')
-    } catch (e) {
-      setError(errorText(e))
-    }
-    setBusy(false)
-  }
-
   const pending = request.status === 'pending'
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 480, boxSizing: 'border-box', alignSelf: 'flex-start', padding: '14px 16px', border: '1px solid var(--border)', borderRadius: 20 }}>
@@ -88,7 +75,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
         </div>
         {pending ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
-            {busy ? <Spinner /> : <IconButton title="Cancel request" icon="xmark" onClick={() => void cancel()} />}
+            {busy ? <Spinner /> : null}
             <Button disabled={busy || ((isSecret || isLogin) && !value)} onClick={() => void connect()}>
               {isAgent ? 'Sign in' : isLogin ? 'Save' : 'Connect'}
             </Button>

@@ -123,12 +123,14 @@ and states.
 - TUI keeps text and attachments in the composer until sending succeeds. A failed
   send can be retried with Enter; it reuses the nonce. A late response must not erase
   a draft edited while the request was running.
-- TUI **C** opens a pending connection request in the current lane; selecting a request
-  and pressing Enter opens that request. Credentials, connector installation/sign-in
-  and hosted apps use the secure setup APIs. Ctrl+X cancels the request; Escape closes
-  the editor without cancelling. Secrets are masked and never sent as chat text. An
-  agent sign-in request opens that agent's sign-in sheet instead (it always checks the
-  sign-in again); Ctrl+X there cancels the request.
+- Connection requests in the chat are cards shaped like an Extensions row (logo, name,
+  reason, one action on the right; at most 480 pt wide), with no dismiss button: a
+  request just stays until it's done. TUI **C** opens a pending connection request in
+  the current lane; selecting a request and pressing Enter opens that request.
+  Credentials, connector installation/sign-in and hosted apps use the secure setup
+  APIs; Escape closes the editor. Secrets are masked and never sent as chat text. An
+  agent sign-in request opens that agent's sign-in sheet instead, which always checks
+  the sign-in again.
 - A bot-to-bot exchange is a compact centered row ("Messaged [avatar] Owen" / "Message from
   [avatar] Egan"; same verbs for asks; the TUI draws one ` · ` line), never a bubble. Only a
   failure is marked: danger color, a warning mark (triangle icon; the TUI uses a

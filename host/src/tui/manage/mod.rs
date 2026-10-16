@@ -143,8 +143,6 @@ pub struct AgentSetup {
     pub busy: bool,
     pub cursor: usize,
     pub error: Option<String>,
-    /// The chat's sign-in request this was opened from (Ctrl+X cancels it).
-    pub request: Option<String>,
 }
 
 pub enum SetupRow {

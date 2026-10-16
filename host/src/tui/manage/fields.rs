@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
-use super::super::app::{After, App, Overlay};
+use super::super::app::{App, Overlay};
 use super::market::connector_inputs;
 use super::{Fields, Reply, Submit, ctrl, newline};
 
@@ -17,16 +17,6 @@ impl App {
         let multiline = f.current().is_some_and(|i| i.multiline);
         match k.code {
             KeyCode::Esc => return None,
-            KeyCode::Char('x') if ctrl(k) && matches!(f.submit, Submit::Connection(_)) => {
-                if let Submit::Connection(c) = &f.submit {
-                    f.saving = true;
-                    self.call(
-                        "connectorRequestFinish",
-                        json!({"entryId":c.entry,"cancel":true}),
-                        After::Connection(c.entry.clone(), super::super::connections::Step::Finish),
-                    );
-                }
-            }
             _ if newline(k) && multiline => {
                 if let Some(i) = f.current() {
                     i.ed.insert("\n");

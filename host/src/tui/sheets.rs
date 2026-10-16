@@ -325,12 +325,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         );
         y += 1;
     }
-    let keys = if a.request.is_some() {
-        "↑↓ move · ↵ run · ^x cancel request · esc back"
-    } else {
-        "↑↓ move · ↵ run · esc back"
-    };
-    footer(buf, inner, a.error.as_deref(), keys);
+    footer(buf, inner, a.error.as_deref(), "↑↓ move · ↵ run · esc back");
 }
 
 pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
@@ -407,7 +402,7 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
     ) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = if matches!(f.submit, Submit::Connection(_)) {
-        "^x cancel request · tab next · esc close"
+        "tab next · esc close"
     } else if tall {
         "⇧↵ new line · paste works"
     } else {

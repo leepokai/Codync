@@ -222,7 +222,7 @@ impl App {
             KeyCode::Enter if field == Field::Agent => {
                 let backend = f.backend.clone();
                 self.overlays.push(Overlay::Form(f));
-                self.open_agent(&backend, None);
+                self.open_agent(&backend, false);
                 return None;
             }
             KeyCode::Char('i') if field == Field::Skills => {

@@ -288,11 +288,7 @@ fn entry_lines(
                 return;
             }
             let text = if let Some(status) = e.data["connectionRequest"]["status"].as_str() {
-                let hint = if e.data["connectionRequest"]["kind"] == "agent" {
-                    "C signs in / cancels"
-                } else {
-                    "C connects / cancels"
-                };
+                let hint = if e.data["connectionRequest"]["kind"] == "agent" { "C signs in" } else { "C connects" };
                 format!(
                     "{} · {} · {}",
                     e.data["connectionRequest"]["title"].as_str().unwrap_or("Connect service"),

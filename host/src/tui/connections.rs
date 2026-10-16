@@ -52,7 +52,7 @@ pub fn fields(entry: &Entry) -> Fields {
     };
     Fields {
         title: request["title"].as_str().unwrap_or("Connect service").into(),
-        note: "Saved securely; never added to chat. Ctrl+X cancels the request; Esc closes.".into(),
+        note: "Saved securely; never added to chat. Esc closes.".into(),
         choices: vec![],
         choice: 0,
         inputs,
@@ -102,7 +102,7 @@ impl App {
             let request = &entry.data["connectionRequest"];
             if request["kind"] == "agent" {
                 // The host completes the request and resends the messages once a check finds it signed in.
-                self.open_agent(request["backend"].as_str().unwrap_or_default(), Some(entry.id.clone()));
+                self.open_agent(request["backend"].as_str().unwrap_or_default(), true);
             } else {
                 self.overlays.push(Overlay::Fields(Box::new(fields(&entry))));
             }
@@ -332,7 +332,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn credentials_submit_exact_secret_and_cancel_is_explicit() {
+    async fn credentials_submit_the_exact_secret_and_esc_sends_nothing() {
         use crossterm::event::{KeyCode, KeyModifiers};
         let (mut app, mut rx, calls, server) = fixture().await;
         open(&mut app, &json!({"kind":"login","status":"pending"}));
@@ -349,10 +349,6 @@ mod tests {
         open(&mut app, &json!({"kind":"secret","status":"pending"}));
         key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
         assert_eq!(calls.lock().unwrap().len(), 1);
-        open(&mut app, &json!({"kind":"secret","status":"pending"}));
-        key(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL);
-        reply(&mut app, &mut rx).await;
-        assert_eq!(calls.lock().unwrap()[1]["body"], json!({"entryId":"request","cancel":true}));
         server.abort();
     }
 
@@ -400,8 +396,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agent_sign_in_request_opens_the_agent_sheet_and_cancels_from_it() {
-        use crossterm::event::{KeyCode, KeyModifiers};
+    async fn agent_sign_in_request_opens_the_agent_sheet_checking_again() {
         let (mut app, mut rx, calls, server) = fixture().await;
         let request = json!({"kind":"agent","status":"pending","title":"Claude Code","backend":"claude"});
         let e = Entry {
@@ -419,17 +414,8 @@ mod tests {
         app.backends = vec![json!({"id":"claude","signedIn":true})];
         app.open_connection();
         let Some(Overlay::Agent(a)) = app.overlays.last() else { panic!("agent sheet") };
-        assert_eq!((a.backend.as_str(), a.request.as_deref(), a.busy), ("claude", Some("card"), true));
+        assert_eq!((a.backend.as_str(), a.busy), ("claude", true));
         reply(&mut app, &mut rx).await;
-        key(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL);
-        assert!(app.overlays.is_empty());
-        let cancel = json!({"method":"connectorRequestFinish","body":{"entryId":"card","cancel":true}});
-        let sent = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-            while !calls.lock().unwrap().contains(&cancel) {
-                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            }
-        });
-        sent.await.expect("the request is cancelled");
         assert_eq!(calls.lock().unwrap()[0], json!({"method":"agentAuth","body":{"backend":"claude"}}));
         server.abort();
     }

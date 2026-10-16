@@ -87,7 +87,7 @@ struct ConnectionRequestCard: View {
     @ViewBuilder private var trailing: some View {
         if pending {
             HStack(spacing: 6) {
-                if busy { Spinner() } else { IconButton("Cancel request", systemImage: "xmark") { cancel() } }
+                if busy { Spinner() }
                 Button(connectTitle) { connect() }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(busy || (["secret", "login"].contains(request.kind) && value.isEmpty))
@@ -151,16 +151,6 @@ struct ConnectionRequestCard: View {
                     withAnimation(Motion.layout) { item = loaded }
                 }
             } catch { self.error = error.localizedDescription }
-        }
-    }
-
-    private func cancel() {
-        guard let client = model.client else { return }
-        busy = true
-        Task {
-            defer { busy = false }
-            do { try await client.finishConnectionRequest(entry.id, cancel: true); value = "" }
-            catch { self.error = error.localizedDescription }
         }
     }
 }

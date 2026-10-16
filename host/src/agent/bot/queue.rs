@@ -241,12 +241,7 @@ impl Actor {
         self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
         // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
-        let mut msg = format!("Couldn't start the agent: {e:#}");
-        if crate::agent::acp::needs_sign_in(e)
-            && let Some(h) = crate::agent::backends::harness(&self.cfg.backend)
-        {
-            msg = format!("{0} needs you to sign in. Open {0} in Extensions to sign in.", h.name);
-        }
+        let msg = self.ask_to_sign_in(e).unwrap_or_else(|| format!("Couldn't start the agent: {e:#}"));
         self.notice(&msg, NoticeStyle::Error);
         self.turn = None;
         if self.routine_completion.is_none() {
@@ -259,6 +254,17 @@ impl Actor {
             r.lane = None;
         });
         self.hub.team.cancel_from(&self.cfg.id);
+    }
+
+    /// When `e` asks for signing in: marks the harness signed out, so Extensions offers to sign
+    /// in again, and returns what to tell the user.
+    pub(super) fn ask_to_sign_in(&self, e: &anyhow::Error) -> Option<String> {
+        if !crate::agent::acp::needs_sign_in(e) {
+            return None;
+        }
+        let h = crate::agent::backends::harness(&self.cfg.backend)?;
+        crate::agent::backends::set_signed_in(&self.cfg.backend, Some(false));
+        Some(format!("{0} needs you to sign in. Open {0} in Extensions to sign in.", h.name))
     }
 
     pub(super) fn complete_request(&mut self, result: Result<String>, cancelled: bool) {

@@ -244,8 +244,11 @@ impl Actor {
         match (&done, stop_reason.as_str()) {
             (Err(e), _) if !self.stop_requested => {
                 let tail = self.exit_tail.take().filter(|t| !t.is_empty());
-                let detail = tail.map(|t| format!("\n\n{}", acp::truncate(&t, 1200))).unwrap_or_default();
-                self.notice(&format!("The agent failed: {e}{detail}"), NoticeStyle::Error);
+                let msg = self.ask_to_sign_in(e).unwrap_or_else(|| {
+                    let detail = tail.map(|t| format!("\n\n{}", acp::truncate(&t, 1200))).unwrap_or_default();
+                    format!("The agent failed: {e}{detail}")
+                });
+                self.notice(&msg, NoticeStyle::Error);
             }
             (_, "cancelled") | (Err(_), _) => self.notice("Stopped.", NoticeStyle::Info),
             (_, "max_tokens") => self.notice("The agent hit its output limit.", NoticeStyle::Info),

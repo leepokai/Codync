@@ -67,7 +67,8 @@ pub fn invite_agent_sign_in(
     }
     let request = json!({"kind": RequestKind::Agent, "status": RequestStatus::Pending, "title": name, "botId": bot,
         "backend": backend, "entryIds": entries});
-    let text = format!("{name} needs you to sign in. Your message goes out again once you're signed in.");
+    // The card's title names the agent.
+    let text = "Needs you to sign in. Your message goes out again once you're signed in.";
     hub.add_entry(
         lane,
         EntryKind::Notice,
@@ -146,8 +147,15 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             }
             let lane = hub.runtime(bot).lane.unwrap_or_else(|| Lane::main(bot));
             let reason: String = text(args, "reason")?.chars().take(400).collect();
+            // The card shows the app's own name and logo when Composio lists it.
+            let listed = super::composio::toolkits(&hub.store, &toolkit, "")
+                .await
+                .ok()
+                .and_then(|v| v["items"].as_array()?.iter().find(|t| t["slug"] == toolkit.as_str()).cloned());
+            let title = listed.as_ref().and_then(|t| t["name"].as_str()).unwrap_or(&toolkit).to_owned();
+            let logo = listed.as_ref().map_or(Value::Null, |t| t["logo"].clone());
             let entry = hub.add_entry(&lane,EntryKind::Notice,hub.store.max_turn(bot),&json!({"text":reason,"connectionRequest":{
-                "kind":RequestKind::App,"status":RequestStatus::Pending,"title":toolkit,"botId":bot,"toolkit":toolkit,"connectorId":format!("{}{}",super::composio::PREFIX,toolkit)
+                "kind":RequestKind::App,"status":RequestStatus::Pending,"title":title,"logo":logo,"botId":bot,"toolkit":toolkit,"connectorId":format!("{}{}",super::composio::PREFIX,toolkit)
             }})).ok_or_else(|| anyhow!("Could not save connection request"))?;
             Ok(json!({"requestId":entry.id,"status":"waitingForUser"}))
         }

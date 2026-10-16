@@ -116,9 +116,10 @@ function serviceDomain(website: string | null | undefined, name: string, registr
   return `${labels[1]}.${labels[0]}`
 }
 
-/** A service's logo from its website favicon, on a white tile; its initial otherwise. */
-export function ServiceLogo({ website, name, registryName, size = 46 }: { website?: string | null; name: string; registryName?: string | null; size?: number }) {
-  const domain = serviceDomain(website, name, registryName)
+/** A service's logo from its website favicon, on a white tile; its initial otherwise. `site`: the
+ *  service's own domain when it's known (a login's site), even github.com. */
+export function ServiceLogo({ website, site, name, registryName, size = 46 }: { website?: string | null; site?: string | null; name: string; registryName?: string | null; size?: number }) {
+  const domain = site ?? serviceDomain(website, name, registryName)
   const radius = size * 0.26
   return (
     <div style={{ position: 'relative', width: size, height: size, borderRadius: radius, overflow: 'hidden', background: 'var(--bubble-agent)', display: 'grid', placeItems: 'center', flex: 'none' }}>

@@ -125,6 +125,8 @@ export interface ConnectionRequest {
   site?: string | null
   /** Agent sign-in requests: the agent (backend id) to sign in to. */
   backend?: string | null
+  /** App requests: the app's logo, when Composio lists it. */
+  logo?: string | null
 }
 
 /** A saved website or app login; the password stays on the computer. */

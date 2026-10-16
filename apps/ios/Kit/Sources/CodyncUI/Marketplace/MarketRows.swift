@@ -140,12 +140,15 @@ struct SkeletonGrid: View {
 /// A service's logo from its website favicon, on a white tile; its initial otherwise.
 struct ServiceLogo: View {
     let website: String?
+    /// The service's own domain when it's known (a login's site), even github.com.
+    var site: String?
     let name: String
     /// MCP Registry names are reverse-DNS ("com.notion/mcp"): the owner's domain.
     var registryName: String?
     var size: CGFloat = 46
 
     private var domain: String? {
+        if let site { return site }
         if let website, let host = URL(string: website)?.host(), host != "github.com" { return host }
         guard let owner = registryName?.split(separator: "/").first else { return nil }
         let labels = owner.split(separator: ".")

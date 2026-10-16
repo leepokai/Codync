@@ -17,41 +17,44 @@ struct ConnectionRequestCard: View {
     @State private var busy = false
     @State private var error: String?
 
+    private var pending: Bool { request.status == "pending" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(request.title, systemImage: "lock.shield")
-                .font(.headline)
-            if let text = entry.data.text { Text(text).foregroundStyle(Palette.secondary) }
-            if request.status == "pending" {
-                if request.kind == "login" {
-                    TextField("Username or email", text: $username)
-                        .plainTextInput()
-                    SecureField("Password or op:// reference", text: $value)
-                        .plainTextInput()
-                    Text("Saved securely on this computer. The bot types it into the sign-in page but never sees it.")
-                        .font(.caption).foregroundStyle(Palette.secondary)
-                } else if request.kind == "secret" {
-                    Text("\(request.field ?? "Credential") · \(request.location ?? "")")
-                        .font(.caption).foregroundStyle(Palette.secondary)
-                    SecureField("Credential or op:// reference", text: $value)
-                        .plainTextInput()
-                    Text("Saved securely on this computer. Never added to the conversation.")
-                        .font(.caption).foregroundStyle(Palette.secondary)
+            HStack(spacing: 14) {
+                logo
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(request.title).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                    if let text = entry.data.text {
+                        Text(text).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
+                    }
                 }
-                HStack {
-                    Button(connectTitle) { connect() }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(busy || (["secret", "login"].contains(request.kind) && value.isEmpty))
-                    Button("Cancel") { cancel() }.buttonStyle(SecondaryButtonStyle()).disabled(busy)
-                    if busy { Spinner() }
-                }
-            } else {
-                Text(request.status == "ready" ? doneTitle : "Cancelled").foregroundStyle(Palette.secondary)
+                Spacer(minLength: 8)
+                trailing
+            }
+            if pending, request.kind == "login" {
+                TextField("Username or email", text: $username)
+                    .plainTextInput()
+                SecureField("Password or op:// reference", text: $value)
+                    .plainTextInput()
+                Text("Saved securely on this computer. The bot types it into the sign-in page but never sees it.")
+                    .font(.caption).foregroundStyle(Palette.secondary)
+            } else if pending, request.kind == "secret" {
+                Text("\(request.field ?? "Credential") · \(request.location ?? "")")
+                    .font(.caption).foregroundStyle(Palette.secondary)
+                SecureField("Credential or op:// reference", text: $value)
+                    .plainTextInput()
+                Text("Saved securely on this computer. Never added to the conversation.")
+                    .font(.caption).foregroundStyle(Palette.secondary)
             }
             if let error { Text(error).font(.footnote).foregroundStyle(Palette.danger) }
         }
-        .padding(16)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Palette.border))
+        // A card, not a banner: full width on a phone, capped on wider screens.
+        .frame(maxWidth: 480, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .textFieldStyle(.plain)
         .codyncSheet(item: $item) { item in
             InstallConnectorSheet(item: item, requestId: entry.id) { self.item = nil }
@@ -63,11 +66,46 @@ struct ConnectionRequestCard: View {
         .onDisappear { value = ""; username = "" }
     }
 
+    /// The agent, website or service the request is for.
+    @ViewBuilder private var logo: some View {
+        switch request.kind {
+        case "agent":
+            let backend = model.hello?.backends.first { $0.id == request.backend }
+            AgentIcon(registry: backend?.registry ?? request.backend, size: 26)
+                .frame(width: 46, height: 46)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        case "app":
+            AppLogo(url: request.logo, name: request.title)
+        case "login":
+            // A login's site is a domain, or an app's name (no logo to find for that).
+            ServiceLogo(website: nil, site: request.site.flatMap { $0.contains(".") ? $0 : nil }, name: request.title)
+        default:
+            ServiceLogo(website: nil, name: request.title, registryName: request.registryName)
+        }
+    }
+
+    @ViewBuilder private var trailing: some View {
+        if pending {
+            HStack(spacing: 6) {
+                if busy { Spinner() } else { IconButton("Cancel request", systemImage: "xmark") { cancel() } }
+                Button(connectTitle) { connect() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(busy || (["secret", "login"].contains(request.kind) && value.isEmpty))
+            }
+        } else {
+            HStack(spacing: 6) {
+                if request.status == "ready" { Image(systemName: "checkmark").fontWeight(.semibold) }
+                Text(request.status == "ready" ? doneTitle : "Cancelled")
+            }
+            .font(.subheadline)
+            .foregroundStyle(Palette.secondary)
+        }
+    }
+
     private var connectTitle: String {
         switch request.kind {
         case "agent": "Sign in"
-        case "login": "Save login"
-        case "secret": "Save and connect"
+        case "login": "Save"
         default: "Connect"
         }
     }

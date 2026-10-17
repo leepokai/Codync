@@ -101,6 +101,14 @@ fun AppStore.removeFromAccount(computerId: String) = action("removeFromAccount")
     refreshCloud()
 }
 
+/** The computer's badge color, picked on this phone (an `AvatarPalette` id). */
+fun AppStore.setColor(color: String) = action("color") {
+    val computer = state.value.computers.firstOrNull() ?: return@action
+    val changed = computer.copy(color = color)
+    withContext(Dispatchers.IO) { local.saveComputers(listOf(changed)) }
+    mutableState.update { it.copy(computers = listOf(changed)) }
+}
+
 fun AppStore.forgetComputer() = sessionAction {
     transitions.withLock {
         val userId = state.value.account.userId

@@ -47,7 +47,7 @@ fun AppStore.pair(text: String) {
             require(old == null || old.id == pairing.computer.id) { "Use Start over to pair a different computer." }
             require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Start over before pairing again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
-            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100))
+            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100)).copy(color = old?.color)
             withContext(Dispatchers.IO) { local.saveComputers(listOf(computer)); local.completeSetup() }
             mutableState.update { it.copy(computers = listOf(computer), setupComplete = true) }
             if (database == null) openMirror()
@@ -90,7 +90,8 @@ fun AppStore.connect() {
                                 reconcileMailbox(active)
                             }
                             if (link is LinkState.Ready) {
-                                val updated = HostClient.hello(active, target)
+                                // The latest saved copy: its color may have changed since this link opened.
+                                val updated = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
                                 val hello = active.call("hello").jsonObject
                                 withContext(Dispatchers.IO) {
                                     local.saveComputers(listOf(updated))

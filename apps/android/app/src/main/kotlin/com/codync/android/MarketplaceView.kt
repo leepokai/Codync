@@ -236,7 +236,7 @@ private fun Modifier.bleed(amount: Dp) = layout { measurable, constraints ->
     val count = connectors.size + state.plugins?.skills.orEmpty().size
     Column(modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ComputerBadge(state.hello?.text("device"), 32.dp)
+            ComputerBadge(state.hello?.text("device"), 32.dp, state.computers.firstOrNull()?.color)
             Column {
                 Text("Extensions", style = Type.title2.semibold, color = Palette.text, maxLines = 1)
                 Text(state.hostName, style = Type.subheadline, color = Palette.secondary, maxLines = 1)

@@ -2,15 +2,23 @@ package com.codync.android
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -22,10 +30,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -36,6 +49,8 @@ import com.codync.android.core.ConnectionRoute
 import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
+import com.kyant.shapes.Capsule
+import com.kyant.shapes.RoundedRectangle
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -51,6 +66,7 @@ import kotlinx.serialization.json.put
     var confirmForget by remember { mutableStateOf(false) }
     var confirmRevoke by remember { mutableStateOf<CloudComputer?>(null) }
     var confirmRemoveCopy by remember { mutableStateOf<CloudComputer?>(null) }
+    var coloring by remember { mutableStateOf(false) }
     var confirmStartOver by remember { mutableStateOf(false) }
     var voice by remember { mutableStateOf(false) }
     var aboutAnalytics by remember { mutableStateOf(false) }
@@ -62,7 +78,7 @@ import kotlinx.serialization.json.put
                 else "Each bot runs on its own computer. Sign in to see the computers in your account.") {
                 if (paired != null) row {
                     val inAccount = state.cloudComputers.firstOrNull { it.computerId == paired.id }
-                    ComputerRow(state, store, inAccount != null, ComputerActions(extensions, store::openScreen, voice = { voice = true },
+                    ComputerRow(state, store, inAccount != null, ComputerActions(extensions, store::openScreen, voice = { voice = true }, color = { coloring = true },
                         revoke = inAccount?.takeIf { it.access == "granted" }?.let { c -> { confirmRevoke = c } }) { confirmForget = true })
                 }
                 for (computer in state.cloudComputers.filter { it.computerId != paired?.id }) row {
@@ -120,6 +136,7 @@ import kotlinx.serialization.json.put
         }
     }
     CodyncSheet(voice, { voice = false }) { VoiceChatSettings(state, store) }
+    SwatchPanel(coloring, paired?.color, { coloring = false }, store::setColor)
     CodyncDialog("Remove the older ${confirmRemoveCopy?.name ?: "computer"}?", confirmRemoveCopy != null, { confirmRemoveCopy = null },
         "It's this computer under an earlier identity and can't be reached anymore. Removing it only cleans up your account.") {
         listOfNotNull(confirmRemoveCopy?.let { copy -> DialogAction("Remove", destructive = true) { store.removeFromAccount(copy.computerId) } })
@@ -158,7 +175,7 @@ import kotlinx.serialization.json.put
 }
 
 /** What the paired computer's row and its menu open; `revoke` is set when this phone's account access can be revoked. */
-private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit, val voice: () -> Unit,
+private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit, val voice: () -> Unit, val color: () -> Unit,
     val revoke: (() -> Unit)?, val remove: () -> Unit)
 
 /** The paired computer: its connection, how it's reached, and whether it's in the account. */
@@ -174,6 +191,7 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
     } else computerStatusText(state)
     Row(Modifier.fillMaxWidth().contextActions(items = {
         listOfNotNull(
+            MenuItem("Color", icon = "paintpalette", action = actions.color),
             if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = actions.extensions) else null,
             if (online) MenuItem("Voice chat", icon = "waveform", action = actions.voice) else null,
             if (viewable) MenuItem("Screen", icon = "display", action = actions.screen) else null,
@@ -181,7 +199,7 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
             MenuItem("Remove", icon = "trash", destructive = true, divider = actions.revoke == null, action = actions.remove),
         )
     }), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        ComputerBadge(state.hello?.text("device"), 40.dp)
+        ComputerBadge(state.hello?.text("device"), 40.dp, computer.color)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(state.hello?.text("name") ?: computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -255,13 +273,45 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
     }
 }
 
-/** A computer's icon showing what it is (laptop, desktop, Linux), as CodyncUI `ComputerBadge`. */
-@Composable internal fun ComputerBadge(device: String?, size: Dp) {
+/** A computer's icon showing what it is (laptop, Mac mini, Linux…) in the color picked for it, as CodyncUI `ComputerBadge`. */
+@Composable internal fun ComputerBadge(device: String?, size: Dp, color: String? = null) {
+    val tint = color?.let(AvatarPalette::tint) ?: Palette.text
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
-        when (device) {
-            "linux" -> Symbol("computer.linux", size = size * 0.55f, tint = Palette.text)
-            "laptop" -> Symbol("laptopcomputer", size = size * 0.6f, tint = Palette.text)
-            else -> Symbol("desktopcomputer", size = size * 0.6f, tint = Palette.text)
+        if (device == "linux") Symbol("computer.linux", size = size * 0.55f, tint = tint)
+        else Symbol(when (device) {
+            "laptop" -> "laptopcomputer"
+            "macmini" -> "macmini"
+            "macstudio" -> "macstudio"
+            "macpro" -> "macpro.gen3"
+            else -> "desktopcomputer"
+        }, size = size * 0.6f, tint = tint)
+    }
+}
+
+/** The computer color choices over the dimmed app: a grid of colored dots, the current one checked. */
+@Composable private fun SwatchPanel(isPresented: Boolean, selected: String?, close: () -> Unit, pick: (String) -> Unit) {
+    val visible = remember { MutableTransitionState(false) }
+    visible.targetState = isPresented
+    if (!visible.currentState && !visible.targetState) return
+    BackHandler(isPresented, close)
+    Overlay {
+        AnimatedVisibility(visible, enter = fadeIn(Motion.layout()), exit = fadeOut(Motion.fade())) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).clickable(remember { MutableInteractionSource() }, null, onClick = close),
+                contentAlignment = Alignment.Center) {
+                Column(Modifier.graphicsLayer { shadowElevation = 24f; shape = RoundedRectangle(22.dp); clip = true }.background(Palette.bubbleAgent)
+                    .clickable(remember { MutableInteractionSource() }, null) {}.semantics { paneTitle = "Color" }.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (swatches in AvatarPalette.colors.entries.chunked(6)) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for ((id, hex) in swatches) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(32.dp).clip(Capsule()).background(Color(hex)).clickable(role = Role.RadioButton) { close(); pick(id) }
+                                .semantics { contentDescription = id.replaceFirstChar(Char::uppercase); this.selected = id == selected },
+                                contentAlignment = Alignment.Center) {
+                                if (id == selected) Symbol("checkmark", size = 13.dp, tint = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

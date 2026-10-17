@@ -106,6 +106,9 @@ import androidx.annotation.DrawableRes
     "lock.rectangle" -> R.drawable.sf_lock_rectangle
     "lock.shield" -> R.drawable.sf_lock_shield
     "lock.slash" -> R.drawable.sf_lock_slash
+    "macmini" -> R.drawable.sf_macmini
+    "macpro.gen3" -> R.drawable.sf_macpro_gen3
+    "macstudio" -> R.drawable.sf_macstudio
     "magnifyingglass" -> R.drawable.sf_magnifyingglass
     "map.fill" -> R.drawable.sf_map_fill
     "mic" -> R.drawable.sf_mic

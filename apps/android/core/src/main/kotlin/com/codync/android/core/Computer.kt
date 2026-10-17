@@ -12,6 +12,8 @@ data class Computer(
     val urls: List<String> = emptyList(),
     val cloud: String? = null,
     val route: ConnectionRoute = ConnectionRoute.Automatic,
+    /** The badge color picked on this phone (an `AvatarPalette` id). */
+    val color: String? = null,
 ) {
     fun validate() {
         require(RelayCrypto.computerId(signKey.decodeBase64Url(32)) == id) { "This computer's identity changed. Pair it again." }

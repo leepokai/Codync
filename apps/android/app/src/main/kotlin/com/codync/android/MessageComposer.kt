@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
@@ -160,7 +159,7 @@ private enum class Trailing { Stop, Call, Send }
         }
         Column(Modifier.weight(1f).glass(RoundedRectangle(24.dp)).animateContentSize(Motion.layoutSize)) {
             if (files.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (file in files) ComposerAttachment(file) { store.removeDraftFile(bot.id, thread, file) }
             }
             Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom,
@@ -206,21 +205,6 @@ private val FIELD_HEIGHT = 54.dp
                 Trailing.Send -> Symbol("arrow.up", size = 19.dp, tint = ink)
             }
         }
-    }
-}
-
-/** A file going out with the next message, removable before it's sent. */
-@Composable private fun ComposerAttachment(file: OutgoingFile, remove: () -> Unit) {
-    Row(Modifier.clip(RoundedRectangle(12.dp)).background(Palette.surface).padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Symbol(if (file.name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp")) "photo" else "doc",
-            size = 16.dp, tint = Palette.secondary)
-        Column {
-            Text(file.name, Modifier.width(120.dp), style = Type.footnote, color = Palette.text, maxLines = 1)
-            Text(formatBytes(file.size), style = Type.caption2, color = Palette.tertiary)
-        }
-        Box(Modifier.size(28.dp).clickable(role = Role.Button, onClick = remove).semantics { contentDescription = "Remove ${file.name}" },
-            contentAlignment = Alignment.Center) { Symbol("xmark.circle.fill", size = 18.dp, tint = Palette.tertiary) }
     }
 }
 

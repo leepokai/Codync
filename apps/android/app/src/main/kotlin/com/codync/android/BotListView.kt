@@ -188,7 +188,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
 @Composable internal fun BotRow(bot: Bot, state: AppState) {
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        BotAvatar(bot, state.bots, 46.dp)
+        AvatarWithStatus(bot, state.bots, 46.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

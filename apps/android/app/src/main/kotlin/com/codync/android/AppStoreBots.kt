@@ -90,6 +90,8 @@ suspend fun AppStore.agentModels(backend: String): AgentModels {
     val response = hostQuery("agentModels", body("backend" to backend), timeoutMillis = 300_000)
     return WireJson.decodeFromJsonElement(response)
 }
+/** A forced usage read that returns when it's done, for pull to refresh. */
+suspend fun AppStore.reloadUsage() { refreshUsage(true); actions["usage"]?.join() }
 fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
     val active = ready()
     // The existing host can spend up to a minute reading an installed provider.

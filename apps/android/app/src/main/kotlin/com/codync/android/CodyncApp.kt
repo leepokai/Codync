@@ -111,7 +111,7 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     }
     CodyncSheet(access, { access = null }) { AccessRequestView(state, store, it) }
     CodyncSheet(showPairing && !state.loading, { showPairing = false }) { PairingView(state, store, inModal = true) }
-    CodyncSheet(showUsage && !state.loading, { showUsage = false }) { UsageScreen(state) { store.refreshUsage(it) } }
+    CodyncSheet(showUsage && !state.loading, { showUsage = false }) { UsageScreen(state, store::refreshUsage, store::reloadUsage) }
     CodyncSheet(showMarketplace && root == Root.Tabs, { showMarketplace = false }) { MarketplaceView(state, store) }
     CodyncSheet(groupEditor.takeIf { !state.loading }, { groupEditor = null }) { draft ->
         key(state.contextId, state.generation, draft.id) { GroupEditor(state, draft, store) }

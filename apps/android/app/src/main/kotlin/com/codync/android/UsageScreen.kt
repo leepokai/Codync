@@ -17,10 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.LinkState
@@ -51,8 +47,7 @@ import kotlin.math.roundToInt
  * Usage limits, opened from the State tab (iOS `UsageSheet` + `UsageView`): one card per
  * provider, the tightest limit as a big bar, every limit listed below. Pull down to refresh.
  */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable fun UsageScreen(state: AppState, refresh: (force: Boolean) -> Unit) {
+@Composable fun UsageScreen(state: AppState, refresh: (force: Boolean) -> Unit, reload: suspend () -> Unit) {
     val dismiss = LocalDismissModal.current
     val report = remember(state.usage) { runCatching { UsageReport.decode(state.usage) }.getOrNull() ?: UsageReport() }
     val online = state.actualConnection is LinkState.Ready
@@ -65,10 +60,7 @@ import kotlin.math.roundToInt
             EmptyUsage("No computer yet", "Usage shows up once a computer is connected.")
             return@Column
         }
-        val pull = rememberPullToRefreshState()
-        PullToRefreshBox("usage" in state.busy, { if (online) refresh(true) }, Modifier.weight(1f), state = pull,
-            indicator = { Box(Modifier.align(Alignment.TopCenter).padding(top = 12.dp).graphicsLayer {
-                alpha = if ("usage" in state.busy) 1f else pull.distanceFraction.coerceIn(0f, 1f) }) { Spinner(18.dp) } }) {
+        PullToRefresh({ if (online) reload() }, Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 for (provider in report.providers) key(provider.id) { ProviderCard(provider) }
                 if (report.providers.isEmpty()) EmptyUsage("No usage yet", "Your computer reads the limits from Claude Code and Codex.")

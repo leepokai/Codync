@@ -64,7 +64,7 @@ private val THUMBNAIL = 112.dp
         RemoveButton(file.name, Color.White, Modifier.align(Alignment.TopEnd).padding(4.dp).clip(Capsule()).background(Color.Black.copy(alpha = 0.75f)), remove)
     } else Row(Modifier.clip(Capsule()).background(Palette.surface).padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Symbol(attachmentSymbol(file.name), size = 18.dp, tint = Palette.secondary)
+        Symbol(AttachmentIcon.symbol(file.name), size = 18.dp, tint = Palette.secondary)
         Text(file.name, Modifier.widthIn(max = 160.dp), style = Type.footnote, color = Palette.text, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
         RemoveButton(file.name, Palette.secondary, action = remove)
     }
@@ -82,14 +82,4 @@ private val THUMBNAIL = 112.dp
 private suspend fun thumbnail(file: OutgoingFile, pixels: Int): ImageBitmap? = withContext(Dispatchers.IO) {
     // Not a picture (or one Android can't read): it shows as a file chip instead.
     try { AttachmentFiles.thumbnail(File(file.path), pixels).asImageBitmap() } catch (_: IOException) { null }
-}
-
-/** The symbol for a file by its extension (iOS `AttachmentIcon`). */
-internal fun attachmentSymbol(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-    "png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp" -> "photo"
-    "pdf" -> "doc.richtext"
-    "zip", "gz", "tar", "7z" -> "doc.zipper"
-    "mov", "mp4", "m4v" -> "film"
-    "mp3", "m4a", "wav", "aac" -> "waveform"
-    else -> "doc"
 }

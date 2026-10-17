@@ -214,7 +214,7 @@ import com.kyant.shapes.Capsule
     val entries = state.entries.filter { it.botId == bot.id && it.threadId == null && it.isChat }
     val pending = state.pending.filter { it.botId == bot.id && it.threadId == null }
     val items = chatItems(entries, pending)
-    val working = bot.status in listOf("working", "needsInput") && bot.workingThread == null && state.connection is LinkState.Ready
+    val working = bot.isWorking(bot.id, null) && state.connection is LinkState.Ready
     val more = bot.id !in state.historyComplete
     // Pull to refresh reconnects, like Reconnect in the title menu, until the link is back.
     ConversationList(items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop) {
@@ -247,7 +247,7 @@ import com.kyant.shapes.Capsule
     val root = state.entries.firstOrNull { it.botId == bot.id && it.id == rootId }
     val replies = state.entries.filter { it.botId == bot.id && it.threadId == rootId && it.isChat }
     val pending = state.pending.filter { it.botId == bot.id && it.threadId == rootId }
-    val working = bot.status in listOf("working", "needsInput") && bot.workingThread == rootId && state.connection is LinkState.Ready
+    val working = bot.isWorking(bot.id, rootId) && state.connection is LinkState.Ready
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val dismiss = LocalDismissModal.current

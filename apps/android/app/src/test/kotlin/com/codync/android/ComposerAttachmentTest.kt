@@ -14,11 +14,11 @@ class ComposerAttachmentTest {
     }
 
     @Test fun `file chips use the symbol of the file's kind`() {
-        assertEquals("photo", attachmentSymbol("shot.PNG"))
-        assertEquals("doc.richtext", attachmentSymbol("paper.pdf"))
-        assertEquals("doc.zipper", attachmentSymbol("logs.tar"))
-        assertEquals("film", attachmentSymbol("clip.mov"))
-        assertEquals("waveform", attachmentSymbol("memo.m4a"))
-        assertEquals("doc", attachmentSymbol("README"))
+        assertEquals("photo", AttachmentIcon.symbol("shot.PNG"))
+        assertEquals("doc.richtext", AttachmentIcon.symbol("paper.pdf"))
+        assertEquals("doc.zipper", AttachmentIcon.symbol("logs.tar"))
+        assertEquals("film", AttachmentIcon.symbol("clip.mov"))
+        assertEquals("waveform", AttachmentIcon.symbol("memo.m4a"))
+        assertEquals("doc", AttachmentIcon.symbol("README"))
     }
 }

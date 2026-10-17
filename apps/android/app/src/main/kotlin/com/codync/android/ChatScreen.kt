@@ -75,6 +75,9 @@ import com.kyant.shapes.Capsule
     var confirmNewSession by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var routines by remember { mutableStateOf(false) }
+    // The routine the sheet opens on (a run's notice), or none for the list.
+    var routineId by remember { mutableStateOf<String?>(null) }
+    val openRoutine = { id: String? -> routineId = id; routines = true }
     // The bot whose conversation with this one is open.
     var peer by remember(bot.id) { mutableStateOf<String?>(null) }
     var micDenied by remember { mutableStateOf(false) }
@@ -91,7 +94,7 @@ import com.kyant.shapes.Capsule
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         Box(Modifier.fillMaxWidth().height(top + 64.dp).background(Brush.verticalGradient(
             0f to Palette.background, 0.55f to Palette.background.copy(alpha = 0.85f), 1f to Color.Transparent)))
-        ThreadHeader(bot, state, store, edit, { store.showTrace(true) }, { routines = true }, { confirmNewSession = true }, { confirmDelete = true })
+        ThreadHeader(bot, state, store, edit, { store.showTrace(true) }, { openRoutine(null) }, { confirmNewSession = true }, { confirmDelete = true })
         // The call floats over the chat under the header, as on iOS; the chat stays readable and usable.
         AnimatedVisibility(state.voice != null, Modifier.padding(top = top + 54.dp),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { -it }, exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { -it }) {
@@ -108,7 +111,7 @@ import com.kyant.shapes.Capsule
         }
     }) {
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
-            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp) { peer = it }
+            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine) { peer = it }
     }
     CodyncDialog("Start a new session?", confirmNewSession, { confirmNewSession = false },
         message = "The conversation stays here, but the agent starts with a fresh context.") {
@@ -127,7 +130,7 @@ import com.kyant.shapes.Capsule
     // A thread over the chat, and "Full conversation" over either.
     CodyncSheet(state.thread, { store.openBot(bot.id) }) { root -> RepliesView(bot, root, state, store, connect) }
     CodyncSheet(state.trace, { store.showTrace(false) }) { TraceView(bot, state.thread, state) }
-    CodyncSheet(routines, { routines = false }) { RoutinesScreen(bot, state, store) }
+    CodyncSheet(routines, { routines = false }) { RoutinesScreen(bot, state, store, routineId) }
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
@@ -207,7 +210,7 @@ import com.kyant.shapes.Capsule
 
 /** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
 @Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
-    indicatorTop: Dp, openPeer: (String) -> Unit) {
+    indicatorTop: Dp, openRoutine: (String) -> Unit, openPeer: (String) -> Unit) {
     val entries = state.entries.filter { it.botId == bot.id && it.threadId == null && it.isChat }
     val pending = state.pending.filter { it.botId == bot.id && it.threadId == null }
     val items = chatItems(entries, pending)
@@ -225,8 +228,12 @@ import com.kyant.shapes.Capsule
         items(items, key = { it.id }) { item ->
             when (item) {
                 is ChatItem.Separator -> TimeSeparator(item.at)
-                is ChatItem.Message -> ChatRow(item.entry, item.groupStart, bot, state, store, openTrace = { store.showTrace(true) },
-                    reply = { store.openBot(bot.id, item.entry.id) }, connect = connect)
+                is ChatItem.Message -> {
+                    val routine = item.entry.data.text("routineId").takeIf { item.entry.kind == "notice" }
+                    if (routine != null) RoutineNotice(item.entry) { openRoutine(routine) }
+                    else ChatRow(item.entry, item.groupStart, bot, state, store, openTrace = { store.showTrace(true) },
+                        reply = { store.openBot(bot.id, item.entry.id) }, connect = connect)
+                }
                 is ChatItem.Pending -> PendingBubble(item.send, item.groupStart, state, store)
                 is ChatItem.Exchanges -> BotMessageRow(item.group, state) { openPeer(item.group.peerId) }
             }

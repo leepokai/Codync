@@ -286,6 +286,15 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
+/** A routine's run in the main chat: tapping it opens Routines on that routine. */
+@Composable internal fun RoutineNotice(entry: Entry, open: () -> Unit) {
+    Row(Modifier.plainButton(action = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Symbol("clock.arrow.circlepath", size = 15.dp, tint = Palette.secondary)
+        Text(entry.text.ifEmpty { "Routine" }, style = Type.footnote, color = Palette.secondary)
+    }
+}
+
 @Composable private fun NoticeRow(entry: Entry) {
     val text = entry.text
     val seconds = entry.data["callSeconds"]?.jsonPrimitive?.longOrNull

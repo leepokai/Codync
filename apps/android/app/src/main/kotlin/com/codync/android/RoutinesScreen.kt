@@ -59,14 +59,17 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** A bot's routines, in a sheet over its chat (iOS `RoutinesView`); a row opens its editor. */
-@Composable fun RoutinesScreen(bot: Bot, state: AppState, store: AppStore) {
+/**
+ * A bot's routines, in a sheet over its chat (iOS `RoutinesView`); a row opens its editor.
+ * `initialId`: open on that routine's editor (a run's notice in the chat was tapped).
+ */
+@Composable fun RoutinesScreen(bot: Bot, state: AppState, store: AppStore, initialId: String?) {
     val dismiss = LocalDismissModal.current
     val online = state.actualConnection is LinkState.Ready
     val listing = state.routines[bot.id]
     val busy = "routines:${bot.id}" in state.busy
     // The open editor: on a routine (its id), or "" setting up a new one.
-    var editing by remember(bot.id) { mutableStateOf<String?>(null) }
+    var editing by remember(bot.id) { mutableStateOf(initialId) }
     LaunchedEffect(bot.id, online) { if (online) while (true) { store.loadRoutines(bot.id); delay(3_000) } }
     Column(Modifier.fillMaxSize().background(Palette.background).verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {

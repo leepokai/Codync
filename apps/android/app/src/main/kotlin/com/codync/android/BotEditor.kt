@@ -27,7 +27,6 @@ import com.codync.android.core.LinkState
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -79,7 +78,7 @@ private val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanOr
 /** Bot settings: a big avatar, then sections in the Settings style (`CardSection`). */
 @Composable private fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
     val online = state.actualConnection is LinkState.Ready
-    val screen = state.hello?.get("screen")?.takeUnless { it == JsonNull } as? JsonObject
+    val screen = state.screen
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(30.dp)) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Box(Modifier.clip(RoundedRectangle(24.dp)).background(Palette.bubbleAgent).padding(18.dp)) {
@@ -154,9 +153,12 @@ private val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanOr
         CardSection("Activity") {
             row { SwitchRow("Notifications", "Get notified when this bot finishes or needs you", draft.notify != false, { change(draft.copy(notify = it)) }) }
             if (screen != null) row {
-                SwitchRow("Use the computer", if (screen["enabled"]?.jsonPrimitive?.booleanOrNull == true)
-                    "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone."
-                    else "Let this bot see the screen and use the mouse and keyboard. On that computer, open Codync → Settings → Computer access to set up permissions first.",
+                SwitchRow("Use the computer", when {
+                    !screen.controlReady -> "Let this bot use apps. On that computer, open Codync → Settings → Computer access to set up permissions first."
+                    screen.enabled -> "Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone."
+                    screen.computerUse -> "Let this bot see the screen and use the mouse and keyboard."
+                    else -> "Let this bot see the screen and use the mouse and keyboard. On that computer, open Codync → Settings → Computer access to set up permissions first."
+                },
                     draft.computer, { change(draft.copy(computer = it)) })
             }
         }

@@ -160,6 +160,8 @@ dependencies {
     implementation(libs.firebase.messaging)
     implementation(libs.work)
     implementation(libs.glance)
+    // Remote screen video and OpenAI Realtime voice, as the iPhone app's WebRTC.
+    implementation(libs.webrtc)
     implementation(libs.camera.core)
     implementation(libs.camera.camera2)
     implementation(libs.camera.lifecycle)

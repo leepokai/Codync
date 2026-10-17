@@ -25,6 +25,7 @@ jna = "5.18.1"
 glance = "1.2.0"
 backdrop = "2.0.1"
 kyant-shapes = "1.2.1"
+webrtc = "125.6422.07"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose" }
@@ -58,6 +59,7 @@ firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "fir
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 work = { module = "androidx.work:work-runtime", version.ref = "work" }
 camera-core = { module = "androidx.camera:camera-core", version.ref = "camera" }
+webrtc = { module = "io.github.webrtc-sdk:android", version.ref = "webrtc" }
 camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camera" }
 camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camera" }
 camera-view = { module = "androidx.camera:camera-view", version.ref = "camera" }

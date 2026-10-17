@@ -146,7 +146,7 @@ That speech prototype does not establish full voice parity.
 AndroidX, Compose, CameraX, Glance, WorkManager, Firebase and desugaring artifacts
 come from Google Maven. Other dependencies use the configured repositories.
 AndroidX native libraries, Vosk and JNA are upstream artifacts; no custom native
-crypto or camera library is introduced. WebRTC artifact selection remains open.
+crypto or camera library is introduced. WebRTC comes from the webrtc-sdk build of libwebrtc.
 
 | Dependency | Version | Source/license and role |
 | --- | --- | --- |
@@ -171,6 +171,7 @@ crypto or camera library is introduced. WebRTC artifact selection remains open.
 | xterm / fit / web-links | 6.0.0 / 0.11.0 / 0.12.0 | [xterm.js](https://github.com/xtermjs/xterm.js/tree/6.0.0), MIT; bundled terminal rendering and explicit HTTP links, with each license included in the assets |
 | Vosk Android / English model | 0.3.75 / small-en-us-0.15 | [Vosk](https://github.com/alphacep/vosk-api), Apache-2.0; bundled offline recognition and checksum-pinned model |
 | JNA | 5.18.1 | [Java Native Access](https://github.com/java-native-access/jna/tree/5.18.1), Apache-2.0 option with notice; native speech binding |
+| WebRTC (webrtc-sdk) | 125.6422.07 | [webrtc-sdk/android](https://github.com/webrtc-sdk/webrtc), BSD-3-Clause; remote screen video and input channels, OpenAI Realtime voice |
 | Kyant backdrop / shapes | 2.0.1 / 1.2.1 | [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass), Apache-2.0; glass blur, lens and highlight (RenderEffect API 31+, RuntimeShader API 33+), continuous-corner shapes |
 | Inter | 4.x variable | [Inter](https://rsms.me/inter/), OFL-1.1; the app's type face in `design/src/main/res/font` |
 | Material Symbols Rounded | upstream SVGs | [Material Design Icons](https://github.com/google/material-design-icons), Apache-2.0; vector stand-ins for SF Symbols |

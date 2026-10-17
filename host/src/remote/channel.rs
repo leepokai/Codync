@@ -847,7 +847,7 @@ mod tests {
         p.send(json!({"id": 3, "sub": "events", "b": {"since": hub.store.current_rev(), "client": "ios"}})).await;
         let hello = p.recv().await.unwrap();
         assert_eq!((hello["id"].as_u64(), hello["ev"]["type"].as_str()), (Some(3), Some("hello")));
-        assert!(hub.ios_connected());
+        assert!(hub.phone_connected());
 
         assert!(hub.revoke_device(&dk).unwrap());
         let (code, reject) = p.recv().await.unwrap_err();
@@ -856,7 +856,7 @@ mod tests {
         assert!(hub.store.push_tickets().is_empty());
         assert_eq!(hub.store.activity_tickets("b1").len(), 0);
         tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(!hub.ios_connected(), "the events subscription ended with the channel");
+        assert!(!hub.phone_connected(), "the events subscription ended with the channel");
         assert!(hub.connected.locked().is_empty());
     }
 

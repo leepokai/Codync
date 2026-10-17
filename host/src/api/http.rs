@@ -246,14 +246,14 @@ mod tests {
             19222,
         );
         let desktop = events_stream(&hub, 0, Some("macos"), &Caller::Local).expect("desktop events");
-        assert!(!hub.ios_connected());
+        assert!(!hub.phone_connected());
         let android = events_stream(&hub, 0, Some("android"), &Caller::Local).expect("Android events");
         let ios = events_stream(&hub, 0, Some("ios"), &Caller::Local).expect("iOS events");
-        assert!(hub.ios_connected());
+        assert!(hub.phone_connected());
         drop(android);
-        assert!(hub.ios_connected(), "the iOS phone remains connected");
+        assert!(hub.phone_connected(), "the iPhone remains connected");
         drop(ios);
-        assert!(!hub.ios_connected(), "desktop streams do not hold phone alerts");
+        assert!(!hub.phone_connected(), "desktop streams do not hold phone alerts");
         drop(desktop);
         let _ = std::fs::remove_dir_all(dir);
     }

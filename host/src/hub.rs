@@ -61,7 +61,7 @@ pub struct Hub {
     emit_lock: Mutex<()>,
     bots: Mutex<HashMap<String, BotHandle>>,
     runtime: Mutex<HashMap<String, Runtime>>,
-    pub ios_clients: AtomicUsize,
+    pub phone_clients: AtomicUsize,
     pub usage: Mutex<Usage>,
     keep_awake: Mutex<service::KeepAwake>,
     /// Generation of the authorized-device table and pairing offers: bumped on every
@@ -102,7 +102,7 @@ impl Hub {
             emit_lock: Mutex::new(()),
             bots: Mutex::default(),
             runtime: Mutex::default(),
-            ios_clients: AtomicUsize::new(0),
+            phone_clients: AtomicUsize::new(0),
             usage: Mutex::default(),
             keep_awake: Mutex::default(),
             auth: watch::Sender::new(0),
@@ -525,8 +525,8 @@ impl Hub {
         Ok(removed)
     }
 
-    pub fn ios_connected(&self) -> bool {
-        self.ios_clients.load(Ordering::Relaxed) > 0
+    pub fn phone_connected(&self) -> bool {
+        self.phone_clients.load(Ordering::Relaxed) > 0
     }
 }
 

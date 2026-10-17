@@ -29,18 +29,18 @@ pub fn term_events(hub: &Hub, id: &str) -> Option<impl Stream<Item = Value> + Se
 }
 
 /// Counts a connected phone (pushes are held while one is connected) for as long as its stream lives.
-struct IosClientGuard(Arc<Hub>);
+struct PhoneClientGuard(Arc<Hub>);
 
-impl IosClientGuard {
+impl PhoneClientGuard {
     fn new(hub: Arc<Hub>) -> Self {
-        hub.ios_clients.fetch_add(1, Ordering::Relaxed);
+        hub.phone_clients.fetch_add(1, Ordering::Relaxed);
         Self(hub)
     }
 }
 
-impl Drop for IosClientGuard {
+impl Drop for PhoneClientGuard {
     fn drop(&mut self) {
-        self.0.ios_clients.fetch_sub(1, Ordering::Relaxed);
+        self.0.phone_clients.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -78,7 +78,7 @@ pub fn events_stream(
     catch_up.insert(0, hello);
 
     let local = matches!(caller, Caller::Local);
-    let guard = Arc::new(matches!(client, Some("ios" | "android")).then(|| IosClientGuard::new(hub.clone())));
+    let guard = Arc::new(matches!(client, Some("ios" | "android")).then(|| PhoneClientGuard::new(hub.clone())));
     let tail = live.filter_map(move |msg| {
         let _keep = guard.clone();
         async move {

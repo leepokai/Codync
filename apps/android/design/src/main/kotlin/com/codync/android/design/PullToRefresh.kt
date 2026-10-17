@@ -132,6 +132,8 @@ private const val MinimumRefreshMillis = 600L
     Box(modifier.padding(8.dp).graphicsLayer { alpha = if (refreshing) 1f else minOf(1f, progress * 2) }
         .then(if (refreshing) Modifier.clearAndSetSemantics { contentDescription = "Refreshing" } else Modifier.clearAndSetSemantics {})) {
         Symbol("arrow.clockwise", Modifier.rotate(turn).drawWithContent {
+            // A full turn is the whole arrow (a 360° arc would come out empty).
+            if (progress >= 1f) { drawContent(); return@drawWithContent }
             val radius = hypot(size.width, size.height)
             val wedge = Path().apply {
                 moveTo(center.x, center.y)

@@ -36,6 +36,7 @@ import kotlinx.serialization.json.jsonPrimitive
 @Composable fun BotEditor(state: AppState, initial: BotDraft, store: AppStore) {
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var folders by remember { mutableStateOf(false) }
+    var viewingSkill by remember { mutableStateOf<SkillRef?>(null) }
     val online = state.actualConnection is LinkState.Ready
     val saving = "editor" in state.busy
     val dismiss = LocalDismissModal.current
@@ -50,13 +51,14 @@ import kotlinx.serialization.json.jsonPrimitive
                 store.saveBot(draft) { dismiss() }
             }
         }
-        BotSettingsForm(state, store, draft, { draft = it }) { folders = true }
+        BotSettingsForm(state, store, draft, { draft = it }, { viewingSkill = it }) { folders = true }
     }
     CodyncSheet(folders, { folders = false }) {
         FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, store::listDirs) {
             draft = draft.copy(cwd = it); folders = false
         }
     }
+    CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
 }
 
 /** Picks an installed agent we know; connectors and skills start on once the computer has listed them. */
@@ -76,7 +78,8 @@ private val JsonObject.available get() = this["available"]?.jsonPrimitive?.boole
 private val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanOrNull != false
 
 /** Bot settings: a big avatar, then sections in the Settings style (`CardSection`). */
-@Composable private fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, chooseFolder: () -> Unit) {
+@Composable private fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, viewSkill: (SkillRef) -> Unit,
+    chooseFolder: () -> Unit) {
     val online = state.actualConnection is LinkState.Ready
     val screen = state.screen
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(30.dp)) {
@@ -167,7 +170,9 @@ private val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanOr
             plugins?.connectors.orEmpty().map { Triple(it.id, it.name, if (it.needsSignIn) "Sign-in needed" else it.command ?: it.url.orEmpty()) },
             draft.connectors ?: plugins?.connectors.orEmpty().map { it.id }, { change(draft.copy(connectors = it)) })
         PluginToggles("Skills", "No skills yet. Get some from Extensions, or write your own.",
-            plugins?.skills.orEmpty().map { Triple(it.id, it.name, it.description) }, draft.skills, { change(draft.copy(skills = it)) })
+            plugins?.skills.orEmpty().map { Triple(it.id, it.name, it.description) }, draft.skills, { change(draft.copy(skills = it)) }) { id ->
+            plugins?.skills?.firstOrNull { it.id == id }?.let { viewSkill(SkillRef(it.id, it.name, it.description)) }
+        }
         draft.id?.let { MemoryCard(it, store) }
         state.error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
     }

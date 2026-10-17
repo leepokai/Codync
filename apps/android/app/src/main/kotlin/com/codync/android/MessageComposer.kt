@@ -125,6 +125,9 @@ private enum class Trailing { Stop, Call, Send }
     }
     val typed = text.text.toString()
     val commands = SlashCommands.query(typed)?.let { SlashCommands.list(bot, it, state.plugins?.skills.orEmpty(), state.hello?.text("version")) }.orEmpty()
+    // Starting a command: list the computer's skills again, once each time the draft becomes "/".
+    val startingCommand = typed == "/" && bot.kind != "group"
+    LaunchedEffect(startingCommand) { if (startingCommand && online) store.refreshPlugins() }
     val mentions = if (bot.kind != "group") emptyList() else mentionQuery(typed)?.let { query ->
         bot.members.mapNotNull { id -> state.bots.firstOrNull { it.id == id } }.filter { query.isEmpty() || it.name.contains(query, true) }
     }.orEmpty()

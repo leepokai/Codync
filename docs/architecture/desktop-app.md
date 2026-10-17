@@ -64,9 +64,13 @@ The TUI connects to one host at a time, so it keeps its single roster.
   filter distinguishes connecting, attention, disconnected and opening states and
   keeps local recovery actions reachable when a remote computer is already online.
   iOS uses direct/encrypted host connections, and the TUI connects to one host;
-  neither manages desktop SSH profiles. Windows exposes the same profile UI, but
-  the tunnel backend still uses `/usr/bin/ssh*` and Unix socket ownership checks;
-  Windows tunnel support has not been implemented.
+  neither manages desktop SSH profiles. Windows uses the native OpenSSH Client
+  in `%SystemRoot%\System32\OpenSSH` and checks the listener's owning process
+  through `Get-NetTCPConnection` before sending the host token. Install OpenSSH
+  Client in Windows Optional features if it is missing. Keys stay in the local
+  SSH agent or selected key file, including a public key that selects a 1Password
+  agent identity. Windows drive and UNC key paths are supported. Disconnect and
+  quit close the tunnel; startup removes leftover tunnels for this app variant.
 - **Icons**: SF Symbols may only ship in apps for Apple platforms, so the masks are generated
   on macOS at build time and never committed; Linux draws the closest Lucide icons.
 - **On-device speech** is macOS only; Linux calls use OpenAI or Gemini on the user's key.
@@ -81,8 +85,8 @@ The TUI connects to one host at a time, so it keeps its single roster.
   Agents start through `cmd /c` (`host/src/shell.rs`), setup terminals use ConPTY
   (`portable-pty`), and the vault key lives in Credential Manager. Not on Windows yet: Remote
   screen and the `computer` MCP (no screen helper), on-device speech, the Claude Code status
-  line hook (usage still comes from `claude -p /usage` and ACP), SSH tunnels to other
-  computers, and `curl | bash` installers (npm installs and Claude Code's PowerShell installer
+  line hook (usage still comes from `claude -p /usage` and ACP), and `curl | bash`
+  installers (npm installs and Claude Code's PowerShell installer
   work). The tray icon is the app icon; left-click opens the chat, right-click the menu.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)
   as an SMAppService agent; Linux starts its helper from the host, as before.
@@ -108,11 +112,13 @@ child must own the listening socket and stay alive until disconnect. This keeps
 `ControlMaster` / `ControlPersist` in the user's config from transferring the
 forward to a shared master that outlives the app.
 
-For a read-only macOS integration check against an already trusted SSH computer,
+For a read-only integration check against an already trusted SSH computer,
 run `node --experimental-strip-types tools/ssh-e2e.mjs <ssh-alias>` from
 `apps/desktop`. It checks discovery, listener ownership, host identity, API
-authentication and sync, SSE, disconnect/reconnect, and an occupied local port.
+authentication, bot sync and history, SSE, disconnect/reconnect, and an occupied local port.
 It uses port 19222 on the remote computer and leaves bots and settings unchanged.
+An explicit user and identity file can follow the alias; Windows uses its native
+OpenSSH Client and listener ownership check, just like the app.
 
 ```sh
 cd apps/desktop

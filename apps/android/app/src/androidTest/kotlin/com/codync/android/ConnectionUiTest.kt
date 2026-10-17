@@ -18,10 +18,10 @@ class ConnectionUiTest {
     @Test fun theComputerRowNamesTheActualConnectionState() {
         val state = mutableStateOf(fixture(LinkState.Failed("Your access was revoked.", 403)))
         compose.setContent { Hosted { SettingsView(state.value, viewModel(), null, {}, {}, {}) } }
-        compose.onNodeWithText("Access denied").assertIsDisplayed()
+        compose.onNodeWithText("Your access was revoked.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Extensions").assertDoesNotExist()
         compose.runOnUiThread { state.value = fixture(LinkState.ComputerOffline(null)) }
-        compose.onNodeWithText("Computer offline").assertIsDisplayed()
+        compose.onNodeWithText("Offline").assertIsDisplayed()
         compose.runOnUiThread { state.value = fixture(LinkState.Ready(HostRoute.Direct)).copy(bots = listOf(Bot("bot", "Saved bot"))) }
         compose.onNodeWithText("1 bot · Wi-Fi/Tailscale").assertIsDisplayed()
         compose.onNodeWithContentDescription("Extensions").assertIsDisplayed()
@@ -32,7 +32,7 @@ class ConnectionUiTest {
         var created = false
         compose.setContent { Hosted { BotListView(state.value, viewModel(), {}, {}, { created = true }, {}, {}, 0.dp) } }
         compose.onNodeWithText("Saved bot").assertIsDisplayed()
-        compose.onNodeWithText("Offline").assertIsDisplayed()
+        compose.onNodeWithText("1 offline").assertIsDisplayed()
         compose.onNodeWithText("No bots yet").assertDoesNotExist()
         compose.runOnUiThread { state.value = fixture(LinkState.Ready(HostRoute.Direct)) }
         compose.onNodeWithText("1 connected").assertIsDisplayed()

@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
@@ -149,10 +150,11 @@ import kotlinx.serialization.json.put
     val link = state.connection
     val online = link is LinkState.Ready
     val viewable = online && state.screen != null
+    val stale = state.isStale
     val detail = if (link is LinkState.Ready) {
         val count = state.bots.count { !it.deleted && it.kind != "group" }
         "$count bot${if (count == 1) "" else "s"} · ${if (link.route == HostRoute.Direct) "Wi-Fi/Tailscale" else "Cloudflare"}"
-    } else connectionLabel(link)
+    } else computerStatusText(state)
     Row(Modifier.fillMaxWidth().contextActions(items = {
         listOfNotNull(
             if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = extensions) else null,
@@ -165,15 +167,17 @@ import kotlinx.serialization.json.put
             Text(state.hello?.text("name") ?: computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val ink = if (link is LinkState.ComputerOffline || link is LinkState.Failed) Palette.warning else Palette.secondary
-                Text(detail, style = Type.subheadline, color = ink, maxLines = 1)
+                Text(detail, style = Type.subheadline, color = ink, maxLines = if (stale) 2 else 1, overflow = TextOverflow.Ellipsis)
                 if (link is LinkState.Ready) Symbol(if (link.route == HostRoute.Direct) "wifi" else "cloud", size = 14.dp, tint = ink,
                     contentDescription = if (link.route == HostRoute.Direct) "Wi-Fi or Tailscale" else "Through Cloudflare")
             }
         }
         if (online) IconButton("Extensions", "square.grid.2x2", action = extensions)
         if (viewable) IconButton("Screen", "display", action = screen)
+        // Revoked, or this computer under an earlier identity: nothing to do but remove it.
+        if (stale) IconButton("Remove", "trash", action = remove)
         // Which route goes first, and whether Cloudflare is a fallback at all.
-        DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(route.title, icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
+        else DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(route.title, icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
             Modifier.size(36.dp), label = "Connection") {
             Symbol(computer.route.icon, size = 21.dp, tint = Palette.secondary)
         }

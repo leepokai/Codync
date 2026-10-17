@@ -261,20 +261,6 @@ internal fun messagePreview(text: String): String {
     }
 }
 
-/** "2 connected", "Connecting…", "Offline": what the roster says about its computers. */
-internal fun connectionSummary(state: AppState): String = when {
-    state.computers.isEmpty() -> "No computers"
-    state.connection is LinkState.Ready -> "${state.computers.size} connected"
-    state.connection is LinkState.Connecting -> "Connecting…"
-    else -> "Offline"
-}
-
-internal fun connectionLabel(state: AppState): String = when (state.connection) {
-    is LinkState.Ready -> "Connected"
-    is LinkState.Connecting -> "Connecting…"
-    else -> "Offline"
-}
-
 @Composable private fun NewMenuButton(enabled: Boolean, groupEnabled: Boolean, newBot: () -> Unit, newGroup: () -> Unit) {
     DropdownMenu({
         listOf(MenuItem("New bot", icon = "plus", action = newBot),

@@ -1,43 +1,66 @@
 package com.codync.android
 
 import com.codync.android.core.*
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.*
 import org.junit.Test
 
 class ConnectionPresentationTest {
-    private val computer = Computer("fixture", "Computer", "fixture")
-    private fun state(link: LinkState, loaded: Boolean = false) = AppState(
+    private val computer = Computer("fixture", "Studio", "fixture")
+    private fun state(link: LinkState, cloud: List<CloudComputer> = emptyList(), computers: List<Computer> = listOf(computer)) = AppState(
         account = AccountState(configured = false), loading = false, setupComplete = true,
-        computers = listOf(computer), connection = link, actualConnection = link, rosterLoaded = loaded)
+        computers = computers, connection = link, actualConnection = link, cloudComputers = cloud)
+    private fun cloud(id: String, online: Boolean, name: String = "Studio") = CloudComputer(id, name, "key", online = online)
 
-    @Test fun anUnreachableComputerIsNotAnEmptyRoster() {
-        for (loaded in listOf(false, true)) {
-            val empty = emptyRoster(state(LinkState.ComputerOffline(null), loaded), "", false)
-            assertEquals("Computer offline", empty.title)
-            assertFalse(empty.canCreate)
-            assertNotNull(empty.detail)
+    @Test fun eachConnectionReadsAsOnIPhone() {
+        val revoked = LinkState.Failed("This device isn't allowed on Studio anymore.", 403)
+        val cases = listOf(
+            LinkState.Ready(HostRoute.Relay) to Triple("Online", "Connected", "Connected through Cloudflare"),
+            LinkState.Ready(HostRoute.Direct) to Triple("Online", "Connected", "Connected over Wi-Fi or Tailscale"),
+            LinkState.Connecting to Triple("Connecting…", "Connecting…", "Connecting"),
+            LinkState.ComputerOffline(null) to Triple("Offline", "Offline", "Offline"),
+            LinkState.Failed("Connection closed.") to Triple("Can't reach", "Offline", "Offline"),
+            revoked to Triple(revoked.message, "No access", "No access"),
+        )
+        for ((link, words) in cases) {
+            assertEquals(words.first, statusText(state(link)))
+            assertEquals(words.second, connectionLabel(state(link)))
+            assertEquals(words.third, connectionDescription(state(link)))
         }
+        val unpaired = state(LinkState.Connecting, computers = emptyList())
+        assertEquals("Not paired", statusText(unpaired))
+        assertEquals("Not paired", connectionLabel(unpaired))
+        assertEquals("Not paired", connectionDescription(unpaired))
     }
 
-    @Test fun accessAndCompatibilityFailuresKeepTheirActionableMessage() {
-        for ((status, title) in listOf(403 to "Access denied", 426 to "Update required", 500 to "Disconnected")) {
-            val link = LinkState.Failed("Actionable host error", status)
-            assertEquals(title, connectionLabel(link))
-            val empty = emptyRoster(state(link), "", false)
-            assertEquals(title, empty.title)
-            assertEquals(link.message, empty.detail)
-            assertFalse(empty.canCreate)
-        }
+    @Test fun anOfflineComputerSaysWhenItWasLastSeen() {
+        val seen = System.currentTimeMillis() - 60_000
+        assertEquals("Offline · seen ${RelativeTime.day(seen)}", statusText(state(LinkState.ComputerOffline(seen))))
     }
 
-    @Test fun creationWaitsForAnAuthoritativeOnlineRoster() {
-        val online = state(LinkState.Ready(HostRoute.Direct))
-        assertEquals("Syncing bots…", emptyRoster(online, "", false).title)
-        val loaded = online.copy(rosterLoaded = true)
-        assertTrue(emptyRoster(loaded, "", false).canCreate)
-        assertFalse(emptyRoster(loaded.copy(actualConnection = LinkState.Connecting), "", false).canCreate)
-        assertEquals("No matching bots", emptyRoster(loaded, "missing", false).title)
-        assertEquals("No hidden bots", emptyRoster(loaded, "", true).title)
-        assertFalse(emptyRoster(loaded, "", true).canCreate)
+    @Test fun aComputerBehindTheAppNeedsAnUpdate() {
+        val online = state(LinkState.Ready(HostRoute.Direct)).copy(hello = buildJsonObject { put("version", "2.0.0"); put("minApp", "2.0.0") })
+        assertEquals("Needs update", statusText(online))
+        assertEquals("Needs update", connectionLabel(online))
+        assertEquals("Needs update", connectionDescription(online))
+    }
+
+    @Test fun theHeaderSummarizesTheComputers() {
+        assertEquals("1 connected", connectionSummary(state(LinkState.Ready(HostRoute.Direct))))
+        assertEquals("Connecting…", connectionSummary(state(LinkState.Connecting)))
+        assertEquals("No access", connectionSummary(state(LinkState.Failed("Revoked", 403))))
+        assertEquals("1 offline", connectionSummary(state(LinkState.ComputerOffline(null))))
+        assertEquals("Computers", connectionSummary(state(LinkState.Connecting, computers = emptyList())))
+    }
+
+    @Test fun aComputerTurningThisPhoneAwayOrReplacedByANewIdentityIsStale() {
+        assertTrue(state(LinkState.Failed("Revoked", 403)).isStale)
+        val offline = state(LinkState.ComputerOffline(null), listOf(cloud("new", online = true)))
+        assertTrue(offline.isStale)
+        assertEquals("Older copy of this computer · Offline", computerStatusText(offline))
+        assertFalse(state(LinkState.ComputerOffline(null), listOf(cloud("new", online = false))).isStale)
+        assertFalse(state(LinkState.Ready(HostRoute.Direct), listOf(cloud("new", online = true))).isStale)
+        assertEquals("Revoked", computerStatusText(state(LinkState.Failed("Revoked", 403), listOf(cloud("new", online = true)))))
     }
 }

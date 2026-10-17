@@ -1,27 +1,69 @@
 package com.codync.android
 
+import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 
-/** Cached bots remain readable while the connection reports its actual state. */
-internal fun connectionLabel(link: LinkState): String = when (link) {
-    is LinkState.Ready -> "Connected"
+// What the roster header, Computers & settings and the chat header say about the computer's link
+// (iOS `ComputerStatus`, `ConnectionSummary`, `BotStore.connectionLabel`).
+
+/** Turned away by the computer: access revoked, or its identity changed. */
+private val LinkState.unauthorized get() = this is LinkState.Failed && status == 403
+
+/** One short line for the computer's connection, next to its name (iOS `BotStore.statusText`). */
+internal fun statusText(state: AppState): String = if (state.computers.isEmpty()) "Not paired" else when (val link = state.connection) {
+    is LinkState.Ready -> if (state.mismatch != null) "Needs update" else "Online"
     LinkState.Connecting -> "Connecting…"
-    is LinkState.ComputerOffline -> "Computer offline"
-    is LinkState.Failed -> if (link.status == 403) "Access denied" else if (link.status == 426) "Update required" else "Disconnected"
+    is LinkState.ComputerOffline -> link.lastSeenAt?.let { "Offline · seen ${RelativeTime.day(it)}" } ?: "Offline"
+    is LinkState.Failed -> if (link.unauthorized) link.message else "Can't reach"
 }
 
-internal data class EmptyRoster(val title: String, val detail: String? = null, val canCreate: Boolean = false)
+/** The status line in Computers & settings: one that's offline while its new identity is around says so. */
+internal fun computerStatusText(state: AppState): String =
+    if (state.isStale && !state.connection.unauthorized) "Older copy of this computer · ${statusText(state)}" else statusText(state)
 
-internal fun emptyRoster(state: AppState, query: String, hidden: Boolean): EmptyRoster = when {
-    state.computers.isEmpty() -> EmptyRoster("No computer yet")
-    query.isNotBlank() -> EmptyRoster("No matching bots")
-    state.connection !is LinkState.Ready -> EmptyRoster(connectionLabel(state.connection),
-        when (val link = state.connection) {
-            is LinkState.Failed -> link.message
-            is LinkState.ComputerOffline -> "Your bots and chats will appear when the computer reconnects."
-            else -> "Waiting for your computer’s bot list."
-        })
-    !state.rosterLoaded -> EmptyRoster("Syncing bots…")
-    hidden -> EmptyRoster("No hidden bots")
-    else -> EmptyRoster("No bots yet", canCreate = state.actualConnection is LinkState.Ready)
+/** A word for the link: the computer filter's rows and the chat header. */
+internal fun connectionLabel(state: AppState): String = if (state.computers.isEmpty()) "Not paired" else when (val link = state.connection) {
+    is LinkState.Ready -> if (state.mismatch != null) "Needs update" else "Connected"
+    LinkState.Connecting -> "Connecting…"
+    is LinkState.ComputerOffline -> "Offline"
+    is LinkState.Failed -> if (link.unauthorized) "No access" else "Offline"
 }
+
+/** What TalkBack says for the chat header's connection: the route too, when there is one. */
+internal fun connectionDescription(state: AppState): String {
+    val link = state.connection
+    return when {
+        state.computers.isEmpty() -> "Not paired"
+        link == LinkState.Connecting -> "Connecting"
+        link !is LinkState.Ready -> connectionLabel(state)
+        state.mismatch != null -> "Needs update"
+        link.route == HostRoute.Relay -> "Connected through Cloudflare"
+        else -> "Connected over Wi-Fi or Tailscale"
+    }
+}
+
+/** "1 connected", "Connecting…", "No access": the roster header's summary of its computers. */
+internal fun connectionSummary(state: AppState): String = when {
+    state.computers.isEmpty() -> "Computers"
+    state.connection is LinkState.Ready -> "${state.computers.size} connected"
+    state.connection is LinkState.Connecting -> "Connecting…"
+    state.connection.unauthorized -> "No access"
+    else -> "${state.computers.size} offline"
+}
+
+/**
+ * The computer this phone uses won't come back as it is: it turned this phone away, or it's offline
+ * while an account computer with its name is online, the same machine under a new identity
+ * (iOS `AccountStore.isStale`). Removing it is the fix.
+ */
+internal val AppState.isStale: Boolean get() {
+    val computer = computers.firstOrNull() ?: return false
+    return when (val link = connection) {
+        is LinkState.Failed -> link.unauthorized || renamedCopyOnline(computer.id, computer.name)
+        is LinkState.ComputerOffline -> renamedCopyOnline(computer.id, computer.name)
+        else -> false
+    }
+}
+
+private fun AppState.renamedCopyOnline(id: String, name: String) =
+    cloudComputers.any { it.computerId != id && it.name == name && it.online == true }

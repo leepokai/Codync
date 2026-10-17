@@ -37,7 +37,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -142,6 +144,14 @@ private class RosterReorder {
 internal fun roster(bots: List<Bot>): List<Bot> = bots.filter { !it.deleted && !it.hidden }
     .sortedWith(compareByDescending<Bot> { it.pinned }.thenBy { it.position }.thenByDescending { it.lastAt })
 
+/** The roster order with a bot one place up (-1) or down (+1) among bots with its pin state, or null when it can't move. */
+internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
+    val at = roster.indexOfFirst { it.id == id }
+    val neighbor = roster.getOrNull(at + offset)
+    if (at < 0 || neighbor == null || neighbor.pinned != roster[at].pinned) return null
+    return roster.map(Bot::id).toMutableList().apply { this[at] = neighbor.id; this[at + offset] = id }
+}
+
 @Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, edit: () -> Unit, delete: () -> Unit) {
     Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
         Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state) }
@@ -160,7 +170,13 @@ internal fun roster(bots: List<Bot>): List<Bot> = bots.filter { !it.deleted && !
             },
             MenuItem("Delete", icon = "trash", destructive = true, divider = true, action = delete),
         )
-    }.semantics { contentDescription = bot.name }) {
+    }.semantics {
+        contentDescription = bot.name
+        // TalkBack's way to reorder (the drag needs a touch and hold, then a move).
+        customActions = listOf(-1 to "Move up", 1 to "Move down").map { (offset, title) ->
+            CustomAccessibilityAction(title) { moved(roster(state.bots), bot.id, offset)?.let(store::reorder) != null }
+        }
+    }) {
         BotRow(bot, state)
     }
 }

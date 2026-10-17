@@ -75,9 +75,10 @@ private data class EntryFields(
             name.isNotEmpty() && name.toByteArray(Charsets.UTF_8).size <= 200 && name != "." && name != ".." &&
             '/' !in name && '\\' !in name && name.codePoints().noneMatch { Character.getType(it).toByte() in CONTROLS }) { "Invalid file metadata." }
     }
-
-    private companion object { val CONTROLS = setOf(Character.CONTROL, Character.FORMAT) }
 }
+
+/** Unicode control and format characters, which a file name may not contain. */
+private val CONTROLS = setOf(Character.CONTROL, Character.FORMAT)
 
 @Serializable
 enum class SendStatus { Sending, Waiting, Delivering, Failed }

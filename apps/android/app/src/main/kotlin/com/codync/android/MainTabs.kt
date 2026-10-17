@@ -51,9 +51,12 @@ private enum class AppTab { Bots, State }
         AnimatedVisibility(state.selectedBot == null, Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it / 2 },
             exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it / 2 }) {
-            GlassTabBar(tab, listOf(TabItem(AppTab.Bots, "Bots", "bubble.left.and.bubble.right.fill", 33.dp),
-                TabItem(AppTab.State, "State", "rectangle.stack.fill")), { tab = it },
-                Modifier.padding(bottom = maxOf(bottom - 4.dp, 12.dp)))
+            Box(contentAlignment = Alignment.BottomCenter) {
+                ScrollEdge(Edge.Bottom, barSpace)
+                GlassTabBar(tab, listOf(TabItem(AppTab.Bots, "Bots", "bubble.left.and.bubble.right.fill", 33.dp),
+                    TabItem(AppTab.State, "State", "rectangle.stack.fill")), { tab = it },
+                    Modifier.padding(bottom = maxOf(bottom - 4.dp, 12.dp)))
+            }
         }
     }) {
         Box(Modifier.fillMaxSize().tabLayer(tab == AppTab.Bots)) {

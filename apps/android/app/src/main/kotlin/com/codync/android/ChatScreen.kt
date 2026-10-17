@@ -44,8 +44,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -92,8 +90,9 @@ import com.kyant.shapes.Capsule
     // The main chat ignores an open thread: it stays put underneath.
     val chatState = state.copy(thread = null, trace = false)
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
-        Box(Modifier.fillMaxWidth().height(top + 64.dp).background(Brush.verticalGradient(
-            0f to Palette.background, 0.55f to Palette.background.copy(alpha = 0.85f), 1f to Color.Transparent)))
+        // Down to just above the header's bottom; the bottom one stops under Jump to latest.
+        ScrollEdge(Edge.Top, top + 84.dp)
+        ScrollEdge(Edge.Bottom, with(density) { composerHeight.toDp() } + 4.dp, Modifier.align(Alignment.BottomCenter))
         ThreadHeader(bot, state, store, edit, { store.showTrace(true) }, { openRoutine(null) }, { confirmNewSession = true }, { confirmDelete = true })
         // The call floats over the chat under the header, as on iOS; the chat stays readable and usable.
         AnimatedVisibility(state.voice != null, Modifier.padding(top = top + 54.dp),

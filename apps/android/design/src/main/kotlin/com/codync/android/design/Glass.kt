@@ -5,6 +5,12 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -51,6 +57,32 @@ val LocalBackdrop = staticCompositionLocalOf<Backdrop> { emptyBackdrop() }
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop), content = content)
         CompositionLocalProvider(LocalBackdrop provides backdrop) { Box(Modifier.fillMaxSize(), content = chrome) }
     }
+}
+
+/** Which bar a scroll edge sits under. */
+enum class Edge { Top, Bottom }
+
+/**
+ * iOS 26's soft scroll edge under a bar: content passing beneath blurs and washes into the
+ * background, strongest at the screen's edge, so the bar stays legible over it. Chrome of a
+ * `GlassStage`, like the bar it sits under.
+ */
+@Composable fun ScrollEdge(edge: Edge, height: Dp, modifier: Modifier = Modifier) {
+    val backdrop = LocalBackdrop.current
+    val ground = Palette.background
+    val top = edge == Edge.Top
+    Box(modifier.fillMaxWidth().height(height)
+        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            // The blur and the wash both fade out toward the content.
+            drawRect(Brush.verticalGradient(*if (top) arrayOf(0f to Color.Black, 0.8f to Color.Black, 1f to Color.Transparent)
+                else arrayOf(0f to Color.Transparent, 0.2f to Color.Black, 1f to Color.Black)), blendMode = BlendMode.DstIn)
+        }
+        .drawPlainBackdrop(backdrop, shape = { RoundedRectangle(0.dp) }, effects = { blur(10.dp.toPx()) }, onDrawSurface = {
+            val wash = listOf(ground.copy(alpha = 0.85f), ground.copy(alpha = 0.45f))
+            drawRect(Brush.verticalGradient(if (top) wash else wash.reversed()))
+        }))
 }
 
 /** How strongly glass frosts what's behind it. */

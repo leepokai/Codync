@@ -34,8 +34,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -66,9 +64,7 @@ import kotlinx.serialization.json.putJsonArray
     val online = state.actualConnection is LinkState.Ready
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
-        // iOS 26 scroll edge: content fades as it slides under the bar.
-        Box(Modifier.fillMaxWidth().height(top + 64.dp).background(Brush.verticalGradient(
-            0f to Palette.background, 0.55f to Palette.background.copy(alpha = 0.85f), 1f to Color.Transparent)))
+        ScrollEdge(Edge.Top, top + 64.dp)
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp),
             verticalAlignment = Alignment.CenterVertically) {
             AccountSwitcherButton(state, account)

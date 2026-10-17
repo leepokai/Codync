@@ -90,10 +90,9 @@ private suspend fun LazyListState.scrollToEnd(animated: Boolean) {
 @Composable private fun JumpToLatest(visible: Boolean, modifier: Modifier, action: () -> Unit) {
     AnimatedVisibility(visible, modifier, enter = fadeIn(Motion.layout()) + scaleIn(Motion.layout(), initialScale = 0.8f),
         exit = fadeOut(Motion.layout()) + scaleOut(Motion.layout(), targetScale = 0.8f)) {
-        // iOS `frosted(in: Circle())`: a near-opaque grey disc with a soft shadow.
+        // iOS `frosted(in: Circle())`: a near-opaque grey disc lifted by a soft shadow.
         val frosted = Color(if (LocalDark.current) 0xFF232323 else 0xFFF4F4F4).copy(alpha = 0.82f)
-        Box(Modifier.shadow(6.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.12f),
-            spotColor = Color.Black.copy(alpha = 0.12f)).background(frosted, CircleShape)) {
+        Box(Modifier.shadow(8.dp, CircleShape).background(frosted, CircleShape)) {
             IconButton("Jump to latest", "arrow.down", action = action)
         }
     }

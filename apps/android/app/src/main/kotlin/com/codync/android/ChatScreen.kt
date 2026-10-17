@@ -1,11 +1,17 @@
 package com.codync.android
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,12 +53,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -173,6 +181,23 @@ import kotlinx.coroutines.launch
                 ConnectionSubtitle(state)
             }
         }
+        // The corner is the computer: it pulses while this bot is operating it (watch, then take over).
+        val screen = state.screen
+        if (screen != null) {
+            val operating = screen.agentBot == bot.id
+            ComputerButton(operating, Modifier.align(Alignment.CenterEnd)) { store.openScreen(bot.id.takeIf { operating }) }
+        }
+    }
+}
+
+@Composable private fun ComputerButton(operating: Boolean, modifier: Modifier, action: () -> Unit) {
+    val (source, pressed) = rememberPress()
+    val pulse by rememberInfiniteTransition(label = "Operating").animateFloat(1f, 0.35f,
+        infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "Pulse")
+    Box(modifier.size(44.dp).glass(Capsule(), pressed = pressed)
+        .clickable(source, null, role = Role.Button, onClick = action).semantics { contentDescription = "Computer" },
+        contentAlignment = Alignment.Center) {
+        Symbol("desktopcomputer", Modifier.graphicsLayer { alpha = if (operating) pulse else 1f }, size = 22.dp, tint = Palette.text)
     }
 }
 

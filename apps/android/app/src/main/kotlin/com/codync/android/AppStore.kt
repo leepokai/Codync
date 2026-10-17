@@ -24,6 +24,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     private var contextJob = SupervisorJob(viewModelScope.coroutineContext[Job])
     internal var contextScope = CoroutineScope(contextJob + Dispatchers.Main.immediate)
     internal val transitions = Mutex()
+    internal val screenTakeovers = Mutex()
     internal var cloud: CloudClient? = null
     private var sessionJob: Job? = null
     internal var linkJob: Job? = null
@@ -175,8 +176,10 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         val retainedDraftFiles = state.value.drafts.values.flatMap { it.files }.map { it.path }.toSet()
         val retired = state.value.pending.filter { old -> snapshot.pending.none { it.nonce == old.nonce } }.flatMap { it.files }.filter { it.path !in retainedDraftFiles }
         withContext(Dispatchers.IO) { retired.forEach(attachments::discard) }
+        // Like iOS, a screen state this app can't read is a host without remote screen.
+        val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
         mutableState.update { current -> current.copy(bots = snapshot.bots, entries = snapshot.entries,
-            pending = snapshot.pending, usage = snapshot.usage, mirrorRevision = snapshot.rev,
+            pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }
         speakToCall(snapshot.entries, snapshot.bots)
         if (PushPreferences.tasks(getApplication())) {

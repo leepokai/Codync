@@ -2,6 +2,8 @@ package com.codync.android
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -111,9 +113,24 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     CodyncSheet(editor.takeIf { !state.loading }, { editor = null }) { draft ->
         key(state.contextId, state.generation, draft.id) { BotEditor(state, draft, store) }
     }
+    // The remote screen opens over the app once its sheets have slid away.
+    LaunchedEffect(state.screenRequest) { if (state.screenRequest != null) { closeAll(); showUsage = false } }
+    ScreenLayer(state, store)
     // One place for errors the screen showing them doesn't handle itself (pairing, access, the editors do).
     val inline = root == Root.Pairing || showPairing || access != null || editor != null || groupEditor != null
     CodyncDialog("Something went wrong", state.error != null && !inline, store::clearError, state.error, cancel = "OK") { emptyList() }
+}
+
+/** The remote screen as a full-window layer that fades in and out (iOS `.codyncOverlay`). */
+@Composable private fun ScreenLayer(state: AppState, store: AppStore) {
+    val visible = remember { MutableTransitionState(false) }
+    visible.targetState = state.screenRequest != null
+    if (!visible.currentState && !visible.targetState) return
+    Overlay {
+        AnimatedVisibility(visible, enter = fadeIn(Motion.layout()), exit = fadeOut(Motion.fade())) {
+            ScreenView(state, store, state.screenRequest?.watching, store::closeScreen)
+        }
+    }
 }
 
 /** The app-level analytics events (iOS reports the same): setup finished, signed in, signed out. */

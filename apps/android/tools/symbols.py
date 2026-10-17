@@ -157,6 +157,7 @@ MAP = {
     "return": "keyboard_return",
     "rotate.right": "rotate_right",
     "safari": "explore",
+    "shift": "shift",
     "shippingbox": "package_2",
     "square.and.arrow.down": "download",
     "square.and.arrow.up": "ios_share",

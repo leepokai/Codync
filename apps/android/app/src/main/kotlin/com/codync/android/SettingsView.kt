@@ -58,7 +58,7 @@ import kotlinx.serialization.json.put
             CardSection("Computers", if (signedIn) "Computers in your account need your OK on the computer before this phone can use them."
                 else "Each bot runs on its own computer. Sign in to see the computers in your account.") {
                 if (paired != null) row {
-                    ComputerRow(state, store, state.cloudComputers.any { it.computerId == paired.id }, extensions) { confirmForget = true }
+                    ComputerRow(state, store, state.cloudComputers.any { it.computerId == paired.id }, extensions, store::openScreen) { confirmForget = true }
                 }
                 for (computer in state.cloudComputers.filter { it.computerId != paired?.id }) row {
                     AccountComputerRow(computer, state.access?.takeIf { it.computerId == computer.computerId }?.code, canAsk = paired == null) { ask(computer) }
@@ -143,10 +143,12 @@ import kotlinx.serialization.json.put
 }
 
 /** The paired computer: its connection, how it's reached, and whether it's in the account. */
-@Composable private fun ComputerRow(state: AppState, store: AppStore, inAccount: Boolean, extensions: () -> Unit, remove: () -> Unit) {
+@Composable private fun ComputerRow(state: AppState, store: AppStore, inAccount: Boolean, extensions: () -> Unit, screen: () -> Unit,
+    remove: () -> Unit) {
     val computer = state.computers.first()
     val link = state.connection
     val online = link is LinkState.Ready
+    val viewable = online && state.screen != null
     val detail = if (link is LinkState.Ready) {
         val count = state.bots.count { !it.deleted && it.kind != "group" }
         "$count bot${if (count == 1) "" else "s"} · ${if (link.route == HostRoute.Direct) "Wi-Fi/Tailscale" else "Cloudflare"}"
@@ -154,6 +156,7 @@ import kotlinx.serialization.json.put
     Row(Modifier.fillMaxWidth().contextActions(items = {
         listOfNotNull(
             if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = extensions) else null,
+            if (viewable) MenuItem("Screen", icon = "display", action = screen) else null,
             MenuItem("Remove", icon = "trash", destructive = true, divider = online, action = remove),
         )
     }), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -168,6 +171,7 @@ import kotlinx.serialization.json.put
             }
         }
         if (online) IconButton("Extensions", "square.grid.2x2", action = extensions)
+        if (viewable) IconButton("Screen", "display", action = screen)
         // Which route goes first, and whether Cloudflare is a fallback at all.
         DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(route.title, icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
             Modifier.size(36.dp), label = "Connection") {

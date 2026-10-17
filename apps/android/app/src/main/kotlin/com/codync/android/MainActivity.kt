@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
         // Retain the scoped, non-secret destination for Activity/process restoration.
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) store.openLink(uri)
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; store.finishConnectorSignIn(uri) }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; store.openScreenLink() }
     }
 }
 

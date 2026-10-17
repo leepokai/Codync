@@ -28,13 +28,16 @@ fun AppStore.taskNotifications(enabled: Boolean) = action("taskSettings") {
     if (!enabled) NotificationDisplay.cancel(getApplication(), 2)
     syncPush(); PushDelivery.schedule(getApplication())
 }
+/** The state once the signed-in (or local) account has loaded: where a link can be opened. */
+internal suspend fun AppStore.activated(): AppState = state.first { current -> !current.loading &&
+    (current.account.ready || !current.account.configured || current.account.error != null) &&
+    current.contextId == LocalStore.referenceId(current.account.userId ?: "local") }
+
 fun AppStore.openLink(uri: Uri) {
     linkJob?.cancel()
     linkJob = viewModelScope.launch {
         val completed = withTimeoutOrNull(30_000) {
-            val activated = state.first { current -> !current.loading &&
-                (current.account.ready || !current.account.configured || current.account.error != null) &&
-                current.contextId == LocalStore.referenceId(current.account.userId ?: "local") }
+            val activated = activated()
             val usage = uri.host == "usage"
             val destination = try {
                 if (usage) { val target = UsageDestination.parse(uri.toString(), BuildConfig.URL_SCHEME); BotDestination(target.scope, target.computerId, "") }

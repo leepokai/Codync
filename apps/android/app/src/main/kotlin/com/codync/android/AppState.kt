@@ -39,6 +39,10 @@ data class AppState(
     val routines: Map<String, RoutineListing> = emptyMap(),
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
+    /** The computer's remote screen (`null`: the host predates it). */
+    val screen: ScreenState? = null,
+    /** The remote screen viewer is open (`codync://screen`, the thread header, Computers). */
+    val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */
     val unreadable: Boolean = false,
     val error: String? = null,

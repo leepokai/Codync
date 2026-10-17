@@ -146,6 +146,7 @@ import androidx.annotation.DrawableRes
     "return" -> R.drawable.sf_return
     "rotate.right" -> R.drawable.sf_rotate_right
     "safari" -> R.drawable.sf_safari
+    "shift" -> R.drawable.sf_shift
     "shippingbox" -> R.drawable.sf_shippingbox
     "square.and.arrow.down" -> R.drawable.sf_square_and_arrow_down
     "square.and.arrow.up" -> R.drawable.sf_square_and_arrow_up

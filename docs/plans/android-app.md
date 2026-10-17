@@ -14,8 +14,8 @@ emulator against a real host; device acceptance is listed separately.
 | Area | Android | Remaining |
 | --- | --- | --- |
 | Welcome/pairing | Ported: welcome crew and chat glimpse, Install (Mac/Linux) and Scan pages with the camera on the page, paste link, Tailscale note, sign-in | Physical optical scan, camera permission denial |
-| Accounts/access | Ported: account sheet and switcher, Computers & settings, account computer access with its code, access banner | Provider browser round trip on a device; one computer per phone ([multiple computers are future work](../architecture/overview.md)) |
-| Roster | Ported: rows, menus, pin/hide/delete, groups, drag to reorder (host-synced order), computer header | Multiple computers |
+| Accounts/access | Ported: account sheet and switcher, Computers & settings (connection status, badge color, Revoke this phone's access, older copies removed from the account), account computer access with its code, access banner, `codync-dev://computers` and `codync-dev://plugins` | Provider browser round trip on a device; Revoke and older copies against a signed-in account (covered by cloud request tests only); one computer per phone ([multiple computers are future work](../architecture/overview.md)) |
+| Roster | Ported: rows, menus, pin/hide/delete, groups, drag to reorder (host-synced order) and TalkBack Move up/down, computer header | Multiple computers |
 | Conversation/threads | Ported: bubbles, Markdown/code, permissions, reactions, threads, Full conversation, bot-to-bot exchange lines and their conversation, routine notices | Physical keyboard and TalkBack |
 | Composer | Ported: files/photos/paste, `/` commands (Fast mode, New session, skills), @mentions in groups, call/send/stop button | — |
 | Bot and group editors | Ported: avatar, profile, agent and model options, Fast mode, workspace folder picker, permissions, activity, connectors, skills | — |

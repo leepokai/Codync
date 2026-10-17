@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +50,7 @@ import kotlinx.serialization.json.put
     var confirmForget by remember { mutableStateOf(false) }
     var confirmStartOver by remember { mutableStateOf(false) }
     var voice by remember { mutableStateOf(false) }
+    var aboutAnalytics by remember { mutableStateOf(false) }
     LaunchedEffect(state.contextId) { store.refreshCloud() }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         PageHeader("Computers & settings", pop)
@@ -80,6 +82,17 @@ import kotlinx.serialization.json.put
                 }
             }
             NotificationsSection(state, store)
+            CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
+                row {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Share usage analytics", style = Type.body, color = Palette.text, maxLines = 1)
+                        IconButton("About usage analytics", "info.circle") { aboutAnalytics = true }
+                        Box(Modifier.weight(1f))
+                        CodyncSwitch(Analytics.enabled, Analytics::setEnabled, Modifier.width(34.dp)
+                            .semantics { contentDescription = "Share usage analytics" }) {}
+                    }
+                }
+            }
             val hidden = state.bots.filter { it.hidden && !it.deleted }
             if (hidden.isNotEmpty()) CardSection("Hidden bots") {
                 for (bot in hidden) row { HiddenBotRow(state, store, bot) }
@@ -100,6 +113,7 @@ import kotlinx.serialization.json.put
         }
     }
     CodyncSheet(voice, { voice = false }) { VoiceChatSettings(store) }
+    CodyncSheet(aboutAnalytics, { aboutAnalytics = false }) { AnalyticsSheet() }
     CodyncDialog("Start over?", confirmStartOver, { confirmStartOver = false },
         "Signs out of every account and forgets every computer on this phone, then shows the welcome again. Your computers keep their bots and chats; pair again to use them.") {
         listOf(DialogAction("Start over", destructive = true, action = store::startOver))

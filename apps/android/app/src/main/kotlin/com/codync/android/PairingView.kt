@@ -207,7 +207,10 @@ private enum class ComputerOS { Mac, Linux }
         if (!started || state.pairing) return@LaunchedEffect
         started = false
         val failure = state.error
-        if (failure == null) { pasted = ""; paired() }
+        if (failure == null) {
+            state.computers.firstOrNull()?.let { Analytics.capture(AnalyticsEvent.ComputerPaired, mapOf("via" to "qr", "computer" to Analytics.computerTag(it.id))) }
+            pasted = ""; paired()
+        }
         else { error = failure; attempt++; store.clearError() }
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),

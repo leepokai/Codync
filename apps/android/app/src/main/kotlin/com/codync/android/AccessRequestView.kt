@@ -50,7 +50,11 @@ private enum class AccessPhase { Asking, Code, Approved, Ended }
         if (asking) asked = true
         else if (asked && !approved) { ended = state.error ?: "${computer.name} didn't approve this request."; store.clearError(); asked = false }
     }
-    LaunchedEffect(approved) { if (approved) { delay(1000); dismiss() } }
+    LaunchedEffect(approved) {
+        if (!approved) return@LaunchedEffect
+        Analytics.capture(AnalyticsEvent.ComputerPaired, mapOf("via" to "account", "computer" to Analytics.computerTag(computer.computerId)))
+        delay(1000); dismiss()
+    }
     val phase = when {
         approved -> AccessPhase.Approved
         ticket != null -> AccessPhase.Code

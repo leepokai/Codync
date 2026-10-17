@@ -27,6 +27,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         NativeAccounts.initialize(this)
+        Analytics.start(applicationContext)
+        Analytics.userId = { store.state.value.account.userId }
         NotificationDisplay.channels(this)
         enableEdgeToEdge()
         setContent {
@@ -58,8 +60,13 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         handle(intent)
     }
-    override fun onStart() { super.onStart(); store.setForeground(true) }
-    override fun onStop() { store.setForeground(false); super.onStop() }
+    override fun onStart() { super.onStart(); store.setForeground(true); Analytics.becameActive() }
+    override fun onStop() {
+        store.setForeground(false)
+        // A rotation isn't a trip to the background.
+        if (!isChangingConfigurations) Analytics.enteredBackground()
+        super.onStop()
+    }
     private fun handle(intent: Intent?) {
         val uri = intent?.data ?: return
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "pair") {

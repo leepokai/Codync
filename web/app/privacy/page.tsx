@@ -30,7 +30,7 @@ export default function Privacy() {
 
         <Section title="Data we collect">
           <p className="mb-2">
-            Only usage analytics. They are on by default; turn them off on each iPhone and each computer in Settings (Share usage analytics), and that device stops sending right away.
+            Only usage analytics. They are on by default; turn them off on each phone and each computer in Settings (Share usage analytics), and that device stops sending right away.
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>What we record:</strong> which features you use, such as opening the app, creating or deleting a bot, sending a message (with the number of attachments, not the files), starting a routine or a voice call, and installing a connector from the catalog. Each event carries the app version, the platform and the agent and model a bot uses.</li>
@@ -54,7 +54,7 @@ export default function Privacy() {
         </Section>
 
         <Section title="Data retention">
-          Everything lives on your devices. Delete a bot to remove its conversation; uninstall the host and delete <code>~/.codync</code> to remove all of it. Deleting the iPhone app removes its cache. Turning analytics off stops new events from being sent.
+          Everything lives on your devices. Delete a bot to remove its conversation; uninstall the host and delete <code>~/.codync</code> to remove all of it. Deleting the phone app removes its cache. Turning analytics off stops new events from being sent.
         </Section>
 
         <Section title="Children's privacy">

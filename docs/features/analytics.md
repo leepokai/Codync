@@ -5,8 +5,8 @@ every device; *Share usage analytics* in Settings turns it off. It exists to spo
 (failed or stopped turns per agent and platform) and to serve users better. The public promise
 lives in `web/app/privacy/page.tsx`: keep it true. The info button beside the switch (terminal
 UI: *About usage analytics…*) shows the same promise in the app, in one text per client
-(desktop `views/settings/AnalyticsSheet.tsx`, `CodyncUI/AnalyticsSheet.swift`,
-`host/src/tui/view/analytics.rs`): change all three with the policy.
+(desktop `views/settings/AnalyticsSheet.tsx`, `CodyncUI/AnalyticsSheet.swift`, Android
+`AnalyticsSheet.kt`, `host/src/tui/view/analytics.rs`): change all four with the policy.
 
 ## Rules
 
@@ -16,7 +16,7 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   Errors are categories and code locations, never an error's message (see *Error tracking*).
 - **Setting per device.** The computer's owner decides for that computer (host kv
   `analytics_enabled`, on unless `0`); each iPhone decides for itself (`UserDefaults`
-  `analyticsEnabled`, on unless `false`). Turning it off drops anything still queued. A
+  `analyticsEnabled`, on unless `false`; each Android phone in its `codync-analytics` preferences). Turning it off drops anything still queued. A
   device that said no to the earlier opt-in question stays off.
 - **Identity.** Every device gets a person profile. Signed in to a Codync account: the Clerk
   user id. Otherwise a random install id (the host id on a computer, a UUID on the iPhone).
@@ -47,6 +47,8 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
 - **iPhone** (`CodyncKit` analytics client, no SDK) sends its own app-level events
   (`app_opened`, `onboarding_completed`, `computer_paired`, `signed_in`, `signed_out`,
   `voice_call_started`) straight to PostHog. Widgets and the notification extension never send.
+  **Android** (`apps/android/.../Analytics.kt`, its port, no SDK) sends the same events with
+  `$lib` `codync-android`; widgets never send.
 
 ## Event properties
 
@@ -80,6 +82,9 @@ builds PostHog's generic `custom` frames (oldest first, the failing one last).
 - **iPhone** (`CodyncKit` `CrashReports`): MetricKit's crash diagnostics, delivered on the next
   launch, straight to PostHog with the version that crashed. Frames are `binary + offset`
   (unsymbolicated; Xcode Organizer has the symbolicated crash). Process `ios`.
+- **Android** (`CrashReports.kt`): an uncaught exception is written down as it happens and sent
+  on the next launch: its type and frames (class, method, file name, line), never the message.
+  Process `android`.
 
 What leaves the device: the error's type (`Panic`, `TypeError`, `EXC_BAD_ACCESS`), how it was
 caught, function names, and file names and line numbers inside Codync's code; an absolute path
@@ -115,6 +120,6 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 ## Turning it off
 
 No client asks: sharing starts with the first launch. Every client has the same switch,
-*Share usage analytics* (iPhone and desktop Settings → Privacy, terminal UI `^k`). The App
+*Share usage analytics* (iPhone, Android and desktop Settings, terminal UI `^k`). The App
 Store privacy label declares *Product Interaction* and *Coarse Location*, linked to the user, not used
 for tracking (the same two in `apps/ios/Resources/PrivacyInfo.xcprivacy`).

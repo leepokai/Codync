@@ -53,6 +53,7 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
         if (handledNavigation != state.navigationRequest) { closeAll(); showUsage = state.navigationUsage; handledNavigation = state.navigationRequest }
     }
     val signedIn = state.account.userId != null
+    AnalyticsMilestones(state)
     val onboarding = !state.setupComplete && state.computers.isEmpty() && state.cloudComputers.isEmpty()
     // Signing in to an account that has computers completes setup, as pairing or skipping does.
     LaunchedEffect(state.cloudComputers.isNotEmpty(), state.loading) {
@@ -113,4 +114,22 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     // One place for errors the screen showing them doesn't handle itself (pairing, access, the editors do).
     val inline = root == Root.Pairing || showPairing || access != null || editor != null || groupEditor != null
     CodyncDialog("Something went wrong", state.error != null && !inline, store::clearError, state.error, cancel = "OK") { emptyList() }
+}
+
+/** The app-level analytics events (iOS reports the same): setup finished, signed in, signed out. */
+@Composable private fun AnalyticsMilestones(state: AppState) {
+    var setup by remember { mutableStateOf<Boolean?>(null) }
+    var user by remember { mutableStateOf<String?>(null) }
+    var known by remember { mutableStateOf(false) }
+    LaunchedEffect(state.loading, state.setupComplete) {
+        if (state.loading) return@LaunchedEffect
+        if (setup == false && state.setupComplete) Analytics.capture(AnalyticsEvent.OnboardingCompleted)
+        setup = state.setupComplete
+    }
+    LaunchedEffect(state.account.ready, state.account.userId) {
+        if (!state.account.ready) return@LaunchedEffect
+        val now = state.account.userId
+        if (known && now != user) Analytics.capture(if (now != null) AnalyticsEvent.SignedIn else AnalyticsEvent.SignedOut)
+        user = now; known = true
+    }
 }

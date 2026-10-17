@@ -66,6 +66,7 @@ internal fun openAppSettings(context: android.content.Context) =
     val color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.accent
     var settings by remember { mutableStateOf(false) }
     val speaking = voice.phase == VoicePhase.Speaking
+    LaunchedEffect(call.id) { Analytics.capture(AnalyticsEvent.VoiceCallStarted) }
     Column(Modifier.padding(horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth().glass(Capsule()).padding(start = 14.dp, end = 7.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

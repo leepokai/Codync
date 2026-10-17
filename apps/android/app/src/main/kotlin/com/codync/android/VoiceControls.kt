@@ -80,6 +80,11 @@ internal fun openAppSettings(context: android.content.Context) =
             }
             CallLevelDots(voice.level, speaking, bot?.status == "working", color,
                 Modifier.weight(1f).height(20.dp).semantics { contentDescription = statusText(voice, bot?.status == "working") })
+            // Audio leaves the phone: say where.
+            voice.provider?.let { provider ->
+                Text(provider.title, Modifier.semantics { contentDescription = "Voice by ${provider.title}" },
+                    style = Type.caption2.semibold, color = Palette.secondary, maxLines = 1)
+            }
             RoundButton("Call settings", "gearshape") { settings = true }
             RoundButton(if (voice.muted) "Unmute" else "Mute", if (voice.muted) "mic.slash" else "mic", on = voice.muted, action = store::muteVoice)
             Box(Modifier.size(46.dp).clip(Capsule()).background(Palette.danger).plainButton { store.endVoice() }
@@ -91,9 +96,10 @@ internal fun openAppSettings(context: android.content.Context) =
         when {
             failure != null -> CallLine(failure, Palette.danger)
             voice.phase == VoicePhase.Interrupted -> CallLine("Audio paused by another app. Tap to resume.", Palette.secondary, store::resumeVoice)
+            call.notice != null -> CallLine(call.notice, Palette.secondary)
         }
     }
-    CodyncSheet(settings, { settings = false }) { VoiceChatSettings(store) }
+    CodyncSheet(settings, { settings = false }) { VoiceChatSettings(state, store) }
 }
 
 @Composable private fun CallLine(text: String, color: Color, action: (() -> Unit)? = null) {
@@ -141,33 +147,6 @@ private fun statusText(voice: VoiceState, working: Boolean) = when (voice.phase)
             val height = 4.dp.toPx() + amount * (size.height - 4.dp.toPx())
             drawRoundRect((if (speaking) accent else color).copy(alpha = 0.5f + 0.5f * amount),
                 Offset(i * spacing + spacing / 2 - width / 2, (size.height - height) / 2), Size(width, height), CornerRadius(width / 2))
-        }
-    }
-}
-
-/** Voice chat settings (iOS `VoiceChatSettingsView`): Android speech on this phone, its pause and reading speed. */
-@Composable internal fun VoiceChatSettings(store: AppStore) {
-    val context = LocalContext.current
-    var settings by remember { mutableStateOf(VoicePreferences.load(context)) }
-    fun change(next: VoiceSettings) { settings = next; store.voiceSettings(next) }
-    Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader("Voice chat")
-        CardForm {
-            CardSection("Voice", footer = "Android speech, on this phone. Only the text reaches the computer.") {
-                row { ValueRow("Engine", "On device") }
-                row {
-                    ValueRow("Reading speed") {
-                        ChoicePicker(settings.rate, listOf(.84f to "Slower", 1f to "Normal", 1.12f to "Faster"), { change(settings.copy(rate = it)) },
-                            label = "Reading speed")
-                    }
-                }
-                row {
-                    ValueRow("Send after a pause of", detail = "Longer leaves time to think mid-sentence.") {
-                        ChoicePicker(settings.pauseMillis, listOf(1_000L to "1 s", 1_500L to "1.5 s", 2_500L to "2.5 s"),
-                            { change(settings.copy(pauseMillis = it)) }, label = "Send after a pause of")
-                    }
-                }
-            }
         }
     }
 }

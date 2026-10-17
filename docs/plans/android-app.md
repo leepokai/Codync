@@ -22,7 +22,7 @@ emulator against a real host; device acceptance is listed separately.
 | Memory | Ported: search, filters, add/edit, pin, review, history and timeline, export/import, forget all | — |
 | Routines | Ported: list with switches, editor (schedule, webhook panel, run settings), test run, delete | Live provider/routine acceptance |
 | Extensions | Ported: agents (install, sign-in, setup terminal), registry connectors, Composio apps, skills, installed list, custom connector, own skill, credentials, chat connection request card | Real provider OAuth, 1Password |
-| Voice | Ported call bar and Voice chat settings; on-device Android speech | OpenAI Realtime / Gemini Live engines |
+| Voice | Ported: call bar (provider name, fallback notice), Voice chat settings (engine, mode, models, voice, minutes this month), on device (Vosk English + Android TTS), OpenAI Realtime (WebRTC), Gemini Live, Speech mode, fallback to on device, group calls | Both providers with a real key on a device; on-device recognition in languages other than English |
 | State/widgets | Ported: Widget (with the animated Add a widget guide), Live update and Status bar pages, Usage sheet, Choose the look; Provider usage, Bots and Team widgets with launcher Edit widget | Physical launcher refresh |
 | Live updates | Android 16 Live updates (`ProgressStyle`), the status bar chip on Android 16 QPR1 (API 36.1) | Background updates need FCM in the deployment |
 | Version check | `VersionMismatch.MIN_HOST`, the host's `minApp`, the update card in the roster and in place of the composer | Set `MIN_HOST` to the first release that ships Android support when it's cut |

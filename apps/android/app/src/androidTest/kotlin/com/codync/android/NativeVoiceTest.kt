@@ -40,7 +40,7 @@ class NativeVoiceTest {
         val samples = requireNotNull(pcm)
         val text = withContext(Dispatchers.IO) {
             LibVosk.vosk_set_log_level(-1)
-            val directory = VoiceModels.english(instrumentation.targetContext)
+            val directory = VoskModels.english(instrumentation.targetContext)
             Model(directory.absolutePath).use { model -> Recognizer(model, 16_000f).use { recognizer ->
                 val results = mutableListOf<String>(); var position = 0
                 while (position < samples.size) {

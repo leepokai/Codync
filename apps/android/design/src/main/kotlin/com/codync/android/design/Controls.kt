@@ -193,10 +193,10 @@ import com.kyant.shapes.RoundedRectangle
 
 /** Shows the current choice in a pill with a chevron and opens the menu: `ChoicePicker`. */
 @Composable fun <T> ChoicePicker(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier,
-    fill: Color = Color.Transparent, label: String? = null) {
+    fill: Color = Color.Transparent, label: String? = null, enabled: Boolean = true) {
     val current = options.firstOrNull { it.first == selection }?.second ?: "Choose"
     DropdownMenu({ options.map { (id, text) -> MenuItem(text, selected = id == selection) { select(id) } } }, modifier,
-        label = label?.let { "$it: $current" }) {
+        enabled = enabled, label = label?.let { "$it: $current" }) {
         Row(Modifier.then(if (fill == Color.Transparent) Modifier.outline() else Modifier).pill(fill),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(current, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)

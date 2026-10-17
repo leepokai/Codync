@@ -71,12 +71,12 @@ import kotlinx.serialization.json.put
                     }
                 }
             }
-            if (state.actualConnection is LinkState.Ready) CardSection("Voice chat", "Android speech on this phone; only the text reaches the computer.") {
+            if (state.actualConnection is LinkState.Ready) CardSection("Voice chat", "Android speech on this phone, or OpenAI and Gemini on your own API key, kept on the computer.") {
                 row {
                     Row(Modifier.fillMaxWidth().plainButton { voice = true }, verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Symbol("waveform", size = 20.dp, tint = Palette.text)
-                        Text("Voice chat", Modifier.weight(1f), style = Type.body, color = Palette.text)
+                        Text("Voice and API keys", Modifier.weight(1f), style = Type.body, color = Palette.text)
                         Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
                     }
                 }
@@ -112,7 +112,7 @@ import kotlinx.serialization.json.put
             }
         }
     }
-    CodyncSheet(voice, { voice = false }) { VoiceChatSettings(store) }
+    CodyncSheet(voice, { voice = false }) { VoiceChatSettings(state, store) }
     CodyncSheet(aboutAnalytics, { aboutAnalytics = false }) { AnalyticsSheet() }
     CodyncDialog("Start over?", confirmStartOver, { confirmStartOver = false },
         "Signs out of every account and forgets every computer on this phone, then shows the welcome again. Your computers keep their bots and chats; pair again to use them.") {

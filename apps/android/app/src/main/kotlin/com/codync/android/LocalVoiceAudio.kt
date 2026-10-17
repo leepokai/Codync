@@ -10,6 +10,7 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import com.codync.android.core.*
 import java.io.File
 import java.io.IOException
@@ -21,26 +22,25 @@ import org.json.JSONObject
 import org.vosk.LibVosk
 import org.vosk.Model
 import org.vosk.Recognizer
-import kotlin.math.log10
 
 /** Offline English recognition and an installed local TTS voice. No PCM is written to disk. */
 internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
-    private val worker = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var model: Model? = null
-    @Volatile private var recorder: AudioRecord? = null
-    private var recording: Job? = null
+    private val mic = AndroidMic(context)
+    /** Vosk, fed from the microphone's thread; closed only after that thread has stopped. */
+    private var decoder: Recognizer? = null
     private var speech: TextToSpeech? = null
     private var completion: ((Long, String?) -> Unit)? = null
     private var speakingId: Long? = null; private var lastChunk: String? = null
-    val recordingSessionId: Int? get() = recorder?.audioSessionId
+    val recordingSessionId: Int? get() = mic.recordingSessionId
 
     override suspend fun initialize(): String {
         require(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
         withContext(Dispatchers.IO) {
             try {
                 LibVosk.vosk_set_log_level(-1)
-                val directory = VoiceModels.english(context)
+                val directory = VoskModels.english(context)
                 currentCoroutineContext().ensureActive()
                 model = Model(directory.absolutePath)
             } catch (error: LinkageError) { throw IOException("The local speech engine couldn't load.", error) }
@@ -75,55 +75,27 @@ internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
         return "Offline English · Vosk"
     }
     override suspend fun listen(generation: Long, events: (VoiceInput) -> Unit) {
-        check(recording == null)
-        require(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-        val installed = requireNotNull(model)
-        recording = worker.launch {
-            var microphone: AudioRecord? = null; var decoder: Recognizer? = null
-            try {
-                val format = AudioFormat.Builder().setSampleRate(16_000).setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT).build()
-                val minimum = AudioRecord.getMinBufferSize(16_000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-                check(minimum > 0)
-                microphone = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
-                    .setAudioFormat(format).setBufferSizeInBytes(maxOf(minimum, 12_800)).build()
-                recorder = microphone
-                check(microphone.state == AudioRecord.STATE_INITIALIZED)
-                decoder = Recognizer(installed, 16_000f)
-                ensureActive(); microphone.startRecording()
-                check(microphone.recordingState == AudioRecord.RECORDSTATE_RECORDING)
-                val buffer = ShortArray(3_200); var previous = ""
-                while (isActive) {
-                    val count = microphone.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
-                    if (!isActive) break
-                    if (count < 0) throw IOException("Microphone read failed")
-                    if (count == 0) { delay(10); continue }
-                    var power = 0.0
-                    for (i in 0 until count) { val sample = buffer[i].toDouble() / 32_768; power += sample * sample }
-                    val db = 10 * log10(maxOf(power / count, 1e-10))
-                    events(VoiceInput.Level(generation, ((db + 50) / 50).toFloat().coerceIn(0f, 1f)))
-                    if (decoder.acceptWaveForm(buffer, count)) {
-                        val text = JSONObject(decoder.result).optString("text")
-                        previous = ""; if (text.isNotBlank()) events(VoiceInput.Text(generation, text, true))
-                    } else {
-                        val text = JSONObject(decoder.partialResult).optString("partial")
-                        if (text != previous) { previous = text; events(VoiceInput.Text(generation, text, false)) }
-                    }
+        check(decoder == null)
+        val recognizer = Recognizer(requireNotNull(model), Pcm.RATE.toFloat()).also { decoder = it }
+        var previous = ""
+        try {
+            mic.start({ pcm, level ->
+                events(VoiceInput.Level(generation, level))
+                if (recognizer.acceptWaveForm(pcm, pcm.size)) {
+                    val text = JSONObject(recognizer.result).optString("text")
+                    previous = ""; if (text.isNotBlank()) events(VoiceInput.Text(generation, text, true))
+                } else {
+                    val text = JSONObject(recognizer.partialResult).optString("partial")
+                    if (text != previous) { previous = text; events(VoiceInput.Text(generation, text, false)) }
                 }
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { if (isActive) events(VoiceInput.Failed(generation, "Couldn't use the microphone. Check its permission and other audio apps.")) }
-            finally {
-                runCatching { microphone?.stop() }; runCatching { microphone?.release() }
-                if (recorder === microphone) recorder = null
-                decoder?.close()
-            }
+            }) { events(VoiceInput.Failed(generation, "Couldn't use the microphone. Check its permission and other audio apps.")) }
+        } catch (error: Exception) {
+            decoder = null; recognizer.close()
+            events(VoiceInput.Failed(generation, error.message ?: "Couldn't use the microphone."))
         }
     }
     override suspend fun stopListening() {
-        withContext(NonCancellable) {
-            val old = recording; recording = null
-            old?.cancel(); runCatching { recorder?.stop() }; old?.join()
-        }
+        withContext(NonCancellable) { mic.stop(); decoder?.close(); decoder = null }
     }
     override suspend fun speak(id: Long, text: String, rate: Float, completed: (Long, String?) -> Unit) {
         val engine = requireNotNull(speech)
@@ -138,7 +110,6 @@ internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
     override suspend fun close() {
         try { stopListening() }
         finally {
-            worker.cancel()
             try { stopSpeaking() }
             finally {
                 val engine = speech; speech = null
@@ -150,7 +121,7 @@ internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
 }
 
 /** Public linguistic weights are shared; account credentials and captured audio never enter this directory. */
-internal object VoiceModels {
+internal object VoskModels {
     private val lock = Mutex()
     private const val source = "voice/vosk-model-small-en-us-0.15"
     suspend fun english(context: Context): File = lock.withLock {
@@ -177,13 +148,20 @@ internal object VoiceModels {
     }
 }
 
+/** Call settings on this phone: the pause and reading speed, and the cloud engine choices (`VoiceChoices`). */
 internal object VoicePreferences {
+    private fun stored(context: Context) = context.getSharedPreferences("codync-voice", Context.MODE_PRIVATE)
     fun load(context: Context): VoiceSettings {
-        val stored = context.getSharedPreferences("codync-voice", Context.MODE_PRIVATE)
+        val stored = stored(context)
         return runCatching { VoiceSettings(stored.getLong("pause", 1_500), stored.getFloat("rate", 1f)) }.getOrDefault(VoiceSettings())
     }
     fun save(context: Context, settings: VoiceSettings) {
-        context.getSharedPreferences("codync-voice", Context.MODE_PRIVATE).edit()
-            .putLong("pause", settings.pauseMillis).putFloat("rate", settings.rate).apply()
+        stored(context).edit { putLong("pause", settings.pauseMillis); putFloat("rate", settings.rate) }
+    }
+    fun choices(context: Context): VoiceChoices {
+        val stored = stored(context)
+        return VoiceChoices({ runCatching { stored.getString(it, null) }.getOrNull() }) { key, value ->
+            stored.edit { if (value == null) remove(key) else putString(key, value) }
+        }
     }
 }

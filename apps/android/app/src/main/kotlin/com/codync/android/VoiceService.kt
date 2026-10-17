@@ -14,14 +14,14 @@ import com.codync.android.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 
-data class VoiceCallViewState(val id: String, val botId: String, val state: VoiceState = VoiceState())
+/** The call the UI shows; `notice` is the line under the bar, e.g. why it fell back to on-device voice. */
+data class VoiceCallViewState(val id: String, val botId: String, val state: VoiceState = VoiceState(), val notice: String? = null)
 
 /** Started only by the visible call UI. Audio is retained in background, never restarted by Android. */
 class VoiceService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var store: AppStore? = null
-    private var session: VoiceSession? = null
-    private var audio: LocalVoiceAudio? = null
+    private var session: VoiceBinding? = null
     private var callId: String? = null
     private var focus: AudioFocusRequest? = null
     private lateinit var manager: AudioManager
@@ -33,19 +33,19 @@ class VoiceService : Service() {
     private var receivers = false
     private var ending = false
     private val noisy = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) { session?.focus(false) }
+        override fun onReceive(context: Context?, intent: Intent?) { store?.focusVoice(false) }
     }
     private val devices = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) { chooseRoute() }
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
-            if (removedDevices.any { it.id == selectedDevice?.id && it.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }) session?.focus(false)
+            if (removedDevices.any { it.id == selectedDevice?.id && it.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }) store?.focusVoice(false)
             chooseRoute()
         }
     }
     private val recording = object : AudioManager.AudioRecordingCallback() {
         override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) {
-            val id = audio?.recordingSessionId ?: return
-            if (configs.orEmpty().any { it.clientAudioSessionId == id && it.isClientSilenced }) session?.focus(false)
+            val id = store?.voiceRecordingSession() ?: return
+            if (configs.orEmpty().any { it.clientAudioSessionId == id && it.isClientSilenced }) store?.focusVoice(false)
         }
     }
     override fun onCreate() {
@@ -72,9 +72,9 @@ class VoiceService : Service() {
                 val ownedFocus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attributes)
                     .setOnAudioFocusChangeListener({ change ->
                         when (change) {
-                            AudioManager.AUDIOFOCUS_GAIN -> session?.focus(true)
+                            AudioManager.AUDIOFOCUS_GAIN -> store?.focusVoice(true)
                             AudioManager.AUDIOFOCUS_LOSS -> end("Voice chat ended because another app took audio focus.")
-                            else -> session?.focus(false)
+                            else -> store?.focusVoice(false)
                         }
                     }, Handler(Looper.getMainLooper())).build()
                 focus = ownedFocus
@@ -88,8 +88,7 @@ class VoiceService : Service() {
                 manager.registerAudioRecordingCallback(recording, Handler(Looper.getMainLooper()))
                 ContextCompat.registerReceiver(this, noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED)
                 receivers = true
-                val engine = LocalVoiceAudio(applicationContext); audio = engine
-                val call = request.store.attachVoice(request.id, request.botId, engine) ?: throw IllegalStateException("The active account changed")
+                val call = request.store.attachVoice(request.id, request.botId) ?: throw IllegalStateException("The active account changed")
                 session = call
                 scope.launch { call.state.collectLatest { state ->
                     if (state.phase in listOf(VoicePhase.Failed, VoicePhase.Ended)) end(state.error)
@@ -97,7 +96,7 @@ class VoiceService : Service() {
                 } }
             } catch (_: Exception) { end("Couldn't start voice chat. Check microphone access and Android's audio settings.") }
         } else if (id == callId) {
-            when (intent?.action) { MUTE -> session?.let { it.mute(!it.state.value.muted) }; END -> end(null) }
+            when (intent?.action) { MUTE -> store?.muteVoice(); END -> end(null) }
         } else if (session == null) stopSelf(startId)
         return START_NOT_STICKY
     }
@@ -132,8 +131,9 @@ class VoiceService : Service() {
         return NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Voice chat · ${bot?.name ?: "Codync"}")
             .setContentText(if (state.muted) "Microphone muted" else when (state.phase) {
-                VoicePhase.Starting -> "Starting offline speech…"; VoicePhase.Speaking -> "Reading a reply"
-                VoicePhase.Interrupted -> "Audio interrupted · return to resume"; else -> "Listening · offline English"
+                VoicePhase.Starting -> "Connecting…"; VoicePhase.Speaking -> "Speaking"
+                VoicePhase.Interrupted -> "Audio interrupted · return to resume"
+                else -> "Listening · " + (state.provider?.title ?: "on this phone")
             }).setContentIntent(content).setOngoing(true).setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setOnlyAlertOnce(true)
             .addAction(0, if (state.muted) "Unmute" else "Mute", action(MUTE)).addAction(0, "End call", action(END)).build()
@@ -143,23 +143,21 @@ class VoiceService : Service() {
         ending = true
         val id = callId
         if (id != null) store?.finishVoice(id, error)
-        val call = session
-        call?.end()
-        scope.launch { try { call?.awaitEnd() } finally { stopSelf() } }
+        val engine = session?.engine
+        scope.launch { try { engine?.awaitEnd() } finally { stopSelf() } }
     }
     override fun onTaskRemoved(rootIntent: Intent?) { end(null); super.onTaskRemoved(rootIntent) }
     override fun onDestroy() {
         val id = callId
         if (id != null) store?.finishVoice(id)
-        val call = session
-        call?.end(); session = null; audio = null
+        val engine = session?.engine; session = null
         if (receivers) unregisterReceiver(noisy)
         runCatching { manager.unregisterAudioDeviceCallback(devices) }
         runCatching { manager.unregisterAudioRecordingCallback(recording) }
         // A UI end or account retirement can destroy this service first. Keep
         // the route and audio focus until its recorder worker has joined.
         scope.launch {
-            try { call?.awaitEnd() }
+            try { engine?.awaitEnd() }
             finally {
                 runCatching { releaseRoute() }
                 if (currentId == id) currentId = null

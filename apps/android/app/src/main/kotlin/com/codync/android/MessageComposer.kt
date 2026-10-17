@@ -111,7 +111,7 @@ private enum class Trailing { Stop, Call, Send }
     val working = bot.status in listOf("working", "needsInput") && (thread == null || bot.workingThread == thread)
     val trailing = when {
         working && empty -> Trailing.Stop
-        onCall != null && empty && thread == null && bot.kind != "group" -> Trailing.Call
+        onCall != null && empty && thread == null -> Trailing.Call
         else -> Trailing.Send
     }
     val placeholder = when {

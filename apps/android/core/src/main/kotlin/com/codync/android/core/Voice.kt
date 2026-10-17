@@ -44,18 +44,26 @@ object SpokenText {
     }
 }
 
+/** Something a call says: a bot's reply, or a notice from the computer. */
+data class VoiceCue(val text: String, val notice: Boolean = false)
+
 /** Only newly finalized main-chat replies are spoken. The mirror remains the history owner. */
 class VoiceReplyGate(private val botId: String, private val startRev: Long, initial: List<Entry>) {
     private var previous = initial.associateBy(Entry::id)
-    fun observe(entries: List<Entry>): List<String> {
-        val result = mutableListOf<String>()
+    fun observe(entries: List<Entry>, bots: List<Bot>): List<VoiceCue> {
+        val result = mutableListOf<VoiceCue>()
+        val group = bots.firstOrNull { it.id == botId }?.kind == "group"
         for (entry in entries) {
             if (entry.botId != botId || entry.threadId != null || entry.rev <= startRev) continue
             val before = previous[entry.id]
+            val author = entry.data.text("author")?.let { id -> bots.firstOrNull { it.id == id }?.name }
             if (entry.kind == "agent" && entry.data["final"]?.jsonPrimitive?.booleanOrNull == true &&
-                before?.data?.get("final")?.jsonPrimitive?.booleanOrNull != true && entry.text.isNotBlank()) result.add(entry.text)
-            if (entry.kind == "permission" && entry.status == "pending" && before?.status != "pending")
-                result.add("Your bot needs approval. Open the conversation to allow or deny the request.")
+                before?.data?.get("final")?.jsonPrimitive?.booleanOrNull != true && entry.text.isNotBlank())
+                result.add(VoiceCue(if (group && author != null) "$author: ${entry.text}" else entry.text))
+            if (entry.kind == "permission" && entry.status == "pending" && before?.status != "pending") {
+                val name = author ?: bots.firstOrNull { it.id == botId && !group }?.name ?: "A bot"
+                result.add(VoiceCue("$name needs your approval in the chat.", notice = true))
+            }
         }
         previous = entries.associateBy(Entry::id)
         return result
@@ -68,7 +76,9 @@ data class VoiceSettings(val pauseMillis: Long = 1_500, val rate: Float = 1f) {
 }
 data class VoiceState(val phase: VoicePhase = VoicePhase.Starting, val muted: Boolean = false,
     val heard: String = "", val said: String = "", val level: Float = 0f, val engine: String = "",
-    val settings: VoiceSettings = VoiceSettings(), val error: String? = null)
+    val settings: VoiceSettings = VoiceSettings(), val error: String? = null,
+    /** Where the audio goes when it leaves the phone; null on device. */
+    val provider: VoiceProvider? = null)
 sealed interface VoiceInput {
     data class Text(val generation: Long, val value: String, val final: Boolean) : VoiceInput
     data class Level(val generation: Long, val value: Float) : VoiceInput
@@ -85,7 +95,7 @@ interface VoiceAudio {
 
 /** Serial audio ownership: no late recognizer/TTS callback can submit or restart a retired call. */
 class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settings: VoiceSettings,
-    private val send: (String) -> Unit) {
+    private val send: (String) -> Unit) : VoiceEngine {
     private sealed interface Event {
         data class Input(val value: VoiceInput) : Event
         data class Submit(val generation: Long, val revision: Long) : Event
@@ -100,7 +110,7 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
     private val scope = CoroutineScope(parent.coroutineContext + job)
     private val commands = Channel<Event>(64)
     private val mutableState = MutableStateFlow(VoiceState(settings = settings))
-    val state = mutableState.asStateFlow()
+    override val state = mutableState.asStateFlow()
     private var generation = 0L; private var revision = 0L; private var utterance = 0L
     private var silence: Job? = null
     private val replies = ArrayDeque<String>()
@@ -128,13 +138,14 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
         }
     } }
     private fun post(event: Event): Boolean = job.isActive && commands.trySend(event).isSuccess
-    fun speak(markdown: String): Boolean = post(Event.Reply(markdown))
-    fun mute(value: Boolean) { post(Event.Mute(value)) }
-    fun settings(value: VoiceSettings) { post(Event.Settings(value)) }
-    fun focus(active: Boolean) { post(Event.Focus(active)) }
-    fun interrupt() { post(Event.Interrupt) }
-    fun end() { job.cancel() }
-    suspend fun awaitEnd() { job.join() }
+    override fun speak(markdown: String): Boolean = post(Event.Reply(markdown))
+    override fun announce(notice: String) { post(Event.Reply(notice)) }
+    override fun mute(value: Boolean) { post(Event.Mute(value)) }
+    override fun settings(value: VoiceSettings) { post(Event.Settings(value)) }
+    override fun focus(active: Boolean) { post(Event.Focus(active)) }
+    override fun interrupt() { post(Event.Interrupt) }
+    override fun end() { job.cancel() }
+    override suspend fun awaitEnd() { job.join() }
 
     private suspend fun stopListening() {
         generation++; revision++; silence?.cancel(); silence = null

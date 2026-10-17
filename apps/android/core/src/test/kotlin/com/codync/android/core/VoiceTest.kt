@@ -104,10 +104,18 @@ class VoiceTest {
         val gate = VoiceReplyGate("active", 10, listOf(old, streaming))
         val values = listOf(entry("old", 20), entry("streaming", 21), entry("reply", 22),
             entry("thread", 23, thread = "root"), entry("other", 24, bot = "other"), entry("history", 6))
-        assertEquals(listOf("streaming", "reply"), gate.observe(values))
-        assertTrue(gate.observe(values).isEmpty())
+        val bots = listOf(Bot("active", "Ada"))
+        assertEquals(listOf("streaming", "reply"), gate.observe(values, bots).map(VoiceCue::text))
+        assertTrue(gate.observe(values, bots).isEmpty())
         val permission = Entry("approval", 25, "active", rev = 25, kind = "permission", data = buildJsonObject { put("status", "pending") })
-        assertEquals(1, gate.observe(values + permission).size)
-        assertTrue(gate.observe(values + permission).isEmpty())
+        assertEquals(listOf(VoiceCue("Ada needs your approval in the chat.", notice = true)), gate.observe(values + permission, bots))
+        assertTrue(gate.observe(values + permission, bots).isEmpty())
+    }
+    @Test fun groupRepliesAndApprovalsNameTheMemberWhoSentThem() {
+        val bots = listOf(Bot("team", "Team", kind = "group", members = listOf("ada")), Bot("ada", "Ada"))
+        val gate = VoiceReplyGate("team", 0, emptyList())
+        val reply = Entry("r", 1, "team", rev = 1, kind = "agent", data = buildJsonObject { put("text", "Done"); put("final", true); put("author", "ada") })
+        val card = Entry("p", 2, "team", rev = 2, kind = "permission", data = buildJsonObject { put("status", "pending"); put("author", "ghost") })
+        assertEquals(listOf(VoiceCue("Ada: Done"), VoiceCue("A bot needs your approval in the chat.", true)), gate.observe(listOf(reply, card), bots))
     }
 }

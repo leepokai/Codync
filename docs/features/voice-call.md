@@ -1,6 +1,6 @@
 # Voice call
 
-A hands-free call with one bot from the iPhone or desktop chat (the waveform button in an empty composer).
+A hands-free call with one bot or group from the iPhone, Android or desktop chat (the waveform button in an empty composer).
 On Linux the desktop app offers only the cloud engines (on-device speech is macOS only). The terminal
 UI has no calls (no audio stack); it shows the "Voice chat · 00:16" notice like every client.
 The bot is the same agent on the computer; the call only changes how you talk to it.
@@ -8,6 +8,7 @@ The bot is the same agent on the computer; the call only changes how you talk to
 ## On-device voice
 
 - `apps/ios/Kit/Sources/CodyncUI/Call/` (iPhone) and `apps/desktop/src/renderer/views/call/` (desktop): `CallView` (the call bar) over a `VoiceEngine`; `OnDeviceEngine` is the default audio loop. On the Mac the desktop app runs speech recognition in `codync-speech` (`apps/desktop/native/speech-macos/`, driven by `apps/desktop/src/main/speech.ts`).
+- Android: `CallBar` (`apps/android/app/.../VoiceControls.kt`) over the same `VoiceEngine` set, ported into `apps/android/core` (`VoiceEngine.kt`, `CloudSpeechEngine.kt`, `GeminiLiveEngine.kt`, `OpenAIRealtimeEngine.kt`, `CallOperator.kt`) with the phone's audio in the app (`VoiceAudioPorts.kt`, `WebRtcPeer.kt`). On device is `VoiceSession` with offline English Vosk recognition and an installed Android voice (`LocalVoiceAudio.kt`); `VoiceService` (a microphone foreground service) holds audio focus and the Bluetooth/wired route for the call. Settings keys match the iPhone's (`callEngine`, `callMode.<provider>`, …).
 - UI follows Grok Bot: a floating capsule over the top of the chat (`ThreadView` overlay), and the
   chat stays readable and usable underneath. Left to right: the bot's avatar (pulses while
   speaking; tap it to interrupt), a dotted level line (your voice while listening, a ripple while
@@ -118,7 +119,7 @@ built into the host and the app (today `gpt-realtime-2.1`, `gpt-transcribe`, `gp
 list arrives.
 
 Voice settings (`VoiceChatSettingsView`) open from the call bar's gear and from settings: on the
-iPhone, **Computers & settings → Voice chat**; on the desktop, **Settings → Voice chat** (this
+iPhone, **Computers & settings → Voice chat**; on Android, **Settings → Voice and API keys**; on the desktop, **Settings → Voice chat** (this
 computer) or the waveform button on a computer's card in **Computers & devices**. Keys are entered
 on the computer only: the host takes `setVoiceKey` from loopback, and the iPhone shows whether a key
 is there and can test it. Picking a cloud engine shows its key form instead of the on-device settings: a secure field, a link
@@ -184,6 +185,9 @@ a spoken reply, and `send_to_bot` called for a Chinese request. The iOS Simulato
 audio unit can abort with an RPC timeout when WebRTC starts its audio; use a physical iPhone for audio.
 
 `StoreTests` cover the operator's tools against a scripted host (send, status with an approval,
-option matching, recent messages) and approvals reaching a call as notices. Provider audio isn't
+option matching, recent messages) and approvals reaching a call as notices. On Android, `VoiceEnginesTest` (core, JVM) drives
+each engine through fake audio: utterance cutting and clip playback, OpenAI's event sequence and SDP
+exchange (MockWebServer), and a Gemini Live session over a real WebSocket (setup, audio both ways,
+a tool call, a close with the provider's reason). Provider audio isn't
 simulated: on a physical iPhone, check both engines with a real key (talk over a reply, ask "what
 are you doing?", approve by voice, and turn off Wi-Fi mid-call to see the fallback).

@@ -2,7 +2,7 @@ name: Android
 
 on:
   push:
-    branches: [main, fergusean/consolidated]
+    branches: [main, dev]
     paths:
       - "apps/android/**"
       - "apps/project.yml"

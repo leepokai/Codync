@@ -78,8 +78,7 @@ conversation.
 Text and private attachment drafts survive process death separately for each bot
 and thread. Sends retain their nonce through durable queue commit and retry.
 Uncertain sends require explicit retry with the same ID. Text can wait in the
-encrypted relay mailbox; files require a live computer and are unavailable in
-groups. Files are capped at 100 MiB each and uploaded in 384 KiB chunks. Sharing
+encrypted relay mailbox; files require a live computer. Files are capped at 100 MiB each and uploaded in 384 KiB chunks. Sharing
 uses a temporary copy rather than exposing the private cache.
 
 ## Ownership and storage

@@ -1,5 +1,7 @@
 package com.codync.android
 
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -50,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -88,6 +91,7 @@ private enum class Trailing { Stop, Call, Send }
         if (external != text.text.toString() && external !in echoes) text.setTextAndPlaceCursorAtEnd(external)
     }
     val clipboard = LocalClipboard.current
+    val clips = LocalContext.current.getSystemService(ClipboardManager::class.java)
     val scope = rememberCoroutineScope()
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
         if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
@@ -96,7 +100,7 @@ private enum class Trailing { Stop, Call, Send }
         if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
     }
     val receiver = remember(bot.id, importing, queuing) { ReceiveContentListener { content ->
-        if (bot.kind == "group" || importing || queuing) content else {
+        if (importing || queuing) content else {
             val uris = mutableListOf<android.net.Uri>()
             val remaining = content.consume { item -> item.uri?.takeIf { it.scheme == "content" }?.let { uris.add(it); true } ?: false }
             if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
@@ -143,19 +147,17 @@ private enum class Trailing { Stop, Call, Send }
     }
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp), verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (bot.kind != "group") {
-            val (source, pressed) = rememberPress()
-            DropdownMenu({ listOf(
-                MenuItem("Photos", icon = "photo.on.rectangle") { photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                MenuItem("Files", icon = "folder") { documents.launch(arrayOf("*/*")) },
-                MenuItem("Paste", icon = "doc.on.clipboard") { scope.launch {
-                    val data = clipboard.getClipEntry()?.clipData
-                    val uris = if (data == null) emptyList() else (0 until data.itemCount).mapNotNull { data.getItemAt(it).uri }
-                    if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
-                } },
-            ) }, Modifier.size(FIELD_HEIGHT).glass(Capsule(), pressed = pressed), enabled = !queuing, label = "Add files") {
-                Symbol("plus", size = 26.dp, tint = Palette.text)
-            }
+        DropdownMenu({ buildList {
+            add(MenuItem("Photos", icon = "photo.on.rectangle") { photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+            add(MenuItem("Files", icon = "folder") { documents.launch(arrayOf("*/*")) })
+            // Only the clip's description: reading the clip itself would show Android's paste notice.
+            if (clipOffersFiles(clips.primaryClipDescription?.mimeTypes().orEmpty())) add(MenuItem("Paste", icon = "doc.on.clipboard") { scope.launch {
+                val data = clipboard.getClipEntry()?.clipData
+                val uris = if (data == null) emptyList() else (0 until data.itemCount).mapNotNull { data.getItemAt(it).uri?.takeIf { uri -> uri.scheme == "content" } }
+                if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+            } })
+        } }, Modifier.size(FIELD_HEIGHT).glass(Capsule()), enabled = !queuing, label = "Add files") {
+            Symbol("plus", size = 26.dp, tint = Palette.text)
         }
         Column(Modifier.weight(1f).glass(RoundedRectangle(24.dp)).animateContentSize(Motion.layoutSize)) {
             if (files.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, top = 8.dp),
@@ -207,6 +209,15 @@ private val FIELD_HEIGHT = 54.dp
         }
     }
 }
+
+/**
+ * Whether the clipboard holds what Paste can attach (iOS: images or URLs), from its MIME types alone.
+ * Text, HTML and intents carry no file; any other type comes from a URI item.
+ */
+internal fun clipOffersFiles(mimeTypes: List<String>): Boolean =
+    mimeTypes.any { it !in listOf(ClipDescription.MIMETYPE_TEXT_PLAIN, ClipDescription.MIMETYPE_TEXT_HTML, ClipDescription.MIMETYPE_TEXT_INTENT) }
+
+private fun ClipDescription.mimeTypes(): List<String> = (0 until mimeTypeCount).map(::getMimeType)
 
 fun formatBytes(size: Long): String = when {
     size >= 1024 * 1024 -> "%.1f MB".format(size / (1024.0 * 1024))

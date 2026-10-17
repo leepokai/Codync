@@ -26,7 +26,7 @@ emulator against a real host; device acceptance is listed separately.
 | State/widgets | Ported: Widget (with the animated Add a widget guide), Live update and Status bar pages, Usage sheet, Choose the look; Provider usage, Bots and Team widgets with launcher Edit widget | Physical launcher refresh |
 | Live updates | Android 16 Live updates (`ProgressStyle`), the status bar chip on Android 16 QPR1 (API 36.1) | Background updates need FCM in the deployment |
 | Version check | `VersionMismatch.MIN_HOST`, the host's `minApp`, the update card in the roster and in place of the composer | Set `MIN_HOST` to the first release that ships Android support when it's cut |
-| Remote screen | Not ported | WebRTC view and control |
+| Remote screen | Ported: viewer from Computers, the chat header (watch a bot, then take over) and `codync-dev://screen`; WebRTC H.264, trackpad and direct touch, long-press drag, two-finger scroll, pinch zoom streaming the visible region, keyboard with IME and modifier keys, clipboard, displays, take over/hand back, Rotate | Pinch, IME composition and a hardware keyboard on a device; TURN relay path and renewal |
 | Analytics | Not ported | PostHog with the Settings switch |
 | Packaging | Debug, unsigned R8 release, CI, optional Firebase/private configuration | Play signing, distribution, `versionCode` policy |
 

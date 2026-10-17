@@ -68,9 +68,9 @@ if touches '^apps/(android/|project\.yml)'; then
     jdk=$( (/usr/libexec/java_home -v 21 2>/dev/null) || printf '%s' "${JAVA_HOME:-}")
     if [ -n "$jdk" ]; then
         staged_copy
-        echo "Checking the Android app (unit tests, compile)..."
+        echo "Checking the Android app (unit tests, compile, instrumentation tests compile)..."
         (cd "$snapshot/apps/android" && JAVA_HOME="$jdk" ./gradlew --console=plain -q --build-cache \
-            :core:test :app:testDebugUnitTest :app:compileDebugKotlin)
+            :core:test :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin)
     else
         echo "Skipping the Android checks (needs JDK 21)."
     fi

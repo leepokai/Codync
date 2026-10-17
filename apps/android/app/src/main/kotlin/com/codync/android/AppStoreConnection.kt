@@ -14,7 +14,19 @@ fun AppStore.setRoute(route: ConnectionRoute) = action("route") {
     val changed = computer.copy(route = route)
     withContext(Dispatchers.IO) { local.saveComputers(listOf(changed)) }
     mutableState.update { it.copy(computers = listOf(changed)) }
-    connectionJob?.cancelAndJoin(); connect()
+    reconnect().join()
+}
+
+/**
+ * Drop the link and dial again at once (iOS `restartStream`), not after the backoff. It runs in the
+ * account's scope, so a caller that goes away can't leave the link down.
+ */
+fun AppStore.reconnect(): Job = contextScope.launch { connectionJob?.cancelAndJoin(); connect() }
+
+/** A pull to refresh in a chat: reconnect, and hold until the link is back or has failed (the header says why). */
+suspend fun AppStore.refreshConnection() {
+    reconnect().join()
+    withTimeoutOrNull(20_000) { state.first { it.actualConnection !is LinkState.Connecting } }
 }
 
 fun AppStore.setForeground(active: Boolean) {

@@ -73,7 +73,7 @@ import kotlinx.serialization.json.put
     LaunchedEffect(state.contextId) { store.refreshCloud() }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         PageHeader("Computers & settings", pop)
-        CardForm(Modifier.weight(1f)) {
+        PullToRefresh(store::refreshComputers, Modifier.weight(1f)) { CardForm {
             CardSection("Computers", if (signedIn) "Computers in your account need your OK on the computer before this phone can use them."
                 else "Each bot runs on its own computer. Sign in to see the computers in your account.") {
                 if (paired != null) row {
@@ -133,7 +133,7 @@ import kotlinx.serialization.json.put
                     }
                 }
             }
-        }
+        } }
     }
     CodyncSheet(voice, { voice = false }) { VoiceChatSettings(state, store) }
     SwatchPanel(coloring, paired?.color, { coloring = false }, store::setColor)

@@ -76,6 +76,8 @@ import kotlinx.serialization.json.putJsonArray
             NewMenuButton(enabled = state.computers.isNotEmpty(), groupEnabled = online, newBot, newGroup)
         }
     }) {
+        // Pull to refresh reconnects and asks the account for its computers again (iOS `refreshable`).
+        PullToRefresh({ store.reconnect(); store.refreshComputers() }, Modifier.fillMaxSize(), indicatorTop = top + 50.dp) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 56.dp, bottom = bottomInset)) {
             // A computer waiting for an update has its card instead; its bots may not be readable yet.
             state.mismatch?.let { mismatch -> item("update") { UpdateNeededCard(state, mismatch, Modifier.padding(vertical = 8.dp)) } }
@@ -90,6 +92,7 @@ import kotlinx.serialization.json.putJsonArray
                     BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, edit = { edit(bot) }, delete = { confirmDelete = bot })
                 }
             }
+        }
         }
     }
     val deleting = confirmDelete
@@ -266,7 +269,7 @@ internal fun messagePreview(text: String): String {
         listOf(
             MenuItem("All computers", icon = "checkmark"),
             *state.computers.map { MenuItem("${it.name} · ${connectionLabel(state)}", icon = "checkmark") }.toTypedArray(),
-            MenuItem("Reconnect", icon = "arrow.clockwise", divider = true, enabled = state.computers.isNotEmpty()) { store.connect() },
+            MenuItem("Reconnect", icon = "arrow.clockwise", divider = true, enabled = state.computers.isNotEmpty()) { store.reconnect() },
             MenuItem("Manage computers", icon = "desktopcomputer", action = manage),
         )
     }, label = "Computers, $summary. Filter conversations") {

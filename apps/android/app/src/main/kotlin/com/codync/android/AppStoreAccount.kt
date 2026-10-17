@@ -46,6 +46,9 @@ fun AppStore.refreshCloud() = action("cloud") {
     } catch (error: CloudError) { if (!error.isTransient) throw error }
 }
 
+/** A pull to refresh: the account's computers, joining a refresh already under way. */
+suspend fun AppStore.refreshComputers() { refreshCloud(); actions["cloud"]?.join() }
+
 fun AppStore.requestAccess(target: CloudComputer) = action("access") {
     val client = requireNotNull(cloud) { "Sign in to reach your account." }
     require(state.value.computers.isEmpty() || state.value.computers.first().id == target.computerId) { "Forget the current computer before connecting a different one." }

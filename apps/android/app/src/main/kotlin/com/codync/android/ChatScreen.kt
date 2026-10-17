@@ -31,11 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,19 +40,13 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -70,8 +60,6 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 /**
  * One endless conversation with a bot or a group, as iOS `ThreadView`: only deliberate messages
@@ -120,7 +108,7 @@ import kotlinx.coroutines.launch
         }
     }) {
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
-            bottom = with(density) { composerHeight.toDp() } + 8.dp)) { peer = it }
+            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp) { peer = it }
     }
     CodyncDialog("Start a new session?", confirmNewSession, { confirmNewSession = false },
         message = "The conversation stays here, but the agent starts with a fresh context.") {
@@ -157,7 +145,7 @@ import kotlinx.coroutines.launch
         val host = state.computers.firstOrNull()?.name.orEmpty()
         DropdownMenu({ buildList {
             add(MenuItem("$host · ${connectionLabel(state)}", enabled = false))
-            add(MenuItem("Reconnect", icon = "arrow.clockwise") { store.connect() })
+            add(MenuItem("Reconnect", icon = "arrow.clockwise") { store.reconnect() })
             add(MenuItem("Details", icon = "info.circle", divider = true) { edit(bot) })
             add(MenuItem("Full conversation", icon = "list.bullet.rectangle", action = trace))
             val pin = MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = "pin") {
@@ -219,17 +207,17 @@ import kotlinx.coroutines.launch
 
 /** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
 @Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
-    openPeer: (String) -> Unit) {
+    indicatorTop: Dp, openPeer: (String) -> Unit) {
     val entries = state.entries.filter { it.botId == bot.id && it.threadId == null && it.isChat }
     val pending = state.pending.filter { it.botId == bot.id && it.threadId == null }
     val items = chatItems(entries, pending)
     val working = bot.status in listOf("working", "needsInput") && bot.workingThread == null && state.connection is LinkState.Ready
-    val list = rememberLazyListState()
     val more = bot.id !in state.historyComplete
-    Follow(list, items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding.calculateBottomPadding())
-    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = padding) {
+    // Pull to refresh reconnects, like Reconnect in the title menu, until the link is back.
+    ConversationList(items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop) {
         if (more) item("earlier") {
-            Box(Modifier.fillMaxWidth().padding(vertical = 14.dp), contentAlignment = Alignment.Center) { Spinner(14.dp) }
+            Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },
+                contentAlignment = Alignment.Center) { Spinner(14.dp) }
             // A chat shorter than the screen never scrolls, so showing the row is the trigger.
             LaunchedEffect(Unit) { if ("history" !in state.busy) store.loadHistory() }
         }
@@ -244,30 +232,6 @@ import kotlinx.coroutines.launch
             }
         }
         if (working) item("working") { WorkingIndicator(bot, currentThinking(state.entries, bot.id, null)) }
-    }
-}
-
-/** Stays on the newest message until the reader scrolls away; scrolling back down follows again. */
-@Composable private fun Follow(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp = 0.dp) {
-    var following by remember { mutableStateOf(true) }
-    LaunchedEffect(list) {
-        // Only the reader's own scroll decides: new content arriving (even while Codync is in the background) keeps the follow.
-        var touched = false
-        launch { list.interactionSource.interactions.collect { if (it is DragInteraction.Start) touched = true } }
-        snapshotFlow { list.isScrollInProgress }.collect { scrolling ->
-            if (!scrolling && touched) { touched = false; following = !list.canScrollForward }
-        }
-    }
-    LaunchedEffect(Unit) {
-        val count = snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
-        list.scrollToItem(count - 1, Int.MAX_VALUE)
-    }
-    // A new message, or the box growing (keyboard, more lines): stay on the newest.
-    LaunchedEffect(last, rev, working, bottom) {
-        val count = list.layoutInfo.totalItemsCount
-        if (!following || count == 0) return@LaunchedEffect
-        list.animateScrollToItem(count - 1)
-        list.scrollToItem(count - 1, Int.MAX_VALUE)
     }
 }
 
@@ -290,11 +254,9 @@ import kotlinx.coroutines.launch
                 IconButton("Close thread", "xmark", action = dismiss)
             }
             Box(Modifier.fillMaxWidth().height(0.5.dp).background(Palette.border))
-            val list = rememberLazyListState()
             val items = chatItems(replies, pending)
-            Follow(list, items.lastOrNull()?.id, replies.lastOrNull()?.rev, working)
-            LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp,
-                bottom = with(density) { composerHeight.toDp() } + 8.dp)) {
+            Box(Modifier.weight(1f)) { ConversationList(items.lastOrNull()?.id, replies.lastOrNull()?.rev, working,
+                PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = with(density) { composerHeight.toDp() } + 8.dp)) {
                 if (root != null) {
                     item("root") { ChatRow(root, true, bot, state, store, openTrace = { store.showTrace(true) }, reply = null, connect = connect) }
                     item("count") {
@@ -314,7 +276,7 @@ import kotlinx.coroutines.launch
                     }
                 }
                 if (working) item("working") { WorkingIndicator(bot, currentThinking(state.entries, bot.id, rootId)) }
-            }
+            } }
         }
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }) {
             MessageComposer(bot, rootId, state, store, onCall = null)

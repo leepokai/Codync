@@ -22,7 +22,7 @@ class UsageScreenTest {
         val refreshes = mutableListOf<Boolean>()
         var closed = false
         compose.setContent { Hosted { CompositionLocalProvider(LocalDismissModal provides { closed = true }) {
-            UsageScreen(state.value) { refreshes.add(it) }
+            UsageScreen(state.value, { refreshes.add(it) }, { refreshes.add(true) })
         } } }
         compose.onNodeWithText("Future provider").assertIsDisplayed()
         compose.onNodeWithText("Monthly").assertIsDisplayed()
@@ -45,7 +45,7 @@ class UsageScreenTest {
 
     @Test fun usageExplainsWhenThereIsNoComputerOrNoReportYet() {
         val state = mutableStateOf(AppState(loading = false))
-        compose.setContent { Hosted { UsageScreen(state.value) {} } }
+        compose.setContent { Hosted { UsageScreen(state.value, {}, {}) } }
         compose.onNodeWithText("No computer yet").assertIsDisplayed()
         compose.onNodeWithText("Usage shows up once a computer is connected.").assertIsDisplayed()
         compose.runOnUiThread { state.value = state.value.copy(computers = listOf(Computer("fixture", "Acceptance computer", "fixture"))) }

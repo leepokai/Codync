@@ -28,12 +28,12 @@ reason to lock someone out.
 
 ## What each client does
 
-| | iPhone and desktop (`BotStore.mismatch`); Android (`AppState.mismatch`) | Terminal client |
+| | iPhone and desktop (`BotStore.mismatch`); Android (`AppState.mismatch`, `AppStoreConnection.kt`) | Terminal client |
 |---|---|---|
 | Notice | `UpdateNeededCard` above the computer's bots and in place of the composer; status reads *Needs update* | *needs update* in the status line, with the reason |
 | Update this app | iPhone: App Store page. Desktop: electron-updater check (`apps/desktop/src/main/updates.ts`). Android: text only | Text only |
 | Update the host | Desktop: its own host is reinstalled (**Restart host**). iPhone and Android: instructions for that computer | `^k` → Check for updates |
-| Sync while mismatched | Stopped; `hello` is asked again every 30 s and on every reconnect. Android: continues; sending is blocked | Continues; sending is blocked |
+| Sync while mismatched | Stopped; `hello` is asked again every 30 s and on every reconnect | Continues; sending is blocked |
 
 Drafts are kept while sending is blocked. A host update restarts the host, so the reconnect
 reads the new `hello` and the notice goes away on its own.

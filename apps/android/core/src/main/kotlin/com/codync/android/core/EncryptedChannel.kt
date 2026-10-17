@@ -9,8 +9,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.channels.Channel
@@ -286,15 +284,6 @@ class EncryptedChannel internal constructor(
         val id = ids.incrementAndGet()
         require(id <= 0xffff_ffffL) { "Channel must be replaced before request IDs wrap" }
         return id
-    }
-
-    private suspend fun <T> deadline(milliseconds: Long, message: String, operation: suspend CoroutineScope.() -> T): T {
-        try { return withTimeout(milliseconds, operation) }
-        catch (error: TimeoutCancellationException) {
-            // A request deadline is a recoverable failure; owner cancellation still retires work.
-            currentCoroutineContext().ensureActive()
-            throw IOException(message, error)
-        }
     }
 
     private suspend fun sendInner(message: JsonObject) {

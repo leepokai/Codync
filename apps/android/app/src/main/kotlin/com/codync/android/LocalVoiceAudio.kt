@@ -48,7 +48,8 @@ internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
         val ready = CompletableDeferred<Int>()
         val engine = TextToSpeech(context) { ready.complete(it) }
         speech = engine
-        val status = withTimeout(20_000) { ready.await() }
+        val status = withTimeoutOrNull(20_000) { ready.await() }
+            ?: throw VoiceUnavailable("Android's text-to-speech engine didn't start. Try the call again.")
         if (status != TextToSpeech.SUCCESS) throw VoiceUnavailable("Install a text-to-speech engine in Android's speech settings.")
         val voices = engine.voices.orEmpty().filter { !it.isNetworkConnectionRequired && it.locale.language == "en" }
         val voice = voices.maxWithOrNull(compareBy<android.speech.tts.Voice> { it.locale == Locale.US }.thenBy { it.quality })

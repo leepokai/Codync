@@ -12,13 +12,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.AppVersion
 import com.codync.android.core.VersionMismatch
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 
-/** Which side must update before this app and the computer can work together (iOS `UpdateNeededCard`), from the host's `hello`. */
-internal val AppState.mismatch: VersionMismatch? get() =
-    VersionMismatch.check(BuildConfig.VERSION_NAME, hello?.text("version"), hello?.text("minApp"))
+/** Which side must update before this app and the computer can work together (iOS `BotStore.mismatch`), from the host's `hello`. */
+internal val AppState.mismatch: VersionMismatch? get() {
+    val host = hello?.text("version")
+    return VersionMismatch.check(BuildConfig.VERSION_NAME, host, hello?.text("minApp"))
+        // Data this app can't read from a newer host: this app is behind, whatever `minApp` says.
+        ?: if (unreadable && host != null && AppVersion.isBelow(BuildConfig.VERSION_NAME, host)) VersionMismatch.UpdateApp(host) else null
+}
 
 /** Says which side has to update, shown instead of the composer and above the computer's bots. */
 @Composable internal fun UpdateNeededCard(state: AppState, mismatch: VersionMismatch, modifier: Modifier = Modifier) {

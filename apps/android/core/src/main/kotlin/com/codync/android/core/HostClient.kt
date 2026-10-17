@@ -7,7 +7,6 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.coroutines.withTimeout
 
 @Serializable
 data class Bot(
@@ -82,7 +81,7 @@ object HostClient {
     suspend fun bots(channel: EncryptedChannel): List<Bot> {
         // The host exposes its roster through revision-ordered events, like iOS.
         // This finite read never advances the caller's durable mirror cursor.
-        return withTimeout(20_000) { botSnapshot(channel.events(0)) }
+        return deadline(20_000, "The computer didn't send its bots in time.") { botSnapshot(channel.events(0)) }
     }
 
     fun decodeBot(event: JsonObject): Bot? {

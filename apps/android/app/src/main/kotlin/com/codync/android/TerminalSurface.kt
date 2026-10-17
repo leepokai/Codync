@@ -23,7 +23,7 @@ import java.io.ByteArrayInputStream
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.withTimeout
+import com.codync.android.core.deadline
 
 /** Only bundled terminal assets run here. Terminal output is bytes; it never becomes HTML or JavaScript. */
 internal class TerminalRenderer internal constructor(internal val view: WebView) : TerminalSink {
@@ -38,7 +38,7 @@ internal class TerminalRenderer internal constructor(internal val view: WebView)
         writes[id] = done
         val encoded = Base64.getEncoder().encodeToString(bytes)
         view.evaluateJavascript("codyncTerminal.write($id, '$encoded')", null)
-        try { withTimeout(10_000) { done.await() } } finally { writes.remove(id) }
+        try { deadline(10_000, "The terminal stopped responding.") { done.await() } } finally { writes.remove(id) }
     }
     override fun reset() { if (!disposed) view.evaluateJavascript("codyncTerminal.reset()", null) }
     override fun input(enabled: Boolean) { if (!disposed) view.evaluateJavascript("codyncTerminal.input($enabled)", null) }

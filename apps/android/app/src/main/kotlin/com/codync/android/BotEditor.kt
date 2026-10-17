@@ -167,7 +167,7 @@ private val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanOr
         }
         val plugins = state.plugins
         PluginToggles("Connectors", "No connectors yet. Add GitHub, Linear, Notion and more from Extensions.",
-            plugins?.connectors.orEmpty().map { Triple(it.id, it.name, if (it.needsSignIn) "Sign-in needed" else it.command ?: it.url.orEmpty()) },
+            plugins?.connectors.orEmpty().map { Triple(it.id, it.name, it.command ?: it.url.orEmpty()) },
             draft.connectors ?: plugins?.connectors.orEmpty().map { it.id }, { change(draft.copy(connectors = it)) })
         PluginToggles("Skills", "No skills yet. Get some from Extensions, or write your own.",
             plugins?.skills.orEmpty().map { Triple(it.id, it.name, it.description) }, draft.skills, { change(draft.copy(skills = it)) }) { id ->

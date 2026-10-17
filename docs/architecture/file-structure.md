@@ -48,7 +48,11 @@ Codync/
 │   │   ├── src/preload/       # window.codync bridge
 │   │   ├── src/renderer/      # React UI: store/, components/, views/
 │   │   └── native/            # codync-speech (macOS on-device speech helper)
-│   ├── android/               # Kotlin/Compose client; app, core and design modules
+│   ├── android/               # Android phone app (Kotlin, Compose), ported from the iPhone app
+│   │   ├── core/              # JVM models, crypto, pairing, encrypted channel, host and cloud clients
+│   │   ├── design/            # Codync's components: palette, type, motion, glass, sheets, menus, dialogs, controls, symbols
+│   │   ├── app/               # Screens, the store (AppStore), notifications, Live updates, Glance widgets
+│   │   └── tools/             # symbols.py (SF Symbol stand-ins), launcher_icon.py, agent_icons.py
 │   ├── screen-macos/          # macOS screen helper (Xcode Screen target)
 │   └── screen-linux/          # Linux portal/GStreamer screen helper
 ├── cloud/                     # Account API + encrypted relay Worker and Durable Object
@@ -74,6 +78,7 @@ Codync/
 - `Screen` (`apps/screen-macos/`) — Codync Screen: capture, input and WebRTC for Remote screen, embedded in the macOS desktop app (`Contents/Library/LoginItems`); starts the computer-use driver it carries in `Contents/Helpers`
 - `apps/screen-linux/` — `codync-screen` (Rust, GStreamer + xdg portals), the Linux Remote screen helper
 - `Widgets` (`apps/ios/Widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
+- `apps/android/` — Android app (`com.pokai.Codync.android`, Dev `.dev`; Gradle modules `app`, `core`, `design`; CI `.github/workflows/android.yml`)
 - `CodyncKit` (`apps/ios/Kit/`) — the iPhone app's Swift package: `CodyncKit` + `CodyncUI` libraries (tests: `xcodebuild test -scheme CodyncKit-Package` on an iOS simulator)
 
 ## Where to make a change
@@ -103,6 +108,10 @@ Codync/
 | Cloud routes / authentication / relay | `cloud/src/index.ts`, `api.ts`, `routes/`, `auth.ts`, `relay.ts` |
 | Push encryption / APNs delivery / decryption | `host/src/remote/push.rs`, `relay/src/`, `apps/ios/NotificationService/` |
 | Widget and activity rendering | `apps/ios/Kit/Sources/CodyncKit/Design/`, `apps/ios/Widgets/` |
+| Android screens (one file per iOS view: `BotListView.kt`, `ChatScreen.kt`, `PairingView.kt`, `SettingsView.kt`, …) | `apps/android/app/src/main/kotlin/com/codync/android/` |
+| Android components and glass | `apps/android/design/` (`Controls.kt`, `Chrome.kt`, `Sheet.kt`, `Menus.kt`, `Dialog.kt`, `Glass.kt`) |
+| Android transport, pairing and wire models | `apps/android/core/` (`EncryptedChannel.kt`, `HostConnector.kt`, `Pairing.kt`, `Compatibility.kt`) |
+| Android widgets, Live updates, push | `apps/android/app/` (`CodyncWidgets.kt`, `WidgetCards.kt`, `LiveUpdateGallery.kt`, `PushService.kt`) |
 
 ## Dependency rules
 
@@ -110,6 +119,7 @@ Codync/
 - `CodyncUI` owns the iPhone app's observable stores and screens. App-specific lifecycle, OAuth configuration and device hooks belong in `apps/`.
 - Each `BotStore` (Swift, and its TypeScript port in the desktop app) talks to one computer. `AccountStore` aggregates stores and routes by `BotReference`; bare bot IDs are not globally unique.
 - The host owns routing, reply counts, permissions and group turn scheduling. Clients render these results; they do not reimplement host policy.
+- Android: `core` is plain JVM (no Android or Compose imports) and `design` holds no I/O; `app` uses both. Like the other clients it renders host state and sends intents, never product logic.
 - `cloud/` transports encrypted chat traffic and manages account metadata. `relay/` delivers APNs pushes. The two Workers have separate configuration and tests.
 
 ## Names

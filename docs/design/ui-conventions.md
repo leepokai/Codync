@@ -53,6 +53,7 @@ The iPhone and the desktop no longer share UI code. `CodyncUI` (`apps/ios/Kit/`)
 
 - The iPhone chat's chrome is in `ThreadView.swift` (`body`, `chrome`, `header`). The iPhone conversation (chat and thread) is a UIKit collection view of hosted SwiftUI rows (`ConversationList.swift`): it loads earlier messages from the computer as the reader scrolls up, runs under the bars and the composer (the list sits in the safe area and reaches past it, so rows never get a safe area of their own), follows the newest message until they scroll away (with a round "Jump to latest" button), and pops each new message in ([chat messages](../features/chat-messages.md)).
 - The desktop UI rules (custom controls, no system menus except the tray, icon-only buttons, fill or border) are implemented in `apps/desktop/src/renderer/components/` (`Controls.tsx`, `Overlay.tsx`, `Icon.tsx`).
+- The Android app (`apps/android/`) ports the iPhone screens one to one in Compose. Where iOS uses system UI (the tab bar, menus, sheets, Liquid Glass), Android draws the same look with its `design` module: glass from Kyant's backdrop library (blur, lens refraction and highlight on RenderEffect/RuntimeShader), the iOS sheet with its grabber and drag-to-close, glass menus and context menus, Inter for SF Pro and Material Symbols for SF Symbols (`Symbol("sf.name")`). Android has no Liquid Glass of its own; Material widgets aren't used.
 - A change to one lands in the other and the TUI in the same change; see [native client parity](#native-client-parity).
 
 ## Shared application controls

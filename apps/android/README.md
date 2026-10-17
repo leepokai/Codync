@@ -1,8 +1,9 @@
 # Codync Android
 
 A native Kotlin/Compose phone client using the existing host's encrypted channel
-and account APIs. This is a **draft**: the everyday pairing, bot and conversation
-flows are available, but it does not match every iOS feature. See the
+and account APIs. It follows the iPhone app screen for screen (layout, wording,
+motion and the Liquid Glass look), built from the iOS sources in
+`apps/ios/Views` and `apps/ios/Kit/Sources/CodyncUI`. What's still missing is in the
 [parity and acceptance checklist](../../docs/plans/android-app.md).
 
 ## Build
@@ -59,7 +60,7 @@ which backend the app will use.
 
 Run `codync-host pair` on the computer and scan its code or paste the resulting
 `codync://pair` link (`codync-dev://pair` for Codync Dev, which pairs only with a
-development host). Setup explains Mac, Windows and Linux paths. Pairing links
+development host). Setup shows the Mac and Linux install paths, as on iOS. Pairing links
 and one-time codes remain in memory. Account login discovers computers; each
 host must still approve access.
 
@@ -68,8 +69,8 @@ current pairing in Computers & settings before pairing another. Multiple-compute
 support is tracked in the checklist. Accounts have separate device keys, mirrors,
 files, image caches and composer drafts.
 
-The roster shows activity, previews, unread counts, groups, pin/hide actions and
-search. Cached bots remain readable offline and are labeled as saved. An
+The roster shows activity, previews, unread counts, groups and pin/hide actions;
+touch and hold a bot, then move it, to reorder (the order syncs through the host). Cached bots remain readable offline and are labeled as saved. An
 unreachable computer is distinguished from an empty online roster. Chat supports
 final replies, Markdown/code, permissions, reactions, threads, history and Full
 conversation.
@@ -87,7 +88,13 @@ uses a temporary copy rather than exposing the private cache.
   account-scoped storage, files, notifications and widgets.
 - `core`: JVM models, crypto, pairing, RPC and transport. The host retains bot,
   agent, memory, routine, connector and other product logic.
-- `design`: shared Android controls, palette and avatars.
+- `design`: Codync's design system on Android, mirroring CodyncUI: `Palette`,
+  `Type` (Inter, since SF Pro ships only on Apple platforms), `Motion`, glass
+  (`Glass.kt`, Kyant backdrop: blur, lens refraction and highlight standing in for
+  Liquid Glass), sheets, menus, dialogs, controls and avatars. `Symbol("sf.name")`
+  draws the Material Symbols Rounded stand-in for each SF Symbol the iOS app names
+  (`python3 tools/symbols.py` regenerates them; SF Symbols may not ship on Android).
+  Screens use these components, never Material widgets beyond `Text`.
 
 Ed25519/X25519 seeds use Android Keystore AES-GCM wrapping; no global crypto
 provider is replaced. Local data is excluded from backup and device transfer.
@@ -146,7 +153,7 @@ crypto or camera library is introduced. WebRTC artifact selection remains open.
 | Gradle | 9.6.0 | [Gradle](https://gradle.org/releases/), Apache-2.0; checksum-pinned wrapper |
 | Android Gradle plugin | 9.4.1 | [Compatibility](https://developer.android.com/build/releases/agp-9-4-0-release-notes), Apache-2.0; SDK 36 build |
 | Kotlin and Compose compiler | 2.4.20 | [Kotlin](https://kotlinlang.org/docs/releases.html), Apache-2.0 |
-| Compose BOM | 2025.12.01 | [AndroidX](https://developer.android.com/develop/ui/compose/bom/bom-mapping), Apache-2.0; UI components |
+| Compose BOM | 2026.09.00 | [AndroidX](https://developer.android.com/develop/ui/compose/bom/bom-mapping), Apache-2.0; UI components |
 | AndroidX Activity / Lifecycle | 1.12.2 / 2.10.0 | [AndroidX](https://developer.android.com/jetpack/androidx/releases), Apache-2.0; platform lifecycle |
 | Coroutines / serialization | 1.10.2 / 1.9.0 | [Kotlin libraries](https://github.com/Kotlin), Apache-2.0; concurrency and JSON |
 | OkHttp | 4.12.0 | [Square](https://square.github.io/okhttp/), Apache-2.0; WebSockets and test server |
@@ -164,4 +171,7 @@ crypto or camera library is introduced. WebRTC artifact selection remains open.
 | xterm / fit / web-links | 6.0.0 / 0.11.0 / 0.12.0 | [xterm.js](https://github.com/xtermjs/xterm.js/tree/6.0.0), MIT; bundled terminal rendering and explicit HTTP links, with each license included in the assets |
 | Vosk Android / English model | 0.3.75 / small-en-us-0.15 | [Vosk](https://github.com/alphacep/vosk-api), Apache-2.0; bundled offline recognition and checksum-pinned model |
 | JNA | 5.18.1 | [Java Native Access](https://github.com/java-native-access/jna/tree/5.18.1), Apache-2.0 option with notice; native speech binding |
+| Kyant backdrop / shapes | 2.0.1 / 1.2.1 | [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass), Apache-2.0; glass blur, lens and highlight (RenderEffect API 31+, RuntimeShader API 33+), continuous-corner shapes |
+| Inter | 4.x variable | [Inter](https://rsms.me/inter/), OFL-1.1; the app's type face in `design/src/main/res/font` |
+| Material Symbols Rounded | upstream SVGs | [Material Design Icons](https://github.com/google/material-design-icons), Apache-2.0; vector stand-ins for SF Symbols |
 | esbuild (asset regeneration only) | 0.28.2 | [esbuild](https://esbuild.github.io/api/#target), MIT; transforms newer syntax for older WebViews, never included as an APK binary |

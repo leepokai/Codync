@@ -10,6 +10,7 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 - Use `sending`, `nonisolated`, `@MainActor` correctly per Swift 6 rules
 - Avoid `@unchecked Sendable` — prefer proper `Sendable` conformance
 - Desktop app (`apps/desktop/`) is Electron + React + strict TypeScript: state in `Observable` models (`src/renderer/store/`), host calls through the `window.codync` bridge (`src/shared/ipc.ts`), main-process code in `src/main/`; CI runs `npm run typecheck` and `npm test`
+- Android app (`apps/android/`) is Kotlin + Jetpack Compose, ported screen for screen from the iPhone app: screens use the `design` module (glass, sheets, menus, controls, `Symbol` for SF Symbol names), never Material widgets beyond `Text`; CI runs the Gradle checks in `.github/workflows/android.yml` ([apps/android/README.md](apps/android/README.md))
 - Host is Rust 2024 edition and follows the `rust-skills` rules (`~/.agents/skills/rust-skills`). Lints live in `host/Cargo.toml` (`[lints]`: default groups + pedantic, `unwrap_used`); CI runs `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
 - Host conventions: no `unwrap()` outside tests (`expect("why this can't fail")` for true invariants); lock std mutexes with `LockExt::locked()` (poison-tolerant); enums, not strings, for states and modes (`BotStatus`, `Permission`, `EntryKind`, `AlertKind`); `tracing` with structured fields (`error = format!("{e:#}")` keeps the context chain); blocking fs/process work goes through `spawn_blocking`; registry JSON is untrusted (paths are validated)
 
@@ -19,7 +20,7 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 ## Architecture
 
-- Clients: iOS app (SwiftUI), desktop app for macOS, Linux and Windows (`apps/desktop/`, Electron: menu bar/tray + chat window; why and how: [docs/architecture/desktop-app.md](docs/architecture/desktop-app.md)), terminal UI (`codync-host tui`, `host/src/tui/`, ratatui; layout and state vocabulary modeled on herdr).
+- Clients: iOS app (SwiftUI), Android app (`apps/android/`, follows the iOS app; gaps in [docs/plans/android-app.md](docs/plans/android-app.md)), desktop app for macOS, Linux and Windows (`apps/desktop/`, Electron: menu bar/tray + chat window; why and how: [docs/architecture/desktop-app.md](docs/architecture/desktop-app.md)), terminal UI (`codync-host tui`, `host/src/tui/`, ratatui; layout and state vocabulary modeled on herdr).
 - **Host owns the logic**: bot management, sessions, agent processes, MCP servers/connectors, routing, routines, memory, validation and anything heavy or needed by more than one client run in the Rust host. iOS, desktop and TUI render host state and send intents through the host API; they keep only UI state and device-only work (mic/speech, Keychain, push decryption; desktop main process: host service, SSH, updates). A client that needs something the host lacks gets a new host method, never its own copy: [ownership rules](docs/architecture/overview.md#host-owns-the-logic).
 - iPhone Swift package (`apps/ios/Kit/`, iOS only): `CodyncKit` (models, client, theme, avatars; also used by the widgets and the notification extension) + `CodyncUI` (`BotStore` + screens).
 - UI principle: buttons an icon can express are icon-only (with tooltip / accessibility label); text only where an icon would be ambiguous (approval choices).
@@ -40,7 +41,7 @@ Bot-based remote for coding agents: persistent named bots on your computer, mess
 
 ## Cross-platform UI changes
 
-- Any UI change in any client must include the corresponding updates to the other clients in the same change: iOS (`apps/ios/`, `apps/ios/Kit/Sources/CodyncUI/`), desktop (`apps/desktop/src/renderer/`, macOS, Linux and Windows), and terminal UI (`host/src/tui/`). This applies in every direction.
+- Any UI change in any client must include the corresponding updates to the other clients in the same change: iOS (`apps/ios/`, `apps/ios/Kit/Sources/CodyncUI/`), Android (`apps/android/app/`), desktop (`apps/desktop/src/renderer/`, macOS, Linux and Windows), and terminal UI (`host/src/tui/`). This applies in every direction.
 - Keep shared features, actions, terminology, displayed information, and loading, empty, error, and permission states consistent. Adapt layout, controls, and input to each platform, including terminal keyboard interaction, while preserving the same user-facing behavior.
 - Inspect every client's corresponding implementation before finishing a UI task. Implement applicable changes together; do not silently defer another client. For a platform-only change or an unsupported capability, document which clients are unaffected and the concrete reason in the change summary.
 - Validate each affected client with its relevant build/tests and UI checks. Report any checks that could not run and why.
@@ -60,7 +61,7 @@ Keep only the latest build: in this checkout, Apple builds go to `build/dd` only
 
 ## End-to-end test every change
 
-After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Computer Use, and the iPhone app on an iOS Simulator through Device Hub (Xcode's `DeviceHub.app`). Report any check that could not run and why.
+After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Computer Use, the iPhone app on an iOS Simulator through Device Hub (Xcode's `DeviceHub.app`), and the Android app on an emulator (`adb`). Report any check that could not run and why.
 - **Minimal e2e** (default): only the platform of the computer you test on (on the Mac: macOS).
 - **Full e2e** (large changes: platform code, packaging, the desktop main process; or when asked): macOS, Linux (Lima `codync-linux`) and Windows (UTM, [Windows testing](docs/guides/windows-testing.md)). A platform whose VM isn't installed is skipped and reported, not set up.
 - **Desktop build to use**: develop and e2e with `npm run dev` in `apps/desktop` (renderer reloads on save, restart it after `src/main` or preload changes; nothing packaged or signed). After a host change run `node tools/native-host.mjs dev` there first: `npm run dev` prefers that build over `host/target/debug`. Package `npm run dist:mac:dev` (about 45 s) only for what an unpackaged run lacks: the bundled host install, Codync Screen / computer use, system permissions. `dist:*:main` (universal, timestamped, minutes) only to check the production app.

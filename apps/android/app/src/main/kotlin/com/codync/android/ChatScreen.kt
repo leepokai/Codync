@@ -286,7 +286,9 @@ import com.kyant.shapes.Capsule
             } }
         }
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }) {
-            MessageComposer(bot, rootId, state, store, onCall = null)
+            val mismatch = state.mismatch
+            if (mismatch != null) UpdateNeededCard(state, mismatch, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
+            else MessageComposer(bot, rootId, state, store, onCall = null)
         }
     }
 }

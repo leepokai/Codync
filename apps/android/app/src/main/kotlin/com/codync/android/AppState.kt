@@ -5,6 +5,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
+/** Where a link lands once everything open is closed: the roster, or a sheet over it. */
+enum class LinkPage { Bots, Usage, Computers, Extensions }
+
 /** Everything the UI renders for the active account and its computer; `AppStore` owns the only writer. */
 data class AppState(
     val contextId: String = "local",
@@ -31,7 +34,7 @@ data class AppState(
     val actualConnection: LinkState = LinkState.Connecting,
     val selectedBot: String? = null,
     val navigationRequest: Int = 0,
-    val navigationUsage: Boolean = false,
+    val navigationPage: LinkPage = LinkPage.Bots,
     val thread: String? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),

@@ -99,6 +99,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="${urlScheme}" android:host="screen" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${urlScheme}" android:host="computers" />
+                <data android:scheme="${urlScheme}" android:host="plugins" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

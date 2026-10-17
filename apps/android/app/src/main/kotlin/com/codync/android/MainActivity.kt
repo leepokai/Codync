@@ -80,6 +80,8 @@ class MainActivity : ComponentActivity() {
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) store.openLink(uri)
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; store.finishConnectorSignIn(uri) }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; store.openScreenLink() }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "computers") { intent.data = null; store.openPage(LinkPage.Computers) }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "plugins") { intent.data = null; store.openPage(LinkPage.Extensions) }
     }
 }
 

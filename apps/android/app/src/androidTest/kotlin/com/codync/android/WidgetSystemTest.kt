@@ -131,7 +131,7 @@ class WidgetSystemTest {
         assertTrue(feed.botsAt > System.currentTimeMillis() - 30_000)
         val link = requireNotNull(widgetIntent(context, feed, usage = true).data)
         compose.runOnUiThread { store.openLink(link) }
-        compose.waitUntil(10_000) { store.state.value.navigationUsage && store.state.value.selectedBot == null }
+        compose.waitUntil(10_000) { store.state.value.navigationPage == LinkPage.Usage && store.state.value.selectedBot == null }
         // The usage sheet's title (it refreshes on its own and on pull).
         val refresh = hasText("Usage") and isHeading()
         compose.waitUntil(10_000) { compose.onAllNodes(refresh).fetchSemanticsNodes().size == 1 }

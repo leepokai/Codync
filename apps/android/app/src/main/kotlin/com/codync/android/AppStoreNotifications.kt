@@ -56,7 +56,7 @@ fun AppStore.openLink(uri: Uri) {
             if (usage) {
                 if (state.value.generation == generation) {
                     openBot(null)
-                    mutableState.update { it.copy(error = null, navigationRequest = it.navigationRequest + 1, navigationUsage = true) }
+                    mutableState.update { it.copy(error = null, navigationRequest = it.navigationRequest + 1, navigationPage = LinkPage.Usage) }
                 }
                 return@withTimeoutOrNull true
             }
@@ -78,12 +78,23 @@ fun AppStore.openLink(uri: Uri) {
             }
             if (state.value.generation != generation || state.value.contextId != destination.scope) return@withTimeoutOrNull true
             if (state.value.bots.any { it.id == destination.botId && !it.deleted }) {
-                mutableState.update { it.copy(error = null, navigationRequest = it.navigationRequest + 1, navigationUsage = false) }
+                mutableState.update { it.copy(error = null, navigationRequest = it.navigationRequest + 1, navigationPage = LinkPage.Bots) }
                 openBot(destination.botId)
             }
             else mutableState.update { it.copy(error = "This notification's bot is no longer available on the computer.") }
             true
         }
         if (completed == null) mutableState.update { it.copy(error = "Couldn't open this notification yet. Reconnect and try again.") }
+    }
+}
+
+/** `codync://computers` and `codync://plugins`: Computers & settings, or the paired computer's extensions, over the roster. */
+fun AppStore.openPage(page: LinkPage) {
+    linkJob?.cancel()
+    linkJob = viewModelScope.launch {
+        val ready = withTimeoutOrNull(30_000) { activated() } ?: return@launch
+        if (page == LinkPage.Extensions && ready.computers.isEmpty()) return@launch
+        openBot(null)
+        mutableState.update { it.copy(navigationRequest = it.navigationRequest + 1, navigationPage = page) }
     }
 }

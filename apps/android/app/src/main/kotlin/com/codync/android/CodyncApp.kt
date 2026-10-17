@@ -50,9 +50,15 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     }
     // A new account or a fresh start drops whatever was open for the old one.
     LaunchedEffect(state.generation) { if (handledGeneration != state.generation) { closeAll(); showUsage = false; handledGeneration = state.generation } }
-    // A notification, widget or link: close everything, then maybe show usage.
+    // A notification, widget or link: close everything, then maybe show usage, the computers or extensions.
     LaunchedEffect(state.navigationRequest) {
-        if (handledNavigation != state.navigationRequest) { closeAll(); showUsage = state.navigationUsage; handledNavigation = state.navigationRequest }
+        if (handledNavigation != state.navigationRequest) {
+            closeAll()
+            showUsage = state.navigationPage == LinkPage.Usage
+            showComputers = state.navigationPage == LinkPage.Computers
+            showMarketplace = state.navigationPage == LinkPage.Extensions
+            handledNavigation = state.navigationRequest
+        }
     }
     val signedIn = state.account.userId != null
     AnalyticsMilestones(state)

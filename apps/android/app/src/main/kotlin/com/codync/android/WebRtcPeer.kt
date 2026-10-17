@@ -27,7 +27,7 @@ internal class WebRtcPeer(private val context: Context) : RealtimePeer {
     override val isOpen: Boolean get() = channel?.state() == DataChannel.State.OPEN
 
     override suspend fun offer(events: RealtimePeer.Events): String {
-        initialize(context)
+        WebRtc.load(context)
         val audio = JavaAudioDeviceModule.builder(context).setAudioAttributes(callAudio)
             .setUseHardwareAcousticEchoCanceler(true).setUseHardwareNoiseSuppressor(true).createAudioDeviceModule()
         this.audio = audio
@@ -101,12 +101,14 @@ internal class WebRtcPeer(private val context: Context) : RealtimePeer {
         })
     }
 
-    private companion object {
-        @Volatile var initialized = false
-        @Synchronized fun initialize(context: Context) {
-            if (initialized) return
-            PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions())
-            initialized = true
-        }
+}
+
+/** Loads WebRTC once per process, for voice calls and the remote screen. */
+internal object WebRtc {
+    private var loaded = false
+    @Synchronized fun load(context: Context) {
+        if (loaded) return
+        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions())
+        loaded = true
     }
 }

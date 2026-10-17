@@ -343,7 +343,7 @@ internal object ScreenRtc {
     private var factory: PeerConnectionFactory? = null
 
     @Synchronized fun factory(context: Context): PeerConnectionFactory = factory ?: run {
-        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions())
+        WebRtc.load(context)
         PeerConnectionFactory.builder()
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext))
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))

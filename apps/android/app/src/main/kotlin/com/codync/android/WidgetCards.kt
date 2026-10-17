@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,10 +32,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.ProviderLimit
 import com.codync.android.core.UsageProvider
 import com.codync.android.core.UsageReport
 import com.codync.android.core.UsageWindow
 import com.codync.android.core.WidgetBot
+import com.codync.android.core.usageLimits
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
@@ -151,6 +154,44 @@ internal fun until(at: Long, now: Long): String {
         }
     }
 }
+
+/** Every provider's limits: the tightest is the headline, the rest thin bars that take color near the limit (iOS `UsageWidgetView`). */
+@Composable internal fun UsageLimitsCard(report: UsageReport, wide: Boolean) {
+    val limits = usageLimits(report)
+    val top = limits.firstOrNull() ?: return
+    val rest = limits.drop(1)
+    if (wide) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        Box(Modifier.width(118.dp)) { LimitHero(top) }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) { for (limit in rest.take(4)) LimitBar(limit) }
+    } else Column(Modifier.fillMaxSize()) {
+        LimitHero(top)
+        Spacer(Modifier.weight(1f).heightIn(min = 6.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) { for (limit in rest.take(2)) LimitBar(limit) }
+    }
+}
+
+@Composable private fun LimitHero(limit: ProviderLimit) {
+    val percent = limit.window.percent ?: 0.0
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("${limit.provider} · ${limit.window.label}", style = Type.caption, color = Palette.secondary, maxLines = 1)
+        Text("${percent.roundToInt()}%", style = Type.system(34f).semibold.monospacedDigit, color = if (percent >= 90) Palette.danger else Palette.text, maxLines = 1)
+        Text(limit.window.resetsShort() ?: " ", style = Type.caption2, color = Palette.tertiary, maxLines = 1)
+    }
+}
+
+@Composable private fun LimitBar(limit: ProviderLimit) {
+    val percent = limit.window.percent ?: 0.0
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row {
+            Text("${limit.provider} ${limit.window.label}", Modifier.weight(1f), style = Type.caption2, color = Palette.secondary, maxLines = 1)
+            Text("${percent.roundToInt()}%", style = Type.caption2.monospacedDigit, color = Palette.secondary)
+        }
+        UsageTicks(percent, usageTint(percent), 10.dp)
+    }
+}
+
+/** "How full is this limit" (CodyncKit `Palette.usageTint`). */
+@Composable private fun usageTint(percent: Double): Color = if (percent >= 90) Palette.danger else if (percent >= 70) Palette.warning else Palette.accent
 
 /** The state word the widgets show and its color: only what needs you (or failed) stands out. */
 @Composable internal fun widgetState(status: String): Pair<String, Color> = when (status) {

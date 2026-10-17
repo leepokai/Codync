@@ -4,6 +4,7 @@
     <string name="widget_bots_description">Latest bot status and unread counts</string>
     <string name="widget_team_description">Four bots as characters, the ones that need you first</string>
     <string name="widget_provider_description">Latest limits from your selected provider</string>
+    <string name="widget_usage_description">Subscription limits your computer reports, for every provider</string>
     <color name="widget_background">#F8F8F8</color>
     <color name="widget_foreground">#111111</color>
     <color name="widget_secondary">#666666</color>

@@ -16,4 +16,15 @@ class WidgetFeedTest {
         assertEquals(listOf("c", "a", "b", null), teamSlots(bots, listOf("c", "gone", null, null)).map { it?.id })
         assertEquals(listOf("a", "b", "c", null), teamSlots(bots, emptyList()).map { it?.id })
     }
+
+    @Test fun `usage limits lead with the tightest limit of any provider and keep the rest in order`() {
+        val report = UsageReport(listOf(
+            UsageProvider("claude", "Claude", listOf(UsageWindow("five_hour", "5-hour", 16.0), UsageWindow("seven_day", "Weekly", 59.0))),
+            UsageProvider("codex", "Codex", listOf(UsageWindow("primary", "5-hour", 8.0), UsageWindow("secondary", "Weekly", null)))))
+        assertEquals(listOf("Claude Weekly", "Claude 5-hour", "Codex 5-hour", "Codex Weekly"),
+            usageLimits(report).map { "${it.provider} ${it.window.label}" })
+        assertEquals(listOf("Codex Weekly"), usageLimits(UsageReport(listOf(UsageProvider("codex", "Codex",
+            listOf(UsageWindow("secondary", "Weekly")))))).map { "${it.provider} ${it.window.label}" })
+        assertTrue(usageLimits(UsageReport()).isEmpty())
+    }
 }

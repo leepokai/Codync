@@ -117,7 +117,7 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { asked++; store?.syncPush() }
     var kind by rememberSaveable { mutableStateOf("usage") }
     var provider by rememberSaveable { mutableStateOf("claude") }
-    var size by rememberSaveable { mutableStateOf("medium") }
+    var sizeChoice by rememberSaveable { mutableStateOf("medium") }
     var pinFailed by remember { mutableStateOf(false) }
 
     Row(Modifier.fillMaxWidth().clip(RoundedRectangle(22.dp)).background(Palette.surface).padding(16.dp),
@@ -155,14 +155,17 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
             Box(Modifier.weight(1f)) { SectionLabel("Choose your widget") }
             Text("Sample data", style = Type.caption2, color = Palette.secondary)
         }
-        SegmentedChoice(kind, listOf("usage" to "Provider usage", "bots" to "Bots", "team" to "Team"), { kind = it })
+        ChoicePicker(kind, listOf("usage" to "Provider usage", "limits" to "Usage limits", "bots" to "Bots", "team" to "Team"), { kind = it })
         val report = remember(state.usage) { runCatching { UsageReport.decode(state.usage) }.getOrNull() }
         val providers = (WidgetPreview.usage.providers + report?.providers.orEmpty()).distinctBy { it.id }
         if (kind == "usage") {
             if (providers.size <= 3) SegmentedChoice(provider, providers.map { it.id to it.name }, { provider = it })
             else ChoicePicker(provider, providers.map { it.id to it.name }, { provider = it })
         }
-        if (kind != "team") ChoicePicker(size, listOf("small" to "Small", "medium" to "Medium", "large" to "Large"), { size = it })
+        // Usage limits comes small and medium, as on iOS.
+        val sizes = listOf("small" to "Small", "medium" to "Medium", "large" to "Large").take(if (kind == "limits") 2 else 3)
+        val size = sizeChoice.takeIf { shown -> sizes.any { it.first == shown } } ?: "medium"
+        if (kind != "team") ChoicePicker(size, sizes, { picked -> sizeChoice = picked })
         Column(Modifier.fillMaxWidth().clip(RoundedRectangle(26.dp)).background(Palette.bubbleAgent).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val small = size == "small" || kind == "team"
@@ -174,6 +177,7 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
                     "usage" -> providers.firstOrNull { it.id == provider }?.let {
                         ProviderWidgetCard(it, if (size == "large") ProviderLayout.Large else if (size == "medium") ProviderLayout.Medium else ProviderLayout.Small)
                     }
+                    "limits" -> UsageLimitsCard(WidgetPreview.usage, wide = size != "small")
                     "team" -> BotsTeamCard(teamSlots(WidgetPreview.bots, emptyList()))
                     else -> BotsWidgetCard(WidgetPreview.bots, WidgetPreview.activities, wide = size != "small", large = size == "large")
                 }
@@ -182,6 +186,7 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
                 Text(if (kind == "team") "Small widget" else "${size.replaceFirstChar(Char::uppercase)} widget", style = Type.subheadline.medium, color = Palette.text)
                 Text(when (kind) {
                     "usage" -> "Small shows the tightest limit. Medium shows two windows. Large adds a summary and up to four limits."
+                    "limits" -> "Every provider's limits in one widget. The tightest leads; small shows two more and medium up to four."
                     "team" -> "Four bots as characters with a dot for each one at work; the bots that need you come first."
                     else -> "See who needs you and who's still working. Large shows up to six bots."
                 }, style = Type.caption, color = Palette.secondary)
@@ -207,7 +212,7 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionLabel("Add a widget")
-        val kindToPin = when (kind) { "usage" -> WidgetKind.Provider; "team" -> WidgetKind.Team; else -> WidgetKind.Bots }
+        val kindToPin = when (kind) { "usage" -> WidgetKind.Provider; "limits" -> WidgetKind.Usage; "team" -> WidgetKind.Team; else -> WidgetKind.Bots }
         if (AppWidgetManager.getInstance(context).isRequestPinAppWidgetSupported)
             PrimaryButton("Add to Home Screen") { pinFailed = !CodyncWidgets.pin(context, kindToPin) }
         if (pinFailed) Text("Your launcher couldn't add it. Add it from the Home Screen instead.", style = Type.footnote, color = Palette.danger)

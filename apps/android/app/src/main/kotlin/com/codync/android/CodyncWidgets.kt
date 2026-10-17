@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.net.Uri
+import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,19 +57,22 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider as Ink
+import com.codync.android.core.ProviderLimit
 import com.codync.android.core.UsageProvider
 import com.codync.android.core.UsageWindow
 import com.codync.android.core.WidgetBot
 import com.codync.android.core.WidgetFeed
 import com.codync.android.core.WidgetKind
 import com.codync.android.core.teamSlots
+import com.codync.android.core.usageLimits
 import com.codync.android.design.characterAvatarBitmap
 import kotlin.math.roundToInt
 
 // The Home Screen widgets, drawn like the iOS widgets (CodyncKit `WidgetCards.swift`) and the
-// State tab's previews: Provider usage, Bots and Team.
+// State tab's previews: Provider usage, Usage limits, Bots and Team.
 
 class ProviderWidget : CodyncWidget(WidgetKind.Provider)
+class UsageWidget : CodyncWidget(WidgetKind.Usage)
 class BotsWidget : CodyncWidget(WidgetKind.Bots)
 class TeamWidget : CodyncWidget(WidgetKind.Team)
 
@@ -98,6 +102,7 @@ abstract class CodyncWidget(private val kind: WidgetKind) : GlanceAppWidget() {
 
 private val ink = ColorProvider(day = Color(0xFF141414), night = Color(0xFFF2F2F2))
 private val secondary = ColorProvider(day = Color(0xFF6B6B6B), night = Color(0xFF9A9A9A))
+private val tertiary = ColorProvider(day = Color(0xFF767676), night = Color(0xFF929292))
 private val attention = ColorProvider(day = Color(0xFF936000), night = Color(0xFFECAF52))
 private val danger = ColorProvider(day = Color(0xFFC23A2B), night = Color(0xFFF0A7A7))
 private val tile = ColorProvider(day = Color(0xFFF0F0F0), night = Color(0xFF1C1C1C))
@@ -110,10 +115,12 @@ private fun style(size: Float, color: Ink, weight: FontWeight = FontWeight.Norma
     val context = LocalContext.current
     val size = LocalSize.current
     val layout = if (size.height >= 230.dp) ProviderLayout.Large else if (size.width >= 230.dp) ProviderLayout.Medium else ProviderLayout.Small
+    // Usage limits opens the app as it is, as on iOS.
     val open = widgetIntent(context, feed, usage = kind == WidgetKind.Provider)
     Box(GlanceModifier.fillMaxSize().appWidgetBackground().background(ground).cornerRadius(22.dp)
         .then(if (sample) GlanceModifier else GlanceModifier.clickable(actionStartActivity(open))).padding(14.dp)) {
         when {
+            kind == WidgetKind.Usage -> UsageCard(context, feed, wide = layout != ProviderLayout.Small, sample)
             feed.computerId == null && !sample -> Empty("Codync", "Connect a computer in Codync.")
             kind == WidgetKind.Provider -> {
                 val provider = feed.usage.providers.firstOrNull { it.id == providerId }
@@ -196,6 +203,63 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
         window.resetsShort()?.let { Text(it, GlanceModifier.fillMaxWidth(), style = TextStyle(secondary, 9.sp, textAlign = TextAlign.End), maxLines = 1) }
     }
 }
+
+/** Every provider's limits: the tightest is the headline, the rest thin bars that take color near the limit (iOS `UsageWidgetView`). */
+@Composable private fun UsageCard(context: Context, feed: WidgetFeed, wide: Boolean, sample: Boolean) {
+    val limits = usageLimits(feed.usage)
+    val top = limits.firstOrNull()
+    if (top == null) {
+        Column(GlanceModifier.fillMaxSize()) {
+            Face(context, "blob", "gray", 26.dp)
+            Spacer(GlanceModifier.defaultWeight())
+            Text(if (feed.computerId == null && !sample) "Open Codync to pair with your computer." else "No usage reported yet.",
+                style = style(12f, secondary), maxLines = 3)
+        }
+        return
+    }
+    val rest = limits.drop(1)
+    if (wide) Row(GlanceModifier.fillMaxSize()) {
+        Box(GlanceModifier.width(118.dp)) { LimitHero(top) }
+        Spacer(GlanceModifier.width(18.dp))
+        Column(GlanceModifier.defaultWeight()) {
+            for ((index, limit) in rest.take(4).withIndex()) {
+                if (index > 0) Spacer(GlanceModifier.height(9.dp))
+                LimitBar(context, limit)
+            }
+        }
+    } else Column(GlanceModifier.fillMaxSize()) {
+        LimitHero(top)
+        Spacer(GlanceModifier.defaultWeight())
+        for ((index, limit) in rest.take(2).withIndex()) {
+            if (index > 0) Spacer(GlanceModifier.height(7.dp))
+            LimitBar(context, limit)
+        }
+    }
+}
+
+@Composable private fun LimitHero(limit: ProviderLimit) {
+    val percent = limit.window.percent ?: 0.0
+    Column {
+        Text("${limit.provider} · ${limit.window.label}", style = style(12f, secondary), maxLines = 1)
+        Text("${percent.roundToInt()}%", style = style(34f, if (percent >= 90) danger else ink, FontWeight.Medium), maxLines = 1)
+        Text(limit.window.resetsShort() ?: " ", style = style(11f, tertiary), maxLines = 1)
+    }
+}
+
+@Composable private fun LimitBar(context: Context, limit: ProviderLimit) {
+    val percent = limit.window.percent ?: 0.0
+    Column(GlanceModifier.fillMaxWidth()) {
+        Row(GlanceModifier.fillMaxWidth()) {
+            Text("${limit.provider} ${limit.window.label}", GlanceModifier.defaultWeight(), style = style(11f, secondary), maxLines = 1)
+            Text("${percent.roundToInt()}%", style = style(11f, secondary))
+        }
+        Spacer(GlanceModifier.height(4.dp))
+        // Grey until 70%, then amber (iOS `Palette.usageTint`); the ticks turn red from 90%.
+        Ticks(context, percent, if (percent >= 70) WARNING else ink.getColor(context).toArgb(), 10.dp)
+    }
+}
+
+private const val WARNING = 0xFFF0A030.toInt()
 
 /** Fine, separated ticks (iOS `UsageTicks`), as a bitmap: widgets can't draw. */
 @Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp) {
@@ -338,6 +402,7 @@ internal fun sampleFeed(): WidgetFeed = WidgetFeed(computerId = "sample", comput
     botsAt = System.currentTimeMillis(), usage = WidgetPreview.usage, usageAt = System.currentTimeMillis())
 
 class ProviderWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = ProviderWidget() }
+class UsageWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = UsageWidget() }
 class BotsWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = BotsWidget() }
 class TeamWidgetReceiver : CodyncWidgetReceiver() { override val glanceAppWidget = TeamWidget() }
 
@@ -351,17 +416,27 @@ abstract class CodyncWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 internal object CodyncWidgets {
-    val receivers = listOf(ProviderWidgetReceiver::class.java, BotsWidgetReceiver::class.java, TeamWidgetReceiver::class.java)
+    val receivers = listOf(ProviderWidgetReceiver::class.java, UsageWidgetReceiver::class.java, BotsWidgetReceiver::class.java,
+        TeamWidgetReceiver::class.java)
     fun installed(context: Context): Int = receivers.sumOf { AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, it)).size }
     suspend fun update(context: Context) {
         if (installed(context) == 0) return
-        ProviderWidget().updateAll(context); BotsWidget().updateAll(context); TeamWidget().updateAll(context)
+        ProviderWidget().updateAll(context); UsageWidget().updateAll(context); BotsWidget().updateAll(context); TeamWidget().updateAll(context)
+    }
+    /** The launcher's widget picker shows each widget drawn from sample data (Android 15+); the system rate-limits it. */
+    suspend fun publishPreviews(context: Context) {
+        if (Build.VERSION.SDK_INT < 35) return
+        val manager = GlanceAppWidgetManager(context)
+        // A preview that can't be drawn leaves the launcher's placeholder, never a crash at launch.
+        try { for (receiver in receivers) manager.setWidgetPreviews(receiver.kotlin) }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { android.util.Log.w("Codync", "Widget previews unavailable", error) }
     }
     fun pin(context: Context, kind: WidgetKind): Boolean {
         val manager = AppWidgetManager.getInstance(context)
         if (!manager.isRequestPinAppWidgetSupported) return false
-        val receiver = when (kind) { WidgetKind.Provider -> ProviderWidgetReceiver::class.java; WidgetKind.Bots -> BotsWidgetReceiver::class.java
-            WidgetKind.Team -> TeamWidgetReceiver::class.java }
+        val receiver = when (kind) { WidgetKind.Provider -> ProviderWidgetReceiver::class.java; WidgetKind.Usage -> UsageWidgetReceiver::class.java
+            WidgetKind.Bots -> BotsWidgetReceiver::class.java; WidgetKind.Team -> TeamWidgetReceiver::class.java }
         return manager.requestPinAppWidget(ComponentName(context, receiver), null, null)
     }
 }

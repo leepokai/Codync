@@ -1,5 +1,6 @@
 package com.codync.android
 
+import com.codync.android.core.CloudComputer
 import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 
@@ -67,3 +68,15 @@ internal val AppState.isStale: Boolean get() {
 
 private fun AppState.renamedCopyOnline(id: String, name: String) =
     cloudComputers.any { it.computerId != id && it.name == name && it.online == true }
+
+/**
+ * An offline account computer named like one this phone uses or sees online: most likely the same
+ * machine under an earlier identity (its host keys were reset), left behind in the account.
+ */
+internal fun AppState.isOlderCopy(computer: CloudComputer): Boolean {
+    if (computer.online == true) return false
+    // The current copy may be paired with its code without being listed in the account.
+    return computers.any { it.id != computer.computerId && it.name == computer.name }
+        || cloudComputers.any { other -> other.computerId != computer.computerId && other.name == computer.name
+            && (computers.any { it.id == other.computerId } || other.online == true) }
+}

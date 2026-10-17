@@ -95,6 +95,19 @@ class CloudClient private constructor(base: String, private val identity: Device
         } finally { nonce.fill(0) }
     }
 
+    /** Takes back this device's grants on a computer, including one approved for an earlier install. */
+    suspend fun revokeAccess(computerId: String) {
+        val devices = request("GET", listOf("v1", "devices")).getValue("devices").jsonArray.map { it.jsonObject }
+        val device = devices.firstOrNull { it.text("deviceKey") == identity.publicKey }?.text("deviceId") ?: return
+        val grants = request("GET", listOf("v1", "computers", computerId, "grants")).getValue("grants").jsonArray.map { it.jsonObject }
+        for (grant in grants.filter { it.text("deviceId") == device }) {
+            request("DELETE", listOf("v1", "computers", computerId, "grants", requireNotNull(grant.text("grantId")) { "Invalid grant" }))
+        }
+    }
+
+    /** Takes a computer out of the account; its grants and pending requests go with it. */
+    suspend fun removeComputer(id: String) { request("DELETE", listOf("v1", "computers", id)) }
+
     suspend fun accessStatus(id: String): AccessStatus {
         val result = request("GET", listOf("v1", "access-requests", id))
         return json.decodeFromJsonElement(result)

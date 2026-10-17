@@ -39,7 +39,9 @@ fun AppStore.refreshCloud() = action("cloud") {
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
         mutableState.update { it.copy(cloudComputers = computers) }
-        val target = computers.firstOrNull { remote -> state.value.computers.isEmpty() && remote.computerId !in asked }
+        // Online computers this phone has no grant on yet; a granted one needs Revoke before asking again.
+        val target = computers.firstOrNull { remote -> state.value.computers.isEmpty() && remote.online == true &&
+            remote.access != "granted" && remote.computerId !in asked }
         if (target != null) requestAccess(target)
     } catch (error: CloudError) { if (!error.isTransient) throw error }
 }
@@ -82,6 +84,21 @@ fun AppStore.cancelAccess() {
         request?.cancelAndJoin()
         if (ticket != null && client != null) client.cancelAccess(ticket.requestId)
     }
+}
+
+/**
+ * Takes back this phone's account access to a computer (its grants) and forgets the computer here.
+ * Also the way out when an earlier install was approved but this one never checked the code.
+ */
+fun AppStore.revokeAccess(computerId: String) = action("revoke") {
+    requireNotNull(cloud) { "Sign in to reach your account." }.revokeAccess(computerId)
+    if (state.value.computers.firstOrNull()?.id == computerId) forgetComputer() else refreshCloud()
+}
+
+/** Takes an older copy of a computer out of the account (its grants and pending requests go with it). */
+fun AppStore.removeFromAccount(computerId: String) = action("removeFromAccount") {
+    requireNotNull(cloud) { "Sign in to reach your account." }.removeComputer(computerId)
+    refreshCloud()
 }
 
 fun AppStore.forgetComputer() = sessionAction {

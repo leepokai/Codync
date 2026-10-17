@@ -88,4 +88,40 @@ class CloudClientTest {
             assertEquals("/v1/access-requests/r", withdrawal?.path)
         } finally { server.shutdown() }
     }
+
+    @Test fun `revoking access removes only this device's grants on that computer`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"devices":[{"deviceId":"other","deviceKey":"elsewhere","name":"iPhone"},
+                {"deviceId":"mine","deviceKey":"${identity.publicKey}","name":"Pixel","revoked":false}]}"""))
+            server.enqueue(MockResponse().setBody("""{"grants":[{"grantId":"g1","deviceId":"other"},{"grantId":"g2","deviceId":"mine","scopes":["chat"]}]}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            client.revokeAccess(id)
+            assertEquals("/v1/devices", server.takeRequest().path)
+            assertEquals("/v1/computers/$id/grants", server.takeRequest().path)
+            val revoke = server.takeRequest()
+            assertEquals("DELETE", revoke.method)
+            assertEquals("/v1/computers/$id/grants/g2", revoke.path)
+            assertEquals("Bearer session", revoke.getHeader("Authorization"))
+            assertEquals(3, server.requestCount)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `an unknown device has no grants to revoke and removing a computer deletes it from the account`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"devices":[]}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            client.revokeAccess(id)
+            client.removeComputer(id)
+            assertEquals("/v1/devices", server.takeRequest().path)
+            val remove = server.takeRequest()
+            assertEquals("DELETE", remove.method)
+            assertEquals("/v1/computers/$id", remove.path)
+        } finally { server.shutdown() }
+    }
 }

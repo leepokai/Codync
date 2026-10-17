@@ -49,6 +49,8 @@ import kotlinx.serialization.json.put
     val signedIn = state.account.userId != null
     val paired = state.computers.firstOrNull()
     var confirmForget by remember { mutableStateOf(false) }
+    var confirmRevoke by remember { mutableStateOf<CloudComputer?>(null) }
+    var confirmRemoveCopy by remember { mutableStateOf<CloudComputer?>(null) }
     var confirmStartOver by remember { mutableStateOf(false) }
     var voice by remember { mutableStateOf(false) }
     var aboutAnalytics by remember { mutableStateOf(false) }
@@ -59,10 +61,14 @@ import kotlinx.serialization.json.put
             CardSection("Computers", if (signedIn) "Computers in your account need your OK on the computer before this phone can use them."
                 else "Each bot runs on its own computer. Sign in to see the computers in your account.") {
                 if (paired != null) row {
-                    ComputerRow(state, store, state.cloudComputers.any { it.computerId == paired.id }, extensions, store::openScreen) { confirmForget = true }
+                    val inAccount = state.cloudComputers.firstOrNull { it.computerId == paired.id }
+                    ComputerRow(state, store, inAccount != null, ComputerActions(extensions, store::openScreen, voice = { voice = true },
+                        revoke = inAccount?.takeIf { it.access == "granted" }?.let { c -> { confirmRevoke = c } }) { confirmForget = true })
                 }
                 for (computer in state.cloudComputers.filter { it.computerId != paired?.id }) row {
-                    AccountComputerRow(computer, state.access?.takeIf { it.computerId == computer.computerId }?.code, canAsk = paired == null) { ask(computer) }
+                    if (state.isOlderCopy(computer)) OlderCopyRow(computer) { confirmRemoveCopy = computer }
+                    else AccountComputerRow(computer, state.access?.takeIf { it.computerId == computer.computerId }?.code, canAsk = paired == null,
+                        ask = { ask(computer) }, revoke = { confirmRevoke = computer })
                 }
                 row {
                     Row(Modifier.fillMaxWidth().plainButton(action = pair), verticalAlignment = Alignment.CenterVertically,
@@ -114,6 +120,10 @@ import kotlinx.serialization.json.put
         }
     }
     CodyncSheet(voice, { voice = false }) { VoiceChatSettings(state, store) }
+    CodyncDialog("Remove the older ${confirmRemoveCopy?.name ?: "computer"}?", confirmRemoveCopy != null, { confirmRemoveCopy = null },
+        "It's this computer under an earlier identity and can't be reached anymore. Removing it only cleans up your account.") {
+        listOfNotNull(confirmRemoveCopy?.let { copy -> DialogAction("Remove", destructive = true) { store.removeFromAccount(copy.computerId) } })
+    }
     CodyncSheet(aboutAnalytics, { aboutAnalytics = false }) { AnalyticsSheet() }
     CodyncDialog("Start over?", confirmStartOver, { confirmStartOver = false },
         "Signs out of every account and forgets every computer on this phone, then shows the welcome again. Your computers keep their bots and chats; pair again to use them.") {
@@ -122,6 +132,10 @@ import kotlinx.serialization.json.put
     CodyncDialog("Remove ${paired?.name ?: "computer"}?", confirmForget, { confirmForget = false },
         "Its bots and conversations stay on that computer. You can pair again any time.") {
         listOf(DialogAction("Remove", destructive = true, action = store::forgetComputer))
+    }
+    CodyncDialog("Revoke this phone's access to ${confirmRevoke?.name ?: "the computer"}?", confirmRevoke != null, { confirmRevoke = null },
+        "You can ask for access again; the computer will show a new code to confirm.") {
+        listOfNotNull(confirmRevoke?.let { target -> DialogAction("Revoke", destructive = true) { store.revokeAccess(target.computerId) } })
     }
 }
 
@@ -143,9 +157,12 @@ import kotlinx.serialization.json.put
     }
 }
 
+/** What the paired computer's row and its menu open; `revoke` is set when this phone's account access can be revoked. */
+private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit, val voice: () -> Unit,
+    val revoke: (() -> Unit)?, val remove: () -> Unit)
+
 /** The paired computer: its connection, how it's reached, and whether it's in the account. */
-@Composable private fun ComputerRow(state: AppState, store: AppStore, inAccount: Boolean, extensions: () -> Unit, screen: () -> Unit,
-    remove: () -> Unit) {
+@Composable private fun ComputerRow(state: AppState, store: AppStore, inAccount: Boolean, actions: ComputerActions) {
     val computer = state.computers.first()
     val link = state.connection
     val online = link is LinkState.Ready
@@ -157,9 +174,11 @@ import kotlinx.serialization.json.put
     } else computerStatusText(state)
     Row(Modifier.fillMaxWidth().contextActions(items = {
         listOfNotNull(
-            if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = extensions) else null,
-            if (viewable) MenuItem("Screen", icon = "display", action = screen) else null,
-            MenuItem("Remove", icon = "trash", destructive = true, divider = online, action = remove),
+            if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = actions.extensions) else null,
+            if (online) MenuItem("Voice chat", icon = "waveform", action = actions.voice) else null,
+            if (viewable) MenuItem("Screen", icon = "display", action = actions.screen) else null,
+            actions.revoke?.let { MenuItem("Revoke this phone's access", icon = "lock.slash", destructive = true, divider = true, action = it) },
+            MenuItem("Remove", icon = "trash", destructive = true, divider = actions.revoke == null, action = actions.remove),
         )
     }), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         ComputerBadge(state.hello?.text("device"), 40.dp)
@@ -172,10 +191,10 @@ import kotlinx.serialization.json.put
                     contentDescription = if (link.route == HostRoute.Direct) "Wi-Fi or Tailscale" else "Through Cloudflare")
             }
         }
-        if (online) IconButton("Extensions", "square.grid.2x2", action = extensions)
-        if (viewable) IconButton("Screen", "display", action = screen)
+        if (online) IconButton("Extensions", "square.grid.2x2", action = actions.extensions)
+        if (viewable) IconButton("Screen", "display", action = actions.screen)
         // Revoked, or this computer under an earlier identity: nothing to do but remove it.
-        if (stale) IconButton("Remove", "trash", action = remove)
+        if (stale) IconButton("Remove", "trash", action = actions.remove)
         // Which route goes first, and whether Cloudflare is a fallback at all.
         else DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(route.title, icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
             Modifier.size(36.dp), label = "Connection") {
@@ -186,11 +205,11 @@ import kotlinx.serialization.json.put
 }
 
 /** A computer in the account that this phone can't use yet. */
-@Composable private fun AccountComputerRow(computer: CloudComputer, code: String?, canAsk: Boolean, ask: () -> Unit) {
+@Composable private fun AccountComputerRow(computer: CloudComputer, code: String?, canAsk: Boolean, ask: () -> Unit, revoke: () -> Unit) {
     val online = if (computer.online == true) "Online" else "Offline"
     val detail = when {
         code != null -> "Waiting for your OK on the computer · $code"
-        computer.access == "granted" -> "Approved for an earlier install of Codync. Ask again to use it here."
+        computer.access == "granted" -> "Approved for an earlier install of Codync. Revoke it, then ask again."
         computer.access == "pending" -> "$online · A request is waiting"
         canAsk -> "$online · In your account"
         // One computer per phone for now: the paired one goes first.
@@ -202,7 +221,24 @@ import kotlinx.serialization.json.put
             Text(computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1)
             Text(detail, style = Type.subheadline, color = Palette.secondary, maxLines = 2)
         }
-        SecondaryButton(if (code != null) "Code" else "Ask for access", enabled = code != null || canAsk, action = ask)
+        when {
+            code != null -> SecondaryButton("Code", action = ask)
+            computer.access == "granted" -> SecondaryButton("Revoke", action = revoke)
+            else -> SecondaryButton("Ask for access", enabled = canAsk, action = ask)
+        }
+    }
+}
+
+/** The same machine under an earlier identity: one tap cleans it out of the account. */
+@Composable private fun OlderCopyRow(computer: CloudComputer, remove: () -> Unit) {
+    val seen = computer.lastSeenAt?.let { " · last seen ${RelativeTime.day(it)}" }.orEmpty()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.graphicsLayer { alpha = 0.35f }) { ComputerBadge(computer.device, 40.dp) }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(computer.name, style = Type.body.semibold, color = Palette.secondary, maxLines = 1)
+            Text("Older copy of this computer$seen", style = Type.subheadline, color = Palette.tertiary, maxLines = 2)
+        }
+        IconButton("Remove from account", "trash", action = remove)
     }
 }
 

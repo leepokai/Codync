@@ -63,4 +63,16 @@ class ConnectionPresentationTest {
         assertFalse(state(LinkState.Ready(HostRoute.Direct), listOf(cloud("new", online = true))).isStale)
         assertEquals("Revoked", computerStatusText(state(LinkState.Failed("Revoked", 403), listOf(cloud("new", online = true)))))
     }
+
+    @Test fun anOfflineAccountComputerNamedLikeTheCurrentOneIsAnOlderCopy() {
+        val old = cloud("old", online = false)
+        assertTrue(state(LinkState.Connecting, listOf(old)).isOlderCopy(old))
+        assertFalse(state(LinkState.Connecting, listOf(old.copy(online = true))).isOlderCopy(old.copy(online = true)))
+        assertFalse(state(LinkState.Connecting, listOf(old), computers = emptyList()).isOlderCopy(old))
+        val renamed = cloud("old", online = false, name = "Laptop")
+        assertFalse(state(LinkState.Connecting, listOf(renamed)).isOlderCopy(renamed))
+        // Not paired here, but the new identity is online in the account.
+        val accountOnly = state(LinkState.Connecting, listOf(old, cloud("new", online = true)), computers = emptyList())
+        assertTrue(accountOnly.isOlderCopy(old))
+    }
 }

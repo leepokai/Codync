@@ -17,8 +17,8 @@ emulator against a real host; device acceptance is listed separately.
 | Accounts/access | Ported: account sheet and switcher, Computers & settings (connection status, badge color, Revoke this phone's access, older copies removed from the account), account computer access with its code, access banner, `codync-dev://computers` and `codync-dev://plugins` | Provider browser round trip on a device; Revoke and older copies against a signed-in account (covered by cloud request tests only); one computer per phone ([multiple computers are future work](../architecture/overview.md)) |
 | Roster | Ported: rows, menus, pin/hide/delete, groups, drag to reorder (host-synced order) and TalkBack Move up/down, computer header | Multiple computers |
 | Conversation/threads | Ported: bubbles, Markdown/code, permissions, reactions, threads, Full conversation, bot-to-bot exchange lines and their conversation, routine notices | Physical keyboard and TalkBack |
-| Composer | Ported: files/photos/paste, `/` commands (Fast mode, New session, skills), @mentions in groups, call/send/stop button | — |
-| Bot and group editors | Ported: avatar, profile, agent and model options, Fast mode, workspace folder picker, permissions, activity, connectors, skills | — |
+| Composer | Ported: files/photos/paste (groups too, image thumbnails, Paste only when the clipboard holds files), `/` commands (Fast mode, New session, skills listed fresh on `/`), @mentions in groups, call/send/stop/interrupt button | — |
+| Bot and group editors | Ported: avatar, profile, agent and model options, Fast mode, workspace folder picker, permissions, activity, connectors, skills (with their details) | — |
 | Memory | Ported: search, filters, add/edit, pin, review, history and timeline, export/import, forget all | — |
 | Routines | Ported: list with switches, editor (schedule, webhook panel, run settings), test run, delete | Live provider/routine acceptance |
 | Extensions | Ported: agents (install, sign-in, setup terminal), registry connectors, Composio apps, skills, installed list, custom connector, own skill, credentials, chat connection request card | Real provider OAuth, 1Password |

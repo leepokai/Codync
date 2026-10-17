@@ -163,7 +163,7 @@ private fun messageMenu(context: android.content.Context, entry: Entry, reply: (
     if (trace != null) add(MenuItem("Show what it did", icon = "list.bullet", action = trace))
 }
 
-internal val quickReactions = listOf("👍", "❤️", "😂", "🎉", "👀", "🙏")
+internal val quickReactions = listOf("👍", "❤️", "😂", "🎉", "👀", "✅")
 
 private fun reactionPick(entry: Entry, store: AppStore) = ReactionPick(quickReactions, entry.reactions) { emoji ->
     store.command("react", body("entryId" to entry.id, "emoji" to emoji), "react:" + entry.id)

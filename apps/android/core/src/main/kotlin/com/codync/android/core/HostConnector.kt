@@ -18,9 +18,15 @@ object HostConnector {
         require(deviceName.isNotBlank() && deviceName.codePointCount(0, deviceName.length) <= 100)
         val channel = connect(pairing.computer, identity, pairing)
         try {
-            val response = channel.call("pair", buildJsonObject {
-                put("code", pairing.code); put("name", deviceName); put("platform", "android")
-            }, timeoutMillis = 30_000)
+            val response = try {
+                channel.call("pair", buildJsonObject {
+                    put("code", pairing.code); put("name", deviceName); put("platform", "android")
+                }, timeoutMillis = 30_000)
+            } catch (error: HostError) {
+                // Hosts from before Android support turn the platform down: say what to do, not the wire error.
+                if (error.status == 400 && "platform" in error.message) throw HostError(400, "Update Codync on this computer to pair an Android phone.")
+                throw error
+            }
             val result = response.jsonObject
             require(result.text("computerId") == pairing.computer.id) { "This computer's identity changed. Pair it again." }
             return pairing.computer.copy(name = result.text("name")?.takeIf(String::isNotBlank) ?: pairing.computer.name)

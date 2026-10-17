@@ -61,9 +61,9 @@ class NativeVoiceTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals(PackageManager.PERMISSION_GRANTED, ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO))
         ActivityScenario.launch(MainActivity::class.java).use {
-            val engine = LocalVoiceAudio(context)
+            val engine = LocalVoiceAudio(context, "")
             try { runBlocking { withContext(Dispatchers.Main) {
-                val name = engine.initialize(); assertEquals("Offline English · Vosk", name)
+                val name = engine.initialize(); assertTrue(name, name.endsWith(" · Vosk") || name.endsWith(" · Android speech"))
                 val capturing = CompletableDeferred<Unit>()
                 engine.listen(1) { event -> if (event is VoiceInput.Level) capturing.complete(Unit) }
                 withTimeout(10_000) { capturing.await() }

@@ -163,7 +163,12 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
         if (next == null) { listen(); return }
         utterance++
         mutableState.update { it.copy(phase = VoicePhase.Speaking, said = next, heard = "") }
-        audio.speak(utterance, next, state.value.settings.rate) { id, error -> post(Event.Done(id, error)) }
+        try { audio.speak(utterance, next, state.value.settings.rate) { id, error -> post(Event.Done(id, error)) } }
+        catch (unavailable: VoiceUnavailable) {
+            // A reply the phone has no voice for stays in chat; the call goes on.
+            mutableState.update { it.copy(error = unavailable.message) }
+            speakNext()
+        }
     }
     private suspend fun submit() {
         val text = state.value.heard.trim()

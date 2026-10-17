@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.*
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -23,21 +24,39 @@ import org.vosk.LibVosk
 import org.vosk.Model
 import org.vosk.Recognizer
 
-/** Offline English recognition and an installed local TTS voice. No PCM is written to disk. */
-internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
+/**
+ * On-device calls: the call's language heard by Android's on-device recognizer, or the bundled English
+ * model, and each reply read by an installed offline voice for the language it's written in. No PCM
+ * is written to disk.
+ */
+internal class LocalVoiceAudio(private val context: Context, private val picked: String) : VoiceAudio {
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var model: Model? = null
     private val mic = AndroidMic(context)
     /** Vosk, fed from the microphone's thread; closed only after that thread has stopped. */
     private var decoder: Recognizer? = null
+    /** Android's recognizer, when it hears the call's language. */
+    private var platform: PlatformSpeechInput? = null
+    private var language = VoiceLanguages.ENGLISH
     private var speech: TextToSpeech? = null
+    private var voices: List<android.speech.tts.Voice> = emptyList()
     private var completion: ((Long, String?) -> Unit)? = null
     private var speakingId: Long? = null; private var lastChunk: String? = null
     val recordingSessionId: Int? get() = mic.recordingSessionId
 
     override suspend fun initialize(): String {
         require(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-        withContext(Dispatchers.IO) {
+        val support = PlatformSpeech.support(context)
+        language = VoiceLanguages.resolve(picked, Locale.getDefault(), support.onDevice)
+        val recognition = VoiceLanguages.recognition(language, support.onDevice)
+            ?: throw VoiceUnavailable("Speech recognition isn't available for this language right now.")
+        if (recognition == Recognition.Platform && Build.VERSION.SDK_INT >= 33) {
+            if (language !in support.installed) {
+                PlatformSpeech.download(context, language)
+                throw VoiceUnavailable("Android is getting ${PlatformSpeech.name(language)} speech ready on this phone. Try the call again in a few minutes.")
+            }
+            platform = PlatformSpeechInput(context, language, mic)
+        } else withContext(Dispatchers.IO) {
             try {
                 LibVosk.vosk_set_log_level(-1)
                 val directory = VoskModels.english(context)
@@ -51,10 +70,9 @@ internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
         val status = withTimeoutOrNull(20_000) { ready.await() }
             ?: throw VoiceUnavailable("Android's text-to-speech engine didn't start. Try the call again.")
         if (status != TextToSpeech.SUCCESS) throw VoiceUnavailable("Install a text-to-speech engine in Android's speech settings.")
-        val voices = engine.voices.orEmpty().filter { !it.isNetworkConnectionRequired && it.locale.language == "en" }
-        val voice = voices.maxWithOrNull(compareBy<android.speech.tts.Voice> { it.locale == Locale.US }.thenBy { it.quality })
-            ?: throw VoiceUnavailable("Install an offline English voice in Android's text-to-speech settings.")
-        check(engine.setVoice(voice) == TextToSpeech.SUCCESS)
+        voices = engine.voices.orEmpty().filter { !it.isNetworkConnectionRequired && TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in it.features.orEmpty() }
+        if (voice(language) == null && voice(VoiceLanguages.ENGLISH) == null)
+            throw VoiceUnavailable("Install an offline voice in Android's text-to-speech settings.")
         engine.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -72,9 +90,11 @@ internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
                 callback?.invoke(id, "Couldn't read the reply. Check the installed offline voice.")
             } }
         })
-        return "Offline English · Vosk"
+        return if (platform != null) "${PlatformSpeech.name(language)} · Android speech" else "Offline English · Vosk"
     }
     override suspend fun listen(generation: Long, events: (VoiceInput) -> Unit) {
+        val platform = platform
+        if (platform != null && Build.VERSION.SDK_INT >= 33) { platform.listen(generation, events); return }
         check(decoder == null)
         val recognizer = Recognizer(requireNotNull(model), Pcm.RATE.toFloat()).also { decoder = it }
         var previous = ""
@@ -95,16 +115,32 @@ internal class LocalVoiceAudio(private val context: Context) : VoiceAudio {
         }
     }
     override suspend fun stopListening() {
-        withContext(NonCancellable) { mic.stop(); decoder?.close(); decoder = null }
+        withContext(NonCancellable) {
+            if (Build.VERSION.SDK_INT >= 33) platform?.stop()
+            mic.stop(); decoder?.close(); decoder = null
+        }
     }
     override suspend fun speak(id: Long, text: String, rate: Float, completed: (Long, String?) -> Unit) {
         val engine = requireNotNull(speech)
         val chunks = SpokenText.chunks(text)
         speakingId = id; completion = completed; lastChunk = "codync-$id-${chunks.lastIndex}"
+        val written = VoiceLanguages.spoken(text, language)
+        // A reply in a language with no installed voice would come out as noise: say what to install instead.
+        val voice = voice(written) ?: throw VoiceUnavailable("Install an offline ${PlatformSpeech.name(written)} voice in Android's text-to-speech settings to hear this reply.")
+        check(engine.setVoice(voice) == TextToSpeech.SUCCESS)
         check(engine.setSpeechRate(rate) == TextToSpeech.SUCCESS)
         for ((index, chunk) in chunks.withIndex()) {
             check(engine.speak(chunk, TextToSpeech.QUEUE_ADD, Bundle(), "codync-$id-$index") == TextToSpeech.SUCCESS)
         }
+    }
+
+    /** The best installed offline voice for a language: its region (for Chinese, the reader's script), then quality. */
+    private fun voice(tag: String): android.speech.tts.Voice? {
+        val wanted = Locale.forLanguageTag(tag)
+        val base = VoiceLanguages.base(wanted)
+        val region = wanted.country.ifEmpty { if (base == "zh") (if (readsTraditional()) "TW" else "CN") else Locale.getDefault().country }
+        return voices.filter { VoiceLanguages.base(it.locale) == base }
+            .maxWithOrNull(compareBy<android.speech.tts.Voice> { it.locale.country == region }.thenBy { it.quality })
     }
     override suspend fun stopSpeaking() { completion = null; speakingId = null; lastChunk = null; speech?.stop() }
     override suspend fun close() {
@@ -148,7 +184,7 @@ internal object VoskModels {
     }
 }
 
-/** Call settings on this phone: the pause and reading speed, and the cloud engine choices (`VoiceChoices`). */
+/** Call settings on this phone: the pause, reading speed and language, and the cloud engine choices (`VoiceChoices`). */
 internal object VoicePreferences {
     private fun stored(context: Context) = context.getSharedPreferences("codync-voice", Context.MODE_PRIVATE)
     fun load(context: Context): VoiceSettings {
@@ -158,6 +194,9 @@ internal object VoicePreferences {
     fun save(context: Context, settings: VoiceSettings) {
         stored(context).edit { putLong("pause", settings.pauseMillis); putFloat("rate", settings.rate) }
     }
+    /** The language on-device calls hear (a BCP 47 tag); empty follows the phone. */
+    fun language(context: Context): String = runCatching { stored(context).getString("language", null) }.getOrNull().orEmpty()
+    fun language(context: Context, tag: String) { stored(context).edit { putString("language", tag) } }
     fun choices(context: Context): VoiceChoices {
         val stored = stored(context)
         return VoiceChoices({ runCatching { stored.getString(it, null) }.getOrNull() }) { key, value ->

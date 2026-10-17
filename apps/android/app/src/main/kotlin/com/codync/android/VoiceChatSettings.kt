@@ -47,7 +47,7 @@ import kotlinx.coroutines.launch
                     }
                     if (speech) row { PauseRow(settings, ::change) }
                 } else {
-                    row { ValueRow("Language", "English", detail = "The language you speak in calls.") }
+                    row { LanguageRow(store) }
                     row {
                         ValueRow("Reading speed") {
                             ChoicePicker(settings.rate, listOf(.84f to "Slower", 1f to "Normal", 1.12f to "Faster"),
@@ -59,6 +59,18 @@ import kotlinx.coroutines.launch
             }
             if (provider != null) key(provider) { ProviderVoiceSettings(provider, speech, state, store, choices) }
         }
+    }
+}
+
+/** The language on-device calls hear: the phone's, or one Android hears on this phone (English always). */
+@Composable private fun LanguageRow(store: AppStore) {
+    var language by remember { mutableStateOf(store.callLanguage()) }
+    var heard by remember { mutableStateOf(emptyList<String>()) }
+    LaunchedEffect(Unit) { heard = store.callLanguages() }
+    val collator = remember { java.text.Collator.getInstance() }
+    val named = (heard + language).filter { it.isNotEmpty() }.distinct().map { it to PlatformSpeech.name(it) }.sortedWith(compareBy(collator) { it.second })
+    ValueRow("Language", detail = "The language you speak in calls.") {
+        ChoicePicker(language, listOf("" to "System") + named, { language = it; store.callLanguage(it) }, label = "Language")
     }
 }
 

@@ -68,7 +68,7 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
     })
     call.recording = { null }
     val engine: VoiceEngine = if (provider == null) {
-        val audio = LocalVoiceAudio(getApplication())
+        val audio = LocalVoiceAudio(getApplication(), VoicePreferences.language(getApplication()))
         call.recording = { audio.recordingSessionId }
         VoiceSession(contextScope, audio, settings) { sendFromCall(call, it) }
     } else {
@@ -177,6 +177,24 @@ fun AppStore.interruptVoice() { voiceBinding?.engine?.interrupt() }
 fun AppStore.resumeVoice() { voiceBinding?.engine?.focus(true) }
 internal fun AppStore.focusVoice(active: Boolean) { voiceBinding?.engine?.focus(active) }
 internal fun AppStore.voiceRecordingSession(): Int? = voiceBinding?.recording?.invoke()
+/** The language on-device calls hear; empty follows the phone. */
+internal fun AppStore.callLanguage(): String = VoicePreferences.language(getApplication())
+
+/** Picks it, and has Android fetch it when it hears it on device but hasn't downloaded it yet. */
+internal fun AppStore.callLanguage(tag: String) {
+    VoicePreferences.language(getApplication(), tag)
+    if (tag.isNotEmpty()) contextScope.launch {
+        val support = PlatformSpeech.support(getApplication())
+        if (tag !in support.installed && tag in support.downloadable) PlatformSpeech.download(getApplication(), tag)
+    }
+}
+
+/** What on-device calls can hear on this phone: Android's on-device languages, and English always. */
+internal suspend fun AppStore.callLanguages(): List<String> {
+    val onDevice = PlatformSpeech.support(getApplication()).onDevice
+    return if (onDevice.any { VoiceLanguages.base(java.util.Locale.forLanguageTag(it)) == "en" }) onDevice else onDevice + VoiceLanguages.ENGLISH
+}
+
 fun AppStore.voiceSettings(settings: VoiceSettings) { VoicePreferences.save(getApplication(), settings); voiceBinding?.engine?.settings(settings) }
 
 // The computer's voice methods: it holds the provider keys and does the provider calls that need them.

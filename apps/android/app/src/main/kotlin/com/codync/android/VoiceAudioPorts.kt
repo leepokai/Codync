@@ -156,10 +156,13 @@ internal object AndroidClipPlayer : ClipPlayer {
  * Speech to text writes Chinese in Simplified characters whatever it's told: turn it into Traditional
  * for someone who reads Traditional (their first Chinese language, or a Traditional region when none is listed).
  */
-internal fun inReadersScript(text: String): String {
+internal fun inReadersScript(text: String): String =
+    if (readsTraditional()) Transliterator.getInstance("Hans-Hant").transliterate(text) else text
+
+/** Whether the phone's reader reads Chinese in Traditional characters. */
+internal fun readsTraditional(): Boolean {
     val languages = LocaleList.getDefault().let { list -> (0 until list.size()).map(list::get) }
     val chinese = languages.firstOrNull { it.language == "zh" }
-    val traditional = if (chinese != null) ULocale.addLikelySubtags(ULocale.forLocale(chinese)).script == "Hant"
+    return if (chinese != null) ULocale.addLikelySubtags(ULocale.forLocale(chinese)).script == "Hant"
         else Locale.getDefault().country in listOf("TW", "HK", "MO")
-    return if (traditional) Transliterator.getInstance("Hans-Hant").transliterate(text) else text
 }

@@ -20,10 +20,15 @@ class VoiceTest {
         var failedInit = false; var failedClose = false
         val spoken = mutableListOf<Pair<Long, String>>()
         var done: ((Long, String?) -> Unit)? = null
+        /** Replies containing this have no installed voice. */
+        var unvoiced: String? = null
         override suspend fun initialize(): String { if (failedInit) error("Fixture unavailable"); return "Fixture local engine" }
         override suspend fun listen(generation: Long, events: (VoiceInput) -> Unit) { this.generation = generation; input = events }
         override suspend fun stopListening() { stops++ }
-        override suspend fun speak(id: Long, text: String, rate: Float, completed: (Long, String?) -> Unit) { spoken.add(id to text); done = completed }
+        override suspend fun speak(id: Long, text: String, rate: Float, completed: (Long, String?) -> Unit) {
+            if (unvoiced?.let(text::contains) == true) throw VoiceUnavailable("Install an offline Chinese voice")
+            spoken.add(id to text); done = completed
+        }
         override suspend fun stopSpeaking() { speakerStops++ }
         override suspend fun close() { closed++; if (failedClose) error("Fixture close failure") }
         fun text(value: String, final: Boolean = false, owner: Long = generation) { input?.invoke(VoiceInput.Text(owner, value, final)) }
@@ -61,6 +66,18 @@ class VoiceTest {
         session.focus(true); runCurrent(); assertTrue(session.state.value.muted)
         session.mute(false); runCurrent(); audio.text("After unmute", true); runCurrent()
         assertEquals(listOf("After unmute"), sent)
+        session.end(); runCurrent(); session.awaitEnd()
+    }
+    @Test fun aReplyWithNoInstalledVoiceIsSkippedWithANoticeAndTheCallGoesOn() = runTest {
+        val audio = Audio().apply { unvoiced = "測試" }
+        val session = VoiceSession(backgroundScope, audio, VoiceSettings()) { }
+        runCurrent()
+        session.speak("測試通過了"); session.speak("Second reply"); runCurrent()
+        assertEquals("Install an offline Chinese voice", session.state.value.error)
+        assertEquals(listOf("Second reply"), audio.spoken.map { it.second })
+        assertEquals(VoicePhase.Speaking, session.state.value.phase)
+        audio.done?.invoke(audio.spoken.single().first, null); runCurrent()
+        assertEquals(VoicePhase.Listening, session.state.value.phase)
         session.end(); runCurrent(); session.awaitEnd()
     }
     @Test fun repliesPauseTheMicrophoneAndStalePlaybackCompletionCannotRestartIt() = runTest {

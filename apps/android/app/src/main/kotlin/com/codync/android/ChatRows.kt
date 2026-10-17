@@ -177,7 +177,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, state, store)
         if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
-            .contextActions(reactions = reactionPick(entry, store), preview = { UserText(entry.text) }) {
+            .contextActions(reactions = reactionPick(entry, store), preview = { SelectionContainer { UserText(entry.text) } }) {
                 messageMenu(context, entry, reply, null)
             }) { UserText(entry.text) }
         SendStatusLine(entry.status, state.bots.firstOrNull { it.id == entry.botId }?.status == "working")
@@ -238,14 +238,18 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (file in files) FileDownloadCard(entry, file, state, store)
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .contextActions(reactions = reactionPick(entry, store), preview = { AgentText(entry.text) }) {
+            .contextActions(reactions = reactionPick(entry, store), preview = { AgentText(entry.text, selectable = true) }) {
                 messageMenu(context, entry, reply, openTrace)
-            }) { AgentText(entry.text) }
+            }) { AgentText(entry.text, selectable = false) }
     }
 }
 
-@Composable private fun AgentText(text: String) {
-    Box(Modifier.background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 10.dp)) { MarkdownText(text, selectable = false) }
+/**
+ * A reply. Holding it opens its menu over a lifted copy, as on iOS, so only that copy is `selectable`:
+ * text selection takes the same long press.
+ */
+@Composable private fun AgentText(text: String, selectable: Boolean) {
+    Box(Modifier.background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 10.dp)) { MarkdownText(text, selectable) }
 }
 
 /** Under a message with a thread (Slack's): how many replied, how recently. */

@@ -106,6 +106,13 @@ Each cloud engine has two **modes**:
   (`Hans-Hant`) for a reader whose first Chinese language, or region, is Traditional. Only a
   model the user picks is saved; the default isn't, so a newer default reaches everyone.
 
+**OpenAI-compatible server.** Set `CODYNC_OPENAI_BASE_URL` in the host's environment (for example
+`http://127.0.0.1:8890`) to send the OpenAI engine's requests (`/v1/models`,
+`/v1/realtime/client_secrets`, `/v1/audio/transcriptions`, `/v1/audio/speech`) to that server instead
+of `https://api.openai.com`, e.g. a local speech-to-text and text-to-speech server. Speech clips are
+then requested and returned as WAV, so the server needs no AAC encoder. Only **Speech** mode goes
+through the host; **Realtime** still connects the device to OpenAI. Unset, nothing changes.
+
 **Default models follow the provider.** Nothing pins a model version: once a day (and whenever a
 key is saved or the model list is opened) the host reads each keyed provider's model list and
 keeps its newest model per mode (`voice::newest`, stored as `voice-defaults.<provider>`), and

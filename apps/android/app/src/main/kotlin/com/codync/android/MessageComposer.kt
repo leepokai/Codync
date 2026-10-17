@@ -64,14 +64,16 @@ import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.launch
 
 /** What the composer's one trailing button does now; it morphs between them. */
-private enum class Trailing { Stop, Call, Send }
+private enum class Trailing { Interrupt, Stop, Call, Send }
 
 /**
  * The message box under a chat or a thread, as iOS `Composer`: a glass + for files, a glass
- * field whose trailing button morphs between call, send and stop.
+ * field whose trailing button morphs between call, send, stop and interrupt. `onInterrupt`
+ * cuts the bot off while it speaks in a voice call.
  */
 @OptIn(ExperimentalFoundationApi::class)
-@Composable fun MessageComposer(bot: Bot, thread: String?, state: AppState, store: AppStore, onCall: (() -> Unit)?) {
+@Composable fun MessageComposer(bot: Bot, thread: String?, state: AppState, store: AppStore, onCall: (() -> Unit)?,
+    onInterrupt: (() -> Unit)? = null) {
     val lane = ComposerDraft.lane(bot.id, thread)
     val draft = state.drafts[lane]
     val text = rememberTextFieldState(initialText = draft?.text.orEmpty())
@@ -110,11 +112,13 @@ private enum class Trailing { Stop, Call, Send }
     val online = state.actualConnection is LinkState.Ready
     val empty = text.text.isBlank() && files.isEmpty()
     // Offline computers still take text when the relay can hold it; files need the computer.
-    val canSend = !empty && !importing && !queuing && (online || files.isEmpty())
-    val working = bot.status in listOf("working", "needsInput") && (thread == null || bot.workingThread == thread)
+    val canSend = !empty && !importing && !queuing && (online || state.actualConnection is LinkState.ComputerOffline && files.isEmpty())
+    val working = bot.isWorking(bot.id, thread)
+    val bare = text.text.isEmpty() && files.isEmpty()
     val trailing = when {
-        working && empty -> Trailing.Stop
-        onCall != null && empty && thread == null -> Trailing.Call
+        onInterrupt != null && bare -> Trailing.Interrupt
+        working && bare -> Trailing.Stop
+        onCall != null && bare -> Trailing.Call
         else -> Trailing.Send
     }
     val placeholder = when {
@@ -175,6 +179,7 @@ private enum class Trailing { Stop, Call, Send }
                     decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1); input() } })
                 TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp)) {
                     when (trailing) {
+                        Trailing.Interrupt -> onInterrupt?.invoke()
                         Trailing.Stop -> store.command("stop", body("botId" to bot.id))
                         Trailing.Call -> onCall?.invoke()
                         Trailing.Send -> {
@@ -191,21 +196,29 @@ private enum class Trailing { Stop, Call, Send }
 
 private val FIELD_HEIGHT = 54.dp
 
-/** One button that morphs between call, send and stop: its symbol swaps, its fill crossfades and the capsule narrows. */
+/** One button that morphs between call, send, stop and interrupt: its symbol swaps, its fill crossfades and the capsule narrows. */
 @Composable private fun TrailingButton(state: Trailing, canSend: Boolean, modifier: Modifier, action: () -> Unit) {
     val enabled = state != Trailing.Send || canSend
-    val fill by animateColorAsState(if (state == Trailing.Send && !canSend) Palette.accentDim else Palette.accentFill, Motion.morph(), label = "Fill")
-    val ink = if (state == Trailing.Send && !canSend) Palette.tertiary else Palette.onAccent
+    val fill by animateColorAsState(when {
+        state == Trailing.Interrupt -> Palette.danger
+        state == Trailing.Send && !canSend -> Palette.accentDim
+        else -> Palette.accentFill
+    }, Motion.morph(), label = "Fill")
+    val ink by animateColorAsState(when {
+        state == Trailing.Interrupt -> Color.White
+        state == Trailing.Send && !canSend -> Palette.tertiary
+        else -> Palette.onAccent
+    }, Motion.morph(), label = "Ink")
     val width by animateDpAsState(if (state == Trailing.Call) 46.dp else 34.dp, Motion.morph(), label = "Width")
     val (source, pressed) = rememberPress()
     Box(modifier.pressScale(pressed).size(width, 34.dp).clip(Capsule()).background(fill)
         .clickable(source, null, enabled = enabled, role = Role.Button, onClick = action)
-        .semantics { contentDescription = when (state) { Trailing.Stop -> "Stop"; Trailing.Call -> "Call"; Trailing.Send -> "Send" } },
+        .semantics { contentDescription = when (state) { Trailing.Interrupt -> "Interrupt"; Trailing.Stop -> "Stop"; Trailing.Call -> "Call"; Trailing.Send -> "Send" } },
         contentAlignment = Alignment.Center) {
         AnimatedContent(state, transitionSpec = { (fadeIn(Motion.morph()) + scaleIn(Motion.morph(), 0.6f)) togetherWith
             (fadeOut(Motion.morph()) + scaleOut(Motion.morph(), 0.6f)) }, label = "Symbol") { shown ->
             when (shown) {
-                Trailing.Stop -> Symbol("stop.fill", size = 16.dp, tint = ink)
+                Trailing.Interrupt, Trailing.Stop -> Symbol("stop.fill", size = 16.dp, tint = ink)
                 Trailing.Call -> Symbol("waveform", size = 20.dp, tint = ink)
                 Trailing.Send -> Symbol("arrow.up", size = 19.dp, tint = ink)
             }

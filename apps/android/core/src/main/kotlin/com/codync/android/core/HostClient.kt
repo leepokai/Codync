@@ -57,6 +57,10 @@ data class Bot(
     /** Why Fast mode isn't in effect, when the agent turned it off itself. */
     val fastModeRefusal: String? get() = if (fastMode && fastModeSupport == "refused")
         "The agent turned it off: ${fastModeIssue ?: "not available"}. Switch it off and on to try again." else null
+
+    /** Working right now in this chat's main conversation (`thread == null`) or in that thread. */
+    fun isWorking(chat: String, thread: String?): Boolean =
+        status in listOf("working", "needsInput") && (workingChat ?: id) == chat && workingThread == thread
 }
 
 object HostClient {

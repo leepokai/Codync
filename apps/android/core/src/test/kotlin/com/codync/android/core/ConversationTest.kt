@@ -8,6 +8,17 @@ class ConversationTest {
     private fun entry(kind: String, final: Boolean = false) = Entry("e", 1, "b", rev = 1, kind = kind,
         data = buildJsonObject { put("text", "message"); put("final", final) })
 
+    @Test fun `a bot works in the one chat and thread its turn talks in`() {
+        val bot = Bot("b", status = "working")
+        assertTrue(bot.isWorking("b", null))
+        assertFalse(bot.isWorking("b", "root"))
+        assertTrue(bot.copy(workingThread = "root").isWorking("b", "root"))
+        assertFalse(bot.copy(workingThread = "root").isWorking("b", null))
+        assertTrue(bot.copy(workingChat = "group").isWorking("group", null))
+        assertFalse(bot.copy(workingChat = "group").isWorking("b", null))
+        assertFalse(bot.copy(status = "idle").isWorking("b", null))
+    }
+
     @Test fun `chat shows final replies permissions notices and users without narration`() {
         assertTrue(entry("user").isChat)
         assertTrue(entry("permission").isChat)

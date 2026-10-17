@@ -50,7 +50,10 @@ object PushDelivery {
     suspend fun retire(context: Context) {
         PushPreferences.retire(context)
         WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
-        gate.withLock { context.getSystemService(NotificationManager::class.java).cancelAll() }
+        gate.withLock {
+            context.getSystemService(NotificationManager::class.java).cancelAll()
+            AlertConversations.forget(context)
+        }
     }
     suspend fun activate(context: Context, user: String?) {
         WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
@@ -178,18 +181,14 @@ class PushService : FirebaseMessagingService() {
                     return
                 }
                 if (!PushPreferences.enabled(context) || PushDelivery.foreground) return
-                var title = context.getString(R.string.app_name)
-                var text = "A bot has an update."
+                var alert = PushAlert(title = context.getString(R.string.app_name), body = "A bot has an update.")
                 try {
                     if (local.hasIdentity()) {
                         val sealed = requireNotNull(data["sealed"]).takeIf { it.length <= 8192 } ?: return
-                        val plain = local.identity().openPush(sealed, computerId)
-                        val alert = Json.parseToJsonElement(plain.toString(Charsets.UTF_8)).jsonObject
-                        title = alert.getValue("title").jsonPrimitive.content.take(120)
-                        text = alert.getValue("body").jsonPrimitive.content.take(400)
+                        alert = PushAlert.decode(local.identity().openPush(sealed, computerId).toString(Charsets.UTF_8))
                     }
                 } catch (_: Exception) { /* Locked/unavailable key: show only a generic fallback. */ }
-                NotificationDisplay.alert(context, scope, computerId, botId, title, text)
+                NotificationDisplay.alert(context, scope, computerId, botId, alert)
             } catch (_: Exception) { /* A malformed push cannot crash the Firebase service. */ }
             }
         }
@@ -204,20 +203,30 @@ internal object NotificationDisplay {
         manager.createNotificationChannel(NotificationChannel(ALERTS, "Bot updates", NotificationManager.IMPORTANCE_HIGH))
         manager.createNotificationChannel(NotificationChannel(TASKS, "Delegated tasks", NotificationManager.IMPORTANCE_LOW))
     }
-    private fun builder(context: Context, scope: String, computer: String, bot: String, channel: String): NotificationCompat.Builder {
+    private fun open(context: Context, scope: String, computer: String, bot: String): Intent {
         val url = Uri.Builder().scheme(BuildConfig.URL_SCHEME).authority("bot").appendPath(bot).appendQueryParameter("scope", scope).appendQueryParameter("computer", computer).build()
-        val intent = Intent(context, MainActivity::class.java).setAction(Intent.ACTION_VIEW).setData(url)
-        val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return Intent(context, MainActivity::class.java).setAction(Intent.ACTION_VIEW).setData(url)
+    }
+    private fun builder(context: Context, scope: String, computer: String, bot: String, channel: String): NotificationCompat.Builder {
+        val pending = PendingIntent.getActivity(context, 0, open(context, scope, computer, bot), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val generic = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.app_name)).setContentText("A bot has an update.").build()
         return NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification).setContentIntent(pending)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(generic).setGroup("$scope/$computer")
     }
-    fun alert(context: Context, scope: String, computer: String, bot: String, title: String, text: String) {
+    /** The alert's title, what happened and its text; with the chat's face, a conversation from the bot. */
+    fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert) {
         channels(context)
-        val notification = builder(context, scope, computer, bot, ALERTS).setContentTitle(title).setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text)).setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE).build()
-        try { context.getSystemService(NotificationManager::class.java).notify("$scope/$computer/$bot", 1, notification) } catch (_: SecurityException) { }
+        val tag = "$scope/$computer/$bot"
+        val builder = builder(context, scope, computer, bot, ALERTS).setContentTitle(alert.title).setContentText(alert.body)
+            .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
+            .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
+        alert.conversation(bot)?.let { conversation ->
+            // A system that refuses the conversation still shows the plain alert.
+            try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot), alert.body, conversation) }
+            catch (error: Exception) { android.util.Log.w("Codync", "Alert shown without its conversation", error) }
+        }
+        try { context.getSystemService(NotificationManager::class.java).notify(tag, 1, builder.build()) } catch (_: SecurityException) { }
     }
     /**
      * A delegated task: on Android 16 a Live update (promoted ongoing notification) with its

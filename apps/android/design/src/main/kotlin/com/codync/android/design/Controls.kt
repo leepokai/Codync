@@ -18,6 +18,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -199,7 +201,7 @@ import com.kyant.shapes.RoundedRectangle
         enabled = enabled, label = label?.let { "$it: $current" }) {
         Row(Modifier.then(if (fill == Color.Transparent) Modifier.outline() else Modifier).pill(fill),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(current, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(current, Modifier.weight(1f, fill = false), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
         }
     }
@@ -253,14 +255,26 @@ class CardRows internal constructor() {
     Box(modifier.fillMaxWidth().height(px).background(Palette.border))
 }
 
-/** Label on the left, value on the right: the replacement for `LabeledContent`. */
+/**
+ * Label on the left, value on the right: the replacement for `LabeledContent`. A long value (a
+ * language's full name) takes at most 60% of the row and truncates, so the label never breaks mid-word.
+ */
 @Composable fun ValueRow(label: String, modifier: Modifier = Modifier, detail: String? = null, value: @Composable () -> Unit) {
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Layout({
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(label, style = Type.body, color = Palette.text)
             if (detail != null) Text(detail, style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f), color = Palette.secondary)
         }
         CompositionLocalProvider(LocalContentColor provides Palette.secondary, LocalTextStyle provides Type.body.copy(color = Palette.secondary)) { value() }
+    }, modifier.fillMaxWidth()) { (labels, values), constraints ->
+        val width = constraints.maxWidth
+        val shown = values.measure(Constraints(maxWidth = (width * 0.6f).toInt()))
+        val text = labels.measure(Constraints(maxWidth = (width - shown.width - 12.dp.roundToPx()).coerceAtLeast(0)))
+        val height = maxOf(text.height, shown.height)
+        layout(width, height) {
+            text.place(0, (height - text.height) / 2)
+            shown.place(width - shown.width, (height - shown.height) / 2)
+        }
     }
 }
 

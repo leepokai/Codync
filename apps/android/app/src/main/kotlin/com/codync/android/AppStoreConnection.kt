@@ -174,7 +174,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             }
             withContext(Dispatchers.IO) { requireNotNull(database).apply(batch) }
             refresh()
-            if (batch.any { it is MirrorEvent.EntryChanged && it.entry.isChat }) acknowledgeVisible()
+            acknowledgeVisible(readAfter(batch, state.value.readingScopes))
             if (resync) throw Resync()
         }
     } finally { source.cancel() }

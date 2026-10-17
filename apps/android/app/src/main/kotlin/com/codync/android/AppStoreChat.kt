@@ -23,13 +23,34 @@ fun AppStore.openBot(id: String?, thread: String? = null) {
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
-internal fun AppStore.acknowledgeVisible() {
-    val current = state.value
-    val id = current.selectedBot ?: return
-    if (!foreground || current.trace || channel?.state?.value !is LinkState.Ready) return
-    action("read:" + id + ":" + current.thread) {
-        val response = body("botId" to id, "threadId" to current.thread)
-        channel?.call("markRead", response)
+/** A conversation on screen: a bot's main chat (`thread` null) or one of its threads. */
+internal data class ReadingScope(val botId: String, val thread: String?)
+
+/**
+ * What's being read (iOS `ReadingConversation`): the open chat, still on screen under its thread
+ * or Full conversation, and the open thread.
+ */
+internal val AppState.readingScopes: List<ReadingScope> get() {
+    val id = selectedBot ?: return emptyList()
+    return listOfNotNull(ReadingScope(id, null), thread?.let { ReadingScope(id, it) })
+}
+
+/** The scopes events make unread while they're on screen: a message in one, or its bot counting unread. */
+internal fun readAfter(events: List<MirrorEvent>, scopes: List<ReadingScope>): List<ReadingScope> = scopes.filter { scope ->
+    events.any { event ->
+        when (event) {
+            is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == scope.botId && event.entry.threadId == scope.thread
+            is MirrorEvent.BotChanged -> event.bot.id == scope.botId && event.bot.unread > 0
+            else -> false
+        }
+    }
+}
+
+/** Marks the conversations on screen read (`scopes`: only these); the host ignores it when nothing there is unread. */
+internal fun AppStore.acknowledgeVisible(scopes: List<ReadingScope> = state.value.readingScopes) {
+    if (!foreground || channel?.state?.value !is LinkState.Ready) return
+    for (scope in scopes) action("read:" + scope.botId + ":" + scope.thread) {
+        channel?.call("markRead", body("botId" to scope.botId, "threadId" to scope.thread))
     }
 }
 

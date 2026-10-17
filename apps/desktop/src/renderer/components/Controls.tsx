@@ -51,26 +51,32 @@ export function Switch({ on, onChange, children, label, disabled, style }: { on:
 }
 
 /** A button that opens a Codync menu. */
-export function DropdownMenu({ items, children, className, style, title }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string }) {
+export function DropdownMenu({ items, children, className, style, title, search }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string; search?: { value: string; onChange: (v: string) => void; placeholder?: string } }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
+  // A menu opens unfiltered: a query left over from the last open would hide choices at rest.
+  const toggle = () => {
+    if (!open) search?.onChange('')
+    setOpen(!open)
+  }
   return (
     <>
-      <button ref={ref} className={className} style={style} title={title} onClick={() => setOpen((o) => !o)}>
+      <button ref={ref} className={className} style={style} title={title} onClick={toggle}>
         {children}
       </button>
-      <AnchoredMenu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} />
+      <AnchoredMenu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} search={search} />
     </>
   )
 }
 
 /** Picks one value: the current choice in a pill with a chevron, opening a Codync menu. */
-export function ChoicePicker<T extends string | number>({ selection, options, onChange, fill, fits = false }: {
+export function ChoicePicker<T extends string | number>({ selection, options, onChange, fill, fits = false, search }: {
   selection: T
   options: { id: T; label: string }[]
   onChange: (id: T) => void
   fill?: string
   fits?: boolean
+  search?: { value: string; onChange: (v: string) => void; placeholder?: string }
 }) {
   const label = options.find((o) => o.id === selection)?.label ?? 'Choose'
   return (
@@ -79,6 +85,7 @@ export function ChoicePicker<T extends string | number>({ selection, options, on
       className={`choice-picker ${fill ? '' : 'outlined'}`}
       style={{ background: fill, width: fits ? '100%' : undefined }}
       items={() => options.map((o) => ({ title: o.label, selected: o.id === selection, action: () => onChange(o.id) }))}
+      search={search}
     >
       <span className="choice-label">{label}</span>
       <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />

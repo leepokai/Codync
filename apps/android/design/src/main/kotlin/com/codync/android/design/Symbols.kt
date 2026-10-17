@@ -71,6 +71,7 @@ import androidx.annotation.DrawableRes
     "doc.text" -> R.drawable.sf_doc_text
     "doc.zipper" -> R.drawable.sf_doc_zipper
     "ellipsis" -> R.drawable.sf_ellipsis
+    "ellipsis.bubble.fill" -> R.drawable.sf_ellipsis_bubble_fill
     "envelope.fill" -> R.drawable.sf_envelope_fill
     "escape" -> R.drawable.sf_escape
     "exclamationmark" -> R.drawable.sf_exclamationmark
@@ -110,6 +111,7 @@ import androidx.annotation.DrawableRes
     "mic" -> R.drawable.sf_mic
     "mic.fill" -> R.drawable.sf_mic_fill
     "mic.slash" -> R.drawable.sf_mic_slash
+    "moon.zzz.fill" -> R.drawable.sf_moon_zzz_fill
     "move" -> R.drawable.sf_move
     "music.note" -> R.drawable.sf_music_note
     "network" -> R.drawable.sf_network

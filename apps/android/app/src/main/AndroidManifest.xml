@@ -53,6 +53,10 @@
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_usage" />
         </receiver>
+        <service android:name=".LeadBotTile" android:exported="true" android:label="Bots"
+            android:icon="@drawable/sf_ellipsis_bubble_fill" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
         <activity android:name=".WidgetConfigurationActivity" android:exported="true">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
         </activity>

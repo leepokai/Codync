@@ -27,4 +27,11 @@ class WidgetFeedTest {
             listOf(UsageWindow("secondary", "Weekly")))))).map { "${it.provider} ${it.window.label}" })
         assertTrue(usageLimits(UsageReport()).isEmpty())
     }
+
+    @Test fun `the lead bot is the first at work and nobody when all are quiet`() {
+        val bots = listOf(WidgetBot("a", "A", "needsInput"), WidgetBot("b", "B", "working"), WidgetBot("c", "C", "error"))
+        assertEquals("a", leadBot(bots)?.id)
+        assertEquals("b", leadBot(bots.drop(1))?.id)
+        assertNull(leadBot(bots.drop(2)))
+    }
 }

@@ -150,9 +150,9 @@ class RelayVectorsTest {
     }
 }
 
-internal inline fun <reified T : Throwable> assertFails(block: () -> Unit) {
+internal inline fun <reified T : Throwable> assertFails(block: () -> Unit): T {
     try { block() } catch (error: Throwable) {
-        if (error is T) return
+        if (error is T) return error
         throw AssertionError("Expected ${T::class.simpleName}, got ${error::class.simpleName}", error)
     }
     throw AssertionError("Expected ${T::class.simpleName}")

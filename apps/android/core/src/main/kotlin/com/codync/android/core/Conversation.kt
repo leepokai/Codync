@@ -28,6 +28,8 @@ data class Entry(
     val text: String get() = data.text("text").orEmpty()
     val clientNonce: String? get() = data.text("clientNonce")
     val status: String? get() = data.text("status")
+    /** Files the bot shared in this message. */
+    val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
     val isChat: Boolean get() = kind in listOf("user", "permission", "notice") ||
         kind == "agent" && data["final"]?.jsonPrimitive?.booleanOrNull == true
 
@@ -56,12 +58,25 @@ private data class EntryFields(
     val final: Boolean? = null, val title: String? = null, val command: String? = null,
     val detail: String? = null, val output: String? = null, val author: String? = null,
     val options: List<PermissionChoice>? = null, val reactions: List<String>? = null,
-    val thread: ReplySummary? = null, val attachments: List<Attachment>? = null, val callSeconds: Long? = null,
+    val thread: ReplySummary? = null, val attachments: List<Attachment>? = null, val files: List<SharedFile>? = null,
+    val callSeconds: Long? = null,
 )
 @Serializable private data class PermissionChoice(val optionId: String, val name: String, val kind: String)
 @Serializable private data class ReplySummary(val count: Int)
 @Serializable data class Attachment(val id: String, val name: String, val size: Long) {
     val isImage: Boolean get() = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp")
+}
+
+/** A file a bot shared: immutable on the computer, checked against its SHA-256 once downloaded. */
+@Serializable data class SharedFile(val id: String, val name: String, val size: Long, val sha256: String) {
+    /** Before any of it is read: a name that can't leave its folder and a hash to check. */
+    fun validate() {
+        require(size in 0..MAX_FILE_BYTES && sha256.length == 64 && sha256.all { it in "0123456789abcdef" } &&
+            name.isNotEmpty() && name.toByteArray(Charsets.UTF_8).size <= 200 && name != "." && name != ".." &&
+            '/' !in name && '\\' !in name && name.codePoints().noneMatch { Character.getType(it).toByte() in CONTROLS }) { "Invalid file metadata." }
+    }
+
+    private companion object { val CONTROLS = setOf(Character.CONTROL, Character.FORMAT) }
 }
 
 @Serializable

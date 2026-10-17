@@ -28,6 +28,8 @@ data class AppState(
     val pending: List<PendingSend> = emptyList(),
     val drafts: Map<String, ComposerDraft> = emptyMap(),
     val uploadProgress: Map<String, Int> = emptyMap(),
+    /** Files bots shared that this phone is downloading, has downloaded or couldn't, by file ID. */
+    val fileDownloads: Map<String, FileDownloadState> = emptyMap(),
     val usage: JsonObject = JsonObject(emptyMap()),
     val hello: JsonObject? = null,
     val connection: LinkState = LinkState.Connecting,

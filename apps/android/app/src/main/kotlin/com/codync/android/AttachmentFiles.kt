@@ -87,19 +87,23 @@ class AttachmentFiles(private val context: Context, private val directory: File)
         var bytes = files.sumOf { it.length() }
         for (file in files) if (bytes > 512L * 1024 * 1024) { bytes -= file.length(); file.delete() }
     }
-    suspend fun share(file: Attachment, source: File) {
-        val chooser = withContext(Dispatchers.IO) {
+
+    /**
+     * A new folder for one file the share sheet hands out. The receiving app reads it after the sheet
+     * closes, so folders are cleared only once they're a day old.
+     */
+    fun shareFolder(): File {
         val root = File(context.cacheDir, "shared-attachments").apply { mkdirs() }
         root.listFiles().orEmpty().filter { System.currentTimeMillis() - it.lastModified() > 24 * 60 * 60 * 1000 }.forEach { it.deleteRecursively() }
-        val folder = File(root, UUID.randomUUID().toString()).apply { mkdirs() }
-        val shared = source.copyTo(File(folder, cleanName(file.name)))
+        return File(root, UUID.randomUUID().toString())
+    }
+
+    /** The system share sheet for a file in a `shareFolder`. */
+    fun open(shared: File, name: String) {
         val uri = FileProvider.getUriForFile(context, context.packageName + ".files", shared)
         val type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(shared.extension.lowercase()) ?: "application/octet-stream"
-        val intent = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            Intent.createChooser(intent, "Share " + file.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(chooser)
+        val intent = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(Intent.createChooser(intent, "Share $name").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     companion object {

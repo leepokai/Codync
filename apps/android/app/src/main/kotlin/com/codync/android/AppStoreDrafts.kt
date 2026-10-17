@@ -107,7 +107,3 @@ suspend fun AppStore.attachment(botId: String, file: Attachment): File {
     } }
     try { return request.await() } finally { request.cancel() }
 }
-fun AppStore.shareAttachment(botId: String, file: Attachment) = action("share:" + file.id) {
-    val source = attachment(botId, file)
-    attachments.share(file, source)
-}

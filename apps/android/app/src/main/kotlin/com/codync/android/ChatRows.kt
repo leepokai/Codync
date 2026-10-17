@@ -175,7 +175,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val context = LocalContext.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (file in attachments) AttachmentRow(entry.botId, file, state, store)
+        if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, state, store)
         if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
             .contextActions(reactions = reactionPick(entry, store), preview = { UserText(entry.text) }) {
                 messageMenu(context, entry, reply, null)
@@ -231,10 +231,13 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 
 @Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?) {
     val context = LocalContext.current
-    val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
+    val files = entry.files
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (file in attachments) AttachmentRow(entry.botId, file, state, store)
-        if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
+        // A message with files is its files: the text is only the computer's fallback.
+        if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store)) { messageMenu(context, entry, reply, openTrace) },
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (file in files) FileDownloadCard(entry, file, state, store)
+        } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
             .contextActions(reactions = reactionPick(entry, store), preview = { AgentText(entry.text) }) {
                 messageMenu(context, entry, reply, openTrace)
             }) { AgentText(entry.text) }

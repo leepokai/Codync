@@ -2,8 +2,10 @@ package com.codync.android.core
 
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 
@@ -60,6 +62,45 @@ class HostFiles(private val call: suspend (String, JsonObject, Long) -> JsonElem
             }
             if (!partial.renameTo(destination)) throw IOException("Couldn't save the downloaded file.")
         } finally { partial.delete() }
+    }
+
+    /**
+     * A file a bot shared (iOS `FileDownload.save`), read chunk by chunk into its own new `folder`,
+     * checked against its SHA-256, then moved to `folder/ready/<name>`. Any failure removes the folder.
+     */
+    suspend fun downloadShared(entryId: String, file: SharedFile, folder: File, progress: (Long) -> Unit = {}): File = withContext(Dispatchers.IO) {
+        file.validate()
+        if (!folder.mkdirs()) throw IOException("Couldn't prepare the download.")
+        var saved = false
+        try {
+            val partial = File(folder, ".download-partial")
+            val hash = MessageDigest.getInstance("SHA-256")
+            partial.outputStream().use { output ->
+                var offset = 0L
+                do {
+                    ensureActive()
+                    val chunk = call("readFile", buildJsonObject { put("entryId", entryId); put("fileId", file.id); put("offset", offset) }, 60_000).jsonObject
+                    val data = chunk["data"]?.jsonPrimitive?.contentOrNull
+                    val bytes = if (chunk["size"]?.jsonPrimitive?.longOrNull == file.size && data != null && data.length <= CHUNK_BYTES / 3 * 4)
+                        try { Base64.getDecoder().decode(data) } catch (_: IllegalArgumentException) { null } else null
+                    if (bytes == null || bytes.size.toLong() != minOf(CHUNK_BYTES.toLong(), file.size - offset)) {
+                        throw IOException("The download was truncated or changed. Retry the download.")
+                    }
+                    output.write(bytes)
+                    hash.update(bytes)
+                    offset += bytes.size
+                    progress(offset)
+                } while (offset < file.size)
+                output.fd.sync()
+            }
+            if (hash.digest().joinToString("") { "%02x".format(it) } != file.sha256) throw IOException("The file integrity check failed. Retry the download.")
+            ensureActive()
+            // A name like .download-partial stays valid: the finished file lives in its own folder.
+            val destination = File(File(folder, "ready").apply { mkdirs() }, file.name)
+            if (!partial.renameTo(destination)) throw IOException("Couldn't save the downloaded file.")
+            saved = true
+            destination
+        } finally { if (!saved) folder.deleteRecursively() }
     }
 
     /** A small text file the host prepared (a memory export), read chunk by chunk. */

@@ -54,7 +54,7 @@ was walked through on an emulator against a real host.
 | OpenAI Realtime, Gemini Live and Speech mode with a real key | `WebRtcPeer.kt`, `core/.../OpenAIRealtimeEngine.kt`, `GeminiLiveEngine.kt`, `CloudSpeechEngine.kt` | A provider key on the paired computer; the fallback to on-device voice is verified |
 | Remote screen: Chinese IME composition, a hardware keyboard, the TURN relay path and its credential renewal | `ScreenKeys.kt`, `ScreenSession.kt`, `ScreenView.kt` | A computer it's safe to type into, and a signed-in host for the relay; viewing, trackpad and pinch zoom are verified |
 | On-device voice with a live microphone | `PlatformSpeech.kt`, `LocalVoiceAudio.kt` | A phone; on the emulator the recognizer was fed the speech fixture |
-| Camera QR pairing, launcher widget refresh, rotation, foldables, large text, TalkBack end to end | `QrViewfinder.kt`, `CodyncWidgets.kt` | Physical devices |
+| Camera QR pairing, launcher widget refresh, foldables, TalkBack end to end | `QrViewfinder.kt`, `CodyncWidgets.kt` | Physical devices; portrait lock with the rotating screen viewer, 130% text and TalkBack's Move up/down were checked on the emulator |
 
 ### Different from the iPhone on purpose or by platform
 

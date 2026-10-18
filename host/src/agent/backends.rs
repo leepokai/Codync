@@ -216,6 +216,20 @@ pub const HARNESSES: &[Harness] = &[
         signed_in: None,
     },
     Harness {
+        id: "hermes",
+        name: "Hermes Agent",
+        bins: &["hermes"],
+        local: Some("{bin} acp"),
+        registry: None,
+        setup: "Install Hermes Agent and run `hermes acp --setup` to choose a provider and model.",
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"iex (irm https://hermes-agent.nousresearch.com/install.ps1)\"",
+        }),
+        login: "{bin} acp --setup",
+        signed_in: None,
+    },
+    Harness {
         id: "goose",
         name: "goose",
         bins: &["goose"],
@@ -454,6 +468,10 @@ fn node_version(dir: &Path) -> Vec<u32> {
 
 fn well_known_dirs() -> Vec<PathBuf> {
     let Some(home) = dirs::home_dir() else { return vec![] };
+    well_known_dirs_for(&home, dirs::data_local_dir().as_deref())
+}
+
+fn well_known_dirs_for(home: &Path, data_local: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> =
         ["/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin", "/usr/bin", "/bin"]
             .iter()
@@ -464,9 +482,13 @@ fn well_known_dirs() -> Vec<PathBuf> {
         dirs.extend(dirs::data_dir().map(|d| d.join("npm")));
         dirs.extend(std::env::var_os("ProgramFiles").map(|d| PathBuf::from(d).join("nodejs")));
         // oh-my-pi's binary install (%LOCALAPPDATA%\omp); a Bun install lands in ~/.bun/bin below.
-        dirs.extend(dirs::data_local_dir().map(|d| d.join("omp")));
+        dirs.extend(data_local.map(|d| d.join("omp")));
+        // Hermes Agent's Windows launchers, including older source installs.
+        dirs.extend(data_local.map(|d| d.join("hermes/bin")));
+        dirs.extend(data_local.map(|d| d.join("hermes/hermes-agent/.hermes/bin")));
     }
     for rel in [
+        // Hermes Agent's Unix installer also puts its launcher here.
         ".local/bin",
         ".bun/bin",
         ".cargo/bin",
@@ -760,5 +782,30 @@ mod tests {
     fn every_harness_is_unique() {
         let ids: HashSet<_> = HARNESSES.iter().map(|h| h.id).collect();
         assert_eq!(ids.len(), HARNESSES.len());
+    }
+
+    #[test]
+    fn hermes_uses_native_acp() {
+        let hermes = harness("hermes").unwrap();
+        let local = hermes.local.unwrap();
+        assert!(local.starts_with("{bin}"));
+        assert_eq!(local.strip_prefix("{bin}").unwrap().trim(), "acp");
+        assert_eq!(hermes.registry, None);
+        assert_eq!(hermes.login, "{bin} acp --setup");
+        assert!(!belongs_to_other("hermes", "hermes"));
+        assert_eq!(HARNESSES.iter().filter(|h| h.bins.contains(&"hermes")).count(), 1);
+    }
+
+    #[test]
+    fn hermes_install_dirs_are_searched() {
+        let root = std::env::temp_dir().join(format!("codync-paths-{}", uuid::Uuid::new_v4()));
+        let home = root.join("home");
+        let data_local = root.join("local");
+        let dirs = well_known_dirs_for(&home, Some(&data_local));
+        assert!(dirs.contains(&home.join(".local/bin")));
+        if cfg!(windows) {
+            assert!(dirs.contains(&data_local.join("hermes/bin")));
+            assert!(dirs.contains(&data_local.join("hermes/hermes-agent/.hermes/bin")));
+        }
     }
 }

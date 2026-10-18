@@ -27,6 +27,12 @@ Clicking a skill (an Extensions row, an installed skill, or the info button besi
 
 Registry-backed package connectors follow their upstream release. The host checks the Registry periodically after credentials are unlocked and checks again immediately before a package process starts. If a newer pinned npm, PyPI, OCI or NuGet reference is available, only that package/image argument is replaced; the running process is not interrupted, and the new version applies on its next launch. Network failures, missing packages and attempted downgrades leave the installed reference unchanged. Custom command connectors are never updated automatically.
 
+## Hermes Agent
+
+Hermes Agent is a built-in agent that runs its installed CLI with `hermes acp`, without an ACP registry adapter. Install it using the [official installation guide](https://hermes-agent.nousresearch.com/docs/getting-started/installation), then run `hermes acp --setup` to choose a provider and model. In Codync, refresh the agents and select **Hermes Agent** when creating a bot; leave the custom command empty.
+
+The Unix installer puts its launcher at `~/.local/bin/hermes`, which Codync already searches. On Windows, Codync also searches `%LOCALAPPDATA%\hermes\bin` (the current installer) and `%LOCALAPPDATA%\hermes\hermes-agent\.hermes\bin` (older source installs), so Hermes can be detected without adding it to PATH. For a custom install location, add its launcher directory to PATH before refreshing agents.
+
 ## Commands
 
 Typing `/` at the start of a message to a bot (desktop, iPhone, terminal; not in a group, where each member has its own agent and skills) lists that bot's commands, filtered by what follows the `/` (a command's name or title): the built-in ones first, then the skills the bot has on. Each row shows an icon, the title and what it does. The list floats above the box on the desktop (↑/↓ move the highlight, Tab or Return picks it, Escape hides the list until the draft changes, hover and click work too), sits inline above the box on the iPhone (a tap picks; it isn't a menu, so the system-menu rule doesn't apply), and is the highlighted list over the transcript in the terminal (↑/↓, Tab or ↵).

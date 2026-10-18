@@ -13,7 +13,10 @@ export const remoteInfoCommand = (port: number, folder = '.codync') => {
   return `sh -lc 'PATH="${REMOTE_PATH}" codync-host info --json --port ${port}'`
 }
 
-export const knownHostsFiles = (h: string, folder = '.codync') => [`${h}/.ssh/known_hosts`, `${h}/${folder}/ssh_known_hosts`]
+export const knownHostsFiles = (h: string, folder = '.codync') => {
+  const home = h.replaceAll('\\', '/')
+  return [`${home}/.ssh/known_hosts`, `${home}/${folder}/ssh_known_hosts`]
+}
 
 /** ssh's config tokenizer splits `UserKnownHostsFile` on spaces, so each path carries literal quotes. */
 export const hostKeyOptions = (h: string, folder = '.codync') => [

@@ -136,8 +136,10 @@ import com.codync.android.design.*
     val activity = LocalActivity.current ?: return
     val view = LocalView.current
     DisposableEffect(activity) {
-        // The Rotate button's choice lasts only while the screen is open.
+        // The app is portrait; the screen turns with the phone (its rotation lock respected) and with
+        // the Rotate button, only while it's open.
         val orientation = activity.requestedOrientation
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
         val controller = WindowCompat.getInsetsController(activity.window, view)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())

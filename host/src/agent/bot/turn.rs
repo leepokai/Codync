@@ -86,7 +86,10 @@ impl Actor {
         if let Some(sid) = self.turn_session.clone() {
             self.sync_fast_mode(&sid).await;
         }
-        if hidden && self.session_fresh {
+        let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
+        let snapshot = self.snapshot(&sid).await?;
+        let fresh = matches!(snapshot.prelude, Some(context::Prelude::New | context::Prelude::UnpromptedFork));
+        if hidden && fresh {
             // A new session must never silently repeat an interrupted routine.
             self.finish_routine(
                 crate::routines::Status::Interrupted,
@@ -108,7 +111,7 @@ impl Actor {
         }
         // Session-start chatter (banners, command lists) isn't part of the reply.
         // Some adapters (pi-acp) send it on a timer right after session/new.
-        if self.session_fresh {
+        if fresh {
             tokio::time::sleep(Duration::from_millis(400)).await;
         }
         if let Some(conn) = self.conn.as_mut() {
@@ -119,7 +122,6 @@ impl Actor {
             }
         }
         let claude = self.conn.as_ref().is_some_and(|c| c.claude);
-        let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
         self.memory_session = match memory::lifecycle::begin(&self.hub, &self.cfg.id, &sid).await {
             Ok(session) => Some(session),
             Err(error) => {
@@ -133,17 +135,16 @@ impl Actor {
         {
             tracing::warn!(bot = %self.cfg.id, %error, "memory prompt capture failed");
         }
-        let snapshot = self.snapshot(&sid).await?;
         let remind_files = !snapshot.system.contains("send_file");
         let mut prompt = text.to_owned();
         if let Some(notice) = memory::lifecycle::change_notice(&self.hub, &self.cfg.id, &sid) {
             prompt = format!("{notice}\n\n{prompt}");
         }
-        if let Some(intro) = self.thread_intro.take() {
+        if let (Some(root), Some(prelude)) = (&slot, snapshot.prelude) {
+            let intro = self.thread_intro(root, prelude != context::Prelude::New);
             prompt = format!("{intro}\n\n{prompt}");
         }
-        if self.session_fresh {
-            self.session_fresh = false;
+        if fresh {
             // Claude already has the instructions as its system prompt.
             if !claude {
                 prompt = format!("<bot-profile>\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
@@ -151,7 +152,7 @@ impl Actor {
         }
         if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
             prompt = format!("{prompt}\n\n{update}");
-            self.announce = Some((snapshot, identity));
+            self.announce = Some((snapshot.clone(), identity));
         }
         if remind_files && self.active_group.is_none() && self.active_request.is_none() && self.active_routine.is_none()
         {
@@ -169,6 +170,11 @@ impl Actor {
         }
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.send("session/prompt", params).await?;
+        if snapshot.prelude.is_some()
+            && let Err(error) = context::mark_prompted(&self.hub.store, &self.cfg.id, &snapshot)
+        {
+            tracing::warn!(bot = %self.cfg.id, %error, "couldn't acknowledge initial session instructions");
+        }
         if let Err(error) = memory::lifecycle::mark_announced(&self.hub, &self.cfg.id, &sid, &self.turn_memory_revision)
         {
             tracing::warn!(%error, "could not acknowledge memory update notice");

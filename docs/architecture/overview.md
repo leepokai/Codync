@@ -61,7 +61,7 @@ When a client needs data or behavior the host doesn't offer, add a host method o
 
 `api/` and `remote/channel.rs` share dispatch and caller checks. `hub.rs` coordinates actors and event publication; `store/` persists mutations and the global revision. Clients catch up from `rev`, then follow events. Duplicate sends are identified by `clientNonce`.
 
-`agent/bot/` serializes each bot's turns and owns its ACP process. A main chat and its reply threads can have distinct sessions. Group turns are queued on member bots and use their main sessions; the group itself has no harness. See [groups and threads](../features/groups-and-threads.md), [collaboration](../features/bot-collaboration.md) and [context/memory](../features/context-and-memory.md).
+`agent/bot/` serializes each bot's turns and owns its ACP process. Process-tree ownership, graceful shutdown and first-prompt persistence are described in [agent lifecycle](../reference/agent-lifecycle.md). A main chat and its reply threads can have distinct sessions. Group turns are queued on member bots and use their main sessions; the group itself has no harness. See [groups and threads](../features/groups-and-threads.md), [collaboration](../features/bot-collaboration.md) and [context/memory](../features/context-and-memory.md).
 
 ## Client state and routing
 

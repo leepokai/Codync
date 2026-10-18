@@ -10,3 +10,7 @@ pub mod node;
 pub mod registry;
 pub mod term;
 pub mod workspace;
+
+mod process;
+#[cfg(windows)]
+mod process_windows;

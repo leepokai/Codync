@@ -20,6 +20,7 @@ mod files;
 mod lifecycle;
 mod queue;
 mod session;
+mod session_setup;
 mod turn;
 mod updates;
 
@@ -126,13 +127,11 @@ pub fn spawn(hub: Arc<Hub>, cfg: BotConfig) -> BotHandle {
         thread_sessions: HashMap::new(),
         lane,
         turn_session: None,
-        thread_intro: None,
         active_group: None,
         active_routine: None,
         routine_deadline: None,
         routine_timed_out: false,
         routine_completion: None,
-        session_fresh: false,
         applied_system: HashMap::new(),
         keeper,
         turn_text: None,
@@ -187,6 +186,9 @@ pub(crate) struct Conn {
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     started: Instant,
+    allocation_uncertain: bool,
+    /// Allocated sessions whose model setup has not yet completed.
+    pending_models: HashMap<String, Value>,
     /// Each live session's Fast mode option, as the agent last listed it.
     fast_options: HashMap<String, Value>,
 }
@@ -216,15 +218,11 @@ struct Actor {
     lane: Lane,
     /// The session the current turn prompts.
     turn_session: Option<String>,
-    /// Told on the first message of a new thread session: what the thread is about.
-    thread_intro: Option<String>,
     active_group: Option<GroupTurn>,
     active_routine: Option<String>,
     routine_deadline: Option<Instant>,
     routine_timed_out: bool,
     routine_completion: Option<RoutineCompletion>,
-    /// True until the first prompt of a new ACP session has been sent.
-    session_fresh: bool,
     /// Session -> the instructions this process last handed Claude as its system prompt.
     applied_system: HashMap<String, String>,
     keeper: mpsc::UnboundedSender<memory::KeeperEvent>,

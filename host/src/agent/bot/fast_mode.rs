@@ -55,7 +55,8 @@ impl Actor {
         let Some(option) = self.conn.as_ref().and_then(|c| c.fast_options.get(sid)) else { return };
         let (Some(config_id), Some(value)) = (option["id"].as_str(), fast_mode_change(option, on)) else { return };
         let params = json!({"sessionId": sid, "configId": config_id, "value": value});
-        match self.session_request("session/set_config_option", params).await {
+        let switched = self.request_with_timeout("session/set_config_option", params).await;
+        match switched {
             Ok(answer) => self.note_options(sid, &answer, Listing::Switch),
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't set Fast mode");

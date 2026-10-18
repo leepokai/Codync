@@ -83,13 +83,14 @@ impl Actor {
     }
 
     async fn close_session(&mut self, sid: &str) {
-        let closed = self.session_request("session/close", json!({ "sessionId": sid })).await;
+        let closed = self.request_with_timeout("session/close", json!({ "sessionId": sid })).await;
         let Some(conn) = self.conn.as_mut() else { return };
         match closed {
             Ok(_) => {
                 tracing::info!(bot = %self.cfg.id, session = sid, "closed an idle session");
                 conn.loaded.remove(sid);
                 conn.fast_options.remove(sid);
+                conn.pending_models.remove(sid);
             }
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, session = sid, error = format!("{error:#}"), "couldn't close an idle session");

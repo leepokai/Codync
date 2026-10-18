@@ -194,7 +194,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
                 }
                 Spacer(Modifier.width(8.dp))
                 if (bot.lastAt > 0) Text(RelativeTime.day(bot.lastAt), style = Type.subheadline,
-                    color = if (bot.unread > 0) Palette.text else Palette.tertiary, maxLines = 1)
+                    color = if (bot.unread > 0) Palette.text else Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) { Preview(bot, state) }
@@ -270,7 +270,7 @@ internal fun messagePreview(text: String): String {
         )
     }, label = "Computers, $summary. Filter conversations") {
         Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(summary, style = Type.system(12f).medium, color = Palette.secondary, maxLines = 1)
+            Text(summary, style = Type.system(12f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.down", size = 15.dp, tint = Palette.secondary)
         }
     }

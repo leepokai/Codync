@@ -203,7 +203,7 @@ import com.kyant.shapes.Capsule
                 else -> Symbol("wifi.slash", size = 11.dp, tint = Palette.secondary)
             }
         }
-        Text(connectionLabel(state), style = Type.system(10f).medium, color = Palette.secondary, maxLines = 1)
+        Text(connectionLabel(state), style = Type.system(10f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -255,7 +255,7 @@ import com.kyant.shapes.Capsule
             Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Thread", style = Type.body.semibold, color = Palette.text)
-                    Text(bot.name, style = Type.caption, color = Palette.tertiary, maxLines = 1)
+                    Text(bot.name, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton("Close thread", "xmark", action = dismiss)
             }

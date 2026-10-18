@@ -108,7 +108,7 @@ import kotlinx.serialization.json.put
             CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
                 row {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Share usage analytics", style = Type.body, color = Palette.text, maxLines = 1)
+                        Text("Share usage analytics", style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         IconButton("About usage analytics", "info.circle") { aboutAnalytics = true }
                         Box(Modifier.weight(1f))
                         CodyncSwitch(Analytics.enabled, Analytics::setEnabled, Modifier.width(34.dp)
@@ -201,7 +201,7 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
     }), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         ComputerBadge(state.hello?.text("device"), 40.dp, computer.color)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(state.hello?.text("name") ?: computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1)
+            Text(state.hello?.text("name") ?: computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val ink = if (link is LinkState.ComputerOffline || link is LinkState.Failed) Palette.warning else Palette.secondary
                 Text(detail, style = Type.subheadline, color = ink, maxLines = if (stale) 2 else 1, overflow = TextOverflow.Ellipsis)
@@ -236,8 +236,8 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.graphicsLayer { alpha = 0.5f }) { ComputerBadge(computer.device, 40.dp) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1)
-            Text(detail, style = Type.subheadline, color = Palette.secondary, maxLines = 2)
+            Text(computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(detail, style = Type.subheadline, color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         when {
             code != null -> SecondaryButton("Code", action = ask)
@@ -253,8 +253,8 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.graphicsLayer { alpha = 0.35f }) { ComputerBadge(computer.device, 40.dp) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(computer.name, style = Type.body.semibold, color = Palette.secondary, maxLines = 1)
-            Text("Older copy of this computer$seen", style = Type.subheadline, color = Palette.tertiary, maxLines = 2)
+            Text(computer.name, style = Type.body.semibold, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Older copy of this computer$seen", style = Type.subheadline, color = Palette.tertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         IconButton("Remove from account", "trash", action = remove)
     }
@@ -264,7 +264,7 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         BotAvatar(bot, state.bots, 28.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(bot.name, style = Type.body, color = Palette.text, maxLines = 1)
+            Text(bot.name, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(state.hello?.text("name") ?: state.computers.firstOrNull()?.name.orEmpty(), style = Type.caption, color = Palette.tertiary)
         }
         IconButton("Unhide", "eye") {

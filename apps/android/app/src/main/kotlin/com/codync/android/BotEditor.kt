@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.BotDraft
 import com.codync.android.core.LinkState
 import com.codync.android.design.*
@@ -138,7 +139,7 @@ private val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanOr
                         Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(if (draft.cwd.isEmpty()) "Personal" else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
-                                style = Type.body, color = Palette.text, maxLines = 1)
+                                style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
                         }
                     }

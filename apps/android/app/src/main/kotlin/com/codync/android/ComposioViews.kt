@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.CatalogPage
 import com.codync.android.core.ComposioApp
 import com.codync.android.core.ComposioStatus
@@ -165,7 +166,7 @@ import kotlinx.coroutines.launch
                         AppLogo(app.logo, app.name, 52.dp)
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(app.name, style = Type.title3.semibold, color = Palette.text)
-                            app.description?.let { Text(it, style = Type.subheadline, color = Palette.secondary, maxLines = 3) }
+                            app.description?.let { Text(it, style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }

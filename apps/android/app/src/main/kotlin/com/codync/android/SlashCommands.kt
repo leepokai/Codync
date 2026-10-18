@@ -69,7 +69,7 @@ internal object SlashCommands {
             .semantics(mergeDescendants = true) { contentDescription = command.title }.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) { Symbol(command.icon, size = 17.dp, tint = Palette.secondary) }
-            Text(command.title, style = Type.subheadline, color = Palette.text, maxLines = 1)
+            Text(command.title, style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(command.detail, Modifier.weight(1f), style = Type.subheadline, color = if (command.warning) Palette.warning else Palette.secondary,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -82,7 +82,7 @@ internal object SlashCommands {
         for (member in members) Row(Modifier.clip(Capsule()).background(Palette.surface).plainButton { mention(member) }
             .padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             BotAvatar(member, bots, 18.dp)
-            Text(member.name, style = Type.subheadline, color = Palette.text, maxLines = 1)
+            Text(member.name, style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

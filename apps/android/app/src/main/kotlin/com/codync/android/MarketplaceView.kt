@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.AgentBackend
 import com.codync.android.core.CatalogPage
 import com.codync.android.core.MarketConnector
@@ -238,8 +239,8 @@ private fun Modifier.bleed(amount: Dp) = layout { measurable, constraints ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ComputerBadge(state.hello?.text("device"), 32.dp, state.computers.firstOrNull()?.color)
             Column {
-                Text("Extensions", style = Type.title2.semibold, color = Palette.text, maxLines = 1)
-                Text(state.hostName, style = Type.subheadline, color = Palette.secondary, maxLines = 1)
+                Text("Extensions", style = Type.title2.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(state.hostName, style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (count > 0) Row(Modifier.plainButton(action = showInstalled), verticalAlignment = Alignment.CenterVertically,

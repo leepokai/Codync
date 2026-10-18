@@ -227,7 +227,7 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
     }
     val savedHere = method.vars.any { it.name in saved }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ScreenHeader({ BackButton(back) }, { Text(method.name, style = Type.body.semibold, color = Palette.text, maxLines = 1) }) {
+        ScreenHeader({ BackButton(back) }, { Text(method.name, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis) }) {
             if (saving) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
             else IconButton("Save", "checkmark", enabled = method.complete(values, saved)) { save(values.filterValues(String::isNotEmpty)) }
         }

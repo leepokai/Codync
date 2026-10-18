@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Bot
 import com.codync.android.core.GroupDraft
 import com.codync.android.design.*
@@ -104,7 +105,7 @@ import com.codync.android.design.*
 @Composable private fun MemberRow(bot: Bot, bots: List<Bot>, dimmed: Boolean = false, trailing: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         BotAvatar(bot, bots, 32.dp)
-        Text(bot.name, Modifier.weight(1f), style = Type.body, color = if (dimmed) Palette.secondary else Palette.text, maxLines = 1)
+        Text(bot.name, Modifier.weight(1f), style = Type.body, color = if (dimmed) Palette.secondary else Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         trailing()
     }
 }

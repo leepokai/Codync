@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Bot
 import com.codync.android.core.BotConversationRow
 import com.codync.android.core.BotExchange
@@ -115,7 +116,7 @@ private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id =
             if (index > 0) Symbol("arrow.left.arrow.right", size = 13.dp, tint = Palette.tertiary)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 state.bots.firstOrNull { it.id == id }?.let { BotAvatar(it, state.bots, 22.dp) }
-                Text(state.authorName(id), style = Type.body.semibold, color = Palette.text, maxLines = 1)
+                Text(state.authorName(id), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -176,7 +177,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
                 BasicTextField(state = text, enabled = !queuing, modifier = Modifier.weight(1f).contentReceiver(receiver).padding(vertical = 10.dp),
                     textStyle = Type.body.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent),
                     lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
-                    decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1); input() } })
+                    decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis); input() } })
                 TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp)) {
                     when (trailing) {
                         Trailing.Interrupt -> onInterrupt?.invoke()

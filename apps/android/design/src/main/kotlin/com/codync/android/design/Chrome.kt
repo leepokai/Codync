@@ -100,7 +100,7 @@ class TabItem<T>(val value: T, val title: String, val systemImage: String, val i
                 Column(Modifier.size(TAB_WIDTH, 54.dp).clip(Capsule()).selectable(on, role = Role.Tab) { select(tab.value) },
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Symbol(tab.systemImage, size = tab.iconSize, height = 28.dp, tint = Palette.text)
-                    Text(tab.title, style = Type.system(10f).medium, color = Palette.text, maxLines = 1)
+                    Text(tab.title, style = Type.system(10f).medium, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

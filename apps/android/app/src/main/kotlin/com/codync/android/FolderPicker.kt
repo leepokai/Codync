@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.DirListing
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
@@ -81,7 +82,7 @@ import kotlinx.coroutines.CancellationException
                             Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
                                 Symbol(if (dir.isGit) "arrow.triangle.branch" else "folder", size = 18.dp, tint = if (dir.isGit) Palette.accent else Palette.secondary)
                             }
-                            Text(dir.name, Modifier.weight(1f), style = Type.body, color = Palette.text, maxLines = 1)
+                            Text(dir.name, Modifier.weight(1f), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
                         }
                     }

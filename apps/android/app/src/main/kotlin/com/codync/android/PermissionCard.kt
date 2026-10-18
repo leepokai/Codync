@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Entry
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -120,7 +121,7 @@ private fun outcome(d: JsonObject): String = when (d.text("status")) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol(if (isNew) "doc.badge.plus" else "doc.text", size = 14.dp, tint = Palette.secondary)
-            Text(path.substringAfterLast('/'), Modifier.weight(1f), style = Type.caption.monospaced, color = Palette.secondary, maxLines = 1)
+            Text(path.substringAfterLast('/'), Modifier.weight(1f), style = Type.caption.monospaced, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("+" + (diff["added"]?.jsonPrimitive?.intOrNull ?: 0), style = Type.caption.monospaced, color = Palette.added)
             Text("−" + (diff["removed"]?.jsonPrimitive?.intOrNull ?: 0), style = Type.caption.monospaced, color = Palette.removed)
         }

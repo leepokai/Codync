@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.ProviderLimit
 import com.codync.android.core.UsageProvider
 import com.codync.android.core.UsageReport
@@ -116,14 +117,14 @@ internal fun until(at: Long, now: Long): String {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(if (layout == ProviderLayout.Small) 6.dp else 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             ProviderMascot(provider, 22.dp)
-            Text(provider.name, Modifier.weight(1f), style = Type.system(13f).semibold, color = Palette.text, maxLines = 1)
+            Text(provider.name, Modifier.weight(1f), style = Type.system(13f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (layout != ProviderLayout.Small) Text("Usage", style = Type.system(10f).medium, color = Palette.secondary)
         }
         val top = provider.tightest
         if (layout == ProviderLayout.Small && top != null) {
             Spacer(Modifier.weight(1f))
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(top.title, style = Type.system(11f), color = Palette.secondary, maxLines = 1)
+                Text(top.title, style = Type.system(11f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.Bottom) {
                     val ink = if ((top.percent ?: 0.0) >= 90) Palette.danger else Palette.text
                     Text("${(top.percent ?: 0.0).roundToInt()}", style = Type.system(32f).semibold.monospacedDigit, color = ink)
@@ -131,24 +132,24 @@ internal fun until(at: Long, now: Long): String {
                 }
             }
             UsageTicks(top.percent ?: 0.0, tint, 13.dp)
-            Text(top.resetsShort() ?: "Usage reported by your computer", style = Type.system(9f), color = Palette.secondary, maxLines = 1)
+            Text(top.resetsShort() ?: "Usage reported by your computer", style = Type.system(9f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         } else {
             if (layout == ProviderLayout.Large && top != null) Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("${(top.percent ?: 0.0).roundToInt()}%", style = Type.system(36f).semibold.monospacedDigit,
                     color = if ((top.percent ?: 0.0) >= 90) Palette.danger else Palette.text)
-                Text("${top.title} · highest usage", Modifier.padding(bottom = 6.dp), style = Type.system(11f), color = Palette.secondary, maxLines = 2)
+                Text("${top.title} · highest usage", Modifier.padding(bottom = 6.dp), style = Type.system(11f), color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             for (window in provider.windows.take(if (layout == ProviderLayout.Large) 4 else 2)) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(window.title, Modifier.weight(1f), style = Type.system(11f).medium, color = Palette.secondary, maxLines = 1)
+                        Text(window.title, Modifier.weight(1f), style = Type.system(11f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${(window.percent ?: 0.0).roundToInt()}%", style = Type.system(13f).semibold.monospacedDigit,
                             color = if ((window.percent ?: 0.0) >= 90) Palette.danger else Palette.text)
                     }
                     UsageTicks(window.percent ?: 0.0, tint, 12.dp)
                     window.resetsShort()?.let { Text(it, Modifier.fillMaxWidth(), style = Type.system(9f), color = Palette.secondary,
-                        maxLines = 1, textAlign = TextAlign.End) }
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End) }
                 }
             }
         }
@@ -173,9 +174,9 @@ internal fun until(at: Long, now: Long): String {
 @Composable private fun LimitHero(limit: ProviderLimit) {
     val percent = limit.window.percent ?: 0.0
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("${limit.provider} · ${limit.window.label}", style = Type.caption, color = Palette.secondary, maxLines = 1)
-        Text("${percent.roundToInt()}%", style = Type.system(34f).semibold.monospacedDigit, color = if (percent >= 90) Palette.danger else Palette.text, maxLines = 1)
-        Text(limit.window.resetsShort() ?: " ", style = Type.caption2, color = Palette.tertiary, maxLines = 1)
+        Text("${limit.provider} · ${limit.window.label}", style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("${percent.roundToInt()}%", style = Type.system(34f).semibold.monospacedDigit, color = if (percent >= 90) Palette.danger else Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(limit.window.resetsShort() ?: " ", style = Type.caption2, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -183,7 +184,7 @@ internal fun until(at: Long, now: Long): String {
     val percent = limit.window.percent ?: 0.0
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row {
-            Text("${limit.provider} ${limit.window.label}", Modifier.weight(1f), style = Type.caption2, color = Palette.secondary, maxLines = 1)
+            Text("${limit.provider} ${limit.window.label}", Modifier.weight(1f), style = Type.caption2, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${percent.roundToInt()}%", style = Type.caption2.monospacedDigit, color = Palette.secondary)
         }
         UsageTicks(percent, usageTint(percent), 10.dp)
@@ -257,12 +258,12 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 CharacterAvatar(bot.avatarShape, bot.avatarColor, 24.dp)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Text(bot.name, style = Type.system(11f).semibold, color = Palette.text, maxLines = 1)
+                    Text(bot.name, style = Type.system(11f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     activities[bot.id]?.takeIf { bot.status == "working" || bot.status == "needsInput" }?.let {
-                        Text(it, style = Type.system(10f), color = Palette.secondary, maxLines = 1)
+                        Text(it, style = Type.system(10f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Text(label, style = Type.system(10f, if (bot.status == "needsInput") FontWeight.SemiBold else FontWeight.Normal), color = tint, maxLines = 1)
+                Text(label, style = Type.system(10f, if (bot.status == "needsInput") FontWeight.SemiBold else FontWeight.Normal), color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (bots.isEmpty()) Text("Create your first bot in Codync.", style = Type.system(12f), color = Palette.secondary)
@@ -279,7 +280,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
                 else {
                     Column(Modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         CharacterAvatar(bot.avatarShape, bot.avatarColor, 30.dp, bot.status)
-                        Text(bot.name, style = Type.system(9f).semibold, color = Palette.text, maxLines = 1)
+                        Text(bot.name, style = Type.system(9f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (bot.status == "working" || bot.status == "error") Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(7.dp)
                         .clip(Capsule()).background(widgetState(bot.status).second))

@@ -96,7 +96,7 @@ import com.kyant.shapes.RoundedRectangle
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(backend.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(status, style = Type.caption, color = Palette.secondary, maxLines = 1)
+            Text(status, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

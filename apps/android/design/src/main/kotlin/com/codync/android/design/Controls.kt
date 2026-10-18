@@ -101,10 +101,10 @@ import com.kyant.shapes.RoundedRectangle
 
 /** A filled capsule button: `.buttonStyle(.primary)` (accent) or `.secondary`. */
 @Composable fun PrimaryButton(title: String, modifier: Modifier = Modifier, enabled: Boolean = true, action: () -> Unit) =
-    PrimaryButton(action, modifier, enabled) { Text(title, maxLines = 1) }
+    PrimaryButton(action, modifier, enabled) { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 
 @Composable fun SecondaryButton(title: String, modifier: Modifier = Modifier, enabled: Boolean = true, action: () -> Unit) =
-    SecondaryButton(action, modifier, enabled) { Text(title, maxLines = 1) }
+    SecondaryButton(action, modifier, enabled) { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 
 /** `.buttonStyle(.primary)` around any label (the label sets its own font and frame). */
 @Composable fun PrimaryButton(action: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, label: @Composable () -> Unit) =
@@ -170,7 +170,7 @@ import com.kyant.shapes.RoundedRectangle
                 val on = id == selection
                 Box(Modifier.width(segment).height(36.dp).clip(Capsule())
                     .selectable(on, role = Role.Tab) { select(id) }, contentAlignment = Alignment.Center) {
-                    Text(label, style = Type.subheadline.medium, color = if (on) Palette.text else Palette.secondary, maxLines = 1)
+                    Text(label, style = Type.subheadline.medium, color = if (on) Palette.text else Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

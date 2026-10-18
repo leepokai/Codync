@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
@@ -282,7 +283,7 @@ private const val WIDGET_H = 84f
     Row(Modifier.fillMaxWidth().height(24.dp).background(Color.White.copy(alpha = if (highlighted) 0.14f else 0f)).padding(horizontal = 9.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         Symbol(symbol, size = 11.dp, tint = Color.White)
-        Text(title, style = Type.system(9f, FontWeight.Medium), color = Color.White, maxLines = 1)
+        Text(title, style = Type.system(9f, FontWeight.Medium), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -335,8 +336,8 @@ private const val WIDGET_H = 84f
             CharacterAvatar("hex", "gray", 16.dp)
         }
         Column(Modifier.weight(1f)) {
-            Text(title, style = Type.system(10f, FontWeight.Medium), color = Color.White, maxLines = 1)
-            Text(count, style = Type.system(8f), color = Color.White.copy(alpha = 0.5f), maxLines = 1)
+            Text(title, style = Type.system(10f, FontWeight.Medium), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(count, style = Type.system(8f), color = Color.White.copy(alpha = 0.5f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Symbol("chevron.down", Modifier.graphicsLayer { rotationZ = 180f * open }, size = 10.dp, tint = Color.White.copy(alpha = 0.5f))
     }

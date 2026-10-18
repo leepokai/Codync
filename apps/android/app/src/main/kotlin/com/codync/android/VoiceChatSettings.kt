@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.*
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
@@ -148,8 +149,8 @@ import kotlinx.coroutines.launch
                 if (hasKey) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Symbol("key.fill", size = 18.dp, tint = Palette.secondary)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        Text("Key saved", style = Type.body, color = Palette.text, maxLines = 1)
-                        Text("Stays on $host", style = Type.caption, color = Palette.tertiary, maxLines = 1)
+                        Text("Key saved", style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Stays on $host", style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (busy) Spinner() else IconButton("Test key", "checkmark.seal", action = ::test)
                 } else if (saved == false) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

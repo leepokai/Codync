@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.kyant.shapes.Capsule
 import kotlin.math.sin
 import androidx.core.content.ContextCompat
@@ -83,7 +84,7 @@ internal fun openAppSettings(context: android.content.Context) =
             // Audio leaves the phone: say where.
             voice.provider?.let { provider ->
                 Text(provider.title, Modifier.semantics { contentDescription = "Voice by ${provider.title}" },
-                    style = Type.caption2.semibold, color = Palette.secondary, maxLines = 1)
+                    style = Type.caption2.semibold, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             RoundButton("Call settings", "gearshape") { settings = true }
             RoundButton(if (voice.muted) "Unmute" else "Mute", if (voice.muted) "mic.slash" else "mic", on = voice.muted, action = store::muteVoice)

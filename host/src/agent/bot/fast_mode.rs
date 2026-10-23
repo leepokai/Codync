@@ -28,6 +28,8 @@ impl Actor {
             return;
         }
         let Some(conn) = self.conn.as_mut() else { return };
+        let reported = crate::agent::config::current_values(options);
+        self.hub.set_runtime(&self.cfg.id, |r| r.session_options = Some(reported));
         let option = fast_mode_config(options).cloned();
         let was_on = conn.fast_options.get(sid).is_some_and(fast_mode_on);
         let support = match &option {

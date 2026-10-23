@@ -47,6 +47,9 @@ pub struct Runtime {
     /// The ACP session the running turn prompts. A memory write made there is one that session already knows.
     pub session: Option<String>,
     pub fast_mode: crate::agent::config::FastModeSupport,
+    /// What the bot's agent session reports it runs on (model, effort…, option id → value), as last listed by the
+    /// agent itself; `None` until its current process lists them. Clients tell it from what the bot saved.
+    pub session_options: Option<std::collections::BTreeMap<String, String>>,
     /// The fallback the bot is on; `None` on its own agent (see `agent::fallback`).
     pub agent_step: Option<AgentStep>,
 }
@@ -369,6 +372,7 @@ impl Hub {
             || before.activity != after.activity
             || before.lane != after.lane
             || before.fast_mode != after.fast_mode
+            || before.session_options != after.session_options
             || before.agent_step != after.agent_step
         {
             self.emit_bot(id);

@@ -147,6 +147,8 @@ impl Actor {
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
                 match start_agent(command, &self.cfg.cwd, &env, budget).await {
                     Ok(conn) => {
+                        // A new process confirms nothing until it lists its options.
+                        self.hub.set_runtime(&self.cfg.id, |r| r.session_options = None);
                         self.conn = Some(conn);
                         break;
                     }

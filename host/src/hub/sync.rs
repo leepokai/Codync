@@ -40,6 +40,7 @@ impl Hub {
             v["resting"] = json!(crate::agent::fallback::resting(&self.store, cfg, crate::store::now_ms()));
         }
         v["fastModeIssue"] = rt.fast_mode.issue().into();
+        v["sessionOptions"] = json!(rt.session_options);
         v["unread"] = self.store.unread(&cfg.id, row.read_rev).into();
         let preview = last.as_ref().map(|l| match &l.author {
             // A group names who spoke.

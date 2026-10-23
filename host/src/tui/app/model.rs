@@ -122,6 +122,8 @@ pub struct Bot {
     pub self_fallbacks: bool,
     /// The fallback agent it's on now; `None` on its own.
     pub agent_step: Option<String>,
+    /// What the agent it runs on now (its own, or `agent_step`'s) says about its settings.
+    pub session: Session,
     /// Agents of its chain resting now.
     pub resting: Vec<Rest>,
     pub connectors: Vec<String>,
@@ -161,10 +163,27 @@ pub struct AgentModel {
 }
 
 /// A model setting (effort, fast…) and its values as `(id, name)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelOption {
     pub id: String,
     pub name: String,
     pub values: Vec<(String, String)>,
+    /// The agent's ACP category for it: `thought_level` is the effort level.
+    pub category: Option<String>,
+}
+
+/// What the bot's running agent session says about its settings (the payload's `sessionOptions` and the rest).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Session {
+    pub live: bool,
+    /// Setting id → value, as the session last listed them; `None`: none listed.
+    pub options: Option<BTreeMap<String, String>>,
+    /// The settings it offers for the model it runs; `None` until it lists them.
+    pub settings: Option<Vec<ModelOption>>,
+    /// Saved settings that didn't take: id → (`not_offered` or `rejected`, the value).
+    pub issues: BTreeMap<String, (String, String)>,
+    /// A change waits for the running reply, then starts a new agent session.
+    pub pending: bool,
 }
 
 impl AgentModel {
@@ -184,12 +203,39 @@ impl AgentModel {
             Some((v["name"].as_str().unwrap_or(&id).to_owned(), id))
         };
         let (name, id) = pair(v)?;
-        let options = v["options"].as_array().into_iter().flatten().filter_map(|o| {
-            let (name, id) = pair(o)?;
-            let values = o["values"].as_array()?.iter().filter_map(|v| pair(v).map(|(n, i)| (i, n))).collect();
-            Some(ModelOption { id, name, values })
-        });
+        let options = v["options"].as_array().into_iter().flatten().filter_map(ModelOption::parse);
         Some(Self { id, name, options: options.collect(), current: false })
+    }
+}
+
+impl Session {
+    /// The bot payload's `sessionLive`, `sessionOptions`, `sessionSettings`, `settingIssues` and `restartPending`;
+    /// an older host sends none of them.
+    fn parse(v: &Value) -> Self {
+        let text = |v: &Value| v.as_str().map(str::to_owned);
+        let map =
+            |v: &Value| v.as_object().map(|o| o.iter().filter_map(|(k, v)| Some((k.clone(), text(v)?))).collect());
+        let issues = v["settingIssues"].as_object().into_iter().flatten();
+        Self {
+            live: v["sessionLive"] == true,
+            options: map(&v["sessionOptions"]),
+            settings: v["sessionSettings"].as_array().map(|l| l.iter().filter_map(ModelOption::parse).collect()),
+            issues: issues.filter_map(|(k, i)| Some((k.clone(), (text(&i["issue"])?, text(&i["value"])?)))).collect(),
+            pending: v["restartPending"] == true,
+        }
+    }
+}
+
+impl ModelOption {
+    /// A setting as the host lists it: `{id, name, values: [{id, name}], category}`.
+    pub fn parse(o: &Value) -> Option<Self> {
+        let id = o["id"].as_str()?.to_owned();
+        let name = o["name"].as_str().unwrap_or(&id).to_owned();
+        let values = o["values"].as_array()?.iter().filter_map(|v| {
+            let id = v["id"].as_str()?.to_owned();
+            Some((id.clone(), v["name"].as_str().unwrap_or(&id).to_owned()))
+        });
+        Some(Self { id, name, values: values.collect(), category: o["category"].as_str().map(str::to_owned) })
     }
 }
 
@@ -258,6 +304,7 @@ impl Bot {
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
+            session: Session::parse(v),
             resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),
             connectors: strs(&v["connectors"]),
             skills: strs(&v["skills"]),

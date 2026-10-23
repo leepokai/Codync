@@ -12,7 +12,7 @@ mod bot_chat;
 mod buffer;
 mod chat;
 mod computer_access;
-mod fallbacks;
+pub(in crate::tui) mod fallbacks;
 mod forms;
 mod goto;
 mod help;

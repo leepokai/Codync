@@ -246,8 +246,9 @@ impl App {
                         if !ids.is_empty() {
                             let i = ids.iter().position(|x| *x == f.backend).unwrap_or(0);
                             f.backend.clone_from(&ids[cycle(i, d, ids.len())]);
-                            // Another agent's model ids mean nothing here, and it can't be its own fallback.
+                            // Another agent's model ids and settings mean nothing here, and it can't be its own fallback.
                             f.model.clear();
+                            f.model_options = (String::new(), BTreeMap::new());
                             let own = f.backend.clone();
                             f.fallbacks.retain(|x| x.backend != own);
                             self.want_models(&f.backend);
@@ -263,7 +264,7 @@ impl App {
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::ModelOptions => {
                         let model = f.model.text.trim().to_owned();
-                        let offered = self.model_settings(&f.backend, &model);
+                        let offered = super::settings_in_order(self.model_settings(&f.backend, &model));
                         if !space {
                             f.sub = cycle(f.sub, d, offered.len().max(1));
                         } else if let Some(o) = offered.get(f.sub) {
@@ -380,7 +381,7 @@ impl Form {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AgentModel, test_app};
+    use super::super::{AgentModel, setting_label, settings_in_order, test_app};
     use super::*;
 
     #[tokio::test]
@@ -420,6 +421,33 @@ mod tests {
         let space = KeyEvent::from(KeyCode::Char(' '));
         let Some(Overlay::Form(f)) = app.form_key(f, space) else { panic!("the editor stays") };
         assert_eq!(f.model_options().and_then(|o| o.get("reasoning_effort")).map(String::as_str), Some("low"));
+    }
+
+    #[tokio::test]
+    async fn another_agent_starts_without_the_old_agents_settings_and_the_effort_level_comes_first() {
+        let mut app = test_app();
+        app.backends = ["claude", "codex"]
+            .iter()
+            .map(|id| json!({"id": id, "name": id, "available": true, "installed": true}))
+            .collect();
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": [
+            {"id": "verbosity", "name": "Verbosity", "values": [{"id": "terse", "name": "Terse"}]},
+            {"id": "effort", "name": "Thinking", "category": "thought_level", "values": [{"id": "high", "name": "High"}]}]}]});
+        app.models.insert("claude".into(), Some(AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "backend": "claude", "modelOptions": {"effort": "high"}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        let order: Vec<&str> =
+            settings_in_order(app.model_settings("claude", "")).iter().map(|o| setting_label(o)).collect();
+        assert_eq!(order, ["Effort level", "Verbosity"]);
+        f.field = FIELDS.iter().position(|x| *x == Field::Agent).expect("an agent field");
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Right)) else {
+            panic!("the editor stays")
+        };
+        assert_eq!(f.backend, "codex");
+        assert!(f.model_options().is_some_and(BTreeMap::is_empty), "claude's effort isn't codex's");
     }
 
     #[tokio::test]

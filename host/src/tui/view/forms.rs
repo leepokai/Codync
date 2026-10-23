@@ -4,7 +4,10 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 
-use super::super::app::{App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, tilde};
+use super::super::app::{
+    App, COLORS, Editor, Effort, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, setting_label, settings_in_order,
+    tilde,
+};
 use super::super::manage::Page;
 use super::super::md::{truncate, width as w};
 use super::super::sheets::page_tabs;
@@ -127,9 +130,15 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &format!("{s}{offered}"), t.text.patch(base));
             }
             Field::ModelOptions => {
-                let offered = app.model_settings(&f.backend, f.model.text.trim());
+                let offered = settings_in_order(app.model_settings(&f.backend, f.model.text.trim()));
+                let effort = app.form_effort(f, None);
                 if offered.is_empty() {
-                    put(buf, vx, y, vw, "none for this model", t.dim.patch(base));
+                    let none = if matches!(effort, Effort::Later) {
+                        "Effort level appears once the agent runs this model"
+                    } else {
+                        "none for this model"
+                    };
+                    put(buf, vx, y, vw, none, t.dim.patch(base));
                 }
                 let mut x = vx;
                 for (j, o) in offered.iter().enumerate() {
@@ -137,13 +146,19 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     let value = picked.map_or("default", |v| {
                         o.values.iter().find(|(id, _)| id == v).map_or(v.as_str(), |(_, name)| name.as_str())
                     });
-                    let item = format!("{} ‹{value}›", o.name);
+                    let item = format!("{} ‹{value}›", setting_label(o));
                     let s = if active && j == f.sub { t.bold.add_modifier(Modifier::UNDERLINED) } else { t.text };
                     if x + u(w(&item)) >= inner.right() {
                         put(buf, x, y, 2, "…", t.dim.patch(base));
                         break;
                     }
                     x = put(buf, x, y, u(w(&item)), &item, s.patch(base)) + 2;
+                }
+                // What the running agent says about the effort level, where the row has room.
+                if let Effort::Row { caption: Some(c), .. } = effort
+                    && x + u(w(&c)) + 2 < inner.right()
+                {
+                    rput(buf, inner.right(), y, &c, t.dim.patch(base));
                 }
             }
             Field::Agent => {
@@ -167,6 +182,14 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                         break;
                     }
                     x = put(buf, x, y, u(w(item)), item, s.patch(base)) + 2;
+                }
+                // The picked fallback's Effort level, as its own agent reports it.
+                if active
+                    && f.sub < f.fallbacks.len()
+                    && let Effort::Row { caption: Some(c), .. } = app.form_effort(f, Some(f.sub))
+                    && x + u(w(&c)) + 2 < inner.right()
+                {
+                    rput(buf, inner.right(), y, &c, t.dim.patch(base));
                 }
             }
             Field::SelfFallbacks => {
@@ -286,7 +309,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Skills => "←→ move · space toggle · i details · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::Model => "←→ pick a model · or type its id",
-        Field::Fallbacks => "←→ pick · space add / model · a agent · [ ] move · x remove",
+        Field::Fallbacks => "←→ pick · space add / model · e effort level · a agent · [ ] move · x remove",
         Field::Fast
         | Field::SelfFallbacks
         | Field::Color

@@ -1,6 +1,7 @@
 //! The bot form's Fallbacks field: the agents that carry on, in order, when the bot's own can't answer
 //! (`agent::fallback`). ←/→ picks a fallback or the "+ add" slot after them; space adds the next free agent on the
-//! slot and cycles a fallback's model; `a` gives a fallback the next free agent; `[`/`]` move it; `x` removes it. `A`
+//! slot and cycles a fallback's model; `e` cycles its Effort level through Default and the values its agent lists for
+//! its model; `a` gives a fallback the next free agent; `[`/`]` move it; `x` removes it. `A`
 //! on a failure notice that offers a fallback opens the field.
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -45,6 +46,22 @@ impl App {
                 if let Some(model) = self.cycle_model(&step.backend, step.model.as_deref().unwrap_or_default(), 1) {
                     step.model = (!model.is_empty()).then_some(model);
                     step.model_options.clear();
+                }
+            }
+            KeyCode::Char('e') if at < f.fallbacks.len() => {
+                let step = &mut f.fallbacks[at];
+                let model = step.model.clone().unwrap_or_default();
+                if let Some(o) = super::effort_setting(self.model_settings(&step.backend, &model)) {
+                    // Default (the agent's own), then each value.
+                    let ids: Vec<&str> =
+                        std::iter::once("").chain(o.values.iter().map(|(id, _)| id.as_str())).collect();
+                    let now = step.model_options.get(&o.id).map_or("", String::as_str);
+                    let next = ids[cycle(ids.iter().position(|i| *i == now).unwrap_or(0), 1, ids.len())];
+                    if next.is_empty() {
+                        step.model_options.remove(&o.id);
+                    } else {
+                        step.model_options.insert(o.id.clone(), next.to_owned());
+                    }
                 }
             }
             KeyCode::Char('a') if at < f.fallbacks.len() => {
@@ -114,6 +131,69 @@ mod tests {
         assert_eq!(agents(&f), ["codex"]);
         assert!(!app.fallback_key(&mut f, key(KeyCode::Char('q'))), "other keys aren't the field's");
         assert!(!f.dirty(), "back to the list it opened with");
+    }
+
+    #[tokio::test]
+    async fn each_fallback_has_its_own_effort_level() {
+        let mut app = test_app();
+        let level = |id: &str| {
+            json!({"id": id, "name": "Effort", "category": "thought_level",
+                "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]})
+        };
+        let catalog = |options: serde_json::Value| json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": options}]});
+        app.models.insert("claude".into(), Some(super::super::AgentModel::list(&catalog(json!([level("effort")])))));
+        app.models
+            .insert("codex".into(), Some(super::super::AgentModel::list(&catalog(json!([level("reasoning_effort")])))));
+        app.models.insert("gemini".into(), Some(super::super::AgentModel::list(&catalog(json!([])))));
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "modelOptions": {"effort": "high"},
+            "fallbacks": [{"backend": "codex", "model": null}, {"backend": "gemini", "model": null}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"reasoning_effort": "low"}, "sessionSettings": [level("reasoning_effort")]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        let key = |c: KeyCode| KeyEvent::from(c);
+        let item =
+            |app: &App, f: &Form, i: usize| crate::tui::view::fallbacks::step_item(app, None, i, &f.fallbacks[i]);
+        assert_eq!(
+            item(&app, &f, 0),
+            "1 codex · default · effort ‹default›",
+            "its own agent's list, not the bot's value"
+        );
+        assert_eq!(item(&app, &f, 1), "2 gemini · default", "an agent without an effort level shows none");
+        let caption = |app: &App, f: &Form, step| match app.form_effort(f, step) {
+            super::super::Effort::Row { caption, .. } => caption,
+            other => panic!("no row: {other:?}"),
+        };
+        assert_eq!(caption(&app, &f, Some(0)).as_deref(), Some("In use: Low (agent default)"), "the bot runs on it");
+        assert_eq!(
+            caption(&app, &f, None).as_deref(),
+            Some("Not running · Saved: High"),
+            "the bot's own isn't running"
+        );
+
+        assert!(app.fallback_key(&mut f, key(KeyCode::Char('e'))));
+        assert_eq!(f.fallbacks[0].model_options, [("reasoning_effort".to_owned(), "low".to_owned())].into());
+        assert_eq!(caption(&app, &f, Some(0)), None, "nothing to report for a value not saved yet");
+        app.fallback_key(&mut f, key(KeyCode::Char('e')));
+        app.fallback_key(&mut f, key(KeyCode::Char('e')));
+        assert!(f.fallbacks[0].model_options.is_empty(), "Default drops the entry's own value");
+        app.fallback_key(&mut f, key(KeyCode::Char('e')));
+        f.sub = 1;
+        assert!(app.fallback_key(&mut f, key(KeyCode::Char('e'))), "the key is the field's");
+        assert!(f.fallbacks[1].model_options.is_empty(), "nothing to pick where the agent lists no effort level");
+        app.fallback_key(&mut f, key(KeyCode::Char('[')));
+        assert_eq!(
+            f.fallbacks[1].model_options,
+            [("reasoning_effort".to_owned(), "low".to_owned())].into(),
+            "moves with it"
+        );
+        assert_eq!(
+            f.model_options().and_then(|o| o.get("effort")).map(String::as_str),
+            Some("high"),
+            "the bot's own stays"
+        );
     }
 
     #[tokio::test]

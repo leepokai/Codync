@@ -1,14 +1,22 @@
 //! How the terminal shows a bot's fallback chain (`agent::fallback`): the agent it's on, and each step's state.
 
-use super::super::app::{App, Bot};
+use super::super::app::{App, Bot, effort_setting};
 use super::time::now_ms;
 use super::usage::when_future;
 use crate::agent::fallback::Reason;
 use crate::store::Fallback;
 
-/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Gemini CLI · default (usage resets 15:00)".
+/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 · effort ‹High› (in use)", "2 Gemini CLI · default (usage resets
+/// 15:00)". The effort level shows where its agent lists one for the model, or one is saved.
 pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
-    let item = format!("{} {} · {}", i + 1, app.agent_name(&f.backend), f.model.as_deref().unwrap_or("default"));
+    let model = f.model.as_deref().unwrap_or("default");
+    let effort = effort_setting(app.model_settings(&f.backend, f.model.as_deref().unwrap_or_default())).map(|o| {
+        let value = f.model_options.get(&o.id).map_or("default", |v| {
+            o.values.iter().find(|(id, _)| id == v).map_or(v.as_str(), |(_, name)| name.as_str())
+        });
+        format!(" · effort ‹{value}›")
+    });
+    let item = format!("{} {} · {model}{}", i + 1, app.agent_name(&f.backend), effort.unwrap_or_default());
     if bot.and_then(|b| b.agent_step.as_deref()) == Some(f.backend.as_str()) {
         format!("{item} (in use)")
     } else if let Some(note) = bot.and_then(|b| rest_note(b, &f.backend)) {

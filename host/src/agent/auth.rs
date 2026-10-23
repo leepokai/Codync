@@ -239,8 +239,13 @@ fn selects<'a>(options: impl Iterator<Item = &'a Value>) -> Vec<Value> {
                     Some(json!({"id": value, "name": text(&v["name"]).unwrap_or(value)}))
                 })
                 .collect();
-            Some(json!({"id": id, "name": text(&o["name"]).unwrap_or(id), "values": values,
-                "default": text(&o["currentValue"])}))
+            let mut setting = json!({"id": id, "name": text(&o["name"]).unwrap_or(id), "values": values,
+                "default": text(&o["currentValue"])});
+            // Which kind of setting it is (`thought_level`: the effort level), when the agent says.
+            if let Some(category) = text(&o["category"]) {
+                setting["category"] = category.into();
+            }
+            Some(setting)
         })
         .collect()
 }
@@ -539,7 +544,7 @@ mod tests {
         assert_eq!(
             result["models"][0]["options"],
             json!([
-                {"id": "reasoning_effort", "name": "Reasoning", "default": "high",
+                {"id": "reasoning_effort", "name": "Reasoning", "default": "high", "category": "thought_level",
                  "values": [{"id": "medium", "name": "Medium"}, {"id": "high", "name": "High"}]},
                 {"id": "fast", "name": "fast", "default": "true",
                  "values": [{"id": "false", "name": "Off"}, {"id": "true", "name": "true"}]}
@@ -613,7 +618,7 @@ mod tests {
             {"group": "deep", "name": "Deep", "options": [{"value": "high", "name": "High"}]}]}]});
         assert_eq!(
             session_options(&session),
-            json!([{"id": "effort", "name": "effort", "default": "low",
+            json!([{"id": "effort", "name": "effort", "default": "low", "category": "thought_level",
                     "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]}])
             .as_array()
             .unwrap()

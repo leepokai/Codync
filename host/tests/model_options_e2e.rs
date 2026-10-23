@@ -219,7 +219,8 @@ async fn a_chosen_models_settings_come_from_the_session_running_it() {
     // to is `sessionOptions`).
     assert_eq!(
         shown["sessionSettings"],
-        json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "values": [{"id": "low", "name": "Low"}]}])
+        json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "category": "thought_level",
+            "values": [{"id": "low", "name": "Low"}]}])
     );
 }
 

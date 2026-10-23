@@ -48,8 +48,8 @@ What their issues taught, and the answer here:
   bot runs on it. Listing what an agent offers starts it (`agentModels`), so a fallback's row never asks: it says what
   its agent's own session reports while the bot is on it ("Effort level · In use: High"), or else what is saved. Edit in
   the row's menu opens the Add fallback sheet for it (agent kept; model and Effort level), which alone loads the list
-  (terminal UI: `e` on a fallback cycles its effort level, loading the list on the first press; where the loaded list
-  has no effort level, `e` clears a saved setting it doesn't list).
+  (terminal UI: `e` on a fallback cycles its effort level, loading the list on the first press; a setting the list
+  leaves out stays as saved, shown as "saved ‹high›").
 - Each agent appears once, the bot's own included. Making a fallback the bot's own agent drops it from the list
   (`fallback::tidy`).
 - Everything else is the bot's for every step: folder, approvals, connectors, skills, computer use, memory, fast mode

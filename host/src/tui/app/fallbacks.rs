@@ -51,15 +51,9 @@ impl App {
             KeyCode::Char('e') if at < f.fallbacks.len() => {
                 // Its agent's list loads on the first press; nothing starts that agent before.
                 self.want_models(&f.fallbacks[at].backend);
-                let settings = self.step_settings(f, Some(at));
-                let setting = super::effort_setting(settings).cloned();
-                let ids: Vec<String> = settings.iter().map(|o| o.id.clone()).collect();
-                let loaded = matches!(self.models.get(&f.fallbacks[at].backend), Some(Some(_)));
+                let setting = super::effort_setting(self.step_settings(f, Some(at))).cloned();
                 let step = &mut f.fallbacks[at];
-                if setting.is_none() && loaded {
-                    // No effort level listed for this model: a saved one nothing lists goes.
-                    step.model_options.retain(|id, _| ids.contains(id));
-                } else if let Some(o) = setting {
+                if let Some(o) = setting {
                     // Default (the agent's own), then each value.
                     let ids: Vec<&str> =
                         std::iter::once("").chain(o.values.iter().map(|(id, _)| id.as_str())).collect();

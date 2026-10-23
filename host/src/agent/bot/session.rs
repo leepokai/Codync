@@ -35,10 +35,20 @@ impl Actor {
         if slot.is_none() {
             self.reported.opened(sid, &selected.options);
             self.reported.unconfirmed(sid, &selected.unconfirmed, selected.model_unlisted);
+            self.reported.left_out(&selected.left_out.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>());
         }
-        for line in &selected.left_out {
+        for (_, line) in &selected.left_out {
             self.notice(line, NoticeStyle::Info);
         }
+    }
+
+    /// The agent refused one of the bot's settings: the session start fails, and the bot's own says which.
+    fn refused(&mut self, slot: Option<&str>, selected: &mut Selected) -> Result<()> {
+        let Some((id, error)) = selected.rejected.take() else { return Ok(()) };
+        if slot.is_none() {
+            self.reported.rejected(&id);
+        }
+        Err(error)
     }
 
     pub(super) fn set_session(&mut self, slot: Option<&str>, sid: Option<&str>) {
@@ -215,11 +225,18 @@ impl Actor {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
-                    let selected = if res.get("configOptions").is_some() || res.get("models").is_some() {
+                    let mut selected = if res.get("configOptions").is_some() || res.get("models").is_some() {
                         select_model(&conn.acp, &res, &sid, &self.cfg).await?
                     } else {
                         Selected { options: res, ..Selected::default() }
                     };
+                    // The agent refused one of the bot's settings (see `refused`).
+                    if let Some((id, error)) = selected.rejected.take() {
+                        if slot.is_none() {
+                            self.reported.rejected(&id);
+                        }
+                        return Err(error);
+                    }
                     let res = selected.options.clone();
                     conn.loaded.insert(sid.clone(), Instant::now());
                     self.note_options(&sid, &res, Listing::Session);
@@ -255,7 +272,8 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
-        let selected = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        let mut selected = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        self.refused(slot, &mut selected)?;
         self.note_options(&sid, &selected.options, Listing::Session);
         self.opened_session(slot, &sid, &selected);
         self.set_session(slot, Some(&sid));

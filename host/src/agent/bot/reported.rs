@@ -56,23 +56,29 @@ impl Reported {
     }
 
     /// Settings left out of the session just opened (never sent).
-    pub(super) fn left_out(&mut self, _ids: &[String]) {}
+    pub(super) fn left_out(&mut self, ids: &[String]) {
+        self.issues.extend(ids.iter().map(|id| (id.clone(), "not_offered")));
+    }
 
     /// The agent refused setting `id`: the session didn't start.
-    pub(super) fn rejected(&mut self, _id: &str) {}
+    pub(super) fn rejected(&mut self, id: &str) {
+        self.issues.insert(id.to_owned(), "rejected");
+    }
 
     /// The bot's saved settings changed: what went wrong with the old ones no longer applies.
-    pub(super) fn settings_changed(&mut self) {}
+    pub(super) fn settings_changed(&mut self) {
+        self.issues.clear();
+    }
 
     /// The payload's `settingIssues`.
     pub(super) fn issues(&self) -> BTreeMap<String, &'static str> {
-        BTreeMap::new()
+        self.issues.clone()
     }
 
     /// Keeps the report only while its session is live (`live` says whether a session is).
     pub(super) fn settle(&mut self, live: impl Fn(&str) -> bool) {
         if self.session.as_deref().is_some_and(|sid| !live(sid)) {
-            *self = Self::default();
+            *self = Self { issues: std::mem::take(&mut self.issues), ..Self::default() };
         }
     }
 

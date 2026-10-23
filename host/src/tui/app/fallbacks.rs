@@ -285,6 +285,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_running_fallbacks_line_reads_the_setting_its_session_lists() {
+        // Reviewer on b513536b: the catalog's effort level had another id than the session's.
+        let mut app = test_app();
+        let level = |id: &str| {
+            json!({"id": id, "name": "Effort", "category": "thought_level",
+                "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]})
+        };
+        let catalog =
+            json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": [level("old_effort")]}]});
+        app.models.insert("codex".into(), Some(super::super::AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude",
+            "fallbacks": [{"backend": "codex", "model": null, "modelOptions": {"effort": "high"}}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"effort": "high"}, "sessionSettings": [level("effort")]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        let line = crate::tui::view::fallbacks::chain_line(&app, &app.bots["b"]);
+        assert_eq!(line.as_deref(), Some("Fallbacks: 1 codex · default · effort: In use: High (in use)"));
+    }
+
+    #[tokio::test]
     async fn a_members_failure_in_a_group_opens_that_members_fallbacks() {
         let mut app = test_app();
         for bot in [

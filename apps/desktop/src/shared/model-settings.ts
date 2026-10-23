@@ -11,7 +11,9 @@ interface Catalog {
   currentModelId?: string | null
 }
 
-/** The settings to show for a bot's model (`''` is the agent's Default). */
+/** The settings to show for a bot's model. Default (`''`) shows those of the model the agent
+ *  runs by default, which is the one a bot on Default gets. */
 export function modelSettings(catalog: Catalog | null | undefined, model: string): ModelSetting[] {
-  return catalog?.models.find((m) => m.id === model)?.options ?? []
+  const id = model || catalog?.currentModelId
+  return catalog?.models.find((m) => m.id === id)?.options ?? []
 }

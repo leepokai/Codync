@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { ChoicePicker, IconButton, Pill, Spinner } from '../../components/Controls'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { modelSettings } from '@shared/model-settings'
 import type { AgentModelsState } from './agent-models'
 
 /** The bot's model and its options, from the list `useAgentModels` loaded for its agent. */
@@ -36,7 +37,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   const value = selection === agentDefault?.id ? '' : (selection ?? '')
   const set = (v: string) => onChange(v ? v : null)
   const empty = catalog?.models.length === 0
-  const modelOptions = available.find((m) => m.id === value)?.options ?? []
+  const modelOptions = modelSettings(catalog, value)
   const setOption = (id: string, v: string) => {
     const { [id]: _, ...rest } = chosen
     onOptionsChange(v ? { ...rest, [id]: v } : rest)

@@ -13,6 +13,9 @@ pub(super) struct Reported {
     values: BTreeMap<String, String>,
     /// The settings the session offers for the model it runs; `None` until it lists them.
     settings: Option<Vec<Value>>,
+    /// Saved settings that didn't take, by id: `not_offered` (left out, never sent) or `rejected` (the agent refused
+    /// it). They outlive the session they happened in, until the next one opens or the bot's settings change.
+    issues: BTreeMap<String, &'static str>,
 }
 
 impl Reported {
@@ -52,6 +55,20 @@ impl Reported {
         }
     }
 
+    /// Settings left out of the session just opened (never sent).
+    pub(super) fn left_out(&mut self, _ids: &[String]) {}
+
+    /// The agent refused setting `id`: the session didn't start.
+    pub(super) fn rejected(&mut self, _id: &str) {}
+
+    /// The bot's saved settings changed: what went wrong with the old ones no longer applies.
+    pub(super) fn settings_changed(&mut self) {}
+
+    /// The payload's `settingIssues`.
+    pub(super) fn issues(&self) -> BTreeMap<String, &'static str> {
+        BTreeMap::new()
+    }
+
     /// Keeps the report only while its session is live (`live` says whether a session is).
     pub(super) fn settle(&mut self, live: impl Fn(&str) -> bool) {
         if self.session.as_deref().is_some_and(|sid| !live(sid)) {
@@ -70,6 +87,21 @@ impl Reported {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn what_went_wrong_outlives_the_session_until_the_settings_or_session_change() {
+        let mut r = Reported::default();
+        r.rejected("effort");
+        r.settle(|_| false);
+        assert_eq!(r.issues(), [("effort".to_owned(), "rejected")].into(), "the session never started");
+        r.settings_changed();
+        assert!(r.issues().is_empty());
+        r.opened("main", &serde_json::json!({}));
+        r.left_out(&["effort".to_owned()]);
+        assert_eq!(r.issues(), [("effort".to_owned(), "not_offered")].into());
+        r.opened("next", &serde_json::json!({}));
+        assert!(r.issues().is_empty(), "a new session starts over");
+    }
+
     use super::*;
     use serde_json::json;
 

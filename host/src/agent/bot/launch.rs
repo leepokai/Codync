@@ -103,17 +103,21 @@ fn unoffered(session: &Value, id: &str, value: &str) -> Option<String> {
 }
 
 /// The `session/set_config_option` calls, in order: the model when the bot picked one, then its
-/// options. Without config options there is nothing to set them on.
+/// options. Without config options there is nothing to set them on; on Default the options need
+/// no model selector (an agent may list its models the older way).
 fn config_steps<'a>(
     res: &'a Value,
     model: Option<&'a str>,
     own: &'a BTreeMap<String, String>,
 ) -> Vec<(&'a str, &'a str)> {
-    let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) else {
+    if !res["configOptions"].is_array() {
         return Vec::new();
-    };
+    }
     match model {
         Some(model) => {
+            let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) else {
+                return Vec::new();
+            };
             let (model, options) = model_choice(res, model, own);
             std::iter::once((config_id, model)).chain(options).collect()
         }

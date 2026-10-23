@@ -230,9 +230,10 @@ fn selects<'a>(options: impl Iterator<Item = &'a Value>) -> Vec<Value> {
         .filter(|o| o["type"] == "select")
         .filter_map(|o| {
             let id = text(&o["id"])?;
-            let values: Vec<Value> = o["options"]
-                .as_array()?
-                .iter()
+            // Values may come in groups, as model lists do.
+            let listed = o["options"].as_array()?.iter();
+            let values: Vec<Value> = listed
+                .flat_map(|v| std::iter::once(v).chain(v["options"].as_array().into_iter().flatten()))
                 .filter_map(|v| {
                     let value = text(&v["value"])?;
                     Some(json!({"id": value, "name": text(&v["name"]).unwrap_or(value)}))

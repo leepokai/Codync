@@ -1,6 +1,8 @@
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
 
+import type { ModelSetting } from './model-settings'
+
 export type BotStatus = 'idle' | 'working' | 'needsInput' | 'error'
 
 export interface Bot {
@@ -36,6 +38,16 @@ export interface Bot {
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
   resting: Resting[]
+  /** The bot's main agent session is running (on the agent `agentStep` names), whatever it listed. */
+  sessionLive: boolean
+  /** What that session itself last listed its settings as (setting id → value); null with no session running. */
+  sessionOptions: Record<string, string> | null
+  /** The settings that session offers for the model it runs; null until it lists them. */
+  sessionSettings: ModelSetting[] | null
+  /** Saved settings that didn't take, by id: `not_offered` (left out) or `rejected`, and the value it was about. */
+  settingIssues: Record<string, { issue: string; value: string }>
+  /** A change that starts a new agent session waits for the running reply. */
+  restartPending: boolean
   pinned: boolean
   /** Where the user dragged it, lowest first (after pinned bots); ties sort by recent activity. */
   position: number
@@ -92,6 +104,11 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     resting: raw.resting ?? [],
+    sessionLive: raw.sessionLive ?? false,
+    sessionOptions: raw.sessionOptions ?? null,
+    sessionSettings: raw.sessionSettings ?? null,
+    settingIssues: raw.settingIssues ?? {},
+    restartPending: raw.restartPending ?? false,
     pinned: raw.pinned ?? false,
     position: raw.position ?? 0,
     hidden: raw.hidden ?? false,

@@ -58,3 +58,16 @@ test('a quote names who wrote it and falls back to file names', () => {
   assert.equal(quoteOf(message('user', { text: '', attachments: [{ id: 'a', name: 'a.png', size: 1 }, { id: 'c', name: 'c.pdf', size: 1 }] })).text, 'a.png, c.pdf')
   assert.equal(quoteOf(message('user', { text: 'x'.repeat(900) })).text.length, 500)
 })
+
+test('a bot carries what its running session reports, and an older host reports nothing', () => {
+  const bot = normalizeBot({
+    id: 'b', sessionLive: true, sessionOptions: { effort: 'high' }, sessionSettings: [{ id: 'effort', name: 'Effort', values: [] }],
+    settingIssues: { effort: { issue: 'rejected', value: 'max' } }, restartPending: true,
+  })
+  assert.deepEqual(
+    [bot.sessionLive, bot.sessionOptions, bot.sessionSettings?.length, bot.settingIssues.effort?.issue, bot.restartPending],
+    [true, { effort: 'high' }, 1, 'rejected', true],
+  )
+  const old = normalizeBot({ id: 'b' })
+  assert.deepEqual([old.sessionLive, old.sessionOptions, old.sessionSettings, old.settingIssues, old.restartPending], [false, null, null, {}, false])
+})

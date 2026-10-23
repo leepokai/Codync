@@ -62,6 +62,8 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
         return r.map(|_| (res.clone(), Vec::new())).map_err(|e| model_error(model, &e));
     }
     let mut current = res.clone();
+    // Whether `current` lists the options of the model the session runs now.
+    let mut fresh = true;
     let mut left_out = Vec::new();
     // Cursor lists each model's options only through its own method; asked once, when needed.
     let mut listing = Value::Null;
@@ -70,11 +72,11 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     for (i, (id, value)) in steps.iter().copied().enumerate() {
         let is_model = model.is_some() && i == 0;
         if !is_model {
-            if cfg.backend == "cursor" && listing.is_null() && !lists(&current, id) {
+            if cfg.backend == "cursor" && listing.is_null() && !(fresh && lists(&current, id)) {
                 listing = acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default();
             }
             let running = chosen.or_else(|| current_model(&current));
-            if let Some(offered) = unoffered(&current, &listing, running, id, value) {
+            if let Some(offered) = unoffered(&current, fresh, &listing, running, id, value) {
                 left_out.push(offered);
                 continue;
             }
@@ -89,6 +91,8 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
             })?;
         if answer["configOptions"].is_array() {
             current = answer;
+        } else if is_model {
+            fresh = false;
         }
     }
     Ok((current, left_out))
@@ -108,16 +112,28 @@ fn current_model(session: &Value) -> Option<&str> {
 
 /// Why `value` can't be set, from the agent's own schema: the session's options or, for an option the session
 /// doesn't list, Cursor's per-model `listing` for the `model` it runs. A setting no schema offers is never sent.
-fn unoffered(session: &Value, listing: &Value, model: Option<&str>, id: &str, value: &str) -> Option<String> {
+fn unoffered(
+    session: &Value,
+    fresh: bool,
+    listing: &Value,
+    model: Option<&str>,
+    id: &str,
+    value: &str,
+) -> Option<String> {
     let select = |o: &&Value| o["id"] == id && o["type"] == "select";
-    let in_session = session["configOptions"].as_array().into_iter().flatten().find(select);
+    // A list from before a model change describes the old model.
+    let in_session = session["configOptions"].as_array().filter(|_| fresh).into_iter().flatten().find(select);
     let per_model = || {
         let entry =
             listing["models"].as_array().into_iter().flatten().find(|m| model.is_some_and(|id| m["value"] == id));
         entry.and_then(|m| m["configOptions"].as_array()).into_iter().flatten().find(select)
     };
     let Some(option) = in_session.or_else(per_model) else {
-        return Some(format!("{id} {value} isn't offered by this agent, so it isn't set."));
+        return Some(if fresh {
+            format!("{id} {value} isn't offered by this agent, so it isn't set.")
+        } else {
+            format!("{id} {value} couldn't be confirmed for this model, so it isn't set.")
+        });
     };
     // Values may come in groups, as model lists do.
     let listed = option["options"].as_array().into_iter().flatten();
@@ -322,14 +338,14 @@ mod tests {
             {"id": "effort", "name": "Effort", "type": "select", "options": [{"value": "low"}, {"group": "more",
              "options": [{"value": "high"}]}]},
         ]});
-        assert_eq!(unoffered(&session, &Value::Null, None, "effort", "low"), None);
-        assert_eq!(unoffered(&session, &Value::Null, None, "effort", "high"), None, "grouped values count");
+        assert_eq!(unoffered(&session, true, &Value::Null, None, "effort", "low"), None);
+        assert_eq!(unoffered(&session, true, &Value::Null, None, "effort", "high"), None, "grouped values count");
         assert_eq!(
-            unoffered(&session, &Value::Null, None, "effort", "max").as_deref(),
+            unoffered(&session, true, &Value::Null, None, "effort", "max").as_deref(),
             Some("Effort max isn't offered for this model, so the agent uses its own setting.")
         );
         // Without a schema that lists it (see `a_saved_setting_no_schema_offers_is_never_sent`), nothing is sent.
-        assert!(unoffered(&session, &Value::Null, None, "fast", "true").is_some());
+        assert!(unoffered(&session, true, &Value::Null, None, "fast", "true").is_some());
     }
 
     #[test]
@@ -352,19 +368,19 @@ mod tests {
         ]});
         // Not on the session and no per-model list: nothing says the agent has it.
         assert_eq!(
-            unoffered(&session, &Value::Null, Some("grok"), "verbosity", "terse").as_deref(),
+            unoffered(&session, true, &Value::Null, Some("grok"), "verbosity", "terse").as_deref(),
             Some("verbosity terse isn't offered by this agent, so it isn't set.")
         );
         // Cursor's own per-model list is the schema for its model options.
         let listing = json!({"models": [{"value": "grok", "configOptions": [
             {"id": "fast", "type": "select", "options": [{"value": "false"}, {"value": "true"}]}]}]});
-        assert_eq!(unoffered(&session, &listing, Some("grok"), "fast", "true"), None);
+        assert_eq!(unoffered(&session, true, &listing, Some("grok"), "fast", "true"), None);
         assert_eq!(
-            unoffered(&session, &listing, Some("grok"), "fast", "maybe").as_deref(),
+            unoffered(&session, true, &listing, Some("grok"), "fast", "maybe").as_deref(),
             Some("fast maybe isn't offered for this model, so the agent uses its own setting.")
         );
         // Another model's list doesn't vouch for this one.
-        assert!(unoffered(&session, &listing, Some("auto"), "fast", "true").is_some());
+        assert!(unoffered(&session, true, &listing, Some("auto"), "fast", "true").is_some());
     }
 
     #[test]

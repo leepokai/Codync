@@ -83,12 +83,26 @@ async fn a_setting_the_agent_rejects_names_the_setting() {
     }
     let host = Host::start().await;
     let bot = host.fixture_bot("Rejected", "effort_agent.py", "").await;
-    // A setting the session doesn't list goes to the agent as saved (Cursor's arrive this way); it refuses it.
-    host.call("updateBot", json!({"id": bot, "modelOptions": {"verbosity": "terse"}})).await;
+    // Listed, so it is sent; the agent refuses it.
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "max"}})).await;
     host.call("send", json!({"botId": bot, "text": "one"})).await;
     let failed = wait_for(&host, &bot, "failure", |e| e["data"]["style"] == "error").await;
     let text = failed["data"]["text"].as_str().unwrap();
-    assert!(text.contains("Couldn't set verbosity to terse"), "{text}");
+    assert!(text.contains("Couldn't set reasoning_effort to max"), "{text}");
+}
+
+#[tokio::test]
+async fn a_setting_no_schema_offers_is_never_sent() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Unlisted", "effort_agent.py", "").await;
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"verbosity": "terse"}})).await;
+    assert_eq!(answer(&host, &bot, "one").await, "sol low · one");
+    assert_eq!(calls(&host, &bot), ["session/new"], "never sent");
+    let said = wait_for(&host, &bot, "notice", |e| e["kind"] == "notice").await;
+    assert!(said["data"]["text"].as_str().unwrap().contains("verbosity terse isn't offered by this agent"));
 }
 
 #[tokio::test]

@@ -106,11 +106,19 @@ fn current_model(session: &Value) -> Option<&str> {
         .or_else(|| session["models"]["currentModelId"].as_str())
 }
 
-/// Why `value` can't be set: the session lists option `id` without it. An option the session doesn't list goes to
-/// the agent as saved (Cursor's own model options arrive that way), and the agent decides.
-fn unoffered(session: &Value, _listing: &Value, _model: Option<&str>, id: &str, value: &str) -> Option<String> {
-    let options = session["configOptions"].as_array()?;
-    let option = options.iter().find(|o| o["id"] == id && o["type"] == "select")?;
+/// Why `value` can't be set, from the agent's own schema: the session's options or, for an option the session
+/// doesn't list, Cursor's per-model `listing` for the `model` it runs. A setting no schema offers is never sent.
+fn unoffered(session: &Value, listing: &Value, model: Option<&str>, id: &str, value: &str) -> Option<String> {
+    let select = |o: &&Value| o["id"] == id && o["type"] == "select";
+    let in_session = session["configOptions"].as_array().into_iter().flatten().find(select);
+    let per_model = || {
+        let entry =
+            listing["models"].as_array().into_iter().flatten().find(|m| model.is_some_and(|id| m["value"] == id));
+        entry.and_then(|m| m["configOptions"].as_array()).into_iter().flatten().find(select)
+    };
+    let Some(option) = in_session.or_else(per_model) else {
+        return Some(format!("{id} {value} isn't offered by this agent, so it isn't set."));
+    };
     // Values may come in groups, as model lists do.
     let listed = option["options"].as_array().into_iter().flatten();
     let values: Vec<&str> = listed

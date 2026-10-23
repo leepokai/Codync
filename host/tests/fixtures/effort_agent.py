@@ -1,7 +1,7 @@
 """ACP agent offering reasoning effort the way Codex's adapter does: a session-level
 `reasoning_effort` select (category `thought_level`) beside the model select. Model
-`sol` accepts low and high, `mini` only low; a value the model doesn't list is
-rejected. Each process starts on sol at low, like a fresh Codex. It resumes sessions,
+`sol` lists low, high and max, `mini` only low; a value the model doesn't list is
+rejected, and so is max, the way an account can refuse a listed value. Each process starts on sol at low, like a fresh Codex. It resumes sessions,
 logs session calls to calls.jsonl in its folder, and answers each prompt with its
 model, effort and the message."""
 
@@ -9,7 +9,7 @@ import json
 import sys
 
 model, effort = "sol", "low"
-EFFORTS = {"sol": ["low", "high"], "mini": ["low"]}
+EFFORTS = {"sol": ["low", "high", "max"], "mini": ["low"]}
 
 
 def send(value):
@@ -46,7 +46,7 @@ for line in sys.stdin:
         log({"method": method, "configId": config, "value": value})
         if config == "model" and value in EFFORTS:
             model, effort = value, "low"
-        elif config == "reasoning_effort" and value in EFFORTS[model]:
+        elif config == "reasoning_effort" and value in EFFORTS[model] and value != "max":
             effort = value
         else:
             send({"id": rid, "error": {"code": -32602, "message": f"{config} {value} is not available"}})

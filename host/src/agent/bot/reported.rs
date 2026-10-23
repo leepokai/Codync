@@ -96,16 +96,30 @@ mod tests {
     #[test]
     fn what_went_wrong_outlives_the_session_until_the_settings_or_session_change() {
         let mut r = Reported::default();
-        r.rejected("effort");
+        r.rejected("effort", "max");
         r.settle(|_| false);
-        assert_eq!(r.issues(), [("effort".to_owned(), "rejected")].into(), "the session never started");
+        assert_eq!(
+            r.issues(),
+            serde_json::json!({"effort": {"issue": "rejected", "value": "max"}}),
+            "the session never started; the issue names the value it was about"
+        );
         r.settings_changed();
-        assert!(r.issues().is_empty());
+        assert_eq!(r.issues(), serde_json::json!({}), "a new choice isn't the refused one");
         r.opened("main", &serde_json::json!({}));
-        r.left_out(&["effort".to_owned()]);
-        assert_eq!(r.issues(), [("effort".to_owned(), "not_offered")].into());
+        r.left_out(&[("effort".to_owned(), "high".to_owned())]);
+        assert_eq!(r.issues(), serde_json::json!({"effort": {"issue": "not_offered", "value": "high"}}));
         r.opened("next", &serde_json::json!({}));
-        assert!(r.issues().is_empty(), "a new session starts over");
+        assert_eq!(r.issues(), serde_json::json!({}), "a new session starts over");
+    }
+
+    #[test]
+    fn live_comes_from_the_session_not_from_what_it_listed() {
+        let mut r = Reported::default();
+        assert!(!r.live());
+        r.opened("main", &serde_json::json!({"sessionId": "main"}));
+        assert!(r.live(), "a session that lists nothing is still running");
+        r.settle(|_| false);
+        assert!(!r.live());
     }
 
     use super::*;

@@ -16,6 +16,14 @@ class AgentSettingsTest {
         assertEquals(listOf(ModelChoice(null, "Default")), AgentModels(emptyList()).options(null))
     }
 
+    @Test fun `default model shows the settings of the model the agent runs by default`() {
+        val catalog = WireJson.decodeFromString<AgentModels>("""{"models":[{"id":"gpt-6.1-sol","name":"6.1 Sol","options":[{"id":"reasoning_effort","name":"Reasoning Effort","default":"low","values":[{"id":"low","name":"Low"},{"id":"high","name":"High"}]}]},{"id":"gpt-6.1-mini","name":"6.1 Mini","options":[]}],"currentModelId":"gpt-6.1-sol"}""")
+        assertEquals(listOf("reasoning_effort"), catalog.settings("").map { it.id })
+        assertTrue(catalog.settings("gpt-6.1-mini").isEmpty())
+        assertTrue(catalog.settings("typed-by-hand").isEmpty())
+        assertTrue(AgentModels(emptyList()).settings("").isEmpty())
+    }
+
     @Test fun `new bot defaults preserve host connectors and a nullable notification toggle turns off`() {
         val draft = BotDraft(command = "stale custom command")
         assertFalse("an unnamed bot is only created, never saved", draft.isValid)

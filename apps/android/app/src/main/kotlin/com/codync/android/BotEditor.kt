@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.BotDraft
 import com.codync.android.core.LinkState
+import com.codync.android.core.report
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.serialization.json.JsonArray
@@ -130,7 +131,10 @@ internal val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanO
             }
             row {
                 AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
-                    { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) })
+                    { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
+                    // The running agent's word is about the saved agent and model, not an unsaved choice.
+                    status = bot?.takeIf { it.backend == draft.backend && it.model == draft.model }?.let { it.report(it.backend) to it.modelOptions },
+                    working = bot?.status == "working")
             }
             // Only from a host that has fallbacks (its bots say).
             val list = draft.fallbacks

@@ -2,8 +2,9 @@ package com.codync.android.core
 
 import kotlinx.serialization.Serializable
 
-/** A model setting (effort, fast…) and the values the agent accepts. */
-@Serializable data class ModelOption(val id: String, val name: String, val values: List<ModelOptionValue> = emptyList(), val default: String? = null)
+/** A model setting (effort, fast…) and the values the agent accepts; [category] is the agent's ACP category (`thought_level`: the effort level). */
+@Serializable data class ModelOption(val id: String, val name: String, val values: List<ModelOptionValue> = emptyList(), val default: String? = null,
+    val category: String? = null)
 @Serializable data class ModelOptionValue(val id: String, val name: String)
 @Serializable data class AgentModel(val id: String, val name: String, val description: String? = null, val options: List<ModelOption>? = null)
 /** `fastMode`: the agent offers Fast mode (absent on older hosts). */

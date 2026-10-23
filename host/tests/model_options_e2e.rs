@@ -162,3 +162,29 @@ async fn a_chosen_models_settings_come_from_the_session_running_it() {
         json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "values": [{"id": "low", "name": "Low"}]}])
     );
 }
+
+#[tokio::test]
+async fn a_bot_left_on_default_sends_nothing_and_another_bot_is_untouched() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let set = host.fixture_bot("Set", "effort_agent.py", "").await;
+    let plain = host.fixture_bot("Plain", "effort_agent.py", "").await;
+    host.call("updateBot", json!({"id": set, "modelOptions": {"reasoning_effort": "high"}})).await;
+    assert_eq!(answer(&host, &set, "one").await, "sol high · one");
+    assert_eq!(answer(&host, &plain, "two").await, "sol low · two", "the agent's own default");
+    assert_eq!(calls(&host, &plain), ["session/new"], "no model and no setting is forced on it");
+
+    // Read back, then cleared to inherit again.
+    let saved = |snapshot: &Value, id: &str| {
+        snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == id).unwrap()["modelOptions"].clone()
+    };
+    let snapshot = host.snapshot().await;
+    assert_eq!(saved(&snapshot, &set), json!({"reasoning_effort": "high"}));
+    assert_eq!(saved(&snapshot, &plain), json!({}));
+    host.call("updateBot", json!({"id": set, "modelOptions": {}})).await;
+    assert_eq!(saved(&host.snapshot().await, &set), json!({}));
+    assert_eq!(answer(&host, &set, "three").await, "sol low · three");
+    assert_eq!(calls(&host, &set)[2..], ["session/new"], "inheriting again sets nothing");
+}

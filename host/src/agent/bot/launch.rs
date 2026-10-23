@@ -107,7 +107,9 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
             }
         };
         if answer["configOptions"].is_array() {
+            // A full list is the session's word again, whatever came before it.
             current = answer;
+            fresh = true;
             unconfirmed.clear();
         } else if is_model {
             fresh = false;

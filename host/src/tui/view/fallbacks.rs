@@ -19,7 +19,9 @@ pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fall
     let session = bot.filter(|_| host.is_some_and(|h| h.model_options == f.model_options)).and_then(|b| {
         (b.agent_step.as_deref() == Some(f.backend.as_str())).then(|| b.session_of(&f.backend)).flatten()
     });
-    let reported = setting.zip(session).and_then(|(o, s)| {
+    let reported = session.and_then(|s| {
+        // The setting `effort` describes: the session's own effort level before the catalog's.
+        let Effort::Row { setting: Some(o), .. } = effort(&settings, None, Some(s), false, false) else { return None };
         let saved = f.model_options.get(&o.id).map(String::as_str);
         match effort(&settings, saved, Some(s), false, false) {
             Effort::Row { caption: Some(c), .. } => Some(format!(" · effort: {c}")),

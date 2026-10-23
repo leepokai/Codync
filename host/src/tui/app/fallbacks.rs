@@ -49,11 +49,11 @@ impl App {
                 }
             }
             KeyCode::Char('e') if at < f.fallbacks.len() => {
-                let step = &mut f.fallbacks[at];
                 // Its agent's list loads on the first press; nothing starts that agent before.
-                self.want_models(&step.backend);
-                let model = step.model.clone().unwrap_or_default();
-                if let Some(o) = super::effort_setting(self.model_settings(&step.backend, &model)) {
+                self.want_models(&f.fallbacks[at].backend);
+                let setting = super::effort_setting(self.step_settings(f, Some(at))).cloned();
+                let step = &mut f.fallbacks[at];
+                if let Some(o) = setting {
                     // Default (the agent's own), then each value.
                     let ids: Vec<&str> =
                         std::iter::once("").chain(o.values.iter().map(|(id, _)| id.as_str())).collect();

@@ -39,6 +39,34 @@ pub fn label(o: &ModelOption) -> &str {
 }
 
 impl App {
+    /// The settings a step offers: while the bot runs its agent on the model the host saved for the step, with nothing
+    /// pending, that session's own list (for the model it runs); else what the agent's catalog lists for `model`.
+    pub(in crate::tui) fn settings_for<'a>(
+        &'a self,
+        bot: Option<&'a Bot>,
+        backend: &str,
+        model: &str,
+        saved: bool,
+    ) -> &'a [ModelOption] {
+        let session = bot.filter(|_| saved).and_then(|b| b.session_of(backend)).filter(|s| !s.pending);
+        session.and_then(|s| s.settings.as_deref()).unwrap_or_else(|| self.model_settings(backend, model))
+    }
+
+    /// `settings_for` the form's own agent (`step` `None`) or its fallback `step`, as the form shows them now.
+    pub(in crate::tui) fn step_settings(&self, f: &Form, step: Option<usize>) -> &[ModelOption] {
+        let entry = step.and_then(|i| f.fallbacks.get(i));
+        let (backend, model) = match entry {
+            Some(x) => (x.backend.clone(), x.model.clone().unwrap_or_default()),
+            None => (f.backend.clone(), f.model.text.trim().to_owned()),
+        };
+        let bot = self.bots.get(&f.bot_id);
+        let saved = bot.is_some_and(|b| match entry {
+            Some(_) => b.fallbacks.iter().any(|x| x.backend == backend && x.model.clone().unwrap_or_default() == model),
+            None => b.backend == backend && b.model.clone().unwrap_or_default() == model,
+        });
+        self.settings_for(bot, &backend, &model, saved)
+    }
+
     /// The Effort level of the form's own agent (`step` `None`) or of its fallback `step`. The line under it speaks
     /// only for what the host saved: none while the form shows another agent, model or value.
     pub(in crate::tui) fn form_effort(&self, f: &Form, step: Option<usize>) -> Effort<'_> {

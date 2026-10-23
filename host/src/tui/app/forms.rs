@@ -264,7 +264,7 @@ impl App {
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::ModelOptions => {
                         let model = f.model.text.trim().to_owned();
-                        let offered = super::settings_in_order(self.model_settings(&f.backend, &model));
+                        let offered = super::settings_in_order(self.step_settings(&f, None));
                         if !space {
                             f.sub = cycle(f.sub, d, offered.len().max(1));
                         } else if let Some(o) = offered.get(f.sub) {

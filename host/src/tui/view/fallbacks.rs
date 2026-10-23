@@ -10,7 +10,10 @@ use crate::store::Fallback;
 /// 15:00)". The effort level shows where its agent lists one for the model, or one is saved.
 pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
     let model = f.model.as_deref().unwrap_or("default");
-    let effort = effort_setting(app.model_settings(&f.backend, f.model.as_deref().unwrap_or_default())).map(|o| {
+    // While the bot runs this agent on the saved model, its session's own list; else the agent's catalog.
+    let saved = bot.is_some_and(|b| b.fallbacks.iter().any(|x| x.backend == f.backend && x.model == f.model));
+    let settings = app.settings_for(bot, &f.backend, f.model.as_deref().unwrap_or_default(), saved);
+    let effort = effort_setting(settings).map(|o| {
         let value = f.model_options.get(&o.id).map_or("default", |v| {
             o.values.iter().find(|(id, _)| id == v).map_or(v.as_str(), |(_, name)| name.as_str())
         });

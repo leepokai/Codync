@@ -130,7 +130,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &format!("{s}{offered}"), t.text.patch(base));
             }
             Field::ModelOptions => {
-                let offered = settings_in_order(app.model_settings(&f.backend, f.model.text.trim()));
+                let offered = settings_in_order(app.step_settings(f, None));
                 let effort = app.form_effort(f, None);
                 if offered.is_empty() {
                     let none = if matches!(effort, Effort::Later) {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MAX_FALLBACKS, moveFallback, restLine, restOf, stepBanner } from '@shared/fallbacks'
-import { fallbackLine, reportFor } from '@shared/model-settings'
+import { fallbackLine, fallbackStatus, reportFor } from '@shared/model-settings'
 import type { Backend, Bot, BotDraft, Fallback } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, ChoicePicker, DropdownMenu, IconButton, ValueRow } from '../../components/Controls'
@@ -183,7 +183,8 @@ function FallbackSheet({ choices, initial, bot, onDone }: { choices: Backend[]; 
             options={modelOptions}
             onOptionsChange={setModelOptions}
             sessionNote={false}
-            status={initial && bot ? fallbackStatus(bot, initial) : undefined}
+            // What the running agent says is about the saved model only, never one picked here and not saved yet.
+            status={initial && bot ? fallbackStatus(bot, { backend, model }) : undefined}
           />
         </CardSection>
       </CardForm>
@@ -191,10 +192,3 @@ function FallbackSheet({ choices, initial, bot, onDone }: { choices: Backend[]; 
   )
 }
 
-/** What a fallback's own agent reports while the bot runs on it, and what the host saved for the entry (its model
- *  unchanged): the Edit sheet's Effort level line. */
-function fallbackStatus(bot: Bot, entry: Fallback) {
-  const saved = bot.fallbacks.find((f) => f.backend === entry.backend && (f.model ?? null) === (entry.model ?? null))
-  if (!saved) return undefined
-  return { report: bot.agentStep?.agent === entry.backend ? reportFor(bot, bot.agentStep.step) : null, saved: saved.modelOptions }
-}

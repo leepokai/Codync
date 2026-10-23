@@ -49,30 +49,54 @@ pub(crate) async fn launch_commands(cfg: &BotConfig, progress: impl Fn(&str)) ->
 }
 
 /// Switches a session (`session/new` or `session/load` answered `res`) to the bot's
-/// chosen model, then sets that model's options (effort, fast…). Returns the answer holding
-/// the session's config options now: a model can change them.
+/// chosen model, then sets that model's options (effort, fast…). A bot on the agent's default
+/// model gets its options too. Returns the answer holding the session's config options now: a
+/// model can change them.
 pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Value> {
-    let Some(model) = cfg.model.as_deref().filter(|m| !m.is_empty()) else { return Ok(res.clone()) };
-    let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) else {
+    let model = cfg.model.as_deref().filter(|m| !m.is_empty());
+    if let Some(model) = model
+        && crate::agent::auth::model_config(res).is_none()
+    {
         let r = acp.request("session/set_model", json!({"sessionId": sid, "modelId": model})).await;
         return r.map(|_| res.clone()).map_err(|e| model_error(model, &e));
-    };
-    let (model, options) = model_choice(res, model, &cfg.model_options);
-    let set = |id: &str, value: &str| {
-        acp.request("session/set_config_option", json!({"sessionId": sid, "configId": id, "value": value}))
-    };
-    let mut current = set(config_id, model).await.map_err(|e| model_error(model, &e))?;
-    for (id, value) in options {
-        let answer = set(id, value).await.map_err(|e| model_error(&format!("{model} with {id}={value}"), &e))?;
+    }
+    let mut current = res.clone();
+    for (i, (id, value)) in config_steps(res, model, &cfg.model_options).into_iter().enumerate() {
+        let answer = acp
+            .request("session/set_config_option", json!({"sessionId": sid, "configId": id, "value": value}))
+            .await
+            .map_err(|e| match model {
+                Some(model) if i == 0 => model_error(model, &e),
+                Some(model) => model_error(&format!("{model} with {id}={value}"), &e),
+                None => option_error(id, value, &e),
+            })?;
         if answer["configOptions"].is_array() {
             current = answer;
         }
     }
-    Ok(if current["configOptions"].is_array() { current } else { res.clone() })
+    Ok(current)
 }
 
-/// The model to select and the options to set on it: the model id's variant, then the bot's own. How the agent
-/// approves tools is the bot's Approvals, never a model option (`opus[mode=acceptEdits]`).
+/// The `session/set_config_option` calls, in order: the model when the bot picked one, then its
+/// options. Without config options there is nothing to set them on.
+fn config_steps<'a>(
+    res: &'a Value,
+    model: Option<&'a str>,
+    own: &'a BTreeMap<String, String>,
+) -> Vec<(&'a str, &'a str)> {
+    let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) else {
+        return Vec::new();
+    };
+    match model {
+        Some(model) => {
+            let (model, options) = model_choice(res, model, own);
+            std::iter::once((config_id, model)).chain(options).collect()
+        }
+        None => own_options(res, own.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()),
+    }
+}
+
+/// The model to select and the options to set on it: the model id's variant, then the bot's own.
 fn model_choice<'a>(
     res: &Value,
     model: &'a str,
@@ -80,9 +104,19 @@ fn model_choice<'a>(
 ) -> (&'a str, Vec<(&'a str, &'a str)>) {
     let (model, mut options) = split_variant(res, model);
     options.extend(own.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    (model, own_options(res, options))
+}
+
+/// How the agent approves tools is the bot's Approvals, never a model option (`opus[mode=acceptEdits]`).
+fn own_options<'a>(res: &Value, mut options: Vec<(&'a str, &'a str)>) -> Vec<(&'a str, &'a str)> {
     let mode = res["configOptions"].as_array().into_iter().flatten().find(|o| o["category"] == "mode");
     options.retain(|(id, _)| mode.is_none_or(|m| m["id"] != *id));
-    (model, options)
+    options
+}
+
+fn option_error(id: &str, value: &str, e: &anyhow::Error) -> anyhow::Error {
+    tracing::warn!(id, value, error = format!("{e:#}"), "couldn't set model option");
+    acp::Failure::error(acp::FailureKind::NoModel, format!("Couldn't set {id} to {value}: {e:#}"))
 }
 
 fn model_error(model: &str, e: &anyhow::Error) -> anyhow::Error {

@@ -161,7 +161,8 @@ pub(crate) fn model_ids(session: &Value) -> Vec<String> {
 }
 
 /// `{models: [{id, name, description, options}], currentModelId, fastMode}`; `options` is
-/// Cursor's `cursor/list_available_models` answer (`Null` for other agents).
+/// Cursor's `cursor/list_available_models` answer (`Null` for other agents, whose current
+/// model gets the session's own settings, such as Codex's reasoning effort).
 fn model_catalog(session: &Value, options: &Value) -> Value {
     fn collect(options: &Value, out: &mut Vec<Value>) {
         for option in options.as_array().into_iter().flatten() {
@@ -190,8 +191,14 @@ fn model_catalog(session: &Value, options: &Value) -> Value {
         }
         text(&session["models"]["currentModelId"])
     };
+    let own = session_options(session);
     for model in &mut models {
-        model["options"] = json!(model_options(options, model["id"].as_str().unwrap_or_default()));
+        let id = model["id"].as_str().unwrap_or_default();
+        model["options"] = json!(if options.is_null() && current.as_deref() == Some(id) {
+            own.clone()
+        } else {
+            model_options(options, id)
+        });
     }
     json!({"models": models, "currentModelId": current,
         "fastMode": crate::agent::config::fast_mode_config(session).is_some()})
@@ -201,10 +208,25 @@ fn model_catalog(session: &Value, options: &Value) -> Value {
 /// `{models: [{value, configOptions}]}` (ACP select config options).
 fn model_options(options: &Value, model: &str) -> Vec<Value> {
     let entry = options["models"].as_array().into_iter().flatten().find(|m| m["value"] == model);
-    entry
-        .and_then(|m| m["configOptions"].as_array())
+    selects(entry.and_then(|m| m["configOptions"].as_array()).into_iter().flatten())
+}
+
+/// The session's own settings for the model it runs, in the same shape: every select config
+/// option except the model itself, how the agent approves tools (the bot's Approvals) and
+/// Fast mode (its own switch).
+fn session_options(session: &Value) -> Vec<Value> {
+    let model = model_config(session).map(|c| &c["id"]);
+    let fast = crate::agent::config::fast_mode_config(session).map(|c| &c["id"]);
+    let own = session["configOptions"]
+        .as_array()
         .into_iter()
         .flatten()
+        .filter(|o| o["category"] != "mode" && Some(&o["id"]) != model && Some(&o["id"]) != fast);
+    selects(own)
+}
+
+fn selects<'a>(options: impl Iterator<Item = &'a Value>) -> Vec<Value> {
+    options
         .filter(|o| o["type"] == "select")
         .filter_map(|o| {
             let id = text(&o["id"])?;

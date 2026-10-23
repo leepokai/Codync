@@ -63,11 +63,21 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     }
     let mut current = res.clone();
     let mut left_out = Vec::new();
-    for (i, (id, value)) in config_steps(res, model, &cfg.model_options).into_iter().enumerate() {
+    // Cursor lists each model's options only through its own method; asked once, when needed.
+    let mut listing = Value::Null;
+    let steps = config_steps(res, model, &cfg.model_options);
+    let chosen = model.map(|_| steps.first().map_or("", |s| s.1));
+    for (i, (id, value)) in steps.iter().copied().enumerate() {
         let is_model = model.is_some() && i == 0;
-        if !is_model && let Some(offered) = unoffered(&current, id, value) {
-            left_out.push(offered);
-            continue;
+        if !is_model {
+            if cfg.backend == "cursor" && listing.is_null() && !lists(&current, id) {
+                listing = acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default();
+            }
+            let running = chosen.or_else(|| current_model(&current));
+            if let Some(offered) = unoffered(&current, &listing, running, id, value) {
+                left_out.push(offered);
+                continue;
+            }
         }
         let answer = acp
             .request("session/set_config_option", json!({"sessionId": sid, "configId": id, "value": value}))
@@ -84,9 +94,21 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     Ok((current, left_out))
 }
 
+/// Whether the session lists select option `id`.
+fn lists(session: &Value, id: &str) -> bool {
+    session["configOptions"].as_array().into_iter().flatten().any(|o| o["id"] == id && o["type"] == "select")
+}
+
+/// The model the session runs, as it lists it.
+fn current_model(session: &Value) -> Option<&str> {
+    crate::agent::auth::model_config(session)
+        .and_then(|c| c["currentValue"].as_str())
+        .or_else(|| session["models"]["currentModelId"].as_str())
+}
+
 /// Why `value` can't be set: the session lists option `id` without it. An option the session doesn't list goes to
 /// the agent as saved (Cursor's own model options arrive that way), and the agent decides.
-fn unoffered(session: &Value, id: &str, value: &str) -> Option<String> {
+fn unoffered(session: &Value, _listing: &Value, _model: Option<&str>, id: &str, value: &str) -> Option<String> {
     let options = session["configOptions"].as_array()?;
     let option = options.iter().find(|o| o["id"] == id && o["type"] == "select")?;
     // Values may come in groups, as model lists do.
@@ -292,15 +314,15 @@ mod tests {
             {"id": "effort", "name": "Effort", "type": "select", "options": [{"value": "low"}, {"group": "more",
              "options": [{"value": "high"}]}]},
         ]});
-        assert_eq!(unoffered(&session, "effort", "low"), None);
-        assert_eq!(unoffered(&session, "effort", "high"), None, "grouped values count");
+        assert_eq!(unoffered(&session, &Value::Null, None, "effort", "low"), None);
+        assert_eq!(unoffered(&session, &Value::Null, None, "effort", "high"), None, "grouped values count");
         assert_eq!(
-            unoffered(&session, "effort", "max").as_deref(),
+            unoffered(&session, &Value::Null, None, "effort", "max").as_deref(),
             Some("Effort max isn't offered for this model, so the agent uses its own setting.")
         );
         // Cursor lists its model options elsewhere: an option the session doesn't list is the agent's to judge.
-        assert_eq!(unoffered(&session, "fast", "true"), None);
-        assert_eq!(unoffered(&json!({}), "effort", "max"), None);
+        assert_eq!(unoffered(&session, &Value::Null, None, "fast", "true"), None);
+        assert_eq!(unoffered(&json!({}), &Value::Null, None, "effort", "max"), None);
     }
 
     #[test]

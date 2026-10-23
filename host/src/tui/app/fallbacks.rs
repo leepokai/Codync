@@ -266,6 +266,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_running_fallbacks_line_says_what_its_session_runs_not_only_what_is_saved() {
+        // Greptile on #204: the chain showed the saved High beside "in use" while the agent ran Low.
+        let mut app = test_app();
+        let level = json!({"id": "reasoning_effort", "name": "Effort", "category": "thought_level",
+            "values": [{"id": "low", "name": "Low"}]});
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude",
+            "fallbacks": [{"backend": "codex", "model": null, "modelOptions": {"reasoning_effort": "high"}}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"reasoning_effort": "low"}, "sessionSettings": [level],
+            "settingIssues": {"reasoning_effort": {"issue": "not_offered", "value": "high"}}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        let line = crate::tui::view::fallbacks::chain_line(&app, &app.bots["b"]);
+        assert_eq!(
+            line.as_deref(),
+            Some("Fallbacks: 1 codex · default · effort: In use: Low · Saved: high not offered (in use)")
+        );
+    }
+
+    #[tokio::test]
     async fn a_members_failure_in_a_group_opens_that_members_fallbacks() {
         let mut app = test_app();
         for bot in [

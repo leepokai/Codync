@@ -447,17 +447,21 @@ mod tests {
     }
 
     /// An ACP agent over stdio for `select_model`: answers `cursor/list_available_models` with A offering high and
-    /// B only low, reports model `reported` after the model setter, and logs every setter.
+    /// B only low (or, for a `reported` ending in `!`, with an error), reports model `reported` after the model setter,
+    /// and logs every setter.
     fn wire_agent(dir: &std::path::Path, reported: &str) -> String {
         let script = dir.join("agent.py");
         let body = r#"
 import json, sys
-REPORTED = sys.argv[1]
+REPORTED = sys.argv[1].rstrip("!")
+FAIL = sys.argv[1].endswith("!")
 def send(v): print(json.dumps({"jsonrpc": "2.0", **v}), flush=True)
 for line in sys.stdin:
     m = json.loads(line); method, rid, p = m.get("method"), m.get("id"), m.get("params", {})
     if rid is None: continue
     if method == "initialize": send({"id": rid, "result": {"protocolVersion": 1}})
+    elif method == "cursor/list_available_models" and FAIL:
+        send({"id": rid, "error": {"code": -32603, "message": "list exploded"}})
     elif method == "cursor/list_available_models":
         send({"id": rid, "result": {"models": [
             {"value": "A", "configOptions": [{"id": "effort", "type": "select", "options": [{"value": "low"}, {"value": "high"}]}]},
@@ -504,6 +508,19 @@ for line in sys.stdin:
         // When the session does run A, A's own list allows it.
         let (_, calls) = selected_with_reported_model("A").await;
         assert_eq!(calls, "model=A\neffort=high\n");
+    }
+
+    #[tokio::test]
+    async fn a_failed_model_list_says_why_a_setting_is_left_out() {
+        // Greptile on #204: a failed `cursor/list_available_models` read as "not offered", hiding the failure.
+        let (selected, calls) = selected_with_reported_model("A!").await;
+        assert_eq!(calls, "model=A\n", "nothing vouches for high");
+        let [(id, value, notice)] = selected.left_out.as_slice() else {
+            panic!("one left out: {:?}", selected.left_out)
+        };
+        assert_eq!((id.as_str(), value.as_str()), ("effort", "high"));
+        assert!(notice.contains("list exploded"), "the failure is kept: {notice}");
+        assert!(!notice.contains("isn't offered"), "not claimed unsupported: {notice}");
     }
 
     #[tokio::test]

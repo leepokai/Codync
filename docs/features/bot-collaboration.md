@@ -107,6 +107,6 @@ A bot made this way records its creator (`createdBy`, next to `createdAt`); clie
 - `host/src/agent/bot/` (`queue.rs`, `turn.rs`): queue boundaries, recipient execution, completion and targeted cancellation.
 - `host/src/mcp.rs`: the authenticated local MCP → HTTP bridge.
 - `host/tests/team_e2e.rs`: a real host and MCP subprocess, with scripted ACP agents, covering discovery → delegation → recipient approval → reply → client sync. No paid provider calls.
-- `host/src/chat/manage.rs` (+ `Cmd::Approve` in `agent/bot/updates.rs`): team management; `host/tests/manage_e2e.rs` walks an allowed `create_bot`, a denied `update_bot`, and cards that end when the turn stops or the agent cancels the call, through the real `manage` MCP process.
+- `host/src/chat/manage.rs` (+ `Cmd::Approve` in `agent/bot/updates.rs`): team management; `host/tests/manage_e2e.rs` walks an allowed `create_bot`, a denied `update_bot`, an allowed `run_routine` of a teammate's paused routine, and cards that end when the turn stops or the agent cancels the call, through the real `manage` MCP process.
 
 Run `cargo test` and `cargo clippy --all-targets -- -D warnings` in `host/`.

@@ -78,3 +78,13 @@ import Testing
     draft.model = "haiku"
     #expect(draft.rebased(from: base, onto: fresh).model == "haiku")
 }
+
+@Test func defaultModelShowsTheSettingsOfTheModelTheAgentRunsByDefault() throws {
+    let data = Data(#"{"models":[{"id":"gpt-6.1-sol","name":"6.1 Sol","options":[{"id":"reasoning_effort","name":"Reasoning Effort","default":"low","values":[{"id":"low","name":"Low"},{"id":"high","name":"High"}]}]},{"id":"gpt-6.1-mini","name":"6.1 Mini","options":[]}],"currentModelId":"gpt-6.1-sol"}"#.utf8)
+    let catalog = try JSONDecoder().decode(AgentModels.self, from: data)
+    #expect(catalog.settings(for: "").map(\.id) == ["reasoning_effort"])
+    #expect(catalog.settings(for: "gpt-6.1-mini").isEmpty)
+    #expect(catalog.settings(for: "typed-by-hand").isEmpty)
+    let unknown = try JSONDecoder().decode(AgentModels.self, from: Data(#"{"models":[]}"#.utf8))
+    #expect(unknown.settings(for: "").isEmpty)
+}

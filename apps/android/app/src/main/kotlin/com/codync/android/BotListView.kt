@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -58,9 +59,19 @@ import kotlinx.serialization.json.putJsonArray
 @Composable internal fun BotListView(state: AppState, store: AppStore, account: () -> Unit, manage: () -> Unit,
     newBot: () -> Unit, newGroup: () -> Unit, edit: (Bot) -> Unit, bottomInset: androidx.compose.ui.unit.Dp) {
     var confirmDelete by remember { mutableStateOf<Bot?>(null) }
+    var naming by remember { mutableStateOf<SectionNaming?>(null) }
+    val context = LocalContext.current
+    var folded by remember { mutableStateOf(FoldedSections.load(context)) }
+    // A rename or removal made here keeps a folded section folded under its new name.
+    val renameSection = { from: String, to: String? ->
+        store.renameSection(from, to)
+        folded = foldsAfterRename(folded, from, to)
+        FoldedSections.save(context, folded)
+    }
     val roster = roster(state.bots)
+    val sections = menuSections(state.bots)
     val reorder = remember { RosterReorder() }
-    reorder.roster = roster.map(Bot::id)
+    reorder.roster = roster
     val online = state.actualConnection is LinkState.Ready
     // A computer that turned this phone away, or this computer's older identity, counts as none (iOS `availableStores`).
     val usable = state.computers.isNotEmpty() && !state.isStale
@@ -82,12 +93,26 @@ import kotlinx.serialization.json.putJsonArray
             if (roster.isEmpty() && state.mismatch == null) item {
                 EmptyRoster(canCreate = usable, hasComputer = usable, create = newBot, showComputers = manage)
             }
-            items(reorder.shown(roster), key = Bot::id) { bot ->
-                val lifted = reorder.dragged == bot.id
-                Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
-                    .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
-                        else Modifier.animateItem())) {
-                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, edit = { edit(bot) }, delete = { confirmDelete = bot })
+            items(rosterLines(reorder.shown(roster), folded), key = RosterLine::key) { line ->
+                when (line) {
+                    // Folding drops the section's rows from the list; animateItem fades them out and slides the rest up.
+                    is RosterLine.Header -> SectionHeader(line, toggle = {
+                        folded = if (line.name in folded) folded - line.name else folded + line.name
+                        FoldedSections.save(context, folded)
+                    }, actions = if (state.supportsSections) sectionActions(rename = { naming = SectionNaming.Rename(line.name) },
+                        remove = { renameSection(line.name, null) }) else emptyList(),
+                        modifier = Modifier.animateItem())
+                    RosterLine.Label -> SectionLabel(Modifier.animateItem())
+                    is RosterLine.Row -> {
+                        val bot = line.bot
+                        val lifted = reorder.dragged == bot.id
+                        Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
+                            .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
+                                else Modifier.animateItem())) {
+                            BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, edit = { edit(bot) },
+                                delete = { confirmDelete = bot }, newSection = { naming = SectionNaming.New(bot.id) })
+                        }
+                    }
                 }
             }
         }
@@ -100,6 +125,7 @@ import kotlinx.serialization.json.putJsonArray
             deleting?.let { store.deleteBot(it) {} }
         })
     }
+    SectionNameDialog(naming, store, renameSection) { naming = null }
 }
 
 /**
@@ -107,37 +133,38 @@ import kotlinx.serialization.json.putJsonArray
  * shown follows the finger until the host's synced order catches up.
  */
 private class RosterReorder {
-    var roster: List<String> = emptyList()
+    var roster: List<Bot> = emptyList()
     var order by mutableStateOf<List<String>?>(null)
     var dragged by mutableStateOf<String?>(null)
     var offset by mutableFloatStateOf(0f)
     val heights = mutableMapOf<String, Int>()
     private val handles = mutableMapOf<String, ContextDrag>()
+    private val synced: List<String> get() = roster.map(Bot::id)
 
     fun shown(bots: List<Bot>): List<Bot> {
         val ids = order ?: return bots
         // Dropped and synced: the host's order is the one to show again.
-        if (dragged == null && ids == roster) { order = null; return bots }
+        if (dragged == null && ids == synced) { order = null; return bots }
         return ids.mapNotNull { id -> bots.firstOrNull { it.id == id } } + bots.filter { it.id !in ids }
     }
 
     fun handle(id: String, save: (List<String>) -> Unit): ContextDrag = handles.getOrPut(id) {
-        ContextDrag(start = { order = order ?: roster; dragged = id; offset = 0f }, move = { step -> offset += step; swap(id) }, end = {
+        ContextDrag(start = { order = order ?: synced; dragged = id; offset = 0f }, move = { step -> offset += step; swap(id) }, end = {
             val dropped = order
             dragged = null; offset = 0f
-            if (dropped != null && dropped != roster) save(dropped) else order = null
+            if (dropped != null && dropped != synced) save(dropped) else order = null
         })
     }
 
-    /** Past half the neighbor's height, the row takes the neighbor's place. */
+    /** Past half its height, the row takes the place of the next bot it may pass ([moved]): headers and other sections stay put. */
     private fun swap(id: String) {
-        val list = order ?: return
-        val at = list.indexOf(id)
-        val next = if (offset > 0) at + 1 else at - 1
-        val height = list.getOrNull(next)?.let(heights::get) ?: return
+        val bots = shown(roster)
+        val direction = if (offset > 0) 1 else -1
+        val swapped = moved(bots, id, direction) ?: return
+        val height = heights[swapped[bots.indexOfFirst { it.id == id }]] ?: return
         if (kotlin.math.abs(offset) < height / 2f) return
-        order = list.toMutableList().apply { add(next, removeAt(at)) }
-        offset -= if (offset > 0) height else -height
+        order = swapped
+        offset -= direction * height
     }
 }
 
@@ -145,22 +172,30 @@ private class RosterReorder {
 internal fun roster(bots: List<Bot>): List<Bot> = bots.filter { !it.deleted && !it.hidden }
     .sortedWith(compareByDescending<Bot> { it.pinned }.thenBy { it.position }.thenByDescending { it.lastAt })
 
-/** The roster order with a bot one place up (-1) or down (+1) among bots with its pin state, or null when it can't move. */
+/**
+ * The roster order with a bot swapped with the next bot up (-1) or down (+1) that shows beside it, or null when there's none:
+ * pinned bots move among all the pinned, the others among bots of their section (or of none), skipping the bots between.
+ */
 internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
     val at = roster.indexOfFirst { it.id == id }
-    val neighbor = roster.getOrNull(at + offset)
-    if (at < 0 || neighbor == null || neighbor.pinned != roster[at].pinned) return null
-    return roster.map(Bot::id).toMutableList().apply { this[at] = neighbor.id; this[at + offset] = id }
+    if (at < 0) return null
+    val next = generateSequence(at + offset) { it + offset }.takeWhile { it in roster.indices }
+        .firstOrNull { roster[it].movesWith(roster[at]) } ?: return null
+    return roster.map(Bot::id).toMutableList().apply { this[at] = roster[next].id; this[next] = id }
 }
 
-@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, edit: () -> Unit, delete: () -> Unit) {
+private fun Bot.movesWith(other: Bot) = pinned == other.pinned && (pinned || section == other.section)
+
+@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, sections: List<String>, edit: () -> Unit,
+    delete: () -> Unit, newSection: () -> Unit) {
     Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
         Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state) }
     }) {
-        listOf(
+        listOfNotNull(
             MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = if (bot.pinned) "pin.slash" else "pin") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("pinned", !bot.pinned) }, "roster:" + bot.id)
             },
+            if (state.supportsSections) sectionMenu(bot, sections, store, newSection) else null,
             if (bot.kind == "group") MenuItem("Edit group", icon = "person.2", action = edit)
             else MenuItem("Edit profile", icon = "pencil", action = edit),
             MenuItem("Mark as read", icon = "checkmark.message") {
@@ -200,12 +235,17 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) { Preview(bot, state) }
-                if (bot.unread > 0) Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(Palette.accentFill)
-                    .padding(horizontal = 6.dp).semantics { contentDescription = "${bot.unread} unread" }, contentAlignment = Alignment.Center) {
-                    Text("${bot.unread}", style = Type.caption2.bold, color = Palette.onAccent)
-                }
+                if (bot.unread > 0) UnreadBadge(bot.unread)
             }
         }
+    }
+}
+
+/** A count of unread messages in the accent capsule (a row, a folded section). */
+@Composable internal fun UnreadBadge(count: Int) {
+    Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(Palette.accentFill)
+        .padding(horizontal = 6.dp).semantics { contentDescription = "$count unread" }, contentAlignment = Alignment.Center) {
+        Text("$count", style = Type.caption2.bold, color = Palette.onAccent)
     }
 }
 

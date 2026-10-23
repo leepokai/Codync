@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { isGroup, type Bot } from '@shared/models'
 import { moveInOrder } from '../lib/computer-roster'
 import { pointerDrag, type Point } from '../lib/pointer-drag'
+import { rosterLines, sameRosterGroup } from '../lib/roster-sections'
 import { reduceMotion } from '../lib/theme'
 import { useSlide } from '../lib/slide'
 import { sameRef, refKey, type RosterItem } from '../store/app-model'
@@ -11,6 +12,7 @@ import type { useComputerRoster } from '../store/computer-roster'
 import { StoreContext, useApp } from '../store/context'
 import { BotRow } from './BotRow'
 import { ComputerRosterSection } from './ComputerRosterSection'
+import { RosterLabel, RosterSection } from './RosterSection'
 import { UpdateNeededCard } from './UpdateNeededCard'
 
 /** A bot being dragged among its computer's bots, and the order it has made so far. */
@@ -28,10 +30,11 @@ interface Lift {
   seq: number
 }
 
-export function BotRoster({ roster, compact, onContext }: {
+export function BotRoster({ roster, compact, onContext, onSectionContext }: {
   roster: ReturnType<typeof useComputerRoster>
   compact: boolean
   onContext: (bot: Bot, store: BotStore, x: number, y: number) => void
+  onSectionContext: (section: string, store: BotStore, x: number, y: number) => void
 }) {
   const app = useApp()
   const selected = app.selection
@@ -93,14 +96,14 @@ export function BotRoster({ roster, compact, onContext }: {
     edgeScroll.current = requestAnimationFrame(scrollAtEdge)
   }
 
-  // Any row of the same computer is a target; only rows with the same pin state make room.
+  // Any row of the same computer is a target; only rows with the same pin state and section make room.
   const makeRoom = (under: Element | null) => {
     const current = drag.current
     const row = under?.closest<HTMLElement>('[data-roster-row]')
     const item = row && itemsByKey.current.get(row.dataset.rosterRow!)
     if (!current || !row || !item || current.item.ref.computerId !== item.ref.computerId) return
     // A row still sliding out of the way would be hit again where it was.
-    if (item.bot.id === current.item.bot.id || item.bot.pinned !== current.item.bot.pinned || row.getAnimations().length) return
+    if (item.bot.id === current.item.bot.id || !sameRosterGroup(item.bot, current.item.bot) || row.getAnimations().length) return
     setBotDrag({ ...current, ids: moveInOrder(current.ids, current.item.bot.id, item.bot.id) })
   }
 
@@ -158,7 +161,12 @@ export function BotRoster({ roster, compact, onContext }: {
 
   const sections = roster.sections.map(({ computer, store, items }, index) => {
     const notice = store.mismatch && !compact ? <StoreContext.Provider value={store}><UpdateNeededCard /></StoreContext.Provider> : null
-    const rows = ordered(computer.id, items).map((item) => row(item, items))
+    const rows = rosterLines(ordered(computer.id, items), roster.folded).map((line) => line.kind === 'row' ? row(line.item, items) : line.kind === 'label' ? <RosterLabel key="label" compact={compact} /> : (
+      <RosterSection key={`section/${line.name}`} name={line.name} count={line.count} unread={line.unread} folded={line.folded} compact={compact}
+        toggle={() => roster.toggleSection(line.name)} onContext={(x, y) => onSectionContext(line.name, store, x, y)}>
+        {line.items.map((item) => row(item, items))}
+      </RosterSection>
+    ))
     if (!roster.grouped) return <div key={computer.id}>{notice}{rows}</div>
     return (
       <ComputerRosterSection key={computer.id} store={store} compact={compact}

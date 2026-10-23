@@ -18,7 +18,7 @@ mod skill;
 mod when;
 
 pub use analytics::AnalyticsSheet;
-pub use fields::handoff_fields;
+pub use fields::{handoff_fields, section_fields};
 pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
 pub use pages::Page;
 pub use skill::SkillSheet;
@@ -59,6 +59,11 @@ pub enum Reply {
     Auth(String),
     Setup,
     FieldsSaved,
+    /// `renameSection` from a Fields sheet: saved like `FieldsSaved`, and the fold follows the name.
+    SectionRenamed {
+        from: String,
+        to: Option<String>,
+    },
     SignIn,
     Models(String),
     Downloaded,
@@ -176,6 +181,10 @@ pub enum Submit {
     Import,
     /// A handoff card's text (the card's entry id).
     Handoff(String),
+    /// A bot's section (its id): a name, or empty for none.
+    Section(String),
+    /// A section's new name (its current one), or empty to remove it.
+    RenameSection(String),
 }
 
 /// A few labeled text fields: an agent's keys, a connector's setup, a pasted MCP config.

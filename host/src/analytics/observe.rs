@@ -68,6 +68,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         "updateBot" => Event::BotUpdated,
         "reorderBots" => Event::BotsReordered,
+        "renameSection" => {
+            // Whether it took the section away; the names never leave the computer.
+            p.insert("removed".into(), b["to"].as_str().is_none_or(|t| t.trim().is_empty()).into());
+            Event::SectionRenamed
+        }
         "deleteBot" => Event::BotDeleted,
         "send" => {
             let reply = b["replyTo"].as_str().is_some_and(|t| !t.is_empty());
@@ -380,6 +385,23 @@ mod tests {
             serde_json::from_value(json!({"id": "b1", "name": "Ada", "backend": "codex", "cwd": own})).unwrap();
         assert_eq!(changed_fields(&stored, &json!({"id": "b1", "cwd": "", "fastMode": true})), ["fastMode"]);
         assert_eq!(changed_fields(&stored, &json!({"id": "b1", "cwd": "/tmp"})), ["cwd"]);
+    }
+
+    #[test]
+    fn sections_count_without_their_names() {
+        assert_eq!(
+            props("renameSection", &json!({"from": "Work", "to": "Play"})),
+            Some((Event::SectionRenamed, json!({"removed": false, "client": "local"})))
+        );
+        let removed = props("renameSection", &json!({"from": "Work", "to": null}));
+        assert_eq!(removed.map(|(_, p)| p["removed"].clone()), Some(json!(true)));
+
+        let stored: BotConfig = serde_json::from_value(
+            json!({"id": "b1", "name": "Ada", "backend": "codex", "cwd": "/tmp", "section": "Work"}),
+        )
+        .unwrap();
+        assert_eq!(changed_fields(&stored, &json!({"id": "b1", "section": null})), ["section"]);
+        assert_eq!(changed_fields(&stored, &json!({"id": "b1", "section": "Work"})), Vec::<String>::new());
     }
 
     #[test]

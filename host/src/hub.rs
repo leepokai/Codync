@@ -20,6 +20,7 @@ use tokio::sync::{broadcast, watch};
 
 mod order;
 mod reactions;
+mod sections;
 mod sync;
 
 /// What a bot is doing right now (wire values: `idle` / `working` / `needsInput` / `error`).
@@ -225,6 +226,7 @@ impl Hub {
             }
         }
         crate::agent::fallback::tidy(&mut cfg);
+        cfg.section = sections::normalize_section(cfg.section.as_deref())?;
         validate(&cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
         {
@@ -267,6 +269,7 @@ impl Hub {
             cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
         }
         crate::agent::fallback::tidy(&mut cfg);
+        cfg.section = sections::normalize_section(cfg.section.as_deref())?;
         validate(&cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
         crate::agent::own_memory::settle(&mut cfg, &row.config, patch);

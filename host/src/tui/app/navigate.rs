@@ -240,15 +240,22 @@ impl App {
         true
     }
 
-    /// Moves the selected bot one place up (-1) or down (+1), staying among bots with its pin
-    /// state, and saves the order. Shown at once; the host's bot events confirm it.
+    /// Moves the selected bot one place up (-1) or down (+1) and saves the order. Pinned bots move
+    /// among all pinned bots (they show no sections), the rest only inside their section. Shown at
+    /// once; the host's bot events confirm it.
     pub(super) fn reorder_bot(&mut self, d: isize) {
-        let roster: Vec<(String, bool)> = self.roster().iter().map(|b| (b.id.clone(), b.pinned)).collect();
-        let Some(i) = self.selected.as_ref().and_then(|s| roster.iter().position(|(id, _)| id == s)) else { return };
-        let Some(j) = i.checked_add_signed(d).filter(|&j| j < roster.len() && roster[j].1 == roster[i].1) else {
+        let roster = self.roster();
+        let Some(i) = self.selected.as_ref().and_then(|s| roster.iter().position(|b| &b.id == s)) else { return };
+        let group = roster[i].roster_group();
+        // A folded section shows no order to change.
+        if group.1.is_some_and(|s| self.folded.contains(s)) {
+            return;
+        }
+        let Some(j) = i.checked_add_signed(d).filter(|&j| roster.get(j).is_some_and(|b| b.roster_group() == group))
+        else {
             return;
         };
-        let mut ids: Vec<String> = roster.into_iter().map(|(id, _)| id).collect();
+        let mut ids: Vec<String> = roster.iter().map(|b| b.id.clone()).collect();
         ids.swap(i, j);
         for (position, id) in (0_i64..).zip(&ids) {
             if let Some(b) = self.bots.get_mut(id) {
@@ -290,5 +297,35 @@ mod tests {
         app.selected = Some("a".into());
         app.reorder_bot(-1);
         assert_eq!(order(&app), ["p", "a", "c", "b"], "an unpinned bot can't move above a pinned one");
+    }
+
+    #[tokio::test]
+    async fn unpinned_bots_reorder_inside_their_section_pinned_ones_among_all_pinned() {
+        let mut app = test_app();
+        let bots = [
+            ("p1", true, Some("Home"), 5),
+            ("p2", true, None, 4),
+            ("a", false, Some("Work"), 3),
+            ("b", false, Some("Work"), 2),
+            ("c", false, None, 1),
+        ];
+        for (id, pinned, section, last_at) in bots {
+            let bot = Bot::parse(&json!({"id": id, "pinned": pinned, "section": section, "lastAt": last_at}))
+                .expect("a bot with an id parses");
+            app.bots.insert(id.into(), bot);
+        }
+        let order = |app: &super::App| app.roster().iter().map(|b| b.id.clone()).collect::<Vec<_>>();
+        app.selected = Some("p2".into());
+        app.reorder_bot(-1);
+        assert_eq!(order(&app), ["p2", "p1", "a", "b", "c"], "pinned rows show no sections: any two swap");
+        app.selected = Some("c".into());
+        app.reorder_bot(-1);
+        assert_eq!(order(&app), ["p2", "p1", "a", "b", "c"], "a bot in no section can't move into one");
+        app.selected = Some("b".into());
+        app.reorder_bot(-1);
+        assert_eq!(order(&app), ["p2", "p1", "b", "a", "c"]);
+        app.folded.insert("Work".into());
+        app.reorder_bot(1);
+        assert_eq!(order(&app), ["p2", "p1", "b", "a", "c"], "a folded section shows no order to change");
     }
 }

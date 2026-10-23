@@ -43,10 +43,14 @@ status and update notices in each section. Drag a heading or press Alt+Up/Down o
 heading to reorder sections. Click a heading to fold its bots.
 Order and folded sections stay on this device; the iPhone and other computers keep
 independent orders even when signed in to the same account. Filtering a computer out
-does not discard its position. One selected computer keeps a flat roster. Bots stay within
-their computer's section; drag a bot row or press Alt+Up/Down on the selected bot to reorder
+does not discard its position. One selected computer gets no heading. Inside each computer,
+pinned rows come first, then foldable section headers sorted by name (name, bot count, and the
+unread total while folded; folded state saved on this device), then rows in no section (under a "Bots" label when there are sections). A row's
+right-click menu has Move to section, a section header's has Rename section and Remove section
+(both only for a host at 2.24.0 or newer). Bots stay among their computer's bots, an unpinned bot
+also inside its section; drag a bot row or press Alt+Up/Down on the selected bot to reorder
 it ([bot order](../features/computer-order.md#bot-order), synced through the host), and
-arrow-key navigation skips folded sections.
+Up/Down navigation skips folded computers and sections.
 Search still includes their bots. The compact sidebar uses computer badges for the same
 section controls. Ordering is saved locally immediately and survives restart, with separate
 preferences per account and cloud environment. See [computer ordering](../features/computer-order.md).

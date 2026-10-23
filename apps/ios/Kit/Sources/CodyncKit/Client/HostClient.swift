@@ -166,6 +166,12 @@ public extension HostClient {
         return res.bot
     }
 
+    /// Puts the bot in `section`, or takes it out of its own (nil, sent as null); nothing else changes.
+    func setSection(_ botId: String, to section: String?) async throws {
+        let body: [String: String?] = ["id": botId, "section": section]
+        let _: Empty = try await call("updateBot", body)
+    }
+
     func deleteBot(_ id: String) async throws {
         let _: Empty = try await call("deleteBot", ["botId": id])
     }
@@ -173,6 +179,13 @@ public extension HostClient {
     /// The roster as the user dragged it, top first.
     func reorderBots(_ ids: [String]) async throws {
         let _: Empty = try await call("reorderBots", ["ids": ids])
+    }
+
+    /// Moves every bot of the computer in section `from` to `to` (a name already in use merges the
+    /// two); nil removes the section, its bots staying without one.
+    func renameSection(from: String, to: String?) async throws {
+        let body: [String: String?] = ["from": from, "to": to]
+        let _: Empty = try await call("renameSection", body)
     }
 
     /// The chat read; a no-op when nothing there is unread.

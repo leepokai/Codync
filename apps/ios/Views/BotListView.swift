@@ -4,8 +4,9 @@ import SwiftUI
 
 /// The roster: every bot on every computer is a person you can message (Grok Bot sidebar, phone-sized).
 /// A `List` with its styling taken away, for the system's reordering: touch and hold opens a bot's
-/// menu, and dragging it (before or after the menu shows) moves it among its computer's bots.
-/// Dragging a computer's heading moves the computer with its bots.
+/// menu, and dragging it (before or after the menu shows) moves it among its computer's bots with
+/// the same pin state and section. Dragging a computer's heading moves the computer with its bots;
+/// a section's heading folds its bots away and holds its menu.
 struct BotListView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountStore.self) private var accounts
@@ -13,6 +14,8 @@ struct BotListView: View {
     @State private var editing: EditTarget?
     @State private var editingGroup: GroupTarget?
     @State private var confirmDelete: RosterItem?
+    /// What the section name dialog names while it's open.
+    @State private var naming: SectionNaming?
     /// The row that's lifted (a `RosterLine` id): a bot to drag or for its menu, or a computer's heading.
     @State private var lifted: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,6 +23,9 @@ struct BotListView: View {
     @AppStorage("hiddenComputers") private var hiddenComputers = ""
     /// Computers whose bots are folded away on this device, comma-separated IDs.
     @AppStorage("collapsedComputers") private var collapsedComputers = ""
+    /// Sections folded away on this device, by name, one per line: a name never holds a line break.
+    // ponytail: one name folds that section on every computer; key it by computer if they must fold apart.
+    @AppStorage("collapsedRosterSections") private var collapsedRosterSections = ""
 
     private var collapsedIDs: Set<ComputerID> { Set(collapsedComputers.split(separator: ",").map(String.init)) }
 
@@ -27,6 +33,24 @@ struct BotListView: View {
         var ids = collapsedIDs
         if ids.remove(id) == nil { ids.insert(id) }
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { collapsedComputers = ids.sorted().joined(separator: ",") }
+    }
+
+    private var foldedSections: Set<String> {
+        get { Set(collapsedRosterSections.split(separator: "\n").map(String.init)) }
+        nonmutating set { collapsedRosterSections = newValue.sorted().joined(separator: "\n") }
+    }
+
+    private func toggleSection(_ name: String) {
+        var names = foldedSections
+        if names.remove(name) == nil { names.insert(name) }
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { foldedSections = names }
+    }
+
+    /// Renames or removes (nil) a section on `store`'s computer; a folded one stays folded under its
+    /// new name, on this device.
+    private func renameSection(_ name: String, to newName: String?, on store: BotStore) {
+        store.renameSection(from: name, to: newName)
+        foldedSections = RosterSection.folds(foldedSections, renaming: name, to: newName)
     }
 
     private var shownIDs: Set<ComputerID> {
@@ -58,14 +82,27 @@ struct BotListView: View {
         accounts.computers.compactMap { accounts.store(for: $0.id) }.filter { $0.mismatch == nil && !accounts.isStale($0.computer.id) }
     }
 
-    /// The rows the user can drag: each shown computer's heading (with several computers), in the
-    /// order they were dragged into, followed by its bots unless it's folded away.
+    /// The roster's rows: each shown computer's heading (with several computers), in the order
+    /// they were dragged into, followed by its bots and sections unless it's folded away.
     private var lines: [RosterLine] {
         shownStores.flatMap { store -> [RosterLine] in
             let id = store.computer.id
-            let bots = grouped && collapsedIDs.contains(id)
-                ? [] : accounts.roster.filter { $0.ref.computerId == id }.map { RosterLine.bot($0, store) }
-            return grouped ? [.computer(id, store)] + bots : bots
+            let rows = grouped && collapsedIDs.contains(id) ? [] : sectionLines(store)
+            return grouped ? [.computer(id, store)] + rows : rows
+        }
+    }
+
+    /// A computer's bots: pinned ones, then each section's heading with its bots (none while
+    /// folded), then the bots in no section (under the "Bots" label when there are sections).
+    private func sectionLines(_ store: BotStore) -> [RosterLine] {
+        let id = store.computer.id
+        let items = accounts.roster.filter { $0.ref.computerId == id }
+        return RosterSection.lines(items, folded: foldedSections) { $0.bot }.map { line -> RosterLine in
+            switch line {
+            case let .header(section): .section(section, id, store)
+            case .label: .label(id)
+            case let .bot(item): .bot(item, store)
+            }
         }
     }
 
@@ -91,6 +128,10 @@ struct BotListView: View {
                 ForEach(lines) { line in
                     switch line {
                     case let .computer(_, store): computerHeading(store, roster: roster, folded: movingComputer)
+                    case let .section(section, _, store):
+                        if movingComputer { Color.clear.frame(height: 0) } else { sectionHeading(section, store: store) }
+                    case .label:
+                        if movingComputer { Color.clear.frame(height: 0) } else { RosterBotsLabel().moveDisabled(true) }
                     case let .bot(item, store):
                         // A dragged heading folds every computer's bots into their headings. Each
                         // row stays, empty: taking it out would move the lifted heading's place in
@@ -180,11 +221,13 @@ struct BotListView: View {
                 if let item { accounts.store(for: item.ref.computerId)?.delete(item.bot) }
             }]
         }
+        .sectionNameDialog($naming)
     }
 
     /// A row the system's reordering dropped. A heading moves its computer and its bots (an order
-    /// kept on this device); a bot moves only among its computer's bots, an order the host syncs to
-    /// every device: dropped above or below them (on another computer), it goes first or last.
+    /// kept on this device); a bot moves only among its computer's bots with the same pin state and
+    /// section, an order the host syncs to every device: dropped among others (another section,
+    /// another computer), it goes first or last of its own. Section headings don't move.
     private func moveLines(from source: IndexSet, to destination: Int) {
         let before = lines
         guard let from = source.first, before.indices.contains(from) else { return }
@@ -196,7 +239,9 @@ struct BotListView: View {
             guard let to = new.firstIndex(of: id), old[to] != id else { return }
             withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { accounts.move(id, to: old[to]) }
         case let .bot(item, store):
-            store.reorder(after.compactMap { $0.botId(on: item.ref.computerId) })
+            store.drop(item.bot.id, in: after.compactMap { $0.botId(on: item.ref.computerId) })
+        case .section, .label:
+            break
         }
     }
 
@@ -223,6 +268,25 @@ struct BotListView: View {
         .itemProvider { lift(.computer(id, store)) }
     }
 
+    /// A section's heading: tap folds its bots away (on this device); touch and hold to rename or
+    /// remove it, its bots staying without one. An older computer has no section menu.
+    @ViewBuilder private func sectionHeading(_ section: RosterSection, store: BotStore) -> some View {
+        let header = RosterSectionHeader(section: section, hasMenu: store.supportsSections) { toggleSection(section.name) }
+            .moveDisabled(true)
+        if store.supportsSections {
+            header.contextActions {
+                [
+                    MenuItem("Rename section…", icon: "pencil") {
+                        naming = .rename(section.name) { renameSection(section.name, to: $0, on: store) }
+                    },
+                    MenuItem("Remove section", icon: "xmark.circle") { renameSection(section.name, to: nil, on: store) },
+                ]
+            }
+        } else {
+            header
+        }
+    }
+
     private func row(_ item: RosterItem, store: BotStore) -> some View {
         let bot = item.bot
         let line = RosterLine.bot(item, store)
@@ -245,7 +309,7 @@ struct BotListView: View {
             Button("Move down") { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
         }
         .contextActions {
-            [
+            var items = [
                 MenuItem(bot.pinned ? "Unpin" : "Pin", icon: bot.pinned ? "pin.slash" : "pin") { store.setPinned(bot, !bot.pinned) },
                 bot.isGroup
                     ? MenuItem("Edit group", icon: "person.2") { editingGroup = GroupTarget(computerId: item.ref.computerId, group: bot) }
@@ -254,7 +318,22 @@ struct BotListView: View {
                 MenuItem("Hide from list", icon: "eye.slash") { store.setHidden(bot, true) },
                 MenuItem("Delete", icon: "trash", destructive: true, divider: true) { confirmDelete = item },
             ]
+            // Below Pin, like the desktop; an older computer has no sections.
+            if store.supportsSections { items.insert(sectionMenu(bot, store: store), at: 1) }
+            return items
         }
+    }
+
+    /// "Move to section ▸": the computer's other sections, a new one, and out of its own.
+    private func sectionMenu(_ bot: Bot, store: BotStore) -> MenuItem {
+        var rows = store.sections.filter { $0 != bot.section }.map { name in
+            MenuItem(name, icon: "tray") { store.setSection(bot, to: name) }
+        }
+        rows.append(MenuItem("New section…", icon: "plus", divider: !rows.isEmpty) { naming = .new(bot, store) })
+        if bot.section != nil {
+            rows.append(MenuItem("Remove from section", icon: "minus.circle") { store.setSection(bot, to: nil) })
+        }
+        return MenuItem("Move to section", icon: "tray", submenu: rows)
     }
 
     /// The system asks for a row's item as it lifts; the row shows as lifted until it lets go.
@@ -296,14 +375,19 @@ private final class LiftItem: NSItemProvider {
     deinit { ended() }
 }
 
-/// One row the user can drag in the roster: a computer's heading or a bot.
+/// One row in the roster: a computer's heading or a bot, which the user can drag, or a section's
+/// heading or the "Bots" label on a computer (its id carried along: `id` can't read the main-actor store).
 private enum RosterLine: Identifiable {
     case computer(ComputerID, BotStore)
+    case section(RosterSection, ComputerID, BotStore)
+    case label(ComputerID)
     case bot(RosterItem, BotStore)
 
     var id: String {
         switch self {
         case let .computer(id, _): "computer:\(id)"
+        case let .section(section, computerId, _): "section:\(computerId):\(section.name)"
+        case let .label(computerId): "label:\(computerId)"
         case let .bot(item, _): "bot:\(item.ref.computerId):\(item.bot.id)"
         }
     }
@@ -315,71 +399,6 @@ private enum RosterLine: Identifiable {
 
     func botId(on computerId: ComputerID) -> String? {
         if case let .bot(item, _) = self, item.ref.computerId == computerId { item.bot.id } else { nil }
-    }
-}
-
-/// A computer's heading above its bots: badge, name and connection. Tap folds its bots away;
-/// touch and hold, then drag, moves the computer (on this device).
-private struct ComputerSection: View {
-    let store: BotStore
-    let empty: Bool
-    let collapsed: Bool
-    let toggle: () -> Void
-    let move: (ComputerID, Int) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            heading
-            if empty && !collapsed {
-                Text("No bots yet")
-                    .font(.footnote)
-                    .foregroundStyle(Palette.tertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 4)
-                    .transition(.opacity)
-            }
-        }
-        .padding(.top, 14)
-        .padding(.bottom, 2)
-        .padding(.horizontal, -8)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits([.isHeader, .isButton])
-        .accessibilityLabel("\(store.hostName), \(store.statusText)")
-        .accessibilityValue(collapsed ? "Collapsed" : "Expanded")
-        .accessibilityHint("Double-tap to fold or expand. Touch and hold, then drag to reorder on this device.")
-        .accessibilityAction(named: collapsed ? "Expand" : "Collapse", toggle)
-        .accessibilityAction(.default) { toggle() }
-        .accessibilityActions {
-            Button("Move up") { move(store.computer.id, -1) }
-            Button("Move down") { move(store.computer.id, 1) }
-        }
-    }
-
-    private var heading: some View {
-        HStack(spacing: 6) {
-            ComputerBadge(store.computer, size: 18)
-            Text(store.hostName)
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(Palette.secondary)
-                .lineLimit(1)
-            Text(store.statusText)
-                .font(.footnote)
-                .foregroundStyle(store.isOffline ? Palette.warning : Palette.tertiary)
-                .lineLimit(1)
-                .contentTransition(.opacity)
-            if store.connection == .online {
-                RouteIcon(route: store.hostRoute).font(.caption2).foregroundStyle(Palette.tertiary)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.down")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Palette.tertiary)
-                .rotationEffect(.degrees(collapsed ? -90 : 0))
-                .accessibilityHidden(true)
-        }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
     }
 }
 

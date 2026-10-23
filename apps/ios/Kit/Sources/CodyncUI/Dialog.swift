@@ -18,14 +18,26 @@ public struct DialogAction: Identifiable {
     }
 }
 
+/// A text box above a dialog's actions (a name to type), focused as the dialog opens.
+public struct DialogField {
+    public var placeholder: String
+    public var text: Binding<String>
+
+    public init(_ placeholder: String, text: Binding<String>) {
+        self.placeholder = placeholder
+        self.text = text
+    }
+}
+
 public extension View {
     /// A centered card over a dimmed screen with the actions and Cancel:
-    /// the replacement for `confirmationDialog` and `alert`.
+    /// the replacement for `confirmationDialog` and `alert`. A `field` sits above the actions;
+    /// Return in it runs the first action.
     /// Set `inPlace` only at the navigation root to keep underlying glass unchanged.
-    func codyncDialog(_ title: String, isPresented: Binding<Bool>, message: String? = nil,
+    func codyncDialog(_ title: String, isPresented: Binding<Bool>, message: String? = nil, field: DialogField? = nil,
                       cancel: String? = "Cancel", inPlace: Bool = false,
                       actions: @escaping () -> [DialogAction]) -> some View {
-        modifier(CodyncDialog(title: title, message: message, cancel: cancel, inPlace: inPlace,
+        modifier(CodyncDialog(title: title, message: message, field: field, cancel: cancel, inPlace: inPlace,
                               isPresented: isPresented, actions: actions))
     }
 }
@@ -33,11 +45,15 @@ public extension View {
 private struct CodyncDialog: ViewModifier {
     let title: String
     let message: String?
+    let field: DialogField?
     let cancel: String?
     /// Use only above the navigation container so the scrim also covers its toolbar.
     let inPlace: Bool
     @Binding var isPresented: Bool
     let actions: () -> [DialogAction]
+    /// Counts the dismissals: each opening of the in-place card is a fresh card, so one that closed
+    /// and reopened before a redraw can't keep its `closed` flag.
+    @State private var opening = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
@@ -47,12 +63,16 @@ private struct CodyncDialog: ViewModifier {
                 .accessibilityHidden(isPresented)
                 .overlay {
                     if isPresented {
-                        DialogCard(title: title, message: message, cancel: cancel, actions: actions()) {
+                        DialogCard(title: title, message: message, field: field, cancel: cancel, actions: actions()) {
                             isPresented = false
+                            opening += 1
                         }
+                        .id(opening)
                         .ignoresSafeArea(.container)
                         .transition(.opacity)
                         .onAppear {
+                            // A field takes the focus on the next update: don't race it with a keyboard drop.
+                            guard field == nil else { return }
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                                              to: nil, from: nil, for: nil)
                         }
@@ -61,7 +81,7 @@ private struct CodyncDialog: ViewModifier {
                 .animation(Motion.reduced(Motion.fade, reduceMotion), value: isPresented)
         } else {
             content.codyncOverlay(isPresented: $isPresented) { close in
-                DialogCard(title: title, message: message, cancel: cancel, actions: actions(), dismiss: close)
+                DialogCard(title: title, message: message, field: field, cancel: cancel, actions: actions(), dismiss: close)
             }
         }
     }
@@ -70,14 +90,18 @@ private struct CodyncDialog: ViewModifier {
 private struct DialogCard: View {
     let title: String
     let message: String?
+    let field: DialogField?
     let cancel: String?
     let actions: [DialogAction]
     let dismiss: () -> Void
+    @FocusState private var typing: Bool
+    /// Set once the card begins to close: a second tap or Return during the fade runs nothing.
+    @State private var closed = false
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.35).ignoresSafeArea()
-                .onTapGesture { if cancel != nil { dismiss() } }
+                .onTapGesture { if cancel != nil { close() } }
             VStack(spacing: 14) {
                 VStack(spacing: 6) {
                     Text(title).font(.headline).foregroundStyle(Palette.text)
@@ -86,18 +110,30 @@ private struct DialogCard: View {
                     }
                 }
                 .multilineTextAlignment(.center)
+                if let field {
+                    TextField(field.placeholder, text: field.text)
+                        .textFieldStyle(.plain)
+                        .font(.body)
+                        .foregroundStyle(Palette.text)
+                        .submitLabel(.done)
+                        .focused($typing)
+                        .onSubmit { if let first = actions.first { run(first) } }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .background(Palette.background, in: Capsule())
+                        .task { typing = true }
+                }
                 VStack(spacing: 8) {
                     ForEach(actions) { action in
                         Button {
-                            dismiss()
-                            action.action()
+                            run(action)
                         } label: {
                             Text(action.title).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(DialogButtonStyle(destructive: action.destructive, prominent: true))
                     }
                     if let cancel {
-                        Button(action: dismiss) { Text(cancel).frame(maxWidth: .infinity) }
+                        Button(action: close) { Text(cancel).frame(maxWidth: .infinity) }
                             .buttonStyle(DialogButtonStyle(destructive: false, prominent: false))
                             .keyboardShortcut(.cancelAction)
                     }
@@ -110,6 +146,18 @@ private struct DialogCard: View {
             .padding(24)
         }
         .accessibilityAddTraits(.isModal)
+    }
+
+    private func close() {
+        guard !closed else { return }
+        closed = true
+        dismiss()
+    }
+
+    private func run(_ action: DialogAction) {
+        guard !closed else { return }
+        close()
+        action.action()
     }
 }
 

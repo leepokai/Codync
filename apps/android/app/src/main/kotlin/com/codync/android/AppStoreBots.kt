@@ -20,6 +20,12 @@ fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), 
     onSuccess()
 }
 
+/** Moves a bot into the roster section [section], or out of any (null). */
+fun AppStore.setSection(botId: String, section: String?) = command("updateBot", sectionUpdate(botId, section), "roster:$botId")
+
+/** Moves every bot of the section [from] into [to] (merging into a section of that name), or out of any (null: removes the section). */
+fun AppStore.renameSection(from: String, to: String?) = command("renameSection", sectionRename(from, to), "section:$from")
+
 fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
     val active = ready()
     val result = active.call(if (draft.id == null) "createBot" else "updateBot", draft.body())

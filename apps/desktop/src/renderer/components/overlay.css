@@ -138,6 +138,20 @@
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
+/* A text field in a dialog (a name to type). */
+.dialog-field {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--field);
+  border-radius: var(--radius-m);
+  color: var(--text);
+  font-size: var(--text-body);
+  user-select: text;
+  cursor: text;
+}
+.dialog-field:focus {
+  outline: 2px solid var(--secondary);
+}
 .dialog-buttons {
   display: flex;
   flex-wrap: wrap;

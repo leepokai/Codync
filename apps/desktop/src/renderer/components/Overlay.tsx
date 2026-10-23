@@ -142,19 +142,21 @@ export interface DialogAction {
 }
 
 /** A centered card over a dimmed screen with the actions and Cancel (`.codyncDialog`). */
-export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClose }: {
+export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClose, children }: {
   open: boolean
   title: string
   message?: string | null
   actions: DialogAction[]
   cancel?: string | null
   onClose: () => void
+  /** A field between the text and the buttons (a name to type); `data-autofocus` on it takes the focus. */
+  children?: ReactNode
 }) {
   const { mounted, shown } = usePresence(open, 120)
-  const last = useRef({ title, message, actions })
+  const last = useRef({ title, message, actions, children })
   const layer = useRef<HTMLDivElement>(null)
   const id = useId()
-  if (open) last.current = { title, message, actions }
+  if (open) last.current = { title, message, actions, children }
   useEscape(open && cancel !== null, onClose)
   useModalFocus(open, mounted, layer)
   if (!mounted) return null
@@ -167,6 +169,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
           <Text as="h2" id={`${id}-title`} size="title3" weight="semibold">{shownContent.title}</Text>
           {shownContent.message ? <Text as="div" id={`${id}-message`} size="body" tone="secondary">{shownContent.message}</Text> : null}
         </div>
+        {shownContent.children}
         <div className="dialog-buttons">
           {cancel !== null ? (
             <button className="dialog-button" data-autofocus onClick={onClose}>

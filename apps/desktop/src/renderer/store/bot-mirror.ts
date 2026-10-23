@@ -102,6 +102,11 @@ export class BotMirror extends Observable {
     return null
   }
 
+  /** The host keeps roster sections (an older one leaves them out): the menus offer them only then. */
+  get hasRosterSections() {
+    return this.hostVersion !== null && !isBelow(this.hostVersion.version, ROSTER_SECTIONS_HOST)
+  }
+
   /** Roster order: pinned first, then where the user dragged them, then most recent activity. */
   get roster(): Bot[] {
     return [...this.bots.values()].filter((b) => !b.hidden).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.position - b.position || b.lastAt - a.lastAt)
@@ -231,6 +236,9 @@ export class BotMirror extends Observable {
     } catch {}
   }
 }
+
+/** The first host with roster sections. */
+const ROSTER_SECTIONS_HOST = '2.24.0'
 
 export function builtInBackendName(id: string) {
   switch (id) {

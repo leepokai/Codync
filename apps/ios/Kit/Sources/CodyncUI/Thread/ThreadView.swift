@@ -402,9 +402,7 @@ extension ThreadView {
             Button("Details", systemImage: "info.circle", action: openDetails)
             ForEach(menuItems) { item in
                 if item.divider { Divider() }
-                Button(role: item.destructive ? .destructive : nil, action: item.action) {
-                    if let icon = item.icon { Label(item.title, systemImage: icon) } else { Text(item.title) }
-                }
+                systemMenuRow(item)
             }
         } label: {
             title

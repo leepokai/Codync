@@ -13,6 +13,7 @@ import {
   type Usage,
 } from '@shared/models'
 import type { HostClient } from '../client/host-client'
+import { placedBots, sectionMembers, sectionRename } from '../lib/roster-sections'
 import { FileDownloads } from './file-downloads'
 import { BotSync, sleep } from './bot-sync'
 
@@ -249,15 +250,36 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('markRead', { botId }), true)
   }
 
-  private patchBot(bot: Bot, change: Partial<BotDraft>) {
+  private patchBot(bot: Bot, change: Partial<BotDraft>, undo?: () => void) {
     const current = this.bots.get(bot.id)
-    if (current) this.bots.set(bot.id, { ...current, ...change } as Bot)
+    // Normalized, so a cleared section (null) reads as none.
+    if (current) this.bots.set(bot.id, normalizeBot({ ...current, ...change } as Bot))
     this.changed()
-    this.perform((c) => c.call('updateBot', { ...updatePayload(bot), ...change }), true)
+    this.perform((c) => c.call('updateBot', { ...updatePayload(current ?? bot), ...change }), true, undo)
   }
 
   setPinned(bot: Bot, pinned: boolean) {
     this.patchBot(bot, { pinned })
+  }
+
+  /** Puts the bot in roster section `name`, or takes it out of its section (null), shown at once and taken back if the host refuses the name. */
+  setSection(bot: Bot, name: string | null) {
+    const before = this.bots.get(bot.id)?.section
+    this.patchBot(bot, { section: name?.trim() || null }, () => this.place([bot.id], before))
+  }
+
+  /** Renames a section on this computer (onto another one's name merges them); null removes it, its bots stay. */
+  renameSection(from: string, to: string | null) {
+    const rename = sectionRename(from, to)
+    const moved = sectionMembers(this.bots.values(), from)
+    this.place(moved, rename.to ?? undefined)
+    this.perform((c) => c.call('renameSection', rename), true, () => this.place(moved, from))
+  }
+
+  /** Shows the bots in roster section `section` (none: undefined) before the host's bot events confirm it. */
+  private place(ids: string[], section: string | undefined) {
+    for (const [id, bot] of placedBots(this.bots, ids, section)) this.bots.set(id, bot)
+    this.changed()
   }
 
   /** Whether the bot may see and use the computer's screen. */

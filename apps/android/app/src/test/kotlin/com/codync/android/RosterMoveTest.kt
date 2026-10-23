@@ -18,4 +18,14 @@ class RosterMoveTest {
         assertNull(moved(roster, "c", 1))
         assertNull(moved(roster, "missing", 1))
     }
+
+    @Test fun aBotMovesPastOtherSectionsToTheNextBotInItsOwn() {
+        val sectioned = listOf(Bot("pin", pinned = true, section = "Work"), Bot("pin2", pinned = true), Bot("a", section = "Work"),
+            Bot("b"), Bot("c", section = "Work"))
+        assertEquals(listOf("pin", "pin2", "c", "b", "a"), moved(sectioned, "a", 1))
+        assertNull(moved(sectioned, "b", -1))
+        assertNull(moved(sectioned, "b", 1))
+        // Pinned bots show together whatever their section, so they move among each other.
+        assertEquals(listOf("pin2", "pin", "a", "b", "c"), moved(sectioned, "pin", 1))
+    }
 }

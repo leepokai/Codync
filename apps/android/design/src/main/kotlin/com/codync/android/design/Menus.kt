@@ -135,13 +135,17 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
             hold()
             var moved = 0f
             var started = false
-            drag(held.id) { change ->
-                val step = change.positionChange().y
-                moved += step
-                if (!started && abs(moved) > viewConfiguration.touchSlop) { started = true; open = false; reorder.start() }
-                if (started) { reorder.move(step); change.consume() }
+            // finally: a cancelled gesture (the row left the list, the handler restarted) still ends the drag.
+            try {
+                drag(held.id) { change ->
+                    val step = change.positionChange().y
+                    moved += step
+                    if (!started && abs(moved) > viewConfiguration.touchSlop) { started = true; open = false; reorder.start() }
+                    if (started) { reorder.move(step); change.consume() }
+                }
+            } finally {
+                if (started) reorder.end()
             }
-            if (started) reorder.end()
         }
     }
     return onGloballyPositioned { anchor = it.boundsInRoot() }.then(gestures)

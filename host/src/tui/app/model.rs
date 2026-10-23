@@ -107,6 +107,8 @@ pub struct Bot {
     /// Where the user dragged it (see `App::roster`).
     pub position: i64,
     pub hidden: bool,
+    /// Its roster section; `None` for none (the host trims and checks the name).
+    pub section: Option<String>,
     pub notify: bool,
     pub computer: bool,
     /// It creates bots and changes any bot's setup (`chat::manage`); `None` from a host without it.
@@ -237,6 +239,7 @@ impl Bot {
             pinned: v["pinned"].as_bool().unwrap_or(false),
             position: v["position"].as_i64().unwrap_or(0),
             hidden: v["hidden"].as_bool().unwrap_or(false),
+            section: v["section"].as_str().map(str::to_owned),
             notify: v["notify"].as_bool().unwrap_or(true),
             computer: v["computer"].as_bool().unwrap_or(false),
             manage_team: v["manageTeam"].as_bool(),

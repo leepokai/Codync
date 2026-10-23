@@ -19,6 +19,8 @@ import kotlinx.serialization.Serializable
         return choices
     }
     fun normalize(selected: String?): String? = selected?.takeIf { it.isNotBlank() && it != agentDefault?.id }
+    /** The settings to show for a bot's model. Default (`""`) shows those of the model the agent runs by default, which is the one a bot on Default gets. */
+    fun settings(model: String): List<ModelOption> = models.firstOrNull { it.id == model.ifEmpty { currentModelId } }?.options.orEmpty()
 }
 data class ModelChoice(val id: String?, val name: String, val description: String? = null)
 

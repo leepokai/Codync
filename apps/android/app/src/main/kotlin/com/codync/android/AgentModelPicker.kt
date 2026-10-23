@@ -49,7 +49,7 @@ import kotlinx.coroutines.CancellationException
     // The agent's own "Default" entry is the same choice as no model.
     val agentDefault = catalog?.agentDefault
     val value = if (selection == agentDefault?.id) "" else selection.orEmpty()
-    val modelOptions = catalog?.models?.firstOrNull { it.id == value }?.options.orEmpty()
+    val modelOptions = catalog?.settings(value).orEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Model", style = Type.body, color = Palette.text)

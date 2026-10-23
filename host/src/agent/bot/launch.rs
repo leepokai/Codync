@@ -205,6 +205,25 @@ mod tests {
     }
 
     #[test]
+    fn a_bot_on_the_default_model_still_gets_its_own_options() {
+        let res = json!({"configOptions": [
+            {"id": "model", "category": "model", "type": "select", "options": [{"value": "gpt-6.1-sol"}]},
+            {"id": "mode", "category": "mode", "type": "select", "options": [{"value": "auto"}]},
+            {"id": "reasoning_effort", "category": "thought_level", "type": "select", "options": [{"value": "high"}]},
+        ]});
+        let own = [("mode", "auto"), ("reasoning_effort", "high")].map(|(k, v)| (k.to_owned(), v.to_owned())).into();
+        // No model to pick: the agent keeps its default and only the bot's settings are set.
+        assert_eq!(config_steps(&res, None, &own), vec![("reasoning_effort", "high")]);
+        // With a model, the model comes first.
+        assert_eq!(
+            config_steps(&res, Some("gpt-6.1-sol"), &own),
+            vec![("model", "gpt-6.1-sol"), ("reasoning_effort", "high")]
+        );
+        // An agent without config options has nothing to set them on.
+        assert!(config_steps(&json!({}), None, &own).is_empty());
+    }
+
+    #[test]
     fn claude_codes_memory_is_off_in_any_folder_unless_the_user_kept_it() {
         let bot = |kept: Value| -> BotConfig {
             serde_json::from_value(

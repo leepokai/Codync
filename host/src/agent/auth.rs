@@ -526,6 +526,30 @@ mod tests {
     }
 
     #[test]
+    fn model_catalog_gives_the_current_model_the_sessions_own_options() {
+        // Codex (codex-acp) advertises reasoning effort on the session, not per model.
+        let session = json!({"configOptions": [
+            {"id": "model", "category": "model", "type": "select", "currentValue": "gpt-6.1-sol",
+             "options": [{"value": "gpt-6.1-sol", "name": "6.1 Sol"}, {"value": "gpt-6.1-mini", "name": "6.1 Mini"}]},
+            {"id": "mode", "category": "mode", "type": "select", "currentValue": "auto",
+             "options": [{"value": "read-only"}, {"value": "auto"}]},
+            {"id": "reasoning_effort", "name": "Reasoning Effort", "category": "thought_level", "type": "select",
+             "currentValue": "low", "options": [{"value": "low", "name": "Low"}, {"value": "high", "name": "High"}]},
+            {"id": "fast-mode", "type": "select", "currentValue": "off", "options": [{"value": "on"}, {"value": "off"}]},
+            {"id": "verbose", "type": "boolean"}
+        ]});
+        let result = model_catalog(&session, &Value::Null);
+        assert_eq!(
+            result["models"][0]["options"],
+            json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "default": "low",
+                    "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]}]),
+            "only the agent's own setting: not the model, approvals or Fast mode"
+        );
+        // The session only shows the values for the model it runs; another model's may differ.
+        assert_eq!(result["models"][1]["options"], json!([]));
+    }
+
+    #[test]
     fn model_config_prefers_category_and_ignores_unknown_types() {
         let session = json!({"configOptions": [
             {"id": "model", "type": "boolean"},

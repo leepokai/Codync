@@ -572,6 +572,36 @@ mod tests {
     }
 
     #[test]
+    fn model_catalog_reads_any_agents_session_settings_by_schema() {
+        // No agent names or ids are special: another agent calls its effort `effort` and adds a setting of its own
+        // category. A boolean (other than Fast mode) has no values to pick from, so it isn't offered.
+        let session = json!({"configOptions": [
+            {"id": "provider-model", "category": "model", "type": "select", "currentValue": "big",
+             "options": [{"value": "big"}, {"value": "small"}]},
+            {"id": "effort", "category": "thought_level", "type": "select", "currentValue": "medium",
+             "options": [{"value": "minimal"}, {"value": "medium"}]},
+            {"id": "verbosity", "name": "Verbosity", "category": "_custom", "type": "select",
+             "options": [{"value": "terse", "name": "Terse"}]},
+            {"id": "sandbox", "type": "boolean", "currentValue": true}
+        ]});
+        let result = model_catalog(&session, &Value::Null);
+        let ids: Vec<&str> =
+            result["models"][0]["options"].as_array().unwrap().iter().map(|o| o["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["effort", "verbosity"]);
+        assert_eq!(result["models"][0]["options"][1]["default"], Value::Null, "no current value: no default claimed");
+        assert_eq!(result["models"][1]["options"], json!([]));
+    }
+
+    #[test]
+    fn model_catalog_offers_no_settings_when_the_agent_lists_none() {
+        let session = json!({"configOptions": [{"id": "model", "category": "model", "type": "select",
+            "currentValue": "a", "options": [{"value": "a"}]}]});
+        assert_eq!(model_catalog(&session, &Value::Null)["models"][0]["options"], json!([]));
+        let legacy = json!({"models": {"currentModelId": "a", "availableModels": [{"modelId": "a"}]}});
+        assert_eq!(model_catalog(&legacy, &Value::Null)["models"][0]["options"], json!([]));
+    }
+
+    #[test]
     fn model_config_prefers_category_and_ignores_unknown_types() {
         let session = json!({"configOptions": [
             {"id": "model", "type": "boolean"},

@@ -11,8 +11,8 @@ public struct AgentModels: Decodable, Sendable {
     }
 
     /// A model setting and the values the agent accepts.
-    public struct Option: Decodable, Identifiable, Sendable {
-        public struct Value: Decodable, Sendable {
+    public struct Option: Codable, Hashable, Identifiable, Sendable {
+        public struct Value: Codable, Hashable, Sendable {
             public let id: String
             public let name: String
         }
@@ -21,6 +21,8 @@ public struct AgentModels: Decodable, Sendable {
         public let name: String
         public let values: [Value]
         public let `default`: String?
+        /// The ACP category, when the agent gives one: `thought_level` is the effort level.
+        public var category: String? = nil
     }
 
     public let models: [Model]

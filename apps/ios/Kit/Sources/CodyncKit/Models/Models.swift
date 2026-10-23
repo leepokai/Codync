@@ -69,6 +69,16 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var agentStep: AgentStep?
     /// Agents of its chain resting now.
     public var resting: [AgentRest] = []
+    /// Its main agent session is running (on the agent `agentStep` names), whatever it listed.
+    public var sessionLive = false
+    /// What that session last listed its settings as (setting id → value); nil with no session running.
+    public var sessionOptions: [String: String]?
+    /// The settings that session offers for the model it runs; nil until it lists them.
+    public var sessionSettings: [AgentModels.Option]?
+    /// Saved settings that didn't take, by id.
+    public var settingIssues: [String: SettingIssue] = [:]
+    /// A change that starts a new agent session waits for the running reply.
+    public var restartPending = false
     public var unread: Int
     public var lastMessage: String?
     public var lastAt: Int64
@@ -486,6 +496,11 @@ extension Bot {
         workingChat = try c.decodeIfPresent(String.self, forKey: .workingChat)
         agentStep = try? c.decodeIfPresent(AgentStep.self, forKey: .agentStep)
         resting = (try? c.decodeIfPresent([AgentRest].self, forKey: .resting)) ?? []
+        sessionLive = (try? c.decodeIfPresent(Bool.self, forKey: .sessionLive)) ?? false
+        sessionOptions = try? c.decodeIfPresent([String: String].self, forKey: .sessionOptions)
+        sessionSettings = try? c.decodeIfPresent([AgentModels.Option].self, forKey: .sessionSettings)
+        settingIssues = (try? c.decodeIfPresent([String: SettingIssue].self, forKey: .settingIssues)) ?? [:]
+        restartPending = (try? c.decodeIfPresent(Bool.self, forKey: .restartPending)) ?? false
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt

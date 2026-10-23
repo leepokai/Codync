@@ -564,9 +564,9 @@ mod tests {
         let result = model_catalog(&session, &Value::Null);
         assert_eq!(
             result["models"][0]["options"],
-            json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "default": "low",
+            json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "default": "low", "category": "thought_level",
                     "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]}]),
-            "only the agent's own setting: not the model, approvals or Fast mode"
+            "only the agent's own setting, with its category: not the model, approvals or Fast mode"
         );
         // The session only shows the values for the model it runs; another model's may differ.
         assert_eq!(result["models"][1]["options"], json!([]));
@@ -590,6 +590,9 @@ mod tests {
             result["models"][0]["options"].as_array().unwrap().iter().map(|o| o["id"].as_str().unwrap()).collect();
         assert_eq!(ids, ["effort", "verbosity"]);
         assert_eq!(result["models"][0]["options"][1]["default"], Value::Null, "no current value: no default claimed");
+        // The category says which setting is the effort level, whatever its id.
+        assert_eq!(result["models"][0]["options"][0]["category"], "thought_level");
+        assert_eq!(result["models"][0]["options"][1]["category"], "_custom");
         assert_eq!(result["models"][1]["options"], json!([]));
     }
 

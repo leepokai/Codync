@@ -338,3 +338,82 @@ async fn a_change_during_a_reply_waits_for_it_and_says_so() {
     }
     assert_eq!(answer(&host, &bot, "three").await, "sol low · three");
 }
+
+fn bot_state(snapshot: &Value, bot: &str) -> Value {
+    snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).cloned().unwrap()
+}
+
+#[tokio::test]
+async fn a_session_that_lists_nothing_is_running_with_its_settings_unknown() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let bot = host.fixture_bot("Bare", "effort_agent.py", "").await;
+    fixture_flag(&host, &bot, "bare");
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "high"}})).await;
+    answer(&host, &bot, "one").await;
+    let state = bot_state(&host.snapshot().await, &bot);
+    assert_eq!(state["sessionLive"], true, "running");
+    assert_eq!(state["sessionOptions"], json!({}), "nothing it said, so nothing known");
+    assert_eq!(state["sessionSettings"], Value::Null);
+    assert_eq!(calls(&host, &bot), ["session/new"], "no list, nothing set");
+}
+
+#[tokio::test]
+async fn an_issue_is_about_its_value_and_a_new_choice_clears_it() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let bot = host.fixture_bot("Retry", "effort_agent.py", "").await;
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "max"}})).await;
+    host.call("send", json!({"botId": bot, "text": "one"})).await;
+    wait_for(&host, &bot, "failure", |e| e["data"]["style"] == "error").await;
+    let state = bot_state(&host.snapshot().await, &bot);
+    assert_eq!(state["settingIssues"], json!({"reasoning_effort": {"issue": "rejected", "value": "max"}}));
+    assert_eq!(state["sessionLive"], false, "the session never started");
+
+    // Choosing high clears the refusal of max, and high applies.
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "high"}})).await;
+    assert_eq!(bot_state(&host.snapshot().await, &bot)["settingIssues"], json!({}));
+    assert_eq!(answer(&host, &bot, "two").await, "sol high · two");
+
+    // Back to Default: nothing saved, nothing sent, the agent's own low.
+    host.call("updateBot", json!({"id": bot, "modelOptions": {}})).await;
+    assert_eq!(answer(&host, &bot, "three").await, "sol low · three");
+    let state = bot_state(&host.snapshot().await, &bot);
+    assert_eq!(
+        (state["settingIssues"].clone(), state["sessionOptions"]["reasoning_effort"].clone()),
+        (json!({}), json!("low"))
+    );
+}
+
+#[tokio::test]
+async fn going_back_to_default_during_a_reply_is_pending_too() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let bot = host.fixture_bot("Undo", "effort_agent.py", "").await;
+    let workspace = host.home.join("bots").join(&bot).join("workspace");
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "high"}})).await;
+    answer(&host, &bot, "one").await;
+    fixture_flag(&host, &bot, "hold");
+    host.call("send", json!({"botId": bot, "text": "two"})).await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !workspace.join("prompted").exists() {
+        assert!(Instant::now() < deadline, "the reply never started");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    host.call("updateBot", json!({"id": bot, "modelOptions": {}})).await;
+    let during = bot_state(&host.snapshot().await, &bot);
+    assert_eq!((during["restartPending"].clone(), during["modelOptions"].clone()), (json!(true), json!({})));
+    std::fs::remove_file(workspace.join("hold")).unwrap();
+    std::fs::write(workspace.join("release"), "").unwrap();
+    wait_for(&host, &bot, "the held reply", |e| e["kind"] == "agent" && e["data"]["text"] == "sol high · two").await;
+    assert_eq!(answer(&host, &bot, "three").await, "sol low · three", "the agent's own again, in a new session");
+}

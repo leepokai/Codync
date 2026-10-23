@@ -11,7 +11,8 @@ Files in its folder change how it behaves, for lifecycle tests:
 - `foreign`: after each prompt, a config_option_update arrives for another session.
 - `exit`: the process exits right after answering a prompt.
 - `unlisted`: sessions list the model select only, no settings.
-- `hold`: a prompt writes `prompted`, then waits for a `release` file before answering."""
+- `hold`: a prompt writes `prompted`, then waits for a `release` file before answering.
+- `bare`: new and loaded sessions list no config options at all."""
 
 import json
 import os
@@ -33,6 +34,8 @@ def log(value):
 
 
 def options():
+    if os.path.exists("bare"):
+        return {}
     if os.path.exists("unlisted"):
         return {"configOptions": [
             {"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": model,

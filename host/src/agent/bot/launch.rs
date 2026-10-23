@@ -436,6 +436,66 @@ mod tests {
         assert_eq!(config_steps(&res, Some("m"), &own), vec![("reasoning_effort", "high")]);
     }
 
+    /// An ACP agent over stdio for `select_model`: answers `cursor/list_available_models` with A offering high and
+    /// B only low, reports model `reported` after the model setter, and logs every setter.
+    fn wire_agent(dir: &std::path::Path, reported: &str) -> String {
+        let script = dir.join("agent.py");
+        let body = r#"
+import json, sys
+REPORTED = sys.argv[1]
+def send(v): print(json.dumps({"jsonrpc": "2.0", **v}), flush=True)
+for line in sys.stdin:
+    m = json.loads(line); method, rid, p = m.get("method"), m.get("id"), m.get("params", {})
+    if rid is None: continue
+    if method == "initialize": send({"id": rid, "result": {"protocolVersion": 1}})
+    elif method == "cursor/list_available_models":
+        send({"id": rid, "result": {"models": [
+            {"value": "A", "configOptions": [{"id": "effort", "type": "select", "options": [{"value": "low"}, {"value": "high"}]}]},
+            {"value": "B", "configOptions": [{"id": "effort", "type": "select", "options": [{"value": "low"}]}]}]}})
+    elif method == "session/set_config_option":
+        open("calls.log", "a").write(p["configId"] + "=" + p["value"] + "\n")
+        model = [] if REPORTED == "-" else [{"id": "model", "category": "model", "type": "select",
+            "currentValue": REPORTED, "options": [{"value": "A"}, {"value": "B"}]}]
+        send({"id": rid, "result": {"configOptions": model}})
+    else: send({"id": rid, "result": {}})
+"#;
+        std::fs::write(&script, body).unwrap();
+        format!("python3 {} {reported}", script.display())
+    }
+
+    async fn selected_with_reported_model(reported: &str) -> (Selected, String) {
+        let dir = std::env::temp_dir().join(format!("codync-select-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = start_agent(&wire_agent(&dir, reported), dir.to_str().unwrap(), &[], Duration::from_secs(20))
+            .await
+            .unwrap();
+        let res = json!({"sessionId": "s1", "configOptions": [{"id": "model", "category": "model", "type": "select",
+            "currentValue": "B", "options": [{"value": "A"}, {"value": "B"}]}]});
+        let cfg: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "cursor",
+            "model": "A", "modelOptions": {"effort": "high"}}))
+        .unwrap();
+        let selected = select_model(&conn.acp, &res, "s1", &cfg).await.unwrap();
+        conn.acp.kill().await;
+        let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&dir);
+        (selected, calls)
+    }
+
+    #[tokio::test]
+    async fn the_model_the_session_reports_decides_its_settings_not_the_one_asked_for() {
+        // Reviewer DJ103-REQUESTED-MODEL-AS-CAPABILITY: asked for A, the session says it runs B, where high isn't
+        // offered; A's list must not vouch for it.
+        let (selected, calls) = selected_with_reported_model("B").await;
+        assert_eq!(calls, "model=A\n", "high never reaches B");
+        assert_eq!(selected.left_out.len(), 1);
+        // A report without the model's identity confirms nothing either.
+        let (_, calls) = selected_with_reported_model("-").await;
+        assert_eq!(calls, "model=A\n");
+        // When the session does run A, A's own list allows it.
+        let (_, calls) = selected_with_reported_model("A").await;
+        assert_eq!(calls, "model=A\neffort=high\n");
+    }
+
     #[test]
     fn claude_codes_memory_is_off_in_any_folder_unless_the_user_kept_it() {
         let bot = |kept: Value| -> BotConfig {

@@ -110,14 +110,14 @@ struct BotSettingsForm: View {
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
             if let error {
-                Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
             }
         }
     }
 
     private var instructions: some View {
         Field("Standing instructions", detail: "Rules that always apply. Put task-specific requests in the chat instead.") {
-            TextField("e.g. Reviews PRs. Never pushes without asking.", text: $draft.description, axis: .vertical)
+            TextField(L10n.tr("e.g. Reviews PRs. Never pushes without asking."), text: $draft.description, axis: .vertical)
                 .lineLimit(3...8)
                 .fieldBox()
         }
@@ -226,7 +226,7 @@ struct BotSettingsForm: View {
                         ]
                     } label: {
                         HStack(spacing: 6) {
-                            Text(draft.cwd.isEmpty ? "Personal" : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
+                            Text(draft.cwd.isEmpty ? L10n.tr("Personal") : (draft.cwd as NSString).lastPathComponent).lineLimit(1)
                             Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
                         }
                         .foregroundStyle(Palette.text)
@@ -276,7 +276,7 @@ struct BotSettingsForm: View {
                 info: { id in viewingSkill = model.installedSkills.first { $0.id == id }.map(SkillRef.init) }
             )
             if let error {
-                Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
             }
         }
     }
@@ -298,9 +298,9 @@ struct Field<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(label).foregroundStyle(Palette.text)
+                Text(L10n.tr(label)).foregroundStyle(Palette.text)
                 if let detail {
-                    Text(detail).font(.caption).foregroundStyle(Palette.secondary).lineSpacing(2)
+                    Text(L10n.tr(detail)).font(.caption).foregroundStyle(Palette.secondary).lineSpacing(2)
                         .lineLimit(noteLines)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -326,9 +326,9 @@ struct SwitchRow: View {
     var body: some View {
         Toggle(isOn: $isOn) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).foregroundStyle(Palette.text)
+                Text(L10n.tr(title)).foregroundStyle(Palette.text)
                 if let detail {
-                    Text(detail).font(.caption).foregroundStyle(Palette.secondary).lineSpacing(2)
+                    Text(L10n.tr(detail)).font(.caption).foregroundStyle(Palette.secondary).lineSpacing(2)
                         .lineLimit(noteLines)
                         .fixedSize(horizontal: false, vertical: true)
                 }

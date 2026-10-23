@@ -4,6 +4,8 @@ import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { effortRow, modelSettings, stepSettings, type ModelSetting, type SessionReport } from '@shared/model-settings'
 import type { AgentModelsState } from './agent-models'
+import { useTr } from '../../lib/use-language'
+
 
 /** The bot's model and its options, from the list `useAgentModels` loaded for its agent: the Effort level row first,
  *  then the agent's other settings under their own names. */
@@ -22,6 +24,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   /** The bot is replying: a change waits for the reply. */
   working?: boolean
 }) {
+  const tr = useTr()
   const { catalog, loading, failure } = models
   const custom = backend === 'custom'
 
@@ -68,7 +71,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   return (
     <VStack gap={6}>
       <HStack gap={8}>
-        <Text tone="text" className="model-picker-label">Model</Text>
+        <Text tone="text" className="model-picker-label">{tr(`Model`)}</Text>
         <Spacer />
         <HStack gap={4} shrink>
           {custom ? null : (
@@ -109,13 +112,13 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
       {!custom && !loading && failure ? (
         <Text size="caption" tone="attention">{failure}</Text>
       ) : !custom && !loading && empty ? (
-        <Text size="caption" tone="secondary">This agent doesn't advertise a model list. Leave Default or enter a model ID.</Text>
+        <Text size="caption" tone="secondary">{tr(`This agent doesn't advertise a model list. Leave Default or enter a model ID.`)}</Text>
       ) : null}
       {sessionNote ? (
         <Text size="caption" tone="secondary">
-          {working
+          {tr(working
             ? 'Changes to the model or effort level apply after this reply, in a new agent session. Chat history is kept; the agent’s session context starts fresh.'
-            : 'Changes to the model or effort level apply to the next message, in a new agent session. Chat history is kept; the agent’s session context starts fresh.'}
+            : 'Changes to the model or effort level apply to the next message, in a new agent session. Chat history is kept; the agent’s session context starts fresh.')}
         </Text>
       ) : null}
     </VStack>

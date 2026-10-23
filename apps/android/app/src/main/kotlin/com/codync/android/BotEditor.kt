@@ -168,7 +168,7 @@ internal val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanO
                     ) }, label = "Workspace") {
                         Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(if (draft.cwd.isEmpty()) "Personal" else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
+                            Text(if (draft.cwd.isEmpty()) tr("Personal") else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
                                 style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
                         }

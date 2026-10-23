@@ -37,17 +37,17 @@ private val DETAILS = listOf(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Box(Modifier.width(22.dp).padding(top = 1.dp), contentAlignment = Alignment.Center) { Symbol(icon, size = 18.dp, tint = Palette.secondary) }
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(title, style = Type.body, color = Palette.text)
-                            Text(detail, style = Type.footnote, color = Palette.secondary)
+                            Text(tr(title), style = Type.body, color = Palette.text)
+                            Text(tr(detail), style = Type.footnote, color = Palette.secondary)
                         }
                     }
                 }
             }
             Row(Modifier.padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("See the", style = Type.caption, color = Palette.secondary)
+                Text(tr("See the"), style = Type.caption, color = Palette.secondary)
                 LinkButton("Privacy Policy", style = Type.caption.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
                     color = Palette.text) { uri.open("https://codync.dev/privacy", OutboundLink.Privacy) }
-                Text("for details.", style = Type.caption, color = Palette.secondary)
+                Text(tr("for details."), style = Type.caption, color = Palette.secondary)
             }
         }
     }

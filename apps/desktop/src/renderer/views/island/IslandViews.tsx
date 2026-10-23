@@ -6,6 +6,7 @@ import { Icon } from '../../components/Icon'
 import { RecordingPill } from '../../components/RecordingPill'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useModel } from '../../lib/observable'
+import { useTr } from '../../lib/use-language'
 import { avatarColor, withAlpha } from '../../lib/theme'
 import type { IslandModel } from './island-model'
 import { useArrivals, useFlip, useSwap } from './island-motion'
@@ -187,6 +188,7 @@ export function Message({ model }: { model: IslandModel }) {
   const dictation = useModel(model.dictation)
   const bot = model.messageBot
   /** Why dictation stopped, else how to talk from any app. */
+  const tr = useTr()
   const hint = dictation.error ?? model.voiceTip
   const swap = useSwap(bot?.ref)
   if (!bot) return null
@@ -239,7 +241,7 @@ export function Message({ model }: { model: IslandModel }) {
               <Icon name="arrow.up" size={12} weight="bold" scaled={false} />
             </button>
           </form>
-          {hint ? <span className="island-hint">{hint}</span> : null}
+          {hint ? <span className="island-hint">{tr(hint)}</span> : null}
         </div>
       </div>
       <MiniColumn bots={model.others(3).filter((b) => b.ref !== bot.ref)} onOpen={(ref) => model.openBot(ref)} />

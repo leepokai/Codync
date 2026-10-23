@@ -11,6 +11,8 @@ import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
 import { currentZone } from './time-zones'
 import './routines.css'
+import { useTr } from '../../lib/use-language'
+
 
 const saveShortcut = window.codync.platform === 'darwin' ? '⌘S' : 'Ctrl+S'
 
@@ -20,6 +22,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   /** Called after a save (the routine) or a delete (null). */
   saved: (routine: Routine | null) => void
 }) {
+  const tr = useTr()
   const store = useStore()
   const [name, setName] = useState(routine?.name ?? '')
   const [instruction, setInstruction] = useState(routine?.instruction ?? '')
@@ -164,7 +167,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
           </VStack>
           <VStack gap={10}>
             <HStack gap={12}>
-              <Text tone="text" grow>When to run</Text>
+              <Text tone="text" grow>{tr(`When to run`)}</Text>
               <SegmentedChoice selection={schedule.kind} options={options} onChange={(kind) => update({ kind })} />
             </HStack>
             {loaded ? (
@@ -190,7 +193,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
                 <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
                   <LabeledRow label="Timeout">
                     <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
-                    <Text size="callout" tone="secondary">seconds</Text>
+                    <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
                   </LabeledRow>
                 </CardSection>
               </div>
@@ -253,8 +256,8 @@ export function RoutineEditorView({ botId, routine, saved }: {
 
       <Dialog
         open={confirmDelete}
-        title="Delete routine?"
-        message="This deletes the routine and stops its future runs. This can't be undone."
+        title={tr('Delete routine?')}
+        message={tr("This deletes the routine and stops its future runs. This can't be undone.")}
         actions={[
           {
             title: 'Delete routine',

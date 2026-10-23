@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, u
 import { createPortal } from 'react-dom'
 import { reduceMotion } from '../lib/theme'
 import { afterExit } from '../lib/exit-delay'
+import { useTr } from '../lib/use-language'
 import { Icon } from './Icon'
 import { HStack, VStack } from './Stack'
 import { Text } from './Text'
@@ -151,6 +152,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
   onClose: () => void
 }) {
   const { mounted, shown } = usePresence(open, 120)
+  const tr = useTr()
   const last = useRef({ title, message, actions })
   const layer = useRef<HTMLDivElement>(null)
   const id = useId()
@@ -164,13 +166,14 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
       <div className="dialog-dim" onClick={() => cancel !== null && onClose()} />
       <div className="dialog-card" data-modal-card tabIndex={-1}>
         <div className="dialog-text">
+          {/* Callers translate the sentence, then insert names. A second pass would also translate a device named "Done". */}
           <Text as="h2" id={`${id}-title`} size="title3" weight="semibold">{shownContent.title}</Text>
           {shownContent.message ? <Text as="div" id={`${id}-message`} size="body" tone="secondary">{shownContent.message}</Text> : null}
         </div>
         <div className="dialog-buttons">
           {cancel !== null ? (
             <button className="dialog-button" data-autofocus onClick={onClose}>
-              {cancel}
+              {tr(cancel)}
             </button>
           ) : null}
           {shownContent.actions.map((a) => (
@@ -182,7 +185,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
                 a.action()
               }}
             >
-              {a.title}
+              {tr(a.title)}
             </button>
           ))}
         </div>
@@ -238,6 +241,7 @@ export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick
 
 /** The floating panel of menu rows. */
 export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number }) {
+  const tr = useTr()
   const [highlight, setHighlight] = useState(-1)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -267,7 +271,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
             className={`menu-row ${item.destructive ? 'destructive' : ''} ${highlight === i ? 'highlight' : ''}`}
             role={item.selected === undefined ? 'menuitem' : 'menuitemradio'}
             aria-checked={item.selected}
-            title={item.title}
+            title={tr(item.title)}
             onMouseEnter={() => setHighlight(i)}
             onClick={() => {
               dismiss()
@@ -279,7 +283,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
                 {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
               </span>
             ) : null}
-            <span className="menu-title">{item.title}</span>
+            <span className="menu-title">{tr(item.title)}</span>
             {item.selected !== undefined ? (
               <span className={`check-slot${item.selected ? ' on' : ''}`}>
                 <Icon name="checkmark" size={10} weight="semibold" />
@@ -413,13 +417,15 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
   /** Set when the button opens a menu: whether that menu is open. */
   menuOpen?: boolean
 }) {
+  const tr = useTr()
+  const label = tr(title)
   return (
     <button
       ref={buttonRef}
       className={`icon-button ${selected ? 'selected' : ''} ${className ?? ''}`}
       style={{ width: size, height: size, borderRadius: size * 0.28 }}
-      title={title}
-      aria-label={title}
+      title={label}
+      aria-label={label}
       aria-haspopup={menuOpen === undefined ? undefined : 'menu'}
       aria-expanded={menuOpen}
       disabled={disabled}

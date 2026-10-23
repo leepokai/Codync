@@ -2,6 +2,7 @@ import type { Usage } from '@shared/models'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { prefs, usePref } from '../../lib/prefs'
+import { useResetLine } from '../../lib/use-language'
 import { ProviderMascot } from '../usage/ProviderMascot'
 import { UsageBar } from '../usage/UsageBar'
 import { providerTintCSS, resetDescription, windowTitle } from '../usage/usage-model'
@@ -10,6 +11,7 @@ import './settings.css'
 /** Every limit as a bar under its provider, the way the menu bar lists them. */
 export function UsageLimits({ usage }: { usage: Usage }) {
   const [style] = usePref(prefs.usageIconStyle)
+  const resetLine = useResetLine()
   return (
     <VStack gap={18}>
       {usage.providers.map((provider) => (
@@ -23,7 +25,7 @@ export function UsageLimits({ usage }: { usage: Usage }) {
               <Text tone="text" truncate className="settings-usage-title">{windowTitle(w)}</Text>
               <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
               <Text tone="text" tabular className="settings-usage-percent">{Math.round(w.percent)}%</Text>
-              <Text tone="secondary" truncate className="settings-usage-reset">{resetDescription(w) ?? ''}</Text>
+              <Text tone="secondary" truncate className="settings-usage-reset">{resetLine(resetDescription(w) ?? '')}</Text>
             </HStack>
           ))}
         </VStack>

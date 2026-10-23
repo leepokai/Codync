@@ -82,10 +82,10 @@ struct BotConversationView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if let error {
-                        Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                        Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                             .frame(maxWidth: .infinity).padding(.top, 24)
                     } else if rows.isEmpty, fetched != nil {
-                        Text("No messages yet.").font(.footnote).foregroundStyle(Palette.tertiary)
+                        Text(L10n.tr("No messages yet.")).font(.footnote).foregroundStyle(Palette.tertiary)
                             .frame(maxWidth: .infinity).padding(.top, 24)
                     }
                     ForEach(rows) { rowView($0) }
@@ -123,7 +123,7 @@ struct BotConversationView: View {
     @ViewBuilder private func caption(_ outcome: BotExchange.Outcome, awaiting: String) -> some View {
         switch outcome {
         case .pending:
-            Text("Waiting for \(model.authorName(awaiting))…").font(.footnote).foregroundStyle(Palette.secondary)
+            Text(L10n.tr("Waiting for \(model.authorName(awaiting))…")).font(.footnote).foregroundStyle(Palette.secondary)
                 .padding(.leading, 12)
         case .failed(let detail):
             Text(detail.isEmpty ? "Didn't complete." : detail).font(.footnote).foregroundStyle(Palette.danger)

@@ -18,13 +18,13 @@ struct HandoffCardRow: View {
                 Disclosure(isExpanded: $expanded) {
                     carried
                 } label: {
-                    Text("What it carries").font(.footnote.weight(.medium)).foregroundStyle(Palette.text)
+                    Text(L10n.tr("What it carries")).font(.footnote.weight(.medium)).foregroundStyle(Palette.text)
                 }
                 HStack(spacing: 8) {
                     if model.answering[entry.id] != nil {
                         Spinner()
                     } else {
-                        Button("Keep this conversation") { model.keepConversation(entry) }
+                        Button(L10n.tr("Keep this conversation")) { model.keepConversation(entry) }
                             .buttonStyle(SecondaryButtonStyle())
                         IconButton("Edit what it carries", systemImage: "pencil") {
                             withAnimation(Motion.layout) { editing = true }

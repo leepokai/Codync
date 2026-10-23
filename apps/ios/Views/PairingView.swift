@@ -52,7 +52,7 @@ struct PairingView<Leading: View>: View {
                         if inModal { dismissModal() } else { onSkip?() }
                     }
                 } label: {
-                    Text("Skip").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                    Text(L10n.tr("Skip")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
                 }
                 .buttonStyle(.secondary)
                 .accessibilityHint("Pair a computer later from Computers & settings.")
@@ -99,11 +99,11 @@ private struct InstallPage: View {
                     .padding(.top, 8)
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Install Codync\non your computer")
+                        Text(L10n.tr("Install Codync\non your computer"))
                             .font(.system(size: 30, weight: .semibold))
                             .tracking(-0.5)
                             .foregroundStyle(Palette.text)
-                        Text("Your bots run there. This iPhone is how you talk to them.")
+                        Text(L10n.tr("Your bots run there. This iPhone is how you talk to them."))
                             .font(.body)
                             .foregroundStyle(Palette.secondary)
                     }
@@ -123,9 +123,9 @@ private struct InstallPage: View {
                             Hint("or install with Homebrew")
                             CommandBlock("brew install leepokai/codync/codync-host\ncodync-host install", records: .installCommand)
                         }
-                        Text(os == .mac
+                        Text(L10n.tr(os == .mac
                              ? "Open Codync and it sets up the host on its own."
-                             : "codync-host install keeps it running in the background.")
+                             : "codync-host install keeps it running in the background."))
                             .font(.subheadline)
                             .foregroundStyle(Palette.secondary)
                             .contentTransition(.opacity)
@@ -141,7 +141,7 @@ private struct InstallPage: View {
             }
 
             Button(action: next) {
-                Text("Continue").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                Text(L10n.tr("Continue")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
             }
             .buttonStyle(.primary)
             .padding(.horizontal, 24)
@@ -156,7 +156,7 @@ private struct Hint: View {
     init(_ text: String) { self.text = text }
 
     var body: some View {
-        Text(text).font(.footnote).foregroundStyle(Palette.secondary).transition(.opacity)
+        Text(L10n.tr(text)).font(.footnote).foregroundStyle(Palette.secondary).transition(.opacity)
     }
 }
 
@@ -220,13 +220,13 @@ private struct ScanPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Scan the pairing code")
+                    Text(L10n.tr("Scan the pairing code"))
                         .font(.system(size: 30, weight: .semibold))
                         .tracking(-0.5)
                         .foregroundStyle(Palette.text)
                     Text(os == .mac
-                         ? "On your Mac, click Codync in the menu bar, then Pair iPhone."
-                         : "On your computer, run this in a terminal:")
+                         ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair iPhone.")
+                         : L10n.tr("On your computer, run this in a terminal:"))
                         .font(.body)
                         .foregroundStyle(Palette.secondary)
                     if os == .linux { CommandBlock("codync-host pair") }
@@ -235,7 +235,7 @@ private struct ScanPage: View {
                 viewfinder
 
                 HStack {
-                    TextField("Or paste a \(AppEnvironment.current.urlScheme)://pair link", text: $pasted)
+                    TextField(L10n.tr("Or paste a {scheme}://pair link").replacingOccurrences(of: "{scheme}", with: AppEnvironment.current.urlScheme), text: $pasted)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())
@@ -252,7 +252,7 @@ private struct ScanPage: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(error).font(.footnote).foregroundStyle(Palette.danger)
                         // The usual cause: the phone has no road to the computer yet.
-                        Label("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
+                        Label(L10n.tr("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."),
                               systemImage: "wifi.exclamationmark")
                             .font(.footnote)
                             .foregroundStyle(Palette.secondary)
@@ -265,16 +265,16 @@ private struct ScanPage: View {
 
                 // How it connects is never a choice here: every paired computer gets every route.
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted.",
+                    Label(L10n.tr("Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted."),
                           systemImage: "lock.fill")
                     if tailscaleOn {
-                        Label("Tailscale is on: Codync connects over it directly.", systemImage: "checkmark.circle.fill")
+                        Label(L10n.tr("Tailscale is on: Codync connects over it directly."), systemImage: "checkmark.circle.fill")
                     } else {
                         Button {
                             Analytics.shared.capture(.linkOpened(.tailscale))
                             openURL(Tailscale.downloadURL)
                         } label: {
-                            Label("Use Tailscale? Direct and faster away from home.", systemImage: "arrow.up.right")
+                            Label(L10n.tr("Use Tailscale? Direct and faster away from home."), systemImage: "arrow.up.right")
                         }
                         .buttonStyle(PressScale())
                     }
@@ -296,10 +296,20 @@ private struct ScanPage: View {
             if DataScannerViewController.isSupported {
                 QRScanner { code in pair(code) }
                     .id(attempt)
+                // VisionKit's own hint follows the app's localizations, which stay English.
+                if !pairing {
+                    Text(L10n.tr("Find nearby barcodes."))
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.55), radius: 8)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                        .allowsHitTesting(false)
+                }
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "qrcode.viewfinder").font(.system(size: 44, weight: .light))
-                    Text("Camera not available. Paste the link below.").font(.footnote)
+                    Text(L10n.tr("Camera not available. Paste the link below.")).font(.footnote)
                 }
                 .foregroundStyle(Palette.tertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -351,6 +361,7 @@ struct QRScanner: UIViewControllerRepresentable {
         let vc = DataScannerViewController(
             recognizedDataTypes: [.barcode(symbologies: [.qr])],
             qualityLevel: .fast,
+            isGuidanceEnabled: false,
             isHighlightingEnabled: true
         )
         vc.delegate = context.coordinator

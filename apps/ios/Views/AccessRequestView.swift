@@ -55,7 +55,7 @@ struct AccessRequestView: View {
                     .foregroundStyle(Palette.added)
             } else if let ticket {
                 VStack(spacing: 10) {
-                    Text("Check the code on \(computer.name)")
+                    Text(L10n.tr("Check the code on \(computer.name)"))
                         .font(.headline)
                         .foregroundStyle(Palette.text)
                     Text(spaced(ticket.code))
@@ -63,14 +63,14 @@ struct AccessRequestView: View {
                         .foregroundStyle(Palette.text)
                         .textSelection(.enabled)
                         .accessibilityLabel("Code \(ticket.code.map(String.init).joined(separator: " "))")
-                    Text("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in.")
+                    Text(L10n.tr("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in."))
                         .font(.subheadline)
                         .foregroundStyle(Palette.secondary)
                         .multilineTextAlignment(.center)
                 }
                 HStack(spacing: 8) {
                     Spinner()
-                    Text("Waiting for approval…").foregroundStyle(Palette.secondary)
+                    Text(L10n.tr("Waiting for approval…")).foregroundStyle(Palette.secondary)
                     IconButton("Cancel request", systemImage: "xmark.circle.fill") {
                         Task {
                             await accounts.cancelAccess(computer.computerId)
@@ -83,13 +83,13 @@ struct AccessRequestView: View {
                 Text(error)
                     .foregroundStyle(Palette.danger)
                     .multilineTextAlignment(.center)
-                Button("Try again") { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = nil } }
+                Button(L10n.tr("Try again")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = nil } }
                     .buttonStyle(.secondary)
             } else if sawTicket {
                 Text(outcome ?? "\(computer.name) didn't approve this request.")
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
-                Button("Ask again") {
+                Button(L10n.tr("Ask again")) {
                     withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
                         outcome = nil
                         sawTicket = false

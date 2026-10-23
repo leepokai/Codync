@@ -73,7 +73,7 @@ struct RootView: View {
     /// thread is open.
     private var tabs: some View {
         TabView(selection: Bindable(app).tab) {
-            Tab("Bots", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
+            Tab(L10n.tr("Bots"), systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
                 NavigationStack(path: path) {
                     BotListView()
                         .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
@@ -82,7 +82,7 @@ struct RootView: View {
                         }
                 }
             }
-            Tab("State", systemImage: "rectangle.stack.fill", value: AppTab.state) {
+            Tab(L10n.tr("State"), systemImage: "rectangle.stack.fill", value: AppTab.state) {
                 StateTab()
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
@@ -178,7 +178,7 @@ private struct StateTab: View {
             ScreenHeader {
                 EmptyView()
             } title: {
-                Text("State").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(L10n.tr("State")).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
                 IconButton("Usage limits", systemImage: "chart.bar") { app.showUsage = true }
             }
@@ -218,7 +218,7 @@ private struct UsageSheet: View {
             ScreenHeader {
                 IconButton("Close", systemImage: "xmark") { dismiss() }
             } title: {
-                Text("Usage").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(L10n.tr("Usage")).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
                 if let store, accounts.computers.count > 1 {
                     DropdownMenu {
@@ -258,9 +258,9 @@ struct EmptyState: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: systemImage).font(.system(size: 40)).foregroundStyle(Palette.tertiary)
-            Text(title).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+            Text(L10n.tr(title)).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
             if let message {
-                Text(message).font(.subheadline).foregroundStyle(Palette.secondary)
+                Text(L10n.tr(message)).font(.subheadline).foregroundStyle(Palette.secondary)
             }
         }
         .multilineTextAlignment(.center)
@@ -288,7 +288,7 @@ struct PageHeader<Trailing: View>: View {
             ScreenHeader {
                 BackButton { pop() }
             } title: {
-                Text(title).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                Text(L10n.tr(title)).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
             } trailing: {
                 trailing
             }
@@ -334,8 +334,8 @@ private struct AccessBanners: View {
                 HStack(spacing: 12) {
                     Spinner(size: 16)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Approve on \(name)").font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
-                        Text("Code \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
+                        Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                        Text(L10n.tr("Code \(ticket.code.prefix(3)) \(ticket.code.suffix(3))"))
                             .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
                     }
                     Spacer(minLength: 8)

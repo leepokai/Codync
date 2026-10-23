@@ -5,6 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 
 use super::super::app::{COLORS, NewBot, NewBotField, SHAPES};
+use super::super::l10n::tr;
 use super::super::md::width as w;
 use super::buffer::{centered, frame_box, put, rput, u};
 use super::overlay::input_line;
@@ -16,7 +17,7 @@ const LOOKS_W: usize = 6 + 2 + COLORS.len() * 3 + 1;
 pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     let t = theme();
     let r = centered(area, 56, 18);
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("New bot", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((tr("New bot").as_ref(), t.text)));
     let mid = |width: usize| inner.x + inner.width.saturating_sub(u(width)) / 2;
     for (y, row) in (inner.y + 1..).zip(FACE) {
         put(buf, mid(w(row)), y, inner.width, row, face_style(COLORS[n.color]).patch(t.panel));
@@ -33,7 +34,7 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     let on_color = n.field == NewBotField::Color;
     let x0 = mid(LOOKS_W);
     let y = inner.y + 11;
-    let mut x = put(buf, x0, y, 6, "Color ", label(NewBotField::Color));
+    let mut x = put(buf, x0, y, 6, tr("Color ").as_ref(), label(NewBotField::Color));
     x = put(buf, x, y, 2, if on_color { "‹ " } else { "  " }, label(NewBotField::Color));
     for (ci, c) in COLORS.iter().enumerate() {
         let s = if t.color { Style::default().bg(bot_color(c)) } else { t.text };

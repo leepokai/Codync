@@ -95,10 +95,10 @@ struct RoutineEditorView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 14) {
                     Field("Name") {
-                        TextField("Name", text: $name, prompt: Text("e.g. Morning summary").foregroundStyle(Palette.secondary)).routineInput().focused($typing)
+                        TextField("Name", text: $name, prompt: Text(L10n.tr("e.g. Morning summary")).foregroundStyle(Palette.secondary)).routineInput().focused($typing)
                     }
                     Field("Instruction") {
-                        TextField("Instruction", text: $instruction, prompt: Text("Describe what this bot should do each time it runs.").foregroundStyle(Palette.secondary), axis: .vertical)
+                        TextField("Instruction", text: $instruction, prompt: Text(L10n.tr("Describe what this bot should do each time it runs.")).foregroundStyle(Palette.secondary), axis: .vertical)
                             .lineLimit(3...8).routineInput().focused($typing)
                     }
                 }
@@ -107,18 +107,18 @@ struct RoutineEditorView: View {
                         ChoicePicker(selection: $schedule.kind, options: options.map { (id: $0.0, label: $0.1) }, fitsAvailableWidth: true)
                     }
                     if loaded { triggerFields }
-                    else { Label("Loading schedule…", systemImage: "clock").foregroundStyle(Palette.secondary) }
+                    else { Label(L10n.tr("Loading schedule…"), systemImage: "clock").foregroundStyle(Palette.secondary) }
                 }
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
                         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { advanced.toggle() }
                     } label: {
                         HStack(spacing: 6) {
-                            Text("Run settings")
+                            Text(L10n.tr("Run settings"))
                             Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
                                 .rotationEffect(.degrees(advanced ? 180 : 0))
                             Spacer()
-                            if !advanced { Text("Timeout \(Routine.timeoutText(timeout))").foregroundStyle(Palette.tertiary) }
+                            if !advanced { Text(L10n.tr("Timeout \(Routine.timeoutText(timeout))")).foregroundStyle(Palette.tertiary) }
                         }
                         .font(.subheadline)
                         .foregroundStyle(Palette.secondary)
@@ -129,7 +129,7 @@ struct RoutineEditorView: View {
                     .accessibilityValue(advanced ? "Expanded" : "Collapsed")
                     if advanced {
                         Field("Timeout (seconds)") { TextField("3600", text: $timeout).routineInput().focused($typing) }
-                        Text("A run is stopped after this long. 1 second to 24 hours.")
+                        Text(L10n.tr("A run is stopped after this long. 1 second to 24 hours."))
                             .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
                     }
                 }
@@ -176,12 +176,12 @@ struct RoutineEditorView: View {
             if let routine, routine.triggers.contains(where: { $0.type == "webhook" || $0.type == "event" }) {
                 RoutineWebhookPanel(botId: botId, routineId: routine.id)
             } else {
-                Text("Runs each time something is posted to its URL. Save to get the URL and key.")
+                Text(L10n.tr("Runs each time something is posted to its URL. Save to get the URL and key."))
                     .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
                     .fixedSize(horizontal: false, vertical: true)
             }
         default:
-            Text("Set up by the bot. Pick Schedule or Webhook to replace it.")
+            Text(L10n.tr("Set up by the bot. Pick Schedule or Webhook to replace it."))
                 .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
         }
     }
@@ -246,7 +246,7 @@ struct RoutineEditorView: View {
 
     private var expressionField: some View {
         Field("Cron") {
-            TextField("Cron", text: $schedule.expression, prompt: Text("0 9 * * 1-5").foregroundStyle(Palette.secondary))
+            TextField("Cron", text: $schedule.expression, prompt: Text(L10n.tr("0 9 * * 1-5")).foregroundStyle(Palette.secondary))
                 .font(.body.monospaced()).autocorrectionDisabled().routineInput().focused($typing)
                 .frame(minWidth: 220)
         }
@@ -277,7 +277,7 @@ struct RoutineEditorView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(preview.summary).font(.caption.weight(.medium))
                 if let next = preview.nextRunAt {
-                    Text("Next \(Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened))")
+                    Text(L10n.tr("Next \(Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened))"))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 if let warning = preview.warning {
@@ -285,18 +285,18 @@ struct RoutineEditorView: View {
                 }
             }
         } else if schedule.calendarStyle == "custom" {
-            Text("minute  hour  day  month  weekday").font(.caption.monospaced()).foregroundStyle(Palette.tertiary)
+            Text(L10n.tr("minute  hour  day  month  weekday")).font(.caption.monospaced()).foregroundStyle(Palette.tertiary)
         }
     }
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
             if previewError != nil {
-                Button("Check schedule again") { Task { await checkSchedule() } }
+                Button(L10n.tr("Check schedule again")) { Task { await checkSchedule() } }
                     .buttonStyle(.plain).disabled(model.isOffline)
             }
             if !loaded, error != nil {
-                Button("Retry loading schedule") { Task { await loadSchedule() } }.buttonStyle(.plain)
+                Button(L10n.tr("Retry loading schedule")) { Task { await loadSchedule() } }.buttonStyle(.plain)
             }
             if schedule.kind != "cron", let previewError {
                 Text(previewError).font(.caption).foregroundStyle(Palette.danger)
@@ -306,13 +306,13 @@ struct RoutineEditorView: View {
                     .font(.callout).foregroundStyle(Palette.danger).textSelection(.enabled)
             }
             if model.isOffline {
-                Label("Connect to this computer to save your routine.", systemImage: "wifi.slash")
+                Label(L10n.tr("Connect to this computer to save your routine."), systemImage: "wifi.slash")
                     .font(.caption).foregroundStyle(Palette.danger)
             }
             if loaded, !model.isOffline,
                name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Enter a name and instruction above to save.")
+                Text(L10n.tr("Enter a name and instruction above to save."))
                     .font(.caption).foregroundStyle(Palette.secondary)
             }
             HStack(spacing: 16) { routineActions; saveButton }

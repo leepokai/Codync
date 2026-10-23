@@ -5,6 +5,7 @@ import { Icon } from '../components/Icon'
 import { HStack, Spacer, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useReduceMotion } from '../lib/theme'
+import { useTr } from '../lib/use-language'
 import { useAccount } from '../store/account'
 import googleLogo from '../assets/google.svg'
 import './account-welcome.css'
@@ -15,6 +16,8 @@ const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
 export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   const account = useAccount()
   const reduce = useReduceMotion()
+  const tr = useTr()
+  const onThis = tr(deviceName === 'Mac' ? 'Continue on this Mac' : 'Continue on this computer')
   const [beat, setBeat] = useState(reduce ? 4 : 0)
 
   useEffect(() => {
@@ -32,9 +35,9 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
     return (
       <VStack align="center" justify="center" gap={14} className="welcome-restoring">
         <Spinner size={24} />
-        <Text as="div" size="callout" tone="secondary">Checking for a saved account…</Text>
+        <Text as="div" size="callout" tone="secondary">{tr(`Checking for a saved account…`)}</Text>
         <button className="welcome-skip" onClick={onContinue}>
-          Continue on this {deviceName}
+          {onThis}
         </button>
       </VStack>
     )
@@ -56,17 +59,13 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
           <WelcomeChatGlimpse shown={beat >= 2} />
         </div>
         <VStack gap={10} style={rise(beat >= 3)}>
-          <div className="welcome-title">
-            Your coding agents,
-            <br />
-            as teammates.
-          </div>
-          <Text as="div" size="body" tone="secondary">Give each one a name and a project. They work on your computer while you're away.</Text>
+          <div className="welcome-title">{tr('Your coding agents,\nas teammates.')}</div>
+          <Text as="div" size="body" tone="secondary">{tr(`Give each one a name and a project. They work on your computer while you're away.`)}</Text>
         </VStack>
         <Spacer min={32} />
         <VStack gap={10} style={rise(beat >= 4)}>
           <Button onClick={onContinue} className="welcome-button">
-            Continue on this {deviceName}
+            {onThis}
           </Button>
           <Button onClick={() => void account.signIn('apple')} disabled={!account.isConfigured || account.isBusy} className="welcome-button">
             {account.isBusy ? (
@@ -74,7 +73,7 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
             ) : (
               <HStack as="span" gap={10}>
                 <Icon name="apple.logo" size={20} />
-                Continue with Apple
+                {tr('Continue with Apple')}
               </HStack>
             )}
           </Button>
@@ -84,12 +83,12 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
             ) : (
               <HStack as="span" gap={10}>
                 <img src={googleLogo} alt="" width={20} height={20} />
-                Continue with Google
+                {tr('Continue with Google')}
               </HStack>
             )}
           </Button>
           {!account.isConfigured ? (
-            <Text as="div" size="footnote" tone="tertiary">Sign-in isn't configured in this build. You can still use Codync on this {deviceName}.</Text>
+            <Text as="div" size="footnote" tone="tertiary">{tr(deviceName === 'Mac' ? "Sign-in isn't configured in this build. You can still use Codync on this Mac." : "Sign-in isn't configured in this build. You can still use Codync on this computer.")}</Text>
           ) : null}
           {account.errorMessage ? <Text as="div" size="footnote" tone="attention">{account.errorMessage}</Text> : null}
         </VStack>
@@ -141,6 +140,7 @@ function WelcomeCrew({ shown }: { shown: boolean }) {
 
 /** A short animated user and bot exchange, matching the iPhone onboarding preview. */
 function WelcomeChatGlimpse({ shown }: { shown: boolean }) {
+  const tr = useTr()
   const reduce = useReduceMotion()
   const [replied, setReplied] = useState(false)
   useEffect(() => {
@@ -152,16 +152,16 @@ function WelcomeChatGlimpse({ shown }: { shown: boolean }) {
   return (
     <VStack gap={10}>
       <HStack align="stretch" justify="flex-end" style={rise}>
-        <Text size="subheadline" tone="text" className="welcome-bubble user">Fix the flaky login test</Text>
+        <Text size="subheadline" tone="text" className="welcome-bubble user">{tr(`Fix the flaky login test`)}</Text>
       </HStack>
       <HStack align="flex-end" gap={8} style={rise}>
         <CharacterAvatar shape="blob" color="blue" size={28} mood={replied ? 'idle' : 'working'} />
         {replied ? (
           <Text size="subheadline" tone="text" className="welcome-bubble agent">
-            Done. It raced the session refresh; tests pass on fix/login.
+            {tr(`Done. It raced the session refresh; tests pass on fix/login.`)}
           </Text>
         ) : (
-          <Text size="subheadline" tone="tertiary">Working…</Text>
+          <Text size="subheadline" tone="tertiary">{tr(`Working…`)}</Text>
         )}
       </HStack>
     </VStack>

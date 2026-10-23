@@ -7,6 +7,7 @@ import { useStore } from '../../store/context'
 import { errorText, market, needsSignIn, type InstalledConnector, type MarketConnector, type MarketInput } from './market-models'
 import { ErrorText, Field, WebLink } from './pieces'
 import { usePlugins } from './plugins'
+import { useTr } from '../../lib/use-language'
 
 export function InstallConnectorSheet({ item, requestId, done }: { item: MarketConnector; requestId?: string; done: () => void }) {
   const store = useStore()
@@ -52,12 +53,14 @@ export function InstallConnectorSheet({ item, requestId, done }: { item: MarketC
     if (item.options.length === 1 && item.options[0].inputs.length === 0) void install()
   }, [])
 
+  const tr = useTr()
+  const onHost = (template: string) => tr(template).replaceAll('{name}', store.hostName)
   const missing = !option || option.inputs.some((i) => i.required && !(values[i.name] ?? i.default ?? ''))
   return (
     <SheetPage>
       <ModalHeader
         icon="point.3.connected.trianglepath.dotted"
-        title="Add connector"
+        title={tr(`Add connector`)}
         trailing={saving ? <Spinner /> : <IconButton title="Add" icon="plus" disabled={installed === null && missing} onClick={() => void install()} />}
       />
       <CardForm>
@@ -75,15 +78,22 @@ export function InstallConnectorSheet({ item, requestId, done }: { item: MarketC
             <ChoiceList
               selection={optionId}
               onChange={setOptionId}
-              options={item.options.map((o) => ({ id: o.id, label: o.kind === 'remote' ? `Hosted by ${item.title}` : `On ${store.hostName} (${o.kind})` }))}
+              options={item.options.map((o) => ({
+                id: o.id,
+                label: o.kind === 'remote'
+                  ? tr('Hosted by {name}').replaceAll('{name}', item.title)
+                  : tr('On {name} ({kind})').replaceAll('{name}', store.hostName).replaceAll('{kind}', o.kind),
+              }))}
             />
           </CardSection>
         ) : null}
         {option ? (
-          <CardSection title="Setup" footer={`Keys are saved on ${store.hostName} only.`}>
+          <CardSection title="Setup" footer={onHost('Keys are saved on {name} only.')}>
             {option.inputs.length === 0 ? (
               <Text tone="secondary">
-                {option.kind === 'remote' ? `No keys needed here. If ${item.title} wants you to sign in, its sign-in page opens next.` : 'No setup needed.'}
+                {option.kind === 'remote'
+                  ? tr('No keys needed here. If {name} wants you to sign in, its sign-in page opens next.').replaceAll('{name}', item.title)
+                  : tr(`No setup needed.`)}
               </Text>
             ) : null}
             {option.inputs.map((input) => (
@@ -96,7 +106,7 @@ export function InstallConnectorSheet({ item, requestId, done }: { item: MarketC
                   onChange={(v) => setValues((old) => ({ ...old, [input.name]: v }))}
                 />
                 {input.description ? (
-                  <Text size="caption" tone="secondary">{input.description + (input.required ? '' : ' (optional)')}</Text>
+                  <Text size="caption" tone="secondary">{input.description + (input.required ? '' : tr(' (optional)'))}</Text>
                 ) : null}
               </VStack>
             ))}
@@ -112,6 +122,7 @@ type Mode = 'command' | 'url' | 'config'
 
 export function CustomConnectorSheet() {
   const store = useStore()
+  const tr = useTr()
   const plugins = usePlugins(store)
   const dismiss = useDismiss()
   const [name, setName] = useState('')
@@ -123,10 +134,11 @@ export function CustomConnectorSheet() {
   const [error, setError] = useState<string | null>(null)
   const ready = mode === 'config' ? config.trim() !== '' : name.trim() !== '' && target.trim() !== ''
 
+  const onHost = (template: string) => tr(template).replaceAll('{name}', store.hostName)
   const footer = {
-    command: `Runs on ${store.hostName} in the bot's project folder. Quotes work like in a shell.`,
+    command: onHost("Runs on {name} in the bot's project folder. Quotes work like in a shell."),
     url: 'A remote MCP server, streamable HTTP or SSE.',
-    config: `Paste the MCP config from a README or another app (Claude, Cursor, VS Code). Every server in it is added. Saved on ${store.hostName} only.`,
+    config: onHost('Paste the MCP config from a README or another app (Claude, Cursor, VS Code). Every server in it is added. Saved on {name} only.'),
   }[mode]
 
   const save = async () => {
@@ -154,7 +166,7 @@ export function CustomConnectorSheet() {
 
   return (
     <SheetPage>
-      <ModalHeader icon="point.3.connected.trianglepath.dotted" title="Custom connector" trailing={saving ? <Spinner /> : <IconButton title="Add" icon="plus" disabled={!ready} onClick={() => void save()} />} />
+      <ModalHeader icon="point.3.connected.trianglepath.dotted" title={tr(`Custom connector`)} trailing={saving ? <Spinner /> : <IconButton title="Add" icon="plus" disabled={!ready} onClick={() => void save()} />} />
       <CardForm>
         <CardSection footer={footer}>
           <SegmentedChoice selection={mode} onChange={setMode} options={[{ id: 'command', label: 'Command' }, { id: 'url', label: 'URL' }, { id: 'config', label: 'Config' }]} />
@@ -163,11 +175,11 @@ export function CustomConnectorSheet() {
           {mode !== 'config' ? <Field value={target} onChange={setTarget} placeholder={mode === 'url' ? 'https://example.com/mcp' : 'npx -y @scope/server'} mono /> : null}
         </CardSection>
         {mode === 'url' ? (
-          <CardSection title="Headers" footer={`Optional, one Name: value per line. Leave empty if the service has you sign in. Saved on ${store.hostName} only.`}>
+          <CardSection title="Headers" footer={onHost('Optional, one Name: value per line. Leave empty if the service has you sign in. Saved on {name} only.')}>
             <Field value={envText} onChange={setEnvText} placeholder="Authorization: Bearer …" lines={[2, 6]} mono />
           </CardSection>
         ) : mode === 'command' ? (
-          <CardSection title="Environment" footer={`One KEY=value per line. Saved on ${store.hostName} only.`}>
+          <CardSection title="Environment" footer={onHost('One KEY=value per line. Saved on {name} only.')}>
             <Field value={envText} onChange={setEnvText} placeholder="API_KEY=…" lines={[2, 6]} mono />
           </CardSection>
         ) : null}
@@ -178,6 +190,7 @@ export function CustomConnectorSheet() {
 }
 
 export function NewSkillSheet() {
+  const tr = useTr()
   const store = useStore()
   const plugins = usePlugins(store)
   const dismiss = useDismiss()
@@ -202,7 +215,7 @@ export function NewSkillSheet() {
     <SheetPage>
       <ModalHeader
         icon="square.and.pencil"
-        title="New skill"
+        title={tr(`New skill`)}
         trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={!name.trim() || !instructions.trim()} onClick={() => void save()} />}
       />
       <CardForm>

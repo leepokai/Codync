@@ -3,6 +3,7 @@
 //! telling the bot.
 
 use super::super::app::{App, Confirm, ConfirmAct, Overlay};
+use super::super::l10n::tr;
 use super::s;
 use super::{Page, Reply, ctrl};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -272,7 +273,7 @@ impl App {
             Some(false) => {
                 // One line each in the confirmation: the info sheets' points, short.
                 let c = Confirm {
-                    title: format!("Turn on {}'s own memory?", self.harness_name(&m.bot)),
+                    title: tr("Turn on {name}'s own memory?").replace("{name}", &self.harness_name(&m.bot)),
                     detail: "It may store things twice; the two memories can disagree.".into(),
                     note: "Forgetting something in Codync doesn't reach it.".into(),
                     button: "Turn on",

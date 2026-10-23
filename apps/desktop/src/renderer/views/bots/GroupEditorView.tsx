@@ -10,12 +10,15 @@ import { useStore } from '../../store/context'
 import { errorText } from './drafts'
 import { AutoTextArea } from './parts'
 import './bots.css'
+import { useTr } from '../../lib/use-language'
+
 
 /**
  * Change a group chat's name, what it's for and who's in it. Bots are added from a
  * search of the ones not in it yet. New groups start in `NewGroupView`.
  */
 export function GroupEditorView({ group }: { group: Bot }) {
+  const tr = useTr()
   const store = useStore()
   const dismiss = useDismiss()
   const [name, setName] = useState(group.name)
@@ -53,7 +56,7 @@ export function GroupEditorView({ group }: { group: Bot }) {
 
   return (
     <SheetPage>
-      <ModalHeader icon="person.2" title="Group chat" trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={!canSave} onClick={save} />} />
+      <ModalHeader icon="person.2" title={tr(`Group chat`)} trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={!canSave} onClick={save} />} />
       <div className="group-scroll">
         <div className="group-form">
           <div className="group-identity">
@@ -96,10 +99,10 @@ export function GroupEditorView({ group }: { group: Bot }) {
                 <span className="member-add-icon">
                   <Icon name="plus" size={16} color="var(--secondary)" />
                 </span>
-                <Text tone="secondary" className="member-name">Add Member</Text>
+                <Text tone="secondary" className="member-name">{tr(`Add Member`)}</Text>
               </button>
             ) : null}
-            <Text as="div" size="caption" tone="tertiary" className="group-note">Everyone answers in turn unless you @mention someone.</Text>
+            <Text as="div" size="caption" tone="tertiary" className="group-note">{tr(`Everyone answers in turn unless you @mention someone.`)}</Text>
           </VStack>
           {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
           {current ? (
@@ -117,11 +120,12 @@ export function GroupEditorView({ group }: { group: Bot }) {
 /** The one "Delete <bot>?" confirmation (kit `deleteBotConfirmation`). */
 function DeleteBotDialog({ bot, onClose, onDeleted }: { bot: Bot | null; onClose: () => void; onDeleted: () => void }) {
   const store = useStore()
+  const tr = useTr()
   return (
     <Dialog
       open={bot !== null}
       title={`Delete ${bot?.name ?? 'bot'}?`}
-      message={bot && isGroup(bot) ? 'Its bots and their own chats stay.' : 'Files it changed on your computer stay as they are.'}
+      message={tr(bot && isGroup(bot) ? 'Its bots and their own chats stay.' : 'Files it changed on your computer stay as they are.')}
       actions={[
         {
           title: 'Delete bot and its conversation',

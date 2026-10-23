@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react'
 import { Icon } from '../components/Icon'
 import { pointerDrag } from '../lib/pointer-drag'
+import { useTr } from '../lib/use-language'
 import { useSlide } from '../lib/slide'
 import type { BotStore } from '../store/bot-store'
 import { ComputerBadge } from './ComputerBadge'
@@ -22,6 +23,7 @@ interface Props {
 
 export function ComputerRosterSection({ store, compact, collapsed, previous, next, dragged, setDragged, toggle, move, notice, children }: Props) {
   const section = useRef<HTMLElement>(null)
+  const tr = useTr()
   const dropTarget = useRef<string | null>(null)
   const id = store.computer.id
   useSlide(section)
@@ -54,7 +56,7 @@ export function ComputerRosterSection({ store, compact, collapsed, previous, nex
             if (target) move(id, target)
           }}>
           <ComputerBadge computer={store.computer} size={20} />
-          {!compact ? <span className="computer-roster-label"><strong>{store.hostName}</strong><span className={store.shownConnection.kind === 'online' ? '' : 'warning'}>{store.connectionLabel}</span></span> : null}
+          {!compact ? <span className="computer-roster-label"><strong>{store.hostName}</strong><span className={store.shownConnection.kind === 'online' ? '' : 'warning'}>{tr(store.connectionLabel)}</span></span> : null}
           <span className={`computer-roster-chevron ${collapsed ? 'collapsed' : ''}`}><Icon name="chevron.down" size={9} /></span>
         </button>
       </div>

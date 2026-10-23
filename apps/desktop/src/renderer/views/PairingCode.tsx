@@ -6,6 +6,8 @@ import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useScreenViewed } from '../store/analytics'
 import './pairing-code.css'
+import { useTr } from '../lib/use-language'
+
 
 /**
  * A one-time pairing QR (v3) from a computer this app manages: its keys, a code, and how to reach it.
@@ -13,6 +15,7 @@ import './pairing-code.css'
  * error takes the place of the old code, which may have expired.
  */
 export function PairingCode({ name, cloudOn, requestCode, renew = 0 }: { name: string; cloudOn: boolean; requestCode: () => Promise<PairingInfo>; renew?: number }) {
+  const tr = useTr()
   const [code, setCode] = useState<{ info: PairingInfo; qr: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   useScreenViewed('pairing', renew)
@@ -50,12 +53,12 @@ export function PairingCode({ name, cloudOn, requestCode, renew = 0 }: { name: s
             <img src={code.qr} alt={`Pairing code for ${name}`} width={200} height={200} />
           </div>
           <Text as="div" size="caption" tone="secondary" className="pairing-note">
-            Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.
+            {tr(`Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.`)}
           </Text>
           {!cloudOn ? (
             <Text as="div" size="caption" tone="attention" className="pairing-note">
               {code.info.urls.length === 0
-                ? 'No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.'
+                ? tr(`No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.`)
                 : `“Reach from anywhere” is off, so the iPhone only reaches ${name} on the same network.`}
             </Text>
           ) : null}

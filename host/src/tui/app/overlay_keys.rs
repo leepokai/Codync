@@ -25,7 +25,13 @@ impl App {
         let mut items: Vec<GotoItem> = bots.into_iter().map(|b| GotoItem::Bot(b.id.clone())).collect();
         if want.is_none() {
             items.extend(
-                ACTIONS.iter().filter(|(label, _, _)| fuzzy(q, &[label])).map(|(_, _, a)| GotoItem::Action(*a)),
+                ACTIONS
+                    .iter()
+                    .filter(|(label, _, _)| {
+                        let translated = super::super::l10n::tr(label);
+                        fuzzy(q, &[label, translated.as_ref()])
+                    })
+                    .map(|(_, _, a)| GotoItem::Action(*a)),
             );
         }
         items
@@ -48,6 +54,10 @@ impl App {
                 Ok(()) => self.flash(&format!("Appearance: {}", mode.name())),
                 Err(error) => self.flash(&format!("Couldn't save appearance: {error}")),
             },
+            Action::Language => {
+                let title = super::super::l10n::cycle_language();
+                self.flash(title.as_ref());
+            }
             Action::Keys => self.overlays.push(Overlay::Help(Editor::default())),
         }
     }

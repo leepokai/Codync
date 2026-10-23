@@ -4,6 +4,7 @@ import { DropdownMenu } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import type { MenuItem } from '../components/Overlay'
 import { Text } from '../components/Text'
+import { useTr } from '../lib/use-language'
 import { useApp } from '../store/context'
 import { useSSH } from './settings/ssh-model'
 import type { Connection } from '../store/bot-store'
@@ -44,6 +45,7 @@ function summary(connections: Connection[]) {
 /** The roster's connection summary, with details and filters on demand. */
 export function ComputerFilterHeader({ hidden, setHidden, manage, compact = false }: { hidden: string; setHidden: (v: string) => void; manage: () => void; compact?: boolean }) {
   const app = useApp()
+  const tr = useTr()
   const ssh = useSSH()
   const pending = ssh.state.profiles.filter((p) => !ssh.state.attachments.some((a) => a.profileId === p.id))
   const pendingSummary = sshSummary(pending.map((p) => ssh.status(p.id)))
@@ -53,7 +55,7 @@ export function ComputerFilterHeader({ hidden, setHidden, manage, compact = fals
   const text = pendingSummary ? `${online ? `${online} connected · ` : ''}${pendingSummary}` : summary(stores.map((s) => s.shownConnection))
   const title = (c: Computer) => {
     const store = app.store(c.id)
-    return store ? `${store.hostName} · ${store.connectionLabel}` : c.name
+    return store ? `${store.hostName} · ${tr(store.connectionLabel)}` : c.name
   }
   const items = (): MenuItem[] => {
     const list: MenuItem[] = [{ title: 'All computers', selected: selection.shown.length === app.computers.length, action: () => setHidden('') }]

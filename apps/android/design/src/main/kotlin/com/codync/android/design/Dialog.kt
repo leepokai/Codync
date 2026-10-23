@@ -51,6 +51,7 @@ class DialogAction(val title: String, val destructive: Boolean = false, val acti
         else { shown.animateTo(0f, Motion.fade()); mounted = false }
     }
     if (!mounted) return
+    val spokenTitle = tr(title)
     val dismiss by rememberUpdatedState(onDismiss)
     BackHandler(isPresented && cancel != null) { dismiss() }
     Overlay {
@@ -60,15 +61,15 @@ class DialogAction(val title: String, val destructive: Boolean = false, val acti
             Column(Modifier.widthIn(max = 320.dp).fillMaxWidth()
                 .graphicsLayer { val s = 0.96f + 0.04f * shown.value; scaleX = s; scaleY = s; shadowElevation = 24f; shape = RoundedRectangle(22.dp); clip = true }
                 .background(Palette.bubbleAgent).clickable(remember { MutableInteractionSource() }, null) {}
-                .semantics { paneTitle = title }.padding(18.dp),
+                .semantics { paneTitle = spokenTitle }.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(title, style = Type.headline, color = Palette.text, textAlign = TextAlign.Center)
-                    if (!message.isNullOrEmpty()) Text(message, style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
+                    Text(tr(title), style = Type.headline, color = Palette.text, textAlign = TextAlign.Center)
+                    if (!message.isNullOrEmpty()) Text(tr(message), style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (action in actions()) DialogButton(action.title, action.destructive, prominent = true) { dismiss(); action.action() }
-                    if (cancel != null) DialogButton(cancel, destructive = false, prominent = false) { dismiss() }
+                    for (action in actions()) DialogButton(tr(action.title), action.destructive, prominent = true) { dismiss(); action.action() }
+                    if (cancel != null) DialogButton(tr(cancel), destructive = false, prominent = false) { dismiss() }
                 }
             }
         }

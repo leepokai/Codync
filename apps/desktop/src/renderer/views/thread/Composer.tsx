@@ -9,6 +9,7 @@ import { usePresence } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
+import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/bot-store'
 import { pluginsFor } from '../marketplace/plugins'
@@ -47,6 +48,7 @@ function DestinationComposer({ botId, reply, cancelReply, onCall, onInterrupt }:
   botId: string; reply: Entry | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
 }) {
   const store = useStore()
+  const tr = useTr()
   const plugins = useModel(pluginsFor(store))
   const bot = store.bots.get(botId) ?? null
   const drafts = store.composerDrafts
@@ -66,7 +68,14 @@ function DestinationComposer({ botId, reply, cancelReply, onCall, onInterrupt }:
 
   const members = bot && isGroup(bot) ? store.members(bot) : []
 
-  const placeholder = reply ? 'Reply…' : bot && isGroup(bot) ? 'Ask everyone · @ to ask one bot' : working ? `Queue a message for ${bot?.name ?? ''}` : `Ask ${bot?.name ?? ''}`
+  const name = bot?.name ?? ''
+  const placeholder = reply
+    ? tr('Reply…')
+    : bot && isGroup(bot)
+      ? tr('Ask everyone · @ to ask one bot')
+      : working
+        ? tr('Queue a message for {name}').replace('{name}', name)
+        : tr('Ask {name}').replace('{name}', name)
 
   // A routine's "Try it" fills the box.
   const routineDraft = store.routineDrafts.get(botId)

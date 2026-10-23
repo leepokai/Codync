@@ -38,7 +38,7 @@ public struct BotRow: View {
                     preview
                     Spacer(minLength: 4)
                     if bot.unread > 0 {
-                        Text("\(bot.unread)")
+                        Text(L10n.tr("\(bot.unread)"))
                             .font(.caption2.bold())
                             .foregroundStyle(Palette.onAccent)
                             .padding(.horizontal, 6)
@@ -58,7 +58,7 @@ public struct BotRow: View {
     @ViewBuilder private var preview: some View {
         if bot.needsInput {
             Label {
-                Text(bot.activity.isEmpty ? "Needs your approval" : bot.activity)
+                Text(L10n.tr(bot.activity.isEmpty ? "Needs your approval" : bot.activity))
             } icon: {
                 ThinkingOrb(state: .listening, size: 16, color: Palette.warning)
             }
@@ -68,7 +68,7 @@ public struct BotRow: View {
         } else if bot.isWorking {
             HStack(spacing: 6) {
                 ThinkingOrb(size: 13, color: Palette.secondary)
-                Text(bot.activity.isEmpty ? "Working…" : bot.activity)
+                Text(L10n.tr(bot.activity.isEmpty ? "Working…" : bot.activity))
                     .lineLimit(1)
             }
             .font(.subheadline)
@@ -79,7 +79,7 @@ public struct BotRow: View {
                 .foregroundStyle(Palette.danger)
                 .lineLimit(1)
         } else {
-            Text(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.folderName)")))
+            Text(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.managedWorkspace ? L10n.tr("Personal workspace") : bot.folderName)")))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(1)

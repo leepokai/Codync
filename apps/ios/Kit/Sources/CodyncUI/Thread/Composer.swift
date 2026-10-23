@@ -45,9 +45,10 @@ struct Composer: View {
 
     private var placeholder: String {
         let name = bot?.name ?? ""
-        if replyingTo != nil { return "Reply…" }
-        if bot?.isGroup == true { return "Ask everyone · @ to ask one bot" }
-        return working ? "Queue a message for \(name)" : "Ask \(name)"
+        if replyingTo != nil { return L10n.tr("Reply…") }
+        if bot?.isGroup == true { return L10n.tr("Ask everyone · @ to ask one bot") }
+        let key = working ? "Queue a message for {name}" : "Ask {name}"
+        return L10n.tr(key).replacingOccurrences(of: "{name}", with: name)
     }
 
     /// The `@partial` being typed at the end, if any.

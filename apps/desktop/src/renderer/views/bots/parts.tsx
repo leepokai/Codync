@@ -4,6 +4,7 @@ import { CharacterAvatar } from '../../components/Avatar'
 import { RowLabel, Switch } from '../../components/Controls'
 import { anchorPlacement, useEscape, usePresence } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
+import { useTr } from '../../lib/use-language'
 import { AVATAR_COLORS, AVATAR_SHAPES } from '../../lib/theme'
 import './bots.css'
 
@@ -37,6 +38,7 @@ export function AutoTextArea({ value, onChange, placeholder, minRows, maxRows, c
   className?: string
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
 }) {
+  const tr = useTr()
   const ref = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -47,7 +49,7 @@ export function AutoTextArea({ value, onChange, placeholder, minRows, maxRows, c
     el.style.height = '0px'
     el.style.height = `${Math.min(Math.max(el.scrollHeight, line * minRows + pad), line * maxRows + pad)}px`
   }, [value, minRows, maxRows])
-  return <textarea ref={ref} rows={minRows} className={className} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} />
+  return <textarea ref={ref} rows={minRows} className={className} value={value} placeholder={placeholder === undefined ? undefined : tr(placeholder)} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} />
 }
 
 /** The avatar's shape and color: each a wrapping, centered row of choices, ringed when picked. */

@@ -43,7 +43,7 @@ import kotlinx.serialization.json.jsonPrimitive
     Column(Modifier.fillMaxSize()) {
         ModalHeader("Full conversation")
         LazyColumn(state = list, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-            if (turns.isEmpty()) item { Text("Nothing yet.", style = Type.body, color = Palette.tertiary) }
+            if (turns.isEmpty()) item { Text(tr("Nothing yet."), style = Type.body, color = Palette.tertiary) }
             items(turns, key = { it.first }) { (turn, entries) ->
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(entries.firstOrNull { it.kind == "user" }?.text ?: "Turn $turn", Modifier.padding(start = 4.dp),
@@ -69,18 +69,18 @@ internal fun runningTurn(entries: List<Entry>, working: Boolean): Long? =
             Text(entry.text, style = Type.subheadline, color = Palette.text)
         }
         "agent" -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(if (d["final"]?.jsonPrimitive?.booleanOrNull == true) "Reply" else "Said", style = Type.caption2.bold, color = Palette.tertiary)
+            Text(tr(if (d["final"]?.jsonPrimitive?.booleanOrNull == true) "Reply" else "Said"), style = Type.caption2.bold, color = Palette.tertiary)
             MarkdownText(entry.text)
         }
         "thought" -> Disclosure(expanded, { expanded = !expanded }, label = {
             ThinkingOrb(size = 16.dp, color = Palette.secondary, animated = false)
-            Text("Thinking", Modifier.padding(start = 8.dp), style = Type.subheadline, color = Palette.secondary)
+            Text(tr("Thinking"), Modifier.padding(start = 8.dp), style = Type.subheadline, color = Palette.secondary)
         }) { SelectionContainer { Text(entry.text, style = Type.footnote, color = Palette.secondary) } }
         "tool" -> ToolRow(d)
         "plan" -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Symbol("checklist", size = 16.dp, tint = Palette.text)
-                Text("Plan", style = Type.subheadline.bold, color = Palette.text)
+                Text(tr("Plan"), style = Type.subheadline.bold, color = Palette.text)
             }
             for (item in (d["entries"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }) {
                 val status = item.text("status")
@@ -96,7 +96,7 @@ internal fun runningTurn(entries: List<Entry>, working: Boolean): Long? =
             Symbol("hand.raised", size = 16.dp, tint = Palette.secondary)
             Text(d.text("title") ?: "Approval", style = Type.subheadline, color = Palette.secondary)
         }
-        else -> Text(entry.text, style = Type.footnote, color = Palette.tertiary)
+        else -> Text(tr(entry.text), style = Type.footnote, color = Palette.tertiary)
     }
 }
 

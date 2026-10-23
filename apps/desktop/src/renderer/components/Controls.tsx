@@ -2,6 +2,7 @@ import { Children, Fragment, useEffect, useRef, useState, type CSSProperties, ty
 import { Icon } from './Icon'
 import { AnchoredMenu, IconButtonBase, type MenuItem } from './Overlay'
 import { HStack, Spacer, VStack } from './Stack'
+import { useTr } from '../lib/use-language'
 import { Text } from './Text'
 import './controls.css'
 
@@ -18,9 +19,10 @@ export function Button({ kind = 'primary', children, onClick, disabled, classNam
   className?: string
   title?: string
 }) {
+  const tr = useTr()
   return (
-    <button className={`styled-button ${kind} ${className ?? ''}`} onClick={onClick} disabled={disabled} title={title}>
-      {children}
+    <button className={`styled-button ${kind} ${className ?? ''}`} onClick={onClick} disabled={disabled} title={title ? tr(title) : title}>
+      {typeof children === 'string' ? tr(children) : children}
     </button>
   )
 }
@@ -29,7 +31,7 @@ export function Button({ kind = 'primary', children, onClick, disabled, classNam
 export function Spinner({ size = 14 }: { size?: number }) {
   const { w, r, c, center } = ring(size)
   return (
-    <svg className="spinner" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-label="Loading" role="img">
+    <svg className="spinner" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-label={useTr()('Loading')} role="img">
       <circle cx={center} cy={center} r={r} fill="none" stroke="var(--secondary)" strokeWidth={w} strokeLinecap="round" strokeDasharray={`${c * 0.7} ${c}`} />
     </svg>
   )
@@ -65,9 +67,10 @@ function ring(size: number) {
 /** On/off switch: label on the left, a flat capsule track on the right. */
 /** `label` names a switch whose visible label sits outside it (beside an info button, say). */
 export function Switch({ on, onChange, children, label, disabled, className }: { on: boolean; onChange: (on: boolean) => void; children?: ReactNode; label?: string; disabled?: boolean; className?: string }) {
+  const tr = useTr()
   return (
-    <button className={`switch${className ? ` ${className}` : ''}`} role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)}>
-      {children !== undefined ? <span className="switch-label">{children}</span> : null}
+    <button className={`switch${className ? ` ${className}` : ''}`} role="switch" aria-checked={on} aria-label={label ? tr(label) : label} disabled={disabled} onClick={() => onChange(!on)}>
+      {children !== undefined ? <span className="switch-label">{typeof children === 'string' ? tr(children) : children}</span> : null}
       <span className={`switch-track ${on ? 'on' : ''}`}>
         <span className="switch-knob" />
       </span>
@@ -98,14 +101,15 @@ export function ChoicePicker<T extends string | number>({ selection, options, on
   fill?: string
   fits?: boolean
 }) {
+  const tr = useTr()
   const chosen = options.find((o) => o.id === selection)
-  const label = chosen?.label ?? 'Choose'
+  const label = tr(chosen?.label ?? 'Choose')
   return (
     <DropdownMenu
       title={label}
       className={`choice-picker${fill ? '' : ' outlined'}${fits ? ' fits' : ''}`}
       style={{ background: fill }}
-      items={() => options.map((o) => ({ title: o.label, leading: o.leading, selected: o.id === selection, action: () => onChange(o.id) }))}
+      items={() => options.map((o) => ({ title: tr(o.label), leading: o.leading, selected: o.id === selection, action: () => onChange(o.id) }))}
     >
       {chosen?.leading}
       <span className="choice-label">{label}</span>
@@ -116,13 +120,14 @@ export function ChoicePicker<T extends string | number>({ selection, options, on
 
 /** Picks one of a few values side by side: the replacement for `.segmented`. */
 export function SegmentedChoice<T extends string>({ selection, options, onChange }: { selection: T; options: { id: T; label: string }[]; onChange: (id: T) => void }) {
+  const tr = useTr()
   const index = Math.max(0, options.findIndex((o) => o.id === selection))
   return (
     <div className="segmented">
       <div className="segmented-thumb" style={{ width: `calc((100% - 6px - ${(options.length - 1) * 2}px) / ${options.length})`, transform: `translateX(calc(${index} * (100% + 2px)))` }} />
       {options.map((o) => (
         <button key={o.id} className={`segmented-option ${o.id === selection ? 'on' : ''}`} onClick={() => onChange(o.id)} aria-pressed={o.id === selection}>
-          {o.label}
+          {tr(o.label)}
         </button>
       ))}
     </div>
@@ -131,11 +136,12 @@ export function SegmentedChoice<T extends string>({ selection, options, onChange
 
 /** Grok Bot's page tabs: plain labels, the chosen one on a light capsule. */
 export function TabChoice<T extends string>({ label, selection, options, onChange }: { label: string; selection: T; options: { id: T; label: string }[]; onChange: (id: T) => void }) {
+  const tr = useTr()
   return (
-    <div className="tab-choice" role="tablist" aria-label={label}>
+    <div className="tab-choice" role="tablist" aria-label={tr(label)}>
       {options.map((o) => (
         <button key={o.id} role="tab" aria-selected={o.id === selection} className={`tab-choice-option ${o.id === selection ? 'on' : ''}`} onClick={() => onChange(o.id)}>
-          {o.label}
+          {tr(o.label)}
         </button>
       ))}
     </div>
@@ -149,11 +155,12 @@ export function ChipChoice<T extends string | number>({ label, selection, option
   options: readonly { id: T; label: string; title?: string }[]
   onChange: (id: T) => void
 }) {
+  const tr = useTr()
   return (
-    <HStack gap={2} wrap role="radiogroup" aria-label={label}>
+    <HStack gap={2} wrap role="radiogroup" aria-label={tr(label)}>
       {options.map((o) => (
-        <button key={o.id} role="radio" aria-checked={o.id === selection} aria-label={o.title} title={o.title} className={`chip-choice${o.id === selection ? ' on' : ''}`} onClick={() => onChange(o.id)}>
-          {o.label}
+        <button key={o.id} role="radio" aria-checked={o.id === selection} aria-label={o.title ? tr(o.title) : undefined} title={o.title ? tr(o.title) : undefined} className={`chip-choice${o.id === selection ? ' on' : ''}`} onClick={() => onChange(o.id)}>
+          {tr(o.label)}
         </button>
       ))}
     </HStack>
@@ -162,13 +169,14 @@ export function ChipChoice<T extends string | number>({ label, selection, option
 
 /** A list of choices, one per row with a checkmark: the replacement for `.inline` pickers. */
 export function ChoiceList<T extends string>({ selection, options, onChange }: { selection: T; options: { id: T; label: string; detail?: string | null }[]; onChange: (id: T) => void }) {
+  const tr = useTr()
   return (
     <VStack gap={10}>
       {options.map((o) => (
         <button key={o.id} className="choice-row" onClick={() => onChange(o.id)}>
           <VStack gap={2} className="choice-row-label">
-            <Text tone="text">{o.label}</Text>
-            {o.detail ? <Text size="compactSecondary" tone="secondary">{o.detail}</Text> : null}
+            <Text tone="text">{tr(o.label)}</Text>
+            {o.detail ? <Text size="compactSecondary" tone="secondary">{tr(o.detail)}</Text> : null}
           </VStack>
           <span className={`check-slot${o.id === selection ? ' on' : ''}`}>
             <Icon name="checkmark" size={10} weight="semibold" />
@@ -193,12 +201,15 @@ export function CardForm({ children }: { children: ReactNode }) {
  * rounded group whose rows are split by inset hairlines.
  */
 export function CardSection({ title, footer, accessory, children }: { title?: string | null; footer?: ReactNode; accessory?: ReactNode; children: ReactNode }) {
+  const tr = useTr()
   const rows = Children.toArray(children)
+  const heading = typeof title === 'string' ? tr(title) : title
+  const note = typeof footer === 'string' ? tr(footer) : footer
   return (
     <section className="card-section">
-      {title || accessory ? (
+      {heading || accessory ? (
         <div className="card-section-title">
-          {title ? <Text as="h3" size="body" weight="semibold" tone="text">{title}</Text> : null}
+          {heading ? <Text as="h3" size="body" weight="semibold" tone="text">{heading}</Text> : null}
           <Spacer />
           {accessory}
         </div>
@@ -211,7 +222,7 @@ export function CardSection({ title, footer, accessory, children }: { title?: st
           </Fragment>
         ))}
       </div>
-      {footer ? <div className="card-section-footer">{footer}</div> : null}
+      {note ? <div className="card-section-footer">{typeof footer === 'string' ? <Text size="caption" tone="secondary">{note}</Text> : footer}</div> : null}
     </section>
   )
 }
@@ -223,10 +234,13 @@ export function Hairline({ className, style }: { className?: string; style?: CSS
 
 /** A row's title with an optional note under it (rows, fields and switches share it). */
 export function RowLabel({ label, detail, labelId, detailId, grow = false }: { label: ReactNode; detail?: string | null; labelId?: string; detailId?: string; grow?: boolean }) {
+  const tr = useTr()
+  const heading = typeof label === 'string' ? tr(label) : label
+  const note = detail ? tr(detail) : detail
   return (
     <VStack as="span" gap={3} grow={grow} shrink>
-      <Text id={labelId} tone="text">{label}</Text>
-      {detail ? <span id={detailId} className="detail-note" title={detail}>{detail}</span> : null}
+      <Text id={labelId} tone="text">{heading}</Text>
+      {note ? <span id={detailId} className="detail-note" title={note}>{note}</span> : null}
     </VStack>
   )
 }
@@ -244,12 +258,14 @@ export function ValueRow({ label, detail, children }: { label: string; detail?: 
 
 /** A search box: the replacement for `.searchable`. */
 export function SearchField({ value, onChange, prompt = 'Search', inputRef }: { value: string; onChange: (v: string) => void; prompt?: string; inputRef?: React.RefObject<HTMLInputElement | null> }) {
+  const tr = useTr()
+  const clear = tr('Clear search')
   return (
     <div className="search-field">
       <Icon name="magnifyingglass" size={12} color="var(--secondary)" />
-      <input ref={inputRef} value={value} placeholder={prompt} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+      <input ref={inputRef} value={value} placeholder={tr(prompt)} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
       {value ? (
-        <button aria-label="Clear search" title="Clear search" className="search-clear" onClick={() => onChange('')}>
+        <button aria-label={clear} title={clear} className="search-clear" onClick={() => onChange('')}>
           <Icon name="xmark.circle.fill" size={12} />
         </button>
       ) : null}

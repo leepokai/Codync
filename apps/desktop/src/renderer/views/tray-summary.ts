@@ -3,6 +3,7 @@ import type { TrayImage, TraySummary } from '@shared/ipc'
 import { isGroup, isWorking, needsInput, folderName, type Bot, type UsageWindow } from '@shared/models'
 import { drawCharacter, moodOf } from '../components/Avatar'
 import { useModels } from '../lib/observable'
+import { resetLine, resolvedScript, translate } from '../lib/l10n'
 import { prefs, usePref } from '../lib/prefs'
 import { avatarColor, isDark, palette } from '../lib/theme'
 import type { AppModel } from '../store/app-model'
@@ -83,8 +84,12 @@ function barIcon(providerId: string, window: UsageWindow) {
 }
 
 function usageLine(w: UsageWindow) {
+  const preference = prefs.appLanguage.get()
+  const system = typeof navigator === 'undefined' ? 'en' : navigator.language
+  const title = translate(windowTitle(w), preference, system)
   const reset = resetDate(w)
-  return `${windowTitle(w)} · ${Math.round(w.percent)}%${reset ? ` · resets in ${untilText(reset)}` : ''}`
+  const spoken = reset ? resetLine(`resets in ${untilText(reset)}`, preference, system) : ''
+  return `${title} · ${Math.round(w.percent)}%${spoken ? ` · ${spoken}` : ''}`
 }
 
 /** Sends what the menu bar shows whenever the stores change. */
@@ -93,6 +98,7 @@ export function useTraySummary(app: AppModel) {
   useModels(stores)
   const [textSize] = usePref(prefs.textSize)
   const [iconStyle] = usePref(prefs.usageIconStyle)
+  const [language] = usePref(prefs.appLanguage)
   useEffect(() => {
     const timer = setTimeout(() => {
       const local = app.local
@@ -132,6 +138,7 @@ export function useTraySummary(app: AppModel) {
         needsAttention: app.needsAttention,
         textSize,
         usageIconStyle: iconStyle,
+        script: resolvedScript(language, typeof navigator === 'undefined' ? 'en' : navigator.language),
       }
       window.codync.app.setTraySummary(summary)
     }, 150)

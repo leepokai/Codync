@@ -5,6 +5,8 @@ import { LevelDots, type LevelSample } from './LevelDots'
 import { HStack } from './Stack'
 import { Text } from './Text'
 import './recording-pill.css'
+import { useTr } from '../lib/use-language'
+
 
 /** m:ss since `startedAt`, updated every second. */
 function useElapsed(startedAt: number) {
@@ -30,12 +32,13 @@ export function RecordingPill({ startedAt, sample, onStop, transcribing = false,
   color?: string | null
   className?: string
 }) {
+  const tr = useTr()
   const elapsed = useElapsed(startedAt)
   if (transcribing) {
     return (
       <HStack as="span" gap={6} className={`recording-pill transcribing ${className}`}>
         <Spinner size={12} />
-        <Text tone="secondary">Transcribing…</Text>
+        <Text tone="secondary">{tr(`Transcribing…`)}</Text>
       </HStack>
     )
   }

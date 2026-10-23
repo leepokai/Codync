@@ -84,7 +84,7 @@ private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id =
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (error != null || rows.isEmpty() && fetched != null) item("empty") {
-                Text(error ?: "No messages yet.", Modifier.fillMaxWidth().padding(top = 24.dp), style = Type.footnote,
+                Text(tr(error ?: "No messages yet."), Modifier.fillMaxWidth().padding(top = 24.dp), style = Type.footnote,
                     color = if (error != null) Palette.danger else Palette.tertiary, textAlign = TextAlign.Center)
             }
             items(rows, key = { it.id }) { row ->

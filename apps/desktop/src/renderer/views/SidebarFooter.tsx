@@ -1,3 +1,4 @@
+import { useTr } from '../lib/use-language'
 import { ProfileAvatar } from './PanelMenus'
 import { UpdateBadge } from './UpdateButton'
 import gmail from '../assets/gmail.png'
@@ -11,6 +12,7 @@ export function SidebarFooter({ accountOpen, onAccount, onExtensions }: {
   onAccount: () => void
   onExtensions: () => void
 }) {
+  const tr = useTr()
   return (
     <div className="sidebar-footer">
       <div className="sidebar-footer-fade" aria-hidden />
@@ -24,7 +26,7 @@ export function SidebarFooter({ accountOpen, onAccount, onExtensions }: {
         <ProfileAvatar />
       </button>
       <button className="extensions" onClick={onExtensions}>
-        <span>Extensions</span>
+        <span>{tr('Extensions')}</span>
         <span className="extensions-logos" aria-hidden>
           {[gmail, calendar, drive].map((src) => <img key={src} src={src} alt="" draggable={false} />)}
         </span>

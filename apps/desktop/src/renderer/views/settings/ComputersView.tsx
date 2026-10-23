@@ -14,6 +14,7 @@ import { StoreContext, useApp } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
+import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, Reveal, SectionHeader, statusText, thisMac } from './parts'
 import { useSSH } from './ssh-model'
 import { SSHRow } from './SSHRow'
@@ -24,6 +25,7 @@ import { VoiceChatSettingsView } from './VoiceChatSettingsView'
  * SSH profiles; and the account's other computers.
  */
 export function ComputersView() {
+  const tr = useTr()
   const app = useApp()
   const account = useAccount()
   const sshState = useSSH()
@@ -47,7 +49,7 @@ export function ComputersView() {
           </SectionHeader>
           <Reveal show={sshState.state.profiles.length === 0}>
             <Text as="div" size="callout" tone="secondary">
-              Run bots on another computer you reach with SSH. It needs codync-host installed; your SSH keys stay on {thisMac}.
+              {tr('Run bots on another computer you reach with SSH. It needs codync-host installed; your SSH keys stay on {name}.').replaceAll('{name}', tr(thisMac))}
             </Text>
           </Reveal>
           {sshState.state.profiles.map((profile) => (
@@ -60,9 +62,9 @@ export function ComputersView() {
             {account.isSignedIn ? <IconButton title="Refresh" icon="arrow.clockwise" onClick={() => void cloud.refresh()} /> : null}
           </SectionHeader>
           {!account.isSignedIn ? (
-            <Text as="div" size="callout" tone="secondary">Sign in to see the other computers in your account.</Text>
+            <Text as="div" size="callout" tone="secondary">{tr(`Sign in to see the other computers in your account.`)}</Text>
           ) : others.length === 0 ? (
-            <Text as="div" size="callout" tone="secondary">No other computers in your account yet.</Text>
+            <Text as="div" size="callout" tone="secondary">{tr(`No other computers in your account yet.`)}</Text>
           ) : null}
           {others.map((computer) => (
             <AccountComputerRow key={computer.computerId} computer={computer} olderCopy={cloud.isOlderCopy(computer)} onRemove={() => setRemovingCopy(computer)} />
@@ -75,8 +77,8 @@ export function ComputersView() {
       </Sheet>
       <Dialog
         open={removingCopy !== null}
-        title={`Remove the older ${removingCopy?.name ?? 'computer'}?`}
-        message={`It's an earlier identity of ${removingCopy?.name ?? 'a computer'} and can't be reached anymore. Removing it only cleans up your account.`}
+        title={tr('Remove the older {name}?').replaceAll('{name}', removingCopy?.name ?? 'computer')}
+        message={tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removingCopy?.name ?? 'a computer')}
         actions={removingCopy ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removingCopy.computerId) }] : []}
         onClose={() => setRemovingCopy(null)}
       />
@@ -88,6 +90,7 @@ const isMacLabel = thisMac === 'this Mac' ? 'This Mac' : 'This computer'
 
 /** This computer or an SSH computer: relay, account membership, pairing and authorized devices. */
 function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: boolean }) {
+  const tr = useTr()
   const app = useApp()
   const account = useAccount()
   useModel(store)
@@ -119,8 +122,8 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
     })
 
   const cloudLine = !cloud?.enabled
-    ? 'Off: only Wi-Fi and Tailscale reach it, nothing goes through Cloudflare.'
-    : (cloud.lastError ?? (cloud.connected ? 'Reachable from anywhere through Cloudflare (encrypted).' : 'Connecting to Cloudflare…'))
+    ? tr('Off: only Wi-Fi and Tailscale reach it, nothing goes through Cloudflare.')
+    : (cloud.lastError ?? tr(cloud.connected ? 'Reachable from anywhere through Cloudflare (encrypted).' : 'Connecting to Cloudflare…'))
 
   const accountLine = (
     <HStack key="account" gap={8} className="settings-row settings-appear">
@@ -128,11 +131,11 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
       <Text size="callout" grow>
         {owner
           ? owner.userId === account.user?.userId
-            ? 'In your account'
-            : `In ${owner.email ?? 'another'} account`
+            ? tr(`In your account`)
+            : tr('In {name} account').replaceAll('{name}', owner.email ?? tr('another'))
           : account.isSignedIn
-            ? 'Not in your account'
-            : 'Sign in to add it to your account'}
+            ? tr(`Not in your account`)
+            : tr(`Sign in to add it to your account`)}
       </Text>
       {owner ? (
         <Button kind="secondary" onClick={() => setConfirmUnclaim(true)} disabled={busy || !manageable}>
@@ -155,7 +158,7 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
             <VStack grow className="settings-stack">
               <Text size="headline">{name}</Text>
               <Text size="caption" tone="secondary">
-                {overSSH ? 'Over SSH' : isMacLabel} · {statusText(store)}
+                {`${tr(overSSH ? 'Over SSH' : isMacLabel)} · ${tr(statusText(store))}`}
               </Text>
             </VStack>
             {overSSH ? (
@@ -169,7 +172,7 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
             ? [
                 <Switch key="cloud" className="settings-appear" on={cloud.enabled} disabled={busy || !manageable} onChange={(on) => run(() => app.cloud.setCloud(store, on))}>
                   <span className="settings-stack">
-                    <span>Reach from anywhere</span>
+                    <Text>{tr(`Reach from anywhere`)}</Text>
                     <Text size="caption" tone={cloud.lastError ? 'attention' : 'secondary'}>{cloudLine}</Text>
                   </span>
                 </Switch>,
@@ -185,9 +188,9 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
                   onChange={(on) => (on ? setConfirmAutoApproval(true) : setApproval('code'))}
                 >
                   <span className="settings-stack settings-appear">
-                    <span>Skip the 6-digit check</span>
+                    <Text>{tr(`Skip the 6-digit check`)}</Text>
                     <Text size="caption" tone={autoApproval ? 'attention' : 'secondary'}>
-                      {autoApproval ? 'Devices on your account get in on their own.' : 'Each new device shows a code you approve here.'}
+                      {autoApproval ? tr(`Devices on your account get in on their own.`) : tr(`Each new device shows a code you approve here.`)}
                     </Text>
                   </span>
                 </Switch>,
@@ -204,20 +207,20 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
         </StoreContext.Provider>
       </Sheet>
       <Sheet open={showPairing} onClose={() => setShowPairing(false)} width={340}>
-        <ModalHeader icon="qrcode" title={`Pair iPhone with ${name}`} />
+        <ModalHeader icon="qrcode" title={tr('Pair iPhone with {name}').replaceAll('{name}', name)} />
         <PairingPanel store={store} />
       </Sheet>
       <Dialog
         open={confirmAutoApproval}
-        title="Let account devices in without a code?"
-        message={`Any device signed in to your account gets full control of ${name}: its files, terminals and bots, with no check here. If someone gets into your account, or Codync's cloud is ever compromised, they could add their own device and you'd have no chance to stop it. Devices paired with a QR code aren't affected.`}
+        title={tr('Let account devices in without a code?')}
+        message={tr("Any device signed in to your account gets full control of {name}: its files, terminals and bots, with no check here. If someone gets into your account, or Codync's cloud is ever compromised, they could add their own device and you'd have no chance to stop it. Devices paired with a QR code aren't affected.").replaceAll('{name}', name)}
         actions={[{ title: 'Skip the check', destructive: true, action: () => setApproval('auto') }]}
         onClose={() => setConfirmAutoApproval(false)}
       />
       <Dialog
         open={confirmUnclaim}
-        title={`Remove ${name} from the account?`}
-        message="Devices that were approved through the account lose access. Devices paired with a QR code keep it."
+        title={tr('Remove {name} from the account?').replaceAll('{name}', name)}
+        message={tr('Devices that were approved through the account lose access. Devices paired with a QR code keep it.')}
         actions={[{ title: 'Remove from account', destructive: true, action: () => run(() => app.cloud.unclaim(store)) }]}
         onClose={() => setConfirmUnclaim(false)}
       />
@@ -227,6 +230,7 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
 
 /** An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`). */
 function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: CloudComputer; olderCopy: boolean; onRemove: () => void }) {
+  const tr = useTr()
   return (
     <div className="settings-card settings-appear">
       <div className="settings-row">
@@ -235,7 +239,7 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
         </span>
         <div className="settings-stack">
           <Text size="callout" weight="medium" tone={olderCopy ? 'secondary' : undefined}>{computer.name}</Text>
-          <Text size="caption" tone={olderCopy ? 'tertiary' : 'secondary'}>{accountComputerStatus(computer, olderCopy)}</Text>
+          <Text size="caption" tone={olderCopy ? 'tertiary' : 'secondary'}>{tr(accountComputerStatus(computer, olderCopy))}</Text>
         </div>
         <Spacer />
         {olderCopy ? <IconButton title="Remove from account" icon="trash" onClick={onRemove} /> : null}
@@ -265,6 +269,7 @@ function PairingPanel({ store }: { store: BotStore }) {
 
 /** Add or change an SSH computer. Only fields ssh takes as separate arguments; nothing goes through a shell. */
 function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; isNew: boolean }) {
+  const tr = useTr()
   const dismiss = useDismiss()
   const [profile, setProfile] = useState(initial)
   const [port, setPort] = useState(initial.port?.toString() ?? '')
@@ -313,7 +318,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
           <div className="settings-row">
             <span>Key</span>
             <Spacer />
-            <Text tone="secondary">{profile.identityFile?.split('/').pop() ?? 'ssh-agent / SSH config'}</Text>
+            <Text tone="secondary">{profile.identityFile?.split('/').pop() ?? tr(`ssh-agent / SSH config`)}</Text>
             <IconButton
               title="Choose key file"
               icon="key"
@@ -328,7 +333,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
           {field('Codync port', remotePort, setRemotePort, '')}
         </CardSection>
         <Text size="caption" tone="secondary">
-          Codync opens an SSH tunnel to codync-host on that computer's loopback. It uses your SSH config and ssh-agent; agent forwarding stays off.
+          {tr(`Codync opens an SSH tunnel to codync-host on that computer's loopback. It uses your SSH config and ssh-agent; agent forwarding stays off.`)}
         </Text>
         <Reveal show={problem !== null}>
           <Text size="caption" tone="danger">{problem}</Text>

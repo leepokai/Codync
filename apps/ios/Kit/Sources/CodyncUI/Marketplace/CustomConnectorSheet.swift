@@ -40,9 +40,9 @@ struct CustomConnectorSheet: View {
 
     private var footer: String {
         switch mode {
-        case .command: "Runs on \(model.hostName) in the bot's project folder. Quotes work like in a shell."
+        case .command: L10n.tr("Runs on {name} in the bot's project folder. Quotes work like in a shell.").replacingOccurrences(of: "{name}", with: model.hostName)
         case .url: "A remote MCP server, streamable HTTP or SSE."
-        case .config: "Paste the MCP config from a README or another app (Claude, Cursor, VS Code). Every server in it is added. Saved on \(model.hostName) only."
+        case .config: L10n.tr("Paste the MCP config from a README or another app (Claude, Cursor, VS Code). Every server in it is added. Saved on {name} only.").replacingOccurrences(of: "{name}", with: model.hostName)
         }
     }
 
@@ -56,21 +56,21 @@ struct CustomConnectorSheet: View {
                         .font(.callout.monospaced())
                         .plainTextInput()
                 } else {
-                    TextField("Name", text: $name)
+                    TextField(L10n.tr("Name"), text: $name)
                     TextField(mode == .url ? "https://example.com/mcp" : "npx -y @scope/server", text: $target)
                         .font(.callout.monospaced())
                         .plainTextInput()
                 }
             }
             if mode == .url {
-                CardSection("Headers", footer: "Optional, one Name: value per line. Leave empty if the service has you sign in. Saved on \(model.hostName) only.") {
+                CardSection("Headers", footer: L10n.tr("Optional, one Name: value per line. Leave empty if the service has you sign in. Saved on {name} only.").replacingOccurrences(of: "{name}", with: model.hostName)) {
                     TextField("Authorization: Bearer …", text: $envText, axis: .vertical)
                         .lineLimit(2...6)
                         .font(.callout.monospaced())
                         .plainTextInput()
                 }
             } else if mode == .command {
-                CardSection("Environment", footer: "One KEY=value per line. Saved on \(model.hostName) only.") {
+                CardSection("Environment", footer: L10n.tr("One KEY=value per line. Saved on {name} only.").replacingOccurrences(of: "{name}", with: model.hostName)) {
                     TextField("API_KEY=…", text: $envText, axis: .vertical)
                         .lineLimit(2...6)
                         .font(.callout.monospaced())
@@ -78,7 +78,7 @@ struct CustomConnectorSheet: View {
                 }
             }
             if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .textFieldStyle(.plain)

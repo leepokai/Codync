@@ -107,15 +107,37 @@ import kotlinx.serialization.json.put
                     }
                 }
             }
+            val appLanguage = LocalAppLanguage.current
+            val setAppLanguage = LocalSetAppLanguage.current
+            val systemChinese = LocalSystemChinese.current
+            val phrases = LocalPhrases.current
+            val script = systemScript(java.util.Locale.getDefault().toLanguageTag())
+            CardSection("Language", footer = when (script) {
+                ChineseScript.Hant ->
+                    "System language is Traditional Chinese. \"Follow system\" matches the phone. You can switch this app to Simplified Chinese or English."
+                ChineseScript.Hans ->
+                    "System language is Simplified Chinese. \"Follow system\" matches the phone. You can switch this app to Traditional Chinese or English."
+                null ->
+                    "System language is English. \"Follow system\" matches the phone. You can switch this app to Simplified or Traditional Chinese."
+            }) {
+                row {
+                    ValueRow("App language") {
+                        ChoicePicker(appLanguage, AppLanguage.entries.map {
+                            it to AppLanguage.menuTitle(it, appLanguage, systemChinese, phrases)
+                        }, setAppLanguage)
+                    }
+                }
+            }
             NotificationsSection(state, store)
             CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
                 row {
+                    val analyticsLabel = tr("Share usage analytics")
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Share usage analytics", style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(analyticsLabel, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         IconButton("About usage analytics", "info.circle") { aboutAnalytics = true }
                         Box(Modifier.weight(1f))
                         CodyncSwitch(Analytics.enabled, Analytics::setEnabled, Modifier.width(34.dp)
-                            .semantics { contentDescription = "Share usage analytics" }) {}
+                            .semantics { contentDescription = analyticsLabel }) {}
                     }
                 }
             }
@@ -145,7 +167,7 @@ import kotlinx.serialization.json.put
         "Signs out of every account and forgets every computer on this phone, then shows the welcome again. Your computers keep their bots and chats; pair again to use them.") {
         listOf(DialogAction("Start over", destructive = true, action = store::startOver))
     }
-    CodyncDialog("Remove ${paired?.name ?: "computer"}?", confirmForget, { confirmForget = false },
+    CodyncDialog(tr("Remove {name}?").replace("{name}", paired?.name ?: "computer"), confirmForget, { confirmForget = false },
         "Its bots and conversations stay on that computer. You can pair again any time.") {
         listOf(DialogAction("Remove", destructive = true, action = store::removeComputer))
     }

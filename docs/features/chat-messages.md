@@ -78,6 +78,14 @@ On the terminal, `t` opens Full conversation, and the working line retains the c
   `ConversationList.swift`; desktop: `.row-in` in `thread.css`; reduced motion: a 0.12 s fade).
 - The list stays pinned to the bottom while the reader is there; scrolling up releases it and the
   round "Jump to latest" button brings it back. Sending always returns to the bottom.
+- Opening or closing the phone keyboard keeps a bottom-following chat on its latest message;
+  reading older messages preserves that position. iPhone viewport updates do not count as user
+  scrolling and wait for any active touch to finish before applying a deferred bottom follow.
+  Android already follows viewport/padding changes; desktop observes transcript resizing, and
+  the terminal renders its bottom-relative scroll position without a software keyboard.
+- iOS 26+ uses the native circular Liquid Glass button for "Jump to latest", with a material
+  fallback on older iOS. Android and Electron retain their platform controls; neither exposes
+  Apple's native Liquid Glass button API. The terminal keeps its keyboard action.
 - iPhone: earlier messages load when the top of the chat comes into view, so a short chat never
   shows a lasting spinner. Pulling down past the top sweeps in the `arrow.clockwise` symbol; letting
   go of a full sweep (`PullToRefresh.swift`) reconnects to the computer while the chat waits just

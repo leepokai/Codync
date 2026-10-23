@@ -14,6 +14,8 @@ import { useStore } from '../../store/context'
 import type { Backend } from '@shared/models'
 import { errorText, market, type AuthMethod, type SetupStep } from './market-models'
 import { ScreenHeader } from './pieces'
+import { useTr } from '../../lib/use-language'
+
 
 const openLink = (uri: string) => {
   if (/^https?:/i.test(uri)) window.codync.app.openExternal(uri)
@@ -32,6 +34,7 @@ export function SetupTerminalView({ backend, step, method, back }: {
   /** Back to the agent's sheet (the terminal is a step inside it). */
   back: () => void
 }) {
+  const tr = useTr()
   const store = useStore()
   const surface = useRef<HTMLDivElement>(null)
   const [exitCode, setExitCode] = useState<number | null>(null)
@@ -181,7 +184,7 @@ export function SetupTerminalView({ backend, step, method, back }: {
         ) : exitCode !== null ? (
           <>
             <Icon name={exitCode === 0 ? 'checkmark.circle.fill' : 'exclamationmark.circle.fill'} size={10} color={exitCode === 0 ? 'var(--added)' : 'var(--warning)'} />
-            <Text tone="secondary" lines={2}>{exitCode === 0 ? 'Finished.' : `Ended with an error (${exitCode}).`}</Text>
+            <Text tone="secondary" lines={2}>{exitCode === 0 ? tr(`Finished.`) : `Ended with an error (${exitCode}).`}</Text>
           </>
         ) : (
           <>

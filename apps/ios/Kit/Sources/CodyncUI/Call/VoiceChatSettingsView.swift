@@ -185,8 +185,8 @@ private struct ProviderVoiceSettings: View {
                 .foregroundStyle(Palette.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Key saved").foregroundStyle(Palette.text).lineLimit(1)
-                Text("Stays on \(store.hostName)").font(.caption).foregroundStyle(Palette.tertiary).lineLimit(1)
+                Text(L10n.tr("Key saved")).foregroundStyle(Palette.text).lineLimit(1)
+                Text(L10n.tr("Stays on \(store.hostName)")).font(.caption).foregroundStyle(Palette.tertiary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if busy {
@@ -211,8 +211,8 @@ private struct ProviderVoiceSettings: View {
                 .foregroundStyle(Palette.tertiary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("No \(provider.name) key on \(store.hostName)").foregroundStyle(Palette.text)
-                Text("Add it in Codync on that computer: Computers & devices, then Voice chat.")
+                Text(L10n.tr("No \(provider.name) key on \(store.hostName)")).foregroundStyle(Palette.text)
+                Text(L10n.tr("Add it in Codync on that computer: Computers & devices, then Voice chat."))
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -231,7 +231,7 @@ private struct ProviderVoiceSettings: View {
                 if busy {
                     Spinner()
                 } else {
-                    Button("Save", action: test)
+                    Button(L10n.tr("Save"), action: test)
                         .buttonStyle(.primary)
                         .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
@@ -240,7 +240,7 @@ private struct ProviderVoiceSettings: View {
                 WebLink("Get a key from \(provider.name)", url: provider.keyPage).font(.footnote)
                 Spacer()
                 if replacing {
-                    Button("Cancel") { replacing = false; key = ""; result = nil }
+                    Button(L10n.tr("Cancel")) { replacing = false; key = ""; result = nil }
                         .buttonStyle(.plain)
                         .font(.footnote)
                         .foregroundStyle(Palette.secondary)

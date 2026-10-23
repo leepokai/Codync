@@ -3,16 +3,18 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, IconSlot, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { useTr } from '../../lib/use-language'
 
 interface Point { icon: string; title: string; detail: string }
 
-/** What the harness's own memory switch means. `readable`: Codync shows its notes (Claude Code's are a file). */
-export function harnessInfo(harness: string, readable: boolean): Point[] {
+/** What the harness's own memory switch means. `readable`: Codync shows its notes (Claude Code's are a file). The harness name is filled in after the sentence is translated. */
+export function harnessInfo(harness: string, readable: boolean, tr: (text: string) => string): Point[] {
+  const fill = (template: string) => tr(template).replaceAll('{name}', harness)
   return [
-    { icon: 'brain', title: 'A memory of its own', detail: `${harness} keeps notes apart from Codync's memory. It's off by default, so this bot has one memory and you see all of it here.` },
-    { icon: 'square.on.square', title: 'Remembered twice', detail: 'With both on, the bot may save the same thing twice, and the two can disagree after something changes.' },
-    { icon: 'trash', title: 'Forgetting', detail: `What the bot forgets in Codync stays in ${harness}'s notes. Codync can't change them.` },
-    { icon: 'eye', title: 'Where to see it', detail: readable ? `Its notes show read-only under the ${harness} tab.` : `Codync can't show it; look in ${harness} itself.` },
+    { icon: 'brain', title: tr('A memory of its own'), detail: fill("{name} keeps notes apart from Codync's memory. It's off by default, so this bot has one memory and you see all of it here.") },
+    { icon: 'square.on.square', title: tr('Remembered twice'), detail: tr('With both on, the bot may save the same thing twice, and the two can disagree after something changes.') },
+    { icon: 'trash', title: tr('Forgetting'), detail: fill("What the bot forgets in Codync stays in {name}'s notes. Codync can't change them.") },
+    { icon: 'eye', title: tr('Where to see it'), detail: fill(readable ? 'Its notes show read-only under the {name} tab.' : "Codync can't show it; look in {name} itself.") },
   ]
 }
 
@@ -27,9 +29,10 @@ export const dreamsInfo: Point[] = [
 
 /** The memory screen's info buttons: a title and what to know, one point per row. The same text as the kit's; the terminal UI says it short in place. */
 export function MemoryInfoSheet({ icon, title, points }: { icon: string; title: string; points: Point[] }) {
+  const tr = useTr()
   return (
     <SheetPage>
-      <ModalHeader icon={icon} title={title} />
+      <ModalHeader icon={icon} title={tr(title)} />
       <CardForm>
         <CardSection>
           {points.map((d) => (
@@ -38,8 +41,8 @@ export function MemoryInfoSheet({ icon, title, points }: { icon: string; title: 
                 <Icon name={d.icon} size={15} />
               </IconSlot>
               <VStack gap={2} grow>
-                <span>{d.title}</span>
-                <Text size="footnote" tone="secondary">{d.detail}</Text>
+                <Text>{tr(d.title)}</Text>
+                <Text size="footnote" tone="secondary">{tr(d.detail)}</Text>
               </VStack>
             </HStack>
           ))}

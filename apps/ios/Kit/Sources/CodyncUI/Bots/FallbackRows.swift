@@ -19,7 +19,7 @@ struct FallbackBanner: View {
                 .foregroundStyle(Palette.text)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            Button("Switch back") { model.switchBack(bot.id) }
+            Button(L10n.tr("Switch back")) { model.switchBack(bot.id) }
                 .buttonStyle(.secondary)
                 .disabled(model.isOffline)
         }
@@ -55,12 +55,12 @@ struct FallbackList: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             if fallbacks.isEmpty {
-                Text("No fallbacks yet.").foregroundStyle(Palette.secondary).transition(.opacity)
+                Text(L10n.tr("No fallbacks yet.")).foregroundStyle(Palette.secondary).transition(.opacity)
             }
             ForEach(Array(fallbacks.enumerated()), id: \.element.backend) { i, fallback in
                 row(fallback, at: i).transition(.opacity)
             }
-            Text("If \(model.backendName(draft.backend)) runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.")
+            Text(L10n.tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.").replacingOccurrences(of: "{agent}", with: model.backendName(draft.backend)))
                 .font(.caption)
                 .foregroundStyle(Palette.secondary)
                 .lineSpacing(2)
@@ -81,7 +81,7 @@ struct FallbackList: View {
 
     private var header: some View {
         HStack(spacing: 4) {
-            Text("Fallbacks").foregroundStyle(Palette.text)
+            Text(L10n.tr("Fallbacks")).foregroundStyle(Palette.text)
             IconButton("About fallbacks", systemImage: "info.circle") { explaining = true }
             Spacer(minLength: 8)
             if fallbacks.count < BotFallback.limit, !choices.isEmpty {
@@ -106,10 +106,10 @@ struct FallbackList: View {
     private func summary(_ fallback: BotFallback, at i: Int) -> some View {
         let name = model.hello?.backends.first { $0.id == fallback.backend }.map(model.agentLabel) ?? model.backendName(fallback.backend)
         return HStack(spacing: 10) {
-            Text("\(i + 1)").font(.subheadline.monospacedDigit()).foregroundStyle(Palette.secondary)
+            Text(L10n.tr("\(i + 1)")).font(.subheadline.monospacedDigit()).foregroundStyle(Palette.secondary)
             AgentIcon(registry: model.agentRegistry(fallback.backend), size: 18)
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(name) · \(fallback.model ?? "Default")").foregroundStyle(Palette.text).lineLimit(1)
+                Text("\(L10n.tr(name)) · \(L10n.tr(fallback.model ?? "Default"))").foregroundStyle(Palette.text).lineLimit(1)
                 if let line = line(fallback) {
                     Text(line).font(.caption).foregroundStyle(Palette.secondary)
                 }
@@ -119,7 +119,7 @@ struct FallbackList: View {
             }
             Spacer(minLength: 8)
             if bot?.agentStep?.agent == fallback.backend {
-                Text("In use")
+                Text(L10n.tr("In use"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Palette.text)
                     .padding(.horizontal, 8)
@@ -223,7 +223,7 @@ private struct FallbackInfoSheet: View {
         VStack(spacing: 0) {
             ModalHeader("Fallbacks")
             CardForm {
-                Text("When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel).")
+                Text(L10n.tr("When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel)."))
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

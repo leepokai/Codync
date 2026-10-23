@@ -3,6 +3,7 @@
 use ratatui::text::{Line, Span};
 
 use super::super::app::{App, Bot, Entry, Kind};
+use super::super::l10n::tr;
 use super::super::md::truncate;
 use super::style::{spin, theme};
 use super::transcript::{Built, gap, name_style};
@@ -11,10 +12,10 @@ pub(super) fn activity(out: &mut Built, app: &App, bot: &Bot, entries: &[&Entry]
     let t = theme();
     gap(out);
     out.lines.push(Line::from(Span::styled(format!(" {}", bot.name), name_style(&bot.color))));
-    let text = if bot.activity.is_empty() { "Working…" } else { &bot.activity };
+    let text = if bot.activity.is_empty() { tr("Working…") } else { tr(&bot.activity) };
     out.lines.push(Line::from(vec![
         Span::styled(format!(" {} ", spin(app)), t.secondary),
-        Span::styled(truncate(text, width.saturating_sub(4)), t.secondary),
+        Span::styled(truncate(text.as_ref(), width.saturating_sub(4)), t.secondary),
     ]));
     let turn = entries.iter().filter(|e| e.data["status"] != "queued").map(|e| e.turn).max();
     let steps = entries.iter().filter(|entry| Some(entry.turn) == turn && entry.kind == Kind::Tool).count();

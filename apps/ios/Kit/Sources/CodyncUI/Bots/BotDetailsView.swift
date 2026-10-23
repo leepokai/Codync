@@ -119,7 +119,7 @@ struct BotDetailsView: View {
                 }
                 if let screen = model.screen, let bot {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Computer")
+                        Text(L10n.tr("Computer"))
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Palette.text)
                             .padding(.leading, 2)

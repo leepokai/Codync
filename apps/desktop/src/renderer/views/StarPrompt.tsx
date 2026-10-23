@@ -10,6 +10,8 @@ import { prefs, usePref } from '../lib/prefs'
 import { afterStarAsk, dueStarAsk } from '../lib/star-ask'
 import { useApp } from '../store/context'
 import { analytics } from '../store/analytics'
+import { useTr } from '../lib/use-language'
+
 
 const [OWNER, NAME] = ['leepokai', 'Codync']
 const REPO = `https://github.com/${OWNER}/${NAME}`
@@ -30,6 +32,7 @@ const copy = {
  * Starring ends it.
  */
 export function StarPrompt() {
+  const tr = useTr()
   const app = useApp()
   const local = useModel(app.local)
   const [onboarded] = usePref(prefs.onboardingDone)
@@ -60,7 +63,7 @@ export function StarPrompt() {
               <Text size="body" weight="semibold" tone="text" truncate>
                 <Text weight="regular" tone="secondary">{OWNER} /</Text> {NAME}
               </Text>
-              <Text size="callout" tone="secondary" truncate>{REPO.replace('https://', '')}</Text>
+              <Text size="callout" tone="secondary" truncate>{REPO.replace(tr(`https://`), '')}</Text>
             </VStack>
             <Icon name="arrow.up.right.square" size={13} color="var(--secondary)" />
           </button>

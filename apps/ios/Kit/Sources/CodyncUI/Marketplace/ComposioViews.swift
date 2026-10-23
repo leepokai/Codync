@@ -72,7 +72,7 @@ struct ComposioConnectSheet: View {
             }
             if connected {
                 CardSection(footer: "Turn \(app.name) on for a bot in the bot's settings, under Connectors.") {
-                    Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(Palette.added)
+                    Label(L10n.tr("Connected"), systemImage: "checkmark.circle.fill").foregroundStyle(Palette.added)
                 }
             } else if let plan, plan.status == "needsFields" {
                 CardSection(footer: "Sent to Composio, which keeps it for \(app.name).") {
@@ -95,24 +95,24 @@ struct ComposioConnectSheet: View {
             } else if let plan, plan.status == "redirect" {
                 CardSection(footer: "Sign in on the page that opened. This updates by itself when you're done.") {
                     if let url = plan.url.flatMap(URL.init(string:)) {
-                        Button("Open the sign-in page", systemImage: "safari") { openURL(url) }
+                        Button(L10n.tr("Open the sign-in page"), systemImage: "safari") { openURL(url) }
                             .buttonStyle(.secondary)
                     }
                     HStack(spacing: 8) {
                         Spinner()
-                        Text("Waiting for you to finish signing in…").foregroundStyle(Palette.secondary)
+                        Text(L10n.tr("Waiting for you to finish signing in…")).foregroundStyle(Palette.secondary)
                     }
                 }
             } else if error == nil {
                 CardSection {
                     HStack(spacing: 8) {
                         Spinner()
-                        Text("Asking Composio…").foregroundStyle(Palette.secondary)
+                        Text(L10n.tr("Asking Composio…")).foregroundStyle(Palette.secondary)
                     }
                 }
             }
             if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger).textSelection(.enabled) }
+                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
             }
         }
         .textFieldStyle(.plain)

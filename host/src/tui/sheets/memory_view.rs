@@ -1,6 +1,7 @@
 //! A bot's memory: about you, this bot's own, its dreams and Claude Code's own memory where it is kept on.
 
 use super::{App, Buffer, Rect, centered, footer, frame_box, name_of, page_tabs, put, row, s, theme, u, window};
+use crate::tui::l10n::tr;
 use crate::tui::manage::{MemoryMode, MemorySheet, Page, Scroll, Section};
 use crate::tui::md::{truncate, wrap};
 use crate::tui::view::when;
@@ -47,7 +48,7 @@ fn tabs(buf: &mut Buffer, inner: Rect, memory: &MemorySheet) {
     let palette = theme();
     let mut x = inner.x;
     for section in memory.sections() {
-        let mut label = section.label().to_owned();
+        let mut label = tr(section.label()).into_owned();
         let layer = match section {
             Section::Yours => Some("yours"),
             Section::Bot => Some("bot"),
@@ -64,7 +65,7 @@ fn tabs(buf: &mut Buffer, inner: Rect, memory: &MemorySheet) {
         x = put(buf, x, inner.y, inner.right().saturating_sub(x), &format!(" {label} "), style) + 1;
     }
     if memory.busy {
-        put(buf, x, inner.y, inner.right().saturating_sub(x), "Loading…", palette.dim.patch(palette.panel));
+        put(buf, x, inner.y, inner.right().saturating_sub(x), &tr("Loading…"), palette.dim.patch(palette.panel));
     }
 }
 
@@ -74,21 +75,23 @@ fn entries(buf: &mut Buffer, body: Rect, app: &App, memory: &MemorySheet) {
     let bot = app.bots.get(&memory.bot);
     let harness = app.harness_name(&memory.bot);
     let note = match (memory.section, view["shared"] == true, bot.and_then(|b| b.harness_memory)) {
-        (Section::Yours, true, _) => "Shared by your bots · s stops this bot using it".to_owned(),
-        (Section::Yours, false, _) => "This bot doesn't use what your bots share · s turns it on".to_owned(),
-        (_, _, Some(true)) => format!("What this bot learned about you · {harness}'s own memory on · m turns it off"),
-        (_, _, Some(false)) => format!("What this bot learned about you · {harness}'s own memory off · m turns it on"),
-        (_, _, None) => "What this bot learned about you".to_owned(),
+        (Section::Yours, true, _) => tr("Shared by your bots · s stops this bot using it").into_owned(),
+        (Section::Yours, false, _) => tr("This bot doesn't use what your bots share · s turns it on").into_owned(),
+        (_, _, Some(true)) => tr("What this bot learned about you · {harness}'s own memory on · m turns it off")
+            .replace("{harness}", &harness),
+        (_, _, Some(false)) => tr("What this bot learned about you · {harness}'s own memory off · m turns it on")
+            .replace("{harness}", &harness),
+        (_, _, None) => tr("What this bot learned about you").into_owned(),
     };
     put(buf, body.x, body.y, body.width, &note, palette.secondary.patch(palette.panel));
     let rows = memory.rows();
     if rows.is_empty() {
-        let empty = if memory.section == Section::Yours {
+        let empty = tr(if memory.section == Section::Yours {
             "Nothing shared yet. Facts every bot should know (your name, time zone, people) go here."
         } else {
             "Nothing yet. What this bot learns about you shows up here."
-        };
-        put(buf, body.x, body.y + 2, body.width, empty, palette.secondary);
+        });
+        put(buf, body.x, body.y + 2, body.width, &empty, palette.secondary);
         return;
     }
     let height = usize::from(body.height.saturating_sub(2)) / 2;
@@ -131,7 +134,8 @@ fn dreams(buf: &mut Buffer, body: Rect, memory: &MemorySheet) {
     Paragraph::new(lines).style(muted).render(Rect::new(body.x, body.y, body.width, top - 1), buf);
     let rows = memory.rows();
     if rows.is_empty() {
-        put(buf, body.x, body.y + top, body.width, "No dreams yet.", palette.secondary);
+        let empty = tr("No dreams yet.");
+        put(buf, body.x, body.y + top, body.width, &empty, palette.secondary);
         return;
     }
     let height = usize::from(body.height.saturating_sub(top)) / 2;
@@ -165,14 +169,8 @@ fn dreams(buf: &mut Buffer, body: Rect, memory: &MemorySheet) {
 fn notes(buf: &mut Buffer, body: Rect, memory: &MemorySheet) {
     let palette = theme();
     let Some(view) = &memory.view else { return };
-    put(
-        buf,
-        body.x,
-        body.y,
-        body.width,
-        "Longer notes, one topic each. The bot reads one when its topic comes up.",
-        palette.secondary.patch(palette.panel),
-    );
+    let caption = tr("Longer notes, one topic each. The bot reads one when its topic comes up.");
+    put(buf, body.x, body.y, body.width, &caption, palette.secondary.patch(palette.panel));
     let rows = memory.rows();
     if rows.is_empty() {
         put(buf, body.x, body.y + 2, body.width, "No notes yet.", palette.secondary);
@@ -197,7 +195,7 @@ fn notes(buf: &mut Buffer, body: Rect, memory: &MemorySheet) {
 fn note(buf: &mut Buffer, body: Rect, detail: Option<&Value>, scroll: &Scroll) {
     let Some(detail) = detail else {
         let palette = theme();
-        put(buf, body.x, body.y, body.width, "Loading…", palette.dim.patch(palette.panel));
+        put(buf, body.x, body.y, body.width, tr("Loading…").as_ref(), palette.dim.patch(palette.panel));
         return;
     };
     read(buf, body, s(detail, "path"), detail["content"].as_str().unwrap_or("Deleted."), scroll);

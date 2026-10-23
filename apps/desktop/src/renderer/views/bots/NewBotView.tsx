@@ -6,6 +6,7 @@ import { ModalHeader, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
+import { useTr } from '../../lib/use-language'
 import { errorText, fillDefaults, newDraft } from './drafts'
 import { AvatarPicker } from './parts'
 import './bots.css'
@@ -53,6 +54,7 @@ export function NewBotView({ computer }: { computer: ComputerChoice | null }) {
 
 /** A new group chat, laid out like a new bot: its face, an optional name, then the bots to put in it. */
 export function NewGroupView({ computer }: { computer: ComputerChoice | null }) {
+  const tr = useTr()
   const store = useStore()
   const [name, setName] = useState('')
   const [members, setMembers] = useState<string[]>([])
@@ -92,9 +94,9 @@ export function NewGroupView({ computer }: { computer: ComputerChoice | null }) 
           })}
         </HStack>
       ) : (
-        <Text tone="secondary">No bots yet. Create a bot first.</Text>
+        <Text tone="secondary">{tr(`No bots yet. Create a bot first.`)}</Text>
       )}
-      <Text as="div" size="caption" tone="tertiary">Everyone answers in turn unless you @mention someone.</Text>
+      <Text as="div" size="caption" tone="tertiary">{tr(`Everyone answers in turn unless you @mention someone.`)}</Text>
     </CreateLayout>
   )
 }
@@ -112,6 +114,7 @@ function CreateLayout({ title, preview, name, placeholder, onName, canCreate, co
   children: ReactNode
 }) {
   const store = useStore()
+  const tr = useTr()
   const dismiss = useDismiss()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -136,7 +139,7 @@ function CreateLayout({ title, preview, name, placeholder, onName, canCreate, co
           className="field-box create-name"
           autoFocus
           value={name}
-          placeholder={placeholder}
+          placeholder={tr(placeholder)}
           aria-label="Name"
           onChange={(e) => onName(e.target.value)}
           onKeyDown={(e) => {
@@ -149,7 +152,7 @@ function CreateLayout({ title, preview, name, placeholder, onName, canCreate, co
       <HStack gap={8} className="create-footer">
         {computer ? (
           <HStack gap={8}>
-            <Text tone="secondary">On</Text>
+            <Text tone="secondary">{tr(`On`)}</Text>
             <ChoicePicker selection={computer.selection} options={computer.options} onChange={computer.onChange} />
           </HStack>
         ) : null}

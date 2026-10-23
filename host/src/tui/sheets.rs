@@ -6,6 +6,8 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
+
+use crate::tui::l10n::tr;
 use serde_json::Value;
 
 mod memory_view;
@@ -45,9 +47,18 @@ fn footer(buf: &mut Buffer, inner: Rect, error: Option<&str>, keys: &str) {
     let t = theme();
     let by = inner.bottom() - 1;
     if let Some(e) = error {
-        put(buf, inner.x, by - 1, inner.width, &truncate(e, usize::from(inner.width)), t.red.patch(t.panel));
+        let shown = tr(e);
+        put(
+            buf,
+            inner.x,
+            by - 1,
+            inner.width,
+            &truncate(shown.as_ref(), usize::from(inner.width)),
+            t.red.patch(t.panel),
+        );
     }
-    put(buf, inner.x, by, inner.width, keys, t.dim.patch(t.panel));
+    let keys = tr(keys);
+    put(buf, inner.x, by, inner.width, keys.as_ref(), t.dim.patch(t.panel));
 }
 
 fn name_of(app: &App, bot: &str) -> String {
@@ -61,7 +72,8 @@ pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
     let mut x = inner.x;
     for page in Page::ALL {
         let style = if page == current { t.text.patch(t.sel) } else { t.secondary.patch(t.panel) };
-        x = put(buf, x, inner.y, inner.right().saturating_sub(x), &format!(" {} ", page.label()), style) + 1;
+        let tab = tr(page.label());
+        x = put(buf, x, inner.y, inner.right().saturating_sub(x), &format!(" {tab} "), style) + 1;
     }
     rput(buf, inner.right(), inner.y, "⇧←→ page", t.dim.patch(t.panel));
     Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2))
@@ -104,16 +116,16 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
     }
     if !app.screen.is_null() {
         let on = app.bots.get(&l.bot).is_some_and(|b| b.computer);
-        put(buf, inner.x, inner.y, inner.width, "Use the computer", t.text.patch(t.panel));
+        put(buf, inner.x, inner.y, inner.width, &tr("Use the computer"), t.text.patch(t.panel));
         let x = rput(buf, inner.right(), inner.y, "  u switches", t.dim.patch(t.panel));
         rput(buf, x, inner.y, if on { "◉ On" } else { "○ Off" }, if on { t.text } else { t.secondary }.patch(t.panel));
         inner = Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2));
     }
-    put(buf, inner.x, inner.y, inner.width, "Routines", t.bold.patch(t.panel));
+    put(buf, inner.x, inner.y, inner.width, &tr("Routines"), t.bold.patch(t.panel));
     let list_h = usize::from(inner.height.saturating_sub(3)) / 2;
     match &l.items {
         None => {
-            put(buf, inner.x, inner.y + 1, inner.width, "Loading…", t.dim.patch(t.panel));
+            put(buf, inner.x, inner.y + 1, inner.width, &tr("Loading…"), t.dim.patch(t.panel));
         }
         Some(v) if v.is_empty() => {
             put(
@@ -121,7 +133,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
                 inner.x,
                 inner.y + 1,
                 inner.width,
-                "No routines. c asks the bot for one; n sets one up here.",
+                &tr("No routines. c asks the bot for one; n sets one up here."),
                 t.secondary.patch(t.panel),
             );
         }
@@ -177,7 +189,7 @@ pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
     let vx = inner.x + 9;
     let vw = inner.width.saturating_sub(9);
     let at = |y: u16| Rect::new(vx, y, vw, 1);
-    put(buf, inner.x, inner.y, 9, "Name", label(f.field == RoutineField::Name));
+    put(buf, inner.x, inner.y, 9, tr("Name").as_ref(), label(f.field == RoutineField::Name));
     input_line(buf, at(inner.y), inner.y, &f.name, "Morning summary", f.field == RoutineField::Name, false);
     put(buf, inner.x, inner.y + 2, 9, "Do", label(f.field == RoutineField::Instruction));
     multiline(
@@ -233,24 +245,25 @@ fn multiline(buf: &mut Buffer, r: Rect, e: &Editor, placeholder: &str, active: b
 pub fn market(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
     let t = theme();
     let r = centered(area, 96, 30);
-    let title = format!("Extensions · {}", app.host);
+    let title = format!("{} · {}", tr("Extensions"), app.host);
     let inner = frame_box(buf, r, t.text, t.panel, Some((&title, t.text)));
     let mut x = inner.x;
     for (tab, label) in TABS {
         let style = if tab == m.tab { t.btn_primary } else { t.secondary.patch(t.btn) };
-        x = put(buf, x, inner.y, 20, &format!(" {label} "), style) + 1;
+        let tab_label = tr(label);
+        x = put(buf, x, inner.y, 20, &format!(" {tab_label} "), style) + 1;
     }
     let search = Rect::new(x + 2, inner.y, inner.right().saturating_sub(x + 2), 1);
     let placeholder = match m.tab {
-        Tab::Connectors => "search the MCP registry",
-        _ => "filter",
+        Tab::Connectors => tr("search the MCP registry"),
+        _ => tr("filter"),
     };
-    field_line(buf, search, inner.y, &m.query, placeholder, true);
+    field_line(buf, search, inner.y, &m.query, &placeholder, true);
     let rows = app.market_rows(m);
     let list_h = usize::from(inner.height.saturating_sub(5));
     let mut y = inner.y + 2;
     if App::market_stale(m) {
-        put(buf, inner.x, y, inner.width, "↵ searches the registry", t.secondary.patch(t.panel));
+        put(buf, inner.x, y, inner.width, &tr("↵ searches the registry"), t.secondary.patch(t.panel));
         y += 1;
     }
     for (i, item) in rows.iter().enumerate().skip(window(m.cursor, list_h)).take(list_h) {
@@ -258,8 +271,8 @@ pub fn market(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
         let (mark, name, detail, right): (&str, String, String, String) = match item {
             Row::Node => (
                 "+",
-                "Add Node.js".into(),
-                "Some agents need it to run. Codync adds a copy just for them.".into(),
+                tr("Add Node.js").into_owned(),
+                tr("Some agents need it to run. Codync adds a copy just for them.").into_owned(),
                 String::new(),
             ),
             Row::Agent(b) => {
@@ -271,22 +284,28 @@ pub fn market(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
                     (true, None) => "installed",
                     (false, _) => "sets up on first use",
                 };
+                let status = tr(status);
                 let mark = if b["signedIn"] == true || b["installed"] == true { "✓" } else { "↓" };
-                (mark, s(b, "name").into(), s(b, "description").into(), status.into())
+                (mark, s(b, "name").into(), s(b, "description").into(), status.into_owned())
             }
             Row::Installed(c) => {
                 let right = match s(c, "auth") {
-                    "signedOut" => "↵ sign in",
-                    _ if c["kind"] == "composio" => "Composio",
-                    _ => "installed",
+                    "signedOut" => tr("↵ sign in"),
+                    _ if c["kind"] == "composio" => std::borrow::Cow::Borrowed("Composio"),
+                    _ => tr("installed"),
                 };
                 let detail = c["command"].as_str().or(c["url"].as_str()).unwrap_or(s(c, "description"));
-                ("✓", s(c, "name").into(), detail.into(), right.into())
+                ("✓", s(c, "name").into(), detail.into(), right.into_owned())
             }
-            Row::Custom => ("+", "Custom connector".into(), "Paste any MCP server's config".into(), String::new()),
+            Row::Custom => (
+                "+",
+                tr("Custom connector").into_owned(),
+                tr("Paste any MCP server's config").into_owned(),
+                String::new(),
+            ),
             Row::Registry(c) => ("↓", s(c, "title").into(), s(c, "description").into(), String::new()),
-            Row::More => ("…", "Load more connectors".into(), String::new(), String::new()),
-            Row::OwnSkill(v) => ("✓", s(v, "name").into(), s(v, "description").into(), "installed".into()),
+            Row::More => ("…", tr("Load more connectors").into_owned(), String::new(), String::new()),
+            Row::OwnSkill(v) => ("✓", s(v, "name").into(), s(v, "description").into(), tr("installed").into_owned()),
             Row::Skill(v) => ("↓", s(v, "name").into(), s(v, "description").into(), String::new()),
         };
         let ok = mark == "✓";
@@ -298,16 +317,17 @@ pub fn market(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
         y += 1;
     }
     if rows.is_empty() {
-        let msg = if m.loading { "Loading…" } else { "Nothing matches" };
-        put(buf, inner.x, y, inner.width, msg, t.dim.patch(t.panel));
+        let msg = if m.loading { tr("Loading…") } else { tr("Nothing matches") };
+        put(buf, inner.x, y, inner.width, &msg, t.dim.patch(t.panel));
     }
     let keys = match m.tab {
-        Tab::Agents => "tab switch · ↵ install / sign in · ^r refresh · esc close",
-        Tab::Connectors => "tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc",
-        Tab::Skills => "tab switch · ↵ details · ^x remove · esc close",
+        Tab::Agents => tr("tab switch · ↵ install / sign in · ^r refresh · esc close"),
+        Tab::Connectors => tr("tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc"),
+        Tab::Skills => tr("tab switch · ↵ details · ^x remove · esc close"),
     };
     let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();
-    footer(buf, inner, m.error.as_deref().or(loading.then_some("Loading the registry…")), keys);
+    let registry = tr("Loading the registry…");
+    footer(buf, inner, m.error.as_deref().or(loading.then_some(registry.as_ref())), &keys);
 }
 
 pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
@@ -319,16 +339,24 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     let inner = frame_box(buf, r, t.text, t.panel, Some((name, t.text)));
     let mut y = inner.y;
     if let Some(d) = b.map(|b| s(b, "description")).filter(|d| !d.is_empty()) {
-        put(buf, inner.x, y, inner.width, &truncate(d, usize::from(inner.width)), t.secondary.patch(t.panel));
+        let shown = tr(d);
+        put(
+            buf,
+            inner.x,
+            y,
+            inner.width,
+            &truncate(shown.as_ref(), usize::from(inner.width)),
+            t.secondary.patch(t.panel),
+        );
         y += 2;
     }
     let signed_in =
         a.auth.as_ref().map_or_else(|| b.and_then(|b| b["signedIn"].as_bool()), |v| v["signedIn"].as_bool());
     let status = if a.busy {
         if a.auth.is_none() {
-            format!("Checking with {name}… the first check can download it.")
+            format!("Checking with {name}… The first check can download it.")
         } else {
-            "Working…".into()
+            tr("Working…").into_owned()
         }
     } else if signed_in != Some(true) && b.is_some_and(|b| b["node"] == "missing") {
         "Add Node.js first.".into()
@@ -340,12 +368,14 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         }
     };
     let style = if signed_in == Some(true) { t.green } else { t.text };
-    put(buf, inner.x, y, inner.width, &status, style.patch(t.panel).add_modifier(Modifier::BOLD));
+    let status = tr(&status);
+    put(buf, inner.x, y, inner.width, status.as_ref(), style.patch(t.panel).add_modifier(Modifier::BOLD));
     y += 1;
     if signed_in != Some(true)
         && let Some(d) = a.auth.as_ref().and_then(|v| v["detail"].as_str()).filter(|d| !d.is_empty())
     {
-        put(buf, inner.x, y, inner.width, &truncate(d, usize::from(inner.width)), t.dim.patch(t.panel));
+        let shown = tr(d);
+        put(buf, inner.x, y, inner.width, &truncate(shown.as_ref(), usize::from(inner.width)), t.dim.patch(t.panel));
         y += 1;
     }
     y += 1;
@@ -371,14 +401,16 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
             }
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
         };
+        let title = tr(&title);
+        let detail = tr(&detail);
         put(buf, inner.x, y, 3, icon, t.secondary.patch(base));
-        let nx = put(buf, inner.x + 3, y, 30, &title, t.bold.patch(base)) + 2;
+        let nx = put(buf, inner.x + 3, y, 30, title.as_ref(), t.bold.patch(base)) + 2;
         put(
             buf,
             nx,
             y,
             inner.right().saturating_sub(nx),
-            &truncate(&detail, usize::from(inner.right().saturating_sub(nx))),
+            &truncate(detail.as_ref(), usize::from(inner.right().saturating_sub(nx))),
             t.secondary.patch(base),
         );
         y += 1;
@@ -391,9 +423,11 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
     let tall = f.inputs.iter().any(|i| i.multiline);
     let h = if tall { 20 } else { u(f.inputs.len() * 2 + usize::from(f.choices.len() > 1) * 2 + 8) };
     let r = centered(area, 84, h);
-    let inner = frame_box(buf, r, t.text, t.panel, Some((&f.title, t.text)));
+    let title = tr(&f.title);
+    let note = tr(&f.note);
+    let inner = frame_box(buf, r, t.text, t.panel, Some((title.as_ref(), t.text)));
     let mut y = inner.y;
-    put(buf, inner.x, y, inner.width, &truncate(&f.note, usize::from(inner.width)), t.dim.patch(t.panel));
+    put(buf, inner.x, y, inner.width, &truncate(note.as_ref(), usize::from(inner.width)), t.dim.patch(t.panel));
     y += 2;
     let label_w = 18u16;
     let vx = inner.x + label_w;
@@ -401,7 +435,8 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
     let mut row_i = 0;
     if f.choices.len() > 1 {
         let on = f.cursor == 0;
-        put(buf, inner.x, y, label_w, "Runs", if on { t.bold } else { t.secondary }.patch(t.panel));
+        let runs = tr("Runs");
+        put(buf, inner.x, y, label_w, runs.as_ref(), if on { t.bold } else { t.secondary }.patch(t.panel));
         let base = if on { t.sel } else { t.panel };
         put(buf, vx, y, vw, &format!("‹ {} ›", f.choices[f.choice]), t.text.patch(base));
         y += 2;
@@ -410,12 +445,13 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
     for (i, input) in f.inputs.iter().enumerate() {
         let on = f.cursor == row_i + i;
         let star = if input.required { " *" } else { "" };
+        let label = tr(&input.label);
         put(
             buf,
             inner.x,
             y,
             label_w - 1,
-            &truncate(&format!("{}{star}", input.label), usize::from(label_w - 1)),
+            &truncate(&format!("{label}{star}"), usize::from(label_w - 1)),
             if on { t.bold } else { t.secondary }.patch(t.panel),
         );
         if input.multiline {

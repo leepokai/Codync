@@ -8,9 +8,12 @@ import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import type { BotStore } from '../../store/bot-store'
 import { deviceIcon, errorText, liveClient, relativeDay } from './parts'
+import { useTr } from '../../lib/use-language'
+
 
 /** The devices that can use a computer this app manages, each one revocable. */
 export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
+  const tr = useTr()
   useModel(store)
   const [devices, setDevices] = useState<AuthorizedDevice[] | { error: string } | null>(null)
   const [confirmRevoke, setConfirmRevoke] = useState<AuthorizedDevice | null>(null)
@@ -41,14 +44,14 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
 
   return (
     <>
-      <CardSection title={`Devices that can use ${name}`}>
+      <CardSection title={tr('Devices that can use {name}').replaceAll('{name}', name)}>
         {devices === null
           ? [<Spinner key="loading" />]
           : 'error' in devices
             ? [<Text key="error" tone="danger" className="settings-appear">{devices.error}</Text>]
             : [
                 ...(devices.length === 0
-                  ? [<Text key="none" tone="secondary">None yet. Pair an iPhone, or approve one from your account.</Text>]
+                  ? [<Text key="none" tone="secondary">{tr(`None yet. Pair an iPhone, or approve one from your account.`)}</Text>]
                   : []),
                 ...devices.map((device) => (
                   <HStack key={device.key} gap={8} className="settings-row settings-appear">
@@ -57,7 +60,7 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
                     </IconSlot>
                     <VStack grow className="settings-stack">
                       <span>{device.name}</span>
-                      <Text size="caption" tone="tertiary">{deviceDetail(device)}</Text>
+                      <Text size="caption" tone="tertiary">{deviceDetail(device, tr)}</Text>
                     </VStack>
                     <IconButton title="Revoke access" icon="xmark.circle" onClick={() => setConfirmRevoke(device)} />
                   </HStack>
@@ -66,8 +69,8 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
       </CardSection>
       <Dialog
         open={confirmRevoke !== null}
-        title={`Revoke ${confirmRevoke?.name ?? 'device'}?`}
-        message="It disconnects right away and has to pair or ask again."
+        title={tr('Revoke {name}?').replaceAll('{name}', confirmRevoke?.name ?? 'device')}
+        message={tr('It disconnects right away and has to pair or ask again.')}
         actions={confirmRevoke ? [{ title: 'Revoke access', destructive: true, action: () => void revoke(confirmRevoke) }] : []}
         onClose={() => setConfirmRevoke(null)}
       />
@@ -75,9 +78,10 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
   )
 }
 
-function deviceDetail(device: AuthorizedDevice) {
-  const parts = [device.source === 'account' ? 'Approved through the account' : 'Paired with a QR code']
-  if (device.connected) parts.push('connected')
-  else if (device.lastSeenAt) parts.push(`seen ${relativeDay(new Date(device.lastSeenAt))}`)
-  return parts.join(' · ')
+function deviceDetail(device: AuthorizedDevice, tr: (text: string) => string) {
+  const paired = device.source === 'account' ? 'Approved through the account' : 'Paired with a QR code'
+  if (device.connected) return tr(`${paired} · connected`)
+  if (!device.lastSeenAt) return tr(paired)
+  const when = relativeDay(new Date(device.lastSeenAt))
+  return tr(`${paired} · seen {when}`).replaceAll('{when}', when === 'Yesterday' ? tr('Yesterday') : when)
 }

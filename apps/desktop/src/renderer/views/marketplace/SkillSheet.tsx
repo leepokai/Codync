@@ -8,12 +8,15 @@ import { MarkdownText } from '../thread/Markdown'
 import { errorText, market } from './market-models'
 import { ErrorText } from './pieces'
 import { usePlugins } from './plugins'
+import { useTr } from '../../lib/use-language'
+
 
 /** The skill a details sheet shows: an installed one (`id`) or one from the catalog (`source`). */
 export type SkillRef = { name: string; description: string } & ({ id: string; source?: never; installed?: never } | { source: string; installed?: boolean; id?: never })
 
 /** A skill's details (kit `SkillSheet`): what it tells the bot, its `SKILL.md`, with Add while it isn't installed. */
 export function SkillSheet({ skill }: { skill: SkillRef }) {
+  const tr = useTr()
   const store = useStore()
   const plugins = usePlugins(store)
   const [markdown, setMarkdown] = useState<string | null>(null)
@@ -62,7 +65,7 @@ export function SkillSheet({ skill }: { skill: SkillRef }) {
           </CardSection>
         ) : null}
         <CardSection title="Instructions" footer={added ? 'Bots read these before using the skill.' : 'Add it to let bots use these instructions.'}>
-          {markdown ? <MarkdownText text={markdown} /> : markdown === '' ? <Text tone="secondary">No instructions.</Text> : error ? null : <Spinner />}
+          {markdown ? <MarkdownText text={markdown} /> : markdown === '' ? <Text tone="secondary">{tr(`No instructions.`)}</Text> : error ? null : <Spinner />}
         </CardSection>
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>

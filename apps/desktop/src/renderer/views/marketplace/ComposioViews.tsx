@@ -10,12 +10,15 @@ import {
   type ComposioApp, type ComposioConnect,
 } from './market-models'
 import { AppLogo, ErrorText, Field, filled } from './pieces'
+import { useTr } from '../../lib/use-language'
+
 
 /**
  * Connects one app: Composio's sign-in page (opened here, finished anywhere),
  * or a form for apps that use a key.
  */
 export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioApp; requestId?: string; done: () => void }) {
+  const tr = useTr()
   const store = useStore()
   const dismiss = useDismiss()
   const [plan, setPlan] = useState<ComposioConnect | null>(null)
@@ -139,7 +142,7 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
             {(plan?.fields ?? []).map((f) => (
               <VStack key={f.name} gap={4}>
                 <Field label={f.label} value={values[f.name] ?? ''} secret={f.secret} placeholder={f.label} onChange={(v) => setValues((old) => ({ ...old, [f.name]: v }))} />
-                {f.description ? <Text size="caption" tone="secondary">{f.description + (f.required ? '' : ' (optional)')}</Text> : null}
+                {f.description ? <Text size="caption" tone="secondary">{f.description + (f.required ? '' : tr(` (optional)`))}</Text> : null}
               </VStack>
             ))}
           </CardSection>

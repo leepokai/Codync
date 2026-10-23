@@ -6,6 +6,18 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.23.1
+
+### zh-Hant
+- 點一下聊天訊息或空白區域即可收起鍵盤，保留正常捲動與按鈕操作
+- 聊天停在底部時，鍵盤開啟後仍保持最後一則訊息可見
+- 回到最新訊息按鈕改用系統 Liquid Glass
+
+### en-US
+- Tap a message or empty conversation space to dismiss the keyboard while preserving scrolling and button actions
+- Keep the latest message visible when opening the keyboard at the bottom of a chat
+- The jump-to-latest button now uses native Liquid Glass
+
 ## 2.23.0
 
 ### zh-Hant

@@ -40,9 +40,12 @@ import { useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
 import './chat-window.css'
 import './sidebar-header.css'
+import { useTr } from '../lib/use-language'
+
 
 /** Native desktop chat: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
 export function ChatWindow() {
+  const tr = useTr()
   const app = useApp()
   const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
   const [accessSetup, setAccessSetup] = usePref(prefs.computerAccessSetup)
@@ -127,13 +130,13 @@ export function ChatWindow() {
       {onboarded && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
       {onboarded && accessSetup !== null ? <StarPrompt /> : null}
       <Sheet open={showAccess} onClose={() => setShowAccess(false)} width={660} height={Math.min(820, window.innerHeight - 80)}>
-        <ModalHeader icon="hand.raised" title="Computer access" />
+        <ModalHeader icon="hand.raised" title={tr(`Computer access`)} />
         <ComputerAccessView onContinue={(ready) => { finishAccess(ready, false); setShowAccess(false) }} />
       </Sheet>
       <Dialog
         open={confirmReset}
-        title="Reset all data?"
-        message="Signs out every account and deletes this computer's bots, conversations, keys and settings. Codync then starts over from the welcome screen."
+        title={tr('Reset all data?')}
+        message={tr("Signs out every account and deletes this computer's bots, conversations, keys and settings. Codync then starts over from the welcome screen.")}
         actions={[{ title: 'Reset everything', destructive: true, action: () => void window.codync.app.resetAllData() }]}
         onClose={() => setConfirmReset(false)}
       />
@@ -171,6 +174,7 @@ interface CreateTarget {
 }
 
 function ChatSplitView() {
+  const tr = useTr()
   const app = useApp()
   const ssh = useSSH()
   const connecting = ssh.state.profiles.some((p) => isSSHConnecting(ssh.status(p.id))) || [...app.stores.values()].some((s) => s.shownConnection.kind === 'connecting')
@@ -326,8 +330,8 @@ function ChatSplitView() {
           <CharacterAvatar shape="squircle" color="orange" size={60} />
           <CharacterAvatar shape="teardrop" color="violet" size={60} mood="working" />
         </HStack>
-        <Text as="div" size="title2" weight="semibold">{connecting ? 'Connecting to your computers…' : 'Your coding agents, as teammates.'}</Text>
-        <Text as="div" tone="secondary" className="empty-detail-message">{connecting ? 'Your bots will appear once connected. Manage computers to see connection progress.' : 'Pick a bot, or create one for each kind of work and point it at a project.'}</Text>
+        <Text as="div" size="title2" weight="semibold">{connecting ? tr(`Connecting to your computers…`) : tr(`Your coding agents, as teammates.`)}</Text>
+        <Text as="div" tone="secondary" className="empty-detail-message">{connecting ? tr(`Your bots will appear once connected. Manage computers to see connection progress.`) : tr(`Pick a bot, or create one for each kind of work and point it at a project.`)}</Text>
         <Button onClick={() => create('bot')} disabled={!onlineStores.length}>
           New bot
         </Button>
@@ -359,8 +363,8 @@ function ChatSplitView() {
           <BotRoster roster={roster} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} />
           {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
-              <Text as="div" size="body" weight="medium">{onlineStores.length ? 'No bots yet' : 'Waiting for a computer'}</Text>
-              {onlineStores.length ? <Text as="div" size="callout" tone="secondary">Use + to create a bot.</Text> : null}
+              <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
+              {onlineStores.length ? <Text as="div" size="callout" tone="secondary">{tr(`Use + to create a bot.`)}</Text> : null}
             </div>
           ) : null}
         </div>
@@ -438,19 +442,19 @@ function ChatSplitView() {
       </Sheet>
       <Dialog
         open={newSessionBot !== null}
-        title="Start a new session?"
-        message="The conversation stays here, but the agent starts with a fresh context."
+        title={tr('Start a new session?')}
+        message={tr('The conversation stays here, but the agent starts with a fresh context.')}
         actions={newSessionBot ? [{ title: 'New session', action: () => newSessionBot.store.newSession(newSessionBot.bot.id) }] : []}
         onClose={() => setNewSessionBot(null)}
       />
       <Dialog
         open={confirmDelete !== null}
         title={`Delete ${confirmDelete?.bot.name ?? 'bot'}?`}
-        message="Files it changed on your computer stay as they are."
+        message={tr('Files it changed on your computer stay as they are.')}
         actions={confirmDelete ? [{ title: 'Delete bot and its conversation', destructive: true, action: () => confirmDelete.store.delete(confirmDelete.bot) }] : []}
         onClose={() => setConfirmDelete(null)}
       />
-      <Dialog open={errorMessage !== null} title="Something went wrong" message={errorMessage} actions={[]} cancel="OK" onClose={() => app.clearErrors()} />
+      <Dialog open={errorMessage !== null} title={tr('Something went wrong')} message={errorMessage} actions={[]} cancel="OK" onClose={() => app.clearErrors()} />
     </div>
   )
 }

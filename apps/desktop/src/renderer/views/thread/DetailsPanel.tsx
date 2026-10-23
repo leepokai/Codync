@@ -13,6 +13,8 @@ import { RoutinesView } from '../routines/RoutinesView'
 import { MacChatButton } from './MacChatButton'
 import '../bots/bots.css'
 import './details-panel.css'
+import { useTr } from '../../lib/use-language'
+
 
 export type DetailsTab = 'details' | 'memory' | 'settings'
 
@@ -95,13 +97,14 @@ function Identity({ bot }: { bot: Bot }) {
 
 /** Whether this bot may use the computer, switched right here (also in Settings). */
 function ComputerUse({ bot }: { bot: Bot }) {
+  const tr = useTr()
   const store = useStore()
   const screen = store.screen
   if (!screen) return null
   const ready = screen.platform === 'windows' || (screen.enabled && screen.connected && screen.capture && screen.input)
   return (
     <section className="details-section">
-      <span className="details-section-title">Computer</span>
+      <Text className="details-section-title">{tr(`Computer`)}</Text>
       <div className="outlined-card details-switch">
         <RowLabel grow label="Use the computer" detail={ready ? null : 'On that computer, open Codync → Settings → Computer access to set it up first.'} />
         <HStack as="span" align="stretch" className="details-switch-control">
@@ -114,6 +117,7 @@ function ComputerUse({ bot }: { bot: Bot }) {
 
 /** A group's bots (Grok Bot's member list); clicking one opens its own chat. */
 function GroupMembersList({ group, editGroup }: { group: Bot; editGroup: () => void }) {
+  const tr = useTr()
   const store = useStore()
   return (
     <div className="details-members">
@@ -123,7 +127,7 @@ function GroupMembersList({ group, editGroup }: { group: Bot; editGroup: () => v
             <BotAvatar bot={bot} size={32} />
             <VStack as="span" gap={1} grow>
               <span className="member-name">{bot.name}</span>
-              {isWorking(bot) ? <Text size="compactSecondary" tone="secondary" className="member-name">{bot.activity || 'Working…'}</Text> : null}
+              {isWorking(bot) ? <Text size="compactSecondary" tone="secondary" className="member-name">{tr(bot.activity || 'Working…')}</Text> : null}
             </VStack>
           </button>
           {group.members.length > 1 ? <IconButton title={`Remove ${bot.name} from the group`} icon="xmark" onClick={() => store.removeMember(group, bot.id)} /> : null}
@@ -133,7 +137,7 @@ function GroupMembersList({ group, editGroup }: { group: Bot; editGroup: () => v
         <span className="member-add-icon">
           <Icon name="plus" size={16} color="var(--secondary)" />
         </span>
-        <Text tone="secondary" className="member-name">Add Member</Text>
+        <Text tone="secondary" className="member-name">{tr(`Add Member`)}</Text>
       </button>
     </div>
   )

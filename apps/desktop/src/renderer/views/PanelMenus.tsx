@@ -8,6 +8,8 @@ import type { Link } from '@shared/analytics'
 import { account, useAccount } from '../store/account'
 import { openLink, useScreenViewed } from '../store/analytics'
 import googleLogo from '../assets/google.svg'
+import { useTr } from '../lib/use-language'
+
 
 // The chat window's floating panels: the account menu (with its profile avatar) and the roster's
 // right-click actions, both built on the same keyboard-driven rows.
@@ -50,6 +52,7 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
   onUsage: () => void
   onSettings: () => void
 }) {
+  const tr = useTr()
   const [page, setPage] = useState<'main' | 'support'>('main')
   const { user, isBusy, errorMessage } = useAccount()
   useScreenViewed('account')
@@ -90,8 +93,8 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
                 <div className="panel-divider" />
                 <div className="panel-identity">
                   <Icon name="person.crop.circle" size={15} />
-                  <Text size="callout" truncate grow>{user?.email ?? 'Account'}</Text>
-                  {signedIn ? null : <Text size="caption">Not signed in</Text>}
+                  <Text size="callout" truncate grow>{user?.email ?? tr(`Account`)}</Text>
+                  {signedIn ? null : <Text size="caption">{tr(`Not signed in`)}</Text>}
                 </div>
               </>
             ) : page === 'support' && i === 0 ? (
@@ -108,6 +111,7 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
 }
 
 function PanelRows({ items, onDismiss, after, dismissOnActivate = false }: { items: PanelItem[]; onDismiss: () => void; after?: (i: number) => ReactNode; dismissOnActivate?: boolean }) {
+  const tr = useTr()
   const [highlighted, setHighlighted] = useState(0)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -148,7 +152,7 @@ function PanelRows({ items, onDismiss, after, dismissOnActivate = false }: { ite
             <IconSlot width={20}>
               {item.image ? <img src={item.image} alt="" width={14} height={14} /> : <Icon name={item.icon} size={14} />}
             </IconSlot>
-            <Text size="callout" truncate grow>{item.title}</Text>
+            <Text size="callout" truncate grow>{tr(item.title)}</Text>
             {item.detail ? <Text size="body" tone="secondary">{item.detail}</Text> : null}
             {item.chevron ? <Icon name="chevron.right" size={11} color="var(--secondary)" /> : null}
           </button>

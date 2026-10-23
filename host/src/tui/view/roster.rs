@@ -6,6 +6,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use super::super::app::{App, Bot, Click, Focus, Mark, Status};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, restyle, rput, u};
 use super::style::{avatar, glyph, theme};
@@ -125,13 +126,20 @@ pub(super) fn preview(b: &Bot) -> (String, Style) {
 fn preview_raw(b: &Bot) -> (String, Style) {
     let t = theme();
     match b.mark() {
-        Mark::Need => (if b.activity.is_empty() { "Needs your approval".into() } else { b.activity.clone() }, t.amber),
-        Mark::Work => (if b.activity.is_empty() { "Working…".into() } else { b.activity.clone() }, t.secondary),
-        Mark::Error => {
-            (if b.last_message.is_empty() { "Something went wrong".into() } else { b.last_message.clone() }, t.red)
-        }
+        Mark::Need => (
+            if b.activity.is_empty() { tr("Needs your approval").into_owned() } else { tr(&b.activity).into_owned() },
+            t.amber,
+        ),
+        Mark::Work => (
+            if b.activity.is_empty() { tr("Working…").into_owned() } else { tr(&b.activity).into_owned() },
+            t.secondary,
+        ),
+        Mark::Error => (
+            if b.last_message.is_empty() { tr("Something went wrong").into_owned() } else { b.last_message.clone() },
+            t.red,
+        ),
         Mark::Unread => (b.last_message.clone(), t.text),
-        Mark::Idle if b.last_message.is_empty() => ("No messages yet".into(), t.dim),
+        Mark::Idle if b.last_message.is_empty() => (tr("No messages yet").into_owned(), t.dim),
         Mark::Idle => (b.last_message.clone(), t.secondary),
     }
 }

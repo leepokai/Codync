@@ -51,7 +51,7 @@ import com.kyant.shapes.RoundedRectangle
 
 @Composable internal fun MarketSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(title, Modifier.padding(start = 4.dp).semantics { heading() }, style = Type.headline, color = Palette.text)
+        Text(tr(title), Modifier.padding(start = 4.dp).semantics { heading() }, style = Type.headline, color = Palette.text)
         content()
     }
 }
@@ -65,15 +65,15 @@ import com.kyant.shapes.RoundedRectangle
         .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) { icon() }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = Type.body.medium, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(title), style = Type.body.medium, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(subtitle), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         when {
             busy -> Box(Modifier.width(60.dp), contentAlignment = Alignment.Center) { ThinkingOrb(size = 18.dp, color = Palette.secondary) }
             added -> Box(Modifier.width(60.dp), contentAlignment = Alignment.Center) {
-                Symbol("checkmark", size = 16.dp, tint = Palette.secondary, contentDescription = "Added")
+                Symbol("checkmark", size = 16.dp, tint = Palette.secondary, contentDescription = tr("Added"))
             }
-            else -> Text(addLabel, Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = add)
+            else -> Text(tr(addLabel), Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = add)
                 .padding(horizontal = 16.dp, vertical = 7.dp), style = Type.subheadline.semibold, color = Palette.text)
         }
     }
@@ -96,7 +96,7 @@ import com.kyant.shapes.RoundedRectangle
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(backend.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(status, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(status), style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -175,7 +175,8 @@ internal fun serviceDomain(website: String?, name: String, registryName: String?
 @Composable internal fun WebLink(title: String, url: String, style: androidx.compose.ui.text.TextStyle = Type.body) {
     val uri = LocalUriHandler.current
     var failed by remember { mutableStateOf(false) }
-    Text(if (failed) "$title (couldn't open the browser)" else title,
+    val label = tr(title)
+    Text(if (failed) "$label (couldn't open the browser)" else label,
         Modifier.plainButton { failed = runCatching { uri.openUri(url) }.isFailure }, style = style.copy(textDecoration = TextDecoration.Underline),
         color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
@@ -185,7 +186,7 @@ internal fun serviceDomain(website: String?, name: String, registryName: String?
     Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Symbol(icon, size = 30.dp, tint = Palette.tertiary)
-        Text(title, style = Type.body.semibold, color = Palette.text)
-        Text(detail, style = Type.subheadline, color = Palette.secondary)
+        Text(tr(title), style = Type.body.semibold, color = Palette.text)
+        Text(tr(detail), style = Type.subheadline, color = Palette.secondary)
     }
 }

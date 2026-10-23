@@ -25,7 +25,7 @@ public struct ComputerFilterHeader: View {
 
     public var body: some View {
         Menu {
-            Button("All computers", systemImage: selection.shown.count == accounts.computers.count ? "checkmark" : "desktopcomputer") { update("") }
+            Button(L10n.tr("All computers"), systemImage: selection.shown.count == accounts.computers.count ? "checkmark" : "desktopcomputer") { update("") }
             ForEach(accounts.computers) { computer in
                 Button {
                     update(selection.toggling(computer.id))
@@ -35,16 +35,16 @@ public struct ComputerFilterHeader: View {
                 .menuActionDismissBehavior(.disabled)
             }
             if accounts.computers.count > 1 {
-                Menu("Show only") {
+                Menu(L10n.tr("Show only")) {
                     ForEach(accounts.computers) { computer in
                         Button(computer.name) { update(selection.only(computer.id)) }
                     }
                 }
             }
             Divider()
-            Button("Reconnect", systemImage: "arrow.clockwise", action: reconnect)
+            Button(L10n.tr("Reconnect"), systemImage: "arrow.clockwise", action: reconnect)
                 .disabled(stores.isEmpty)
-            Button("Manage computers", systemImage: "desktopcomputer", action: manage)
+            Button(L10n.tr("Manage computers"), systemImage: "desktopcomputer", action: manage)
         } label: { label }
         .accessibilityLabel("Computers, \(summary). Filter conversations")
     }
@@ -54,21 +54,37 @@ public struct ComputerFilterHeader: View {
             if compact {
                 Image(systemName: "desktopcomputer")
             } else {
-                Text(summary).lineLimit(1).contentTransition(.opacity)
+                Text(Self.phrase(summary)).lineLimit(1).contentTransition(.opacity)
             }
             Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
         }
         .font(.system(size: 12, weight: .medium))
         .foregroundStyle(Palette.secondary)
-        .help(summary)
+        .help(Self.phrase(summary))
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: summary)
     }
 
+    /// "3 connected" and the other summaries, in the app's language.
+    private static func phrase(_ raw: String) -> String {
+        let parts = raw.split(separator: " ", maxSplits: 1).map(String.init)
+        if parts.count == 2, let count = Int(parts[0]) {
+            if parts[1] == "connected" { return String(format: L10n.tr("%d connected"), count) }
+            if parts[1] == "offline" { return String(format: L10n.tr("%d offline"), count) }
+        }
+        if parts.count == 2, parts[1] == "connected" {
+            let ends = parts[0].split(separator: "/").map(String.init)
+            if ends.count == 2, let online = Int(ends[0]), let total = Int(ends[1]) {
+                return String(format: L10n.tr("%d/%d connected"), online, total)
+            }
+        }
+        return L10n.tr(raw)
+    }
+
     private func computerTitle(_ computer: Computer) -> String {
         guard let store = accounts.store(for: computer.id) else { return computer.name }
-        return "\(store.hostName) · \(store.connectionLabel)"
+        return "\(store.hostName) · \(L10n.tr(store.connectionLabel))"
     }
 
     private func update(_ value: String) {

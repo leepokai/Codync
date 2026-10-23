@@ -7,6 +7,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.codync.android.design.*
@@ -45,7 +48,11 @@ import kotlinx.coroutines.launch
     val bottom = padding.calculateBottomPadding()
     val following = rememberFollowing(list, last, rev, working, bottom)
     val scope = rememberCoroutineScope()
-    Box(Modifier.fillMaxSize()) {
+    val focus = LocalFocusManager.current
+    // Child controls consume their taps; only a plain conversation tap clears the composer.
+    Box(Modifier.fillMaxSize().pointerInput(focus) {
+        detectTapGestures { focus.clearFocus() }
+    }) {
         if (refresh == null) LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = padding, content = content)
         else PullToRefresh(refresh, Modifier.fillMaxSize(), indicatorTop) {
             LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = padding, content = content)

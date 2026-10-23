@@ -20,7 +20,7 @@ struct TimeZonePicker: View {
                     VStack(spacing: 0) {
                         Color.clear.frame(height: 0).id(Self.top)
                         if zones.isEmpty {
-                            Text("No matching time zones").foregroundStyle(Palette.secondary).padding(.top, 8)
+                            Text(L10n.tr("No matching time zones")).foregroundStyle(Palette.secondary).padding(.top, 8)
                         }
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(zones, id: \.self) { zone in

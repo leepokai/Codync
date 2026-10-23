@@ -100,13 +100,13 @@ public struct NewGroupView: View {
             let bots = model.roster.filter { !$0.isGroup }
             VStack(spacing: 14) {
                 if bots.isEmpty {
-                    Text("No bots yet. Create a bot first.").font(.subheadline).foregroundStyle(Palette.secondary)
+                    Text(L10n.tr("No bots yet. Create a bot first.")).font(.subheadline).foregroundStyle(Palette.secondary)
                 } else {
                     WrapLayout(spacing: 8) {
                         ForEach(bots) { tile($0) }
                     }
                 }
-                Text("Everyone answers in turn unless you @mention someone.")
+                Text(L10n.tr("Everyone answers in turn unless you @mention someone."))
                     .font(.caption)
                     .foregroundStyle(Palette.tertiary)
                     .multilineTextAlignment(.center)
@@ -185,7 +185,7 @@ private struct CreateForm<Preview: View, Content: View>: View {
                 VStack(spacing: 28) {
                     VStack(spacing: 16) {
                         preview
-                        TextField(placeholder, text: $name)
+                        TextField(L10n.tr(placeholder), text: $name)
                             .textFieldStyle(.plain)
                             .font(.title2.weight(.semibold))
                             .foregroundStyle(Palette.text)
@@ -196,7 +196,7 @@ private struct CreateForm<Preview: View, Content: View>: View {
                     }
                     content
                     if let error {
-                        Text(error)
+                        Text(L10n.tr(error))
                             .font(.footnote)
                             .foregroundStyle(Palette.danger)
                             .multilineTextAlignment(.center)

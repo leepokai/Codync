@@ -25,12 +25,3 @@ extension View {
         }
     }
 }
-
-extension View {
-    /// Floating surfaces over the chat (Jump to latest): a dark frosted fill that lets the chat
-    /// show through faintly, not Liquid Glass's clear lens. No border: the fill carries the edge.
-    func frosted(in shape: some Shape) -> some View {
-        background(Color(light: 0xF4F4F4, dark: 0x232323).opacity(0.82), in: shape)
-            .background(.ultraThinMaterial, in: shape)
-    }
-}

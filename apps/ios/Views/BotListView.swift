@@ -108,7 +108,7 @@ struct BotListView: View {
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 0)
         .background(Palette.background)
-        .navigationTitle("Bots")
+        .navigationTitle(L10n.tr("Bots"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
@@ -121,9 +121,9 @@ struct BotListView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 // A native menu: the bar hosts toolbar buttons outside SwiftUI's layout,
                 // so an anchored Codync menu can't find where the button is.
-                Menu("New", systemImage: "plus") {
-                    Button("New bot", systemImage: "plus", action: newBot)
-                    Button("New group chat", systemImage: "person.2", action: newGroup)
+                Menu(L10n.tr("New"), systemImage: "plus") {
+                    Button(L10n.tr("New bot"), systemImage: "plus", action: newBot)
+                    Button(L10n.tr("New group chat"), systemImage: "person.2", action: newGroup)
                         .disabled(onlineStores.isEmpty)
                 }
                 // A computer that needs an update can't take a new bot.
@@ -241,8 +241,8 @@ struct BotListView: View {
         .itemProvider { lift(line) }
         .accessibilityLabel(accounts.computers.count > 1 ? "\(bot.name), on \(store.hostName)" : bot.name)
         .accessibilityActions {
-            Button("Move up") { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
-            Button("Move down") { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
+            Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
+            Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
         }
         .contextActions {
             [
@@ -331,7 +331,7 @@ private struct ComputerSection: View {
         VStack(alignment: .leading, spacing: 6) {
             heading
             if empty && !collapsed {
-                Text("No bots yet")
+                Text(L10n.tr("No bots yet"))
                     .font(.footnote)
                     .foregroundStyle(Palette.tertiary)
                     .padding(.horizontal, 8)
@@ -350,8 +350,8 @@ private struct ComputerSection: View {
         .accessibilityAction(named: collapsed ? "Expand" : "Collapse", toggle)
         .accessibilityAction(.default) { toggle() }
         .accessibilityActions {
-            Button("Move up") { move(store.computer.id, -1) }
-            Button("Move down") { move(store.computer.id, 1) }
+            Button(L10n.tr("Move up")) { move(store.computer.id, -1) }
+            Button(L10n.tr("Move down")) { move(store.computer.id, 1) }
         }
     }
 
@@ -362,7 +362,7 @@ private struct ComputerSection: View {
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(1)
-            Text(store.statusText)
+            Text(L10n.tr(store.statusText))
                 .font(.footnote)
                 .foregroundStyle(store.isOffline ? Palette.warning : Palette.tertiary)
                 .lineLimit(1)
@@ -411,18 +411,18 @@ private struct EmptyRoster: View {
     var body: some View {
         VStack(spacing: 14) {
             CharacterAvatar(shape: "cloud", color: "green", size: 72)
-            Text("No bots yet").font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
-            Text(hasComputer
+            Text(L10n.tr("No bots yet")).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+            Text(L10n.tr(hasComputer
                  ? "Create a bot for each kind of work — a reviewer, a fixer, a docs writer — and point it at a project."
-                 : "Ask one of your account's computers for access, or pair one with its code.")
+                 : "Ask one of your account's computers for access, or pair one with its code."))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
             if canCreate {
-                Button("Create your first bot", action: create)
+                Button(L10n.tr("Create your first bot"), action: create)
                     .buttonStyle(.primary)
             } else if !hasComputer {
-                Button("Computers", action: showComputers)
+                Button(L10n.tr("Computers"), action: showComputers)
                     .buttonStyle(.primary)
             }
         }

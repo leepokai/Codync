@@ -101,7 +101,7 @@ private struct FolderLevel: View {
                         }
                     }
                 } else if let error {
-                    Text(error).foregroundStyle(Palette.danger)
+                    Text(L10n.tr(error)).foregroundStyle(Palette.danger)
                 } else {
                     Spinner(size: 20).frame(maxWidth: .infinity)
                 }

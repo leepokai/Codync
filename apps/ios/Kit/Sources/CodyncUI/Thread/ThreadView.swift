@@ -128,15 +128,15 @@ public struct ThreadView: View {
             }
             .frame(width: 12)
             .accessibilityHidden(true)
-            Text(model.connectionLabel)
+            Text(L10n.tr(model.connectionLabel))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundStyle(Palette.secondary)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(model.hostName), \(connectionDescription)")
-        .help("\(model.hostName) · \(connectionDescription)")
+        .accessibilityLabel("\(model.hostName), \(L10n.tr(connectionDescription))")
+        .help("\(model.hostName) · \(L10n.tr(connectionDescription))")
     }
 
     private var connectionSymbol: String {
@@ -276,7 +276,7 @@ struct GroupIntroCard: View {
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
             }
-            Text("Everyone answers in turn. @mention a bot to ask just that one.")
+            Text(L10n.tr("Everyone answers in turn. @mention a bot to ask just that one."))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
@@ -295,7 +295,11 @@ struct IntroCard: View {
         VStack(spacing: 12) {
             CharacterAvatar(bot: bot, size: 72)
             Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
-            Text(bot.managedWorkspace ? "\(model.backendName(bot.backend)) · Personal workspace" : "\(model.backendName(bot.backend)) in \(bot.cwd)")
+            Text(bot.managedWorkspace
+                 ? "\(model.backendName(bot.backend)) · \(L10n.tr("Personal workspace"))"
+                 : L10n.tr("{agent} in {path}")
+                    .replacingOccurrences(of: "{agent}", with: model.backendName(bot.backend))
+                    .replacingOccurrences(of: "{path}", with: bot.cwd))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
@@ -305,7 +309,7 @@ struct IntroCard: View {
                     .foregroundStyle(Palette.secondary)
                     .multilineTextAlignment(.center)
             }
-            Text("Tell it what you need. You'll get a notification when it's done or needs you.")
+            Text(L10n.tr("Tell it what you need. You'll get a notification when it's done or needs you."))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
@@ -396,14 +400,14 @@ extension ThreadView {
     var header: some View {
         // Like Grok Bot: the title pill holds the bot's actions; the corner is the computer.
         Menu {
-            Text("\(model.hostName) · \(model.connectionLabel)")
-            Button("Reconnect", systemImage: "arrow.clockwise") { model.restartStream() }
+            Text("\(model.hostName) · \(L10n.tr(model.connectionLabel))")
+            Button(L10n.tr("Reconnect"), systemImage: "arrow.clockwise") { model.restartStream() }
             Divider()
-            Button("Details", systemImage: "info.circle", action: openDetails)
+            Button(L10n.tr("Details"), systemImage: "info.circle", action: openDetails)
             ForEach(menuItems) { item in
                 if item.divider { Divider() }
                 Button(role: item.destructive ? .destructive : nil, action: item.action) {
-                    if let icon = item.icon { Label(item.title, systemImage: icon) } else { Text(item.title) }
+                    if let icon = item.icon { Label(L10n.tr(item.title), systemImage: icon) } else { Text(L10n.tr(item.title)) }
                 }
             }
         } label: {
@@ -419,7 +423,7 @@ extension ThreadView {
     /// Opens the computer's screen; pulses while this bot is operating it (watch, then take over).
     private var computerButton: some View {
         let operating = model.screen?.agentBot == botId
-        return Button("Computer", systemImage: "desktopcomputer") {
+        return Button(L10n.tr("Computer"), systemImage: "desktopcomputer") {
             model.screenRequest = operating ? ScreenRequest(watching: botId) : ScreenRequest()
         }
         .symbolEffect(.pulse, options: .repeating, isActive: operating)

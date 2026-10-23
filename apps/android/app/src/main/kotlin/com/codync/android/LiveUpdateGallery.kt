@@ -193,7 +193,7 @@ private val TaskPhase.mood get() = when (this) { TaskPhase.Working -> "working";
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CharacterAvatar("blob", "green", 40.dp, phase.mood)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Reviewer", style = Type.system(14f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(tr("Reviewer"), style = Type.system(14f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Caption(phase, started)
             }
             PhaseMark(phase, 20.dp)

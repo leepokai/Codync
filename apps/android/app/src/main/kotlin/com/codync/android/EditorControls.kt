@@ -39,8 +39,8 @@ import com.kyant.shapes.RoundedRectangle
 @Composable internal fun Field(label: String, detail: String? = null, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(label, style = Type.body, color = Palette.text)
-            if (detail != null) Text(detail, style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f), color = Palette.secondary)
+            Text(tr(label), style = Type.body, color = Palette.text)
+            if (detail != null) Text(tr(detail), style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f), color = Palette.secondary)
         }
         content()
     }
@@ -61,8 +61,8 @@ import com.kyant.shapes.RoundedRectangle
 @Composable internal fun SwitchRow(title: String, detail: String? = null, isOn: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
     CodyncSwitch(isOn, onChange, Modifier.fillMaxWidth(), enabled) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, style = Type.body, color = Palette.text)
-            if (detail != null) Text(detail, style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f), color = Palette.secondary)
+            Text(tr(title), style = Type.body, color = Palette.text)
+            if (detail != null) Text(tr(detail), style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f), color = Palette.secondary)
         }
     }
 }
@@ -99,7 +99,7 @@ import com.kyant.shapes.RoundedRectangle
 @Composable internal fun PluginToggles(title: String, empty: String, items: List<Triple<String, String, String>>, selection: List<String>,
     change: (List<String>) -> Unit, info: ((String) -> Unit)? = null) {
     CardSection(title) {
-        if (items.isEmpty()) row { Text(empty, style = Type.body, color = Palette.secondary) }
+        if (items.isEmpty()) row { Text(tr(empty), style = Type.body, color = Palette.secondary) }
         for ((id, name, detail) in items) row {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Box(Modifier.weight(1f)) {

@@ -8,6 +8,7 @@ import { HStack, IconSlot, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useStore } from '../../store/context'
+import { useTr } from '../../lib/use-language'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
 import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
 import { SetupTerminalView } from './SetupTerminal'
@@ -58,12 +59,13 @@ function TintedAgentIcon({ registry, size }: { registry?: string | null; size: n
  */
 export function NodeNotice({ onAdd }: { onAdd: () => void }) {
   const store = useStore()
+  const tr = useTr()
   return (
     <div className="node-notice fade-in">
       <Icon name="shippingbox" size={15} color="var(--secondary)" />
       <VStack as="span" gap={2} grow>
-        <Text size="subheadline" weight="semibold" tone="text">Node.js isn't on {store.hostName}</Text>
-        <Text size="caption" tone="secondary">Some agents need it to run. Codync can add a copy just for them.</Text>
+        <Text size="subheadline" weight="semibold" tone="text">{tr("Node.js isn't on {name}").replaceAll('{name}', store.hostName)}</Text>
+        <Text size="caption" tone="secondary">{tr(`Some agents need it to run. Codync can add a copy just for them.`)}</Text>
       </VStack>
       <Button onClick={onAdd}>Add Node.js</Button>
     </div>
@@ -252,6 +254,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
   back: () => void
   done: (auth: AgentAuth) => void
 }) {
+  const tr = useTr()
   const store = useStore()
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -291,7 +294,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
                   placeholder={saved.includes(v.name) ? 'Saved (type to replace)' : v.name}
                   onChange={(x) => setValues((old) => ({ ...old, [v.name]: x }))}
                 />
-                <Text size="caption" tone="secondary">{v.label + (v.optional ? ' (optional)' : '')}</Text>
+                <Text size="caption" tone="secondary">{v.label + (v.optional ? tr(` (optional)`) : '')}</Text>
               </VStack>
             ))}
           </CardSection>
@@ -321,8 +324,9 @@ function SetupStepRow({ number, title, detail, done, action }: {
   done: boolean
   action: { label: string; run: () => void } | null
 }) {
+  const tr = useTr()
   return (
-    <HStack gap={12} className="agent-step-row" aria-label={`${title}. ${detail}${done ? '. Done' : ''}`}>
+    <HStack gap={12} className="agent-step-row" aria-label={`${tr(title)}. ${tr(detail)}${done ? `. ${tr('Done')}` : ''}`}>
       <span aria-hidden className={`agent-step-number${done ? ' done' : ''}`}>
         {done
           ? <Icon name="checkmark" size={10} weight="bold" color="var(--on-accent)" />
@@ -335,7 +339,7 @@ function SetupStepRow({ number, title, detail, done, action }: {
       <span className="agent-row-gap" />
       {action ? (
         <button className="capsule-action agent-step-action" onClick={action.run}>
-          {action.label}
+          {tr(action.label)}
         </button>
       ) : null}
     </HStack>

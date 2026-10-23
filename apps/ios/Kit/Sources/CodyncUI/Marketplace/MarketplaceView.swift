@@ -91,7 +91,7 @@ public struct MarketplaceView: View {
                 header
                 searchField
                 if !agents.isEmpty {
-                    MarketSection(title: query.isEmpty ? "Agents" : "Agents matching “\(query)”") {
+                    MarketSection(title: query.isEmpty ? "Agents" : L10n.tr("Agents matching “{query}”").replacingOccurrences(of: "{query}", with: query)) {
                         if model.hello?.backends.contains(where: \.needsNode) == true {
                             NodeNotice { addingNode = true }
                         }
@@ -103,7 +103,7 @@ public struct MarketplaceView: View {
                         }
                         .padding(.horizontal, -24)
                         if agents.count > agentLimit {
-                            Button("Load more agents") {
+                            Button(L10n.tr("Load more agents")) {
                                 withAnimation(Motion.fade) { agentLimit += 10 }
                             }
                             .buttonStyle(SecondaryButtonStyle())
@@ -115,7 +115,7 @@ public struct MarketplaceView: View {
                     if loadingConnectors {
                         SkeletonGrid()
                     } else if connectors.isEmpty {
-                        Text(query.isEmpty ? "Couldn't load connectors." : "No connectors match “\(query)”.")
+                        Text(query.isEmpty ? L10n.tr("Couldn't load connectors.") : L10n.tr("No connectors match “{query}”.").replacingOccurrences(of: "{query}", with: query))
                             .foregroundStyle(Palette.secondary)
                     } else {
                         ItemGrid {
@@ -128,7 +128,7 @@ public struct MarketplaceView: View {
                             }
                         }
                         if connectors.hasHiddenItems || connectorCursor != nil {
-                            Button(loadingMore ? "Loading…" : "Load more connectors") { Task { await loadMoreConnectors() } }
+                            Button(L10n.tr(loadingMore ? "Loading…" : "Load more connectors")) { Task { await loadMoreConnectors() } }
                                 .buttonStyle(SecondaryButtonStyle())
                                 .disabled(loadingMore)
                                 .frame(maxWidth: .infinity)
@@ -157,7 +157,7 @@ public struct MarketplaceView: View {
                     }
                 }
                 Button { withAnimation(Motion.layout) { showCredentials = true } } label: {
-                    Label("Credentials", systemImage: "lock.shield")
+                    Label(L10n.tr("Credentials"), systemImage: "lock.shield")
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 MarketSection(title: "Make your own") {
@@ -175,9 +175,9 @@ public struct MarketplaceView: View {
                     }
                 }
                 if let error {
-                    Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                    Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                 }
-                Text("Connectors come from the official MCP Registry, skills from Anthropic, agents from the ACP registry. Everything installs on \(model.hostName).")
+                Text(L10n.tr("Connectors come from the official MCP Registry, skills from Anthropic, agents from the ACP registry. Everything installs on {name}.").replacingOccurrences(of: "{name}", with: model.hostName))
                     .font(.footnote)
                     .foregroundStyle(Palette.tertiary)
             }
@@ -201,7 +201,7 @@ public struct MarketplaceView: View {
             HStack(spacing: 10) {
                 ComputerBadge(model.computer, size: 32)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Extensions")
+                    Text(L10n.tr("Extensions"))
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(Palette.text)
                     if let computer, computers.count > 1 {
@@ -218,8 +218,8 @@ public struct MarketplaceView: View {
                             .foregroundStyle(Palette.secondary)
                             .contentShape(Rectangle())
                         }
-                        .accessibilityLabel("Computer: \(model.hostName)")
-                        .help("Switch computer")
+                        .accessibilityLabel(L10n.tr("Computer: {name}").replacingOccurrences(of: "{name}", with: model.hostName))
+                        .help(L10n.tr("Switch computer"))
                     } else {
                         Text(model.hostName)
                             .font(.subheadline)
@@ -239,8 +239,8 @@ public struct MarketplaceView: View {
                             }
                         }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(installedCount) installed")
-                            Text("Connectors & skills").font(.caption)
+                            Text(L10n.tr("{count} installed").replacingOccurrences(of: "{count}", with: String(installedCount)))
+                            Text(L10n.tr("Connectors & skills")).font(.caption)
                         }
                         .foregroundStyle(Palette.secondary)
                         Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
@@ -256,7 +256,7 @@ public struct MarketplaceView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary)
-            TextField("Search agents, connectors and skills", text: $search)
+            TextField(L10n.tr("Search agents, connectors and skills"), text: $search)
                 .textFieldStyle(.plain)
                 .plainTextInput()
                 .onSubmit { Task { await loadConnectors() } }
@@ -266,7 +266,7 @@ public struct MarketplaceView: View {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.tertiary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
+                .accessibilityLabel(L10n.tr("Clear search"))
             }
         }
         .padding(.horizontal, 14)

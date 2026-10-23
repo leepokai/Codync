@@ -19,9 +19,12 @@ import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
 import './bots.css'
+import { useTr } from '../../lib/use-language'
+
 
 /** Edit a bot in a modal: the settings form plus Close / Save. New bots start in `NewBotView`. */
 export function BotEditorView({ draft: initial }: { draft: BotDraft }) {
+  const tr = useTr()
   const store = useStore()
   const dismiss = useDismiss()
   const plugins = usePlugins(store)
@@ -45,7 +48,7 @@ export function BotEditorView({ draft: initial }: { draft: BotDraft }) {
   return (
     <SheetPage>
       <ModalHeader
-        title="Settings"
+        title={tr(`Settings`)}
         trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={!isValid(draft) || saving || !online} onClick={save} />}
       />
       <div className="bot-editor-body">
@@ -94,11 +97,12 @@ export function BotSettingsPanel({ botId, part }: { botId: string; part: FormPar
 
 /** The bot that created this one with its team tools, and when. */
 function CreatedBy({ bot, creator }: { bot: Bot; creator: string }) {
+  const tr = useTr()
   const store = useStore()
   const date = new Date(bot.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   return (
     <ValueRow label="Created by">
-      <Text truncate>{`${store.bots.get(creator)?.name ?? 'A bot'} · ${date}`}</Text>
+      <Text truncate>{`${store.bots.get(creator)?.name ?? tr(`A bot`)} · ${date}`}</Text>
     </ValueRow>
   )
 }
@@ -111,6 +115,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   plugins: Plugins | null
   part?: FormPart
 }) {
+  const tr = useTr()
   const store = useStore()
   const [pickingAvatar, setPickingAvatar] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
@@ -259,7 +264,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
               ]}
             >
               <Pill outlined className="workspace-pill">
-                <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : 'Personal'}</Text>
+                <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr(`Personal`)}</Text>
                 <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
               </Pill>
             </DropdownMenu>
@@ -355,9 +360,10 @@ function PluginToggles({ title, empty, items, selection, onChange, onInfo }: {
   /** Shows an item's details from an info button beside its switch. */
   onInfo?: (item: { id: string; name: string; detail: string }) => void
 }) {
+  const tr = useTr()
   return (
     <CardSection title={title}>
-      {items.length ? null : <Text tone="secondary">{empty}</Text>}
+      {items.length ? null : <Text tone="secondary">{tr(empty)}</Text>}
       {items.map((item) => {
         const row = (
           <SwitchRow

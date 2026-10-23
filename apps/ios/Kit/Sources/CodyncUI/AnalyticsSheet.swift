@@ -14,15 +14,17 @@ public struct AnalyticsSheet: View {
         ("power", "Your choice", "Each iPhone and each computer has its own switch. Turning it off stops sending right away and drops anything not sent yet."),
     ]
 
-    /// The footer, with "Privacy Policy" an underlined link.
-    private static let policy: AttributedString = {
-        var text = AttributedString("See the Privacy Policy for details.")
-        if let range = text.range(of: "Privacy Policy") {
+    /// The footer, with the privacy policy name an underlined link. Built when shown, so it follows the app language.
+    private static func policy() -> AttributedString {
+        let sentence = L10n.tr("See the Privacy Policy for details.")
+        let name = L10n.tr("Privacy Policy")
+        var text = AttributedString(sentence)
+        if let range = text.range(of: name) {
             text[range].link = URL(string: "https://codync.dev/privacy")
             text[range].underlineStyle = .single
         }
         return text
-    }()
+    }
 
     public init() {}
 
@@ -37,8 +39,8 @@ public struct AnalyticsSheet: View {
                                 .foregroundStyle(Palette.secondary)
                                 .frame(width: 22)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
-                                Text(item.detail)
+                                Text(L10n.tr(item.title))
+                                Text(L10n.tr(item.detail))
                                     .font(.footnote)
                                     .foregroundStyle(Palette.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -46,7 +48,7 @@ public struct AnalyticsSheet: View {
                         }
                     }
                 }
-                Text(Self.policy)
+                Text(Self.policy())
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
                     .tint(Palette.text)

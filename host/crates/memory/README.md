@@ -41,6 +41,13 @@ codync_mem::schema::migrate(&conn)?;
 The crate re-exports the `rusqlite` it builds against: use that one, because a build can link only one
 `rusqlite` to `sqlite3`.
 
+It links the system SQLite. Where there is none (a fresh Ubuntu fails with `cannot find -lsqlite3`), install
+`libsqlite3-dev` or build SQLite in with the same `rusqlite`:
+
+```sh
+cargo add rusqlite@0.40 --features bundled
+```
+
 ## Modules
 
 - `files`: the files of a layer. You keep them on disk; the crate keeps every version (content, author, cause),

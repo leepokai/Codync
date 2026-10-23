@@ -14,9 +14,12 @@ import {
 } from './market-models'
 import { AppLogo, Field, FormSheet, ServiceLogo } from './pieces'
 import { pluginsFor } from './plugins'
+import { useTr } from '../../lib/use-language'
+
 
 /** Credentials go through the setup API; only the request's state is a chat entry. */
 export function ConnectionRequestCard({ entry }: { entry: Entry }) {
+  const tr = useTr()
   const store = useStore()
   const request = entry.data.connectionRequest as unknown as ConnectionRequest
   const [app, setApp] = useState<ComposioApp | null>(null)
@@ -90,13 +93,13 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
         <>
           <Field value={username} onChange={setUsername} placeholder="Username or email" />
           <Field value={value} onChange={setValue} placeholder="Password or op:// reference" secret />
-          <Text size="caption" tone="secondary">Saved securely on this computer. The bot types it into the sign-in page but never sees it.</Text>
+          <Text size="caption" tone="secondary">{tr(`Saved securely on this computer. The bot types it into the sign-in page but never sees it.`)}</Text>
         </>
       ) : pending && isSecret ? (
         <>
-          <Text size="caption" tone="secondary">{`${request.field ?? 'Credential'} · ${request.location ?? ''}`}</Text>
+          <Text size="caption" tone="secondary">{`${request.field ?? tr(`Credential`)} · ${request.location ?? ''}`}</Text>
           <Field value={value} onChange={setValue} placeholder="Credential or op:// reference" secret />
-          <Text size="caption" tone="secondary">Saved securely on this computer. Never added to the conversation.</Text>
+          <Text size="caption" tone="secondary">{tr(`Saved securely on this computer. Never added to the conversation.`)}</Text>
         </>
       ) : null}
       {error ? <Text size="footnote" tone="danger">{error}</Text> : null}

@@ -68,19 +68,19 @@ const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.g
 export const relativeTime = {
   time: (ms: number) => time.format(new Date(ms)),
   /** Chat separator: Today 3:27 AM · Yesterday 5:20 PM · Sep 16 9:02 AM */
-  separator(ms: number) {
+  separator(ms: number, tr: (text: string) => string = (text) => text) {
     const date = new Date(ms)
     const now = new Date()
     const yesterday = new Date(now.getTime() - 86_400_000)
-    const day = sameDay(date, now) ? 'Today' : sameDay(date, yesterday) ? 'Yesterday' : monthDay.format(date)
+    const day = sameDay(date, now) ? tr('Today') : sameDay(date, yesterday) ? tr('Yesterday') : monthDay.format(date)
     return `${day} ${time.format(date)}`
   },
   /** Roster stamp: 3:45 AM · Yesterday · Wednesday · Sep 16 */
-  day(ms: number) {
+  day(ms: number, tr: (text: string) => string = (text) => text) {
     const date = new Date(ms)
     const now = new Date()
     if (sameDay(date, now)) return time.format(date)
-    if (sameDay(date, new Date(now.getTime() - 86_400_000))) return 'Yesterday'
+    if (sameDay(date, new Date(now.getTime() - 86_400_000))) return tr('Yesterday')
     if (now.getTime() - ms < 6 * 86_400_000) return weekday.format(date)
     return monthDay.format(date)
   },

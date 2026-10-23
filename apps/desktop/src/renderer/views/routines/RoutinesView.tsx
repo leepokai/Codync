@@ -8,6 +8,8 @@ import { useStore } from '../../store/context'
 import { errorText, isActiveRun, runLabel, type Routine, type RoutineListing, type RoutineRun } from './routine'
 import { RoutineEditorView } from './RoutineEditorView'
 import './routines.css'
+import { useTr } from '../../lib/use-language'
+
 
 /** The open editor: on a routine, or (`routineId` null) setting up a new one. `id` is one per opening. */
 interface EditorTarget {
@@ -17,6 +19,7 @@ interface EditorTarget {
 
 /** The routine list in the details panel (and the routines sheet); a row opens its editor. */
 export function RoutinesView({ botId, initialId, onClose }: { botId: string; initialId: string | null; onClose?: () => void }) {
+  const tr = useTr()
   const store = useStore()
   const [routines, setRoutines] = useState<Routine[]>([])
   const [runs, setRuns] = useState<RoutineRun[]>([])
@@ -106,7 +109,7 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
   return (
     <VStack gap={onClose ? 16 : 10} className="routines">
       <HStack>
-        <Text size="body" weight="semibold" className="routines-title">Routines</Text>
+        <Text size="body" weight="semibold" className="routines-title">{tr(`Routines`)}</Text>
         <Spacer />
         <IconButton title="Ask the bot for a routine" icon="text.bubble" disabled={store.isOffline} onClick={() => {
           store.setRoutineDraft(botId, 'I want a routine that ')
@@ -119,7 +122,7 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
       {error ? <Text size="caption" tone="danger" className="routines-error">{error}</Text> : null}
       {routines.length === 0 ? (
         <Text as="div" size="callout" tone="secondary" className="outlined-card routines-empty">
-          {loaded ? 'No routines yet. Ask the bot for one, or set it up yourself with +.' : 'Loading routines…'}
+          {loaded ? tr(`No routines yet. Ask the bot for one, or set it up yourself with +.`) : tr(`Loading routines…`)}
         </Text>
       ) : (
         <VStack gap={8}>

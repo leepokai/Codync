@@ -132,10 +132,10 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         else -> Trailing.Send
     }
     val placeholder = when {
-        replyTo != null -> "Reply…"
-        bot.kind == "group" -> "Ask everyone · @ to ask one bot"
-        working -> "Queue a message for ${bot.name}"
-        else -> "Ask ${bot.name}"
+        replyTo != null -> tr("Reply…")
+        bot.kind == "group" -> tr("Ask everyone · @ to ask one bot")
+        working -> tr("Queue a message for {name}").replace("{name}", bot.name)
+        else -> tr("Ask {name}").replace("{name}", bot.name)
     }
     val typed = text.text.toString()
     val members = bot.memberBots(state.bots)

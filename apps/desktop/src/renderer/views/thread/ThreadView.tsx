@@ -7,6 +7,7 @@ import { Sheet, usePresence } from '../../components/Overlay'
 import { HStack, IconSlot, Spacer } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { prefs, usePref } from '../../lib/prefs'
+import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { UpdateNeededCard } from '../UpdateNeededCard'
@@ -258,6 +259,7 @@ const PAGE = 40
 
 const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void }) {
   const store = useStore()
+  const tr = useTr()
   const bot = store.bots.get(botId) ?? null
   const live = !!bot && isWorkingIn(bot, botId) && !store.isOffline
   // Rebuilt only when this chat changes: the store replaces a chat's list on every change.
@@ -355,7 +357,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
         <div className="transcript-content">
           {more ? (
             <button className="load-earlier" disabled={loadingEarlier} onClick={() => void showEarlier()}>
-              {loadingEarlier ? <Spinner size={14} /> : 'Load earlier messages'}
+              {loadingEarlier ? <Spinner size={14} /> : tr('Load earlier messages')}
             </button>
           ) : null}
           {items.length === 0 && bot ? <div className="transcript-intro">{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
@@ -398,6 +400,7 @@ function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotCh
 
 /** The start of an empty group chat: who's in it and how the room works. */
 function GroupIntroCard({ group }: { group: Bot }) {
+  const tr = useTr()
   const store = useStore()
   const members = store.members(group)
   const names = members.map((m) => m.name)
@@ -407,22 +410,26 @@ function GroupIntroCard({ group }: { group: Bot }) {
       <Text as="div" size="title2" weight="semibold" tone="text">{group.name}</Text>
       {group.name !== names.join(', ') ? <Text as="div" size="subheadline" tone="secondary">{names.join(' · ')}</Text> : null}
       {group.description ? <Text as="div" size="subheadline" tone="secondary">{group.description}</Text> : null}
-      <Text as="div" size="callout" tone="secondary" className="intro-card-hint balanced">Everyone answers in turn. @mention a bot to ask just that one.</Text>
+      <Text as="div" size="callout" tone="secondary" className="intro-card-hint balanced">{tr(`Everyone answers in turn. @mention a bot to ask just that one.`)}</Text>
     </div>
   )
 }
 
 function IntroCard({ bot }: { bot: Bot }) {
   const store = useStore()
+  const tr = useTr()
+  const where = bot.managedWorkspace
+    ? `${store.backendName(bot.backend)} · ${tr('Personal workspace')}`
+    : tr('{agent} in {path}').replace('{agent}', store.backendName(bot.backend)).replace('{path}', bot.cwd)
   return (
     <div className="intro-card">
       <BotAvatar bot={bot} size={72} />
       <Text as="div" size="title2" weight="semibold" tone="text">{bot.name}</Text>
       <Text as="div" size="callout" tone="secondary" className="intro-card-path">
-        {bot.managedWorkspace ? `${store.backendName(bot.backend)} · Personal workspace` : `${store.backendName(bot.backend)} in ${bot.cwd}`}
+        {where}
       </Text>
       {bot.description ? <Text as="div" size="subheadline" tone="secondary">{bot.description}</Text> : null}
-      <Text as="div" size="callout" tone="secondary" className="intro-card-hint">Tell it what you need. You'll get a notification when it's done or needs you.</Text>
+      <Text as="div" size="callout" tone="secondary" className="intro-card-hint">{tr(`Tell it what you need. You'll get a notification when it's done or needs you.`)}</Text>
     </div>
   )
 }

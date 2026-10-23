@@ -88,7 +88,7 @@ import kotlinx.coroutines.CancellationException
                     }
                 }
             }
-            error != null -> Text(error.orEmpty(), style = Type.body, color = Palette.danger)
+            error != null -> Text(tr(error.orEmpty()), style = Type.body, color = Palette.danger)
             else -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner(20.dp) }
         }
     }

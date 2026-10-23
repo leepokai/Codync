@@ -118,7 +118,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(backend.name, style = Type.title3.semibold, color = Palette.text)
                         backend.description?.takeIf(String::isNotEmpty)?.let {
-                            Text(it, style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Text(tr(it), style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -186,8 +186,8 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) { Symbol(icon, size = 20.dp, tint = Palette.secondary) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = Type.body.medium, color = Palette.text)
-            Text(detail, style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(tr(title), style = Type.body.medium, color = Palette.text)
+            Text(tr(detail), style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
         if (busy) ThinkingOrb(size = 16.dp, color = Palette.secondary) else Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
     }
@@ -195,18 +195,19 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
 
 /** A numbered setup step: done shows a check; an action sits on the right. */
 @Composable private fun SetupStepRow(number: Int, title: String, detail: String, done: Boolean, action: Pair<String, () -> Unit>?) {
-    Row(Modifier.padding(vertical = 4.dp).semantics(mergeDescendants = true) { stateDescription = if (done) "Done" else "" },
+    val doneLabel = tr("Done")
+    Row(Modifier.padding(vertical = 4.dp).semantics(mergeDescendants = true) { stateDescription = if (done) doneLabel else "" },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(26.dp).clip(Capsule()).background(if (done) Palette.accentFill else Palette.bubbleAgent), contentAlignment = Alignment.Center) {
             if (done) Symbol("checkmark", size = 13.dp, tint = Palette.onAccent)
             else Text("$number", style = Type.caption.semibold, color = Palette.secondary)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = Type.body.medium, color = Palette.text)
-            Text(detail, style = Type.subheadline, color = Palette.secondary)
+            Text(tr(title), style = Type.body.medium, color = Palette.text)
+            Text(tr(detail), style = Type.subheadline, color = Palette.secondary)
         }
         action?.let { (label, run) ->
-            Text(label, Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = run).padding(horizontal = 14.dp, vertical = 7.dp),
+            Text(tr(label), Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = run).padding(horizontal = 14.dp, vertical = 7.dp),
                 style = Type.subheadline.semibold, color = Palette.text)
         }
     }
@@ -230,7 +231,7 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
     }
     val savedHere = method.vars.any { it.name in saved }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ScreenHeader({ BackButton(back) }, { Text(method.name, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis) }) {
+        ScreenHeader({ BackButton(back) }, { Text(tr(method.name), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis) }) {
             if (saving) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
             else IconButton("Save", "checkmark", enabled = method.complete(values, saved)) { save(values.filterValues(String::isNotEmpty)) }
         }
@@ -239,11 +240,11 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
                 CardSection(method.name) {
                     for (v in method.vars) row {
                         NotedInput(values[v.name].orEmpty(), { values = values + (v.name to it) }, if (v.name in saved) "Saved (type to replace)" else v.name,
-                            v.label + if (v.optional) " (optional)" else "", secret = v.secret)
+                            tr(v.label) + if (v.optional) tr(" (optional)") else "", secret = v.secret)
                     }
                 }
                 Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    method.description?.let { Text(it, style = Type.caption, color = Palette.tertiary) }
+                    method.description?.let { Text(tr(it), style = Type.caption, color = Palette.tertiary) }
                     Text("Saved on ${state.hostName} only and given to ${backend.name} when it starts.", style = Type.caption, color = Palette.tertiary)
                     method.link?.let { WebLink("Get a key", it, Type.caption) }
                 }

@@ -5,6 +5,8 @@ import { Text } from '../../components/Text'
 import { TimeZonePicker } from './TimeZonePicker'
 import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
+import { useTr } from '../../lib/use-language'
+
 
 const weekdays = [
   { id: 1, label: 'Mon', title: 'Monday' },
@@ -29,6 +31,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
   preview: RoutineSchedulePreview | null
   error: string | null
 }) {
+  const tr = useTr()
   const repeat = repeatChoice(schedule.calendarStyle)
   // Custom starts from the host's cron for the choice it replaces; empty while that check is
   // still out, never the cron the routine opened with.
@@ -62,7 +65,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
               autoCorrect="off"
               onChange={(e) => update({ expression: e.target.value })}
             />
-            <Text size="caption" mono tone="tertiary" className="routine-cron-hint">minute  hour  day  month  weekday</Text>
+            <Text size="caption" mono tone="tertiary" className="routine-cron-hint">{tr(`minute  hour  day  month  weekday`)}</Text>
           </VStack>
         </LabeledRow>
       ) : (
@@ -98,6 +101,7 @@ export function LabeledRow({ label, top = false, className, children }: { label:
 
 /** One quiet line under the group: what the host read, or why it can't. */
 function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview | null; error: string | null }) {
+  const tr = useTr()
   if (error) return <Text size="callout" tone="danger" className="schedule-preview">{error}</Text>
   return (
     <VStack gap={2} className="schedule-preview" aria-live="polite">
@@ -107,7 +111,7 @@ function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview |
             <Text size="callout" weight="medium" tone="text">{preview.summary}</Text>
             {preview.nextRunAt ? (
               <Text size="callout" tone="secondary">
-                Next {new Date(preview.nextRunAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                {tr('Next')} {new Date(preview.nextRunAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
               </Text>
             ) : null}
           </HStack>

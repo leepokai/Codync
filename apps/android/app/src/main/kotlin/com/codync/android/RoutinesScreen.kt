@@ -82,7 +82,7 @@ import kotlinx.coroutines.launch
             IconButton("Close routines", "xmark", action = dismiss)
         }
         val routines = listing?.routines.orEmpty()
-        if (routines.isEmpty()) Text(if (listing != null) "No routines yet. Ask the bot for one, or set it up yourself with +." else "Loading routines…",
+        if (routines.isEmpty()) Text(tr(if (listing != null) "No routines yet. Ask the bot for one, or set it up yourself with +." else "Loading routines…"),
             Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface).padding(14.dp),
             style = Type.system(12f).copy(lineHeight = Type.system(12f).lineHeight * 1.25f), color = Palette.secondary)
         else Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface).padding(horizontal = 14.dp)) {
@@ -263,18 +263,21 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
 @Composable private fun SchedulePreview(preview: RoutineSchedulePreview?, error: String?, cronHint: Boolean) {
     Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         when {
-            error != null -> Text(error, style = Type.caption, color = Palette.danger)
+            error != null -> Text(tr(error), style = Type.caption, color = Palette.danger)
             preview != null -> {
                 Text(preview.summary, style = Type.caption.medium, color = Palette.text)
-                preview.nextRunAt?.let { Text("Next ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))}", style = Type.caption, color = Palette.secondary) }
-                preview.warning?.let { Text(it, style = Type.caption, color = Palette.secondary) }
+                preview.nextRunAt?.let {
+                    val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
+                    Text(tr("Next {when}").replace("{when}", whenText), style = Type.caption, color = Palette.secondary)
+                }
+                preview.warning?.let { Text(tr(it), style = Type.caption, color = Palette.secondary) }
             }
             cronHint -> Text("minute  hour  day  month  weekday", style = Type.caption.monospaced, color = Palette.tertiary)
         }
     }
 }
 
-@Composable private fun Note(text: String) = Text(text, Modifier.padding(start = 4.dp), style = Type.caption, color = Palette.secondary)
+@Composable private fun Note(text: String) = Text(tr(text), Modifier.padding(start = 4.dp), style = Type.caption, color = Palette.secondary)
 
 /** A saved webhook routine's address and key: copy either, reveal or replace the key (iOS `RoutineWebhookPanel`). */
 @Composable private fun RoutineWebhookPanel(botId: String, id: String, online: Boolean, store: AppStore) {
@@ -322,7 +325,7 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
                     else "POST with Authorization: Bearer <key>. For GitHub, use content type application/json and the key as the secret. " +
                         "Deliveries wait up to 72 hours while this computer is off. They pass through the Codync cloud, which can read them.")
             }
-            error != null -> Text(error.orEmpty(), Modifier.padding(start = 4.dp), style = Type.caption, color = Palette.danger)
+            error != null -> Text(tr(error.orEmpty()), Modifier.padding(start = 4.dp), style = Type.caption, color = Palette.danger)
             else -> Note("Loading webhook…")
         }
     }

@@ -7,6 +7,8 @@ import { Text } from '../../components/Text'
 import { useStore as useLiveStore } from '../../store/context'
 import { Field } from '../marketplace/pieces'
 import './handoff.css'
+import { useTr } from '../../lib/use-language'
+
 
 function Line({ icon, text }: { icon: string; text?: string }) {
   return (
@@ -34,6 +36,7 @@ export function AgentSwitchNotice({ entry, carried }: { entry: Entry; carried: s
 
 /** The bot's chat starts over: what the new conversation carries, which the user can edit, or turn down to carry on. */
 export function HandoffNotice({ entry, card }: { entry: Entry; card: HandoffCard }) {
+  const tr = useTr()
   const store = useLiveStore()
   const [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
@@ -57,7 +60,7 @@ export function HandoffNotice({ entry, card }: { entry: Entry; card: HandoffCard
   return (
     <div className="handoff-card">
       <Line icon="arrow.triangle.branch" text={entry.data.text} />
-      <Disclosure expanded={expanded} onToggle={() => setExpanded(!expanded)} label={<Text size="footnote" weight="medium">What it carries</Text>}>
+      <Disclosure expanded={expanded} onToggle={() => setExpanded(!expanded)} label={<Text size="footnote" weight="medium">{tr(`What it carries`)}</Text>}>
         {carried}
       </Disclosure>
       <div className="handoff-actions">
@@ -69,7 +72,7 @@ export function HandoffNotice({ entry, card }: { entry: Entry; card: HandoffCard
       <Sheet open={draft !== null} onClose={() => setDraft(null)} width={620}>
         {draft !== null && <SheetPage>
           <ModalHeader
-            title="Edit the handoff"
+            title={tr(`Edit the handoff`)}
             trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={!draft.trim()} onClick={() => { void save() }} />}
           />
           <CardForm>

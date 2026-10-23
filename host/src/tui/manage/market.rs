@@ -4,6 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
 use super::super::app::{After, App, Confirm, ConfirmAct, Editor, Overlay, fuzzy};
+use super::super::l10n::tr;
 use super::{Fields, Input, Market, Reply, Row, Submit, TABS, Tab, ctrl, s};
 
 impl App {
@@ -116,12 +117,13 @@ impl App {
                     _ => return Some(Overlay::Market(m)),
                 };
                 let c = Confirm {
-                    title: format!("Remove {name}?"),
-                    detail: if skill {
-                        "Bots stop using this skill.".into()
+                    title: tr("Remove {name}?").replace("{name}", &name),
+                    detail: tr(if skill {
+                        "Bots stop using this skill."
                     } else {
-                        "Bots lose it, and the keys saved for it are deleted.".into()
-                    },
+                        "Bots lose this connector, and the keys saved for it are deleted."
+                    })
+                    .into_owned(),
                     note: String::new(),
                     button: "Remove",
                     act: if skill { ConfirmAct::RemoveSkill(id) } else { ConfirmAct::RemoveConnector(id) },
@@ -201,7 +203,7 @@ impl App {
             Act::Install(item) => {
                 let options = item["options"].as_array().cloned().unwrap_or_default();
                 if options.len() == 1 && options[0]["inputs"].as_array().is_none_or(Vec::is_empty) {
-                    self.flash(&format!("Adding {}…", s(&item, "title")));
+                    self.flash(&tr("Adding {name}…").replace("{name}", &s(&item, "title")));
                     self.sheet(
                         "installConnector",
                         json!({"registryName": item["name"], "option": options[0]["id"], "inputs": {}}),
@@ -213,15 +215,15 @@ impl App {
                         .iter()
                         .map(|o| {
                             if o["kind"] == "remote" {
-                                format!("Hosted by {}", s(&item, "title"))
+                                tr("Hosted by {name}").replace("{name}", &s(&item, "title"))
                             } else {
-                                format!("On {host} ({})", s(o, "kind"))
+                                tr("On {name} ({kind})").replace("{name}", &host).replace("{kind}", &s(o, "kind"))
                             }
                         })
                         .collect();
                     let mut f = Fields {
-                        title: format!("Add {}", s(&item, "title")),
-                        note: format!("Keys are saved on {host} only."),
+                        title: tr("Add connector").into_owned(),
+                        note: tr("Keys are saved on {name} only.").replace("{name}", &host),
                         choices,
                         choice: 0,
                         inputs: vec![],

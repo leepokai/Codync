@@ -26,12 +26,12 @@ internal object RelativeTime {
     }
 
     /** Roster stamp: 3:45 AM · Yesterday · Wednesday · Sep 16. */
-    fun day(milliseconds: Long, now: Long = System.currentTimeMillis()): String {
+    fun day(milliseconds: Long, now: Long = System.currentTimeMillis(), yesterday: String = "Yesterday"): String {
         val day = date(milliseconds)
         val today = LocalDate.now(ZoneId.systemDefault())
         return when {
             day.toLocalDate() == today -> day.format(time)
-            day.toLocalDate() == today.minusDays(1) -> "Yesterday"
+            day.toLocalDate() == today.minusDays(1) -> yesterday
             now - milliseconds < 6 * 86_400_000L -> day.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()))
             else -> day.format(monthDay)
         }
@@ -50,12 +50,12 @@ internal object RelativeTime {
         date(milliseconds).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(Locale.getDefault()))
 
     /** Chat separator: Today 3:27 AM · Yesterday 5:20 PM · Sep 16 9:02 AM. */
-    fun separator(milliseconds: Long): String {
+    fun separator(milliseconds: Long, todayLabel: String = "Today", yesterdayLabel: String = "Yesterday"): String {
         val day = date(milliseconds)
         val today = LocalDate.now(ZoneId.systemDefault())
         val name = when (day.toLocalDate()) {
-            today -> "Today"
-            today.minusDays(1) -> "Yesterday"
+            today -> todayLabel
+            today.minusDays(1) -> yesterdayLabel
             else -> day.format(monthDay)
         }
         return name + " " + day.format(time)

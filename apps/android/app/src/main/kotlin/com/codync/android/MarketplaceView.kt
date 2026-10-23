@@ -140,7 +140,7 @@ import kotlinx.coroutines.launch
             Header(state, inset, showInstalled)
             SearchBox(search, { search = it }, inset, ::submit) { search = ""; submit() }
             if (agents.isNotEmpty()) Box(inset) {
-                MarketSection(if (query.isEmpty()) "Agents" else "Agents matching “$query”") {
+                MarketSection(if (query.isEmpty()) "Agents" else tr("Agents matching “{query}”").replace("{query}", query)) {
                     if (backends.any { it.needsNode }) NodeNotice(state) { addingNode = true }
                     // The row runs edge to edge, past the page's margins.
                     LazyRow(Modifier.bleed(24.dp), contentPadding = PaddingValues(horizontal = 24.dp),
@@ -156,7 +156,7 @@ import kotlinx.coroutines.launch
                 MarketSection("Connectors") {
                     when {
                         loadingConnectors -> SkeletonRows()
-                        connectors.items.isEmpty() -> Text(if (query.isEmpty()) "Couldn't load connectors." else "No connectors match “$query”.", style = Type.body, color = Palette.secondary)
+                        connectors.items.isEmpty() -> Text(if (query.isEmpty()) tr("Couldn't load connectors.") else tr("No connectors match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
                         else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             for (c in connectors.visible) MarketRow(c.title, c.description ?: c.name, c.installed,
                                 icon = { ServiceLogo(c.website, c.title, c.name) }) { installing = c }
@@ -191,7 +191,7 @@ import kotlinx.coroutines.launch
                 SecondaryButton({ showCredentials = true }) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Symbol("lock.shield", size = 18.dp, tint = Palette.text)
-                        Text("Credentials")
+                        Text(tr("Credentials"))
                     }
                 }
             }
@@ -205,8 +205,8 @@ import kotlinx.coroutines.launch
                     }
                 }
             }
-            error?.let { Text(it, inset, style = Type.footnote, color = Palette.danger) }
-            Text("Connectors come from the official MCP Registry, skills from Anthropic, agents from the ACP registry. Everything installs on ${state.hostName}.",
+            error?.let { Text(tr(it), inset, style = Type.footnote, color = Palette.danger) }
+            Text(tr("Connectors come from the official MCP Registry, skills from Anthropic, agents from the ACP registry. Everything installs on {name}.").replace("{name}", state.hostName),
                 inset, style = Type.footnote, color = Palette.tertiary)
         }
         // The sheet's own close, over the page.
@@ -237,7 +237,7 @@ private fun Modifier.bleed(amount: Dp) = layout { measurable, constraints ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ComputerBadge(state.hello?.text("device"), 32.dp, state.computers.firstOrNull()?.color)
             Column {
-                Text("Extensions", style = Type.title2.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(tr("Extensions"), style = Type.title2.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(state.hostName, style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -247,8 +247,8 @@ private fun Modifier.bleed(amount: Dp) = layout { measurable, constraints ->
                 for (c in connectors.take(3)) ServiceLogo(null, c.name, c.registryName, 26.dp)
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("$count installed", style = Type.body, color = Palette.secondary)
-                Text("Connectors & skills", style = Type.caption, color = Palette.secondary)
+                Text(tr("{count} installed").replace("{count}", "$count"), style = Type.body, color = Palette.secondary)
+                Text(tr("Connectors & skills"), style = Type.caption, color = Palette.secondary)
             }
             Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
         }
@@ -256,12 +256,13 @@ private fun Modifier.bleed(amount: Dp) = layout { measurable, constraints ->
 }
 
 @Composable private fun SearchBox(text: String, onChange: (String) -> Unit, modifier: Modifier, submit: () -> Unit, clear: () -> Unit) {
+    val clearSearch = tr("Clear search")
     Row(modifier.fillMaxWidth().height(38.dp).clip(Capsule()).background(Palette.bubbleAgent).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Symbol("magnifyingglass", size = 18.dp, tint = Palette.secondary)
         PlainTextField(text, onChange, Modifier.weight(1f), "Search agents, connectors and skills", singleLine = true,
             imeAction = ImeAction.Search, actions = KeyboardActions(onSearch = { submit() }))
-        if (text.isNotEmpty()) Box(Modifier.plainButton(action = clear).semantics { contentDescription = "Clear search" }) {
+        if (text.isNotEmpty()) Box(Modifier.plainButton(action = clear).semantics { contentDescription = clearSearch }) {
             Symbol("xmark.circle.fill", size = 18.dp, tint = Palette.tertiary)
         }
     }
@@ -274,10 +275,10 @@ private fun Modifier.bleed(amount: Dp) = layout { measurable, constraints ->
         Symbol("shippingbox", Modifier.padding(top = 1.dp), size = 18.dp, tint = Palette.secondary)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Node.js isn't on ${state.hostName}", style = Type.subheadline.semibold, color = Palette.text)
-                Text("Some agents need it to run. Codync can add a copy just for them.", style = Type.caption, color = Palette.secondary)
+                Text(tr("Node.js isn't on {name}").replace("{name}", state.hostName), style = Type.subheadline.semibold, color = Palette.text)
+                Text(tr("Some agents need it to run. Codync can add a copy just for them."), style = Type.caption, color = Palette.secondary)
             }
-            Text("Add Node.js", Modifier.clip(Capsule()).background(Palette.accentFill).plainButton(action = add).padding(horizontal = 14.dp, vertical = 7.dp),
+            Text(tr("Add Node.js"), Modifier.clip(Capsule()).background(Palette.accentFill).plainButton(action = add).padding(horizontal = 14.dp, vertical = 7.dp),
                 style = Type.subheadline.semibold, color = Palette.onAccent)
         }
     }

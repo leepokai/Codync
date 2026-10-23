@@ -15,11 +15,15 @@ struct MemoryInfoSheet: View {
 
     /// `readable`: Codync can show the harness's notes (Claude Code's are a file on the computer).
     static func harness(_ harness: String, readable: Bool) -> MemoryInfoSheet {
-        MemoryInfoSheet(title: "\(harness)'s own memory", points: [
-            Point(icon: "brain", title: "A memory of its own", detail: "\(harness) keeps notes apart from Codync's memory. It's off by default, so this bot has one memory and you see all of it here."),
+        // Translate the sentence, then put the harness name in, so the name stays as written.
+        func fill(_ template: String) -> String {
+            L10n.tr(template).replacingOccurrences(of: "{name}", with: harness)
+        }
+        return MemoryInfoSheet(title: fill("{name}'s own memory"), points: [
+            Point(icon: "brain", title: "A memory of its own", detail: fill("{name} keeps notes apart from Codync's memory. It's off by default, so this bot has one memory and you see all of it here.")),
             Point(icon: "square.on.square", title: "Remembered twice", detail: "With both on, the bot may save the same thing twice, and the two can disagree after something changes."),
-            Point(icon: "trash", title: "Forgetting", detail: "What the bot forgets in Codync stays in \(harness)'s notes. Codync can't change them."),
-            Point(icon: "eye", title: "Where to see it", detail: readable ? "Its notes show read-only under the \(harness) tab." : "Codync can't show it; look in \(harness) itself."),
+            Point(icon: "trash", title: "Forgetting", detail: fill("What the bot forgets in Codync stays in {name}'s notes. Codync can't change them.")),
+            Point(icon: "eye", title: "Where to see it", detail: fill(readable ? "Its notes show read-only under the {name} tab." : "Codync can't show it; look in {name} itself.")),
         ])
     }
 
@@ -42,8 +46,8 @@ struct MemoryInfoSheet: View {
                                 .foregroundStyle(Palette.secondary)
                                 .frame(width: 22)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
-                                Text(item.detail)
+                                Text(L10n.tr(item.title))
+                                Text(L10n.tr(item.detail))
                                     .font(.footnote)
                                     .foregroundStyle(Palette.secondary)
                                     .fixedSize(horizontal: false, vertical: true)

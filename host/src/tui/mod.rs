@@ -5,6 +5,7 @@ mod app;
 mod appearance;
 mod connections;
 mod drafts;
+mod l10n;
 mod manage;
 mod md;
 mod net;

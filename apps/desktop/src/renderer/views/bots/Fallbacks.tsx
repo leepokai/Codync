@@ -8,6 +8,7 @@ import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { FormSheet } from '../marketplace/pieces'
 import { useAgentModels } from './agent-models'
@@ -35,6 +36,7 @@ export function AgentStepBanner({ bot }: { bot: Bot }) {
 /** The Agent card's Fallbacks: the agents that carry on in order, added, moved and removed here, saved with the form. */
 export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: Bot; onChange: (update: (d: BotDraft) => BotDraft) => void }) {
   const store = useStore()
+  const tr = useTr()
   const [adding, setAdding] = useState(false)
   // The fallback being edited, by its agent (each agent is in the chain once).
   const [editing, setEditing] = useState<string | null>(null)
@@ -47,7 +49,7 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
   return (
     <VStack gap={8}>
       <HStack gap={2}>
-        <Text tone="text">Fallbacks</Text>
+        <Text tone="text">{tr(`Fallbacks`)}</Text>
         <IconButton title="About fallbacks" icon="info.circle" size={22} onClick={() => setAbout(true)} />
         <Spacer />
         {list.length < MAX_FALLBACKS && choices.length ? <IconButton title="Add fallback" icon="plus" className="fade-in" onClick={() => setAdding(true)} /> : null}
@@ -67,12 +69,12 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
           />
         ))
       ) : (
-        <Text tone="secondary">No fallbacks yet.</Text>
+        <Text tone="secondary">{tr(`No fallbacks yet.`)}</Text>
       )}
       <Text size="caption" tone="secondary">
-        {`If ${store.backendName(draft.backend)} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.`}
+        {tr('If {agent} runs out of usage or can\'t answer, the bot carries on with the next one. Chat, memory and workspace carry over.').replace('{agent}', store.backendName(draft.backend))}
       </Text>
-      <Dialog open={about} title="Fallbacks" message={ABOUT} actions={[]} cancel="OK" onClose={() => setAbout(false)} />
+      <Dialog open={about} title={tr('Fallbacks')} message={tr(ABOUT)} actions={[]} cancel="OK" onClose={() => setAbout(false)} />
       <FormSheet open={adding} onClose={() => setAdding(false)} width={460} height={420}>
         {adding ? (
           <FallbackSheet
@@ -114,6 +116,7 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove, openEdit 
   openEdit: () => void
 }) {
   const store = useStore()
+  const tr = useTr()
   const backend = store.hello?.backends.find((b) => b.id === fallback.backend)
   const name = backend ? agentChoice(backend).label : store.backendName(fallback.backend)
   const rest = restOf(bot, fallback.backend, now)
@@ -130,11 +133,11 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove, openEdit 
         </IconSlot>
         <AgentIcon registry={store.agentRegistry(fallback.backend)} size={14} />
         <VStack gap={2} grow>
-          <Text tone="text" truncate>{`${name} · ${fallback.model || 'Default'}`}</Text>
+          <Text tone="text" truncate>{`${name} · ${fallback.model || tr(`Default`)}`}</Text>
           {line ? <Text size="caption" tone="secondary">{line}</Text> : null}
           {rest ? <Text size="caption" tone="secondary">{restLine(rest, now)}</Text> : null}
         </VStack>
-        {bot.agentStep?.agent === fallback.backend ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">In use</Text> : null}
+        {bot.agentStep?.agent === fallback.backend ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
         <DropdownMenu
           className="icon-button fallback-menu"
           title="More"
@@ -155,6 +158,7 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove, openEdit 
 /** The "Add fallback" sheet (another agent, and the model to use on it), or "Edit fallback" for one in the chain: its
  *  agent stays, its model and settings change. Only here does a fallback's agent start, to list what it offers. */
 function FallbackSheet({ choices, initial, bot, onDone }: { choices: Backend[]; initial?: Fallback; bot?: Bot; onDone: (f: Fallback) => void }) {
+  const tr = useTr()
   const [backend, setBackend] = useState(initial?.backend ?? (choices.find((b) => b.available) ?? choices[0])?.id ?? '')
   const [model, setModel] = useState<string | null>(initial?.model ?? null)
   const [modelOptions, setModelOptions] = useState<Record<string, string>>(initial?.modelOptions ?? {})
@@ -167,7 +171,7 @@ function FallbackSheet({ choices, initial, bot, onDone }: { choices: Backend[]; 
   return (
     <SheetPage>
       <ModalHeader
-        title={initial ? 'Edit fallback' : 'Add fallback'}
+        title={tr(initial ? 'Edit fallback' : 'Add fallback')}
         trailing={<IconButton title={initial ? 'Done' : 'Add'} icon="checkmark" disabled={!backend} onClick={() => onDone({ ...initial, backend, model, modelOptions })} />}
       />
       <CardForm>

@@ -4,6 +4,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 use super::super::app::App;
+use super::super::l10n::tr;
 use super::super::md::truncate;
 use super::buffer::{centered, frame_box, put, rput, u};
 use super::filled;
@@ -15,7 +16,7 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App) {
     let providers = app.usage["providers"].as_array().cloned().unwrap_or_default();
     let rows: usize = providers.iter().map(|p| 2 + p["windows"].as_array().map_or(0, Vec::len)).sum();
     let r = centered(area, 78, u(rows + 5).max(8));
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Usage", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((tr("Usage").as_ref(), t.text)));
     let mut y = inner.y + 1;
     if providers.is_empty() {
         put(buf, inner.x, y, inner.width, "No usage numbers yet.", t.secondary.patch(t.panel));
@@ -52,6 +53,7 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App) {
                     win["resetsText"].as_str().map(|s| truncate(s.split(" (").next().unwrap_or(s), 24))
                 })
                 .unwrap_or_default();
+            let reset = crate::tui::l10n::reset_line(&reset);
             rput(buf, inner.right(), y, &reset, t.dim.patch(t.panel));
             y += 1;
         }

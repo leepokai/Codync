@@ -9,23 +9,23 @@ import { relativeTime } from '../thread/chat-items'
 export interface FileTarget { name: string; shared: boolean }
 
 /** One layer's long-form notes, as rows under its entries: name, description, size and date, marked past a cap. Read-only: the bot writes them. */
-export function fileRows(files: MemoryFiles, shared: boolean, open: (target: FileTarget) => void): ReactElement[] {
+export function fileRows(files: MemoryFiles, shared: boolean, open: (target: FileTarget) => void, tr: (text: string) => string = (text) => text): ReactElement[] {
   const live = (shared ? files.yours : files.bot).files.filter((f) => !f.deleted)
   return [
-    <p key="notes" className="memory-notes-header">Notes</p>,
-    ...(live.length === 0 ? [<p key="notes-empty" className="memory-muted">Longer notes, one topic each. The bot reads one when its topic comes up.</p>] : []),
+    <p key="notes" className="memory-notes-header">{tr('Notes')}</p>,
+    ...(live.length === 0 ? [<p key="notes-empty" className="memory-muted">{tr('Longer notes, one topic each. The bot reads one when its topic comes up.')}</p>] : []),
     ...(live.length > files.folderCap ? [<p key="notes-cap" className="memory-attention">{live.length} notes, over the {files.folderCap}-note cap. Ask the bot to merge some.</p>] : []),
-    ...live.map((file) => <FileRow key={file.name} file={file} cap={files.cap} open={() => open({ name: file.name, shared })} />),
+    ...live.map((file) => <FileRow key={file.name} file={file} cap={files.cap} tr={tr} open={() => open({ name: file.name, shared })} />),
   ]
 }
 
-function FileRow({ file, cap, open }: { file: MemoryFile; cap: number; open: () => void }) {
+function FileRow({ file, cap, tr, open }: { file: MemoryFile; cap: number; tr: (text: string) => string; open: () => void }) {
   const over = file.tokens > cap
   return <button className="press memory-content fade-in" onClick={open}>
     <strong><Icon name="doc.text" size={11} />{file.name}</strong>
     {file.description ? <span className="memory-muted">{file.description}</span> : null}
     <small className={over ? 'memory-attention' : undefined}>
-      {file.tokens} tokens{over ? `, over the ${cap} cap` : ''} · {relativeTime.day(file.updatedAt)}
+      {file.tokens} tokens{over ? `, over the ${cap} cap` : ''} · {relativeTime.day(file.updatedAt, tr)}
     </small>
   </button>
 }

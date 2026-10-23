@@ -10,6 +10,8 @@ import { botConversation, buildBotConversation, groupSummary, verbOf, type BotCo
 import { AuthorLabel, Bubble, TimeSeparator } from './ChatRows'
 import { MarkdownText } from './Markdown'
 import './bot-conversation.css'
+import { useTr } from '../../lib/use-language'
+
 
 /** The compact chat row for bot-to-bot messages with one peer: who, never what. Opens the conversation. */
 export function BotMessageRow({ exchanges, open }: { exchanges: BotExchange[]; open: (peerId: string) => void }) {
@@ -54,6 +56,7 @@ function BotPair({ botId, peerId }: { botId: string; peerId: string }) {
 
 /** Read-only history between a bot and one peer: the live chat merged with what the host returns. */
 export function BotConversationView({ botId, peerId }: { botId: string; peerId: string }) {
+  const tr = useTr()
   const store = useStore()
   // null while the host's history loads.
   const [fetched, setFetched] = useState<Entry[] | null>(null)
@@ -90,7 +93,7 @@ export function BotConversationView({ botId, peerId }: { botId: string; peerId: 
       <div className="bot-conversation-scroll" ref={scroller}>
         <div className="bot-conversation-rows">
           {error ? <Text as="div" size="footnote" tone="danger" className="bot-conversation-note">{error}</Text> : null}
-          {!error && fetched && rows.length === 0 ? <Text as="div" size="footnote" tone="tertiary" className="bot-conversation-note">No messages yet.</Text> : null}
+          {!error && fetched && rows.length === 0 ? <Text as="div" size="footnote" tone="tertiary" className="bot-conversation-note">{tr(`No messages yet.`)}</Text> : null}
           {rows.map((row) => <ConversationRow key={row.id} row={row} />)}
         </div>
       </div>

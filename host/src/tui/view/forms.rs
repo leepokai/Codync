@@ -7,6 +7,7 @@ use ratatui::style::{Modifier, Style};
 use super::super::app::{
     App, COLORS, Editor, Effort, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, setting_label, tilde,
 };
+use super::super::l10n::tr;
 use super::super::manage::Page;
 use super::super::md::{truncate, width as w};
 use super::super::sheets::page_tabs;
@@ -67,7 +68,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::Connectors => "Connectors",
             Field::Skills => "Skills",
         };
-        put(buf, fx, y, label_w, lab, if active { t.bold } else { t.secondary }.patch(t.panel));
+        let label = tr(lab);
+        put(buf, fx, y, label_w, &label, if active { t.bold } else { t.secondary }.patch(t.panel));
         let rows = if *field == Field::Instructions { 3 } else { 1 };
         if active {
             restyle(buf, Rect::new(vx.saturating_sub(1), y, vw + 1, rows), t.sel);
@@ -91,7 +93,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         };
         match field {
             Field::Name => {
-                text_field(buf, &f.name, "Name", y);
+                text_field(buf, &f.name, tr("Name").as_ref(), y);
                 if let Some(by) = created_by(app, &f.bot_id)
                     && w(&f.name.text) + w(&by) + 2 < usize::from(vw)
                 {
@@ -99,7 +101,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 }
             }
             Field::Instructions => {
-                text_field(buf, &f.instructions, "e.g. Reviews PRs. Never pushes without asking.", y);
+                let hint = tr("e.g. Reviews PRs. Never pushes without asking.");
+                text_field(buf, &f.instructions, &hint, y);
             }
             Field::Model => {
                 text_field(buf, &f.model, "default", y);
@@ -204,7 +207,11 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     &format!(
                         "{}  ▸",
                         truncate(
-                            &if f.cwd.is_empty() { "Personal workspace".to_owned() } else { tilde(&f.cwd, &app.home) },
+                            &if f.cwd.is_empty() {
+                                tr("Personal workspace").into_owned()
+                            } else {
+                                tilde(&f.cwd, &app.home)
+                            },
                             usize::from(vw.saturating_sub(4))
                         )
                     ),
@@ -273,7 +280,9 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         let refusal = app.bots.get(&f.bot_id).and_then(super::super::app::Bot::fast_refusal);
         let (line, style) = match refusal {
             Some(why) => (why, t.amber),
-            None => ("Faster replies for more usage, on models that offer it (Claude Code, Codex)".to_owned(), t.dim),
+            None => {
+                (tr("Faster replies for more usage, on models that offer it (Claude Code, Codex)").into_owned(), t.dim)
+            }
         };
         put(buf, inner.x, by - 1, inner.width, &line, style.patch(t.panel));
     } else if f.current() == Field::Computer {
@@ -282,17 +291,16 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             inner.x,
             by - 1,
             inner.width,
-            "Set up on the computer: Codync → Settings → Computer access",
+            &tr("Set up on the computer: Codync → Settings → Computer access"),
             t.dim.patch(t.panel),
         );
     } else if f.current() == Field::Fallbacks {
-        let line = format!(
-            "If {agent_name} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over."
-        );
+        let line = tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.")
+            .replace("{agent}", &agent_name);
         put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
     } else if f.current() == Field::SelfFallbacks {
-        let line = "Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.";
-        put(buf, inner.x, by - 1, inner.width, line, t.dim.patch(t.panel));
+        let line = tr("Let the bot change its fallbacks: it can set this list itself, for example when you ask it to.");
+        put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
     } else if f.current() == Field::Team {
         let line =
             "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.";
@@ -330,13 +338,14 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
     let about = g.group_id.is_some();
     let top = if about { 4 } else { 2 };
     let r = centered(area, 74, u(bots.len() + 8).saturating_add(top).max(16));
-    let title = if about { "Group chat" } else { "New group chat" };
-    let inner = frame_box(buf, r, t.text, t.panel, Some((title, t.text)));
+    let title = tr(if about { "Group chat" } else { "New group chat" });
+    let inner = frame_box(buf, r, t.text, t.panel, Some((title.as_ref(), t.text)));
     let label = |on: bool| if on { t.bold } else { t.secondary }.patch(t.panel);
     let on_bots = g.field == GroupField::Bots;
-    put(buf, inner.x, inner.y, 8, "Name", label(g.field == GroupField::Name));
+    put(buf, inner.x, inner.y, 8, tr("Name").as_ref(), label(g.field == GroupField::Name));
     let default = app.group_default_name(&g.members);
-    let placeholder = if default.is_empty() { "Name your group" } else { default.as_str() };
+    let fallback = tr("Name your group");
+    let placeholder = if default.is_empty() { fallback.as_ref() } else { default.as_str() };
     input_line(
         buf,
         Rect::new(inner.x + 8, inner.y, inner.width.saturating_sub(8), 1),
@@ -362,7 +371,14 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
     let list_h = usize::from(inner.height.saturating_sub(top + 5));
     let off = g.cursor.saturating_sub(list_h.saturating_sub(1));
     if bots.is_empty() {
-        put(buf, inner.x, inner.y + top + 1, inner.width, "No bots yet. Create a bot first.", t.dim.patch(t.panel));
+        put(
+            buf,
+            inner.x,
+            inner.y + top + 1,
+            inner.width,
+            tr("No bots yet. Create a bot first.").as_ref(),
+            t.dim.patch(t.panel),
+        );
     }
     for (y, (i, b)) in (inner.y + top + 1..).zip(bots.iter().enumerate().skip(off).take(list_h)) {
         let sel = on_bots && i == g.cursor;
@@ -390,7 +406,7 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
             inner.x,
             by - 1,
             inner.width,
-            "Everyone answers in turn unless you @mention someone.",
+            tr("Everyone answers in turn unless you @mention someone.").as_ref(),
             t.dim.patch(t.panel),
         );
     }

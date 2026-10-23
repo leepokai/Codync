@@ -93,9 +93,9 @@ import java.util.UUID
             val code = status.exitCode
             val error = status.error
             when {
-                renderError -> Text("The terminal couldn't load. Update Android System WebView, then try again.", Modifier.weight(1f),
+                renderError -> Text(tr("The terminal couldn't load. Update Android System WebView, then try again."), Modifier.weight(1f),
                     style = Type.footnote, color = Palette.danger, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                error != null -> Text(error, Modifier.weight(1f), style = Type.footnote, color = Palette.danger, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                error != null -> Text(tr(error), Modifier.weight(1f), style = Type.footnote, color = Palette.danger, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 code != null -> {
                     Symbol(if (code == 0) "checkmark.circle.fill" else "exclamationmark.circle.fill", size = 16.dp, tint = if (code == 0) Palette.added else Palette.warning)
                     Text(if (code == 0) "Finished." else "Ended with an error ($code).", Modifier.weight(1f), style = Type.footnote, color = Palette.secondary)

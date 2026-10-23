@@ -163,19 +163,19 @@ struct AgentModelPicker: View {
         }
         if backend != "custom", !loading {
             if let failure {
-                Text(failure)
+                Text(L10n.tr(failure))
                     .font(.caption)
                     .foregroundStyle(Palette.warning)
             } else if catalog?.models.isEmpty == true {
-                Text("This agent doesn't advertise a model list. Leave Default or enter a model ID.")
+                Text(L10n.tr("This agent doesn't advertise a model list. Leave Default or enter a model ID."))
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
             }
         }
         if fastMode != nil {
-            Text(working
+            Text(L10n.tr(working
                 ? "Changes to the model or effort level apply after this reply, in a new agent session. Chat history is kept; the agent’s session context starts fresh."
-                : "Changes to the model or effort level apply to the next message, in a new agent session. Chat history is kept; the agent’s session context starts fresh.")
+                : "Changes to the model or effort level apply to the next message, in a new agent session. Chat history is kept; the agent’s session context starts fresh."))
                 .font(.caption)
                 .foregroundStyle(Palette.secondary)
         }
@@ -183,7 +183,7 @@ struct AgentModelPicker: View {
 
     private var modelRow: some View {
         HStack(spacing: 8) {
-            Text("Model")
+            Text(L10n.tr("Model"))
                 .foregroundStyle(Palette.text)
                 .fixedSize()
             Spacer(minLength: 0)

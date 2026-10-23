@@ -12,15 +12,15 @@ struct MemoryFilesList: View {
 
     var body: some View {
         let live = (shared ? files.yours : files.bot).files.filter { !$0.deleted }
-        Text("Notes").font(.footnote.weight(.semibold)).foregroundStyle(Palette.secondary)
+        Text(L10n.tr("Notes")).font(.footnote.weight(.semibold)).foregroundStyle(Palette.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
             .codyncSheet(item: $open) { target in MemoryFileView(memory: memory, target: target) }
         if live.isEmpty {
-            Text("Longer notes, one topic each. The bot reads one when its topic comes up.")
+            Text(L10n.tr("Longer notes, one topic each. The bot reads one when its topic comes up."))
                 .font(.footnote).foregroundStyle(Palette.tertiary)
         } else if live.count > files.folderCap {
-            Text("\(live.count) notes, over the \(files.folderCap)-note cap. Ask the bot to merge some.")
+            Text(L10n.tr("\(live.count) notes, over the \(files.folderCap)-note cap. Ask the bot to merge some."))
                 .font(.footnote).foregroundStyle(Palette.attention)
         }
         ForEach(live) { file in row(file, cap: files.cap) }
@@ -65,7 +65,7 @@ struct MemoryFileView: View {
             ModalHeader(target.name)
             CardForm {
                 if let error = memory.error {
-                    CardSection { Text(error).foregroundStyle(Palette.danger).textSelection(.enabled) }
+                    CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
                 }
                 if let detail {
                     CardSection(footer: detail.path) {
@@ -75,7 +75,7 @@ struct MemoryFileView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 } else {
-                    CardSection { Text("Loading…").foregroundStyle(Palette.secondary) }
+                    CardSection { Text(L10n.tr("Loading…")).foregroundStyle(Palette.secondary) }
                 }
             }
         }

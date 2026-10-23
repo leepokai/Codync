@@ -22,6 +22,7 @@
 }
 /* A fixed display size: it doesn't follow the text size preference. */
 .welcome-title {
+  white-space: pre-line;
   font-size: 34px;
   font-weight: 600;
   letter-spacing: -0.6px;

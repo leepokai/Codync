@@ -5,6 +5,8 @@ import { Icon } from '../../components/Icon'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import './permission-card.css'
+import { useTr } from '../../lib/use-language'
+
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
 export const permissionHeadline = (toolKind?: string) => {
@@ -47,6 +49,7 @@ export function optionLabel(o: PermissionOption) {
 
 /** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, the answers. */
 export function PermissionCard({ entry, hostName, answering, respond }: { entry: Entry; hostName: string; answering: string | null; respond: (option: string | null) => void }) {
+  const tr = useTr()
   const [expanded, setExpanded] = useState(false)
   const d = entry.data
   const pending = d.status === 'pending'
@@ -68,7 +71,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
           <Text size="caption" tone="tertiary">{`Runs on ${hostName}${cwd}`}</Text>
         </HStack>
         {hasDetail ? (
-          <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">Details</Text>}>
+          <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
             <VStack gap={8} className="permission-card-details">
               {d.command ? <CodeBox text={d.command} /> : null}
               {d.detail ? <CodeBox text={d.detail.slice(0, 2000)} /> : null}

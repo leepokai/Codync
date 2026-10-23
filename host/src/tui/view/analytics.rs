@@ -5,6 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
+use super::super::l10n::tr;
 use super::super::manage::AnalyticsSheet;
 use super::super::md;
 use super::buffer::{centered, frame_box, hline, put, put_line, u};
@@ -43,7 +44,7 @@ const DETAILS: [(&str, &str); 7] = [
 pub(super) fn analytics(buf: &mut Buffer, area: Rect, s: &AnalyticsSheet) {
     let t = theme();
     let r = centered(area, 72, area.height.saturating_sub(4).min(44));
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Usage analytics", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((tr("Usage analytics").as_ref(), t.text)));
     if inner.height < 5 {
         return;
     }
@@ -54,12 +55,15 @@ pub(super) fn analytics(buf: &mut Buffer, area: Rect, s: &AnalyticsSheet) {
     let width = usize::from(body.width);
     let mut lines = Vec::new();
     for (title, detail) in DETAILS {
+        let title = tr(title).into_owned();
+        let detail = tr(detail).into_owned();
         lines.push(Line::from(Span::styled(format!(" {title}"), t.bold)));
         lines.extend(md::wrap(&[Span::styled(detail, t.secondary)], width, &[Span::raw(" ")], &[Span::raw(" ")]));
         lines.push(Line::default());
     }
+    let policy = tr("See the Privacy Policy for details: ").into_owned();
     lines.push(Line::from(vec![
-        Span::styled(" See the Privacy Policy for details: ", t.dim),
+        Span::styled(format!(" {policy}"), t.dim),
         Span::styled("https://codync.dev/privacy", t.dim.add_modifier(Modifier::UNDERLINED)),
     ]));
     let h = usize::from(body.height);

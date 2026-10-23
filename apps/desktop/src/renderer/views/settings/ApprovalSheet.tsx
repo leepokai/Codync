@@ -7,6 +7,8 @@ import { Text } from '../../components/Text'
 import type { Approval } from '../../store/app-model'
 import { useApp } from '../../store/context'
 import { deviceIcon, errorText, Reveal, spacedCode } from './parts'
+import { useTr } from '../../lib/use-language'
+
 
 /**
  * A device asks for access through the account (spec §4.2 B). The code is the only thing that
@@ -14,6 +16,7 @@ import { deviceIcon, errorText, Reveal, spacedCode } from './parts'
  * Closing puts the request off (the sheet's onClose defers it).
  */
 export function ApprovalSheet({ approval }: { approval: Approval }) {
+  const tr = useTr()
   const app = useApp()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +37,7 @@ export function ApprovalSheet({ approval }: { approval: Approval }) {
 
   return (
     <VStack className="settings-approval">
-      <ModalHeader icon="lock.shield" title="Access request" />
+      <ModalHeader icon="lock.shield" title={tr(`Access request`)} />
       <VStack align="center" gap={16} className="settings-approval-body">
         <Icon name={deviceIcon(request.platform)} size={40} weight="light" color="var(--secondary)" />
         <VStack align="center" gap={4}>

@@ -6,6 +6,7 @@ import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { ThinkingOrb } from '../components/ThinkingOrb'
 import { messagePreview } from '../lib/message-preview'
+import { useTr } from '../lib/use-language'
 import type { BotStore } from '../store/bot-store'
 
 /** A roster row: avatar with status, name, and the live activity or last message (Grok Bot's desktop sidebar). */
@@ -32,11 +33,13 @@ export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer,
 
 /** Live activity while working, otherwise the last message (Grok Bot row behavior). */
 function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
+  const tr = useTr()
+  const place = bot.managedWorkspace ? tr('Personal workspace') : folderName(bot)
   if (needsInput(bot)) {
     return (
       <HStack as="span" gap={6} shrink>
         <ThinkingOrb state="listening" size={16} color="var(--warning)" />
-        <Text size="callout" tone="attention" truncate>{bot.activity || 'Needs your approval'}</Text>
+        <Text size="callout" tone="attention" truncate>{tr(bot.activity || 'Needs your approval')}</Text>
       </HStack>
     )
   }
@@ -44,10 +47,10 @@ function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
     return (
       <HStack as="span" gap={6} shrink>
         <ThinkingOrb size={13} color="var(--secondary)" />
-        <Text size="callout" tone="secondary" truncate>{bot.activity || 'Working…'}</Text>
+        <Text size="callout" tone="secondary" truncate>{tr(bot.activity || 'Working…')}</Text>
       </HStack>
     )
   }
-  if (bot.status === 'error') return <Text size="callout" tone="danger" truncate>{messagePreview(bot.lastMessage ?? 'Something went wrong')}</Text>
-  return <Text size="callout" tone="secondary" truncate>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? `${bot.members.length} bots` : `${store.backendName(bot.backend)} · ${folderName(bot)}`))}</Text>
+  if (bot.status === 'error') return <Text size="callout" tone="danger" truncate>{messagePreview(bot.lastMessage ?? tr(`Something went wrong`))}</Text>
+  return <Text size="callout" tone="secondary" truncate>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? `${bot.members.length} bots` : `${store.backendName(bot.backend)} · ${place}`))}</Text>
 }

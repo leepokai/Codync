@@ -21,7 +21,7 @@ struct RoutinesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Routines")
+                Text(L10n.tr("Routines"))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Palette.text)
                     .padding(.leading, 2)
@@ -31,7 +31,7 @@ struct RoutinesView: View {
                     .disabled(model.isOffline)
             }
             if let loadError { Text(loadError).font(.caption).foregroundStyle(Palette.danger) }
-            if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let error { Text(L10n.tr(error)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             listing
         }
         .foregroundStyle(Palette.text)
@@ -67,7 +67,7 @@ struct RoutinesView: View {
     private var listing: some View {
         VStack(alignment: .leading, spacing: 0) {
             if routines.isEmpty {
-                Text(loaded ? "No routines yet. Ask the bot for one, or set it up yourself with +." : "Loading routines…")
+                Text(L10n.tr(loaded ? "No routines yet. Ask the bot for one, or set it up yourself with +." : "Loading routines…"))
                     .font(.system(size: 12))
                     .lineSpacing(3)
                     .foregroundStyle(Palette.secondary)

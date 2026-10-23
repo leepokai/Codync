@@ -12,6 +12,7 @@ pub(in crate::tui) fn put(buf: &mut Buffer, x: u16, y: u16, max: u16, s: &str, s
     if max == 0 || y >= buf.area.bottom() {
         return x;
     }
+    // Callers translate interface labels. Names, drafts and message previews stay as written.
     let (end, _) = buf.set_stringn(x, y, s, usize::from(max), style);
     end
 }

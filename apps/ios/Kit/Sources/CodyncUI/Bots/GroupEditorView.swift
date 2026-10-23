@@ -61,7 +61,7 @@ public struct GroupEditorView: View {
                     }
                     .frame(maxWidth: .infinity)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Members")
+                        Text(L10n.tr("Members"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Palette.secondary)
                             .padding(.bottom, 4)
@@ -89,7 +89,7 @@ public struct GroupEditorView: View {
                             Button { withAnimation(Motion.layout) { adding = true } } label: {
                                 HStack(spacing: 14) {
                                     Image(systemName: "plus").font(.system(size: 16)).foregroundStyle(Palette.secondary).frame(width: 32)
-                                    Text("Add Member").foregroundStyle(Palette.secondary)
+                                    Text(L10n.tr("Add Member")).foregroundStyle(Palette.secondary)
                                     Spacer(minLength: 0)
                                 }
                                 .frame(minHeight: 48)
@@ -97,17 +97,17 @@ public struct GroupEditorView: View {
                             }
                             .buttonStyle(PressScale())
                         }
-                        Text("Everyone answers in turn unless you @mention someone.")
+                        Text(L10n.tr("Everyone answers in turn unless you @mention someone."))
                             .font(.caption)
                             .foregroundStyle(Palette.tertiary)
                             .padding(.top, 10)
                     }
                     .animation(Motion.layout, value: members)
                     if let error {
-                        Text(error).font(.footnote).foregroundStyle(Palette.danger).transition(.opacity)
+                        Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger).transition(.opacity)
                     }
                     if let group = model.bots[groupId] {
-                        Button("Delete group chat", role: .destructive) { confirmDelete = group }
+                        Button(L10n.tr("Delete group chat"), role: .destructive) { confirmDelete = group }
                             .foregroundStyle(Palette.danger)
                             .buttonStyle(PressScale())
                     }

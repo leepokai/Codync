@@ -42,12 +42,12 @@ struct WelcomeView: View {
                 .padding(.bottom, 24)
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Your coding agents,\nas teammates.")
+                Text(L10n.tr("Your coding agents,\nas teammates."))
                     .font(.system(size: 34, weight: .semibold))
                     .tracking(-0.6)
                     .foregroundStyle(Palette.text)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Give each one a name and a project. They work on your computer while you're away.")
+                Text(L10n.tr("Give each one a name and a project. They work on your computer while you're away."))
                     .font(.body)
                     .foregroundStyle(Palette.secondary)
                 DemoButton().padding(.top, 4)
@@ -58,7 +58,7 @@ struct WelcomeView: View {
 
             VStack(spacing: 10) {
                 Button(action: start) {
-                    Text("Get started").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                    Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
                 }
                 .buttonStyle(.primary)
                 // Signed in, the computers on the account show up without scanning a code.
@@ -114,7 +114,7 @@ private struct ChatGlimpse: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Fix the flaky login test")
+            Text(L10n.tr("Fix the flaky login test"))
                 .bubble(Palette.bubbleUser)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .rise(shown)
@@ -122,11 +122,11 @@ private struct ChatGlimpse: View {
             HStack(alignment: .bottom, spacing: 8) {
                 CharacterAvatar(shape: "blob", color: "blue", size: 28, mood: replied ? .idle : .working)
                 if replied {
-                    Text("Done. It raced the session refresh; tests pass on fix/login.")
+                    Text(L10n.tr("Done. It raced the session refresh; tests pass on fix/login."))
                         .bubble(Palette.bubbleAgent)
                         .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .bottomLeading)))
                 } else {
-                    Text("Working…")
+                    Text(L10n.tr("Working…"))
                         .font(.subheadline)
                         .foregroundStyle(Palette.tertiary)
                         .transition(.opacity)
@@ -149,7 +149,7 @@ private struct ChatGlimpse: View {
 struct DemoButton: View {
     var body: some View {
         Link(destination: URL(string: "https://youtube.com/shorts/xtZ5WeyOewU")!) {
-            Label("Watch the demo", systemImage: "play.circle.fill")
+            Label(L10n.tr("Watch the demo"), systemImage: "play.circle.fill")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Palette.text)
         }

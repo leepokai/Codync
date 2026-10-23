@@ -12,6 +12,8 @@ import { useScreenViewed } from '../../store/analytics'
 import { errorText, liveClient, Reveal } from './parts'
 import * as voice from './voice-settings'
 import type { VoiceModels, VoiceProvider } from './voice-settings'
+import { useTr } from '../../lib/use-language'
+
 
 /**
  * Voice chat settings: which voice carries calls (on-device speech, or OpenAI / Gemini on the
@@ -19,6 +21,7 @@ import type { VoiceModels, VoiceProvider } from './voice-settings'
  * in `StoreContext`. `showsHeader` is false inside Settings, which titles the page itself.
  */
 export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: boolean }) {
+  const tr = useTr()
   useScreenViewed('voice_settings')
   const [engine, setEngine] = usePref(voice.engine)
   const [rate, setRate] = usePref(voice.rate)
@@ -36,7 +39,7 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
       : onDeviceUnavailableReason()
   return (
     <SheetPage className={showsHeader ? 'settings-voice-sheet' : undefined}>
-      {showsHeader ? <ModalHeader icon="waveform" title="Voice chat" /> : null}
+      {showsHeader ? <ModalHeader icon="waveform" title={tr(`Voice chat`)} /> : null}
       <div className="settings-voice-body">
         <CardForm>
           <CardSection title="Voice" footer={footer}>
@@ -92,6 +95,7 @@ function PauseRow() {
 
 /** One provider: the key the computer keeps, models, voice and this month's minutes. `dictationOnly` keeps the key and speech-to-text model. */
 function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: VoiceProvider; dictationOnly?: boolean }) {
+  const tr = useTr()
   const store = useStore()
   const info = voice.voiceInfo[provider]
   const [mode] = usePref(voice.mode(provider))
@@ -219,7 +223,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
         <div className="settings-row">
           <Icon name="key.fill" size={13} color="var(--secondary)" />
           <VStack grow className="settings-stack">
-            <Text tone="text" truncate>Key saved</Text>
+            <Text tone="text" truncate>{tr(`Key saved`)}</Text>
             <Text size="caption" tone="tertiary" truncate>Stays on {store.hostName}</Text>
           </VStack>
           {busy ? (

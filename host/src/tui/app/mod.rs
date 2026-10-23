@@ -26,6 +26,7 @@ pub use ui::{
     Width,
 };
 
+use crate::tui::l10n::tr;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write as _;
@@ -335,7 +336,7 @@ impl App {
     }
 
     pub fn flash(&mut self, s: &str) {
-        self.hint = Some((s.to_owned(), Instant::now() + Duration::from_secs(3)));
+        self.hint = Some((tr(s).into_owned(), Instant::now() + Duration::from_secs(3)));
     }
 
     fn toast(&mut self, text: String, need: bool) {

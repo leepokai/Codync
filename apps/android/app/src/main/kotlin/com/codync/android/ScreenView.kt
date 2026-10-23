@@ -238,7 +238,7 @@ private fun rotate(activity: android.app.Activity) {
         is ScreenSession.Phase.Failed -> Notice("exclamationmark.triangle", phase.message) { session.start() }
         ScreenSession.Phase.Live, ScreenSession.Phase.Closed -> {
             val text = if (!screen.input) "View only. To allow control, open Codync → Settings → Computer access on the computer." else session.lastError
-            if (text != null) Text(text, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp)
+            if (text != null) Text(tr(text), Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp)
                 .padding(horizontal = 16.dp).clip(RoundedCornerShape(if (screen.input) 8.dp else 12.dp)).frost(20.dp, MATERIAL)
                 .padding(if (screen.input) 8.dp else 12.dp), style = Type.caption, color = Color.White)
         }
@@ -259,7 +259,7 @@ private fun rotate(activity: android.app.Activity) {
     Column(Modifier.align(Alignment.Center).widthIn(max = 420.dp).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (icon != null) Symbol(icon, size = 40.dp, tint = Palette.secondary) else Spinner(22.dp)
-        Text(text, style = Type.callout, color = Palette.secondary, textAlign = TextAlign.Center)
+        Text(tr(text), style = Type.callout, color = Palette.secondary, textAlign = TextAlign.Center)
         if (retry != null) SecondaryButton(retry) { Symbol("arrow.clockwise", size = 20.dp, contentDescription = "Try again") }
     }
 }

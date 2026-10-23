@@ -70,7 +70,7 @@ private data class Removal(val id: String, val name: String, val skill: Boolean)
         }
     }
     val target = removing
-    CodyncDialog("Remove ${target?.name.orEmpty()}?", target != null, { removing = null },
+    CodyncDialog(tr("Remove {name}?").replace("{name}", target?.name.orEmpty()), target != null, { removing = null },
         if (target?.skill == true) "Bots stop using this skill." else "Bots lose this connector, and the keys saved for it are deleted.") {
         listOf(DialogAction("Remove", destructive = true) { target?.let { r -> run { store.removePlugin(if (r.skill) "removeSkill" else "removeConnector", r.id) } } })
     }
@@ -85,7 +85,7 @@ private data class Removal(val id: String, val name: String, val skill: Boolean)
             icon()
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(tr(subtitle), style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         accessory()

@@ -104,16 +104,19 @@ private struct ConversationCollection: UIViewRepresentable {
             view.allowsSelection = false
             view.delegate = self
             if #available(iOS 26, *) { view.topEdgeEffect.style = .soft }
-            // Tapping the conversation puts the keyboard away; the rows still get the tap.
-            let tap = UITapGestureRecognizer(target: view, action: #selector(UIView.endEditing(_:)))
+            // Only the empty collection background; hosted rows arbitrate their own taps.
+            let tap = UITapGestureRecognizer(target: view, action: #selector(ConversationCollectionView.dismissComposerKeyboard))
             tap.cancelsTouchesInView = false
+            tap.delegate = view.keyboardDismissTapDelegate
             view.addGestureRecognizer(tap)
 
-            let cell = UICollectionView.CellRegistration<UICollectionViewCell, String> { [weak self] cell, _, id in
+            let cell = UICollectionView.CellRegistration<UICollectionViewCell, String> { [weak self, weak view] cell, _, id in
                 guard let self else { return }
                 cell.backgroundConfiguration = .clear()
-                cell.contentConfiguration = UIHostingConfiguration {
+                cell.contentConfiguration = UIHostingConfiguration { [weak view] in
                     ConversationCell(content: contents[id] ?? AnyView(EmptyView()))
+                        .contentShape(Rectangle())
+                        .onTapGesture { [weak view] in view?.dismissComposerKeyboard() }
                         .environment(\.self, environment)
                         // A reused cell starts fresh (no state carried over from another row).
                         .id(id)
@@ -225,7 +228,7 @@ private struct ConversationCollection: UIViewRepresentable {
             defer { lastOffset = y }
             trackPull(scrollView)
             // Only the reader's own scrolling changes following; layout never does.
-            guard scrollView.isTracking || scrollView.isDecelerating else { return }
+            guard !view.updatingViewport, scrollView.isTracking || scrollView.isDecelerating else { return }
             setFollowing(view.followingAfterScroll(from: lastOffset))
             if !view.following, y + scrollView.adjustedContentInset.top < scrollView.bounds.height / 2 {
                 parent?.nearTop?()
@@ -307,7 +310,7 @@ private struct ConversationCollection: UIViewRepresentable {
 
         /// The reader stopped scrolling: resting at the end follows again; anywhere else stays put.
         private func settle() {
-            setFollowing(view.endOffset - view.contentOffset.y < ConversationCollectionView.nearEnd)
+            setFollowing(view.followingAfterInteraction())
             if view.following { view.pinToEnd() }
         }
     }
@@ -361,13 +364,9 @@ private final class ConversationContainer: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        list.frame = bounds.inset(by: UIEdgeInsets(top: -outsets.top, left: 0, bottom: -outsets.bottom, right: 0))
+        let frame = bounds.inset(by: UIEdgeInsets(top: -outsets.top, left: 0, bottom: -outsets.bottom, right: 0))
         let insets = UIEdgeInsets(top: outsets.top + hold, left: 0, bottom: outsets.bottom, right: 0)
-        if list.contentInset != insets {
-            list.contentInset = insets
-            list.verticalScrollIndicatorInsets = outsets
-            if list.following { list.pinToEnd() }
-        }
+        list.updateViewport(frame: frame, insets: insets, indicators: outsets)
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
@@ -394,16 +393,28 @@ struct JumpToLatest: View {
     var body: some View {
         ZStack {
             if visible {
-                Button("Jump to latest", systemImage: "arrow.down", action: action)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(IconButtonStyle())
-                    .frosted(in: Circle())
-                    .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
-                    .help("Jump to latest")
+                jumpButton
+                    .help(L10n.tr("Jump to latest"))
                     .padding(.bottom, 10)
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
             }
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: visible)
+    }
+
+    @ViewBuilder private var jumpButton: some View {
+        if #available(iOS 26, *) {
+            Button(L10n.tr("Jump to latest"), systemImage: "arrow.down", action: action)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 18, weight: .medium))
+                .controlSize(.large)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+        } else {
+            Button(L10n.tr("Jump to latest"), systemImage: "arrow.down", action: action)
+                .labelStyle(.iconOnly)
+                .buttonStyle(IconButtonStyle())
+                .glass(in: Circle())
+        }
     }
 }

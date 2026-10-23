@@ -156,8 +156,9 @@ import com.kyant.shapes.Capsule
             Symbol("chevron.left", size = 32.dp, tint = Palette.text)
         }
         val host = state.computers.firstOrNull()?.name.orEmpty()
+        val connected = tr(connectionLabel(state))
         DropdownMenu({ buildList {
-            add(MenuItem("$host · ${connectionLabel(state)}", enabled = false))
+            add(MenuItem("$host · $connected", enabled = false))
             add(MenuItem("Reconnect", icon = "arrow.clockwise") { store.reconnect() })
             add(MenuItem("Details", icon = "info.circle", divider = true) { edit(bot) })
             add(MenuItem("Full conversation", icon = "list.bullet.rectangle", action = trace))

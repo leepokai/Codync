@@ -5,6 +5,7 @@ import { Sheet } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
+import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { MemoryStore, authorLabel, type MemoryEntry } from '../../store/memory-store'
@@ -21,6 +22,7 @@ type Info = 'harness' | 'dreams'
 /** A bot's memory, read-only: what all your bots know about you, what this one knows, its dreams, and its harness's own notes when the user kept them on. The user changes memory by telling the bot. */
 export function MemoryCard({ botId }: { botId: string }) {
   const host = useStore()
+  const tr = useTr()
   const memory = useModel(useMemo(() => new MemoryStore(botId, () => host.ready()), [botId, host]))
   useScreenViewed('memory')
   const bot = host.bots.get(botId)
@@ -54,40 +56,41 @@ export function MemoryCard({ botId }: { botId: string }) {
           Use what your bots share
         </Switch>}
         {view && bot && section === 'bot' && bot.harnessMemory !== null && <HStack gap={4}>
-          <span>{harness}'s own memory</span>
-          <IconButton title={`About ${harness}'s own memory`} icon="info.circle" onClick={() => setInfo('harness')} />
-          <Switch on={bot.harnessMemory} onChange={(on) => host.setHarnessMemory(bot, on)} label={`${harness}'s own memory`} className="memory-harness-switch" />
+          <span>{tr("{name}'s own memory").replaceAll('{name}', harness)}</span>
+          <IconButton title={tr("About {name}'s own memory").replaceAll('{name}', harness)} icon="info.circle" onClick={() => setInfo('harness')} />
+          <Switch on={bot.harnessMemory} onChange={(on) => host.setHarnessMemory(bot, on)} label={tr("{name}'s own memory").replaceAll('{name}', harness)} className="memory-harness-switch" />
         </HStack>}
         {layer && [
-          <p key="note" className="memory-muted">{section === 'yours'
-            ? 'Your name, time zone, people and lasting preferences, shared by your bots.'
-            : 'What this bot learned about you.'} {layer.used} of {layer.cap} in use. To change it, tell the bot.</p>,
+          <p key="note" className="memory-muted">{tr(section === 'yours'
+            ? 'Your name, time zone, people and lasting preferences, shared by your bots. {used} of {cap} in use. To change it, tell the bot.'
+            : 'What this bot learned about you. {used} of {cap} in use. To change it, tell the bot.')
+            .replace('{used}', String(layer.used)).replace('{cap}', String(layer.cap))}</p>,
           ...(layer.entries.length ? [] : [<div key="empty" className="memory-empty">
             <Icon name="brain" size={20} color="var(--tertiary)" />
-            <span>{section === 'yours' ? 'Nothing shared yet.' : 'Nothing yet. What this bot learns about you shows up here.'}</span>
+            <span>{tr(section === 'yours' ? 'Nothing shared yet.' : 'Nothing yet. What this bot learns about you shows up here.')}</span>
           </div>]),
           ...layer.entries.map((entry) => <EntryRow key={entry.id} entry={entry} />),
-          ...(view?.files ? fileRows(view.files, section === 'yours', setFile) : []),
+          ...(view?.files ? fileRows(view.files, section === 'yours', setFile, tr) : []),
         ]}
         {view && section === 'dreams' && [
           <div key="note" className="memory-layer-note">
-            <p className="memory-muted">Between chats the bot tidies its memory from your own words.</p>
+            <p className="memory-muted">{tr('Between chats the bot tidies its memory from your own words.')}</p>
             <IconButton title="About dreaming" icon="info.circle" onClick={() => setInfo('dreams')} />
           </div>,
-          ...(view.dreams.length ? [] : [<div key="empty" className="memory-empty"><Icon name="moon" size={20} color="var(--tertiary)" /><span>No dreams yet.</span></div>]),
+          ...(view.dreams.length ? [] : [<div key="empty" className="memory-empty"><Icon name="moon" size={20} color="var(--tertiary)" /><span>{tr('No dreams yet.')}</span></div>]),
           ...view.dreams.map((dream) => <div className="memory-content fade-in" key={dream.id}>
-            <strong>{relativeTime.day(dream.at)}{dream.undone ? ' · undone' : ''}</strong>
+            <strong>{relativeTime.day(dream.at, tr)}{dream.undone ? ' · undone' : ''}</strong>
             {dream.added.map((c) => <Text key={`a${c.id}`} tone="added" className="line-clamp memory-clamp" title={c.text}>+ {c.text}</Text>)}
             {dream.archived.map((c) => <Text key={`r${c.id}`} tone="removed" className="line-clamp memory-clamp" title={c.text}>− {c.text}</Text>)}
             {(dream.files ?? []).map((f) => <span key={`f${f.version}`} className="memory-muted">Added to {f.name}</span>)}
           </div>),
         ]}
         {view?.projectMemory && section === 'harness' && <div className="memory-content">
-          <p className="memory-muted">Claude Code's own notes, read-only here.</p>
+          <p className="memory-muted">{tr("Claude Code's own notes, read-only here.")}</p>
           <small className="memory-muted">{view.projectMemory.path}</small>
           {view.projectMemory.text
             ? <pre className="memory-history">{view.projectMemory.text}</pre>
-            : <div className="memory-empty"><Icon name="brain" size={20} color="var(--tertiary)" /><span>Nothing yet. Claude Code's notes show up here once it saves some.</span></div>}
+            : <div className="memory-empty"><Icon name="brain" size={20} color="var(--tertiary)" /><span>{tr("Nothing yet. Claude Code's notes show up here once it saves some.")}</span></div>}
         </div>}
       </CardSection>
     </div>
@@ -95,7 +98,7 @@ export function MemoryCard({ botId }: { botId: string }) {
       {file && <MemoryFileSheet memory={memory} target={file} />}
     </Sheet>
     <FormSheet open={info !== null} onClose={() => setInfo(null)} height={560}>
-      {info === 'harness' && <MemoryInfoSheet icon="brain" title={`${harness}'s own memory`} points={harnessInfo(harness, bot?.backend === 'claude')} />}
+      {info === 'harness' && <MemoryInfoSheet icon="brain" title={tr("{name}'s own memory").replaceAll('{name}', harness)} points={harnessInfo(harness, bot?.backend === 'claude', tr)} />}
       {info === 'dreams' && <MemoryInfoSheet icon="moon" title="Dreaming" points={dreamsInfo} />}
     </FormSheet>
   </>
@@ -103,9 +106,10 @@ export function MemoryCard({ botId }: { botId: string }) {
 
 function EntryRow({ entry }: { entry: MemoryEntry }) {
   const host = useStore()
+  const tr = useTr()
   const archived = entry.state === 'archived'
   return <div className="memory-content fade-in">
     <strong className={archived ? 'memory-archived' : undefined}>{entry.pinned && <Icon name="pin.fill" size={10} color="var(--secondary)" />}<span className="line-clamp memory-clamp" title={entry.text}>{entry.text}</span></strong>
-    <small>{authorLabel(entry, (id) => host.authorName(id))} · {relativeTime.day(entry.updatedAt)}{archived ? ' · archived' : ''}</small>
+    <small>{authorLabel(entry, (id) => host.authorName(id))} · {relativeTime.day(entry.updatedAt, tr)}{archived ? ' · archived' : ''}</small>
   </div>
 }

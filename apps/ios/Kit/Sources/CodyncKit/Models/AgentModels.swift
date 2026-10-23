@@ -27,4 +27,11 @@ public struct AgentModels: Decodable, Sendable {
     public let currentModelId: String?
     /// The agent offers Fast mode (absent on older hosts).
     public let fastMode: Bool?
+
+    /// The settings to show for a bot's model. Default (`""`) shows those of the model the agent
+    /// runs by default, which is the one a bot on Default gets.
+    public func settings(for model: String) -> [Option] {
+        let id = model.isEmpty ? currentModelId : model
+        return models.first { $0.id == id }?.options ?? []
+    }
 }

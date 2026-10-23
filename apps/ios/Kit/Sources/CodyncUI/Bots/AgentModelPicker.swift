@@ -55,9 +55,9 @@ struct AgentModelPicker: View {
         )
     }
 
-    /// Settings the selected model offers.
+    /// Settings the selected model offers (on Default, the agent's default model's).
     private var modelOptions: [AgentModels.Option] {
-        catalog?.models.first { $0.id == value.wrappedValue }?.options ?? []
+        catalog?.settings(for: value.wrappedValue) ?? []
     }
 
     private func optionValue(_ id: String) -> Binding<String> {

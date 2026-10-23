@@ -75,7 +75,9 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     let mut unconfirmed = Vec::new();
     // Cursor lists each model's options only through its own method; asked once, when needed (`None`: not asked).
     let mut listing: Option<Value> = None;
-    let steps = config_steps(res, model, &cfg.model_options);
+    // A model switch can be the first to list the settings, so plan from what the session lists now.
+    let listed = current.clone();
+    let steps = config_steps(&listed, model, &cfg.model_options);
     for (i, (id, value)) in steps.iter().copied().enumerate() {
         let is_model = model.is_some() && legacy.is_none() && i == 0;
         if !is_model {
@@ -250,6 +252,9 @@ fn split_variant<'a>(res: &Value, model: &'a str) -> (&'a str, Vec<(&'a str, &'a
 }
 
 /// Spawns an ACP agent and completes the `initialize` handshake.
+/// Numbers agent processes (`Conn::process`) from 1.
+static NEXT_PROCESS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget: Duration) -> Result<Conn> {
     let (acp, rx) = Acp::spawn(command, cwd, env)?;
     let init = tokio::time::timeout(
@@ -297,6 +302,7 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         adapter: adapter(&init),
         loaded: HashMap::new(),
         started: Instant::now(),
+        process: NEXT_PROCESS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         fast_options: HashMap::new(),
         reports_compaction: false,
         usage: HashMap::new(),

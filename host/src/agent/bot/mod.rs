@@ -236,6 +236,8 @@ pub(crate) struct Conn {
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     sessions: SessionCaps,
     pub(crate) adapter: Adapter,
+    /// This process among the host's agent processes: a report from one never describes another.
+    pub(crate) process: u64,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     started: Instant,
@@ -454,8 +456,10 @@ impl Actor {
     /// the session is closed or replaced or the agent is gone.
     fn publish_report(&mut self) {
         let (main, conn) = (&self.session_id, &self.conn);
-        self.reported
-            .settle(|sid| main.as_deref() == Some(sid) && conn.as_ref().is_some_and(|c| c.loaded.contains_key(sid)));
+        self.reported.settle(|sid, process| {
+            main.as_deref() == Some(sid)
+                && conn.as_ref().is_some_and(|c| c.process == process && c.loaded.contains_key(sid))
+        });
         let (options, settings) = self.reported.wire();
         let (issues, pending, live) = (self.reported.issues(), self.restart_after_turn, self.reported.live());
         self.hub.set_runtime(&self.cfg.id, |r| {

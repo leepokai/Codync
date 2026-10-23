@@ -33,7 +33,8 @@ impl Actor {
     /// said in the chat.
     fn opened_session(&mut self, slot: Option<&str>, sid: &str, selected: &Selected) {
         if slot.is_none() {
-            self.reported.opened(sid, &selected.options);
+            let process = self.conn.as_ref().map_or(0, |c| c.process);
+            self.reported.opened(sid, process, &selected.options);
             self.reported.unconfirmed(sid, &selected.unconfirmed, selected.model_unlisted);
             let left_out: Vec<_> = selected.left_out.iter().map(|(id, value, _)| (id.clone(), value.clone())).collect();
             self.reported.left_out(&left_out);

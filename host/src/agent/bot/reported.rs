@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 pub(super) struct Reported {
     /// The session the report is about; `None`: no live session, nothing is known.
     session: Option<String>,
+    /// The agent process that opened it: another process loading the same session id hasn't said anything yet.
+    process: u64,
     /// Setting id -> value, as the session last listed it. Absent ids are unknown.
     values: BTreeMap<String, String>,
     /// The settings the session offers for the model it runs; `None` until it lists them.
@@ -19,10 +21,11 @@ pub(super) struct Reported {
 }
 
 impl Reported {
-    /// The main session `sid` was opened or loaded and answered `answer`. What an earlier session said doesn't
-    /// carry over: a session that lists nothing is live, but nothing about it is known.
-    pub(super) fn opened(&mut self, sid: &str, answer: &Value) {
-        *self = Self { session: Some(sid.to_owned()), ..Self::default() };
+    /// The main session `sid` was opened or loaded by agent process `process` (`Conn::process`) and answered
+    /// `answer`. What an earlier session said doesn't carry over: a session that lists nothing is live, but nothing
+    /// about it is known.
+    pub(super) fn opened(&mut self, sid: &str, process: u64, answer: &Value) {
+        *self = Self { session: Some(sid.to_owned()), process, ..Self::default() };
         self.listed(sid, answer);
     }
 
@@ -82,20 +85,9 @@ impl Reported {
         self.session.is_some()
     }
 
-    /// `opened`, by agent process `process` (not yet told apart).
-    pub(super) fn opened_in(&mut self, sid: &str, _process: u64, answer: &Value) {
-        self.opened(sid, answer);
-    }
-
-    /// `settle`, given the running process (not yet told apart).
-    pub(super) fn settle_in(&mut self, live: impl Fn(&str, u64) -> bool) {
-        // Today only the session id counts: any process holding it keeps the report.
-        self.settle(|sid| (1..=2).any(|process| live(sid, process)));
-    }
-
-    /// Keeps the report only while its session is live (`live` says whether a session is).
-    pub(super) fn settle(&mut self, live: impl Fn(&str) -> bool) {
-        if self.session.as_deref().is_some_and(|sid| !live(sid)) {
+    /// Keeps the report only while its session is live in the process that opened it (`live(sid, process)`).
+    pub(super) fn settle(&mut self, live: impl Fn(&str, u64) -> bool) {
+        if self.session.as_deref().is_some_and(|sid| !live(sid, self.process)) {
             *self = Self { issues: std::mem::take(&mut self.issues), ..Self::default() };
         }
     }
@@ -115,7 +107,7 @@ mod tests {
     fn what_went_wrong_outlives_the_session_until_the_settings_or_session_change() {
         let mut r = Reported::default();
         r.rejected("effort", "max");
-        r.settle(|_| false);
+        r.settle(|_, _| false);
         assert_eq!(
             r.issues(),
             serde_json::json!({"effort": {"issue": "rejected", "value": "max"}}),
@@ -123,10 +115,10 @@ mod tests {
         );
         r.settings_changed();
         assert_eq!(r.issues(), serde_json::json!({}), "a new choice isn't the refused one");
-        r.opened("main", &serde_json::json!({}));
+        r.opened("main", 1, &serde_json::json!({}));
         r.left_out(&[("effort".to_owned(), "high".to_owned())]);
         assert_eq!(r.issues(), serde_json::json!({"effort": {"issue": "not_offered", "value": "high"}}));
-        r.opened("next", &serde_json::json!({}));
+        r.opened("next", 1, &serde_json::json!({}));
         assert_eq!(r.issues(), serde_json::json!({}), "a new session starts over");
     }
 
@@ -134,9 +126,9 @@ mod tests {
     fn live_comes_from_the_session_not_from_what_it_listed() {
         let mut r = Reported::default();
         assert!(!r.live());
-        r.opened("main", &serde_json::json!({"sessionId": "main"}));
+        r.opened("main", 1, &serde_json::json!({"sessionId": "main"}));
         assert!(r.live(), "a session that lists nothing is still running");
-        r.settle(|_| false);
+        r.settle(|_, _| false);
         assert!(!r.live());
     }
 
@@ -159,7 +151,7 @@ mod tests {
     fn only_the_main_sessions_own_word_counts() {
         let mut r = Reported::default();
         assert_eq!(r.wire(), (None, None), "nothing before a session");
-        r.opened("main", &listing("high"));
+        r.opened("main", 1, &listing("high"));
         assert_eq!(r.wire().0, Some(values(&[("effort", "high"), ("model", "sol")])));
         assert_eq!(r.wire().1.unwrap()[0]["id"], "effort");
         // Another session (a routine's, or a late update for it) says nothing about this one.
@@ -175,15 +167,15 @@ mod tests {
     #[test]
     fn a_session_that_lists_nothing_is_live_but_unknown() {
         let mut r = Reported::default();
-        r.opened("old", &listing("high"));
-        r.opened("new", &json!({"sessionId": "new"}));
+        r.opened("old", 1, &listing("high"));
+        r.opened("new", 1, &json!({"sessionId": "new"}));
         assert_eq!(r.wire(), (Some(values(&[])), None), "not the old session's values");
     }
 
     #[test]
     fn a_setter_without_a_list_makes_its_setting_unknown() {
         let mut r = Reported::default();
-        r.opened("main", &listing("low"));
+        r.opened("main", 1, &listing("low"));
         r.unconfirmed("main", &["effort".to_owned()], false);
         assert_eq!(r.wire().0, Some(values(&[("model", "sol")])), "low was before the change");
         r.unconfirmed("elsewhere", &["model".to_owned()], false);
@@ -196,21 +188,21 @@ mod tests {
     fn a_new_process_reusing_the_session_id_starts_unknown() {
         // Reviewer: a replacement agent process that loads the same session id isn't the process that reported.
         let mut r = Reported::default();
-        r.opened_in("main", 1, &listing("high"));
-        r.settle_in(|sid, process| sid == "main" && process == 1);
+        r.opened("main", 1, &listing("high"));
+        r.settle(|sid, process| sid == "main" && process == 1);
         assert_eq!(r.wire().0, Some(values(&[("effort", "high"), ("model", "sol")])));
-        r.settle_in(|sid, process| sid == "main" && process == 2);
+        r.settle(|sid, process| sid == "main" && process == 2);
         assert_eq!(r.wire(), (None, None), "process 2 hasn't said anything yet");
     }
 
     #[test]
     fn a_report_ends_with_its_session() {
         let mut r = Reported::default();
-        r.opened("main", &listing("high"));
-        r.settle(|sid| sid == "main");
+        r.opened("main", 1, &listing("high"));
+        r.settle(|sid, _| sid == "main");
         assert_eq!(r.wire().0, Some(values(&[("effort", "high"), ("model", "sol")])));
         // Closed, released, or the agent exited: no live session.
-        r.settle(|_| false);
+        r.settle(|_, _| false);
         assert_eq!(r.wire(), (None, None));
     }
 }

@@ -24,14 +24,23 @@ impl NoVault {
 
 impl Drop for NoVault {
     fn drop(&mut self) {
-        let unlocked = rusqlite::Connection::open(&self.0)
-            .and_then(|db| db.query_row("SELECT COUNT(*) FROM kv WHERE k = 'vault.id'", [], |r| r.get::<_, i64>(0)))
-            .unwrap_or(0)
-            > 0;
-        if unlocked && !std::thread::panicking() {
-            panic!("the test unlocked the vault: a login-keychain item was written for {}", self.0.display());
-        } else if unlocked {
-            eprintln!("the test unlocked the vault: a login-keychain item was written for {}", self.0.display());
+        // No database: nothing was written. One that can't be read proves nothing, so it fails the test too.
+        let problem = if self.0.exists() {
+            let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY;
+            match rusqlite::Connection::open_with_flags(&self.0, flags)
+                .and_then(|db| db.query_row("SELECT COUNT(*) FROM kv WHERE k = 'vault.id'", [], |r| r.get::<_, i64>(0)))
+            {
+                Ok(0) => None,
+                Ok(_) => Some("the test unlocked the vault: a login-keychain item was written".to_owned()),
+                Err(e) => Some(format!("couldn't check that the vault stayed locked: {e}")),
+            }
+        } else {
+            None
+        };
+        match problem {
+            Some(problem) if !std::thread::panicking() => panic!("{problem} ({})", self.0.display()),
+            Some(problem) => eprintln!("{problem} ({})", self.0.display()),
+            None => {}
         }
     }
 }

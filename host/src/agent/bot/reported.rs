@@ -2,7 +2,7 @@
 //! `sessionSettings`): only that session's own word, never another session's, a saved choice or a setter that
 //! succeeded without saying what it set.
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -15,7 +15,7 @@ pub(super) struct Reported {
     settings: Option<Vec<Value>>,
     /// Saved settings that didn't take, by id: `not_offered` (left out, never sent) or `rejected` (the agent refused
     /// it). They outlive the session they happened in, until the next one opens or the bot's settings change.
-    issues: BTreeMap<String, &'static str>,
+    issues: BTreeMap<String, (&'static str, String)>,
 }
 
 impl Reported {
@@ -56,13 +56,13 @@ impl Reported {
     }
 
     /// Settings left out of the session just opened (never sent).
-    pub(super) fn left_out(&mut self, ids: &[String]) {
-        self.issues.extend(ids.iter().map(|id| (id.clone(), "not_offered")));
+    pub(super) fn left_out(&mut self, settings: &[(String, String)]) {
+        self.issues.extend(settings.iter().map(|(id, value)| (id.clone(), ("not_offered", value.clone()))));
     }
 
     /// The agent refused setting `id`: the session didn't start.
-    pub(super) fn rejected(&mut self, id: &str) {
-        self.issues.insert(id.to_owned(), "rejected");
+    pub(super) fn rejected(&mut self, id: &str, value: &str) {
+        self.issues.insert(id.to_owned(), ("rejected", value.to_owned()));
     }
 
     /// The bot's saved settings changed: what went wrong with the old ones no longer applies.
@@ -70,9 +70,16 @@ impl Reported {
         self.issues.clear();
     }
 
-    /// The payload's `settingIssues`.
-    pub(super) fn issues(&self) -> BTreeMap<String, &'static str> {
-        self.issues.clone()
+    /// The payload's `settingIssues`: setting id -> `{issue, value}`, the value it was about.
+    pub(super) fn issues(&self) -> Value {
+        let issues =
+            self.issues.iter().map(|(id, (issue, value))| (id.clone(), json!({"issue": issue, "value": value})));
+        Value::Object(issues.collect())
+    }
+
+    /// Whether the main session is running (`sessionLive`), whatever it listed.
+    pub(super) fn live(&self) -> bool {
+        self.session.is_some()
     }
 
     /// Keeps the report only while its session is live (`live` says whether a session is).

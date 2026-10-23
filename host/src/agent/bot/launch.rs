@@ -85,7 +85,7 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
             }
             let running = chosen.or_else(|| current_model(&current));
             if let Some(offered) = unoffered(&current, fresh, &listing, running, id, value) {
-                left_out.push((id.to_owned(), offered));
+                left_out.push((id.to_owned(), value.to_owned(), offered));
                 continue;
             }
         }
@@ -100,7 +100,7 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
                     Some(model) => model_error(&format!("{model} with {id}={value}"), &e),
                     None => option_error(id, value, &e),
                 };
-                let rejected = Some((id.to_owned(), error));
+                let rejected = Some((id.to_owned(), value.to_owned(), error));
                 return Ok(Selected { options: current, left_out, unconfirmed, model_unlisted: !fresh, rejected });
             }
         };
@@ -116,16 +116,16 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     Ok(Selected { options: current, left_out, unconfirmed, model_unlisted: !fresh, rejected: None })
 }
 
-/// What `select_model` did: the session's options as it last listed them, the settings it left out (id, and the
-/// notice saying why), the ones the agent took without listing what it set, whether a model change went unlisted,
-/// and the setting the agent refused (its id and the error the session start fails with).
+/// What `select_model` did: the session's options as it last listed them, the settings it left out (id, value and
+/// the notice saying why), the ones the agent took without listing what it set, whether a model change went
+/// unlisted, and the setting the agent refused (id, value and the error the session start fails with).
 #[derive(Default)]
 pub(crate) struct Selected {
     pub options: Value,
-    pub left_out: Vec<(String, String)>,
+    pub left_out: Vec<(String, String, String)>,
     pub unconfirmed: Vec<String>,
     pub model_unlisted: bool,
-    pub rejected: Option<(String, anyhow::Error)>,
+    pub rejected: Option<(String, String, anyhow::Error)>,
 }
 
 /// Whether the session lists select option `id`.

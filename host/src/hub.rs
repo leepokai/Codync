@@ -52,8 +52,11 @@ pub struct Runtime {
     pub session_options: Option<std::collections::BTreeMap<String, String>>,
     /// The settings that session offers for the model it runs, as `[{id, name, values}]` (see `agentModels`).
     pub session_settings: Option<Vec<Value>>,
-    /// Saved settings that didn't take, by id: `not_offered` (never sent) or `rejected` (the agent refused it).
-    pub setting_issues: std::collections::BTreeMap<String, &'static str>,
+    /// Saved settings that didn't take: id -> `{issue, value}`, `not_offered` (never sent) or `rejected` (the agent
+    /// refused it), with the value it was about.
+    pub setting_issues: Value,
+    /// The bot's main agent session is running, whatever it listed.
+    pub session_live: bool,
     /// A change that restarts the agent waits for the running turn (`restart_after_turn`).
     pub restart_pending: bool,
     /// The fallback the bot is on; `None` on its own agent (see `agent::fallback`).
@@ -382,6 +385,7 @@ impl Hub {
             || before.session_settings != after.session_settings
             || before.setting_issues != after.setting_issues
             || before.restart_pending != after.restart_pending
+            || before.session_live != after.session_live
             || before.agent_step != after.agent_step
         {
             self.emit_bot(id);

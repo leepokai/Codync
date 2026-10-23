@@ -42,6 +42,7 @@
     "event:bot.bot.resting": "array",
     "event:bot.bot.rev": "number",
     "event:bot.bot.selfFallbacks": "bool",
+    "event:bot.bot.sessionLive": "bool",
     "event:bot.bot.sessionOptions": "null",
     "event:bot.bot.sessionSettings": "null",
     "event:bot.bot.settingIssues": "object",

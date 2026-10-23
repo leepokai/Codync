@@ -35,18 +35,19 @@ impl Actor {
         if slot.is_none() {
             self.reported.opened(sid, &selected.options);
             self.reported.unconfirmed(sid, &selected.unconfirmed, selected.model_unlisted);
-            self.reported.left_out(&selected.left_out.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>());
+            let left_out: Vec<_> = selected.left_out.iter().map(|(id, value, _)| (id.clone(), value.clone())).collect();
+            self.reported.left_out(&left_out);
         }
-        for (_, line) in &selected.left_out {
+        for (_, _, line) in &selected.left_out {
             self.notice(line, NoticeStyle::Info);
         }
     }
 
     /// The agent refused one of the bot's settings: the session start fails, and the bot's own says which.
     fn refused(&mut self, slot: Option<&str>, selected: &mut Selected) -> Result<()> {
-        let Some((id, error)) = selected.rejected.take() else { return Ok(()) };
+        let Some((id, value, error)) = selected.rejected.take() else { return Ok(()) };
         if slot.is_none() {
-            self.reported.rejected(&id);
+            self.reported.rejected(&id, &value);
         }
         Err(error)
     }
@@ -231,9 +232,9 @@ impl Actor {
                         Selected { options: res, ..Selected::default() }
                     };
                     // The agent refused one of the bot's settings (see `refused`).
-                    if let Some((id, error)) = selected.rejected.take() {
+                    if let Some((id, value, error)) = selected.rejected.take() {
                         if slot.is_none() {
-                            self.reported.rejected(&id);
+                            self.reported.rejected(&id, &value);
                         }
                         return Err(error);
                     }

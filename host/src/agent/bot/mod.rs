@@ -457,12 +457,13 @@ impl Actor {
         self.reported
             .settle(|sid| main.as_deref() == Some(sid) && conn.as_ref().is_some_and(|c| c.loaded.contains_key(sid)));
         let (options, settings) = self.reported.wire();
-        let (issues, pending) = (self.reported.issues(), self.restart_after_turn);
+        let (issues, pending, live) = (self.reported.issues(), self.restart_after_turn, self.reported.live());
         self.hub.set_runtime(&self.cfg.id, |r| {
             r.session_options = options;
             r.session_settings = settings;
             r.setting_issues = issues;
             r.restart_pending = pending;
+            r.session_live = live;
         });
     }
 

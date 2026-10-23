@@ -22,6 +22,7 @@ mod files;
 mod launch;
 mod lifecycle;
 mod queue;
+mod reported;
 mod session;
 mod turn;
 mod updates;

@@ -368,6 +368,18 @@ mod tests {
     }
 
     #[test]
+    fn after_a_model_change_without_a_fresh_list_the_old_list_vouches_for_nothing() {
+        // The model setter answered without the new model's options: what the session listed before is the old
+        // model's, and can't approve a value for the new one.
+        let before = json!({"configOptions": [{"id": "effort", "type": "select", "options": [{"value": "high"}]}]});
+        assert_eq!(
+            unoffered(&before, false, &Value::Null, Some("mini"), "effort", "high").as_deref(),
+            Some("effort high couldn't be confirmed for this model, so it isn't set.")
+        );
+        assert_eq!(unoffered(&before, true, &Value::Null, Some("mini"), "effort", "high"), None);
+    }
+
+    #[test]
     fn claude_codes_memory_is_off_in_any_folder_unless_the_user_kept_it() {
         let bot = |kept: Value| -> BotConfig {
             serde_json::from_value(

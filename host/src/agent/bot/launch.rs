@@ -53,18 +53,23 @@ pub(crate) async fn launch_commands(cfg: &BotConfig, progress: impl Fn(&str)) ->
 /// model gets its options too. Returns the answer holding the session's config options now (a
 /// model can change them), and what it left out: a saved value the session lists other values
 /// for, as when the agent's offer changed since it was saved, is never sent.
-pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<(Value, Vec<String>)> {
+pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Selected> {
     let model = cfg.model.as_deref().filter(|m| !m.is_empty());
     if let Some(model) = model
         && crate::agent::auth::model_config(res).is_none()
     {
         let r = acp.request("session/set_model", json!({"sessionId": sid, "modelId": model})).await;
-        return r.map(|_| (res.clone(), Vec::new())).map_err(|e| model_error(model, &e));
+        // `session/set_model` answers with no options: the model the session listed before is no longer known.
+        return r
+            .map(|_| Selected { options: res.clone(), model_unlisted: true, ..Selected::default() })
+            .map_err(|e| model_error(model, &e));
     }
     let mut current = res.clone();
     // Whether `current` lists the options of the model the session runs now.
     let mut fresh = true;
     let mut left_out = Vec::new();
+    // Settings set since the session last listed its options: it didn't say what it set.
+    let mut unconfirmed = Vec::new();
     // Cursor lists each model's options only through its own method; asked once, when needed.
     let mut listing = Value::Null;
     let steps = config_steps(res, model, &cfg.model_options);
@@ -91,11 +96,24 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
             })?;
         if answer["configOptions"].is_array() {
             current = answer;
+            unconfirmed.clear();
         } else if is_model {
             fresh = false;
+        } else {
+            unconfirmed.push(id.to_owned());
         }
     }
-    Ok((current, left_out))
+    Ok(Selected { options: current, left_out, unconfirmed, model_unlisted: !fresh })
+}
+
+/// What `select_model` did: the session's options as it last listed them, the settings it left out (and why), the
+/// ones the agent took without listing what it set, and whether a model change went unlisted.
+#[derive(Default)]
+pub(crate) struct Selected {
+    pub options: Value,
+    pub left_out: Vec<String>,
+    pub unconfirmed: Vec<String>,
+    pub model_unlisted: bool,
 }
 
 /// Whether the session lists select option `id`.

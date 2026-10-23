@@ -1,7 +1,7 @@
 //! The bot's ACP sessions: starting its agent, new/load, routine runs' sessions.
 
 use super::fast_mode::Listing;
-use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
+use super::launch::{Selected, claude_meta, launch_commands, select_model, start_agent, system_prompt};
 use super::{Actor, Conn, Instructions, NoticeStyle};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
@@ -27,6 +27,18 @@ impl Actor {
         let sid = sid.filter(|s| !s.is_empty())?;
         self.run_sessions.insert(slot.to_owned(), sid.clone());
         Some(sid)
+    }
+
+    /// A session is up: the main one's own word on its settings becomes the bot's report, and what was left out is
+    /// said in the chat.
+    fn opened_session(&mut self, slot: Option<&str>, sid: &str, selected: &Selected) {
+        if slot.is_none() {
+            self.reported.opened(sid, &selected.options);
+            self.reported.unconfirmed(sid, &selected.unconfirmed, selected.model_unlisted);
+        }
+        for line in &selected.left_out {
+            self.notice(line, NoticeStyle::Info);
+        }
     }
 
     pub(super) fn set_session(&mut self, slot: Option<&str>, sid: Option<&str>) {
@@ -147,11 +159,6 @@ impl Actor {
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
                 match start_agent(command, &self.cfg.cwd, &env, budget).await {
                     Ok(conn) => {
-                        // A new process confirms nothing until it lists its options.
-                        self.hub.set_runtime(&self.cfg.id, |r| {
-                            r.session_options = None;
-                            r.session_settings = None;
-                        });
                         self.conn = Some(conn);
                         break;
                     }
@@ -208,16 +215,15 @@ impl Actor {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
-                    let (res, left_out) = if res.get("configOptions").is_some() || res.get("models").is_some() {
+                    let selected = if res.get("configOptions").is_some() || res.get("models").is_some() {
                         select_model(&conn.acp, &res, &sid, &self.cfg).await?
                     } else {
-                        (res, Vec::new())
+                        Selected { options: res, ..Selected::default() }
                     };
+                    let res = selected.options.clone();
                     conn.loaded.insert(sid.clone(), Instant::now());
                     self.note_options(&sid, &res, Listing::Session);
-                    for line in left_out {
-                        self.notice(&line, NoticeStyle::Info);
-                    }
+                    self.opened_session(slot, &sid, &selected);
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.
                         context::mark_announced(&self.hub.store, &self.cfg.id, &s, s.system_identity.clone())?;
@@ -249,11 +255,9 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
-        let (options, left_out) = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
-        self.note_options(&sid, &options, Listing::Session);
-        for line in left_out {
-            self.notice(&line, NoticeStyle::Info);
-        }
+        let selected = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        self.note_options(&sid, &selected.options, Listing::Session);
+        self.opened_session(slot, &sid, &selected);
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;
         self.turn_session = Some(sid.clone());

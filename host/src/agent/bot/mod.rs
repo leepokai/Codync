@@ -187,6 +187,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         tools_changed: false,
         restart_after_turn: false,
         fast_support,
+        reported: reported::Reported::default(),
         idle_checked: Instant::now(),
         relay: fallback::Relay::default(),
     };
@@ -353,6 +354,8 @@ struct Actor {
     restart_after_turn: bool,
     /// What the agent says about Fast mode; clients see it in the bot's runtime.
     fast_support: FastModeSupport,
+    /// What the main session itself says its settings are (`sessionOptions`, `sessionSettings`).
+    reported: reported::Reported,
     /// When idle sessions and agents were last looked for.
     idle_checked: Instant,
     /// The running turn's place in the fallback chain (see `fallback`).
@@ -432,6 +435,7 @@ impl Actor {
                     }
                 },
             }
+            self.publish_report();
         }
         self.files.cancel();
         self.hub.team.cancel_from(&self.cfg.id);
@@ -444,6 +448,19 @@ impl Actor {
 
     fn id(&self) -> String {
         self.cfg.id.clone()
+    }
+
+    /// Publishes the main session's report while that session is live in the running agent, and clears it once
+    /// the session is closed or replaced or the agent is gone.
+    fn publish_report(&mut self) {
+        let (main, conn) = (&self.session_id, &self.conn);
+        self.reported
+            .settle(|sid| main.as_deref() == Some(sid) && conn.as_ref().is_some_and(|c| c.loaded.contains_key(sid)));
+        let (options, settings) = self.reported.wire();
+        self.hub.set_runtime(&self.cfg.id, |r| {
+            r.session_options = options;
+            r.session_settings = settings;
+        });
     }
 
     fn set_activity(&self, a: &str) {

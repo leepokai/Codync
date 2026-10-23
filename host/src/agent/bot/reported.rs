@@ -16,22 +16,55 @@ pub(super) struct Reported {
 }
 
 impl Reported {
-    /// The main session `sid` was opened or loaded and answered `answer`.
-    pub(super) fn opened(&mut self, _sid: &str, _answer: &Value) {}
+    /// The main session `sid` was opened or loaded and answered `answer`. What an earlier session said doesn't
+    /// carry over: a session that lists nothing is live, but nothing about it is known.
+    pub(super) fn opened(&mut self, sid: &str, answer: &Value) {
+        *self = Self { session: Some(sid.to_owned()), ..Self::default() };
+        self.listed(sid, answer);
+    }
 
     /// A later answer or `config_option_update` from session `sid`.
-    pub(super) fn listed(&mut self, _sid: &str, _answer: &Value) {}
+    pub(super) fn listed(&mut self, sid: &str, answer: &Value) {
+        if self.session.as_deref() != Some(sid) || !answer["configOptions"].is_array() {
+            return;
+        }
+        self.values = crate::agent::config::current_values(answer);
+        // What each setting is set to is `values`; the list says only what can be picked.
+        let mut offered = crate::agent::auth::session_options(answer);
+        for setting in &mut offered {
+            setting.as_object_mut().map(|s| s.remove("default"));
+        }
+        self.settings = Some(offered);
+    }
 
     /// Session `sid` took these settings without listing what it set: they are no longer known. A model change
     /// without a list makes everything unknown.
-    pub(super) fn unconfirmed(&mut self, _sid: &str, _ids: &[String], _model_changed: bool) {}
+    pub(super) fn unconfirmed(&mut self, sid: &str, ids: &[String], model_changed: bool) {
+        if self.session.as_deref() != Some(sid) {
+            return;
+        }
+        if model_changed {
+            self.values.clear();
+            self.settings = None;
+        }
+        for id in ids {
+            self.values.remove(id);
+        }
+    }
 
     /// Keeps the report only while its session is live (`live` says whether a session is).
-    pub(super) fn settle(&mut self, _live: impl Fn(&str) -> bool) {}
+    pub(super) fn settle(&mut self, live: impl Fn(&str) -> bool) {
+        if self.session.as_deref().is_some_and(|sid| !live(sid)) {
+            *self = Self::default();
+        }
+    }
 
     /// The payload's `sessionOptions` (`None`: no live session) and `sessionSettings` (`None`: not listed).
     pub(super) fn wire(&self) -> (Option<BTreeMap<String, String>>, Option<Vec<Value>>) {
-        (None, None)
+        match self.session {
+            Some(_) => (Some(self.values.clone()), self.settings.clone()),
+            None => (None, None),
+        }
     }
 }
 
@@ -48,8 +81,8 @@ mod tests {
         ]})
     }
 
-    fn values(pairs: &[(&str, &str)]) -> Option<BTreeMap<String, String>> {
-        Some(pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect())
+    fn values(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect()
     }
 
     #[test]
@@ -57,16 +90,16 @@ mod tests {
         let mut r = Reported::default();
         assert_eq!(r.wire(), (None, None), "nothing before a session");
         r.opened("main", &listing("high"));
-        assert_eq!(r.wire().0, values(&[("effort", "high"), ("model", "sol")]));
+        assert_eq!(r.wire().0, Some(values(&[("effort", "high"), ("model", "sol")])));
         assert_eq!(r.wire().1.unwrap()[0]["id"], "effort");
         // Another session (a routine's, or a late update for it) says nothing about this one.
         r.listed("routine", &listing("low"));
-        assert_eq!(r.wire().0, values(&[("effort", "high"), ("model", "sol")]));
+        assert_eq!(r.wire().0, Some(values(&[("effort", "high"), ("model", "sol")])));
         r.listed("main", &listing("low"));
-        assert_eq!(r.wire().0, values(&[("effort", "low"), ("model", "sol")]));
+        assert_eq!(r.wire().0, Some(values(&[("effort", "low"), ("model", "sol")])));
         // An answer without a list leaves the report as it is.
         r.listed("main", &json!({}));
-        assert_eq!(r.wire().0, values(&[("effort", "low"), ("model", "sol")]));
+        assert_eq!(r.wire().0, Some(values(&[("effort", "low"), ("model", "sol")])));
     }
 
     #[test]
@@ -74,7 +107,7 @@ mod tests {
         let mut r = Reported::default();
         r.opened("old", &listing("high"));
         r.opened("new", &json!({"sessionId": "new"}));
-        assert_eq!(r.wire(), (values(&[]), None), "not the old session's values");
+        assert_eq!(r.wire(), (Some(values(&[])), None), "not the old session's values");
     }
 
     #[test]
@@ -82,11 +115,11 @@ mod tests {
         let mut r = Reported::default();
         r.opened("main", &listing("low"));
         r.unconfirmed("main", &["effort".to_owned()], false);
-        assert_eq!(r.wire().0, values(&[("model", "sol")]), "low was before the change");
+        assert_eq!(r.wire().0, Some(values(&[("model", "sol")])), "low was before the change");
         r.unconfirmed("elsewhere", &["model".to_owned()], false);
-        assert_eq!(r.wire().0, values(&[("model", "sol")]));
+        assert_eq!(r.wire().0, Some(values(&[("model", "sol")])));
         r.unconfirmed("main", &[], true);
-        assert_eq!(r.wire(), (values(&[]), None), "another model: nothing listed is known");
+        assert_eq!(r.wire(), (Some(values(&[])), None), "another model: nothing listed is known");
     }
 
     #[test]
@@ -94,7 +127,7 @@ mod tests {
         let mut r = Reported::default();
         r.opened("main", &listing("high"));
         r.settle(|sid| sid == "main");
-        assert_eq!(r.wire().0, values(&[("effort", "high"), ("model", "sol")]));
+        assert_eq!(r.wire().0, Some(values(&[("effort", "high"), ("model", "sol")])));
         // Closed, released, or the agent exited: no live session.
         r.settle(|_| false);
         assert_eq!(r.wire(), (None, None));

@@ -83,6 +83,11 @@ public enum EffortLevel: Equatable, Sendable {
     /// The line under a fallback's row, without starting its agent: its effort level as its own running session
     /// reports it, or else what is saved for it (Edit loads the agent's list to change it).
     public static func fallbackLine(saved: [String: String], report: SessionReport?) -> String? {
-        nil
+        if let found = report?.settings.flatMap(setting(in:)),
+           case .row(_, let caption?) = row(catalog: [found], saved: saved[found.id], report: report, loading: false, failed: false, chosenModel: false) {
+            return "Effort level · \(caption)"
+        }
+        let values = saved.keys.sorted().compactMap { saved[$0] }
+        return values.isEmpty ? nil : "Saved: \(values.joined(separator: ", "))"
     }
 }

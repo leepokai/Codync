@@ -19,8 +19,6 @@ struct AgentModelPicker: View {
     var status: (report: SessionReport?, saved: [String: String])?
     /// The bot is replying: a change waits for the reply.
     var working = false
-    /// Only the Effort level row, for a fallback already in the chain (its model is chosen when it's added).
-    var effortOnly = false
     @Environment(BotStore.self) private var store
     @State private var catalog: AgentModels?
     @State private var catalogScope: String?
@@ -105,7 +103,7 @@ struct AgentModelPicker: View {
                 options = [:]
             }
             .task(id: requestKey) { await load() }
-        if !effortOnly, showsFastMode, let fastMode {
+        if showsFastMode, let fastMode {
             SwitchRow("Fast mode", detail: bot?.fastModeRefusal ?? "Faster replies for more usage, on models that offer it.",
                       isOn: fastMode)
                 .transition(.opacity)
@@ -114,9 +112,9 @@ struct AgentModelPicker: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !effortOnly { modelRow }
+            modelRow
             effortRow
-            if !effortOnly { otherRows }
+            otherRows
         }
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: modelOptions.map(\.id))
     }

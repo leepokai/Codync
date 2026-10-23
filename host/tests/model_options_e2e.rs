@@ -126,3 +126,22 @@ async fn clients_see_what_the_running_session_uses() {
     answer(&host, &bot, "one").await;
     assert_eq!(in_use().await, json!({"model": "sol", "reasoning_effort": "high"}), "what the agent reports");
 }
+
+#[tokio::test]
+async fn a_chosen_models_settings_come_from_the_session_running_it() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Chosen", "effort_agent.py", "").await;
+    host.call("updateBot", json!({"id": bot, "model": "mini"})).await;
+    answer(&host, &bot, "one").await;
+    let snapshot = host.snapshot().await;
+    let shown = snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot.as_str()).unwrap().clone();
+    // Discovery only sees the agent's default model; the bot's own session lists what mini offers.
+    assert_eq!(
+        shown["sessionSettings"],
+        json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "default": "low",
+                "values": [{"id": "low", "name": "Low"}]}])
+    );
+}

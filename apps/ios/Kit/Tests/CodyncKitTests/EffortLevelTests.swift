@@ -59,3 +59,12 @@ private func bot(_ fields: String) throws -> Bot {
     #expect(EffortLevel.row(catalog: [], saved: nil, report: nil, loading: false, failed: false, chosenModel: false) == .none)
     #expect(EffortLevel.row(catalog: [], saved: "high", report: nil, loading: false, failed: true, chosenModel: false) == .row(setting: nil, caption: "Saved: high · couldn’t check this agent’s options"))
 }
+
+@Test func aFallbackRowSaysWhatItsOwnAgentReportsOrWhatIsSavedWithoutAskingIt() throws {
+    let onIt = try bot(#""backend":"claude","agentStep":{"step":1,"agent":"codex","since":0},"sessionLive":true,"sessionOptions":{"effort":"high"},"sessionSettings":[\#(level)]"#)
+    let running = onIt.report(for: "codex")
+    #expect(EffortLevel.fallbackLine(saved: ["effort": "high"], report: running) == "Effort level · In use: High")
+    #expect(EffortLevel.fallbackLine(saved: [:], report: running) == "Effort level · In use: High (agent default)")
+    #expect(EffortLevel.fallbackLine(saved: ["effort": "high"], report: nil) == "Saved: high")
+    #expect(EffortLevel.fallbackLine(saved: [:], report: nil) == nil)
+}

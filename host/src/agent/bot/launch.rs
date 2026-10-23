@@ -370,7 +370,7 @@ mod tests {
             vec![("model", "gpt-6.1-sol"), ("reasoning_effort", "high")]
         );
         // An agent without config options has nothing to set them on.
-        assert!(config_steps(&json!({}), None, &own).is_empty());
+        assert_eq!(config_steps(&json!({}), None, &own), Vec::<(&str, &str)>::new());
     }
 
     #[test]

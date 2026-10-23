@@ -82,6 +82,26 @@ struct FallbackList: View {
     }
 
     private func row(_ fallback: BotFallback, at i: Int) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            summary(fallback, at: i)
+            effort(fallback, at: i).padding(.leading, 28)
+        }
+    }
+
+    /// The fallback's own Effort level, from its agent's list for its model; its line speaks only while the bot runs on
+    /// that agent, and only for what the host saved for this entry.
+    private func effort(_ fallback: BotFallback, at i: Int) -> some View {
+        let saved = bot?.fallbacks?.first { $0.backend == fallback.backend && $0.model == fallback.model }
+        return AgentModelPicker(
+            backend: fallback.backend,
+            selection: .constant(fallback.model),
+            options: Binding(get: { fallback.modelOptions }, set: { options in change { $0[i].modelOptions = options } }),
+            status: saved.map { (bot?.report(for: fallback.backend), $0.modelOptions) },
+            effortOnly: true
+        )
+    }
+
+    private func summary(_ fallback: BotFallback, at i: Int) -> some View {
         let name = model.hello?.backends.first { $0.id == fallback.backend }.map(model.agentLabel) ?? model.backendName(fallback.backend)
         return HStack(spacing: 10) {
             Text("\(i + 1)").font(.subheadline.monospacedDigit()).foregroundStyle(Palette.secondary)

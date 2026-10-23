@@ -166,6 +166,11 @@ pub struct ModelOption {
 }
 
 impl AgentModel {
+    /// The models an `agentModels` answer lists.
+    pub fn list(catalog: &Value) -> Vec<Self> {
+        catalog["models"].as_array().into_iter().flatten().filter_map(Self::parse).collect()
+    }
+
     pub fn parse(v: &Value) -> Option<Self> {
         let pair = |v: &Value| {
             let id = v["id"].as_str()?.to_owned();

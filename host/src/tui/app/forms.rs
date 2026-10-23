@@ -405,6 +405,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_bot_on_the_default_model_sets_the_default_models_settings() {
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "gpt-6.1-sol", "models": [
+            {"id": "gpt-6.1-sol", "name": "6.1 Sol", "options": [{"id": "reasoning_effort", "name": "Reasoning Effort",
+             "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]}]},
+            {"id": "gpt-6.1-mini", "name": "6.1 Mini", "options": []}]});
+        app.models.insert("codex".into(), Some(AgentModel::list(&catalog)));
+        app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "backend": "codex"})).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::ModelOptions).expect("an options field");
+        let space = KeyEvent::from(KeyCode::Char(' '));
+        let Some(Overlay::Form(f)) = app.form_key(f, space) else { panic!("the editor stays") };
+        assert_eq!(f.model_options().and_then(|o| o.get("reasoning_effort")).map(String::as_str), Some("low"));
+    }
+
+    #[tokio::test]
     async fn a_save_sends_only_what_the_form_changed() {
         let mut app = test_app();
         let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "model": "sonnet"});

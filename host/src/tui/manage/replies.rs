@@ -172,7 +172,7 @@ impl App {
                 }
             }
             Reply::Models(backend) => {
-                let list = v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
+                let list = AgentModel::list(&v);
                 if v["fastMode"] == true {
                     self.fast_mode.insert(backend.clone());
                 }

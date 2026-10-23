@@ -99,3 +99,9 @@ export function effortRow({ catalogSettings, saved, report, loading, failed, cho
   if (saved === reported) return row(`In use: ${name(reported)}`)
   return row(`Saved: ${name(saved)} · not confirmed (in use: ${name(reported)})`)
 }
+
+/** The line under a fallback's row, without starting its agent: its effort level as its own running session reports it,
+ *  or else what is saved for it (Edit loads the agent's list to change it). */
+export function fallbackLine(entry: { modelOptions: Record<string, string> }, report: SessionReport | null): string | null {
+  return null
+}

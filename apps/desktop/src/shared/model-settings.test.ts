@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { effortRow, effortSetting, modelSettings, reportFor } from './model-settings.ts'
+import { effortRow, effortSetting, fallbackLine, modelSettings, reportFor } from './model-settings.ts'
 
 const effort = { id: 'reasoning_effort', name: 'Reasoning Effort', default: 'low', values: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }
 const catalog = {
@@ -87,4 +87,13 @@ test('the running session’s own list decides the settings while nothing is pen
   assert.deepEqual(caption('max', reportFor(runtime({ sessionSettings: [other], sessionOptions: { effort: 'max' } }), 0), { catalogSettings: [], chosenModel: true }).setting, other)
   const pending = reportFor(runtime({ sessionSettings: [other], restartPending: true }), 0)
   assert.equal(caption(undefined, pending, { catalogSettings: [], chosenModel: true }).kind, 'later', 'a pending change may be another model')
+})
+
+test('a fallback row says what its own agent reports, or what is saved for it, without asking the agent', () => {
+  const entry = (modelOptions: Record<string, string>) => ({ modelOptions })
+  const running = reportFor(runtime({ agentStep: { step: 1 }, sessionOptions: { effort: 'high' } }), 1)
+  assert.equal(fallbackLine(entry({ effort: 'high' }), running), 'Effort level · In use: High')
+  assert.equal(fallbackLine(entry({}), running), 'Effort level · In use: High (agent default)')
+  assert.equal(fallbackLine(entry({ effort: 'high' }), null), 'Saved: high', 'not running: what is saved, as saved')
+  assert.equal(fallbackLine(entry({}), null), null, 'nothing saved, nothing running: nothing to say')
 })

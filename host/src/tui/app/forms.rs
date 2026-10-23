@@ -451,6 +451,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_effort_level_only_the_running_session_lists_can_be_picked() {
+        // Reviewer 5997efbb: discovery lists settings for the default model only; the session running the bot's
+        // chosen model lists its effort level.
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "m", "models": [
+            {"id": "m", "name": "M", "options": []}, {"id": "big", "name": "Big", "options": []}]});
+        app.models.insert("claude".into(), Some(AgentModel::list(&catalog)));
+        let level = json!({"id": "effort", "name": "Effort", "category": "thought_level",
+            "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]});
+        let bot = json!({"id": "b", "backend": "claude", "model": "big", "sessionLive": true,
+            "sessionOptions": {"effort": "low"}, "sessionSettings": [level]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::ModelOptions).expect("an options field");
+        let space = KeyEvent::from(KeyCode::Char(' '));
+        let Some(Overlay::Form(mut f)) = app.form_key(f, space) else { panic!("the editor stays") };
+        assert_eq!(f.model_options().and_then(|o| o.get("effort")).map(String::as_str), Some("low"));
+        // Another model in the form: the running session's list is for "big", not for it.
+        f.model = Editor::with("m");
+        let Some(Overlay::Form(f)) = app.form_key(f, space) else { panic!("the editor stays") };
+        assert!(
+            f.model_options().is_none_or(BTreeMap::is_empty),
+            "nothing to pick for a model nobody listed settings for"
+        );
+    }
+
+    #[tokio::test]
     async fn a_save_sends_only_what_the_form_changed() {
         let mut app = test_app();
         let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "model": "sonnet"});

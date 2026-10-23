@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { effortRow, effortSetting, fallbackLine, modelSettings, reportFor } from './model-settings.ts'
+import { effortRow, effortSetting, fallbackLine, fallbackStatus, modelSettings, reportFor } from './model-settings.ts'
 
 const effort = { id: 'reasoning_effort', name: 'Reasoning Effort', default: 'low', values: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }
 const catalog = {
@@ -96,4 +96,12 @@ test('a fallback row says what its own agent reports, or what is saved for it, w
   assert.equal(fallbackLine(entry({}), running), 'Effort level · In use: High (agent default)')
   assert.equal(fallbackLine(entry({ effort: 'high' }), null), 'Saved: high', 'not running: what is saved, as saved')
   assert.equal(fallbackLine(entry({}), null), null, 'nothing saved, nothing running: nothing to say')
+})
+
+test('a fallback being edited hears its agent only for the model the host saved for it', () => {
+  // Reviewer 5997efbb: another model picked in the sheet isn't the model the running session reports on.
+  const bot = { ...runtime({ agentStep: { step: 1, agent: 'codex' } }), fallbacks: [{ backend: 'codex', model: null, modelOptions: {} }] }
+  assert.equal(fallbackStatus(bot, { backend: 'codex', model: null })?.report?.options?.effort, 'low')
+  assert.equal(fallbackStatus(bot, { backend: 'codex', model: 'other' }), undefined, 'not saved: nothing to report')
+  assert.equal(fallbackStatus({ ...bot, agentStep: null }, { backend: 'codex', model: null })?.report, null, 'saved but not running')
 })

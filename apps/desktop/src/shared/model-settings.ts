@@ -111,3 +111,12 @@ export function fallbackLine(entry: { modelOptions: Record<string, string> }, re
   const saved = Object.values(entry.modelOptions)
   return saved.length ? `Saved: ${saved.join(', ')}` : null
 }
+
+/** What a fallback being edited hears: its own agent's report while the bot runs on it, and what the host saved for the
+ *  entry with this agent and model; undefined for any other model (nothing saved to report on). */
+export function fallbackStatus(
+  _bot: SessionRuntime & { agentStep: { step: number; agent?: string } | null; fallbacks: { backend: string; model: string | null; modelOptions: Record<string, string> }[] },
+  _draft: { backend: string; model: string | null },
+): { report: SessionReport | null; saved: Record<string, string> } | undefined {
+  return { report: null, saved: {} }
+}

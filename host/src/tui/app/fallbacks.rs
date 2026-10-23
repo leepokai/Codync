@@ -199,6 +199,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_running_fallbacks_own_list_lets_its_effort_level_be_picked() {
+        // Reviewer 5997efbb: the fallback's agent lists its effort level only on the running session.
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": []}]});
+        app.models.insert("codex".into(), Some(super::super::AgentModel::list(&catalog)));
+        let level = json!({"id": "reasoning_effort", "name": "Effort", "category": "thought_level",
+            "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]});
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "fallbacks": [{"backend": "codex", "model": null}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"reasoning_effort": "high"}, "sessionSettings": [level]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        assert!(app.fallback_key(&mut f, KeyEvent::from(KeyCode::Char('e'))));
+        assert_eq!(f.fallbacks[0].model_options, [("reasoning_effort".to_owned(), "low".to_owned())].into());
+        let item = crate::tui::view::fallbacks::step_item(&app, app.bots.get("b"), 0, &f.fallbacks[0]);
+        assert_eq!(item, "1 codex · default · effort ‹Low› (in use)");
+    }
+
+    #[tokio::test]
     async fn a_members_failure_in_a_group_opens_that_members_fallbacks() {
         let mut app = test_app();
         for bot in [

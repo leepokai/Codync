@@ -29,7 +29,15 @@ impl Actor {
         }
         let Some(conn) = self.conn.as_mut() else { return };
         let reported = crate::agent::config::current_values(options);
-        self.hub.set_runtime(&self.cfg.id, |r| r.session_options = Some(reported));
+        // What each setting is set to is `session_options`; the list says only what can be picked.
+        let mut offered = crate::agent::auth::session_options(options);
+        for setting in &mut offered {
+            setting.as_object_mut().map(|s| s.remove("default"));
+        }
+        self.hub.set_runtime(&self.cfg.id, |r| {
+            r.session_options = Some(reported);
+            r.session_settings = Some(offered);
+        });
         let option = fast_mode_config(options).cloned();
         let was_on = conn.fast_options.get(sid).is_some_and(fast_mode_on);
         let support = match &option {

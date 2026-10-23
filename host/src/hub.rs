@@ -50,6 +50,8 @@ pub struct Runtime {
     /// What the bot's agent session reports it runs on (model, effort…, option id → value), as last listed by the
     /// agent itself; `None` until its current process lists them. Clients tell it from what the bot saved.
     pub session_options: Option<std::collections::BTreeMap<String, String>>,
+    /// The settings that session offers for the model it runs, as `[{id, name, values}]` (see `agentModels`).
+    pub session_settings: Option<Vec<Value>>,
     /// The fallback the bot is on; `None` on its own agent (see `agent::fallback`).
     pub agent_step: Option<AgentStep>,
 }
@@ -373,6 +375,7 @@ impl Hub {
             || before.lane != after.lane
             || before.fast_mode != after.fast_mode
             || before.session_options != after.session_options
+            || before.session_settings != after.session_settings
             || before.agent_step != after.agent_step
         {
             self.emit_bot(id);

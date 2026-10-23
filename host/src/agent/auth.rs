@@ -214,7 +214,7 @@ fn model_options(options: &Value, model: &str) -> Vec<Value> {
 /// The session's own settings for the model it runs, in the same shape: every select config
 /// option except the model itself, how the agent approves tools (the bot's Approvals) and
 /// Fast mode (its own switch).
-fn session_options(session: &Value) -> Vec<Value> {
+pub(crate) fn session_options(session: &Value) -> Vec<Value> {
     let model = model_config(session).map(|c| &c["id"]);
     let fast = crate::agent::config::fast_mode_config(session).map(|c| &c["id"]);
     let own = session["configOptions"]

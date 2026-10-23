@@ -138,10 +138,10 @@ async fn a_chosen_models_settings_come_from_the_session_running_it() {
     answer(&host, &bot, "one").await;
     let snapshot = host.snapshot().await;
     let shown = snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot.as_str()).unwrap().clone();
-    // Discovery only sees the agent's default model; the bot's own session lists what mini offers.
+    // Discovery only sees the agent's default model; the bot's own session lists what mini offers (what it is set
+    // to is `sessionOptions`).
     assert_eq!(
         shown["sessionSettings"],
-        json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "default": "low",
-                "values": [{"id": "low", "name": "Low"}]}])
+        json!([{"id": "reasoning_effort", "name": "Reasoning Effort", "values": [{"id": "low", "name": "Low"}]}])
     );
 }

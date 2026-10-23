@@ -7,7 +7,7 @@ use crate::agent::fallback::Reason;
 use crate::store::Fallback;
 
 /// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 · effort ‹High› (in use)", "2 Gemini CLI · default (usage resets
-/// 15:00)". The effort level shows where its agent lists one for the model, or one is saved.
+/// 15:00)". The effort level shows where its agent lists one for the model; else what is saved for it, as saved.
 pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
     let model = f.model.as_deref().unwrap_or("default");
     // While the bot runs this agent on the saved model, its session's own list; else the agent's catalog.
@@ -18,6 +18,11 @@ pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fall
             o.values.iter().find(|(id, _)| id == v).map_or(v.as_str(), |(_, name)| name.as_str())
         });
         format!(" · effort ‹{value}›")
+    });
+    // Without its agent's list, what is saved for it, as saved.
+    let effort = effort.or_else(|| {
+        let saved: Vec<&str> = f.model_options.values().map(String::as_str).collect();
+        (!saved.is_empty()).then(|| format!(" · saved ‹{}›", saved.join(", ")))
     });
     let item = format!("{} {} · {model}{}", i + 1, app.agent_name(&f.backend), effort.unwrap_or_default());
     if bot.and_then(|b| b.agent_step.as_deref()) == Some(f.backend.as_str()) {

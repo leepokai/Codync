@@ -41,9 +41,12 @@ public enum EffortLevel: Equatable, Sendable {
         settings.first { $0.category == "thought_level" }
     }
 
-    /// The settings a step shows.
+    /// The settings a step shows: while nothing is pending, its running session's own list (for the model it runs),
+    /// else what the catalog lists; then any `saved` setting neither lists, so it stays visible and can be cleared.
     public static func shown(catalog: [AgentModels.Option], report: SessionReport?, saved: [String: String]) -> [AgentModels.Option] {
-        catalog
+        let listed = report.flatMap { $0.pending ? nil : $0.settings } ?? catalog
+        let unlisted = saved.keys.filter { id in !listed.contains { $0.id == id } }.sorted()
+        return listed + unlisted.map { AgentModels.Option(id: $0, name: $0, values: [], default: nil) }
     }
 
     /// `catalog`: what the agent lists for the step's model; `saved`: what the host saved; `report`: the step's own

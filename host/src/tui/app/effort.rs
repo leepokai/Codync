@@ -52,9 +52,18 @@ impl App {
         session.and_then(|s| s.settings.as_deref()).unwrap_or_else(|| self.model_settings(backend, model))
     }
 
-    /// What the form shows for its own agent (`step` `None`) or its fallback `step`.
+    /// What the form shows for its own agent (`step` `None`) or its fallback `step`: `step_settings` in order, then any
+    /// setting picked for it that none lists, so it stays visible and can be cleared.
     pub(in crate::tui) fn form_settings(&self, f: &Form, step: Option<usize>) -> Vec<ModelOption> {
-        in_order(self.step_settings(f, step)).into_iter().cloned().collect()
+        let listed = self.step_settings(f, step);
+        let picked = match step {
+            Some(i) => f.fallbacks.get(i).map(|x| &x.model_options),
+            None => f.model_options(),
+        };
+        let unlisted = picked.into_iter().flat_map(|p| p.keys()).filter(|id| !listed.iter().any(|o| &o.id == *id));
+        let unlisted =
+            unlisted.map(|id| ModelOption { id: id.clone(), name: id.clone(), values: vec![], category: None });
+        in_order(listed).into_iter().cloned().chain(unlisted).collect()
     }
 
     /// `settings_for` the form's own agent (`step` `None`) or its fallback `step`, as the form shows them now.

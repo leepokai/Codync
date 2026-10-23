@@ -89,7 +89,9 @@ import kotlinx.coroutines.CancellationException
             }
             EffortLevel.None -> {}
         }
-        for (option in modelOptions.filter { it.id != effortId }) SettingRow(option.name, option, options[option.id].orEmpty()) { setOption(option, it) }
+        // The rest of what the running session lists, and any saved setting nobody lists (so it can be cleared).
+        for (option in EffortLevel.shown(modelOptions, status?.first, options).filter { it.id != effortId })
+            SettingRow(option.name, option, options[option.id].orEmpty()) { setOption(option, it) }
         val note = failure
         if (backend != "custom" && !loading && note != null) Text(note, style = Type.caption, color = Palette.warning)
         else if (backend != "custom" && !loading && catalog?.models?.isEmpty() == true)
@@ -109,6 +111,9 @@ import kotlinx.coroutines.CancellationException
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), style = Type.body, color = Palette.text)
         val fallback = option.values.firstOrNull { it.id == option.default }?.name
-        ChoicePicker(value, listOf("" to (fallback?.let { "Default · $it" } ?: "Default")) + option.values.map { it.id to it.name }, pick, label = label)
+        val listed = listOf("" to (fallback?.let { "Default · $it" } ?: "Default")) + option.values.map { it.id to it.name }
+        // A saved value the agent no longer lists stays visible until it's changed.
+        val choices = if (value.isNotEmpty() && option.values.none { it.id == value }) listed + (value to value) else listed
+        ChoicePicker(value, choices, pick, label = label)
     }
 }

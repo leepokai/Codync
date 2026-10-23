@@ -264,7 +264,7 @@ impl App {
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::ModelOptions => {
                         let model = f.model.text.trim().to_owned();
-                        let offered = super::settings_in_order(self.step_settings(&f, None));
+                        let offered = self.form_settings(&f, None);
                         if !space {
                             f.sub = cycle(f.sub, d, offered.len().max(1));
                         } else if let Some(o) = offered.get(f.sub) {
@@ -381,7 +381,8 @@ impl Form {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AgentModel, setting_label, settings_in_order, test_app};
+    use super::super::effort::in_order as settings_in_order;
+    use super::super::{AgentModel, setting_label, test_app};
     use super::*;
 
     #[tokio::test]

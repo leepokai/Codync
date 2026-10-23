@@ -21,9 +21,12 @@ export function modelSettings(catalog: Catalog | null | undefined, model: string
 }
 
 
-/** The settings a step shows. */
-export function stepSettings(catalogSettings: ModelSetting[], _report: SessionReport | null, _saved: Record<string, string>): ModelSetting[] {
-  return catalogSettings
+/** The settings a step shows: while nothing is pending, its running session's own list (for the model it runs), else
+ *  what the catalog lists; then any `saved` setting neither lists, so it stays visible and can be cleared. */
+export function stepSettings(catalogSettings: ModelSetting[], report: SessionReport | null, saved: Record<string, string>): ModelSetting[] {
+  const listed = report && !report.pending && report.settings ? report.settings : catalogSettings
+  const unlisted = Object.keys(saved).filter((id) => !listed.some((s) => s.id === id)).sort()
+  return [...listed, ...unlisted.map((id) => ({ id, name: id, values: [] }))]
 }
 
 /** The agent's effort level: the setting of ACP category `thought_level`, whatever its id. */

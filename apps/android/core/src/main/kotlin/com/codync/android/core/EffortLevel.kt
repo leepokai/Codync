@@ -36,8 +36,12 @@ sealed interface EffortLevel {
             return if (values.isEmpty()) null else "Saved: ${values.joinToString(", ")}"
         }
 
-        /** The settings a step shows. */
-        fun shown(catalog: List<ModelOption>, report: SessionReport?, saved: Map<String, String>): List<ModelOption> = catalog
+        /** The settings a step shows: while nothing is pending, its running session's own list (for the model it runs), else what the
+         *  catalog lists; then any [saved] setting neither lists, so it stays visible and can be cleared. */
+        fun shown(catalog: List<ModelOption>, report: SessionReport?, saved: Map<String, String>): List<ModelOption> {
+            val listed = report?.takeIf { !it.pending }?.settings ?: catalog
+            return listed + saved.keys.filter { id -> listed.none { it.id == id } }.sorted().map { ModelOption(it, it) }
+        }
 
         /** The agent's effort level: the setting of ACP category `thought_level`, whatever its id. */
         fun setting(settings: List<ModelOption>): ModelOption? = settings.firstOrNull { it.category == "thought_level" }

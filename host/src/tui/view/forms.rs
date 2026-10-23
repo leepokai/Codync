@@ -5,8 +5,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 
 use super::super::app::{
-    App, COLORS, Editor, Effort, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, setting_label, settings_in_order,
-    tilde,
+    App, COLORS, Editor, Effort, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, setting_label, tilde,
 };
 use super::super::manage::Page;
 use super::super::md::{truncate, width as w};
@@ -130,7 +129,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &format!("{s}{offered}"), t.text.patch(base));
             }
             Field::ModelOptions => {
-                let offered = settings_in_order(app.step_settings(f, None));
+                let offered = app.form_settings(f, None);
                 let effort = app.form_effort(f, None);
                 if offered.is_empty() {
                     let none = if matches!(effort, Effort::Later) {

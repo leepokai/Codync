@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { ChoicePicker, IconButton, Pill, Spinner } from '../../components/Controls'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { effortRow, modelSettings, type ModelSetting, type SessionReport } from '@shared/model-settings'
+import { effortRow, modelSettings, stepSettings, type ModelSetting, type SessionReport } from '@shared/model-settings'
 import type { AgentModelsState } from './agent-models'
 
 /** The bot's model and its options, from the list `useAgentModels` loaded for its agent: the Effort level row first,
@@ -58,7 +58,8 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   })
   // A value not saved yet has nothing to report.
   const unsaved = !status || (effortId !== undefined && (chosen[effortId] ?? '') !== (status.saved[effortId] ?? ''))
-  const others = catalogSettings.filter((o) => o.id !== effort.setting?.id)
+  // The rest of what the running session lists, and any saved setting nobody lists (so it can be cleared).
+  const others = stepSettings(catalogSettings, report, chosen).filter((o) => o.id !== effort.setting?.id)
   const setOption = (id: string, v: string) => {
     const { [id]: _, ...rest } = chosen
     onOptionsChange(v ? { ...rest, [id]: v } : rest)

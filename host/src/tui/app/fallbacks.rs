@@ -51,9 +51,15 @@ impl App {
             KeyCode::Char('e') if at < f.fallbacks.len() => {
                 // Its agent's list loads on the first press; nothing starts that agent before.
                 self.want_models(&f.fallbacks[at].backend);
-                let setting = super::effort_setting(self.step_settings(f, Some(at))).cloned();
+                let settings = self.step_settings(f, Some(at));
+                let setting = super::effort_setting(settings).cloned();
+                let ids: Vec<String> = settings.iter().map(|o| o.id.clone()).collect();
+                let loaded = matches!(self.models.get(&f.fallbacks[at].backend), Some(Some(_)));
                 let step = &mut f.fallbacks[at];
-                if let Some(o) = setting {
+                if setting.is_none() && loaded {
+                    // No effort level listed for this model: a saved one nothing lists goes.
+                    step.model_options.retain(|id, _| ids.contains(id));
+                } else if let Some(o) = setting {
                     // Default (the agent's own), then each value.
                     let ids: Vec<&str> =
                         std::iter::once("").chain(o.values.iter().map(|(id, _)| id.as_str())).collect();
@@ -229,9 +235,7 @@ mod tests {
             "fallbacks": [{"backend": "gemini", "model": null, "modelOptions": {"reasoning_effort": "high"}}]});
         app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
         app.selected = Some("b".into());
-        let item = |app: &App, f: &crate::store::Fallback| {
-            crate::tui::view::fallbacks::step_item(app, app.bots.get("b"), 0, f)
-        };
+        let item = |app: &App, f: &Fallback| crate::tui::view::fallbacks::step_item(app, app.bots.get("b"), 0, f);
         let saved = app.bots["b"].fallbacks[0].clone();
         assert_eq!(item(&app, &saved), "1 gemini · default · saved ‹high›");
         app.models.clear();

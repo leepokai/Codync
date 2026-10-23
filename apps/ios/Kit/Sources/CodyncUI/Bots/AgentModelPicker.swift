@@ -87,7 +87,10 @@ struct AgentModelPicker: View {
 
     private func choices(_ option: AgentModels.Option) -> [(String, String)] {
         let fallback = option.values.first { $0.id == option.default }?.name
-        return [("", fallback.map { "Default · \($0)" } ?? "Default")] + option.values.map { ($0.id, $0.name) }
+        var result = [("", fallback.map { "Default · \($0)" } ?? "Default")] + option.values.map { ($0.id, $0.name) }
+        // A saved value the agent no longer lists stays visible until it's changed.
+        if let value = options[option.id], !option.values.contains(where: { $0.id == value }) { result.append((value, value)) }
+        return result
     }
 
     private var showsFastMode: Bool {
@@ -153,8 +156,9 @@ struct AgentModelPicker: View {
     }
 
     @ViewBuilder private var otherRows: some View {
-        let effortID = EffortLevel.setting(in: modelOptions)?.id
-        ForEach(modelOptions.filter { $0.id != effortID }) { option in
+        // The rest of what the running session lists, and any saved setting nobody lists (so it can be cleared).
+        let effortID: String? = if case .row(let setting?, _) = effortLevel(saved: nil) { setting.id } else { nil }
+        ForEach(EffortLevel.shown(catalog: modelOptions, report: status?.report, saved: options).filter { $0.id != effortID }) { option in
             settingRow(option.name, option)
         }
         if backend != "custom", !loading {

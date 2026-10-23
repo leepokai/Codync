@@ -77,17 +77,34 @@ async fn a_bot_on_the_default_model_gets_its_effort_on_new_and_resumed_sessions(
 }
 
 #[tokio::test]
-async fn an_effort_the_agent_rejects_names_the_setting() {
+async fn a_setting_the_agent_rejects_names_the_setting() {
     if python_missing() {
         return;
     }
     let host = Host::start().await;
     let bot = host.fixture_bot("Rejected", "effort_agent.py", "").await;
-    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "max"}})).await;
+    // A setting the session doesn't list goes to the agent as saved (Cursor's arrive this way); it refuses it.
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"verbosity": "terse"}})).await;
     host.call("send", json!({"botId": bot, "text": "one"})).await;
     let failed = wait_for(&host, &bot, "failure", |e| e["data"]["style"] == "error").await;
     let text = failed["data"]["text"].as_str().unwrap();
-    assert!(text.contains("Couldn't set reasoning_effort to max"), "{text}");
+    assert!(text.contains("Couldn't set verbosity to terse"), "{text}");
+}
+
+#[tokio::test]
+async fn a_value_the_model_doesnt_offer_is_left_out_and_said() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Stale", "effort_agent.py", "").await;
+    // Saved for one model, the agent's offer changed: mini has no high effort.
+    host.call("updateBot", json!({"id": bot, "model": "mini", "modelOptions": {"reasoning_effort": "high"}})).await;
+    assert_eq!(answer(&host, &bot, "one").await, "mini low · one", "the session still starts, on the agent's own");
+    assert_eq!(calls(&host, &bot), ["session/new", "model=mini"], "never sent");
+    let said = wait_for(&host, &bot, "notice", |e| e["kind"] == "notice").await;
+    let text = said["data"]["text"].as_str().unwrap();
+    assert!(text.contains("Reasoning Effort") && text.contains("high") && text.contains("isn't offered"), "{text}");
 }
 
 #[tokio::test]

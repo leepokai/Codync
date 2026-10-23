@@ -602,6 +602,22 @@ mod tests {
     }
 
     #[test]
+    fn session_settings_keep_grouped_values() {
+        // Reviewer DJ102-GROUPED-SETTING-VALUES: ACP select values may come in groups.
+        let session = json!({"configOptions": [{"id": "effort", "category": "thought_level", "type": "select",
+            "currentValue": "low", "options": [{"group": "fast", "name": "Fast", "options": [{"value": "low", "name": "Low"}]},
+            {"group": "deep", "name": "Deep", "options": [{"value": "high", "name": "High"}]}]}]});
+        assert_eq!(
+            session_options(&session),
+            json!([{"id": "effort", "name": "effort", "default": "low",
+                    "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]}])
+            .as_array()
+            .unwrap()
+            .clone()
+        );
+    }
+
+    #[test]
     fn model_config_prefers_category_and_ignores_unknown_types() {
         let session = json!({"configOptions": [
             {"id": "model", "type": "boolean"},

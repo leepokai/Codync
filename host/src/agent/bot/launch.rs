@@ -300,6 +300,17 @@ mod tests {
     }
 
     #[test]
+    fn default_gets_its_options_from_an_agent_without_a_model_selector() {
+        // Reviewer DJ102-DEFAULT-OPTIONS-WITHOUT-MODEL-SELECTOR: models listed the older way, settings as config
+        // options; ACP allows one without the other.
+        let res = json!({"models": {"availableModels": [{"modelId": "m"}], "currentModelId": "m"},
+            "configOptions": [{"id": "reasoning_effort", "type": "select", "currentValue": "low",
+                "options": [{"value": "low"}, {"value": "high"}]}]});
+        let own = [("reasoning_effort", "high")].map(|(k, v)| (k.to_owned(), v.to_owned())).into();
+        assert_eq!(config_steps(&res, None, &own), vec![("reasoning_effort", "high")]);
+    }
+
+    #[test]
     fn claude_codes_memory_is_off_in_any_folder_unless_the_user_kept_it() {
         let bot = |kept: Value| -> BotConfig {
             serde_json::from_value(

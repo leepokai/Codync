@@ -42,6 +42,11 @@ What their issues taught, and the answer here:
 
 - Per bot: its agent and model (step 0), then `fallbacks`, up to 3, each `{backend, model, modelOptions}` (a custom
   `command` is accepted on the wire, not offered in the apps). Empty by default.
+- Each fallback keeps its own `modelOptions` (its effort level and the like) for its own agent and model; the bot's
+  own are never used for it, and an empty map leaves the agent's own setting. A fallback step's session gets them like
+  the bot's own (new or resumed); one its agent doesn't offer is left out there and shows in `settingIssues` while the
+  bot runs on it. The apps show each fallback's Effort level, captioned from its agent's own session only while the bot
+  is on it (terminal UI: `e` on a fallback cycles it).
 - Each agent appears once, the bot's own included. Making a fallback the bot's own agent drops it from the list
   (`fallback::tidy`).
 - Everything else is the bot's for every step: folder, approvals, connectors, skills, computer use, memory, fast mode

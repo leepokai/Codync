@@ -384,8 +384,3 @@ button.member-row:hover {
   gap: 6px;
   color: var(--text);
 }
-
-/* A fallback's own Effort level, under its row, lined up with its name. */
-.fallback-effort {
-  padding-left: 42px;
-}

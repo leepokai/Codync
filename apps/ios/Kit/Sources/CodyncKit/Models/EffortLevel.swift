@@ -41,6 +41,11 @@ public enum EffortLevel: Equatable, Sendable {
         settings.first { $0.category == "thought_level" }
     }
 
+    /// The settings a step shows.
+    public static func shown(catalog: [AgentModels.Option], report: SessionReport?, saved: [String: String]) -> [AgentModels.Option] {
+        catalog
+    }
+
     /// `catalog`: what the agent lists for the step's model; `saved`: what the host saved; `report`: the step's own
     /// agent's session while it runs. First match wins; nothing is inferred from a saved value.
     public static func row(

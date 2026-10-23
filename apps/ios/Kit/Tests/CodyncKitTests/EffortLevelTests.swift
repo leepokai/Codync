@@ -68,3 +68,16 @@ private func bot(_ fields: String) throws -> Bot {
     #expect(EffortLevel.fallbackLine(saved: ["effort": "high"], report: nil) == "Saved: high")
     #expect(EffortLevel.fallbackLine(saved: [:], report: nil) == nil)
 }
+
+@Test func aStepShowsEverySettingItsRunningSessionListsAndAnySavedOneNobodyListsStaysVisible() throws {
+    // Greptile on #204: the session's verbosity was hidden, and a saved effort the agent stopped listing vanished.
+    let verbosity = try option(#"{"id":"verbosity","name":"Verbosity","values":[{"id":"terse","name":"Terse"}]}"#)
+    let effort = try option(level)
+    let listed = try bot(#""backend":"claude","sessionSettings":[\#(level),{"id":"verbosity","name":"Verbosity","values":[{"id":"terse","name":"Terse"}]}]"#).report(for: "claude")
+    #expect(EffortLevel.shown(catalog: [], report: listed, saved: [:]) == [effort, verbosity])
+    let pending = try bot(#""backend":"claude","restartPending":true,"sessionSettings":[\#(level)]"#).report(for: "claude")
+    #expect(EffortLevel.shown(catalog: [verbosity], report: pending, saved: [:]) == [verbosity])
+    let unlisted = EffortLevel.shown(catalog: [], report: nil, saved: ["effort": "high"])
+    #expect(unlisted.map(\.id) == ["effort"] && unlisted.first?.values == [])
+    #expect(EffortLevel.shown(catalog: [effort], report: nil, saved: ["effort": "high"]) == [effort])
+}

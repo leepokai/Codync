@@ -21,6 +21,11 @@ export function modelSettings(catalog: Catalog | null | undefined, model: string
 }
 
 
+/** The settings a step shows. */
+export function stepSettings(catalogSettings: ModelSetting[], _report: SessionReport | null, _saved: Record<string, string>): ModelSetting[] {
+  return catalogSettings
+}
+
 /** The agent's effort level: the setting of ACP category `thought_level`, whatever its id. */
 export function effortSetting(settings: ModelSetting[]): ModelSetting | undefined {
   return settings.find((s) => s.category === 'thought_level')

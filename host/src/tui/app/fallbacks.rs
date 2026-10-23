@@ -220,6 +220,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_fallbacks_saved_effort_shows_without_its_agents_list_and_clears() {
+        // Greptile on #204: the chain showed a saved fallback effort only where its agent listed one.
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": []}]});
+        app.models.insert("gemini".into(), Some(super::super::AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude",
+            "fallbacks": [{"backend": "gemini", "model": null, "modelOptions": {"reasoning_effort": "high"}}]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        let item = |app: &App, f: &crate::store::Fallback| {
+            crate::tui::view::fallbacks::step_item(app, app.bots.get("b"), 0, f)
+        };
+        let saved = app.bots["b"].fallbacks[0].clone();
+        assert_eq!(item(&app, &saved), "1 gemini · default · saved ‹high›");
+        app.models.clear();
+        assert_eq!(item(&app, &saved), "1 gemini · default · saved ‹high›", "no list loaded");
+        app.models.insert("gemini".into(), Some(super::super::AgentModel::list(&catalog)));
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        assert!(app.fallback_key(&mut f, KeyEvent::from(KeyCode::Char('e'))));
+        assert!(f.fallbacks[0].model_options.is_empty(), "e clears what its agent doesn't list");
+    }
+
+    #[tokio::test]
     async fn a_members_failure_in_a_group_opens_that_members_fallbacks() {
         let mut app = test_app();
         for bot in [

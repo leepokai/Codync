@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { effortRow, effortSetting, fallbackLine, fallbackStatus, modelSettings, reportFor } from './model-settings.ts'
+import { effortRow, effortSetting, fallbackLine, fallbackStatus, modelSettings, reportFor, stepSettings } from './model-settings.ts'
 
 const effort = { id: 'reasoning_effort', name: 'Reasoning Effort', default: 'low', values: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }
 const catalog = {
@@ -104,4 +104,14 @@ test('a fallback being edited hears its agent only for the model the host saved 
   assert.equal(fallbackStatus(bot, { backend: 'codex', model: null })?.report?.options?.effort, 'low')
   assert.equal(fallbackStatus(bot, { backend: 'codex', model: 'other' }), undefined, 'not saved: nothing to report')
   assert.equal(fallbackStatus({ ...bot, agentStep: null }, { backend: 'codex', model: null })?.report, null, 'saved but not running')
+})
+
+test('a step shows every setting its running session lists, and any saved one nobody lists stays visible', () => {
+  // Greptile on #204: the session's verbosity was hidden, and a saved effort the agent stopped listing vanished.
+  const listed = reportFor(runtime({ sessionSettings: [level, verbosity] }), 0)
+  assert.deepEqual(stepSettings([], listed, {}), [level, verbosity], 'the running session’s own list')
+  const pending = reportFor(runtime({ sessionSettings: [level, verbosity], restartPending: true }), 0)
+  assert.deepEqual(stepSettings([level], pending, {}), [level], 'a pending change may be another model: the catalog')
+  assert.deepEqual(stepSettings([], null, { effort: 'high' }), [{ id: 'effort', name: 'effort', values: [] }], 'saved, listed by nobody')
+  assert.deepEqual(stepSettings([level], null, { effort: 'high' }), [level], 'a listed setting isn’t repeated')
 })

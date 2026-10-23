@@ -36,6 +36,9 @@ sealed interface EffortLevel {
             return if (values.isEmpty()) null else "Saved: ${values.joinToString(", ")}"
         }
 
+        /** The settings a step shows. */
+        fun shown(catalog: List<ModelOption>, report: SessionReport?, saved: Map<String, String>): List<ModelOption> = catalog
+
         /** The agent's effort level: the setting of ACP category `thought_level`, whatever its id. */
         fun setting(settings: List<ModelOption>): ModelOption? = settings.firstOrNull { it.category == "thought_level" }
 

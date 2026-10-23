@@ -63,4 +63,16 @@ class EffortLevelTest {
         assertEquals("Saved: high", EffortLevel.fallbackLine(mapOf("effort" to "high"), null))
         assertNull(EffortLevel.fallbackLine(emptyMap(), null))
     }
+
+    @Test fun `a step shows every setting its running session lists and any saved one nobody lists stays visible`() {
+        // Greptile on #204: the session's verbosity was hidden, and a saved effort the agent stopped listing vanished.
+        val verbosity = ModelOption("verbosity", "Verbosity", listOf(ModelOptionValue("terse", "Terse")))
+        val verbosityJson = """{"id":"verbosity","name":"Verbosity","values":[{"id":"terse","name":"Terse"}]}"""
+        val listed = bot(""","sessionSettings":[$level,$verbosityJson]""").report("claude")
+        assertEquals(catalog + verbosity, EffortLevel.shown(emptyList(), listed, emptyMap()))
+        val pending = bot(""","restartPending":true,"sessionSettings":[$level]""").report("claude")
+        assertEquals(listOf(verbosity), EffortLevel.shown(listOf(verbosity), pending, emptyMap()))
+        assertEquals(listOf(ModelOption("effort", "effort")), EffortLevel.shown(emptyList(), null, mapOf("effort" to "high")))
+        assertEquals(catalog, EffortLevel.shown(catalog, null, mapOf("effort" to "high")))
+    }
 }

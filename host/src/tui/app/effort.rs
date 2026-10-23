@@ -52,6 +52,11 @@ impl App {
         session.and_then(|s| s.settings.as_deref()).unwrap_or_else(|| self.model_settings(backend, model))
     }
 
+    /// What the form shows for its own agent (`step` `None`) or its fallback `step`.
+    pub(in crate::tui) fn form_settings(&self, f: &Form, step: Option<usize>) -> Vec<ModelOption> {
+        in_order(self.step_settings(f, step)).into_iter().cloned().collect()
+    }
+
     /// `settings_for` the form's own agent (`step` `None`) or its fallback `step`, as the form shows them now.
     pub(in crate::tui) fn step_settings(&self, f: &Form, step: Option<usize>) -> &[ModelOption] {
         let entry = step.and_then(|i| f.fallbacks.get(i));

@@ -480,6 +480,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_saved_setting_the_agent_no_longer_lists_stays_visible_and_can_be_cleared() {
+        // Greptile on #204: a saved effort level vanished from the editor once its agent stopped listing it.
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": []}]});
+        app.models.insert("claude".into(), Some(AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "backend": "claude", "modelOptions": {"effort": "high"}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        let shown: Vec<String> = app.form_settings(&f, None).into_iter().map(|o| o.id).collect();
+        assert_eq!(shown, ["effort"], "saved, listed by nobody");
+        f.field = FIELDS.iter().position(|x| *x == Field::ModelOptions).expect("an options field");
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Char(' '))) else {
+            panic!("the editor stays")
+        };
+        assert!(f.model_options().is_some_and(BTreeMap::is_empty), "space clears it");
+    }
+
+    #[tokio::test]
     async fn a_save_sends_only_what_the_form_changed() {
         let mut app = test_app();
         let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "model": "sonnet"});

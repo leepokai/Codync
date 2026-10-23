@@ -423,6 +423,16 @@ mod tests {
     }
 
     #[test]
+    fn a_chosen_model_listed_the_older_way_still_gets_its_settings() {
+        // Reviewer DJ103-LEGACY-EXPLICIT-OPTIONS: the model goes by `session/set_model`, the settings after it.
+        let res = json!({"models": {"availableModels": [{"modelId": "m"}, {"modelId": "n"}], "currentModelId": "n"},
+            "configOptions": [{"id": "reasoning_effort", "type": "select", "currentValue": "low",
+                "options": [{"value": "low"}, {"value": "high"}]}]});
+        let own = [("reasoning_effort", "high")].map(|(k, v)| (k.to_owned(), v.to_owned())).into();
+        assert_eq!(config_steps(&res, Some("m"), &own), vec![("reasoning_effort", "high")]);
+    }
+
+    #[test]
     fn claude_codes_memory_is_off_in_any_folder_unless_the_user_kept_it() {
         let bot = |kept: Value| -> BotConfig {
             serde_json::from_value(

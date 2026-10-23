@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { MAX_FALLBACKS, moveFallback, restLine, restOf, stepBanner } from '@shared/fallbacks'
+import { effortRow, modelSettings, reportFor } from '@shared/model-settings'
 import type { Backend, Bot, BotDraft, Fallback } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, ChoicePicker, DropdownMenu, IconButton, ValueRow } from '../../components/Controls'
@@ -10,7 +11,7 @@ import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { FormSheet } from '../marketplace/pieces'
 import { useAgentModels } from './agent-models'
-import { AgentModelPicker } from './AgentModelPicker'
+import { AgentModelPicker, SettingRow } from './AgentModelPicker'
 import './bots.css'
 
 const ABOUT =
@@ -60,6 +61,7 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
             now={now}
             move={(by) => edit((l) => moveFallback(l, i, by))}
             remove={() => edit((l) => l.filter((_, j) => j !== i))}
+            setOptions={(modelOptions) => edit((l) => l.map((f, j) => (j === i ? { ...f, modelOptions } : f)))}
           />
         ))
       ) : (
@@ -84,8 +86,8 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
   )
 }
 
-/** One fallback: its place, agent and model, whether it's resting or in use, and its menu. */
-function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
+/** One fallback: its place, agent and model, whether it's resting or in use, its menu, and its own Effort level. */
+function FallbackRow({ fallback, index, count, bot, now, move, remove, setOptions }: {
   fallback: Fallback
   index: number
   count: number
@@ -93,34 +95,69 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
   now: number
   move: (by: number) => void
   remove: () => void
+  setOptions: (options: Record<string, string>) => void
 }) {
   const store = useStore()
+  const models = useAgentModels(fallback.backend)
   const backend = store.hello?.backends.find((b) => b.id === fallback.backend)
   const name = backend ? agentChoice(backend).label : store.backendName(fallback.backend)
   const rest = restOf(bot, fallback.backend, now)
   return (
-    <HStack gap={8} className="fade-in">
-      <IconSlot width={12} tone="secondary">
-        <Text tabular>{index + 1}</Text>
-      </IconSlot>
-      <AgentIcon registry={store.agentRegistry(fallback.backend)} size={14} />
-      <VStack gap={2} grow>
-        <Text tone="text" truncate>{`${name} · ${fallback.model || 'Default'}`}</Text>
-        {rest ? <Text size="caption" tone="secondary">{restLine(rest, now)}</Text> : null}
-      </VStack>
-      {bot.agentStep?.agent === fallback.backend ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">In use</Text> : null}
-      <DropdownMenu
-        className="icon-button fallback-menu"
-        title="More"
-        items={() => [
-          ...(index > 0 ? [{ title: 'Move up', icon: 'arrow.up', action: () => move(-1) }] : []),
-          ...(index < count - 1 ? [{ title: 'Move down', icon: 'arrow.down', action: () => move(1) }] : []),
-          { title: 'Remove', icon: 'trash', destructive: true, divider: count > 1, action: remove },
-        ]}
-      >
-        <Icon name="ellipsis" size={14} weight="medium" />
-      </DropdownMenu>
-    </HStack>
+    <VStack gap={6} className="fade-in">
+      <HStack gap={8}>
+        <IconSlot width={12} tone="secondary">
+          <Text tabular>{index + 1}</Text>
+        </IconSlot>
+        <AgentIcon registry={store.agentRegistry(fallback.backend)} size={14} />
+        <VStack gap={2} grow>
+          <Text tone="text" truncate>{`${name} · ${fallback.model || 'Default'}`}</Text>
+          {rest ? <Text size="caption" tone="secondary">{restLine(rest, now)}</Text> : null}
+        </VStack>
+        {bot.agentStep?.agent === fallback.backend ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">In use</Text> : null}
+        <DropdownMenu
+          className="icon-button fallback-menu"
+          title="More"
+          items={() => [
+            ...(index > 0 ? [{ title: 'Move up', icon: 'arrow.up', action: () => move(-1) }] : []),
+            ...(index < count - 1 ? [{ title: 'Move down', icon: 'arrow.down', action: () => move(1) }] : []),
+            { title: 'Remove', icon: 'trash', destructive: true, divider: count > 1, action: remove },
+          ]}
+        >
+          <Icon name="ellipsis" size={14} weight="medium" />
+        </DropdownMenu>
+      </HStack>
+      <FallbackEffort fallback={fallback} bot={bot} models={models} setOptions={setOptions} />
+    </VStack>
+  )
+}
+
+/** A fallback's Effort level: from its own agent's list for its model, captioned only by that agent's own session. */
+function FallbackEffort({ fallback, bot, models, setOptions }: {
+  fallback: Fallback
+  bot: Bot
+  models: ReturnType<typeof useAgentModels>
+  setOptions: (options: Record<string, string>) => void
+}) {
+  // Its own session speaks only while the bot runs on this agent; what the host saved for this entry, by its agent.
+  const saved = bot.fallbacks.find((f) => f.backend === fallback.backend)
+  const report = bot.agentStep?.agent === fallback.backend ? reportFor(bot, bot.agentStep.step) : null
+  const input = { catalogSettings: modelSettings(models.catalog, fallback.model ?? ''), report, loading: models.loading, failed: !!models.failure, chosenModel: !!fallback.model }
+  const id = effortRow({ ...input, saved: undefined }).setting?.id
+  const effort = effortRow({ ...input, saved: id ? saved?.modelOptions[id] : undefined })
+  const value = id ? (fallback.modelOptions[id] ?? '') : ''
+  const unsaved = !saved || (saved.model ?? null) !== (fallback.model ?? null) || (id !== undefined && value !== (saved.modelOptions[id] ?? ''))
+  const set = (v: string) => {
+    if (!id) return
+    const { [id]: _, ...rest } = fallback.modelOptions
+    setOptions(v ? { ...rest, [id]: v } : rest)
+  }
+  if (effort.kind === 'later') return <Text size="caption" tone="secondary" className="fallback-effort">Effort level appears once the agent runs this model.</Text>
+  if (effort.kind !== 'row') return null
+  return (
+    <VStack gap={2} className="fallback-effort fade-in">
+      {effort.setting ? <SettingRow label="Effort level" setting={effort.setting} value={value} onChange={set} /> : null}
+      {effort.caption && !unsaved ? <Text size="caption" tone="secondary">{effort.caption}</Text> : null}
+    </VStack>
   )
 }
 

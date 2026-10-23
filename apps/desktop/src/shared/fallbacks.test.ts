@@ -66,7 +66,7 @@ test('another agent starts on its own default model with none of the old agentâ€
 })
 
 test('moving and removing fallbacks keeps each oneâ€™s own settings', () => {
-  const f = (backend: string, effort?: string) => ({ backend, model: null, modelOptions: effort ? { effort } : {} })
+  const f = (backend: string, effort?: string) => ({ backend, model: null, modelOptions: effort ? { effort } : ({} as Record<string, string>) })
   const moved = moveFallback([f('codex', 'high'), f('gemini')], 0, 1)
   assert.deepEqual(moved.map((x) => x.modelOptions), [{}, { effort: 'high' }])
 })

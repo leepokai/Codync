@@ -500,6 +500,44 @@ for line in sys.stdin:
         assert_eq!(calls, "model=A\neffort=high\n");
     }
 
+    #[tokio::test]
+    async fn settings_the_model_switch_first_lists_are_applied() {
+        // Reviewer: models listed the older way, no settings until `session/set_model` answers with them.
+        let dir = std::env::temp_dir().join(format!("codync-select-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("agent.py");
+        std::fs::write(&script, r#"
+import json, sys
+def send(v): print(json.dumps({"jsonrpc": "2.0", **v}), flush=True)
+for line in sys.stdin:
+    m = json.loads(line); method, rid, p = m.get("method"), m.get("id"), m.get("params", {})
+    if rid is None: continue
+    if method == "initialize": send({"id": rid, "result": {"protocolVersion": 1}})
+    elif method == "session/set_model":
+        open("calls.log", "a").write("model=" + p["modelId"] + "\n")
+        send({"id": rid, "result": {"models": {"currentModelId": p["modelId"]}, "configOptions": [
+            {"id": "effort", "type": "select", "currentValue": "low", "options": [{"value": "low"}, {"value": "high"}]}]}})
+    elif method == "session/set_config_option":
+        open("calls.log", "a").write(p["configId"] + "=" + p["value"] + "\n")
+        send({"id": rid, "result": {}})
+    else: send({"id": rid, "result": {}})
+"#).unwrap();
+        let conn =
+            start_agent(&format!("python3 {}", script.display()), dir.to_str().unwrap(), &[], Duration::from_secs(20))
+                .await
+                .unwrap();
+        let res = json!({"sessionId": "s1", "models": {"availableModels": [{"modelId": "m"}, {"modelId": "n"}],
+            "currentModelId": "n"}});
+        let cfg: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "other",
+            "model": "m", "modelOptions": {"effort": "high"}}))
+        .unwrap();
+        select_model(&conn.acp, &res, "s1", &cfg).await.unwrap();
+        conn.acp.kill().await;
+        let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(calls, "model=m\neffort=high\n");
+    }
+
     #[test]
     fn claude_codes_memory_is_off_in_any_folder_unless_the_user_kept_it() {
         let bot = |kept: Value| -> BotConfig {

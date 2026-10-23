@@ -82,6 +82,17 @@ impl Reported {
         self.session.is_some()
     }
 
+    /// `opened`, by agent process `process` (not yet told apart).
+    pub(super) fn opened_in(&mut self, sid: &str, _process: u64, answer: &Value) {
+        self.opened(sid, answer);
+    }
+
+    /// `settle`, given the running process (not yet told apart).
+    pub(super) fn settle_in(&mut self, live: impl Fn(&str, u64) -> bool) {
+        // Today only the session id counts: any process holding it keeps the report.
+        self.settle(|sid| (1..=2).any(|process| live(sid, process)));
+    }
+
     /// Keeps the report only while its session is live (`live` says whether a session is).
     pub(super) fn settle(&mut self, live: impl Fn(&str) -> bool) {
         if self.session.as_deref().is_some_and(|sid| !live(sid)) {
@@ -179,6 +190,17 @@ mod tests {
         assert_eq!(r.wire().0, Some(values(&[("model", "sol")])));
         r.unconfirmed("main", &[], true);
         assert_eq!(r.wire(), (Some(values(&[])), None), "another model: nothing listed is known");
+    }
+
+    #[test]
+    fn a_new_process_reusing_the_session_id_starts_unknown() {
+        // Reviewer: a replacement agent process that loads the same session id isn't the process that reported.
+        let mut r = Reported::default();
+        r.opened_in("main", 1, &listing("high"));
+        r.settle_in(|sid, process| sid == "main" && process == 1);
+        assert_eq!(r.wire().0, Some(values(&[("effort", "high"), ("model", "sol")])));
+        r.settle_in(|sid, process| sid == "main" && process == 2);
+        assert_eq!(r.wire(), (None, None), "process 2 hasn't said anything yet");
     }
 
     #[test]

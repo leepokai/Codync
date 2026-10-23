@@ -55,4 +55,12 @@ class EffortLevelTest {
         assertEquals(EffortLevel.Row(null, "Saved: high · couldn’t check this agent’s options"),
             EffortLevel.of(emptyList(), "high", null, loading = false, failed = true, chosenModel = false))
     }
+
+    @Test fun `a fallback row says what its own agent reports or what is saved without asking it`() {
+        val running = bot(""","agentStep":{"step":1,"agent":"codex"},"sessionLive":true,"sessionOptions":{"effort":"high"},"sessionSettings":[$level]""").report("codex")
+        assertEquals("Effort level · In use: High", EffortLevel.fallbackLine(mapOf("effort" to "high"), running))
+        assertEquals("Effort level · In use: High (agent default)", EffortLevel.fallbackLine(emptyMap(), running))
+        assertEquals("Saved: high", EffortLevel.fallbackLine(mapOf("effort" to "high"), null))
+        assertNull(EffortLevel.fallbackLine(emptyMap(), null))
+    }
 }

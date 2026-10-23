@@ -26,10 +26,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.AgentStep
 import com.codync.android.core.Bot
+import com.codync.android.core.EffortLevel
 import com.codync.android.core.Fallback
 import com.codync.android.core.MAX_FALLBACKS
 import com.codync.android.core.Resting
 import com.codync.android.core.moved
+import com.codync.android.core.report
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 
@@ -65,7 +67,7 @@ private fun fallbackChoices(state: AppState, own: String, list: List<Fallback>) 
 
 /** The Fallbacks header (ⓘ and "+"), a row per fallback, and what they do. Changes go into the form like any other. */
 @Composable internal fun FallbackList(state: AppState, own: String, list: List<Fallback>, bot: Bot?, change: (List<Fallback>) -> Unit,
-    addFallback: () -> Unit, modifier: Modifier = Modifier) {
+    addFallback: () -> Unit, editFallback: (String) -> Unit, modifier: Modifier = Modifier) {
     var about by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().animateContentSize(Motion.layoutSize), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -76,7 +78,8 @@ private fun fallbackChoices(state: AppState, own: String, list: List<Fallback>) 
         }
         if (list.isEmpty()) Text("No fallbacks yet.", style = Type.subheadline, color = Palette.secondary)
         for ((index, fallback) in list.withIndex()) key(fallback.backend) {
-            FallbackRow(state, index + 1, fallback, bot?.restOf(fallback.backend), bot?.agentStep?.agent == fallback.backend) { buildList {
+            FallbackRow(state, index + 1, fallback, bot?.restOf(fallback.backend), bot?.agentStep?.agent == fallback.backend, fallbackLine(bot, fallback)) { buildList {
+                add(MenuItem("Edit…", icon = "pencil") { editFallback(fallback.backend) })
                 if (index > 0) add(MenuItem("Move up", icon = "arrow.up") { change(list.moved(index, -1)) })
                 if (index < list.lastIndex) add(MenuItem("Move down", icon = "arrow.down") { change(list.moved(index, 1)) })
                 add(MenuItem("Remove", icon = "trash", destructive = true) { change(list - fallback) })
@@ -88,7 +91,15 @@ private fun fallbackChoices(state: AppState, own: String, list: List<Fallback>) 
     CodyncDialog("Fallbacks", about, { about = false }, ABOUT_FALLBACKS, cancel = "OK") { emptyList() }
 }
 
-@Composable private fun FallbackRow(state: AppState, number: Int, fallback: Fallback, rest: Resting?, inUse: Boolean, menu: () -> List<MenuItem>) {
+/** What [fallback]'s own agent reports while the bot runs on it, or what is saved for it, without starting the agent; for an entry as saved. */
+private fun fallbackLine(bot: Bot?, fallback: Fallback): String? {
+    val saved = bot?.fallbacks?.firstOrNull { it.backend == fallback.backend }
+    val current = saved != null && saved.model == fallback.model && saved.modelOptions == fallback.modelOptions
+    val report = if (current) bot?.takeIf { it.agentStep?.agent == fallback.backend }?.report(fallback.backend) else null
+    return EffortLevel.fallbackLine(fallback.modelOptions, report)
+}
+
+@Composable private fun FallbackRow(state: AppState, number: Int, fallback: Fallback, rest: Resting?, inUse: Boolean, line: String?, menu: () -> List<MenuItem>) {
     val name = agentChoices(state).firstOrNull { it.first == fallback.backend }?.second ?: backendName(state, fallback.backend)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("$number", style = Type.subheadline.monospacedDigit, color = Palette.secondary)
@@ -96,6 +107,7 @@ private fun fallbackChoices(state: AppState, own: String, list: List<Fallback>) 
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // ponytail: the model's id, not its name: a name needs the agent's model list, an agent start per row.
             Text("$name · ${fallback.model ?: "Default"}", style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (line != null) Text(line, style = Type.caption, color = Palette.secondary)
             if (rest != null) Text(rest.line(RelativeTime.clock(rest.until)), style = Type.caption, color = Palette.secondary)
         }
         if (inUse) Text("In use", Modifier.clip(Capsule()).background(Palette.accentFill).padding(horizontal = 8.dp, vertical = 3.dp),
@@ -106,23 +118,38 @@ private fun fallbackChoices(state: AppState, own: String, list: List<Fallback>) 
     }
 }
 
-/** "+": another agent and its model, added at the end of the list. */
-@Composable internal fun AddFallbackSheet(state: AppState, store: AppStore, own: String, list: List<Fallback>, add: (Fallback) -> Unit) {
+/** "+": another agent and its model, added at the end of the list. With [editing], one in the chain: its agent kept, its model and
+ *  settings changed. Only here does a fallback's agent start, to list what it offers; [bot] gives the Effort level's line. */
+@Composable internal fun AddFallbackSheet(state: AppState, store: AppStore, own: String, list: List<Fallback>, editing: Fallback? = null, bot: Bot? = null,
+    add: (Fallback) -> Unit) {
     // Taken as the sheet opens, so the added agent doesn't drop out of the picker while the sheet slides away.
     val choices = remember { fallbackChoices(state, own, list) }
     // An installed agent first, as on the other apps.
     val installed = remember { agentBackends(state).filter { it.available }.map { it.id } }
-    var backend by remember { mutableStateOf((choices.firstOrNull { it.first in installed } ?: choices.firstOrNull())?.first.orEmpty()) }
-    var model by remember(backend) { mutableStateOf<String?>(null) }
-    var options by remember(backend) { mutableStateOf(emptyMap<String, String>()) }
+    var backend by remember { mutableStateOf(editing?.backend ?: (choices.firstOrNull { it.first in installed } ?: choices.firstOrNull())?.first.orEmpty()) }
+    var model by remember(backend) { mutableStateOf(editing?.takeIf { it.backend == backend }?.model) }
+    var options by remember(backend) { mutableStateOf(editing?.takeIf { it.backend == backend }?.modelOptions.orEmpty()) }
+    // What the host saved for this entry, while its model is unchanged.
+    val saved = bot?.fallbacks?.firstOrNull { it.backend == backend && it.model == model }?.takeIf { editing != null }
+    val status = saved?.let { bot?.takeIf { b -> b.agentStep?.agent == backend }?.report(backend) to it.modelOptions }
     Column(Modifier.fillMaxSize()) {
-        ModalHeader("Add fallback") {
-            IconButton("Add fallback", "checkmark", enabled = backend.isNotEmpty()) { add(Fallback(backend, model = model, modelOptions = options)) }
+        ModalHeader(if (editing != null) "Edit fallback" else "Add fallback") {
+            IconButton(if (editing != null) "Done" else "Add fallback", "checkmark", enabled = backend.isNotEmpty()) {
+                add((editing ?: Fallback(backend)).copy(backend = backend, model = model, modelOptions = options))
+            }
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
             CardSection {
-                row { ValueRow("Agent") { ChoicePicker(backend, choices, { backend = it }, label = "Agent") } }
-                row { AgentModelPicker(state, store::agentModels, backend, model, options, false, null, { id, picked -> model = id; options = picked }, null) }
+                row {
+                    ValueRow("Agent") {
+                        if (editing != null) Text(backendName(state, backend), style = Type.body, color = Palette.text)
+                        else ChoicePicker(backend, choices, { backend = it }, label = "Agent")
+                    }
+                }
+                row {
+                    AgentModelPicker(state, store::agentModels, backend, model, options, false, null, { id, picked -> model = id; options = picked }, null,
+                        status = status)
+                }
             }
         }
     }

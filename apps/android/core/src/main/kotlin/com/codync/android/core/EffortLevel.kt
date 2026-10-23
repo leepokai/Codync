@@ -24,6 +24,18 @@ sealed interface EffortLevel {
     data class Row(val setting: ModelOption?, val caption: String?) : EffortLevel
 
     companion object {
+        /** The line under a fallback's row, without starting its agent: its effort level as its own running session reports it, or else what
+         *  is saved for it (Edit loads the agent's list to change it). */
+        fun fallbackLine(saved: Map<String, String>, report: SessionReport?): String? {
+            val found = report?.settings?.let(::setting)
+            if (found != null) {
+                val row = of(listOf(found), saved[found.id], report, loading = false, failed = false, chosenModel = false)
+                if (row is Row && row.caption != null) return "Effort level · ${row.caption}"
+            }
+            val values = saved.toSortedMap().values
+            return if (values.isEmpty()) null else "Saved: ${values.joinToString(", ")}"
+        }
+
         /** The agent's effort level: the setting of ACP category `thought_level`, whatever its id. */
         fun setting(settings: List<ModelOption>): ModelOption? = settings.firstOrNull { it.category == "thought_level" }
 

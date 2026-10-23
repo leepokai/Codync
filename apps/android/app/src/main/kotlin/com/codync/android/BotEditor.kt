@@ -49,6 +49,8 @@ import kotlinx.serialization.json.jsonPrimitive
     var folders by remember { mutableStateOf(false) }
     var viewingSkill by remember { mutableStateOf<SkillRef?>(null) }
     var addingFallback by remember { mutableStateOf(false) }
+    // The fallback being edited, by its agent (each agent is in the chain once).
+    var editingFallback by remember { mutableStateOf<String?>(null) }
     val online = state.actualConnection is LinkState.Ready
     val saving = "editor" in state.busy
     val dismiss = LocalDismissModal.current
@@ -60,7 +62,9 @@ import kotlinx.serialization.json.jsonPrimitive
                 store.saveBot(draft) { dismiss() }
             }
         }
-        BotSettingsForm(state, store, draft, { draft = it }, { viewingSkill = it }, { addingFallback = true }, atFallbacks) { folders = true }
+        BotSettingsForm(state, store, draft, { draft = it }, { viewingSkill = it }, { addingFallback = true }, { editingFallback = it }, atFallbacks) {
+            folders = true
+        }
     }
     CodyncSheet(folders, { folders = false }) {
         FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, store::listDirs) {
@@ -71,6 +75,13 @@ import kotlinx.serialization.json.jsonPrimitive
     CodyncSheet(addingFallback, { addingFallback = false }) {
         AddFallbackSheet(state, store, draft.backend, draft.fallbacks.orEmpty()) { draft = draft.copy(fallbacks = draft.fallbacks.orEmpty() + it); addingFallback = false }
     }
+    val edited = draft.fallbacks?.firstOrNull { it.backend == editingFallback }
+    val bot = state.bots.firstOrNull { it.id == draft.id }
+    CodyncSheet(edited != null, { editingFallback = null }) {
+        if (edited != null) AddFallbackSheet(state, store, draft.backend, draft.fallbacks.orEmpty(), editing = edited, bot = bot) { entry ->
+            draft = draft.copy(fallbacks = draft.fallbacks.orEmpty().map { if (it.backend == entry.backend) entry else it }); editingFallback = null
+        }
+    }
 }
 
 /** The computer's agents, as its hello lists them. */
@@ -80,7 +91,7 @@ internal val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanO
 
 /** Bot settings: a big avatar, then sections in the Settings style (`CardSection`). */
 @Composable private fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, viewSkill: (SkillRef) -> Unit,
-    addFallback: () -> Unit, atFallbacks: Boolean, chooseFolder: () -> Unit) {
+    addFallback: () -> Unit, editFallback: (String) -> Unit, atFallbacks: Boolean, chooseFolder: () -> Unit) {
     val online = state.actualConnection is LinkState.Ready
     val screen = state.screen
     val fallbacks = remember { BringIntoViewRequester() }
@@ -140,7 +151,8 @@ internal val JsonObject.curated get() = this["curated"]?.jsonPrimitive?.booleanO
             val list = draft.fallbacks
             if (list != null) {
                 row {
-                    FallbackList(state, draft.backend, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback, Modifier.bringIntoViewRequester(fallbacks))
+                    FallbackList(state, draft.backend, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback, editFallback,
+                        Modifier.bringIntoViewRequester(fallbacks))
                 }
                 row {
                     SwitchRow("Let the bot change its fallbacks", "It can set this list itself, for example when you ask it to.", draft.selfFallbacks != false,

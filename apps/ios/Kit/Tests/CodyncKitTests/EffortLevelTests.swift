@@ -81,3 +81,14 @@ private func bot(_ fields: String) throws -> Bot {
     #expect(unlisted.map(\.id) == ["effort"] && unlisted.first?.values == [])
     #expect(EffortLevel.shown(catalog: [effort], report: nil, saved: ["effort": "high"]) == [effort])
 }
+
+@Test func aSessionThatListsFewerSettingsThanTheCatalogKeepsTheCatalogsOthers() throws {
+    // Greptile on #204: Cursor lists its settings per model, while its session lists only the model.
+    let verbosity = try option(#"{"id":"verbosity","name":"Verbosity","values":[{"id":"terse","name":"Terse"}]}"#)
+    let effort = try option(level)
+    let quiet = try bot(#""backend":"claude","sessionSettings":[]"#).report(for: "claude")
+    #expect(EffortLevel.shown(catalog: [effort, verbosity], report: quiet, saved: [:]) == [effort, verbosity])
+    let max = try option(#"{"id":"effort","name":"Thinking","category":"thought_level","values":[{"id":"max","name":"Max"}]}"#)
+    let own = try bot(#""backend":"claude","sessionSettings":[{"id":"effort","name":"Thinking","category":"thought_level","values":[{"id":"max","name":"Max"}]}]"#).report(for: "claude")
+    #expect(EffortLevel.shown(catalog: [effort, verbosity], report: own, saved: [:]) == [max, verbosity])
+}

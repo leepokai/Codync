@@ -75,4 +75,14 @@ class EffortLevelTest {
         assertEquals(listOf(ModelOption("effort", "effort")), EffortLevel.shown(emptyList(), null, mapOf("effort" to "high")))
         assertEquals(catalog, EffortLevel.shown(catalog, null, mapOf("effort" to "high")))
     }
+
+    @Test fun `a session that lists fewer settings than the catalog keeps the catalog's others`() {
+        // Greptile on #204: Cursor lists its settings per model, while its session lists only the model.
+        val verbosity = ModelOption("verbosity", "Verbosity", listOf(ModelOptionValue("terse", "Terse")))
+        val quiet = bot(""","sessionSettings":[]""").report("claude")
+        assertEquals(catalog + verbosity, EffortLevel.shown(catalog + verbosity, quiet, emptyMap()))
+        val max = ModelOption("effort", "Thinking", listOf(ModelOptionValue("max", "Max")), category = "thought_level")
+        val own = bot(""","sessionSettings":[{"id":"effort","name":"Thinking","category":"thought_level","values":[{"id":"max","name":"Max"}]}]""").report("claude")
+        assertEquals(listOf(max, verbosity), EffortLevel.shown(catalog + verbosity, own, emptyMap()))
+    }
 }

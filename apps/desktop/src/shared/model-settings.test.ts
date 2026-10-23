@@ -115,3 +115,12 @@ test('a step shows every setting its running session lists, and any saved one no
   assert.deepEqual(stepSettings([], null, { effort: 'high' }), [{ id: 'effort', name: 'effort', values: [] }], 'saved, listed by nobody')
   assert.deepEqual(stepSettings([level], null, { effort: 'high' }), [level], 'a listed setting isn’t repeated')
 })
+
+test('a session that lists fewer settings than the catalog keeps the catalog’s others', () => {
+  // Greptile on #204: Cursor lists its settings per model, while its session lists only the model.
+  const quiet = reportFor(runtime({ sessionSettings: [] }), 0)
+  assert.deepEqual(stepSettings([level, verbosity], quiet, {}), [level, verbosity])
+  const max = { ...level, values: [{ id: 'max', name: 'Max' }] }
+  const own = reportFor(runtime({ sessionSettings: [max] }), 0)
+  assert.deepEqual(stepSettings([level, verbosity], own, {}), [max, verbosity], 'the session’s own entry wins')
+})

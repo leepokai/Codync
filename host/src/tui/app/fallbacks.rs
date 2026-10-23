@@ -244,6 +244,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_session_that_lists_fewer_settings_than_the_catalog_keeps_the_catalogs_others() {
+        // Greptile on #204: Cursor lists its settings per model, while its session lists only the model.
+        let mut app = test_app();
+        let level = |values: serde_json::Value| json!({"id": "effort", "name": "Effort", "category": "thought_level", "values": values});
+        let verbosity = json!({"id": "verbosity", "name": "Verbosity", "values": [{"id": "terse", "name": "Terse"}]});
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M",
+            "options": [level(json!([{"id": "low", "name": "Low"}])), verbosity]}]});
+        app.models.insert("cursor".into(), Some(super::super::AgentModel::list(&catalog)));
+        let bot = |settings: serde_json::Value| {
+            Bot::parse(&json!({"id": "b", "backend": "cursor", "sessionLive": true, "sessionSettings": settings}))
+                .expect("a bot")
+        };
+        let ids = |app: &App, b: &Bot| -> Vec<(String, usize)> {
+            app.settings_for(Some(b), "cursor", "", true).iter().map(|o| (o.id.clone(), o.values.len())).collect()
+        };
+        let quiet = bot(json!([]));
+        assert_eq!(ids(&app, &quiet), [("effort".to_owned(), 1), ("verbosity".to_owned(), 1)]);
+        let own = bot(json!([level(json!([{"id": "low", "name": "Low"}, {"id": "max", "name": "Max"}]))]));
+        assert_eq!(ids(&app, &own), [("effort".to_owned(), 2), ("verbosity".to_owned(), 1)], "the session's own wins");
+    }
+
+    #[tokio::test]
     async fn a_members_failure_in_a_group_opens_that_members_fallbacks() {
         let mut app = test_app();
         for bot in [

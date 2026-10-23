@@ -103,5 +103,11 @@ export function effortRow({ catalogSettings, saved, report, loading, failed, cho
 /** The line under a fallback's row, without starting its agent: its effort level as its own running session reports it,
  *  or else what is saved for it (Edit loads the agent's list to change it). */
 export function fallbackLine(entry: { modelOptions: Record<string, string> }, report: SessionReport | null): string | null {
-  return null
+  const setting = report?.settings ? effortSetting(report.settings) : undefined
+  if (setting) {
+    const { caption } = effortRow({ catalogSettings: [setting], saved: entry.modelOptions[setting.id], report, loading: false, failed: false, chosenModel: false })
+    if (caption) return `Effort level · ${caption}`
+  }
+  const saved = Object.values(entry.modelOptions)
+  return saved.length ? `Saved: ${saved.join(', ')}` : null
 }

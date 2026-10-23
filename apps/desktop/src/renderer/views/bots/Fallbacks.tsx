@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MAX_FALLBACKS, moveFallback, restLine, restOf, stepBanner } from '@shared/fallbacks'
-import { effortRow, modelSettings, reportFor } from '@shared/model-settings'
+import { fallbackLine, reportFor } from '@shared/model-settings'
 import type { Backend, Bot, BotDraft, Fallback } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, ChoicePicker, DropdownMenu, IconButton, ValueRow } from '../../components/Controls'
@@ -11,7 +11,7 @@ import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { FormSheet } from '../marketplace/pieces'
 import { useAgentModels } from './agent-models'
-import { AgentModelPicker, SettingRow } from './AgentModelPicker'
+import { AgentModelPicker } from './AgentModelPicker'
 import './bots.css'
 
 const ABOUT =
@@ -36,6 +36,8 @@ export function AgentStepBanner({ bot }: { bot: Bot }) {
 export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: Bot; onChange: (update: (d: BotDraft) => BotDraft) => void }) {
   const store = useStore()
   const [adding, setAdding] = useState(false)
+  // The fallback being edited, by its agent (each agent is in the chain once).
+  const [editing, setEditing] = useState<string | null>(null)
   const [about, setAbout] = useState(false)
   const list = draft.fallbacks ?? []
   // Each agent is in the chain once, the bot's own included.
@@ -61,7 +63,7 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
             now={now}
             move={(by) => edit((l) => moveFallback(l, i, by))}
             remove={() => edit((l) => l.filter((_, j) => j !== i))}
-            setOptions={(modelOptions) => edit((l) => l.map((f, j) => (j === i ? { ...f, modelOptions } : f)))}
+            openEdit={() => setEditing(f.backend)}
           />
         ))
       ) : (
@@ -73,11 +75,24 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
       <Dialog open={about} title="Fallbacks" message={ABOUT} actions={[]} cancel="OK" onClose={() => setAbout(false)} />
       <FormSheet open={adding} onClose={() => setAdding(false)} width={460} height={420}>
         {adding ? (
-          <AddFallback
+          <FallbackSheet
             choices={choices}
-            onAdd={(f) => {
+            onDone={(f) => {
               edit((l) => [...l, f])
               setAdding(false)
+            }}
+          />
+        ) : null}
+      </FormSheet>
+      <FormSheet open={editing !== null} onClose={() => setEditing(null)} width={460} height={420}>
+        {editing !== null && list.some((f) => f.backend === editing) ? (
+          <FallbackSheet
+            choices={(store.hello?.backends ?? []).filter((b) => b.id === editing)}
+            initial={list.find((f) => f.backend === editing)}
+            bot={bot}
+            onDone={(f) => {
+              edit((l) => l.map((x) => (x.backend === f.backend ? f : x)))
+              setEditing(null)
             }}
           />
         ) : null}
@@ -86,8 +101,9 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
   )
 }
 
-/** One fallback: its place, agent and model, whether it's resting or in use, its menu, and its own Effort level. */
-function FallbackRow({ fallback, index, count, bot, now, move, remove, setOptions }: {
+/** One fallback: its place, agent and model, whether it's resting or in use, its own Effort level as far as known
+ *  without starting its agent, and its menu (Edit loads the agent's list). */
+function FallbackRow({ fallback, index, count, bot, now, move, remove, openEdit }: {
   fallback: Fallback
   index: number
   count: number
@@ -95,13 +111,17 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove, setOption
   now: number
   move: (by: number) => void
   remove: () => void
-  setOptions: (options: Record<string, string>) => void
+  openEdit: () => void
 }) {
   const store = useStore()
-  const models = useAgentModels(fallback.backend)
   const backend = store.hello?.backends.find((b) => b.id === fallback.backend)
   const name = backend ? agentChoice(backend).label : store.backendName(fallback.backend)
   const rest = restOf(bot, fallback.backend, now)
+  // Its own session speaks only while the bot runs on this agent, and only about what the host saved for this entry.
+  const saved = bot.fallbacks.find((f) => f.backend === fallback.backend)
+  const unsaved = !saved || (saved.model ?? null) !== (fallback.model ?? null) || JSON.stringify(saved.modelOptions) !== JSON.stringify(fallback.modelOptions)
+  const report = bot.agentStep?.agent === fallback.backend && !unsaved ? reportFor(bot, bot.agentStep.step) : null
+  const line = fallbackLine(fallback, report)
   return (
     <VStack gap={6} className="fade-in">
       <HStack gap={8}>
@@ -111,6 +131,7 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove, setOption
         <AgentIcon registry={store.agentRegistry(fallback.backend)} size={14} />
         <VStack gap={2} grow>
           <Text tone="text" truncate>{`${name} · ${fallback.model || 'Default'}`}</Text>
+          {line ? <Text size="caption" tone="secondary">{line}</Text> : null}
           {rest ? <Text size="caption" tone="secondary">{restLine(rest, now)}</Text> : null}
         </VStack>
         {bot.agentStep?.agent === fallback.backend ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">In use</Text> : null}
@@ -118,6 +139,7 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove, setOption
           className="icon-button fallback-menu"
           title="More"
           items={() => [
+            { title: 'Edit…', icon: 'pencil', action: openEdit },
             ...(index > 0 ? [{ title: 'Move up', icon: 'arrow.up', action: () => move(-1) }] : []),
             ...(index < count - 1 ? [{ title: 'Move down', icon: 'arrow.down', action: () => move(1) }] : []),
             { title: 'Remove', icon: 'trash', destructive: true, divider: count > 1, action: remove },
@@ -126,46 +148,16 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove, setOption
           <Icon name="ellipsis" size={14} weight="medium" />
         </DropdownMenu>
       </HStack>
-      <FallbackEffort fallback={fallback} bot={bot} models={models} setOptions={setOptions} />
     </VStack>
   )
 }
 
-/** A fallback's Effort level: from its own agent's list for its model, captioned only by that agent's own session. */
-function FallbackEffort({ fallback, bot, models, setOptions }: {
-  fallback: Fallback
-  bot: Bot
-  models: ReturnType<typeof useAgentModels>
-  setOptions: (options: Record<string, string>) => void
-}) {
-  // Its own session speaks only while the bot runs on this agent; what the host saved for this entry, by its agent.
-  const saved = bot.fallbacks.find((f) => f.backend === fallback.backend)
-  const report = bot.agentStep?.agent === fallback.backend ? reportFor(bot, bot.agentStep.step) : null
-  const input = { catalogSettings: modelSettings(models.catalog, fallback.model ?? ''), report, loading: models.loading, failed: !!models.failure, chosenModel: !!fallback.model }
-  const id = effortRow({ ...input, saved: undefined }).setting?.id
-  const effort = effortRow({ ...input, saved: id ? saved?.modelOptions[id] : undefined })
-  const value = id ? (fallback.modelOptions[id] ?? '') : ''
-  const unsaved = !saved || (saved.model ?? null) !== (fallback.model ?? null) || (id !== undefined && value !== (saved.modelOptions[id] ?? ''))
-  const set = (v: string) => {
-    if (!id) return
-    const { [id]: _, ...rest } = fallback.modelOptions
-    setOptions(v ? { ...rest, [id]: v } : rest)
-  }
-  if (effort.kind === 'later') return <Text size="caption" tone="secondary" className="fallback-effort">Effort level appears once the agent runs this model.</Text>
-  if (effort.kind !== 'row') return null
-  return (
-    <VStack gap={2} className="fallback-effort fade-in">
-      {effort.setting ? <SettingRow label="Effort level" setting={effort.setting} value={value} onChange={set} /> : null}
-      {effort.caption && !unsaved ? <Text size="caption" tone="secondary">{effort.caption}</Text> : null}
-    </VStack>
-  )
-}
-
-/** The "Add fallback" sheet: another agent, and the model to use on it. */
-function AddFallback({ choices, onAdd }: { choices: Backend[]; onAdd: (f: Fallback) => void }) {
-  const [backend, setBackend] = useState((choices.find((b) => b.available) ?? choices[0])?.id ?? '')
-  const [model, setModel] = useState<string | null>(null)
-  const [modelOptions, setModelOptions] = useState<Record<string, string>>({})
+/** The "Add fallback" sheet (another agent, and the model to use on it), or "Edit fallback" for one in the chain: its
+ *  agent stays, its model and settings change. Only here does a fallback's agent start, to list what it offers. */
+function FallbackSheet({ choices, initial, bot, onDone }: { choices: Backend[]; initial?: Fallback; bot?: Bot; onDone: (f: Fallback) => void }) {
+  const [backend, setBackend] = useState(initial?.backend ?? (choices.find((b) => b.available) ?? choices[0])?.id ?? '')
+  const [model, setModel] = useState<string | null>(initial?.model ?? null)
+  const [modelOptions, setModelOptions] = useState<Record<string, string>>(initial?.modelOptions ?? {})
   const models = useAgentModels(backend)
   // Options belong to one model.
   const pickModel = (m: string | null) => {
@@ -174,15 +166,35 @@ function AddFallback({ choices, onAdd }: { choices: Backend[]; onAdd: (f: Fallba
   }
   return (
     <SheetPage>
-      <ModalHeader title="Add fallback" trailing={<IconButton title="Add" icon="checkmark" disabled={!backend} onClick={() => onAdd({ backend, model, modelOptions })} />} />
+      <ModalHeader
+        title={initial ? 'Edit fallback' : 'Add fallback'}
+        trailing={<IconButton title={initial ? 'Done' : 'Add'} icon="checkmark" disabled={!backend} onClick={() => onDone({ ...initial, backend, model, modelOptions })} />}
+      />
       <CardForm>
         <CardSection>
           <ValueRow label="Agent">
             <ChoicePicker selection={backend} options={choices.map(agentChoice)} onChange={setBackend} />
           </ValueRow>
-          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} />
+          <AgentModelPicker
+            backend={backend}
+            models={models}
+            selection={model}
+            onChange={pickModel}
+            options={modelOptions}
+            onOptionsChange={setModelOptions}
+            sessionNote={false}
+            status={initial && bot ? fallbackStatus(bot, initial) : undefined}
+          />
         </CardSection>
       </CardForm>
     </SheetPage>
   )
+}
+
+/** What a fallback's own agent reports while the bot runs on it, and what the host saved for the entry (its model
+ *  unchanged): the Edit sheet's Effort level line. */
+function fallbackStatus(bot: Bot, entry: Fallback) {
+  const saved = bot.fallbacks.find((f) => f.backend === entry.backend && (f.model ?? null) === (entry.model ?? null))
+  if (!saved) return undefined
+  return { report: bot.agentStep?.agent === entry.backend ? reportFor(bot, bot.agentStep.step) : null, saved: saved.modelOptions }
 }

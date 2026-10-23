@@ -12,13 +12,23 @@ Files in its folder change how it behaves, for lifecycle tests:
 - `exit`: the process exits right after answering a prompt.
 - `unlisted`: sessions list the model select only, no settings.
 - `hold`: a prompt writes `prompted`, then waits for a `release` file before answering.
-- `bare`: new and loaded sessions list no config options at all."""
+- `bare`: new and loaded sessions list no config options at all.
+
+Run as `effort_agent.py <name>` for a bot's fallback chain: it logs to `<name>.calls.jsonl`, and while
+`<name>.limit` exists every prompt fails the way Claude's adapter reports a usage limit."""
 
 import json
 import os
 import sys
 import time
 
+NAME = sys.argv[1] if len(sys.argv) > 1 else None
+CALLS = f"{NAME}.calls.jsonl" if NAME else "calls.jsonl"
+LIMIT = {
+    "code": -32603,
+    "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",
+    "data": {"errorKind": "rate_limit"},
+}
 model, effort = "sol", "low"
 sessions = 0
 EFFORTS = {"sol": ["low", "high", "max"], "mini": ["low"]}
@@ -29,7 +39,7 @@ def send(value):
 
 
 def log(value):
-    with open("calls.jsonl", "a", encoding="utf-8") as f:
+    with open(CALLS, "a", encoding="utf-8") as f:
         f.write(json.dumps(value) + "\n")
 
 
@@ -74,6 +84,8 @@ for line in sys.stdin:
             send({"id": rid, "error": {"code": -32602, "message": f"{config} {value} is not available"}})
             continue
         send({"id": rid, "result": {} if os.path.exists("silent") else options()})
+    elif method == "session/prompt" and NAME and os.path.exists(f"{NAME}.limit"):
+        send({"id": rid, "error": LIMIT})
     elif method == "session/prompt":
         if os.path.exists("hold"):
             open("prompted", "w").close()

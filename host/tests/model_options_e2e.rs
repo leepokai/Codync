@@ -79,7 +79,12 @@ async fn answer(host: &Host, bot: &str, text: &str) -> String {
 
 /// The session calls the agent logged, as `method` or `configId=value`.
 fn calls(host: &Host, bot: &str) -> Vec<String> {
-    host.log(bot, "calls.jsonl")
+    calls_in(host, bot, "calls.jsonl")
+}
+
+/// `calls`, from the log of the fixture run as `effort_agent.py <name>`: `<name>.calls.jsonl`.
+fn calls_in(host: &Host, bot: &str, log: &str) -> Vec<String> {
+    host.log(bot, log)
         .iter()
         .map(|c| match c["configId"].as_str() {
             Some(id) => format!("{id}={}", c["value"].as_str().unwrap()),
@@ -432,4 +437,103 @@ async fn going_back_to_default_during_a_reply_is_pending_too() {
     let log = calls(&host, &bot);
     assert_eq!(log.last().map(String::as_str), Some("session/new"), "{log:?}");
     assert!(!log.contains(&"session/load".to_owned()), "{log:?}");
+}
+
+/// Bot `bot` as clients see it.
+async fn bot_value(host: &Host, bot: &str) -> Value {
+    let snapshot = host.snapshot().await;
+    snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).cloned().unwrap()
+}
+
+/// A bot on `effort_agent.py own` saving `own` settings, whose fallback, Codex, runs `effort_agent.py standin` with
+/// `entry`'s fields (its `modelOptions`). Its own agent is out of usage, so its turns go to the fallback.
+async fn relay_bot(host: &Host, own: Value, entry: Value) -> String {
+    let bot = host.fixture_bot("Relay", "effort_agent.py", "own").await;
+    let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/effort_agent.py");
+    let mut fallback = json!({"backend": "codex", "command": format!("{} standin", common::python_agent(&script))});
+    fallback.as_object_mut().unwrap().extend(entry.as_object().unwrap().clone());
+    host.call("updateBot", json!({"id": bot, "modelOptions": own, "fallbacks": [fallback]})).await;
+    std::fs::write(host.home.join("bots").join(&bot).join("workspace").join("own.limit"), "").unwrap();
+    bot
+}
+
+#[tokio::test]
+async fn a_fallback_runs_with_its_own_effort_not_the_bots() {
+    if python_missing() {
+        return;
+    }
+    let mut host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let entry = json!({"modelOptions": {"reasoning_effort": "high"}});
+    let bot = relay_bot(&host, json!({"reasoning_effort": "low"}), entry).await;
+    assert_eq!(answer(&host, &bot, "one").await, "sol high · one", "the fallback's own effort");
+    assert_eq!(calls_in(&host, &bot, "own.calls.jsonl"), ["session/new", "reasoning_effort=low"]);
+    assert_eq!(calls_in(&host, &bot, "standin.calls.jsonl"), ["session/new", "reasoning_effort=high"]);
+    let on = bot_value(&host, &bot).await;
+    assert_eq!(on["agentStep"]["step"], 1);
+    assert_eq!(on["sessionOptions"], json!({"model": "sol", "reasoning_effort": "high"}), "the fallback's session");
+    assert_eq!(on["settingIssues"], json!({}));
+
+    // A new agent process resumes the fallback's session with the fallback's effort again.
+    host.restart(|_| {}).await;
+    assert_eq!(answer(&host, &bot, "two").await, "sol high · two");
+    let standin = calls_in(&host, &bot, "standin.calls.jsonl");
+    assert_eq!(standin[standin.len() - 2..], ["session/load", "reasoning_effort=high"], "{standin:?}");
+    assert!(!standin.contains(&"reasoning_effort=low".to_owned()), "the bot's own effort never reaches the fallback");
+}
+
+#[tokio::test]
+async fn a_fallback_without_settings_keeps_its_agents_own() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let bot = relay_bot(&host, json!({"reasoning_effort": "high"}), json!({})).await;
+    assert_eq!(bot_value(&host, &bot).await["fallbacks"][0]["modelOptions"], json!({}));
+    assert_eq!(answer(&host, &bot, "one").await, "sol low · one", "the agent's own effort, not the bot's");
+    assert_eq!(calls_in(&host, &bot, "standin.calls.jsonl"), ["session/new"]);
+}
+
+#[tokio::test]
+async fn a_fallback_setting_its_agent_doesnt_offer_is_left_out_there() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let entry = json!({"modelOptions": {"reasoning_effort": "turbo"}});
+    let bot = relay_bot(&host, json!({"reasoning_effort": "high"}), entry).await;
+    assert_eq!(answer(&host, &bot, "one").await, "sol low · one");
+    assert_eq!(calls_in(&host, &bot, "own.calls.jsonl"), ["session/new", "reasoning_effort=high"]);
+    assert_eq!(calls_in(&host, &bot, "standin.calls.jsonl"), ["session/new"], "never sent");
+    let on = bot_value(&host, &bot).await;
+    assert_eq!(on["settingIssues"], json!({"reasoning_effort": {"issue": "not_offered", "value": "turbo"}}));
+}
+
+#[tokio::test]
+async fn each_fallback_keeps_its_own_settings_through_saves() {
+    let host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let bot = host.fixture_bot("Chain", "effort_agent.py", "").await;
+    let (codex, gemini) = (
+        json!({"backend": "codex", "command": "codex-acp", "model": "sol", "modelOptions": {"reasoning_effort": "high"}}),
+        json!({"backend": "gemini", "command": "gemini --acp"}),
+    );
+    let saved = host.call("updateBot", json!({"id": bot, "fallbacks": [codex, gemini]})).await["bot"].clone();
+    assert_eq!(saved["modelOptions"], json!({}), "a fallback's settings aren't the bot's");
+    assert_eq!(saved["fallbacks"][0]["modelOptions"], json!({"reasoning_effort": "high"}));
+    assert_eq!(saved["fallbacks"][1]["modelOptions"], json!({}), "an entry saved without settings has none");
+    let reordered =
+        host.call("updateBot", json!({"id": bot, "fallbacks": [saved["fallbacks"][1], saved["fallbacks"][0]]})).await;
+    assert_eq!(
+        reordered["bot"]["fallbacks"][1]["modelOptions"],
+        json!({"reasoning_effort": "high"}),
+        "moves with its entry"
+    );
+    let removed = host.call("updateBot", json!({"id": bot, "fallbacks": [reordered["bot"]["fallbacks"][1]]})).await;
+    assert_eq!(removed["bot"]["fallbacks"], json!([codex]));
+    let cleared = json!([{"backend": "codex", "command": "codex-acp", "model": "sol", "modelOptions": {}}]);
+    let cleared = host.call("updateBot", json!({"id": bot, "fallbacks": cleared})).await;
+    assert_eq!(cleared["bot"]["fallbacks"][0]["modelOptions"], json!({}), "Default drops the entry's override");
 }

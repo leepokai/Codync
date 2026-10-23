@@ -45,8 +45,10 @@ What their issues taught, and the answer here:
 - Each fallback keeps its own `modelOptions` (its effort level and the like) for its own agent and model; the bot's
   own are never used for it, and an empty map leaves the agent's own setting. A fallback step's session gets them like
   the bot's own (new or resumed); one its agent doesn't offer is left out there and shows in `settingIssues` while the
-  bot runs on it. The apps show each fallback's Effort level, captioned from its agent's own session only while the bot
-  is on it (terminal UI: `e` on a fallback cycles it).
+  bot runs on it. Listing what an agent offers starts it (`agentModels`), so a fallback's row never asks: it says what
+  its agent's own session reports while the bot is on it ("Effort level · In use: High"), or else what is saved. Edit in
+  the row's menu opens the Add fallback sheet for it (agent kept; model and Effort level), which alone loads the list
+  (terminal UI: `e` on a fallback cycles its effort level, loading the list on the first press).
 - Each agent appears once, the bot's own included. Making a fallback the bot's own agent drops it from the list
   (`fallback::tidy`).
 - Everything else is the bot's for every step: folder, approvals, connectors, skills, computer use, memory, fast mode

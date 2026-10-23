@@ -320,9 +320,8 @@ mod tests {
             unoffered(&session, &Value::Null, None, "effort", "max").as_deref(),
             Some("Effort max isn't offered for this model, so the agent uses its own setting.")
         );
-        // Cursor lists its model options elsewhere: an option the session doesn't list is the agent's to judge.
-        assert_eq!(unoffered(&session, &Value::Null, None, "fast", "true"), None);
-        assert_eq!(unoffered(&json!({}), &Value::Null, None, "effort", "max"), None);
+        // Without a schema that lists it (see `a_saved_setting_no_schema_offers_is_never_sent`), nothing is sent.
+        assert!(unoffered(&session, &Value::Null, None, "fast", "true").is_some());
     }
 
     #[test]
@@ -334,6 +333,30 @@ mod tests {
                 "options": [{"value": "low"}, {"value": "high"}]}]});
         let own = [("reasoning_effort", "high")].map(|(k, v)| (k.to_owned(), v.to_owned())).into();
         assert_eq!(config_steps(&res, None, &own), vec![("reasoning_effort", "high")]);
+    }
+
+    #[test]
+    fn a_saved_setting_no_schema_offers_is_never_sent() {
+        let session = json!({"configOptions": [
+            {"id": "model", "category": "model", "type": "select", "currentValue": "grok",
+             "options": [{"value": "grok"}]},
+            {"id": "effort", "type": "select", "options": [{"value": "low"}]},
+        ]});
+        // Not on the session and no per-model list: nothing says the agent has it.
+        assert_eq!(
+            unoffered(&session, &Value::Null, Some("grok"), "verbosity", "terse").as_deref(),
+            Some("verbosity terse isn't offered by this agent, so it isn't set.")
+        );
+        // Cursor's own per-model list is the schema for its model options.
+        let listing = json!({"models": [{"value": "grok", "configOptions": [
+            {"id": "fast", "type": "select", "options": [{"value": "false"}, {"value": "true"}]}]}]});
+        assert_eq!(unoffered(&session, &listing, Some("grok"), "fast", "true"), None);
+        assert_eq!(
+            unoffered(&session, &listing, Some("grok"), "fast", "maybe").as_deref(),
+            Some("fast maybe isn't offered for this model, so the agent uses its own setting.")
+        );
+        // Another model's list doesn't vouch for this one.
+        assert!(unoffered(&session, &listing, Some("auto"), "fast", "true").is_some());
     }
 
     #[test]

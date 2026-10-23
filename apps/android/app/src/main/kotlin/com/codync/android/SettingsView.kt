@@ -201,7 +201,8 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
     val viewable = online && state.screen != null
     val detail = if (link is LinkState.Ready) {
         val count = state.bots.count { !it.deleted && it.kind != "group" }
-        "$count bot${if (count == 1) "" else "s"} · ${if (link.route == HostRoute.Direct) "Wi-Fi/Tailscale" else "Cloudflare"}"
+        val via = if (link.route == HostRoute.Direct) "Wi-Fi/Tailscale" else relayHost(computer.cloud)?.let { "Private relay ($it)" } ?: "Cloudflare"
+        "$count bot${if (count == 1) "" else "s"} · $via"
     } else computerStatusText(state)
     Column(Modifier.fillMaxWidth().contextActions(items = {
         listOfNotNull(
@@ -245,7 +246,7 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
             IconButton("Extensions", "square.grid.2x2", action = actions.extensions)
             if (state.screen != null) IconButton("Screen", "display", action = actions.screen)
         }
-        DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(route.title, icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
+        DropdownMenu({ ConnectionRoute.entries.map { route -> MenuItem(routeTitle(route, computer.cloud), icon = route.icon, selected = route == computer.route) { store.setRoute(route) } } },
             Modifier.size(36.dp), label = "Connection") {
             Symbol(computer.route.icon, size = 21.dp, tint = Palette.secondary)
         }
@@ -343,12 +344,6 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
             }
         }
     }
-}
-
-private val ConnectionRoute.title get() = when (this) {
-    ConnectionRoute.Automatic -> "Auto: Wi-Fi or Tailscale, then Cloudflare"
-    ConnectionRoute.CloudflareFirst -> "Cloudflare, then Wi-Fi or Tailscale"
-    ConnectionRoute.DirectOnly -> "Wi-Fi or Tailscale only, never Cloudflare"
 }
 
 private val ConnectionRoute.icon get() = when (this) {

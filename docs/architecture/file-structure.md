@@ -59,6 +59,7 @@ Codync/
 │   ├── src/
 │   ├── migrations/            # D1 migrations
 │   └── test/                  # workerd tests; e2e/ runs against a real test host
+├── private-relay/             # Single-process relay (the cloud WebSocket subset) for a person's own computers
 ├── relay/                     # Separate APNs push Worker; src/ and test/
 ├── discord/                   # Discord GitHub-role Worker (discord.codync.dev)
 ├── docs/                      # Architecture, features, design, guides, reference, plans, investigations, archive
@@ -94,7 +95,7 @@ Codync/
 | Team management (bots creating and changing bots) | `host/src/chat/manage.rs`, its approval card (`Cmd::Approve`) in `agent/bot/updates.rs` |
 | Prompt snapshots and memory | `host/src/chat/context.rs`, `memory/` (`api.rs` the apps' read-only view, `tools.rs` and `file_tools.rs` the MCP tools, `files.rs` the folders and scan, `turns.rs` which bot's turn a found change is credited to, `file_api.rs`, `dream.rs`, `import.rs`); the rules in `host/crates/memory` (`codync-mem`: files and facts in `files/`, dreaming in `dream/`, tombstones in `store.rs`, the old entries in `legacy.rs`); harnesses' own memory turned off in `host/src/agent/own_memory.rs` |
 | Identity, encryption and direct channel | `host/src/remote/identity.rs`, `crypto.rs`, `channel.rs` |
-| Host cloud state and relay connection | `host/src/remote/cloud.rs`, `relay.rs` |
+| Host cloud state and relay connection | `host/src/remote/cloud.rs`, `cloud_url.rs`, `relay.rs` |
 | Agent discovery, sign-in, setup terminal, Node.js for npm agents | `host/src/agent/backends.rs` (+ `backends/sign_in.rs`), `registry.rs`, `auth.rs`, `term.rs`, `node.rs` |
 | Fast mode (session config option) | `host/src/agent/config.rs`, `agent/bot/fast_mode.rs` |
 | Marketplace, Composio, connector OAuth | `host/src/market/` |
@@ -123,7 +124,7 @@ Codync/
 - Each `BotStore` (Swift, and its TypeScript port in the desktop app) talks to one computer. `AccountStore` aggregates stores and routes by `BotReference`; bare bot IDs are not globally unique.
 - The host owns routing, reply quotes, permissions and group turn scheduling. Clients render these results; they do not reimplement host policy.
 - Android: `core` is plain JVM (no Android or Compose imports) and `design` holds no I/O; `app` uses both. Like the other clients it renders host state and sends intents, never product logic.
-- `cloud/` transports encrypted chat traffic and manages account metadata. `relay/` delivers APNs pushes. The two Workers have separate configuration and tests.
+- `cloud/` transports encrypted chat traffic and manages account metadata. `relay/` delivers APNs pushes. The two Workers have separate configuration and tests. `private-relay/` is a single-process subset of the cloud relay protocol for a person's own computers. It is not the APNs worker.
 
 ## Names
 

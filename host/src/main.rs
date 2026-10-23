@@ -118,6 +118,12 @@ enum Sub {
         /// the cloud, can then add a device).
         #[arg(long, value_parser = ["code", "auto"])]
         approval: Option<String>,
+        /// Cloud base URL for this computer. `https://…`, or `http://127.0.0.1` / `localhost` for a relay on this machine.
+        #[arg(long, conflicts_with = "clear_url")]
+        url: Option<String>,
+        /// Forget the saved URL and use this build's Codync cloud again.
+        #[arg(long)]
+        clear_url: bool,
     },
     /// Install and start the host as a background service (launchd / systemd --user).
     Install {
@@ -360,14 +366,22 @@ async fn main() -> Result<()> {
             }
         },
         Sub::Access { port, action } => access(port, action.unwrap_or(AccessAction::List)).await,
-        Sub::Cloud { port, enable, disable, approval } => {
-            if let Some(approval) = approval {
-                local_call(port, "setApproval", json!({ "approval": approval })).await?;
+        Sub::Cloud { port, enable, disable, approval, url, clear_url } => {
+            let mut status = None;
+            if clear_url {
+                status = Some(local_call(port, "setCloudUrl", json!({ "url": "" })).await?);
+            } else if let Some(url) = url {
+                status = Some(local_call(port, "setCloudUrl", json!({ "url": url })).await?);
             }
-            let status = if enable || disable {
-                local_call(port, "setCloud", json!({"enabled": !disable})).await?
-            } else {
-                local_call(port, "cloudStatus", json!({})).await?
+            if let Some(approval) = approval {
+                status = Some(local_call(port, "setApproval", json!({ "approval": approval })).await?);
+            }
+            if enable || disable {
+                status = Some(local_call(port, "setCloud", json!({"enabled": !disable})).await?);
+            }
+            let status = match status {
+                Some(status) => status,
+                None => local_call(port, "cloudStatus", json!({})).await?,
             };
             let text = |k: &str| status[k].as_str().unwrap_or("-").to_owned();
             let owner = status["owner"]["email"].as_str().or(status["owner"]["userId"].as_str()).unwrap_or("none");

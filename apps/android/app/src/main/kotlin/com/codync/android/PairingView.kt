@@ -247,7 +247,7 @@ private enum class ComputerOS { Mac, Linux }
         if (state.account.configured && state.account.userId == null) SignInButtons(state, store)
         // How it connects is never a choice here: every paired computer gets every route.
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconLabel("Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted.", "lock.fill")
+            IconLabel(pairingLine(pasted, BuildConfig.URL_SCHEME), "lock.fill")
             if (tailscale) IconLabel("Tailscale is on: Codync connects over it directly.", "checkmark.circle.fill")
             else IconLabel("Use Tailscale? Direct and faster away from home.", "arrow.up.right",
                 modifier = Modifier.plainButton { uri.open("https://tailscale.com/download", OutboundLink.Tailscale) })

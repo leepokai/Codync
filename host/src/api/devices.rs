@@ -62,6 +62,7 @@ const LOCAL_ONLY: &[&str] = &[
     "decideAccessRequest",
     "cloudStatus",
     "setCloud",
+    "setCloudUrl",
     "setApproval",
 ];
 const SCREEN: &[&str] = &["screenPrepare", "screenOffer", "screenClose", "screenTakeover"];

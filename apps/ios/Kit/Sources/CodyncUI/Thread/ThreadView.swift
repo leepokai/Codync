@@ -158,7 +158,7 @@ public struct ThreadView: View {
         }
         if model.mismatch != nil { return "Needs update" }
         switch model.hostRoute {
-        case .relay: return "Connected through Cloudflare"
+        case .relay: return RelayCopy.connected(cloud: model.computer.cloud)
         case .direct: return "Connected over Wi-Fi or Tailscale"
         case nil: return "Connected"
         }

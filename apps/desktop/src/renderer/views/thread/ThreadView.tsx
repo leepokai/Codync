@@ -7,6 +7,7 @@ import { Sheet, usePresence } from '../../components/Overlay'
 import { HStack, IconSlot, Spacer } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { prefs, usePref } from '../../lib/prefs'
+import { connectedThrough } from '../../lib/relay-copy'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
@@ -229,6 +230,7 @@ function TopFade() {
 
 function ConnectionSubtitle() {
   const store = useStore()
+  const tr = useTr()
   const connecting = store.shownConnection.kind === 'connecting'
   const symbol = store.connection.kind !== 'online' ? 'wifi.slash' : store.hostRoute === 'relay' ? 'cloud' : store.hostRoute === 'direct' ? 'wifi' : store.hostRoute === 'loopback' ? 'desktopcomputer' : 'network'
   const description = (() => {
@@ -244,10 +246,11 @@ function ConnectionSubtitle() {
         return 'Not paired'
     }
     if (store.mismatch) return 'Needs update'
-    return store.hostRoute === 'relay' ? 'Connected through Cloudflare' : store.hostRoute === 'direct' ? 'Connected over Wi-Fi or Tailscale' : store.hostRoute === 'loopback' ? 'Connected locally' : 'Connected'
+    return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? 'Connected over Wi-Fi or Tailscale' : store.hostRoute === 'loopback' ? 'Connected locally' : 'Connected'
   })()
+  const spoken = tr(description)
   return (
-    <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${description}`} aria-label={`${store.hostName}, ${description}`}>
+    <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${spoken}`} aria-label={`${store.hostName}, ${spoken}`}>
       <IconSlot width={12}>{connecting ? <Spinner size={8} /> : <Icon name={symbol} size={8} weight="medium" />}</IconSlot>
       <Text size="caption" weight="medium" truncate>{store.connectionLabel}</Text>
     </HStack>

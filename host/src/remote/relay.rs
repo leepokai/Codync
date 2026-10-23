@@ -114,7 +114,11 @@ async fn supervise(hub: &Arc<Hub>, url: &str) {
     loop {
         if !registered {
             if let Err(e) = cloud::register(hub, url).await {
-                tracing::warn!(error = format!("{e:#}"), "couldn't register with the Codync cloud");
+                tracing::warn!(
+                    error = format!("{e:#}"),
+                    cloud_host = cloud::authority(url).unwrap_or_else(|_| "unknown".into()),
+                    "couldn't register with the Codync cloud"
+                );
                 cloud::update_status(hub, |s| s.last_error = Some(format!("{e:#}")));
                 sleep(register_wait.wait()).await;
                 continue;
@@ -141,7 +145,11 @@ async fn supervise(hub: &Arc<Hub>, url: &str) {
                 if let Some(tungstenite::Error::Http(res)) = e.downcast_ref::<tungstenite::Error>() {
                     registered = !res.status().is_client_error();
                 }
-                tracing::warn!(error = format!("{e:#}"), "relay connection failed");
+                tracing::warn!(
+                    error = format!("{e:#}"),
+                    cloud_host = cloud::authority(url).unwrap_or_else(|_| "unknown".into()),
+                    "relay connection failed"
+                );
                 cloud::update_status(hub, |s| s.last_error = Some(format!("{e:#}")));
             }
         }
@@ -181,7 +189,11 @@ async fn session(hub: &Arc<Hub>, base: &str) -> Result<Option<u16>> {
         s.connected = true;
         s.last_error = None;
     });
-    tracing::info!(computer_id = hub.identity.computer_id(), "connected to the relay");
+    tracing::info!(
+        computer_id = hub.identity.computer_id(),
+        cloud_host = cloud::authority(base).unwrap_or_else(|_| "unknown".into()),
+        "connected to the relay"
+    );
     let (sink, mut stream) = ws.split();
     let mut s = Session {
         hub: hub.clone(),

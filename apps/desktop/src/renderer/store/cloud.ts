@@ -2,6 +2,7 @@ import type { CloudStatus, ClaimSignature } from '@shared/models'
 import { mayAutoClaim } from '../lib/auto-claim'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
+import { relayAddressToSave } from '../lib/relay-address'
 import { pref, type Pref } from '../lib/prefs'
 import { account } from './account'
 import type { AppModel } from './app-model'
@@ -265,6 +266,20 @@ export class CloudModel extends Observable {
       await this.refresh(true)
     } catch (error) {
       this.fail(error)
+    }
+  }
+
+  /** Points this computer's relay at `raw`, or clears it when `raw` is blank. False when the host refuses. */
+  async setCloudUrl(store: BotStore, raw: string): Promise<boolean> {
+    const next = relayAddressToSave(raw, store.cloud?.url)
+    if (next === null) return true
+    try {
+      // The relay restarts, same as turning the cloud on or off.
+      await (await store.ready()).call('setCloudUrl', { url: next }, 30_000)
+      return true
+    } catch (error) {
+      this.fail(error)
+      return false
     }
   }
 

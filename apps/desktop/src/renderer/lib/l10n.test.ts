@@ -124,6 +124,10 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Usage', 'zh', false), '用量')
   assert.equal(translate('Computers & devices', 'zh', false), '电脑和设备')
   assert.equal(translate('Reachable from anywhere through Cloudflare (encrypted).', 'zh', false), '通过 Cloudflare 随时随地连接（已加密）。')
+  assert.equal(
+    translate('Reachable from anywhere through Private relay (relay.example.com) (encrypted).', 'zh', false),
+    '通过私人中继（relay.example.com）随时随地连接（已加密）。',
+  )
   assert.equal(translate('Use Anthropic Console (API usage billing)', 'zh', false), '使用 Anthropic 控制台（按 API 用量计费）')
   assert.equal(translate('12 pt (Default)', 'zh', false), '12 pt（默认）')
   assert.equal(

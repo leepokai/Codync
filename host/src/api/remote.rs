@@ -103,6 +103,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let enabled = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
             serde_json::to_value(crate::remote::cloud::set_cloud(hub, enabled)?)?
         }
+        "setCloudUrl" => {
+            let url = match &b["url"] {
+                Value::Null => None,
+                Value::String(url) => Some(url.as_str()),
+                _ => bail!("`url` must be a string"),
+            };
+            serde_json::to_value(crate::remote::cloud::set_cloud_url(hub, url)?)?
+        }
         "setApproval" => {
             let approval = serde_json::from_value(b["approval"].clone()).context("`approval` is code or auto")?;
             serde_json::to_value(crate::remote::cloud::set_approval(hub, approval)?)?

@@ -32,6 +32,11 @@ class ConnectionPresentationTest {
         assertEquals("Not paired", statusText(unpaired))
         assertEquals("Not paired", connectionLabel(unpaired))
         assertEquals("Not paired", connectionDescription(unpaired))
+        val custom = computer.copy(cloud = "https://relay.example.com")
+        assertEquals("Connected through Private relay (relay.example.com)", connectionDescription(state(LinkState.Ready(HostRoute.Relay), computers = listOf(custom))))
+        assertEquals("Connected through Cloudflare", connectionDescription(state(LinkState.Ready(HostRoute.Relay), computers = listOf(computer.copy(cloud = "https://api.codync.dev")))))
+        assertEquals("relay.example.com", relayHost("https://relay.example.com/"))
+        assertEquals(null, relayHost("https://dev-api.codync.dev"))
     }
 
     @Test fun anOfflineComputerSaysWhenItWasLastSeen() {

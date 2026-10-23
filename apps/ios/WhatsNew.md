@@ -12,11 +12,13 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 設定與語音聊天的標題加入清楚的圖示。
 - 可在設定中自行選擇英文、簡體中文、繁體中文、日語、韓語、法語、德語或西班牙語，也可跟隨系統語言。
 - 語言偏好保留在這台裝置，聊天內容維持原文。
+- 電腦使用自建中繼時，設定和連線狀態會顯示該中繼的地址，不再一律寫成 Cloudflare。
 
 ### en-US
 - Identify Settings and Voice chat with clearer header icons.
 - Choose English, Simplified Chinese, Traditional Chinese, Japanese, Korean, French, German or Spanish in Settings, or follow your system language.
 - Keep your language preference on this device without translating your conversations.
+- When a computer uses a private relay, Settings and connection status show that relay's address instead of always saying Cloudflare.
 
 ## 2.23.1
 

@@ -16,12 +16,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::watch;
 
-/// The cloud this build belongs to: main only for builds made with `CODYNC_ENV=main` (the
-/// release workflows), dev for every local build, debug or release, like the apps built next
-/// to it.
-fn build_cloud_url() -> &'static str {
-    crate::environment::Environment::current().cloud_url()
-}
+pub use super::cloud_url::{set_cloud_url, url};
 
 /// How long one successful state pull keeps an account device allowed.
 pub const LEASE_MS: i64 = 15 * 60 * 1000;
@@ -41,35 +36,6 @@ const SAS_NONCES: &str = "sas_nonces";
 /// or not: at most this many per hour keeps a 6-digit SAS out of reach of a search.
 const SAS_NONCES_PER_HOUR: usize = 5;
 const HOUR_MS: i64 = 60 * 60 * 1000;
-
-/// The cloud base URL in use, or `None` when the cloud is off.
-/// `CODYNC_CLOUD=off` > turned off here > `CODYNC_CLOUD_URL` (a cloud you're developing) > the
-/// build's cloud. Which cloud is never saved here: on/off is the only stored cloud setting.
-/// Unit tests point at a fake cloud through kv `test_cloud_url`, so they never reach a real one.
-pub fn url(store: &Store) -> Option<String> {
-    if std::env::var("CODYNC_CLOUD").is_ok_and(|v| v == "off")
-        || store.kv_get("cloud_enabled").as_deref() == Some("false")
-    {
-        return None;
-    }
-    if cfg!(test) {
-        return store.kv_get("test_cloud_url");
-    }
-    let custom = std::env::var("CODYNC_CLOUD_URL")
-        .ok()
-        .map(|u| u.trim().trim_end_matches('/').to_owned())
-        .filter(|u| valid_url(&format!("{u}/")));
-    Some(custom.unwrap_or_else(|| build_cloud_url().to_owned()))
-}
-
-/// A cloud URL this host may be pointed at: https, or plain http to this computer (local dev).
-fn valid_url(u: &str) -> bool {
-    let Ok(parsed) = reqwest::Url::parse(u) else { return false };
-    let local = matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
-    parsed.path() == "/"
-        && parsed.query().is_none()
-        && (parsed.scheme() == "https" || (parsed.scheme() == "http" && local))
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -678,12 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn only_safe_cloud_urls() {
-        assert!(valid_url("https://codync-cloud.example.workers.dev/"));
-        assert!(valid_url("http://127.0.0.1:8787/"));
-        assert!(!valid_url("http://example.com/"));
-        assert!(!valid_url("https://example.com/path/"));
-        assert!(!valid_url("ftp://example.com/"));
+    fn signed_authority_omits_the_default_port() {
         assert_eq!(authority("https://Codync.Example.dev").unwrap(), "codync.example.dev");
         assert_eq!(authority("http://127.0.0.1:8787").unwrap(), "127.0.0.1:8787");
         assert_eq!(authority("https://x.dev:443").unwrap(), "x.dev", "default port is left out");

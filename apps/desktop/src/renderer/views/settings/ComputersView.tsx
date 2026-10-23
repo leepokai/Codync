@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AccountApproval, PairingInfo } from '@shared/models'
 import { newSSHProfile, type SSHProfile } from '@shared/ssh'
 import { Button, CardSection, IconButton, Switch } from '../../components/Controls'
@@ -15,6 +15,7 @@ import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { useTr } from '../../lib/use-language'
+import { cloudStatusLine } from '../../lib/relay-copy'
 import { errorText, liveClient, relativeDay, Reveal, SectionHeader, statusText, thisMac } from './parts'
 import { useSSH } from './ssh-model'
 import { SSHRow } from './SSHRow'
@@ -121,9 +122,25 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
       }
     })
 
-  const cloudLine = !cloud?.enabled
-    ? tr('Off: only Wi-Fi and Tailscale reach it, nothing goes through Cloudflare.')
-    : (cloud.lastError ?? tr(cloud.connected ? 'Reachable from anywhere through Cloudflare (encrypted).' : 'Connecting to Cloudflare…'))
+  const [relayAddress, setRelayAddress] = useState(cloud?.url ?? '')
+  const [relayFocused, setRelayFocused] = useState(false)
+  const savingRelay = useRef(false)
+  useEffect(() => {
+    if (!relayFocused && !savingRelay.current) setRelayAddress(cloud?.url ?? '')
+  }, [cloud?.url, relayFocused])
+  const saveRelay = () => {
+    savingRelay.current = true
+    run(async () => {
+      try {
+        const kept = await app.cloud.setCloudUrl(store, relayAddress)
+        if (!kept) setRelayAddress(store.cloud?.url ?? '')
+      } finally {
+        savingRelay.current = false
+      }
+    })
+  }
+  const cloudSentence = cloud ? cloudStatusLine(cloud) : ''
+  const cloudLine = cloud?.enabled && cloud.lastError ? cloud.lastError : tr(cloudSentence)
 
   const accountLine = (
     <HStack key="account" gap={8} className="settings-row settings-appear">
@@ -176,6 +193,26 @@ function ManagedComputerCard({ store, ssh: overSSH }: { store: BotStore; ssh: bo
                     <Text size="caption" tone={cloud.lastError ? 'attention' : 'secondary'}>{cloudLine}</Text>
                   </span>
                 </Switch>,
+                <div key="relay" className="settings-row settings-appear">
+                  <Text tone="text">{tr('Relay address')}</Text>
+                  <input
+                    className="settings-field"
+                    aria-label={tr('Relay address')}
+                    placeholder="https://"
+                    value={relayAddress}
+                    spellCheck={false}
+                    disabled={busy || !manageable}
+                    onFocus={() => setRelayFocused(true)}
+                    onBlur={() => {
+                      setRelayFocused(false)
+                      saveRelay()
+                    }}
+                    onChange={(e) => setRelayAddress(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                  />
+                </div>,
                 accountLine,
               ]
             : []),

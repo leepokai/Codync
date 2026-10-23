@@ -57,3 +57,16 @@ test('an older host has no fallbacks to show or send', () => {
   assert.equal(draftOf(bot).selfFallbacks, undefined)
   assert.equal(normalizeBot({ id: 'b', selfFallbacks: false }).selfFallbacks, false)
 })
+
+test('another agent starts on its own default model with none of the old agent’s settings', () => {
+  const draft = { ...draftOf(normalizeBot({ id: 'b', backend: 'claude', modelOptions: { effort: 'high' } })), model: null }
+  const next = withBackend(draft, 'codex')
+  assert.deepEqual([next.model, next.modelOptions], [null, {}])
+  assert.equal(withBackend(draft, 'claude'), draft, 'the same agent keeps them')
+})
+
+test('moving and removing fallbacks keeps each one’s own settings', () => {
+  const f = (backend: string, effort?: string) => ({ backend, model: null, modelOptions: effort ? { effort } : {} })
+  const moved = moveFallback([f('codex', 'high'), f('gemini')], 0, 1)
+  assert.deepEqual(moved.map((x) => x.modelOptions), [{}, { effort: 'high' }])
+})

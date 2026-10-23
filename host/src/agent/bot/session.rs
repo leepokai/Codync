@@ -2,7 +2,7 @@
 
 use super::fast_mode::Listing;
 use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
-use super::{Actor, Conn, Instructions};
+use super::{Actor, Conn, Instructions, NoticeStyle};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::chat::{context, memory};
@@ -208,13 +208,16 @@ impl Actor {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
-                    let res = if res.get("configOptions").is_some() || res.get("models").is_some() {
+                    let (res, left_out) = if res.get("configOptions").is_some() || res.get("models").is_some() {
                         select_model(&conn.acp, &res, &sid, &self.cfg).await?
                     } else {
-                        res
+                        (res, Vec::new())
                     };
                     conn.loaded.insert(sid.clone(), Instant::now());
                     self.note_options(&sid, &res, Listing::Session);
+                    for line in left_out {
+                        self.notice(&line, NoticeStyle::Info);
+                    }
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.
                         context::mark_announced(&self.hub.store, &self.cfg.id, &s, s.system_identity.clone())?;
@@ -246,8 +249,11 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
-        let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        let (options, left_out) = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
         self.note_options(&sid, &options, Listing::Session);
+        for line in left_out {
+            self.notice(&line, NoticeStyle::Info);
+        }
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;
         self.turn_session = Some(sid.clone());

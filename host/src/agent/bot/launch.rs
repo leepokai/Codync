@@ -50,18 +50,25 @@ pub(crate) async fn launch_commands(cfg: &BotConfig, progress: impl Fn(&str)) ->
 
 /// Switches a session (`session/new` or `session/load` answered `res`) to the bot's
 /// chosen model, then sets that model's options (effort, fast…). A bot on the agent's default
-/// model gets its options too. Returns the answer holding the session's config options now: a
-/// model can change them.
-pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Value> {
+/// model gets its options too. Returns the answer holding the session's config options now (a
+/// model can change them), and what it left out: a saved value the session lists other values
+/// for, as when the agent's offer changed since it was saved, is never sent.
+pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<(Value, Vec<String>)> {
     let model = cfg.model.as_deref().filter(|m| !m.is_empty());
     if let Some(model) = model
         && crate::agent::auth::model_config(res).is_none()
     {
         let r = acp.request("session/set_model", json!({"sessionId": sid, "modelId": model})).await;
-        return r.map(|_| res.clone()).map_err(|e| model_error(model, &e));
+        return r.map(|_| (res.clone(), Vec::new())).map_err(|e| model_error(model, &e));
     }
     let mut current = res.clone();
+    let mut left_out = Vec::new();
     for (i, (id, value)) in config_steps(res, model, &cfg.model_options).into_iter().enumerate() {
+        let is_model = model.is_some() && i == 0;
+        if !is_model && let Some(offered) = unoffered(&current, id, value) {
+            left_out.push(offered);
+            continue;
+        }
         let answer = acp
             .request("session/set_config_option", json!({"sessionId": sid, "configId": id, "value": value}))
             .await
@@ -74,7 +81,25 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
             current = answer;
         }
     }
-    Ok(current)
+    Ok((current, left_out))
+}
+
+/// Why `value` can't be set: the session lists option `id` without it. An option the session doesn't list goes to
+/// the agent as saved (Cursor's own model options arrive that way), and the agent decides.
+fn unoffered(session: &Value, id: &str, value: &str) -> Option<String> {
+    let options = session["configOptions"].as_array()?;
+    let option = options.iter().find(|o| o["id"] == id && o["type"] == "select")?;
+    // Values may come in groups, as model lists do.
+    let listed = option["options"].as_array().into_iter().flatten();
+    let values: Vec<&str> = listed
+        .flat_map(|v| std::iter::once(v).chain(v["options"].as_array().into_iter().flatten()))
+        .filter_map(|v| v["value"].as_str())
+        .collect();
+    if values.contains(&value) {
+        return None;
+    }
+    let name = option["name"].as_str().unwrap_or(id);
+    Some(format!("{name} {value} isn't offered for this model, so the agent uses its own setting."))
 }
 
 /// The `session/set_config_option` calls, in order: the model when the bot picked one, then its
@@ -255,6 +280,23 @@ mod tests {
         );
         // An agent without config options has nothing to set them on.
         assert!(config_steps(&json!({}), None, &own).is_empty());
+    }
+
+    #[test]
+    fn only_a_value_the_session_lists_for_its_option_is_left_out() {
+        let session = json!({"configOptions": [
+            {"id": "effort", "name": "Effort", "type": "select", "options": [{"value": "low"}, {"group": "more",
+             "options": [{"value": "high"}]}]},
+        ]});
+        assert_eq!(unoffered(&session, "effort", "low"), None);
+        assert_eq!(unoffered(&session, "effort", "high"), None, "grouped values count");
+        assert_eq!(
+            unoffered(&session, "effort", "max").as_deref(),
+            Some("Effort max isn't offered for this model, so the agent uses its own setting.")
+        );
+        // Cursor lists its model options elsewhere: an option the session doesn't list is the agent's to judge.
+        assert_eq!(unoffered(&session, "fast", "true"), None);
+        assert_eq!(unoffered(&json!({}), "effort", "max"), None);
     }
 
     #[test]

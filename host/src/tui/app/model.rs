@@ -156,6 +156,8 @@ pub struct AgentModel {
     pub id: String,
     pub name: String,
     pub options: Vec<ModelOption>,
+    /// The model the agent runs by default: a bot left on Default gets its settings.
+    pub current: bool,
 }
 
 /// A model setting (effort, fast…) and its values as `(id, name)`.
@@ -166,9 +168,14 @@ pub struct ModelOption {
 }
 
 impl AgentModel {
-    /// The models an `agentModels` answer lists.
+    /// The models an `agentModels` answer lists, the agent's default one marked.
     pub fn list(catalog: &Value) -> Vec<Self> {
-        catalog["models"].as_array().into_iter().flatten().filter_map(Self::parse).collect()
+        let mut models: Vec<Self> =
+            catalog["models"].as_array().into_iter().flatten().filter_map(Self::parse).collect();
+        for m in &mut models {
+            m.current = catalog["currentModelId"].as_str() == Some(m.id.as_str());
+        }
+        models
     }
 
     pub fn parse(v: &Value) -> Option<Self> {
@@ -182,7 +189,7 @@ impl AgentModel {
             let values = o["values"].as_array()?.iter().filter_map(|v| pair(v).map(|(n, i)| (i, n))).collect();
             Some(ModelOption { id, name, values })
         });
-        Some(Self { id, name, options: options.collect() })
+        Some(Self { id, name, options: options.collect(), current: false })
     }
 }
 

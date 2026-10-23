@@ -289,10 +289,12 @@ impl App {
         Some(ids[super::app::cycle(i, d, ids.len())].clone())
     }
 
-    /// The settings (effort, fast…) `backend`'s `model` offers.
+    /// The settings (effort, fast…) `backend`'s `model` offers; on Default (`""`), those of the
+    /// model the agent runs by default.
     pub(crate) fn model_settings(&self, backend: &str, model: &str) -> &[super::app::ModelOption] {
         let list = self.models.get(backend).and_then(Option::as_ref);
-        list.and_then(|l| l.iter().find(|m| m.id == model)).map_or(&[], |m| &m.options)
+        let chosen = |m: &&super::app::AgentModel| if model.is_empty() { m.current } else { m.id == model };
+        list.and_then(|l| l.iter().find(chosen)).map_or(&[], |m| &m.options)
     }
 }
 

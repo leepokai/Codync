@@ -16,7 +16,7 @@ mod slash;
 mod ui;
 
 pub use editor::Editor;
-pub use effort::{Effort, label as setting_label, setting as effort_setting};
+pub use effort::{Effort, effort, label as setting_label, setting as effort_setting};
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
 pub use model::{After, AgentModel, Bot, Entry, Kind, Mark, ModelOption, Msg, Status};
 pub use slash::SlashAction;

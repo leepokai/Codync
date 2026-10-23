@@ -73,18 +73,20 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     let mut left_out = Vec::new();
     // Settings set since the session last listed its options: it didn't say what it set.
     let mut unconfirmed = Vec::new();
-    // Cursor lists each model's options only through its own method; asked once, when needed.
-    let mut listing = Value::Null;
+    // Cursor lists each model's options only through its own method; asked once, when needed (`None`: not asked).
+    let mut listing: Option<Value> = None;
     let steps = config_steps(res, model, &cfg.model_options);
-    let chosen = legacy.or_else(|| model.map(|_| steps.first().map_or("", |s| s.1)));
     for (i, (id, value)) in steps.iter().copied().enumerate() {
         let is_model = model.is_some() && legacy.is_none() && i == 0;
         if !is_model {
-            if cfg.backend == "cursor" && listing.is_null() && !(fresh && lists(&current, id)) {
-                listing = acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default();
+            if cfg.backend == "cursor" && listing.is_none() && !(fresh && lists(&current, id)) {
+                listing = Some(acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default());
             }
-            let running = chosen.or_else(|| current_model(&current));
-            if let Some(offered) = unoffered(&current, fresh, &listing, running, id, value) {
+            // The model the session itself says it runs, from its fresh list: never the one asked for, which the
+            // agent may not have taken. No such report: no model's list vouches for anything.
+            let running = if fresh { current_model(&current) } else { None };
+            let listing = listing.as_ref().unwrap_or(&Value::Null);
+            if let Some(offered) = unoffered(&current, fresh, listing, running, id, value) {
                 left_out.push((id.to_owned(), value.to_owned(), offered));
                 continue;
             }

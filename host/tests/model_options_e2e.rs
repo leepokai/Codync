@@ -337,6 +337,10 @@ async fn a_change_during_a_reply_waits_for_it_and_says_so() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert_eq!(answer(&host, &bot, "three").await, "sol low · three");
+    // A new agent session (context starts fresh), not the held one resumed.
+    let log = calls(&host, &bot);
+    assert_eq!(log[log.len() - 2..], ["session/new", "reasoning_effort=low"], "{log:?}");
+    assert!(!log.contains(&"session/load".to_owned()), "{log:?}");
 }
 
 fn bot_state(snapshot: &Value, bot: &str) -> Value {
@@ -416,4 +420,7 @@ async fn going_back_to_default_during_a_reply_is_pending_too() {
     std::fs::write(workspace.join("release"), "").unwrap();
     wait_for(&host, &bot, "the held reply", |e| e["kind"] == "agent" && e["data"]["text"] == "sol high · two").await;
     assert_eq!(answer(&host, &bot, "three").await, "sol low · three", "the agent's own again, in a new session");
+    let log = calls(&host, &bot);
+    assert_eq!(log.last().map(String::as_str), Some("session/new"), "{log:?}");
+    assert!(!log.contains(&"session/load".to_owned()), "{log:?}");
 }

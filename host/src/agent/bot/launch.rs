@@ -55,27 +55,30 @@ pub(crate) async fn launch_commands(cfg: &BotConfig, progress: impl Fn(&str)) ->
 /// for, as when the agent's offer changed since it was saved, is never sent.
 pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Selected> {
     let model = cfg.model.as_deref().filter(|m| !m.is_empty());
-    if let Some(model) = model
-        && crate::agent::auth::model_config(res).is_none()
-    {
-        let r = acp.request("session/set_model", json!({"sessionId": sid, "modelId": model})).await;
-        // `session/set_model` answers with no options: the model the session listed before is no longer known.
-        return r
-            .map(|_| Selected { options: res.clone(), model_unlisted: true, ..Selected::default() })
-            .map_err(|e| model_error(model, &e));
-    }
     let mut current = res.clone();
     // Whether `current` lists the options of the model the session runs now.
     let mut fresh = true;
+    // Models listed the older way (`models.availableModels`) are chosen with `session/set_model`; the settings follow.
+    let legacy = model.filter(|_| crate::agent::auth::model_config(res).is_none());
+    if let Some(model) = legacy {
+        let r = acp.request("session/set_model", json!({"sessionId": sid, "modelId": model})).await;
+        let answer = r.map_err(|e| model_error(model, &e))?;
+        // Without a fresh list, what the session listed before describes the model it ran then.
+        if answer["configOptions"].is_array() {
+            current = answer;
+        } else {
+            fresh = false;
+        }
+    }
     let mut left_out = Vec::new();
     // Settings set since the session last listed its options: it didn't say what it set.
     let mut unconfirmed = Vec::new();
     // Cursor lists each model's options only through its own method; asked once, when needed.
     let mut listing = Value::Null;
     let steps = config_steps(res, model, &cfg.model_options);
-    let chosen = model.map(|_| steps.first().map_or("", |s| s.1));
+    let chosen = legacy.or_else(|| model.map(|_| steps.first().map_or("", |s| s.1)));
     for (i, (id, value)) in steps.iter().copied().enumerate() {
-        let is_model = model.is_some() && i == 0;
+        let is_model = model.is_some() && legacy.is_none() && i == 0;
         if !is_model {
             if cfg.backend == "cursor" && listing.is_null() && !(fresh && lists(&current, id)) {
                 listing = acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default();
@@ -188,11 +191,12 @@ fn config_steps<'a>(
     }
     match model {
         Some(model) => {
-            let Some(config_id) = crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) else {
-                return Vec::new();
-            };
             let (model, options) = model_choice(res, model, own);
-            std::iter::once((config_id, model)).chain(options).collect()
+            // Without a model selector the model goes by `session/set_model` (see `select_model`).
+            match crate::agent::auth::model_config(res).and_then(|c| c["id"].as_str()) {
+                Some(config_id) => std::iter::once((config_id, model)).chain(options).collect(),
+                None => options,
+            }
         }
         None => own_options(res, own.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()),
     }

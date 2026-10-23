@@ -39,23 +39,28 @@ pub fn label(o: &ModelOption) -> &str {
 }
 
 impl App {
-    /// The settings a step offers: while the bot runs its agent on the model the host saved for the step, with nothing
-    /// pending, that session's own list (for the model it runs); else what the agent's catalog lists for `model`.
-    pub(in crate::tui) fn settings_for<'a>(
-        &'a self,
-        bot: Option<&'a Bot>,
+    /// The settings a step offers: what the agent's catalog lists for `model`, each replaced by the session's own entry
+    /// while the bot runs its agent on the model the host saved for the step with nothing pending (its list is for the
+    /// model it runs, and may hold only some, as Cursor's does), then the session's others.
+    pub(in crate::tui) fn settings_for(
+        &self,
+        bot: Option<&Bot>,
         backend: &str,
         model: &str,
         saved: bool,
-    ) -> &'a [ModelOption] {
+    ) -> Vec<ModelOption> {
         let session = bot.filter(|_| saved).and_then(|b| b.session_of(backend)).filter(|s| !s.pending);
-        session.and_then(|s| s.settings.as_deref()).unwrap_or_else(|| self.model_settings(backend, model))
+        let session = session.and_then(|s| s.settings.as_deref()).unwrap_or_default();
+        let catalog = self.model_settings(backend, model);
+        let own = |c: &ModelOption| session.iter().find(|s| s.id == c.id).unwrap_or(c).clone();
+        let others = session.iter().filter(|s| !catalog.iter().any(|c| c.id == s.id)).cloned();
+        catalog.iter().map(own).chain(others).collect()
     }
 
     /// What the form shows for its own agent (`step` `None`) or its fallback `step`: `step_settings` in order, then any
     /// setting picked for it that none lists, so it stays visible and can be cleared.
     pub(in crate::tui) fn form_settings(&self, f: &Form, step: Option<usize>) -> Vec<ModelOption> {
-        let listed = self.step_settings(f, step);
+        let listed = &self.step_settings(f, step);
         let picked = match step {
             Some(i) => f.fallbacks.get(i).map(|x| &x.model_options),
             None => f.model_options(),
@@ -67,7 +72,7 @@ impl App {
     }
 
     /// `settings_for` the form's own agent (`step` `None`) or its fallback `step`, as the form shows them now.
-    pub(in crate::tui) fn step_settings(&self, f: &Form, step: Option<usize>) -> &[ModelOption] {
+    pub(in crate::tui) fn step_settings(&self, f: &Form, step: Option<usize>) -> Vec<ModelOption> {
         let entry = step.and_then(|i| f.fallbacks.get(i));
         let (backend, model) = match entry {
             Some(x) => (x.backend.clone(), x.model.clone().unwrap_or_default()),

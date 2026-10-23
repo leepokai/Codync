@@ -36,10 +36,12 @@ sealed interface EffortLevel {
             return if (values.isEmpty()) null else "Saved: ${values.joinToString(", ")}"
         }
 
-        /** The settings a step shows: while nothing is pending, its running session's own list (for the model it runs), else what the
-         *  catalog lists; then any [saved] setting neither lists, so it stays visible and can be cleared. */
+        /** The settings a step shows: what the catalog lists, each replaced by the running session's own entry while nothing is pending (its
+         *  list is for the model it runs, and may hold only some, as Cursor's does), then the session's others; then any [saved] setting none
+         *  lists, so it stays visible and can be cleared. */
         fun shown(catalog: List<ModelOption>, report: SessionReport?, saved: Map<String, String>): List<ModelOption> {
-            val listed = report?.takeIf { !it.pending }?.settings ?: catalog
+            val session = report?.takeIf { !it.pending }?.settings.orEmpty()
+            val listed = catalog.map { c -> session.firstOrNull { it.id == c.id } ?: c } + session.filter { s -> catalog.none { it.id == s.id } }
             return listed + saved.keys.filter { id -> listed.none { it.id == id } }.sorted().map { ModelOption(it, it) }
         }
 

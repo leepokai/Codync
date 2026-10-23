@@ -13,7 +13,7 @@ pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fall
     // While the bot runs this agent on the saved model, its session's own list; else the agent's catalog.
     let saved = bot.is_some_and(|b| b.fallbacks.iter().any(|x| x.backend == f.backend && x.model == f.model));
     let settings = app.settings_for(bot, &f.backend, f.model.as_deref().unwrap_or_default(), saved);
-    let effort = effort_setting(settings).map(|o| {
+    let effort = effort_setting(&settings).map(|o| {
         let value = f.model_options.get(&o.id).map_or("default", |v| {
             o.values.iter().find(|(id, _)| id == v).map_or(v.as_str(), |(_, name)| name.as_str())
         });

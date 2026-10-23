@@ -21,10 +21,12 @@ export function modelSettings(catalog: Catalog | null | undefined, model: string
 }
 
 
-/** The settings a step shows: while nothing is pending, its running session's own list (for the model it runs), else
- *  what the catalog lists; then any `saved` setting neither lists, so it stays visible and can be cleared. */
+/** The settings a step shows: what the catalog lists, each replaced by the running session's own entry while nothing is
+ *  pending (its list is for the model it runs, and may hold only some, as Cursor's does), then the session's others;
+ *  then any `saved` setting none lists, so it stays visible and can be cleared. */
 export function stepSettings(catalogSettings: ModelSetting[], report: SessionReport | null, saved: Record<string, string>): ModelSetting[] {
-  const listed = report && !report.pending && report.settings ? report.settings : catalogSettings
+  const session = report && !report.pending && report.settings ? report.settings : []
+  const listed = [...catalogSettings.map((c) => session.find((s) => s.id === c.id) ?? c), ...session.filter((s) => !catalogSettings.some((c) => c.id === s.id))]
   const unlisted = Object.keys(saved).filter((id) => !listed.some((s) => s.id === id)).sort()
   return [...listed, ...unlisted.map((id) => ({ id, name: id, values: [] }))]
 }

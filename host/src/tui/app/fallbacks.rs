@@ -51,7 +51,7 @@ impl App {
             KeyCode::Char('e') if at < f.fallbacks.len() => {
                 // Its agent's list loads on the first press; nothing starts that agent before.
                 self.want_models(&f.fallbacks[at].backend);
-                let setting = super::effort_setting(self.step_settings(f, Some(at))).cloned();
+                let setting = super::effort_setting(&self.step_settings(f, Some(at))).cloned();
                 let step = &mut f.fallbacks[at];
                 if let Some(o) = setting {
                     // Default (the agent's own), then each value.

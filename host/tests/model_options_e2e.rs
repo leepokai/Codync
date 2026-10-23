@@ -108,3 +108,21 @@ async fn choosing_a_model_drops_the_default_models_effort() {
     assert_eq!(answer(&host, &bot, "two").await, "mini low · two");
     assert_eq!(calls(&host, &bot)[2..], ["session/new", "model=mini"]);
 }
+
+#[tokio::test]
+async fn clients_see_what_the_running_session_uses() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Shown", "effort_agent.py", "").await;
+    let in_use = || async {
+        let snapshot = host.snapshot().await;
+        snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot.as_str()).unwrap()["sessionOptions"].clone()
+    };
+    assert_eq!(in_use().await, Value::Null, "nothing is confirmed before the agent runs");
+
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "high"}})).await;
+    answer(&host, &bot, "one").await;
+    assert_eq!(in_use().await, json!({"model": "sol", "reasoning_effort": "high"}), "what the agent reports");
+}

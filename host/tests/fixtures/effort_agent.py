@@ -10,11 +10,13 @@ Files in its folder change how it behaves, for lifecycle tests:
 - `silent`: a setter succeeds but answers without its config options.
 - `foreign`: after each prompt, a config_option_update arrives for another session.
 - `exit`: the process exits right after answering a prompt.
-- `unlisted`: sessions list the model select only, no settings."""
+- `unlisted`: sessions list the model select only, no settings.
+- `hold`: a prompt writes `prompted`, then waits for a `release` file before answering."""
 
 import json
 import os
 import sys
+import time
 
 model, effort = "sol", "low"
 sessions = 0
@@ -70,6 +72,11 @@ for line in sys.stdin:
             continue
         send({"id": rid, "result": {} if os.path.exists("silent") else options()})
     elif method == "session/prompt":
+        if os.path.exists("hold"):
+            open("prompted", "w").close()
+            while not os.path.exists("release"):
+                time.sleep(0.05)
+            os.remove("release")
         # The first prompt carries the bot's profile: answer to the message itself, its last line.
         text = " ".join(b.get("text", "") for b in params.get("prompt", [])).strip().splitlines()[-1]
         update = {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": f"{model} {effort} · {text}"}}

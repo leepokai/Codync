@@ -294,3 +294,47 @@ async fn an_agent_that_exited_reports_nothing() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
+
+#[tokio::test]
+async fn a_change_during_a_reply_waits_for_it_and_says_so() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let bot = host.fixture_bot("Patient", "effort_agent.py", "").await;
+    let workspace = host.home.join("bots").join(&bot).join("workspace");
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "high"}})).await;
+    assert_eq!(answer(&host, &bot, "one").await, "sol high · one");
+
+    fixture_flag(&host, &bot, "hold");
+    host.call("send", json!({"botId": bot, "text": "two"})).await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !workspace.join("prompted").exists() {
+        assert!(Instant::now() < deadline, "the reply never started");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // Mid-reply: saved, waiting, and the running session still says high.
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "low"}})).await;
+    let state = |snapshot: Value| {
+        snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot.as_str()).cloned().unwrap()
+    };
+    let during = state(host.snapshot().await);
+    assert_eq!(during["restartPending"], true);
+    assert_eq!(during["sessionOptions"]["reasoning_effort"], "high");
+    assert_eq!(during["modelOptions"], json!({"reasoning_effort": "low"}));
+
+    // The reply finishes as it began, then the agent restarts on the new setting.
+    std::fs::remove_file(workspace.join("hold")).unwrap();
+    std::fs::write(workspace.join("release"), "").unwrap();
+    wait_for(&host, &bot, "the held reply", |e| {
+        e["kind"] == "agent" && e["data"]["final"] == true && e["data"]["text"] == "sol high · two"
+    })
+    .await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while state(host.snapshot().await)["restartPending"] == true {
+        assert!(Instant::now() < deadline, "still waiting after the reply");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(answer(&host, &bot, "three").await, "sol low · three");
+}

@@ -19,7 +19,7 @@ mod ui;
 
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
-pub use effort::{Effort, effort, label as setting_label, setting as effort_setting};
+pub use effort::{Effort, effort, label as setting_label, setting_of as effort_setting_of};
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use slash::SlashAction;

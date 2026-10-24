@@ -1,6 +1,6 @@
 //! How the terminal shows a bot's fallback chain (`agent::fallback`): the agent it's on, and each step's state.
 
-use super::super::app::{App, Bot, Effort, effort, effort_setting};
+use super::super::app::{App, Bot, Effort, effort, effort_setting_of};
 use super::time::now_ms;
 use super::usage::when_future;
 use crate::agent::fallback::Reason;
@@ -14,7 +14,7 @@ pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fall
     // While the bot runs this agent on the saved model, its session's own list; else the agent's catalog.
     let host = bot.and_then(|b| b.fallbacks.iter().find(|x| x.backend == f.backend && x.model == f.model));
     let settings = app.settings_for(bot, &f.backend, f.model.as_deref().unwrap_or_default(), host.is_some());
-    let setting = effort_setting(&settings);
+    let setting = effort_setting_of(&settings, bot.filter(|_| host.is_some()).and_then(|b| b.session_of(&f.backend)));
     // Running as saved, its own session says what it runs; anything else is what is picked for it.
     let session = bot.filter(|_| host.is_some_and(|h| h.model_options == f.model_options)).and_then(|b| {
         (b.agent_step.as_deref() == Some(f.backend.as_str())).then(|| b.session_of(&f.backend)).flatten()

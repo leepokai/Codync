@@ -51,7 +51,7 @@ impl App {
             KeyCode::Char('e') if at < f.fallbacks.len() => {
                 // Its agent's list loads on the first press; nothing starts that agent before.
                 self.want_models(&f.fallbacks[at].backend);
-                let setting = super::effort_setting(&self.step_settings(f, Some(at))).cloned();
+                let setting = self.step_effort(f, at);
                 let step = &mut f.fallbacks[at];
                 if let Some(o) = setting {
                     // Default (the agent's own), then each value.
@@ -302,6 +302,28 @@ mod tests {
         app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
         let line = crate::tui::view::fallbacks::chain_line(&app, &app.bots["b"]);
         assert_eq!(line.as_deref(), Some("Fallbacks: 1 codex · default · effort: In use: High (in use)"));
+    }
+
+    #[tokio::test]
+    async fn e_changes_the_effort_level_the_running_session_lists_not_the_catalogs_stale_one() {
+        // Greptile on #204 (51683fa0): with the catalog's `old_effort` first, `e` changed a setting the session drops.
+        let mut app = test_app();
+        let level = |id: &str| {
+            json!({"id": id, "name": "Effort", "category": "thought_level",
+                "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]})
+        };
+        let catalog =
+            json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": [level("old_effort")]}]});
+        app.models.insert("codex".into(), Some(super::super::AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "fallbacks": [{"backend": "codex", "model": null}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"effort": "high"}, "sessionSettings": [level("effort")]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        assert!(app.fallback_key(&mut f, KeyEvent::from(KeyCode::Char('e'))));
+        assert_eq!(f.fallbacks[0].model_options, [("effort".to_owned(), "low".to_owned())].into());
     }
 
     #[tokio::test]

@@ -20,6 +20,13 @@ pub fn setting(settings: &[ModelOption]) -> Option<&ModelOption> {
     settings.iter().find(|s| s.category.as_deref() == Some("thought_level"))
 }
 
+/// The effort level among a step's `settings`, as [`effort`] reads it: the one the running `session` lists (merged in
+/// by `settings_for`) before any other the catalog has under another id.
+pub fn setting_of<'a>(settings: &'a [ModelOption], session: Option<&Session>) -> Option<&'a ModelOption> {
+    let own = session.filter(|s| !s.pending).and_then(|s| s.settings.as_deref()).and_then(setting);
+    own.and_then(|o| settings.iter().find(|s| s.id == o.id)).or_else(|| setting(settings))
+}
+
 impl Bot {
     /// What agent `backend` says, when the bot runs on it now: its own agent unless it's on a fallback.
     pub fn session_of(&self, backend: &str) -> Option<&Session> {
@@ -84,6 +91,16 @@ impl App {
             None => b.backend == backend && b.model.clone().unwrap_or_default() == model,
         });
         self.settings_for(bot, &backend, &model, saved)
+    }
+
+    /// The effort level `e` changes for the form's fallback `step`: the one its running session lists, as its line shows.
+    pub(in crate::tui) fn step_effort(&self, f: &Form, step: usize) -> Option<ModelOption> {
+        let entry = f.fallbacks.get(step)?;
+        let bot = self.bots.get(&f.bot_id);
+        let saved =
+            bot.is_some_and(|b| b.fallbacks.iter().any(|x| x.backend == entry.backend && x.model == entry.model));
+        let session = bot.filter(|_| saved).and_then(|b| b.session_of(&entry.backend));
+        setting_of(&self.step_settings(f, Some(step)), session).cloned()
     }
 
     /// The Effort level of the form's own agent (`step` `None`) or of its fallback `step`. The line under it speaks

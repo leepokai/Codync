@@ -11,12 +11,13 @@ import type { BotStore } from '../store/bot-store'
 
 /** A roster row: avatar with status, name, and the live activity or last message (Grok Bot's desktop sidebar). */
 export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer, members }: { bot: Bot; store: BotStore; compact: boolean; usingComputer: boolean; members: Bot[] }) {
+  const tr = useTr()
   return (
     <HStack gap={compact ? 0 : 10} justify={compact ? 'center' : 'flex-start'} className="bot-row">
       <AvatarWithStatus bot={bot} members={members} size={30} />
       <VStack gap={2} className={`bot-row-text ${compact ? 'collapsed' : ''}`} aria-hidden={compact}>
         <HStack align="baseline" gap={4} shrink>
-          {bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}
+          {bot.lead ? <Icon name="star.fill" size={10} color="var(--tertiary)" title={tr('Lead bot')} /> : bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}
           <Text size="body" weight={bot.unread > 0 ? 'semibold' : 'medium'} tone="text" truncate>{bot.name}</Text>
           {usingComputer ? <Icon name="cursorarrow.motionlines" size={10} color="var(--accent)" title="Using the computer" /> : null}
         </HStack>

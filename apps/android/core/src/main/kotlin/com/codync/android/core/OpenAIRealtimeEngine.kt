@@ -26,10 +26,11 @@ interface RealtimePeer {
 /**
  * OpenAI Realtime over WebRTC, phone ↔ OpenAI directly (iOS `OpenAIRealtimeEngine`): the microphone is
  * a WebRTC audio track, the model's voice plays from the remote track, and events (tools, replies) go
- * over `oai-events`. The user's key stays on the computer, which mints the client secret.
+ * over `oai-events`. The computer runs the call ([CallLink]): it mints the client secret on the user's key and writes
+ * the voice's instructions and tools. `transcribe` is the model that writes down what the user says.
  */
-class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, private val credential: suspend () -> String,
-    private val operator: CallOperator, private val peer: RealtimePeer,
+class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, private val model: String, private val voice: String,
+    private val transcribe: String, private val link: CallLink, private val peer: RealtimePeer,
     private val exchange: suspend (secret: String, offer: String) -> String,
 ) : ProviderEngine(parent, VoiceProvider.OpenAI, settings, "OpenAI Realtime"), RealtimePeer.Events {
     /** A response is being generated; new replies wait for it to finish. */
@@ -37,11 +38,16 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
     /** Replies to hand over, and tool results as empty entries (a response is asked for once free). */
     private val pending = mutableListOf<String>()
     private var dropTimer: Job? = null
+    private var session: CallSession? = null
+    /** Tool calls still running on the computer: replies wait, so the model gets each result first. */
+    private var toolsRunning = 0
 
     init {
         hop {
-            val secret = credential()
+            val session = link.start(VoiceProvider.OpenAI, model, voice)
             if (ended) return@hop
+            val secret = session.credential ?: throw IOException("OpenAI sent no session credential.")
+            this.session = session
             val offer = peer.offer(this)
             peer.mic(!muted)
             val answer = exchange(secret, offer)
@@ -53,10 +59,10 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
 
     override fun speak(markdown: String): Boolean {
         if (ended) return false
-        hop { pending += operator.reply(markdown); flush() }
+        hop { pending += link.reply(markdown); flush() }
         return true
     }
-    override fun announce(notice: String) = hop { pending += operator.notice(notice); flush() }
+    override fun announce(notice: String) = hop { pending += link.notice(notice); flush() }
     override fun mute(value: Boolean) = hop {
         mutable.update { it.copy(muted = value, level = if (value) 0f else it.level) }
         if (phase != VoicePhase.Interrupted) peer.mic(!value)
@@ -73,45 +79,62 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
     }
 
     override fun opened() = hop {
-        dropTimer?.cancel()
         send(buildJsonObject {
             put("type", "session.update")
             putJsonObject("session") {
                 put("type", "realtime")
-                put("instructions", operator.instructions)
-                put("tools", JsonArray(CallOperator.tools.map(CallTool::openAI)))
-                putJsonObject("audio") { putJsonObject("input") { putJsonObject("turn_detection") { put("type", "semantic_vad") } } }
+                put("instructions", session?.instructions.orEmpty())
+                put("tools", JsonArray(session?.tools.orEmpty().map(CallTool::openAI)))
+                // What the user says is transcribed too, for the call's line in the chat.
+                putJsonObject("audio") { putJsonObject("input") {
+                    putJsonObject("turn_detection") { put("type", "semantic_vad") }
+                    putJsonObject("transcription") { put("model", transcribe) }
+                } }
             }
         })
-        phase(VoicePhase.Listening)
-        flush()
     }
 
     override fun received(text: String) = hop {
         val message = runCatching { WireJson.parseToJsonElement(text).jsonObject }.getOrNull() ?: return@hop
         when (message.text("type")) {
+            // Connected once the session has the instructions and tools, not when the channel opens.
+            "session.updated" -> if (phase == VoicePhase.Starting) { dropTimer?.cancel(); phase(VoicePhase.Listening); flush() }
             "input_audio_buffer.speech_started" -> level(if (muted) 0f else .7f)
             "input_audio_buffer.speech_stopped" -> level(0f)
+            "input_audio_buffer.committed" -> link.transcribing(true)
+            "conversation.item.input_audio_transcription.failed" -> link.transcribing(false)
             "output_audio_buffer.started" -> if (phase == VoicePhase.Listening) phase(VoicePhase.Speaking)
             "output_audio_buffer.stopped", "output_audio_buffer.cleared" -> if (phase == VoicePhase.Speaking) phase(VoicePhase.Listening)
             "response.created" -> responding = true
             "response.done" -> { responding = false; flush() }
+            "conversation.item.input_audio_transcription.completed" -> { link.add("user", message.text("transcript").orEmpty()); link.endTurn() }
+            "response.output_audio_transcript.done" -> { link.add("voice", message.text("transcript").orEmpty()); link.endTurn() }
             "response.function_call_arguments.done" -> {
                 val id = message.text("call_id") ?: return@hop
                 val name = message.text("name") ?: return@hop
                 val arguments = message.text("arguments")?.let { runCatching { WireJson.parseToJsonElement(it).jsonObject }.getOrNull() }
-                val output = operator.call(name, arguments ?: JsonObject(emptyMap()))
-                send(buildJsonObject {
-                    put("type", "conversation.item.create")
-                    putJsonObject("item") { put("type", "function_call_output"); put("call_id", id); put("output", output.toString()) }
-                })
-                // An empty entry asks for a response once this one is done, so the model speaks the result.
-                pending += ""
+                // The tool runs on the computer, outside the inbox.
+                toolsRunning++
+                scope.launch {
+                    val output = link.tool(name, arguments ?: JsonObject(emptyMap()))
+                    hop {
+                        toolsRunning--
+                        send(buildJsonObject {
+                            put("type", "conversation.item.create")
+                            putJsonObject("item") { put("type", "function_call_output"); put("call_id", id); put("output", output.toString()) }
+                        })
+                        // An empty entry asks for a response once this one is done, so the model speaks the result.
+                        pending += ""
+                        flush()
+                    }
+                }
             }
         }
     }
 
     override fun ice(state: RealtimePeer.Ice) = hop {
+        // While starting, only a failure counts: the start timer runs until the session is set up.
+        if (phase == VoicePhase.Starting && state != RealtimePeer.Ice.Failed) return@hop
         when (state) {
             RealtimePeer.Ice.Connected -> dropTimer?.cancel()
             RealtimePeer.Ice.Disconnected -> drop(5_000, "Lost the connection to OpenAI.") { true }
@@ -132,7 +155,7 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
 
     /** Hands waiting replies (and tool results, as empty entries) to the model once it's free. */
     private fun flush() {
-        if (responding || !active || !peer.isOpen || pending.isEmpty()) return
+        if (responding || toolsRunning > 0 || !active || !peer.isOpen || pending.isEmpty()) return
         for (text in pending) if (text.isNotEmpty()) send(buildJsonObject {
             put("type", "conversation.item.create")
             putJsonObject("item") {

@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppearancePreferences.initialize(applicationContext)
+        ThinkingDetails.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
         // Clerk's session, not the UI's copy of it: right as sign-in and sign-out happen.

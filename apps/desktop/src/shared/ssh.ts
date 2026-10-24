@@ -41,6 +41,25 @@ export interface SSHState {
   attachments: SSHAttachment[]
 }
 
+/** A name ssh takes as a destination without it reading as an option: an alias or a hostname. */
+export const isSSHHost = (host: string) => !host.startsWith('-') && /^[A-Za-z0-9._-]+$/.test(host)
+
+/** A `Host` of `~/.ssh/config`, offered as an SSH computer to add. */
+export interface SSHConfigHost {
+  alias: string
+  hostname: string | null
+  user: string | null
+}
+
+/** Whether the user let Codync read `~/.ssh/config` (asked in Settings → Computers). */
+export type SSHConfigAccess = 'ask' | 'allowed' | 'denied'
+
+export interface SSHConfigHosts {
+  access: SSHConfigAccess
+  /** Empty unless `allowed`. */
+  hosts: SSHConfigHost[]
+}
+
 export const SSH_INSTALL_COMMAND = 'brew install leepokai/codync/codync-host && codync-host install'
 
 export const newSSHProfile = (remotePort = 19222): SSHProfile => ({
@@ -65,4 +84,8 @@ export interface SSHBridge {
   trustHostKey(id: string): void
   /** The system file dialog; the chosen path, or null. */
   chooseKey(): Promise<string | null>
+  /** The hosts in `~/.ssh/config`, read only once the user allowed it. */
+  configHosts(): Promise<SSHConfigHosts>
+  /** The user's answer; `allowed` reads the config right away. */
+  setConfigAccess(access: 'allowed' | 'denied'): Promise<SSHConfigHosts>
 }

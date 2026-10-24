@@ -142,7 +142,6 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
                 Some(id) => Some(crate::chat::replies::quote(&hub.store, bot, id)?),
                 None => None,
             };
-            let lane = Lane::main(bot);
             let mut attachments = Vec::new();
             if !uploads.is_empty() {
                 let root = crate::chat::uploads::root(&row.config);
@@ -150,10 +149,7 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
                     attachments.push(crate::chat::uploads::resolve(&root, id)?.1);
                 }
             }
-            let turn = hub.store.max_turn(bot) + 1;
-            // A group has no agent of its own to queue behind: its message is simply sent.
-            let status = if row.config.is_group() { "sent" } else { "queued" };
-            let mut data = json!({"text": text, "clientNonce": nonce, "status": status, "attachments": attachments});
+            let mut data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
             // What the user pasted rather than typed: memory never takes it as the user's own words.
             let pasted: Vec<&str> = b["pasted"]
                 .as_array()
@@ -169,31 +165,46 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             if let Some(reply) = reply {
                 data["replyTo"] = reply;
             }
-            let e = hub
-                .add_entry(&lane, EntryKind::User, turn, &data)
-                .ok_or_else(|| anyhow!("couldn't save the message"))?;
-            // Before the turn starts, so its reply lands unread.
-            if let Err(error) = hub.mark_read(bot) {
-                tracing::warn!(%error, bot, "couldn't mark bot read after send");
+            // Said on a voice call (on-device or speech to text): the apps show it in the call's conversation.
+            if let Some(call) = b["call"].as_str() {
+                data["call"] = crate::chat::calls::checked(call)?.into();
             }
-            if row.config.is_group() {
-                // Each member reads it in its room prompt (`chat::group`).
-                crate::chat::group::start(hub, &row.config, lane);
-            } else {
-                // `/skill …` reaches the agent as "read this skill first"; the chat keeps what was typed.
-                let prompt = crate::chat::prompt::of_entry(hub, &row.config, &e.data);
-                hub.send_cmd(bot, Cmd::Send { lane, entry_id: e.id.clone(), text: prompt })?;
-            }
-            json!({"entry": e})
+            json!({"entry": crate::chat::messages::post(hub, &row.config, data)?})
         }
-        // A finished voice call, as a line in the chat ("Voice chat · 0:16").
+        // A voice call is on (its audio flows): the lead speaks first.
+        "callStarted" => {
+            crate::chat::lead::call_started(hub, str_arg(&b, "botId")?)?;
+            json!({})
+        }
+        // A finished voice call from an app older than `endCall`, as a line in the chat ("Voice chat · 0:16").
         "logCall" => {
             let bot = str_arg(&b, "botId")?;
             hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let seconds = b["seconds"].as_u64().unwrap_or(0);
-            let data = json!({"text": "Voice chat", "callSeconds": seconds});
+            let data = json!({"text": crate::chat::calls::UNTITLED, "callSeconds": seconds});
             let e = hub.add_entry(&Lane::main(bot), EntryKind::Notice, hub.store.max_turn(bot), &data);
             json!({"entry": e})
+        }
+        // A voice call, owned by the host (`chat::calls`).
+        "startCall" => crate::chat::calls::start(hub, &b).await?,
+        // `lines`: what was said on the call that the app hadn't sent yet, which the tool may hand on.
+        "callTool" => {
+            let call = crate::chat::calls::checked(str_arg(&b, "callId")?)?;
+            let result = crate::chat::calls::tools::call(hub, call, str_arg(&b, "name")?, &b["arguments"], &b["lines"]);
+            json!({"result": result.await})
+        }
+        "callLines" => {
+            crate::chat::calls::add_lines(
+                &hub.store,
+                crate::chat::calls::checked(str_arg(&b, "callId")?)?,
+                &b["lines"],
+            )?;
+            json!({})
+        }
+        "endCall" => {
+            let call = crate::chat::calls::checked(str_arg(&b, "callId")?)?;
+            let seconds = b["seconds"].as_u64().unwrap_or(0);
+            json!({"entry": crate::chat::calls::end(hub, str_arg(&b, "botId")?, call, seconds, &b["lines"])?})
         }
         "stop" => {
             let bot = str_arg(&b, "botId")?;

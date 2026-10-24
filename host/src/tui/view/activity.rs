@@ -1,5 +1,5 @@
-//! The current activity and how many steps the turn has taken: `>` (or a click) unfolds them under
-//! it, `t` opens Full conversation.
+//! The current activity and how many steps the turn has taken: with thinking details on, `>` (or a
+//! click) unfolds them under it; `t` opens Full conversation.
 
 use ratatui::text::{Line, Span};
 
@@ -14,21 +14,27 @@ use super::transcript::{Built, gap, name_style};
 /// The most lines the unfolded steps take; earlier ones stay in Full conversation.
 const STEP_LINES: usize = 14;
 
-pub(super) fn activity(out: &mut Built, app: &App, bot: &Bot, entries: &[&Entry], width: usize) {
+/// `details`: this terminal's thinking details choice (`super::super::details`).
+pub(super) fn activity(out: &mut Built, app: &App, bot: &Bot, entries: &[&Entry], width: usize, details: bool) {
     let t = theme();
     gap(out);
     out.lines.push(Line::from(Span::styled(format!(" {}", bot.name), name_style(&bot.color))));
     let steps = working_steps(entries);
-    let open = app.steps_open.as_ref().is_some_and(|(id, turn)| id == &bot.id && Some(*turn) == running_turn(entries));
+    let open = details
+        && app.steps_open.as_ref().is_some_and(|(id, turn)| id == &bot.id && Some(*turn) == running_turn(entries));
     let text = if bot.activity.is_empty() { tr("Working…") } else { tr(&bot.activity) };
-    out.buttons.push((out.lines.len(), 0, u(width), Click::Steps));
-    out.lines.push(Line::from(vec![
+    let mut row = vec![
         Span::styled(format!(" {} ", spin(app)), t.secondary),
         Span::styled(truncate(text.as_ref(), width.saturating_sub(8)), t.secondary),
-        Span::styled(if open { "  v" } else { "  >" }, t.dim),
-    ]));
-    let hint =
-        format!("   {} steps so far · > {} · t full conversation", steps.len(), if open { "hide" } else { "show" });
+    ];
+    let hint = if details {
+        out.buttons.push((out.lines.len(), 0, u(width), Click::Steps));
+        row.push(Span::styled(if open { "  v" } else { "  >" }, t.dim));
+        format!("   {} steps so far · > {} · t full conversation", steps.len(), if open { "hide" } else { "show" })
+    } else {
+        format!("   {} steps so far · t full conversation", steps.len())
+    };
+    out.lines.push(Line::from(row));
     out.lines.push(Line::from(Span::styled(hint, t.dim)));
     if open {
         // Claude's thinking text arrives as its thinking ends, so a turn can have no steps yet.
@@ -57,9 +63,33 @@ mod tests {
     use serde_json::json;
 
     fn render(app: &App, entries: &[Entry]) -> (String, usize) {
+        render_with(app, entries, true)
+    }
+
+    fn render_with(app: &App, entries: &[Entry], details: bool) -> (String, usize) {
         let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
-        activity(&mut out, app, &app.bots["bot"], &entries.iter().collect::<Vec<_>>(), 80);
+        activity(&mut out, app, &app.bots["bot"], &entries.iter().collect::<Vec<_>>(), 80, details);
         (out.lines.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n"), out.buttons.len())
+    }
+
+    #[test]
+    fn without_thinking_details_the_line_does_not_unfold() {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "bot", "name": "Bot", "activity": "Terminal"}})));
+        let entries = [Entry {
+            id: "tool".into(),
+            seq: 1,
+            turn: 1,
+            kind: Kind::Tool,
+            data: json!({"title": "rg TODO", "bookkeeping": false}),
+            created_at: 0,
+        }];
+        app.steps_open = Some(("bot".into(), 1));
+        let (text, buttons) = render_with(&app, &entries, false);
+        assert!(text.contains("1 steps so far · t full conversation"));
+        assert!(!text.contains("> show") && !text.contains("> hide") && !text.contains("rg TODO"));
+        assert_eq!(buttons, 0);
     }
 
     #[test]

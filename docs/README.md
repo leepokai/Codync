@@ -28,6 +28,7 @@ Source review, a passing build, local integration tests and production acceptanc
 
 ## Features
 
+- [Lead bot](features/lead-bot.md) (every computer's own bot: on top, checks in, speaks first on calls)
 - [Chat messages](features/chat-messages.md)
 - [Group chats and replies](features/groups-and-replies.md)
 - [Bot-to-bot collaboration](features/bot-collaboration.md)

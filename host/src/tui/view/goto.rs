@@ -86,6 +86,13 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                         (Action::Analytics, Some(false)) => "off",
                         (Action::Analytics, None) => "",
                         (Action::Language, _) => language.as_ref(),
+                        (Action::ThinkingDetails, _) => {
+                            if super::super::details::enabled() {
+                                "on"
+                            } else {
+                                "off"
+                            }
+                        }
                         _ => key,
                     };
                     rput(buf, inner.right(), y, hint, t.dim.patch(base));

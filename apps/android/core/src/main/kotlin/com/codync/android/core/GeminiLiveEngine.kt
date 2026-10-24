@@ -3,6 +3,7 @@ package com.codync.android.core
 import java.net.URLEncoder
 import java.util.Base64
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
@@ -14,11 +15,12 @@ import okio.ByteString
 
 /**
  * Gemini Live over a WebSocket, phone ↔ Google directly (iOS `GeminiLiveEngine`): 16 kHz PCM up,
- * 24 kHz PCM down, echo-cancelled so you can talk over it. The user's key stays on the computer,
- * which mints one-use ephemeral tokens; a session the server ends (`goAway`) is resumed with a fresh one.
+ * 24 kHz PCM down, echo-cancelled so you can talk over it. The computer runs the call ([CallLink]): it mints one-use
+ * ephemeral tokens on the user's key and writes the voice's instructions and tools, again for each session; a session
+ * the server ends (`goAway`) is resumed with a fresh one.
  */
 class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private val model: String, private val voice: String,
-    private val credential: suspend () -> String, private val operator: CallOperator,
+    private val link: CallLink,
     private val mic: MicSource, private val player: PcmPlayer, private val http: OkHttpClient,
     private val endpoint: String = ENDPOINT,
 ) : ProviderEngine(parent, VoiceProvider.Gemini, settings, "Gemini Live") {
@@ -36,15 +38,19 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     /** After a local interrupt, the rest of the turn's audio is dropped. */
     private var dropping = false
     private val pending = mutableListOf<String>()
+    /** The current provider session's instructions and tools, from the computer. */
+    private var session: CallSession? = null
+    /** Tool calls still running on the computer: replies wait, so the model gets each answer first. */
+    private var toolsRunning = 0
 
     init { hop { connect() } }
 
     override fun speak(markdown: String): Boolean {
         if (ended) return false
-        hop { pending += operator.reply(markdown); flush() }
+        hop { pending += link.reply(markdown); flush() }
         return true
     }
-    override fun announce(notice: String) = hop { pending += operator.notice(notice); flush() }
+    override fun announce(notice: String) = hop { pending += link.notice(notice); flush() }
     override fun mute(value: Boolean) = hop {
         if (value == muted) return@hop
         mutable.update { it.copy(muted = value, level = 0f) }
@@ -62,8 +68,10 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     }
 
     private suspend fun connect() {
-        val token = credential()
+        val session = link.start(VoiceProvider.Gemini, model, voice)
         if (ended) return
+        val token = session.credential ?: throw IllegalStateException("Gemini sent no session credential.")
+        this.session = session
         ready = false
         val url = "$endpoint?access_token=" + URLEncoder.encode(token, "UTF-8")
         socket = http.newWebSocket(Request.Builder().url(url).build(), Listener())
@@ -92,10 +100,13 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
                 putJsonArray("responseModalities") { add("AUDIO") }
                 putJsonObject("speechConfig") { putJsonObject("voiceConfig") { putJsonObject("prebuiltVoiceConfig") { put("voiceName", voice) } } }
             }
-            putJsonObject("systemInstruction") { putJsonArray("parts") { addJsonObject { put("text", operator.instructions) } } }
-            putJsonArray("tools") { addJsonObject { put("functionDeclarations", JsonArray(CallOperator.tools.map(CallTool::gemini))) } }
+            putJsonObject("systemInstruction") { putJsonArray("parts") { addJsonObject { put("text", session?.instructions.orEmpty()) } } }
+            putJsonArray("tools") { addJsonObject { put("functionDeclarations", JsonArray(session?.tools.orEmpty().map(CallTool::gemini))) } }
             // Audio sessions are otherwise capped at 15 minutes.
             putJsonObject("contextWindowCompression") { putJsonObject("slidingWindow") { } }
+            // What both sides said, for the call's line in the chat.
+            putJsonObject("inputAudioTranscription") { }
+            putJsonObject("outputAudioTranscription") { }
             putJsonObject("sessionResumption") { resumeHandle?.let { put("handle", it) } }
         }
     }
@@ -110,10 +121,12 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
                 }
                 audioRunning = true
             }
-            if (phase == VoicePhase.Starting) phase(VoicePhase.Listening)
             flush()
         }
         message.objectAt("serverContent")?.let { content ->
+            content.objectAt("inputTranscription")?.text("text")?.let { link.add("user", it) }
+            content.objectAt("outputTranscription")?.text("text")?.let { link.add("voice", it) }
+            if (content.flag("turnComplete") || content.flag("interrupted")) link.endTurn()
             if (content.flag("interrupted")) {
                 stopPlayback(); dropping = false
                 if (phase == VoicePhase.Speaking) phase(VoicePhase.Listening)
@@ -129,14 +142,24 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
             }
         }
         (message.objectAt("toolCall")?.get("functionCalls") as? JsonArray)?.let { calls ->
-            val responses = calls.mapNotNull { call ->
+            val asked = calls.mapNotNull { call ->
                 val fields = call as? JsonObject ?: return@mapNotNull null
-                val id = fields.text("id") ?: return@mapNotNull null
-                val name = fields.text("name") ?: return@mapNotNull null
-                val result = operator.call(name, fields.objectAt("args") ?: JsonObject(emptyMap()))
-                buildJsonObject { put("id", id); put("name", name); putJsonObject("response") { put("result", result) } }
+                Triple(fields.text("id") ?: return@mapNotNull null, fields.text("name") ?: return@mapNotNull null,
+                    fields.objectAt("args") ?: JsonObject(emptyMap()))
             }
-            send(buildJsonObject { putJsonObject("toolResponse") { put("functionResponses", JsonArray(responses)) } })
+            // The tools run on the computer, outside the inbox; their answers go back together.
+            toolsRunning++
+            scope.launch {
+                val responses = asked.map { (id, name, args) ->
+                    val result = link.tool(name, args)
+                    buildJsonObject { put("id", id); put("name", name); putJsonObject("response") { put("result", result) } }
+                }
+                hop {
+                    toolsRunning--
+                    send(buildJsonObject { putJsonObject("toolResponse") { put("functionResponses", JsonArray(responses)) } })
+                    flush()
+                }
+            }
         }
         message.objectAt("sessionResumptionUpdate")?.let { update ->
             if (update.flag("resumable")) update.text("newHandle")?.let { resumeHandle = it }
@@ -152,7 +175,7 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
 
     /** Replies wait for the model to finish talking; `turnComplete` here would cut it off. */
     private fun flush() {
-        if (!ready || !turnDone || queued != 0 || pending.isEmpty() || phase == VoicePhase.Interrupted) return
+        if (!ready || !turnDone || queued != 0 || toolsRunning > 0 || pending.isEmpty() || phase == VoicePhase.Interrupted) return
         val text = pending.joinToString("\n\n"); pending.clear()
         turnDone = false
         send(buildJsonObject {
@@ -164,6 +187,8 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     }
 
     private fun captured(pcm: ByteArray, level: Float) {
+        // Connected once the microphone delivers after setup, not when the socket opens.
+        if (ready && phase == VoicePhase.Starting) phase(VoicePhase.Listening)
         if (muted || !active) return
         level(if (phase == VoicePhase.Speaking) 0f else level)
         send(buildJsonObject {

@@ -115,6 +115,17 @@ impl Store {
         logged("entry by nonce", row.optional()).flatten()
     }
 
+    /// What a voice call carried in `bot_id`'s chat (`chat::calls`), oldest first: its messages and final replies.
+    pub fn call_entries(&self, bot_id: &str, call: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND json_extract(data, '$.call') = ?2 AND
+               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map(params![bot_id, call], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn max_turn(&self, bot_id: &str) -> i64 {
         let c = self.db.locked();
         let n = c.query_row("SELECT COALESCE(MAX(turn), 0) FROM entries WHERE bot_id = ?1", [bot_id], |r| r.get(0));
@@ -225,12 +236,13 @@ impl Store {
     }
 
     /// Messages in `bot_id`'s chat after `after_seq`, oldest first: the
-    /// user's, and final replies. Dreaming reads these.
+    /// user's, final replies and voice calls' transcripts. Dreaming reads these.
     pub fn conversation_since(&self, bot_id: &str, after_seq: i64, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
             "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND
-               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
+               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)
+                OR (kind = 'notice' AND json_extract(data, '$.transcript') IS NOT NULL))
              ORDER BY seq LIMIT ?3"
         ))?;
         Ok(st.query_map(params![bot_id, after_seq, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)

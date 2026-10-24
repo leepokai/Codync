@@ -65,6 +65,11 @@ impl App {
                 let title = super::super::l10n::cycle_language();
                 self.flash(title.as_ref());
             }
+            Action::ThinkingDetails => self.flash(if super::super::details::toggle() {
+                "Thinking details on: > unfolds a working bot's steps"
+            } else {
+                "Thinking details off"
+            }),
             Action::Keys => self.overlays.push(Overlay::Help(Editor::default())),
         }
     }

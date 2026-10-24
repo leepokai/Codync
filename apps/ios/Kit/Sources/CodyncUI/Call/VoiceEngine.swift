@@ -130,6 +130,14 @@ enum VoiceSettings {
         return text.applyingTransform(StringTransform("Hans-Hant"), reverse: false) ?? text
     }
 
+    /// What a call's engine is built from (`CallView.begin`): a different one picked mid-call takes over the call.
+    static func engineChoice(_ provider: VoiceProvider?) -> String {
+        guard let provider else { return "device \(UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey) ?? "")" }
+        return isSpeechMode(provider)
+            ? "\(provider.rawValue) speech \(transcribeModel(provider)) \(speechModel(provider)) \(voice(provider))"
+            : "\(provider.rawValue) \(model(provider)) \(voice(provider))"
+    }
+
     static func voiceKey(_ provider: VoiceProvider) -> String { "callVoice.\(provider.rawValue)" }
 
     static func voice(_ provider: VoiceProvider) -> String {

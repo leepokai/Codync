@@ -49,7 +49,7 @@ final class OnDeviceEngine: VoiceEngine {
     static let pauseKey = "callPause"
     static let rateKey = "callRate"
     /// On-device recognition language (a locale identifier); empty follows the system.
-    static let languageKey = "callLanguage"
+    nonisolated static let languageKey = "callLanguage"
 
     /// Settings options: the system's language, then every language the recognizer supports, by name.
     static var languageOptions: [(String, String)] {

@@ -5,7 +5,7 @@
 # Codync
 
 **The open-source Grok Bot alternative.**<br>
-Your coding agents, as teammates you can message.
+Bring your own agent and subscription — Claude Code, Codex, Gemini CLI, Cursor and 40+ more — as teammates you can message from your phone.
 
 [Website](https://www.codync.dev) · [Docs](https://www.codync.dev/docs) · [Compare](https://www.codync.dev/compare) · [Launch film](https://youtu.be/QAhyZWpV70U)
 
@@ -47,8 +47,9 @@ Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, 
 
 ## Why Codync
 
-- **Free and open source.** No subscription, no paid tier, Apache 2.0 licensed. It runs on your computer with the agents and accounts you already have.
-- **Bring any coding agent.** Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode, Pi, Grok Build and ~40 more — everything in the [ACP registry](https://agentclientprotocol.com/registry). Installed agents are found automatically, the rest are fetched on first use, and every bot picks its own. Mix them freely: a Claude bot can ask a Codex bot for a review.
+- **Free and open source.** No subscription, no paid tier, Apache 2.0 licensed.
+- **Bring your own subscription.** Bots run on the Claude, ChatGPT or other plan your agents are already signed in with, on your own computer. Codync never calls a provider's API with your login.
+- **Agent-agnostic: bring any coding agent.** Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode, Pi, Grok Build and ~40 more — everything in the [ACP registry](https://agentclientprotocol.com/registry). Installed agents are found automatically, the rest are fetched on first use, and every bot picks its own. Mix them freely: a Claude bot can ask a Codex bot for a review.
 - **Many bots, one team.** Run as many bots as you like side by side, each with its own agent, project folder and approvals, all working at once. Put several in a **group chat** and they answer in turn, like a team channel; `@name` picks who replies. **Reply** to any message, yours or a bot's, right in the chat.
 - **Built in Rust.** `codync-host` is one small, fast Rust binary for macOS, Windows and Linux (static on Linux, runs on any distro) that drives every agent, keeps the transcripts and serves every client.
 - **One app per kind of device.** Native SwiftUI on the iPhone, one desktop app for Mac, Windows and Linux (Electron), and a terminal UI for SSH.

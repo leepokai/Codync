@@ -95,7 +95,10 @@ pub struct BotConfig {
     pub self_fallbacks: bool,
     #[serde(default)]
     pub pinned: bool,
-    /// Place in the roster, lowest first (after pinned bots). All 0 until the user drags one:
+    /// The computer's lead bot, which the host makes (see `chat::lead`): first in the roster, never deleted or hidden.
+    #[serde(default)]
+    pub lead: bool,
+    /// Place in the roster, lowest first (after the lead and pinned bots). All 0 until the user drags one:
     /// ties sort by recent activity (see `Hub::reorder_bots`).
     #[serde(default)]
     pub position: i64,

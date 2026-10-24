@@ -104,3 +104,9 @@ pub async fn snapshot(base: &str, token: &str) -> serde_json::Value {
     }
     serde_json::json!({"rev": rev, "bots": bots, "entries": entries})
 }
+
+/// Bot `id` in a [`snapshot`] (which also holds the lead bot every host makes).
+#[allow(dead_code, reason = "not every test binary looks bots up")]
+pub fn bot<'a>(sync: &'a serde_json::Value, id: &str) -> &'a serde_json::Value {
+    sync["bots"].as_array().and_then(|bots| bots.iter().find(|b| b["id"] == id)).expect("the bot is in the snapshot")
+}

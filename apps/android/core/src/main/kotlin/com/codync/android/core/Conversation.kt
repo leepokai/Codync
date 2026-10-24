@@ -128,11 +128,14 @@ data class PendingSend(
     val files: List<OutgoingFile> = emptyList(),
     /** The message it quotes (`send`'s `replyTo` is its id), shown on the bubble until the computer has it. */
     val replyTo: ReplyQuote? = null,
+    /** The voice call it was said in (on-device or speech to text). */
+    val call: String? = null,
 ) {
     /** The `send` request for it, with the ids of its uploaded files. */
     fun body(attachments: List<String> = emptyList()): JsonObject = buildJsonObject {
         put("botId", botId); put("text", text); put("clientNonce", nonce)
         replyTo?.let { put("replyTo", it.id) }
+        call?.let { put("call", it) }
         if (attachments.isNotEmpty()) put("attachments", JsonArray(attachments.map(::JsonPrimitive)))
     }
 }

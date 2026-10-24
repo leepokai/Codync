@@ -31,17 +31,14 @@ impl Appearance {
     }
 }
 
+const FILE: &str = "tui-appearance";
+
 fn load() -> Appearance {
-    match std::fs::read_to_string(crate::service::data_dir().join("tui-appearance")) {
-        Ok(value) => Appearance::parse(&value).unwrap_or(Appearance::System),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            std::env::var("CODYNC_THEME").ok().and_then(|value| Appearance::parse(&value)).unwrap_or(Appearance::System)
-        }
-        Err(error) => {
-            tracing::warn!(%error, "couldn't read terminal appearance");
-            Appearance::System
-        }
+    match super::choice::read(FILE) {
+        Some(value) => Appearance::parse(&value),
+        None => std::env::var("CODYNC_THEME").ok().and_then(|value| Appearance::parse(&value)),
     }
+    .unwrap_or(Appearance::System)
 }
 
 static SELECTED: LazyLock<AtomicU8> = LazyLock::new(|| AtomicU8::new(load() as u8));
@@ -55,14 +52,7 @@ pub fn current() -> Appearance {
 }
 
 pub fn select(mode: Appearance) -> Result<()> {
-    let path = crate::service::data_dir().join("tui-appearance");
-    std::fs::create_dir_all(crate::service::data_dir())?;
-    let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
-    let result = std::fs::write(&temporary, mode.name()).and_then(|()| std::fs::rename(&temporary, &path));
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result?;
+    super::choice::write(FILE, mode.name())?;
     SELECTED.store(mode as u8, Ordering::Relaxed);
     Ok(())
 }

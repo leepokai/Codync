@@ -128,7 +128,7 @@ async fn turn_with_approval_reaches_a_final_reply() {
     let card = host.wait_for(&bot, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
     assert_eq!(card["data"]["title"], "Edit a.txt");
     let bots = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(bots["bots"][0]["status"], "needsInput");
+    assert_eq!(common::bot(&bots, &bot)["status"], "needsInput");
 
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     let reply = host.wait_for(&bot, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
@@ -145,8 +145,8 @@ async fn turn_with_approval_reaches_a_final_reply() {
     assert_eq!(tool["data"]["diffs"][0]["added"], 1);
 
     let synced = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(synced["bots"][0]["status"], "idle");
-    assert_eq!(synced["bots"][0]["unread"], 1);
+    assert_eq!(common::bot(&synced, &bot)["status"], "idle");
+    assert_eq!(common::bot(&synced, &bot)["unread"], 1);
 }
 
 #[tokio::test]
@@ -191,7 +191,7 @@ async fn sent_messages_are_the_reply() {
 
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     let deadline = Instant::now() + Duration::from_secs(20);
-    while common::snapshot(&host.base, &host.token).await["bots"][0]["status"] != "idle" {
+    while common::bot(&common::snapshot(&host.base, &host.token).await, &bot)["status"] != "idle" {
         assert!(Instant::now() < deadline, "turn didn't finish");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }

@@ -5,21 +5,6 @@ use crate::routines::ScheduleDraft;
 use serde_json::{Value, json};
 use std::str::FromStr as _;
 
-/// This computer's IANA time zone (routines run on the host's clock in it).
-pub fn local_zone() -> String {
-    let valid = |z: &str| chrono_tz::Tz::from_str(z).is_ok();
-    if let Ok(tz) = std::env::var("TZ")
-        && valid(tz.trim_start_matches(':'))
-    {
-        return tz.trim_start_matches(':').to_owned();
-    }
-    std::fs::read_link("/etc/localtime")
-        .ok()
-        .and_then(|p| p.to_string_lossy().split_once("zoneinfo/").map(|(_, z)| z.to_owned()))
-        .filter(|z| valid(z))
-        .unwrap_or_else(|| "UTC".into())
-}
-
 /// One trigger from what's typed. A trailing time zone (`daily 09:00 Europe/Paris`, any case)
 /// replaces `zone` for clock times; one still being typed gets a hint at what Tab picks.
 pub fn parse_when(text: &str, zone: &str, now: i64) -> Result<Value, String> {

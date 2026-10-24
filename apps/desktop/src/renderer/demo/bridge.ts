@@ -67,6 +67,8 @@ const bridge: CodyncBridge = {
     disconnect() {},
     trustHostKey() {},
     chooseKey: async () => null,
+    configHosts: async () => ({ access: 'denied', hosts: [] }),
+    setConfigAccess: async () => ({ access: 'denied', hosts: [] }),
   },
   island: {
     supported: false,

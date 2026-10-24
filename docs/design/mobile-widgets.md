@@ -29,7 +29,7 @@
 | Bots | 待回應／工作中的數量與角色圖示 | 狀態摘要與最多三個 bot，待回應優先；每列右側是上色的狀態（Needs you 琥珀、Failed 紅、Working 主色、Ready 灰） | 數量摘要與最多六個 bot |
 | Team | 2×2 角色格：最多四個 bot；「編輯 Widget」可為四個位置各選一個 bot（`TeamIntent`，選項來自目前帳號的 bot），沒選的位置自動補上待回應優先的 bot，被刪掉的 bot 退回自動，頭像顯示當下 mood、工作中的角落有狀態點；空位是淡化的角色；點擊開最需要你的 bot | — | — |
 
-Widget 與 Live Activity 的頭像用 `CharacterAvatar(… still: true)`：畫出 mood（工作中、待回應的漣漪）但不動畫，因為 WidgetKit 只渲染一幀。Control Center 另有一個「Bots」控制項（`LeadBotControl`）：顯示最需要你的 bot 與狀態，點擊開啟它；App 在 bot 狀態改變時重新載入 Bots、Team 與這個控制項。
+Widget 與 Live Activity 的頭像用 `CharacterAvatar(… still: true)`：畫出 mood（工作中、待回應的漣漪）但不動畫，因為 WidgetKit 只渲染一幀。Control Center 另有一個「Bots」控制項（`UrgentBotControl`，kind 仍是 `CodyncLeadBot`，已放好的控制項才不會消失）：顯示最需要你的 bot 與狀態，點擊開啟它；App 在 bot 狀態改變時重新載入 Bots、Team 與這個控制項。
 
 既有 Usage limits 保留 Small／Medium 的跨 provider 用量摘要。Bots 與 Usage limits 另支援 Lock Screen 的圓形、矩形與行內形式；行內放在時鐘上方日期列。
 

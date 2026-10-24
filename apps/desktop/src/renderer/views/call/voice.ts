@@ -53,7 +53,22 @@ export const VoiceSettings = {
   rate: () => rate.get(),
   /** The on-device recognizer's language; '' is the computer's. */
   language: () => language.get(),
+  /** What a call's engine is built from (`CallView`'s `begin`): a different one picked mid-call takes over the call. */
+  engineChoice: (p: VoiceProvider | null): string =>
+    !p
+      ? `device ${VoiceSettings.language()}`
+      : VoiceSettings.isSpeechMode(p)
+        ? `${p} speech ${VoiceSettings.transcribeModel(p)} ${VoiceSettings.speechModel(p)} ${VoiceSettings.voice(p)}`
+        : `${p} ${VoiceSettings.model(p)} ${VoiceSettings.voice(p)}`,
 }
+
+/** Rings when voice chat settings close, so a running call takes up a different engine picked there. */
+class SettingsClosed extends Observable {
+  ring() {
+    this.changed()
+  }
+}
+export const voiceSettingsClosed = new SettingsClosed()
 
 /** This month's realtime minutes, counted on this device. */
 export const countVoiceUsage = (seconds: number, p: VoiceProvider) => addVoiceUsage(Math.floor(seconds), p)

@@ -10,6 +10,7 @@ import {
   type Usage,
 } from '@shared/models'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
+import { rosterOrder } from '../lib/computer-roster'
 import { Observable } from '../lib/observable'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
@@ -102,9 +103,9 @@ export class BotMirror extends Observable {
     return null
   }
 
-  /** Roster order: pinned first, then where the user dragged them, then most recent activity. */
+  /** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */
   get roster(): Bot[] {
-    return [...this.bots.values()].filter((b) => !b.hidden).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.position - b.position || b.lastAt - a.lastAt)
+    return [...this.bots.values()].filter((b) => !b.hidden).sort(rosterOrder)
   }
 
   get hiddenBots(): Bot[] {

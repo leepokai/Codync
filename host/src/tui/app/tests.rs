@@ -39,3 +39,22 @@ async fn r_on_a_picked_message_replies_to_it() {
     assert_eq!(app.replying_to().map(Entry::quoted).as_deref(), Some("hi"));
     assert!(app.typing && app.pick.is_none());
 }
+
+#[tokio::test]
+async fn a_finished_calls_messages_hide_behind_its_line() {
+    let mut app = test_app();
+    let messages = [
+        (1, "user", json!({"text": "spoken", "call": "c"})),
+        (2, "agent", json!({"text": "reply", "final": true, "call": "c"})),
+        (3, "user", json!({"text": "on a live call", "call": "live"})),
+        (4, "notice", json!({"text": "Release plan", "callSeconds": 26, "call": "c"})),
+    ];
+    for (seq, kind, data) in messages {
+        let v = json!({"botId": "b", "id": format!("e{seq}"), "seq": seq, "turn": 1, "kind": kind, "data": data});
+        let (bot, e) = Entry::parse(&v).expect("a full entry parses");
+        app.entries.entry(bot).or_default().insert(e.seq, e);
+    }
+    let shown: Vec<&str> = app.lane("b").iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(shown, ["e3", "e4"], "an ended call's messages hide; a call without its line yet doesn't");
+    assert!(app.lane("b").last().is_some_and(|e| e.unfolds()), "the call's line opens its conversation");
+}

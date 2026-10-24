@@ -232,6 +232,13 @@ stops with a message instead of retrying. The remote command searches Homebrew,
 `~/.zprofile`. At launch the app kills tunnels a crashed or force-quit copy left behind
 (`pkill` on the `.codync/ssh_known_hosts` argument only Codync's tunnels carry).
 
+*Over SSH* also offers the `Host` entries of `~/.ssh/config` and the files it `Include`s
+(`main/ssh-config.ts`, parser in `shared/ssh-config.ts`): named hosts only, not patterns, `Match`
+blocks or git hosting aliases (user `git`), minus the ones already added. The app reads the file
+only after the user chose *Allow* in that section; the answer (`sshConfigAccess` in the main
+process prefs) is asked once, and after *Not now* a header button turns it on. Add opens the
+editor with the alias as Host, so ssh still resolves user, port and keys from the config.
+
 ## Verification boundaries
 
 Build with normal simulator signing for Clerk Keychain access. Test Google consent, cancellation, restoration, two-account switching, per-account cache isolation and sign-out on real test accounts. Build success cannot verify Clerk Dashboard state.

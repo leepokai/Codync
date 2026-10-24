@@ -1,5 +1,5 @@
 import { APP_STORE, DISCORD, DMG_FILE, EMAIL, GITHUB, PRODUCT_HUNT } from "./links";
-import { DESCRIPTION, SITE } from "./site";
+import { ABOUT, SITE } from "./site";
 
 // Structured data so search and AI answer engines read Codync as a free, open-source app.
 const graph = {
@@ -26,7 +26,7 @@ const graph = {
       "@id": `${SITE}/#app`,
       name: "Codync",
       url: SITE,
-      description: DESCRIPTION,
+      description: ABOUT,
       applicationCategory: "DeveloperApplication",
       operatingSystem: "macOS, Windows, Linux, iOS",
       image: `${SITE}/icon.png`,

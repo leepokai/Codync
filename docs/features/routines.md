@@ -1,7 +1,7 @@
 # Routines
 
 Routines belong to an agent bot and are usually created by talking to it ("I want
-a routine that…"). Every agent receives the built-in `routines` MCP server. The Details page
+a routine that…"); the host gives the [lead bot](lead-bot.md) one of its own, *Check in*. Every agent receives the built-in `routines` MCP server. The Details page
 of the bot's details (the desktop's details panel; the phones' details sheet, which tapping the
 chat's title or a routine's notice opens) shows a compact list
 (name, schedule, on/off switch). The header's chat button puts "I want a routine

@@ -30,15 +30,8 @@ public struct MarketplaceView: View {
     @State private var showCredentials = false
     @Environment(\.dismissModal) private var dismiss
 
-    private let computers: [(id: ComputerID, label: String)]
-    private let computer: Binding<ComputerID>?
-
-    /// Each computer has its own marketplace; with `computer` set and more than one computer,
-    /// the header switches between them (the caller swaps the `BotStore`).
-    public init(computers: [(id: ComputerID, label: String)] = [], computer: Binding<ComputerID>? = nil) {
-        self.computers = computers
-        self.computer = computer
-    }
+    /// Each computer has its own marketplace (the `BotStore` in the environment).
+    public init() {}
 
     private var query: String { search.trimmingCharacters(in: .whitespaces) }
 
@@ -204,27 +197,9 @@ public struct MarketplaceView: View {
                     Text(L10n.tr("Extensions"))
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(Palette.text)
-                    if let computer, computers.count > 1 {
-                        DropdownMenu {
-                            computers.map { option in
-                                MenuItem(option.label, selected: option.id == computer.wrappedValue) { computer.wrappedValue = option.id }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(model.hostName)
-                                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(Palette.secondary)
-                            .contentShape(Rectangle())
-                        }
-                        .accessibilityLabel(L10n.tr("Computer: {name}").replacingOccurrences(of: "{name}", with: model.hostName))
-                        .help(L10n.tr("Switch computer"))
-                    } else {
-                        Text(model.hostName)
-                            .font(.subheadline)
-                            .foregroundStyle(Palette.secondary)
-                    }
+                    Text(model.hostName)
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.secondary)
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

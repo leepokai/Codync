@@ -1,7 +1,6 @@
 //! Dreaming in the host: when a bot's run starts, what it reads, and running its model on the bot's own harness.
 //! What a run may change is the crate's decision (`codync_mem::dream`).
 
-use crate::LockExt;
 use crate::chat::{naming, oneshot};
 use crate::hub::Hub;
 use crate::store::{BotConfig, Entry, EntryKind, Store};
@@ -20,8 +19,6 @@ const BATCH: usize = 8;
 /// Entries (the user's messages and final replies) one run looks at.
 const READ_LIMIT: i64 = 40;
 const MESSAGE_CHARS: usize = 4_000;
-/// Usage of the bot's plan above which runs wait, so dreaming never spends the user's last headroom.
-const HEADROOM_PERCENT: f64 = 75.0;
 /// How often an idle bot checks whether its daily time review is due.
 const REVIEW_CHECK: Duration = Duration::from_secs(60 * 60);
 
@@ -110,6 +107,8 @@ pub fn spawn_dreamer(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Dre
                         waiting >= BATCH && retry_at.is_none()
                     }
                     Some(DreamEvent::Flush) => {
+                        // Recount: what waits may not have come as a turn (a call's spoken lines, a stopped turn).
+                        waiting = self::waiting(&hub.store, &bot_id);
                         idle.as_mut().reset(retry_at.unwrap_or_else(Instant::now));
                         false
                     }
@@ -141,11 +140,21 @@ pub fn spawn_dreamer(hub: Arc<Hub>, bot_id: String) -> mpsc::UnboundedSender<Dre
     tx
 }
 
-/// The user's messages since the bookmark.
+/// The user's messages since the bookmark, a call's spoken lines each counting as one.
 fn waiting(store: &Store, bot: &str) -> usize {
-    store
-        .conversation_since(bot, bookmark(store, bot), READ_LIMIT)
-        .map_or(0, |entries| entries.iter().filter(|e| e.kind == EntryKind::User.as_str()).count())
+    store.conversation_since(bot, bookmark(store, bot), READ_LIMIT).map_or(0, |entries| {
+        entries.iter().map(|e| if e.kind == EntryKind::User.as_str() { 1 } else { spoken(e).count() }).sum()
+    })
+}
+
+/// What the user said on a call (`chat::calls`), from the voice's transcript.
+fn spoken(e: &Entry) -> impl Iterator<Item = &str> {
+    e.data["transcript"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|l| l["from"] == "user")
+        .filter_map(|l| l["text"].as_str())
 }
 
 /// Once a day, when the bot's MEMORY.md holds a dated line it may rewrite (the time review).
@@ -189,7 +198,8 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
     let Some(cfg) = hub.store.bot(bot_id)?.filter(|b| !b.deleted).map(|b| b.config) else {
         return Ok(Ran::Done { more: false });
     };
-    if near_limit(hub, &cfg) {
+    // Dreaming never spends the user's last headroom.
+    if crate::usage::near_limit(hub, &cfg.backend) {
         return Ok(Ran::Later);
     }
     let shared = super::shared(&cfg);
@@ -199,7 +209,7 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
     let read = within_batch(&entries);
     let more = read.len() < entries.len() || i64::try_from(entries.len()).is_ok_and(|n| n == READ_LIMIT);
     let last_seq = read.last().map_or(after, |e| e.seq);
-    let messages: Vec<Message> = read.iter().filter_map(message).collect();
+    let messages: Vec<Message> = read.iter().flat_map(messages).collect();
     let today = today();
     let review = review_due(&hub.store, bot_id);
     let tidy = tidy_due(&hub.store, bot_id);
@@ -285,17 +295,6 @@ fn write(hub: &Hub, cfg: &BotConfig, edits: &Edits) -> Result<bool> {
     Ok(whole)
 }
 
-/// Usage of the bot's harness above [`HEADROOM_PERCENT`] in any window.
-fn near_limit(hub: &Hub, cfg: &BotConfig) -> bool {
-    hub.usage
-        .locked()
-        .providers
-        .iter()
-        .filter(|p| p.id == cfg.backend)
-        .flat_map(|p| &p.windows)
-        .any(|w| w.percent > HEADROOM_PERCENT)
-}
-
 /// The entries up to the [`BATCH`]th user message and the replies after it.
 fn within_batch(entries: &[Entry]) -> &[Entry] {
     let mut users = 0;
@@ -311,19 +310,38 @@ fn within_batch(entries: &[Entry]) -> &[Entry] {
 }
 
 /// What a run sees of an entry. A user message counts only for what the user typed themselves; one the host wrote
-/// in the user's place (`from: host`) isn't the user's words.
-fn message(e: &Entry) -> Option<Message> {
+/// in the user's place (`from: host`) isn't the user's words, nor one a call's voice model wrote (`from: voice`, it
+/// may rephrase or translate: the call's transcript holds what the user said). A call's line gives its transcript,
+/// line by line: the user's lines are their own words, the voice's are context.
+fn messages(e: &Entry) -> Vec<Message> {
     let clip = |text: &str| crate::agent::acp::truncate(text, MESSAGE_CHARS);
-    let (from_user, text) = if e.kind == EntryKind::User.as_str() {
-        if e.data["from"] == "host" {
-            return None;
+    let said: Vec<(bool, Vec<String>)> = if e.kind == EntryKind::Notice.as_str() {
+        e.data["transcript"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|l| (l["from"] == "user", vec![clip(l["text"].as_str().unwrap_or_default())]))
+            .collect()
+    } else if e.kind == EntryKind::User.as_str() {
+        match e.data["from"].as_str() {
+            Some("host") => Vec::new(),
+            Some("voice") => vec![(false, vec![clip(e.data["text"].as_str().unwrap_or_default())])],
+            _ => vec![(true, typed(&e.data).iter().map(|run| clip(run)).collect())],
         }
-        (true, typed(&e.data).iter().map(|run| clip(run)).collect::<Vec<_>>())
     } else {
-        (false, vec![clip(e.data["text"].as_str().unwrap_or_default())])
+        vec![(false, vec![clip(e.data["text"].as_str().unwrap_or_default())])]
     };
-    let text: Vec<String> = text.into_iter().filter(|run| !run.trim().is_empty()).collect();
-    (!text.is_empty()).then(|| Message { id: e.id.clone(), from_user, text, date: super::dates::ymd(e.created_at) })
+    said.into_iter()
+        .filter_map(|(from_user, text)| {
+            let text: Vec<String> = text.into_iter().filter(|run| !run.trim().is_empty()).collect();
+            (!text.is_empty()).then(|| Message {
+                id: e.id.clone(),
+                from_user,
+                text,
+                date: super::dates::ymd(e.created_at),
+            })
+        })
+        .collect()
 }
 
 /// The runs of a user message the user typed themselves: not pasted, quoted or forwarded text.
@@ -335,7 +353,41 @@ fn typed(data: &serde_json::Value) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::dated;
+    use super::{dated, messages};
+    use crate::store::{Entry, EntryKind};
+    use serde_json::json;
+
+    fn entry(kind: EntryKind, data: serde_json::Value) -> Entry {
+        Entry {
+            id: "e".into(),
+            seq: 1,
+            bot_id: "b".into(),
+            rev: 1,
+            kind: kind.as_str().into(),
+            turn: 1,
+            data,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn a_call_counts_what_the_user_said_not_what_the_voice_wrote() {
+        let call = entry(
+            EntryKind::Notice,
+            json!({"text": "Voice chat", "call": "c", "transcript": [
+                {"from": "user", "text": "我每週日早上去游泳"},
+                {"from": "voice", "text": "好，記下了。"},
+            ]}),
+        );
+        let seen: Vec<(bool, Vec<String>)> = messages(&call).into_iter().map(|m| (m.from_user, m.text)).collect();
+        assert_eq!(seen, vec![(true, vec!["我每週日早上去游泳".to_owned()]), (false, vec!["好，記下了。".to_owned()])]);
+        let relayed = entry(EntryKind::User, json!({"text": "Note: swims on Sundays", "call": "c", "from": "voice"}));
+        assert!(messages(&relayed).iter().all(|m| !m.from_user));
+        let spoken = entry(EntryKind::User, json!({"text": "swims on Sundays", "call": "c"}));
+        assert!(messages(&spoken).iter().all(|m| m.from_user));
+        assert!(messages(&entry(EntryKind::User, json!({"text": "x", "from": "host"}))).is_empty());
+    }
 
     #[test]
     fn only_dates_trigger_the_time_review() {

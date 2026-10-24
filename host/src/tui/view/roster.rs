@@ -50,12 +50,12 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             y += 1;
         }
     }
-    // Rows: an optional section label, then 2 lines per bot and a gap.
+    // Rows: an optional section label, then 2 lines per bot and a gap. The lead, on top, has no label.
     let any_pinned = bots.iter().any(|b| b.pinned);
     let mut rows: Vec<(u16, Option<&'static str>, Option<usize>)> = vec![];
     let mut y = 0u16;
     for (i, b) in bots.iter().enumerate() {
-        if any_pinned && (i == 0 || (bots[i - 1].pinned && !b.pinned)) {
+        if any_pinned && !b.lead && (i == 0 || bots[i - 1].band() != b.band()) {
             rows.push((y, Some(if b.pinned { "PINNED" } else { "BOTS" }), None));
             y += 1;
         }
@@ -92,7 +92,9 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         let tx = rput(buf, r.right() - 1, yy, &time, if b.unread > 0 { t.bold } else { t.dim });
         let gx = tx.saturating_sub(2);
         put(buf, gx, yy, 1, g, gs);
-        put(buf, x0 + 5, yy, gx.saturating_sub(x0 + 6), &b.name, t.bold);
+        // The lead's star, where the apps show it.
+        let name_x = if b.lead { put(buf, x0 + 5, yy, 2, "★", t.dim) + 1 } else { x0 + 5 };
+        put(buf, name_x, yy, gx.saturating_sub(name_x + 1), &b.name, t.bold);
         let (pv, ps) = preview(b);
         let badge = if b.unread > 0 { format!(" {} ", b.unread) } else { String::new() };
         let room = usize::from(wd.saturating_sub(7)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));

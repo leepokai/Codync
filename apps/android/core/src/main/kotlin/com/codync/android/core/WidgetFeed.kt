@@ -23,7 +23,7 @@ fun usageLimits(report: UsageReport): List<ProviderLimit> {
 }
 
 /** The Bots tile's bot: the one that needs you most, in the feed's order, if any bot is at work. */
-fun leadBot(bots: List<WidgetBot>): WidgetBot? = bots.firstOrNull { it.status == "needsInput" || it.status == "working" }
+fun mostUrgentBot(bots: List<WidgetBot>): WidgetBot? = bots.firstOrNull { it.status == "needsInput" || it.status == "working" }
 
 /** The Team widget's four spots: the picked bots first (a deleted pick falls back), then the feed's order (who needs you). */
 fun teamSlots(bots: List<WidgetBot>, picks: List<String?>): List<WidgetBot?> {

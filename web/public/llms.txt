@@ -1,6 +1,6 @@
 # Codync
 
-> Codync is the open-source (Apache 2.0) Grok Bot alternative, and a Muse and Dots alternative too. Free. It turns the AI agents on your own computer (Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more over the Agent Client Protocol) into persistent named bots, for code and everyday tasks, that you message from an iPhone, a Mac, a Windows PC, a Linux desktop or a terminal.
+> Codync is the open-source (Apache 2.0) Grok Bot alternative, and a Muse and Dots alternative too. Free. It is agent-agnostic and bring-your-own-subscription: it turns the AI agents on your own computer (Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more over the Agent Client Protocol), signed in with the plans you already pay for, into persistent named bots, for code and everyday tasks, that you message from an iPhone, a Mac, a Windows PC, a Linux desktop or a terminal.
 
 Key facts:
 

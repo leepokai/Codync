@@ -28,6 +28,8 @@ import kotlinx.coroutines.launch
     var engine by remember { mutableStateOf(choices.provider) }
     var settings by remember { mutableStateOf(VoicePreferences.load(context)) }
     fun change(next: VoiceSettings) { settings = next; store.voiceSettings(next) }
+    // Closing hands a running call to a different engine picked here.
+    DisposableEffect(Unit) { onDispose { store.switchVoiceEngine() } }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader({
             Symbol("waveform", size = 24.dp, tint = Palette.text)
@@ -37,8 +39,8 @@ import kotlinx.coroutines.launch
         CardForm {
             val provider = engine
             var speech by remember(provider) { mutableStateOf(provider?.let(choices::speechMode) == true) }
-            CardSection("Voice", footer = provider?.let { "Your own ${it.title} key, billed by ${it.title}. Applies from the next call." }
-                ?: "Android speech, on this device. Applies from the next call.", Modifier.animateContentSize(Motion.layoutSize)) {
+            CardSection("Voice", footer = provider?.let { "Your own ${it.title} key, billed by ${it.title}. During a call, applies when you close settings." }
+                ?: "Android speech, on this device. During a call, applies when you close settings.", Modifier.animateContentSize(Motion.layoutSize)) {
                 row {
                     ValueRow("Engine") {
                         ChoicePicker(provider, listOf<Pair<VoiceProvider?, String>>(null to "On device") + VoiceProvider.entries.map { it to it.title },

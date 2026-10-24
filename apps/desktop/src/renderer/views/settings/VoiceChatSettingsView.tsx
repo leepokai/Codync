@@ -1,4 +1,4 @@
-import { onDeviceUnavailableReason } from '../call/voice'
+import { onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { HostClient } from '../../client/host-client'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, ValueRow } from '../../components/Controls'
@@ -32,10 +32,12 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
   /** Dictation on another provider than calls still needs that provider's key and speech-to-text model. */
   const dictationProvider = voice.isVoiceProvider(dictationEngine) && dictationEngine !== provider ? dictationEngine : null
   const [mode, setMode] = usePref(voice.mode(provider ?? 'openai'))
+  // Closing hands a running call to a different engine picked here.
+  useEffect(() => () => voiceSettingsClosed.ring(), [])
   const footer = provider
-    ? `Your own ${voice.voiceInfo[provider].name} key, billed by ${voice.voiceInfo[provider].name}. Applies from the next call.`
+    ? `Your own ${voice.voiceInfo[provider].name} key, billed by ${voice.voiceInfo[provider].name}. During a call, applies when you close settings.`
     : window.codync.speech.available
-      ? 'On-device speech, on this computer. Applies from the next call.'
+      ? 'On-device speech, on this computer. During a call, applies when you close settings.'
       : onDeviceUnavailableReason()
   return (
     <SheetPage className={showsHeader ? 'settings-voice-sheet' : undefined}>

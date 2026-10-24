@@ -58,6 +58,13 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var files: [SharedFile]?
     /// notice: a finished voice call's length.
     public var callSeconds: Int?
+    /// The voice call it was said in (user), answered during (agent), or that it ends (notice); the chat shows those
+    /// messages only in the call's conversation.
+    public var call: String?
+    /// user: `voice` when a call's voice model wrote it for the user (`send_to_bot`).
+    public var from: String?
+    /// notice: what was said on a realtime call, oldest first.
+    public var transcript: [CallLine]?
     /// agent: an artifact card, the bot's artifact as published then (the newest version shows).
     public var artifact: ArtifactRef?
 
@@ -65,6 +72,19 @@ public struct EntryData: Codable, Hashable, Sendable {
         self.text = text
         self.status = status
         self.clientNonce = clientNonce
+    }
+}
+
+/// One line of a voice call: what the user said (`from: user`) or the voice answered (`voice`), with when (ms).
+public struct CallLine: Codable, Hashable, Sendable {
+    public var from: String
+    public var text: String
+    public var at: Int64?
+
+    public init(from: String, text: String, at: Int64?) {
+        self.from = from
+        self.text = text
+        self.at = at
     }
 }
 

@@ -91,7 +91,6 @@ export class CloudSpeechEngine extends VoiceEngine {
     } catch (e) {
       return this.fail(errorMessage(e))
     }
-    this.setPhase('listening')
   }
 
   end() {
@@ -123,6 +122,8 @@ export class CloudSpeechEngine extends VoiceEngine {
   // MARK: listening
 
   private heard(pcm: Int16Array, level: number) {
+    // Listening once the microphone actually delivers.
+    if (!this.ended && this.phase === 'starting') this.setPhase('listening')
     if (this.ended || this.muted || this.phase !== 'listening' || Date.now() < this.deafUntil) return
     this.level = level
     if (level > THRESHOLD) {

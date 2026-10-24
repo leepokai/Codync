@@ -174,6 +174,7 @@ MAP = {
     "square.grid.2x2": "grid_view",
     "square.grid.3x3": "apps",
     "square.on.square": "content_copy",
+    "star.fill": "star+",
     "stop.fill": "stop+",
     "tab": "keyboard_tab",
     "terminal": "terminal",

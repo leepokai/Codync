@@ -100,12 +100,12 @@ impl Store {
 
     /// Final agent messages + pending permission cards newer than what the user has read. A reacted-to message
     /// doesn't count again when it changes: the user reacted, so they have seen it. A bot's reaction isn't a change
-    /// either (`contentRev`, see `Hub::bot_react`).
+    /// either (`contentRev`, see `Hub::bot_react`). Nor is a reply on a voice call: the user heard it.
     pub fn unread(&self, id: &str, read_rev: i64) -> i64 {
         let c = self.db.locked();
         let n = c.query_row(
             "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND
-               ((kind = 'agent' AND json_extract(data, '$.final') = 1) OR
+               ((kind = 'agent' AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.call') IS NULL) OR
                 (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
                json_extract(data, '$.reactions') IS NULL AND
                COALESCE(json_extract(data, '$.contentRev'), rev) > ?2",
@@ -116,12 +116,14 @@ impl Store {
     }
 
     /// Newest chat-visible line for the roster preview, with its author
-    /// (`None` for the user; a group reply names the bot that wrote it).
+    /// (`None` for the user; a group reply names the bot that wrote it). A voice call's messages show only behind
+    /// its line, so they aren't it.
     pub fn last_message(&self, id: &str) -> Option<LastMessage> {
         let c = self.db.locked();
         let row = c.query_row(
             "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
-               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
+               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
+               json_extract(data, '$.call') IS NULL
              ORDER BY seq DESC LIMIT 1",
             [id],
             |r| {
@@ -167,6 +169,7 @@ mod tests {
             fallbacks: vec![],
             self_fallbacks: true,
             pinned: false,
+            lead: false,
             position: 0,
             hidden: false,
             notify: None,
@@ -197,6 +200,12 @@ mod tests {
         assert_eq!(s.history("b1", a.seq, 10).unwrap().len(), 1);
         assert_eq!(s.bot("b1").unwrap().unwrap().config.permission, Permission::Ask);
         assert!(s.bot("missing").unwrap().is_none());
+        // A voice call's messages show only behind its line: neither preview nor unread.
+        let said = serde_json::json!({"text": "said on a call", "call": "c"});
+        s.insert_entry(&Lane::main("b1"), EntryKind::User, 2, &said).unwrap();
+        let heard = serde_json::json!({"text": "heard on it", "final": true, "call": "c"});
+        s.insert_entry(&Lane::main("b1"), EntryKind::Agent, 2, &heard).unwrap();
+        assert_eq!((s.unread("b1", r), s.last_message("b1").unwrap().text.as_str()), (0, "yo!"));
 
         let reply = serde_json::json!({"text": "done", "final": true});
         // A deleted bot stays deleted, and its winding-down actor leaves no lines behind.

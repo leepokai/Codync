@@ -5,28 +5,40 @@ import { Icon } from '../../components/Icon'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
+import { prefs, usePref } from '../../lib/prefs'
 import { useTr } from '../../lib/use-language'
 import { useFollowEnd } from './follow-end'
 import { TraceRow } from './TraceView'
 
-/** The bot's current activity and elapsed time; a click unfolds the turn's steps. */
+/** The bot's current activity and elapsed time; with thinking details on (Settings), a click unfolds the turn's steps. */
 export function WorkingIndicator({ bot, steps }: { bot: Bot; steps: Entry[] }) {
   const tr = useTr()
+  const [details] = usePref(prefs.thinkingDetails)
   const waiting = needsInput(bot)
-  const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const open = details && expanded
+  const status = (
+    <HStack as="span" gap={8}>
+      <ThinkingOrb state={waiting ? 'listening' : 'working'} size={16} color={waiting ? 'var(--warning)' : 'var(--secondary)'} />
+      <Text size="subheadline" tone={waiting ? 'attention' : 'secondary'} truncate grow>{tr(bot.activity || 'Working…')}</Text>
+      {bot.startedAt ? <Timer since={bot.startedAt} /> : null}
+      {details ? (
+        <span className={`disclosure-chevron${open ? ' open' : ''}`}>
+          <Icon name="chevron.right" size={10} weight="semibold" />
+        </span>
+      ) : null}
+    </HStack>
+  )
   return (
     <VStack align="flex-start" className="agent-inset">
       <div className={open ? 'working expanded' : 'working'}>
-        <button className="working-toggle" onClick={() => setOpen((x) => !x)} aria-expanded={open} title={tr(open ? 'Hide steps' : 'Show steps')}>
-          <HStack as="span" gap={8}>
-            <ThinkingOrb state={waiting ? 'listening' : 'working'} size={16} color={waiting ? 'var(--warning)' : 'var(--secondary)'} />
-            <Text size="subheadline" tone={waiting ? 'attention' : 'secondary'} truncate grow>{tr(bot.activity || 'Working…')}</Text>
-            {bot.startedAt ? <Timer since={bot.startedAt} /> : null}
-            <span className={`disclosure-chevron${open ? ' open' : ''}`}>
-              <Icon name="chevron.right" size={10} weight="semibold" />
-            </span>
-          </HStack>
-        </button>
+        {details ? (
+          <button className="working-toggle" onClick={() => setExpanded((x) => !x)} aria-expanded={open} title={tr(open ? 'Hide steps' : 'Show steps')}>
+            {status}
+          </button>
+        ) : (
+          status
+        )}
         <Reveal show={open}>
           <WorkingSteps steps={steps} />
         </Reveal>

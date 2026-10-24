@@ -75,6 +75,8 @@ struct SettingsView: View {
 
             LanguageSettings()
 
+            ThinkingDetailsSettings()
+
             CardSection("Notifications", footer: "Get a result summary, a request for input, or a failure notice. Notification previews follow your iOS settings.") {
                 Toggle(isOn: $notificationsEnabled) { Text(L10n.tr("Push notifications")) }
                     .toggleStyle(.codync)

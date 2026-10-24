@@ -30,7 +30,6 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
             mic.start({ pcm, level -> hop { heard(pcm, level) } }) {
                 hop { fail("Couldn't use the microphone. Check its permission and other audio apps.") }
             }
-            phase(VoicePhase.Listening)
             scope.launch {
                 try {
                     for (wav in utterances) {
@@ -60,6 +59,8 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
     }
 
     private fun heard(pcm: ByteArray, level: Float) {
+        // Listening once the microphone actually delivers.
+        if (!ended && phase == VoicePhase.Starting) phase(VoicePhase.Listening)
         if (muted || phase != VoicePhase.Listening || clock() < deafUntil) return
         level(level)
         detector.feed(pcm, level, clock(), state.value.settings.pauseMillis)?.let { utterances.trySend(it) }

@@ -16,6 +16,8 @@ struct ChatRow: View {
     var addFallback: (() -> Void)?
     /// An artifact card's artifact, full size.
     var openArtifact: ((ArtifactRef) -> Void)?
+    /// A voice call's line: the call's conversation.
+    var openCall: (() -> Void)?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -54,6 +56,8 @@ struct ChatRow: View {
                 HandoffCardRow(entry: entry, card: card).padding(.top, 10)
             } else if let change = entry.data.agentSwitch {
                 AgentSwitchRow(entry: entry, change: change).padding(.top, 10)
+            } else if entry.data.call != nil, let openCall {
+                CallLineRow(entry: entry, open: openCall).padding(.top, 6)
             } else {
                 NoticeRow(entry: entry, addFallback: addFallback).padding(.top, 10)
             }
@@ -224,8 +228,9 @@ struct NoticeRow: View {
 
     var body: some View {
         let text = entry.data.text ?? ""
+        // A call an older app logged, with no conversation to open.
         if let seconds = entry.data.callSeconds {
-            Label("\(text) · \(String(format: "%02d:%02d", seconds / 60, seconds % 60))", systemImage: "waveform")
+            Label("\(L10n.tr(text)) · \(String(format: "%02d:%02d", seconds / 60, seconds % 60))", systemImage: "waveform")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(Palette.secondary)
                 .frame(maxWidth: .infinity)
@@ -260,24 +265,31 @@ struct NoticeRow: View {
     }
 }
 
-/// The bot's current activity and elapsed time; a tap unfolds the turn's steps.
+/// The bot's current activity and elapsed time; with thinking details on (Settings), a tap unfolds the turn's steps.
 struct WorkingIndicator: View {
     let bot: Bot
     let steps: [Entry]
-    @State private var open = false
+    @AppStorage(ThinkingDetails.storageKey) private var details = false
+    @State private var expanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var open: Bool { details && expanded }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { open.toggle() }
-            } label: {
-                status.contentShape(Rectangle())
+            if details {
+                Button {
+                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { expanded.toggle() }
+                } label: {
+                    status.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(L10n.tr(open ? "Hide steps" : "Show steps"))
+                .accessibilityValue(open ? "Expanded" : "Collapsed")
+            } else {
+                status
             }
-            .buttonStyle(.plain)
-            .accessibilityHint(L10n.tr(open ? "Hide steps" : "Show steps"))
-            .accessibilityValue(open ? "Expanded" : "Collapsed")
             if open {
                 WorkingSteps(steps: steps)
                     .padding(.top, 12)
@@ -307,10 +319,12 @@ struct WorkingIndicator: View {
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(Palette.tertiary)
             }
-            Image(systemName: "chevron.right")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Palette.tertiary)
-                .rotationEffect(.degrees(open ? 90 : 0))
+            if details {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Palette.tertiary)
+                    .rotationEffect(.degrees(open ? 90 : 0))
+            }
         }
     }
 }

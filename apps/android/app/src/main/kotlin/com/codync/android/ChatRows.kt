@@ -374,15 +374,17 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
     }
 }
 
-/** The bot's current activity and elapsed time; a tap unfolds the turn's steps. */
-@Composable internal fun WorkingIndicator(bot: Bot, steps: List<Entry>) {
+/** The bot's current activity and elapsed time; with thinking `details` on (Settings), a tap unfolds the turn's steps. */
+@Composable internal fun WorkingIndicator(bot: Bot, steps: List<Entry>, details: Boolean) {
     val needs = bot.status == "needsInput"
     // Each turn starts folded.
-    var open by remember(bot.startedAt) { mutableStateOf(false) }
+    var expanded by remember(bot.startedAt) { mutableStateOf(false) }
+    val open = details && expanded
     val turn by animateFloatAsState(if (open) 90f else 0f, Motion.layout(), label = "Chevron")
     val action = tr(if (open) "Hide steps" else "Show steps")
     val state = tr(if (open) "Expanded" else "Collapsed")
-    val toggle = Modifier.clickable(role = Role.Button, onClickLabel = action) { open = !open }.semantics { stateDescription = state }
+    val toggle = if (!details) Modifier
+        else Modifier.clickable(role = Role.Button, onClickLabel = action) { expanded = !expanded }.semantics { stateDescription = state }
     Column(Modifier.fillMaxWidth().padding(top = 6.dp, end = 40.dp)) {
         Column(Modifier.then(if (open) Modifier.fillMaxWidth() else Modifier).animateContentSize(Motion.layoutSize)
             .clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -392,7 +394,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
                 Text(tr(bot.activity.ifEmpty { "Working…" }), Modifier.weight(1f, fill = open), style = Type.subheadline,
                     color = if (needs) Palette.warning else Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 bot.startedAt?.let { Elapsed(it) }
-                Symbol("chevron.right", Modifier.rotate(turn), size = 13.dp, tint = Palette.tertiary)
+                if (details) Symbol("chevron.right", Modifier.rotate(turn), size = 13.dp, tint = Palette.tertiary)
             }
             AnimatedVisibility(open, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
                 exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) { WorkingSteps(steps) }

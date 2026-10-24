@@ -1,6 +1,7 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
 mod analytics;
+mod bot;
 mod editor;
 mod effort;
 mod events;
@@ -16,10 +17,11 @@ mod slash;
 mod steps;
 mod ui;
 
+pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use effort::{Effort, effort, label as setting_label, setting as effort_setting};
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
-pub use model::{After, AgentModel, Bot, Entry, Kind, Mark, ModelOption, Msg, OwnMemory, Status};
+pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
 pub use ui::{
@@ -199,12 +201,12 @@ impl App {
 
     // ---------- derived ----------
 
-    /// Roster order: pinned first, then where the user put them, then most recent (same as the phone).
+    /// Roster order: the lead, pinned bots, then where the user put them, then most recent (same as the phone).
     pub fn roster(&self) -> Vec<&Bot> {
         let mut v: Vec<&Bot> = self.bots.values().filter(|b| !b.hidden).collect();
         v.sort_by(|a, b| {
-            b.pinned
-                .cmp(&a.pinned)
+            a.band()
+                .cmp(&b.band())
                 .then(a.position.cmp(&b.position))
                 .then(b.last_at.cmp(&a.last_at))
                 .then(a.name.cmp(&b.name))
@@ -233,6 +235,9 @@ impl App {
     /// A chat's entries, in display order.
     pub fn lane(&self, bot: &str) -> Vec<&Entry> {
         let mut v: Vec<&Entry> = self.entries.get(bot).map(|m| m.values().collect()).unwrap_or_default();
+        // What a finished voice call carried shows behind its line (`o`).
+        let ended: HashSet<&str> = v.iter().filter(|e| e.kind == Kind::Notice).filter_map(|e| e.call()).collect();
+        v.retain(|e| e.kind == Kind::Notice || e.call().is_none_or(|c| !ended.contains(c)));
         // A message sent mid-turn belongs after that turn's reply.
         v.sort_by_key(|e| (e.turn, e.seq));
         v

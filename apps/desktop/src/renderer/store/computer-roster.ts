@@ -1,4 +1,4 @@
-import { computerSections, moveInOrder, orderedComputers } from '../lib/computer-roster'
+import { computerSections, moveInOrder, orderedComputers, rosterBand } from '../lib/computer-roster'
 import { prefs, usePref } from '../lib/prefs'
 import { useModel } from '../lib/observable'
 import type { BotStore } from './bot-store'
@@ -25,13 +25,13 @@ export function useComputerRoster(app: AppModel, shown: Set<string>) {
     move(id: string, target: string) {
       app.computerOrder.move(id, target, computers.map((c) => c.id))
     },
-    /** One place up (-1) or down (+1) among its computer's bots with the same pin state. */
+    /** One place up (-1) or down (+1) among its computer's bots in the same band (lead, pinned, the rest). */
     moveBot(ref: BotRef, offset: number) {
       const section = sections.find((s) => s.computer.id === ref.computerId)
       const items = section?.items ?? []
       const index = items.findIndex((item) => item.bot.id === ref.botId)
       const target = items[index + offset]
-      if (!section || index < 0 || !target || target.bot.pinned !== items[index]!.bot.pinned) return
+      if (!section || index < 0 || !target || rosterBand(target.bot) !== rosterBand(items[index]!.bot)) return
       section.store.reorder(moveInOrder(items.map((item) => item.bot.id), ref.botId, target.bot.id))
     },
   }

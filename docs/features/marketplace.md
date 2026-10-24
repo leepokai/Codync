@@ -1,6 +1,6 @@
 # Extensions and agent setup
 
-The Extensions screen configures capabilities installed on the selected computer. Account membership does not install the same capability on every computer.
+The Extensions screen configures capabilities installed on one computer. Account membership does not install the same capability on every computer, so each computer has its own Extensions, opened from that computer and never switched inside: with several computers, from the Extensions button on its heading in the bot list (desktop and iPhone); on the desktop with one computer, from the sidebar footer; on the iPhone, also from its row in Computers & settings.
 
 The desktop and iPhone installed count is labeled **Connectors & skills**, and opens a library with that same title. It includes connected apps (stored as connectors), but excludes agents; agents show their own installation status in the Agents section. The terminal already separates these categories and does not show a combined installed count.
 

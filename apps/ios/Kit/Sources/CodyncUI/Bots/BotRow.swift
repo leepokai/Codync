@@ -16,7 +16,10 @@ public struct BotRow: View {
             AvatarWithStatus(bot: bot, members: model.members(of: bot), size: avatar)
             VStack(alignment: .leading, spacing: lineSpacing) {
                 HStack(alignment: .firstTextBaseline) {
-                    if bot.pinned {
+                    if bot.lead {
+                        Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.tertiary)
+                            .accessibilityLabel(L10n.tr("Lead bot"))
+                    } else if bot.pinned {
                         Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Palette.tertiary)
                     }
                     Text(bot.name)

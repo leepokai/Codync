@@ -1,4 +1,5 @@
 import type { ArtifactCard } from './artifacts'
+import type { CallLine } from './calls'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -51,7 +52,9 @@ export interface Bot {
   /** A change that starts a new agent session waits for the running reply. */
   restartPending: boolean
   pinned: boolean
-  /** Where the user dragged it, lowest first (after pinned bots); ties sort by recent activity. */
+  /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
+  lead: boolean
+  /** Where the user dragged it, lowest first within its band (`rosterBand`); ties sort by recent activity. */
   position: number
   hidden: boolean
   notify?: boolean | null
@@ -114,6 +117,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     settingIssues: raw.settingIssues ?? {},
     restartPending: raw.restartPending ?? false,
     pinned: raw.pinned ?? false,
+    lead: raw.lead ?? false,
     position: raw.position ?? 0,
     hidden: raw.hidden ?? false,
     notify: raw.notify ?? null,
@@ -329,6 +333,13 @@ export interface EntryData {
   /** agent: an artifact the bot published (or updated) in this turn. */
   artifact?: ArtifactCard
   callSeconds?: number
+  /** The voice call it was said in (user), answered during (agent), or that it ends (notice): the chat shows those
+   * messages only in the call's conversation. */
+  call?: string
+  /** user: `voice` when a call's voice wrote it for the user (`send_to_bot`). */
+  from?: string
+  /** notice: what was said on a realtime call, oldest first. */
+  transcript?: CallLine[]
 }
 
 export interface Entry {

@@ -92,6 +92,8 @@ The host puts these URLs first in the pairing code and sends its current address
 
 The desktop app on macOS and Linux can also run bots on another computer you reach with SSH, such as a Linux server or a Mac mini. Open **Settings → Computers**, and under **Over SSH** choose **Add SSH computer**. The other computer needs `codync-host` installed. Codync opens an SSH tunnel to that computer's host using your SSH config and keys (or ssh-agent); your keys stay on the computer running the desktop app. On the first connection, check the host key fingerprint, then choose **Trust and connect**.
 
+Codync can also list the computers in your SSH config. The first time you open **Over SSH**, it asks whether it may read `~/.ssh/config`. Choose **Allow**, and each host in it that you haven't added yet shows up with a **+** to add it. Nothing is sent anywhere, and nothing connects until you add a host. If you chose **Not now**, the magnifying glass next to **Over SSH** turns the list on.
+
 The SSH tunnel serves only the desktop app. To use that computer from your phone, pair the phone with it directly. Details for servers: [Linux servers](/docs/linux-servers).
 
 ## Public routine webhooks

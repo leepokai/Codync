@@ -47,6 +47,8 @@ data class Bot(
     val activity: String = "",
     val backend: String = "",
     val pinned: Boolean = false,
+    /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
+    val lead: Boolean = false,
     /** Where the user dragged it in the roster, synced by the host to every device. */
     val position: Int = 0,
     val hidden: Boolean = false,
@@ -72,6 +74,9 @@ data class Bot(
     /** A change that starts a new agent session waits for the running reply. */
     val restartPending: Boolean = false,
 ) {
+    /** Its band in the roster: the lead, then pinned bots, then the rest. Reordering stays inside a band. */
+    val band: Int get() = when { lead -> 0; pinned -> 1; else -> 2 }
+
     /** [agent]'s rest, unless it's over. */
     fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }
 

@@ -67,7 +67,9 @@ reads as **Typing…** (`activity()` in `agent/bot/tool_entry.rs`). The activity
 animated orb, a short status and elapsed time, in a pill no wider than an agent bubble whose status
 truncates to one line. Replies arrive as complete messages.
 
-The pill ends in a chevron, and a tap (click) unfolds the running turn's steps inside it:
+**Show thinking details** (Settings › Chat; each device's own choice, off by default) decides whether the pill
+unfolds; off, it stays a plain status line. On, the pill ends in a chevron, and a tap (click) unfolds the running
+turn's steps inside it:
 the turn's thinking text, narration (never a `(pass)`), tool calls (MCP tools included) and plan, in order, with each
 tool's output and diffs one more tap away. The pill widens to an agent bubble's width, the steps
 scroll inside it past 280 pt and follow new ones until the reader scrolls up, and each turn starts
@@ -84,7 +86,8 @@ short thought's summary arrives in one piece when the thinking ends, a long one'
 Full conversation remains available through a message's Show what it did (its touch-and-hold
 menu on the iPhone and Android, its actions on the desktop). It contains narration, all
 thoughts, tools and previous turns, and follows new steps until the reader scrolls up.
-On the terminal, `>` or a click on the working line unfolds the steps under it (their last
+On the terminal, with thinking details turned on (`^k` › Show thinking details, kept in
+`tui-thinking-details`), `>` or a click on the working line unfolds the steps under it (their last
 14 lines), `t` opens Full conversation, and the working line keeps the count of steps so far;
 once the turn ends, its last message's `↳ N steps` line counts them the same way.
 

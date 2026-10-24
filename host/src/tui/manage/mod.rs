@@ -24,7 +24,7 @@ pub use library::{ArtifactTitles, LibraryItem};
 pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
 pub use pages::Page;
 pub use skill::SkillSheet;
-pub use when::{complete_zone, local_zone};
+pub use when::complete_zone;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};

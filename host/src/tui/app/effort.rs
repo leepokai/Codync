@@ -1,7 +1,7 @@
 //! The Effort level of each step of a bot's chain (its own agent, then each fallback): the agent setting of ACP
 //! category `thought_level`, and one line saying what that step runs with, from its own agent's session only.
 
-use super::model::{Bot, ModelOption, Session};
+use super::bot::{Bot, ModelOption, Session};
 use super::{App, Form};
 
 /// How a step shows its Effort level.

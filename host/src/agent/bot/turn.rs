@@ -104,6 +104,9 @@ impl Actor {
         let from_user = !hidden && self.source() == TurnSource::User;
         self.turn_text = from_user.then(|| text.to_owned());
         self.turn_entries = if from_user { entry_ids.to_vec() } else { Vec::new() };
+        // A room turn answers the user's message in the room; another turn, the messages it was given.
+        let answered = self.active_group.as_ref().map_or(self.turn_entries.as_slice(), |g| g.answers.as_slice());
+        self.turn_call = crate::chat::calls::of_turn(&self.hub.store, answered);
         self.turn_memory_revision.clear();
         self.announce = None;
         self.stop_requested = false;
@@ -129,9 +132,13 @@ impl Actor {
             self.relay_turn(&lane, entry_ids, text).await;
         }
         // A bot request or room turn isn't resumed after a host restart (the room that waited is gone): a request's
-        // persisted notices are marked interrupted instead of silently repeating work. A reply turn is resumed.
+        // persisted notices are marked interrupted instead of silently repeating work. Nor is a call's opening (the
+        // call is over). A reply turn is resumed.
         self.set_inflight(
-            self.active_request.is_none() && self.active_group.is_none() && self.active_routine.is_none(),
+            self.active_request.is_none()
+                && self.active_group.is_none()
+                && self.active_routine.is_none()
+                && !self.active_prompt,
         );
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
@@ -340,6 +347,8 @@ impl Actor {
         });
         self.turn = None;
         self.reply_hops = None;
+        // A call's opening is heard on the call: no alert.
+        let opening = std::mem::take(&mut self.active_prompt);
         if self.routine_completion.is_none() {
             self.set_inflight(false);
         }
@@ -369,6 +378,7 @@ impl Actor {
         if !self.stop_requested
             && !delegated
             && !grouped
+            && !opening
             && let Some(kind) = turn_alert(failed, &stop_reason, more || held_back)
         {
             let body = final_text.unwrap_or_else(|| match (kind, reacted) {
@@ -429,6 +439,8 @@ impl Actor {
             TurnSource::Group
         } else if self.active_request.is_some() || self.reply_hops.is_some() {
             TurnSource::Bot
+        } else if self.active_prompt {
+            TurnSource::Host
         } else {
             TurnSource::User
         }

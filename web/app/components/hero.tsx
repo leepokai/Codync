@@ -2,7 +2,8 @@
 
 import { motion, MotionConfig } from "framer-motion";
 import { DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
-import AgentMark, { type Agent } from "./agent-mark";
+import { agentName, type Agent } from "./agent-mark";
+import AgentRotator from "./agent-rotator";
 import { AppleLogo } from "./apple-logo";
 import DownloadButton from "./download-button";
 import Halftone from "./halftone";
@@ -12,17 +13,13 @@ import LivePhones from "./live-phone/live-phones";
 import { CharacterAvatar } from "./live-phone/avatar";
 import AppStoreButton from "./app-store-button";
 import GitHubStarButton from "./github-star-button";
+import { ease } from "./motion";
 import { GITHUB, PRODUCT_HUNT } from "../links";
 
-const ease = [0.16, 1, 0.3, 1] as const;
+// Agents the headline cycles through.
+const agents: Agent[] = ["claude", "codex", "gemini", "cursor", "copilot", "opencode"];
 
-// Agents named in the subtitle, each with its mark.
-const agents: [name: string, agent: Agent][] = [
-  ["Claude Code", "claude"],
-  ["Codex", "codex"],
-  ["Gemini", "gemini"],
-  ["Cursor", "cursor"],
-];
+const list = new Intl.ListFormat("en", { type: "disjunction" });
 
 export default function Hero() {
   // Same markup on server and client; MotionConfig drops the movement for reduced motion.
@@ -67,29 +64,25 @@ export default function Hero() {
 
             <motion.h1
               {...rise(0.04)}
-              className="mt-8 flex flex-wrap items-center gap-x-4 text-6xl font-semibold leading-none tracking-tighter text-neutral-50 sm:text-7xl md:gap-x-5 lg:text-8xl"
+              className="mt-8 text-[2.75rem] leading-[1.06] font-semibold tracking-tighter text-neutral-50 sm:text-6xl md:text-5xl lg:text-6xl xl:text-7xl"
             >
-              Meet
-              <span className="inline-flex size-[0.95em] items-center justify-center rounded-[0.24em] bg-neutral-50 [&_svg]:size-[78%]">
-                <CharacterAvatar shape="squircle" color="blue" size={88} mood="working" />
+              <span className="sr-only">Bring your {list.format(agents.map((agent) => agentName[agent]))} into Codync</span>
+              <span aria-hidden className="flex flex-col items-start">
+                <span>Bring your</span>
+                <AgentRotator agents={agents} />
+                <span className="inline-flex items-center gap-x-[0.22em]">
+                  into
+                  <span className="inline-flex size-[0.95em] items-center justify-center rounded-[0.24em] bg-neutral-50 [&_svg]:size-[78%]">
+                    <CharacterAvatar shape="squircle" color="blue" size={88} mood="working" />
+                  </span>
+                  Codync
+                </span>
               </span>
-              Codync
             </motion.h1>
 
             <motion.p {...rise(0.1)} className="mt-8 max-w-[36rem] text-lg leading-relaxed text-neutral-400">
               The open-source Grok Bot alternative, 100% free. Persistent AI teammates on your own computer, for code
-              and everyday life. Run{" "}
-              {agents.map(([name, agent], i) => (
-                <span key={name}>
-                  <span className="inline-flex items-baseline gap-1.5 font-medium whitespace-nowrap text-neutral-50">
-                    <AgentMark agent={agent} className="size-[0.9em] self-center" />
-                    {name}
-                    {i < agents.length - 2 ? "," : ""}
-                  </span>
-                  {i === agents.length - 2 ? " and " : " "}
-                </span>
-              ))}
-              with the plans you already pay for.
+              and everyday life. Bring any of 40+ agents and the subscription you already pay for.
             </motion.p>
 
             <motion.div {...rise(0.16)} className="mt-10 flex flex-wrap items-center gap-3">

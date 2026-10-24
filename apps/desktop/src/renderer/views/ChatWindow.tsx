@@ -16,6 +16,7 @@ import { refKey, sameRef, parseRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
+import { ExtensionsMovedTip } from './ExtensionsMovedTip'
 import { SidebarFooter } from './SidebarFooter'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
@@ -271,14 +272,17 @@ function ChatSplitView() {
 
   const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
 
+  // The lead stays on top and can't go: no pin, hide or delete.
   const botActions = (bot: Bot, store: BotStore): MenuItem[] => [
-    { title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) },
+    ...(bot.lead ? [] : [{ title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) }]),
     { title: 'Mark as Read', icon: 'bell.badge', action: () => store.markAllRead(bot.id) },
     { title: 'Edit Profile…', icon: 'square.and.pencil', divider: true, action: () => setEditing({ id: crypto.randomUUID(), draft: draftOf(bot), store }) },
     { title: 'Copy conversation ID', icon: 'square.on.square', divider: true, action: () => window.codync.app.copy(bot.id) },
     { title: 'New session', icon: 'arrow.counterclockwise', action: () => setNewSessionBot({ bot, store }) },
-    { title: 'Hide from sidebar', icon: 'eye.slash', divider: true, action: () => store.setHidden(bot, true) },
-    { title: 'Delete', icon: 'trash', destructive: true, action: () => setConfirmDelete({ bot, store }) },
+    ...(bot.lead ? [] : [
+      { title: 'Hide from sidebar', icon: 'eye.slash', divider: true, action: () => store.setHidden(bot, true) },
+      { title: 'Delete', icon: 'trash', destructive: true, action: () => setConfirmDelete({ bot, store }) },
+    ]),
   ]
 
   // ↑/↓ in the roster move the selection; Alt+↑/↓ moves the selected bot itself.
@@ -360,7 +364,12 @@ function ChatSplitView() {
           </div>
         ) : null}
         <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
-          <BotRoster roster={roster} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} />
+          {roster.grouped && !compact ? <ExtensionsMovedTip /> : null}
+          <BotRoster roster={roster} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} openExtensions={(id) => {
+            // Found it: the tip about where Extensions went has done its job.
+            prefs.extensionsMovedTipSeen.set(true)
+            setMarketplace(id)
+          }} />
           {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
               <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
@@ -380,7 +389,8 @@ function ChatSplitView() {
             </button>
           </div>
         ) : (
-          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={openMarketplace} />
+          // With several computers each heading opens its own Extensions instead.
+          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} />
         )}
       </aside>
       <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />
@@ -433,7 +443,7 @@ function ChatSplitView() {
       <Sheet open={marketplace !== null} onClose={() => setMarketplace(null)} width={Math.min(920, windowSize.width - 80)} height={sheetHeight} dismissOnDim>
         {marketplace && app.store(marketplace) ? (
           <StoreContext.Provider value={app.store(marketplace)!}>
-            <MarketplaceView key={marketplace} computers={onlineStores.map((s) => ({ id: s.computer.id, name: s.hostName }))} computer={marketplace} onComputer={setMarketplace} />
+            <MarketplaceView key={marketplace} />
           </StoreContext.Provider>
         ) : null}
       </Sheet>

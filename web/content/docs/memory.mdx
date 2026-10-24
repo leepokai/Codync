@@ -61,9 +61,9 @@ The tab has these sections:
 
 Between chats, the bot tidies its memory from your own words. This is called dreaming.
 
-- **When:** after five quiet minutes or eight of your messages, sooner after a new session and before Codync compacts a conversation, and once a day to update lines whose date has passed (putting them in the past tense).
+- **When:** after five quiet minutes or eight of your messages (each thing you say on a call counts as one), sooner after a new session and before Codync compacts a conversation, and once a day to update lines whose date has passed (putting them in the past tense).
 - **What:** it reads what you said since its last run, then adds lines to MEMORY.md, takes out lines that went out of date, and adds lines to notes.
-- **Only your words:** every change has to quote something you typed yourself. Pasted text, code blocks, quoted or forwarded messages, the bot's replies and other bots don't count. Group chats and bot requests never feed it.
+- **Only your words:** every change has to quote something you typed yourself, or said on a call (from the call's transcript). Pasted text, code blocks, quoted or forwarded messages, the voice's wording of what it passed on, the bot's replies and other bots don't count. Group chats and bot requests never feed it.
 - **Small steps:** at most 10 changes a run, never taking out more than a quarter of the lines. It never removes or rewrites a line you wrote, never brings back something you had a bot forget, and never rewrites a note.
 - **Tidying:** when a MEMORY.md is nearly full, dreaming moves detail word for word into notes by topic, your lines too, and leaves one line per topic that points to its note, such as "Allergic to peanuts → health/allergies.md". That way memory doesn't fill up.
 
@@ -115,5 +115,5 @@ The bot's chat, its memory and the agent's session are separate things.
 ## Limits
 
 - Memory search looks for the words you give it, so a fact worded differently won't match.
-- Dreaming treats voice transcripts like typed text.
+- What you say on a call reaches dreaming as speech recognition heard it, so a misheard word counts as said.
 - In your own chat, a bot can still change memory because of something it read along the way, such as a web page or a file. Outside your own chat, it can only add.

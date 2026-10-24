@@ -62,6 +62,7 @@ import kotlinx.serialization.json.putJsonArray
     val roster = roster(state.bots)
     val reorder = remember { RosterReorder() }
     reorder.roster = roster.map(Bot::id)
+    reorder.lead = roster.firstOrNull { it.lead }?.id
     val online = state.actualConnection is LinkState.Ready
     // A computer that turned this phone away, or this computer's older identity, counts as none (iOS `availableStores`).
     val usable = state.computers.isNotEmpty() && !state.isStale
@@ -115,6 +116,8 @@ import kotlinx.serialization.json.putJsonArray
  */
 private class RosterReorder {
     var roster: List<String> = emptyList()
+    /** Stays on top: nothing takes its place. */
+    var lead: String? = null
     var order by mutableStateOf<List<String>?>(null)
     var dragged by mutableStateOf<String?>(null)
     var offset by mutableFloatStateOf(0f)
@@ -141,6 +144,7 @@ private class RosterReorder {
         val list = order ?: return
         val at = list.indexOf(id)
         val next = if (offset > 0) at + 1 else at - 1
+        if (list.getOrNull(next) == lead) return
         val height = list.getOrNull(next)?.let(heights::get) ?: return
         if (kotlin.math.abs(offset) < height / 2f) return
         order = list.toMutableList().apply { add(next, removeAt(at)) }
@@ -148,27 +152,28 @@ private class RosterReorder {
     }
 }
 
-/** Roster order: pinned first, then where the user dragged them, then most recent activity. */
+/** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */
 internal fun roster(bots: List<Bot>): List<Bot> = bots.filter { !it.deleted && !it.hidden }
-    .sortedWith(compareByDescending<Bot> { it.pinned }.thenBy { it.position }.thenByDescending { it.lastAt })
+    .sortedWith(compareBy<Bot> { it.band }.thenBy { it.position }.thenByDescending { it.lastAt })
 
-/** The roster order with a bot one place up (-1) or down (+1) among bots with its pin state, or null when it can't move. */
+/** The roster order with a bot one place up (-1) or down (+1) within its band (`Bot.band`), or null when it can't move. */
 internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
     val at = roster.indexOfFirst { it.id == id }
     val neighbor = roster.getOrNull(at + offset)
-    if (at < 0 || neighbor == null || neighbor.pinned != roster[at].pinned) return null
+    if (at < 0 || neighbor == null || neighbor.band != roster[at].band) return null
     return roster.map(Bot::id).toMutableList().apply { this[at] = neighbor.id; this[at + offset] = id }
 }
 
 @Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, edit: () -> Unit, newSession: () -> Unit,
     delete: () -> Unit) {
-    Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
+    // The lead stays on top and in the list: no drag, pin, hide or delete.
+    Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag.takeUnless { bot.lead }, preview = {
         Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state) }
     }) {
         listOfNotNull(
             MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = if (bot.pinned) "pin.slash" else "pin") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("pinned", !bot.pinned) }, "roster:" + bot.id)
-            },
+            }.takeUnless { bot.lead },
             if (bot.kind == "group") MenuItem("Edit group", icon = "person.2", action = edit)
             else MenuItem("Edit profile", icon = "pencil", action = edit),
             MenuItem("Mark as read", icon = "checkmark.message") {
@@ -178,8 +183,8 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
             MenuItem("New session", icon = "arrow.counterclockwise", action = newSession).takeIf { bot.kind != "group" },
             MenuItem("Hide from list", icon = "eye.slash") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("hidden", true) }, "roster:" + bot.id)
-            },
-            MenuItem("Delete", icon = "trash", destructive = true, divider = true, action = delete),
+            }.takeUnless { bot.lead },
+            MenuItem("Delete", icon = "trash", destructive = true, divider = true, action = delete).takeUnless { bot.lead },
         )
     }.semantics {
         contentDescription = bot.name
@@ -200,7 +205,8 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (bot.pinned) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
+                    if (bot.lead) Symbol("star.fill", size = 13.dp, tint = Palette.tertiary, contentDescription = tr("Lead bot"))
+                    else if (bot.pinned) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
                     Text(bot.name, Modifier.weight(1f, fill = false), style = Type.body.semibold, color = Palette.text, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
                 }

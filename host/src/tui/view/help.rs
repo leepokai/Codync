@@ -27,7 +27,7 @@ const HELP: [(&str, &str, &str); 67] = [
     ("CHAT", "N", "reject and say why"),
     ("CHAT", "1…9", "pick an approval option"),
     ("CHAT", "s", "stop the bot"),
-    ("CHAT", ">", "show / hide the working turn's steps"),
+    ("CHAT", ">", "show / hide the working turn's steps (thinking details on)"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
     ("CHAT", "C", "open connection / login request"),

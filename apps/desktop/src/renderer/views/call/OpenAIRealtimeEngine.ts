@@ -1,11 +1,11 @@
-import { OPERATOR_TOOLS, type CallOperator } from './call-operator'
-import { errorMessage, microphone, VoiceEngine } from './voice'
+import type { CallLink, CallSession } from './call-link'
+import { errorMessage, microphone, VoiceEngine, VoiceSettings } from './voice'
 
 /**
  * OpenAI Realtime over WebRTC, this computer ↔ OpenAI directly: the microphone is a WebRTC audio
  * track, the model's voice plays from the remote track, and events (tools, replies) go over
- * `oai-events`. The user's key stays with the host, which mints the client secret; the host
- * never sees audio.
+ * `oai-events`. The computer runs the call (`CallLink`): it mints the client secret on the user's key and writes the
+ * voice's instructions and tools; it never sees audio.
  */
 export class OpenAIRealtimeEngine extends VoiceEngine {
   readonly provider = 'openai' as const
@@ -17,10 +17,14 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
   private responding = false
   private pending: string[] = []
   private dropTimer: ReturnType<typeof setTimeout> | null = null
+  private session: CallSession | null = null
+  /** Tool calls still running on the computer: replies wait, so the model gets each result first. */
+  private toolsRunning = 0
 
   constructor(
-    private credential: () => Promise<string>,
-    private op: CallOperator,
+    private model: string,
+    private voice: string,
+    private link: CallLink,
   ) {
     super()
   }
@@ -29,9 +33,11 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     try {
       this.stream = await microphone()
       if (this.ended) return this.release()
-      const secret = await this.credential()
+      const session = await this.link.start('realtime', 'openai', this.model, this.voice)
       if (this.ended) return
-      await this.connect(secret)
+      if (!session.credential) throw new Error('OpenAI sent no session credential.')
+      this.session = session
+      await this.connect(session.credential)
     } catch (e) {
       if (!this.ended) this.fail(errorMessage(e))
     }
@@ -113,13 +119,13 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
 
   speak(reply: string) {
     if (this.ended || this.phase === 'failed') return
-    this.pending.push(this.op.reply(reply))
+    this.pending.push(this.link.reply(reply))
     this.flush()
   }
 
   announce(notice: string) {
     if (this.ended || this.phase === 'failed') return
-    this.pending.push(this.op.notice(notice))
+    this.pending.push(this.link.notice(notice))
     this.flush()
   }
 
@@ -127,18 +133,16 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
 
   private opened() {
     if (this.ended) return
-    if (this.dropTimer) clearTimeout(this.dropTimer)
     this.send({
       type: 'session.update',
       session: {
         type: 'realtime',
-        instructions: this.op.instructions,
-        tools: OPERATOR_TOOLS.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters })),
-        audio: { input: { turn_detection: { type: 'semantic_vad' } } },
+        instructions: this.session?.instructions ?? '',
+        tools: (this.session?.tools ?? []).map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters ?? { type: 'object', properties: {} } })),
+        // What the user says is transcribed too, for the call's line in the chat.
+        audio: { input: { turn_detection: { type: 'semantic_vad' }, transcription: { model: VoiceSettings.transcribeModel('openai') } } },
       },
     })
-    this.setPhase('listening')
-    this.flush()
   }
 
   private received(data: string) {
@@ -150,11 +154,24 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
       return
     }
     switch (msg.type) {
+      case 'session.updated':
+        // Connected once the session has the instructions and tools, not when the channel opens.
+        if (this.phase !== 'starting') break
+        if (this.dropTimer) clearTimeout(this.dropTimer)
+        this.setPhase('listening')
+        this.flush()
+        break
       case 'input_audio_buffer.speech_started':
         this.level = this.muted ? 0 : 0.7
         break
       case 'input_audio_buffer.speech_stopped':
         this.level = 0
+        break
+      case 'input_audio_buffer.committed':
+        this.link.transcribing(true)
+        break
+      case 'conversation.item.input_audio_transcription.failed':
+        this.link.transcribing(false)
         break
       case 'output_audio_buffer.started':
         this.setPhase('speaking')
@@ -170,16 +187,31 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
         this.responding = false
         this.flush()
         break
+      case 'conversation.item.input_audio_transcription.completed':
+        this.link.add('user', typeof msg.transcript === 'string' ? msg.transcript : '')
+        this.link.endTurn()
+        break
+      case 'response.output_audio_transcript.done':
+        this.link.add('voice', typeof msg.transcript === 'string' ? msg.transcript : '')
+        this.link.endTurn()
+        break
       case 'response.function_call_arguments.done': {
         if (typeof msg.call_id !== 'string' || typeof msg.name !== 'string') return
         let args: Record<string, unknown> = {}
         try {
           if (typeof msg.arguments === 'string') args = JSON.parse(msg.arguments) as Record<string, unknown>
         } catch {}
-        const output = this.op.call(msg.name, args)
-        this.send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: msg.call_id, output } })
-        // An empty entry asks for a response once this one is done, so the model speaks the result.
-        this.pending.push('')
+        const callId = msg.call_id
+        // The tool runs on the computer.
+        this.toolsRunning++
+        void this.link.tool(msg.name, args).then((result) => {
+          this.toolsRunning--
+          if (this.ended) return
+          this.send({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: JSON.stringify(result) } })
+          // An empty entry asks for a response once this one is done, so the model speaks the result.
+          this.pending.push('')
+          this.flush()
+        })
         break
       }
       case 'error':
@@ -189,7 +221,8 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
   }
 
   private iceChanged(state: RTCIceConnectionState) {
-    if (this.ended) return
+    // While starting, only a failure counts: the start timer runs until the session is set up.
+    if (this.ended || (this.phase === 'starting' && state !== 'failed')) return
     switch (state) {
       case 'connected':
       case 'completed':
@@ -207,7 +240,7 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
 
   /** Hands waiting replies (and tool results, as empty entries) to the model once it's free. */
   private flush() {
-    if (this.responding || !this.isActive || this.events?.readyState !== 'open' || !this.pending.length) return
+    if (this.responding || this.toolsRunning > 0 || !this.isActive || this.events?.readyState !== 'open' || !this.pending.length) return
     for (const text of this.pending) {
       if (text) this.send({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } })
     }

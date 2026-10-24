@@ -3,7 +3,7 @@ You can talk to your bots two ways:
 - **Voice call:** a hands-free conversation with a bot or a group chat. You speak, the bot's replies are read aloud.
 - **Dictation:** speak into the message box, check the text, then send it yourself.
 
-Both work in the iPhone app and the desktop app. The terminal UI has no microphone, so it has neither, but it shows the notice a call leaves in the chat.
+Both work in the iPhone, Android and desktop apps. The terminal UI has no microphone, so it has neither, but it shows the line a call leaves in the chat (press `o` on it to read the call).
 
 A call doesn't change the bot. It's the same agent on your computer; you're just talking to it instead of typing.
 
@@ -14,17 +14,21 @@ When the message box is empty and the bot isn't working, the send button becomes
 The call bar floats at the top of the chat, and the chat stays readable and usable underneath. From left to right:
 
 - the bot's avatar: it pulses while the bot speaks, and tapping it then interrupts the reply
-- a line of dots that follows your voice while you speak, ripples while the bot speaks, and breathes slowly while it works
+- a line of dots that follows your voice while you speak, ripples while the bot speaks, and breathes slowly while it works; while the call connects, a line gliding back and forth takes its place until the voice can really hear you
 - the provider's name, whenever audio leaves your device (see "What goes where" below)
 - **Call settings** (the gear), **Mute**, and **End call** (the red ✕)
 
-When the call ends, the chat gets a notice such as "Voice chat · 00:16", in every app.
+Most bots wait for you to speak. Your [lead bot](/docs/bots#your-lead-bot) speaks first: once the call connects, it tells you in a sentence or two what deserves your attention, or greets you. If it's busy working, its reply comes when the work is done instead.
+
+What you say on a call, and the bot's replies during it, don't fill up the chat. When the call ends, the chat gets one line instead: a waveform, a short title for what the call was about (such as "Release plan · 03:12"; "Voice chat" until the title is written), and its length. Tap it to read the whole call: what you said, what the voice said, and what went to the bot and back.
+
+The bot remembers what matters from the call like from any conversation: its memory picks up what you said, not the voice's wording.
 
 On the iPhone, the first call asks for Microphone and Speech Recognition access. The call keeps going if you leave Codync for the Home Screen.
 
 ### From Shortcuts (iPhone)
 
-In the Shortcuts app, add Codync's **Open Live Mode** action and pick a **Bot**. Running it opens that bot's chat and starts a call. Siri runs it too: say "Open Live Mode in Codync". The computer has to be online; otherwise the action stops with an error instead of starting a call.
+In the Shortcuts app, add Codync's **Open Live Mode** action and pick a **Bot**, or leave it empty to call your lead bot. Running it opens that bot's chat and starts a call. Siri runs it too: say "Talk to Codync" or "Open Live Mode in Codync" to call your lead bot. The computer has to be online; otherwise the action stops with an error instead of starting a call.
 
 ## Choose a voice engine
 
@@ -33,7 +37,7 @@ Open **Voice chat** settings from the call bar's gear, or:
 - **iPhone:** **Computers & settings → Voice chat → Voice and API keys**.
 - **Desktop app:** **Settings → Voice chat**.
 
-Under **Engine**, pick one. The choice is kept on this device and applies from your next call.
+Under **Engine**, pick one. The choice is kept on this device. Changed during a call, it takes over that call once you close the settings; the call goes on, still muted if it was.
 
 | Engine | Needs | How it works |
 | --- | --- | --- |
@@ -44,7 +48,7 @@ Under **Engine**, pick one. The choice is kept on this device and applies from y
 ### On device
 
 - You speak in the language set under **Language** (by default, your device's first language).
-- A pause ends what you said and sends it as an ordinary message. If the bot is busy, it's queued like any other message. Set the pause under **Send after a pause of** (1 s, 1.5 s or 2.5 s).
+- A pause ends what you said and sends it to the bot as part of the call. If the bot is busy, it's queued like any other message. Set the pause under **Send after a pause of** (1 s, 1.5 s or 2.5 s).
 - Each reply is read aloud in the language it's written in, skipping code blocks and formatting. Set **Reading speed** to Slower, Normal or Faster. The microphone pauses while a reply is read.
 - When the bot asks for approval, the call tells you; answer it in the chat.
 
@@ -57,7 +61,9 @@ Each provider has two modes, under **Mode**:
 - **Realtime:** a live conversation with the provider's realtime model. You can talk over replies.
 - **Speech:** the same loop as On device, using the provider's speech-to-text and text-to-speech models instead. What you say is sent when you pause, and replies are read aloud.
 
-In Realtime mode, the voice model works in front of your bot, and the bot still does the work. The voice model passes your requests to the bot as ordinary messages, reads the bot's replies out in shortened form, can tell you what the bot is doing ("what are you working on?") from its status and recent messages, and answers an approval for you once you've said which option. The chat stays the record: only the messages sent to the bot and the bot's replies are saved, and the small talk with the voice model isn't.
+In Realtime mode, the voice model is the bot's voice line, not the bot: it talks with you, and the bot does the work. It passes your requests on to the bot (along with your own words, so nothing gets lost in its wording), reads the bot's replies out in shortened form, tells you what the bot is doing ("what are you working on?"), answers an approval for you once you've said which option, can stop the bot, and can look up what the bot remembers.
+
+Before a Realtime call, your computer gives the voice model the background it needs: the date and time, what your bots remember about you, this bot's settings and memory, the project's git branch and recent changes, what the bot is working on, the recent messages and calls in this chat, your other bots, and the files shared in the chat. Like your audio, it goes to OpenAI or Google on your own key.
 
 Below the key you can pick the **Model** (or, in Speech mode, **Speech to text** and **Text to speech**) and the **Voice**. The default models follow each provider's newest ones. **This month** shows an estimate of the minutes used, counted on each device. The provider bills you; it isn't a bill.
 
@@ -80,7 +86,7 @@ The key is stored encrypted in Codync's vault on the computer (with the system k
 | You use | Your audio | Your key |
 | --- | --- | --- |
 | On device | Stays on your device. Only the recognized text goes to the computer, as a message. Apple's speech recognition may use Apple's servers when on-device recognition isn't available for your language. | Not needed |
-| Realtime | Streams directly between your device and the provider (OpenAI over WebRTC, Gemini over a WebSocket). It doesn't pass through your computer or the relay. | Stays on the computer, which gives your device a short-lived credential for each call |
+| Realtime | Streams directly between your device and the provider (OpenAI over WebRTC, Gemini over a WebSocket). It doesn't pass through your computer or the relay. The written transcript of the call is kept on your computer. | Stays on the computer, which gives your device a short-lived credential for each call |
 | Speech mode, or dictation with a provider | Recordings go to your computer over the encrypted connection, and the computer sends them to the provider, with the names of the bots on the computer as spelling hints. The spoken replies come back the same way. | Stays on the computer |
 
 The relay only ever sees encrypted data. Whenever audio leaves your device, the call bar names the provider.

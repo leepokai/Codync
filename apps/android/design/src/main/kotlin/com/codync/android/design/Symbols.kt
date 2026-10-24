@@ -163,6 +163,7 @@ import androidx.annotation.DrawableRes
     "square.grid.2x2" -> R.drawable.sf_square_grid_2x2
     "square.grid.3x3" -> R.drawable.sf_square_grid_3x3
     "square.on.square" -> R.drawable.sf_square_on_square
+    "star.fill" -> R.drawable.sf_star_fill
     "stop.fill" -> R.drawable.sf_stop_fill
     "tab" -> R.drawable.sf_tab
     "terminal" -> R.drawable.sf_terminal

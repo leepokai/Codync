@@ -9,7 +9,7 @@ struct CodyncWidgets: WidgetBundle {
     var body: some Widget {
         BotsWidget()
         BotsTeamWidget()
-        LeadBotControl()
+        UrgentBotControl()
         UsageWidget()
         ProviderUsageWidget()
         ClaudeUsageWidget()
@@ -117,7 +117,7 @@ struct BotsWidgetView: View {
                 BotsWidgetCard(bots: entry.bots, wide: true, links: entry.links)
             default:
                 BotsWidgetCard(bots: entry.bots, wide: false)
-                    .widgetURL(entry.lead.flatMap { entry.links[$0.id] })
+                    .widgetURL(entry.mostUrgent.flatMap { entry.links[$0.id] })
             }
         }
     }
@@ -231,7 +231,7 @@ struct TeamTimeline: AppIntentTimelineProvider {
 
 extension BotsEntry {
     /// Needs you first, then working, then most recent.
-    var lead: Bot? {
+    var mostUrgent: Bot? {
         bots.filter { !$0.hidden }.min {
             let rank = { (b: Bot) in b.needsInput ? 0 : b.isWorking ? 1 : 2 }
             return rank($0) != rank($1) ? rank($0) < rank($1) : $0.lastAt > $1.lastAt
@@ -242,11 +242,12 @@ extension BotsEntry {
 // MARK: - Control Center
 
 /// A Control Center button: the bot that needs you most and its state; a tap opens it.
-struct LeadBotControl: ControlWidget {
+struct UrgentBotControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "CodyncLeadBot", provider: LeadBotProvider()) { lead in
-            ControlWidgetButton(action: OpenURLIntent(lead.url)) {
-                Label(lead.text, systemImage: lead.symbol)
+        // The kind keeps its first name, so controls already placed stay.
+        StaticControlConfiguration(kind: "CodyncLeadBot", provider: UrgentBotProvider()) { urgent in
+            ControlWidgetButton(action: OpenURLIntent(urgent.url)) {
+                Label(urgent.text, systemImage: urgent.symbol)
             }
         }
         .displayName("Bots")
@@ -254,30 +255,30 @@ struct LeadBotControl: ControlWidget {
     }
 }
 
-struct LeadBot: Sendable {
+struct UrgentBot: Sendable {
     let text: String
     let symbol: String
     let url: URL
 
     static let home = AppEnvironment.current.link("computers")
 
-    init(text: String, symbol: String, url: URL = LeadBot.home) {
+    init(text: String, symbol: String, url: URL = UrgentBot.home) {
         self.text = text; self.symbol = symbol; self.url = url
     }
 
     init(_ entry: BotsEntry) {
         guard entry.paired else { self.init(text: "Connect a computer", symbol: "desktopcomputer"); return }
-        guard let bot = entry.lead, bot.isWorking else { self.init(text: "All quiet", symbol: "moon.zzz.fill"); return }
+        guard let bot = entry.mostUrgent, bot.isWorking else { self.init(text: "All quiet", symbol: "moon.zzz.fill"); return }
         self.init(text: "\(bot.name): \(bot.widgetState.label)",
                   symbol: bot.needsInput ? "hand.raised.fill" : "ellipsis.bubble.fill",
-                  url: entry.links[bot.id] ?? LeadBot.home)
+                  url: entry.links[bot.id] ?? UrgentBot.home)
     }
 }
 
-struct LeadBotProvider: ControlValueProvider {
-    var previewValue: LeadBot { LeadBot(text: "Reviewer: Needs you", symbol: "hand.raised.fill") }
+struct UrgentBotProvider: ControlValueProvider {
+    var previewValue: UrgentBot { UrgentBot(text: "Reviewer: Needs you", symbol: "hand.raised.fill") }
 
-    func currentValue() async throws -> LeadBot { LeadBot(.current) }
+    func currentValue() async throws -> UrgentBot { UrgentBot(.current) }
 }
 
 private struct EmptyWidget: View {

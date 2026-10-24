@@ -120,6 +120,7 @@ import kotlinx.serialization.json.put
                     }
                 }
             }
+            ThinkingDetailsSettings()
             NotificationsSection(state, store)
             CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
                 row {

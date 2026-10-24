@@ -106,15 +106,10 @@ static ES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
 
 static PREFERENCE: LazyLock<Mutex<AppLanguage>> = LazyLock::new(|| Mutex::new(read_preference()));
 
+const FILE: &str = "tui-language";
+
 fn read_preference() -> AppLanguage {
-    match std::fs::read_to_string(crate::service::data_dir().join("tui-language")) {
-        Ok(text) => AppLanguage::parse(text.trim()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => AppLanguage::System,
-        Err(error) => {
-            tracing::warn!(%error, "couldn't read the terminal language");
-            AppLanguage::System
-        }
-    }
+    super::choice::read(FILE).map_or(AppLanguage::System, |text| AppLanguage::parse(text.trim()))
 }
 
 fn system_locale() -> Option<String> {
@@ -378,10 +373,7 @@ pub(in crate::tui) fn cycle_language() -> Cow<'static, str> {
         *preference = next;
         next
     };
-    let dir = crate::service::data_dir();
-    if let Err(error) =
-        std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(dir.join("tui-language"), next.stored()))
-    {
+    if let Err(error) = super::choice::write(FILE, next.stored()) {
         tracing::warn!(%error, "couldn't save the terminal language");
     }
     language_title()

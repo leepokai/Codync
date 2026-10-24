@@ -27,4 +27,11 @@ import Testing
     #expect(order() == ["p", "a", "c", "b"])
     store.reorder(["c", "p", "a", "b"]) // Dropped above a pinned bot: still listed below it.
     #expect(order() == ["p", "c", "a", "b"])
+    // The lead goes above everything, pinned bots too, and nothing moves above it.
+    store.bots["l"] = try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"l","lead":true,"lastAt":0}"#.utf8))
+    #expect(order() == ["l", "p", "c", "a", "b"])
+    store.move("p", by: -1)
+    #expect(order() == ["l", "p", "c", "a", "b"])
+    store.reorder(["p", "c", "l", "a", "b"])
+    #expect(order().first == "l")
 }

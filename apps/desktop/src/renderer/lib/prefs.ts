@@ -66,6 +66,9 @@ export const prefs = {
   computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
   appLanguage: pref<AppLanguage>('appLanguage', 'system'),
+  /** The working pill unfolds the turn's thinking and steps; off keeps the chat to its messages. */
+  thinkingDetails: pref('showThinkingDetails', false),
+  extensionsMovedTipSeen: pref('extensionsMovedTipSeen', false),
 }
 
 /** The Mac preference supplies one scale for conversation text and app chrome. */

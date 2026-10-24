@@ -62,12 +62,18 @@ extension BotStore {
         send(text, to: botId, replyTo: nil, nonce: UUID().uuidString, files: files)
     }
 
+    /// Said on voice call `call` (on-device or speech to text): the chat shows it in the call's conversation.
+    public func send(_ text: String, to botId: String, call: String) {
+        send(text, to: botId, replyTo: nil, nonce: UUID().uuidString, call: call)
+    }
+
     @discardableResult
     func send(_ text: String, to botId: String, replyTo: ReplyQuote?, nonce: String, files: [OutgoingFile] = [],
-              pasted: [String] = []) -> Task<SendProgress, Never>? {
+              pasted: [String] = [], call: String? = nil) -> Task<SendProgress, Never>? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !files.isEmpty, !retired else { return nil }
         var data = EntryData(text: trimmed, status: "sending", clientNonce: nonce)
+        data.call = call
         // Shown at once; the computer's own quote replaces it.
         data.replyTo = replyTo
         if !files.isEmpty {
@@ -81,14 +87,15 @@ extension BotStore {
         upsert(local)
         storage.lastComputerId = computer.id
         if let bot = bots[botId] { onSent?(bot, .sending) }
-        // The relay mailbox holds text only: files wait for the computer.
-        if canQueue, files.isEmpty, let remote = transport as? any RemoteTransport {
+        // The relay mailbox holds text only: files, and the call a message was said in, wait for the computer.
+        if canQueue, files.isEmpty, call == nil, let remote = transport as? any RemoteTransport {
             return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce)
         }
-        return deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted)
+        return deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted, call: call)
     }
 
-    private func deliver(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String] = []) -> Task<SendProgress, Never> {
+    private func deliver(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String] = [],
+                         call: String? = nil) -> Task<SendProgress, Never> {
         Task {
             do {
                 // Safe to repeat: the computer skips a nonce it already has.
@@ -106,7 +113,7 @@ extension BotStore {
                     }
                     try Task.checkCancellation()
                     return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
-                                                 pasted: pasted)
+                                                 pasted: pasted, call: call)
                 }
                 outgoingFiles[nonce] = nil
                 upsert(e)

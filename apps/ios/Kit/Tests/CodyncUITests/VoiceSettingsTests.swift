@@ -32,3 +32,29 @@ import Testing
     VoiceSettings.remember(old)
     #expect(VoiceSettings.defaults(p).transcribe == "gemini-10-flash")
 }
+
+/// A call takes another engine only when what its engine is built from changes: the engine, the mode,
+/// a model or the voice it uses, or the on-device language.
+@Test func engineChoiceChangesWithWhatTheCallIsBuiltFrom() {
+    let p = VoiceProvider.openAI
+    let keys = [OnDeviceEngine.languageKey, VoiceSettings.modelKey(p), VoiceSettings.voiceKey(p), VoiceSettings.modeKey(p),
+                VoiceSettings.transcribeKey(p), VoiceSettings.speechKey(p)]
+    defer { keys.forEach(UserDefaults.standard.removeObject(forKey:)) }
+    keys.forEach(UserDefaults.standard.removeObject(forKey:))
+
+    let device = VoiceSettings.engineChoice(nil)
+    #expect(VoiceSettings.engineChoice(nil) == device)
+    UserDefaults.standard.set("ja-JP", forKey: OnDeviceEngine.languageKey)
+    #expect(VoiceSettings.engineChoice(nil) != device)
+    #expect(VoiceSettings.engineChoice(p) != VoiceSettings.engineChoice(.gemini))
+
+    var seen = [VoiceSettings.engineChoice(p)]
+    for (key, value) in [(VoiceSettings.modelKey(p), "realtime-9"), (VoiceSettings.voiceKey(p), "cedar"), (VoiceSettings.modeKey(p), "speech"),
+                         (VoiceSettings.transcribeKey(p), "transcribe-9"), (VoiceSettings.speechKey(p), "tts-9")] {
+        UserDefaults.standard.set(value, forKey: key)
+        let choice = VoiceSettings.engineChoice(p)
+        #expect(VoiceSettings.engineChoice(p) == choice)
+        #expect(!seen.contains(choice), "\(key)")
+        seen.append(choice)
+    }
+}

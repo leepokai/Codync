@@ -19,10 +19,15 @@ impl App {
         self.online && bot.busy() && bot.works_here()
     }
 
-    /// `>` or a click on the working line: unfolds or folds the selected bot's steps for this turn.
+    /// `>` or a click on the working line: unfolds or folds the selected bot's steps for this turn, once thinking
+    /// details are on.
     pub(super) fn toggle_steps(&mut self) {
         let Some(bot) = self.bot().filter(|b| self.shows_activity(b)) else { return };
         let Some(turn) = running_turn(&self.lane(&bot.id)) else { return };
+        if !super::super::details::enabled() {
+            self.flash("Turn on Show thinking details (^k) to unfold the steps");
+            return;
+        }
         let key = (bot.id.clone(), turn);
         self.steps_open = if self.steps_open.as_ref() == Some(&key) { None } else { Some(key) };
     }

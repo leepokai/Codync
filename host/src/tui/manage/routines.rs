@@ -4,8 +4,9 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
 use super::super::app::{After, App, Confirm, ConfirmAct, Editor, FIELDS, Field, Focus, Overlay};
-use super::when::{complete_zone, local_zone, parse_when, when_text};
+use super::when::{complete_zone, parse_when, when_text};
 use super::{Page, Reply, RoutineField, RoutineForm, RoutineList, ctrl, newline, s};
+use crate::routines::local_zone;
 
 impl App {
     pub fn open_routines(&mut self) {

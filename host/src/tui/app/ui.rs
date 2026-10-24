@@ -60,11 +60,12 @@ pub enum Action {
     Analytics,
     AboutAnalytics,
     Language,
+    ThinkingDetails,
     Keys,
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 17] = [
+pub const ACTIONS: [(&str, &str, Action); 18] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -81,6 +82,7 @@ pub const ACTIONS: [(&str, &str, Action); 17] = [
     ("Appearance: Light", "", Action::Appearance(super::super::appearance::Appearance::Light)),
     ("Appearance: Dark", "", Action::Appearance(super::super::appearance::Appearance::Dark)),
     ("App language…", "", Action::Language),
+    ("Show thinking details", "", Action::ThinkingDetails),
     ("Keys", "?", Action::Keys),
 ];
 

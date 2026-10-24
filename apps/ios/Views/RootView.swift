@@ -56,15 +56,10 @@ struct RootView: View {
             NavigationStack { SettingsView() }
         }
         .codyncSheet(item: Binding(get: { app.marketplace.map(MarketplaceTarget.init) }, set: { app.marketplace = $0?.computerId })) { target in
-            // Switching computers inside keeps the sheet up and loads that computer's own marketplace.
-            let computerId = app.marketplace ?? target.computerId
-            if let store = accounts.store(for: computerId) {
-                MarketplaceView(computers: accounts.computers.compactMap { accounts.store(for: $0.id) }
-                                    .filter { $0.connection == .online }
-                                    .map { ($0.computer.id, $0.hostName) },
-                                computer: Binding(get: { computerId }, set: { app.marketplace = $0 }))
+            // Each computer has its own; it's opened from that computer's heading or row.
+            if let store = accounts.store(for: target.computerId) {
+                MarketplaceView()
                     .environment(store)
-                    .id(computerId)
             }
         }
     }

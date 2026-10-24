@@ -6,7 +6,7 @@ import { createServer } from 'node:net'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
-import type { SSHAttachment, SSHProfile, SSHState, SSHStatus } from '../shared/ssh'
+import { isSSHHost, type SSHAttachment, type SSHProfile, type SSHState, type SSHStatus } from '../shared/ssh'
 import { dataDir } from './host-controller'
 import { infoArguments, knownHostsFiles, orphanTunnelPattern, resolveArguments, tunnelArguments } from './ssh-command'
 
@@ -23,7 +23,7 @@ const home = homedir()
 
 /** A reason the profile can't be used, or null. */
 export function validate(p: SSHProfile): string | null {
-  if (p.host.startsWith('-') || !/^[A-Za-z0-9._-]+$/.test(p.host)) {
+  if (!isSSHHost(p.host)) {
     return 'Use an SSH alias or a hostname: letters, digits, dots, dashes and underscores.'
   }
   if (p.user !== null && !/^[A-Za-z_][A-Za-z0-9._-]*$/.test(p.user)) return "That user name isn't valid."

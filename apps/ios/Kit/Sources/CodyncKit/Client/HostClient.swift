@@ -195,16 +195,17 @@ public extension HostClient {
 
     /// `replyTo`: the chat message this one quotes.
     /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
+    /// `call`: the voice call it was said in (on-device or speech to text).
     func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, attachments: [String]? = nil,
-              pasted: [String]? = nil) async throws -> Entry {
+              pasted: [String]? = nil, call: String? = nil) async throws -> Entry {
         struct Body: Encodable {
             var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var attachments: [String]?
-            var pasted: [String]?
+            var pasted: [String]?; var call: String?
         }
         struct Res: Decodable { var entry: Entry }
         let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, attachments: attachments,
-                        pasted: pasted?.isEmpty == false ? pasted : nil)
-        let res: Res = try await call("send", body)
+                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call)
+        let res: Res = try await self.call("send", body)
         return res.entry
     }
 
@@ -237,9 +238,49 @@ public extension HostClient {
         return out
     }
 
-    func logCall(_ botId: String, seconds: Int) async throws {
-        struct Body: Encodable { var botId: String; var seconds: Int }
-        let _: Empty = try await call("logCall", Body(botId: botId, seconds: seconds))
+    func callStarted(_ botId: String) async throws {
+        let _: Empty = try await call("callStarted", ["botId": botId])
+    }
+
+    // MARK: voice calls (host/src/chat/calls)
+
+    /// The call is on (again, for a provider session that was replaced): the voice's instructions and tools, and a
+    /// realtime provider's credential. `mode`: `realtime`, `speech` or `device`.
+    func startCall(botId: String, call: String, mode: String, provider: VoiceProvider? = nil, model: String? = nil,
+                   voice: String? = nil, language: String?) async throws -> CallSession {
+        struct Body: Encodable {
+            var botId, callId, mode: String; var provider, model, voice, language: String?
+        }
+        let body = Body(botId: botId, callId: call, mode: mode, provider: provider?.rawValue, model: model, voice: voice,
+                        language: language)
+        let data = try await transport.call("startCall", body: try Self.encoder.encode(body), timeout: 30)
+        return try CallSession(json: data)
+    }
+
+    /// Runs one of the voice's tool calls on the computer, with what was said that it hasn't got yet (`lines`);
+    /// `arguments` and the answer are JSON.
+    func callTool(call: String, name: String, arguments: Data, lines: [CallLine]) async throws -> Data {
+        let args = (try? JSONSerialization.jsonObject(with: arguments)) ?? [String: Any]()
+        let said = try JSONSerialization.jsonObject(with: Self.encoder.encode(lines))
+        let body = try JSONSerialization.data(withJSONObject: ["callId": call, "name": name, "arguments": args, "lines": said])
+        let data = try await transport.call("callTool", body: body, timeout: 60)
+        let result = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["result"] ?? [String: Any]()
+        return try JSONSerialization.data(withJSONObject: result)
+    }
+
+    /// What was just said on the call, kept on the computer.
+    func callLines(call: String, lines: [CallLine]) async throws {
+        struct Body: Encodable { var callId: String; var lines: [CallLine] }
+        let _: Empty = try await self.call("callLines", Body(callId: call, lines: lines))
+    }
+
+    /// The call is over: its line in the chat, with the rest of the transcript (`lines`), which the computer titles.
+    /// Safe to repeat: the computer ends a call once.
+    func endCall(botId: String, call: String, seconds: Int, lines: [CallLine]) async throws -> Entry? {
+        struct Body: Encodable { var botId, callId: String; var seconds: Int; var lines: [CallLine] }
+        struct Res: Decodable { var entry: Entry? }
+        let res: Res = try await self.call("endCall", Body(botId: botId, callId: call, seconds: seconds, lines: lines))
+        return res.entry
     }
 
     func stop(_ botId: String) async throws {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Backend } from '@shared/models'
-import { Button, DropdownMenu, IconButton, Spinner } from '../../components/Controls'
+import { Button, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, SheetPage, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -26,10 +26,10 @@ const connectorId = (c: MarketConnector) => c.name
 /**
  * The Marketplace (Grok Bot's layout): one page of agents, connectors and
  * skills for the bots on one computer (the store in context). Installing happens on that
- * computer; each bot turns connectors and skills on in its settings.
- * With more than one computer, the header switches between them (the caller swaps the store).
+ * computer; each bot turns connectors and skills on in its settings. Each computer has its own,
+ * opened from its heading in the sidebar.
  */
-export function MarketplaceView({ computers, computer, onComputer }: { computers: { id: string; name: string }[]; computer: string; onComputer: (id: string) => void }) {
+export function MarketplaceView() {
   const store = useStore()
   const tr = useTr()
   const plugins = usePlugins(store)
@@ -146,18 +146,7 @@ export function MarketplaceView({ computers, computer, onComputer }: { computers
         <ComputerBadge computer={store.computer} size={32} />
         <VStack shrink className="market-heading-titles">
           <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
-          {computers.length > 1 ? (
-            <DropdownMenu
-              title={tr('Switch computer')}
-              className="market-computer-switch"
-              items={() => computers.map((c) => ({ title: c.name, selected: c.id === computer, action: () => onComputer(c.id) }))}
-            >
-              <Text truncate aria-label={tr('Computer: {name}').replaceAll('{name}', store.hostName)}>{store.hostName}</Text>
-              <Icon name="chevron.down" size={10} weight="semibold" />
-            </DropdownMenu>
-          ) : (
-            <Text size="subheadline" tone="secondary" truncate>{store.hostName}</Text>
-          )}
+          <Text size="subheadline" tone="secondary" truncate>{store.hostName}</Text>
         </VStack>
       </HStack>
       <Spacer />

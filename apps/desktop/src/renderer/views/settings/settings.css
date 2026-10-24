@@ -163,6 +163,15 @@
 .settings-computers-content {
   padding: 14px 14px 20px;
 }
+/* Over SSH: room between its note and the SSH config card or hosts under it. */
+.settings-ssh > .reveal + .settings-card {
+  margin-top: 12px;
+}
+/* The SSH config question's icon sits on its title's line. */
+.ssh-config-icon {
+  height: 20px;
+  align-items: center;
+}
 .settings-ssh-editor {
   width: 460px;
 }

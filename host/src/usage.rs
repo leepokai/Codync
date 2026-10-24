@@ -14,6 +14,19 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const POLL_EVERY: Duration = Duration::from_secs(5 * 60);
+/// Usage of a plan above which background work (dreaming, the lead's check-ins) waits.
+const HEADROOM_PERCENT: f64 = 75.0;
+
+/// Usage of harness `backend`'s plan above [`HEADROOM_PERCENT`] in any window.
+pub fn near_limit(hub: &Hub, backend: &str) -> bool {
+    hub.usage
+        .locked()
+        .providers
+        .iter()
+        .filter(|p| p.id == backend)
+        .flat_map(|p| &p.windows)
+        .any(|w| w.percent > HEADROOM_PERCENT)
+}
 
 /// Everything the apps show about limits (wire shape of the `usage` event).
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]

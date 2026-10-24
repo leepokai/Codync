@@ -13,25 +13,26 @@ import { useStore } from '../../store/context'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
 import { voiceStatus } from '../settings/voice-settings'
 import { stopDictation } from '../thread/dictation'
-import { CallOperator } from './call-operator'
+import { CallLink } from './call-link'
+import { CloudSpeechEngine } from './CloudSpeechEngine'
+import { GeminiLiveEngine } from './GeminiLiveEngine'
+import { OnDeviceEngine } from './OnDeviceEngine'
+import { OpenAIRealtimeEngine } from './OpenAIRealtimeEngine'
+import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, voiceSettingsClosed, type VoiceProvider } from './voice'
+import { watchVoiceCall } from './voice-call'
+import './call.css'
 
 /**
  * Opens the window's own Settings at Voice chat; without it (no Settings screen around) the
  * call bar shows the voice settings in their own sheet.
  */
 export const OpenVoiceSettings = createContext<(() => void) | null>(null)
-import { CloudSpeechEngine } from './CloudSpeechEngine'
-import { GeminiLiveEngine } from './GeminiLiveEngine'
-import { OnDeviceEngine } from './OnDeviceEngine'
-import { OpenAIRealtimeEngine } from './OpenAIRealtimeEngine'
-import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, type VoiceProvider } from './voice'
-import { watchVoiceCall } from './voice-call'
-import './call.css'
 
 /**
  * A voice call with a bot, as Grok Bot does it: a floating bar over the chat, which stays
- * readable underneath. What you say goes out as ordinary messages, its final replies are read
- * aloud, and the chat gets a "Voice chat · 00:16" line when the call ends.
+ * readable underneath. The computer runs the call (`CallLink`): what you say reaches the bot as
+ * the call's messages, its final replies are read aloud, and the call ends as one titled line
+ * ("Release plan · 00:16") that opens its conversation.
  */
 export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   botId: string
@@ -51,12 +52,17 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   const engine = useRef<VoiceEngine | null>(null)
   /** When the current cloud engine started, for this month's minutes. */
   const cloudStartedAt = useRef<number | null>(null)
+  /** The call settings the current engine was built from. */
+  const engineChoice = useRef('')
   const closed = useRef(false)
   /** What carries the current engine's audio, and whether the call has been counted (once its first engine runs). */
   const engineName = useRef<VoiceCallEngine>('on_device')
   const counted = useRef(false)
   const bot = store.bots.get(botId)
   const color = bot ? avatarColor(bot.avatarColor) : null
+  /** The call on the computer, which runs it. */
+  const link = useRef<CallLink | null>(null)
+  link.current ??= new CallLink(store, botId, crypto.randomUUID())
 
   const countCloudMinutes = () => {
     const provider = engine.current?.provider
@@ -65,19 +71,15 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     cloudStartedAt.current = null
   }
 
-  const credential = (provider: VoiceProvider, model: string, voice: string) => async () => {
-    const client = await store.ready()
-    return (await client.call<{ credential: string }>('voiceSession', { provider, model, voice }, 30_000)).credential
-  }
-
   /** Starts the engine: a realtime provider on the key kept by the computer, or on-device speech. */
   const begin = (provider: VoiceProvider | null) => {
     if (closed.current) return
     // Every engine takes the microphone (and the speech helper) from any dictation in progress.
     stopDictation()
+    engineChoice.current = VoiceSettings.engineChoice(provider)
     if (!provider && !onDeviceAvailable()) return void fallbackFromDevice()
-    const op = new CallOperator(store, botId)
-    const send = (text: string) => store.send(text, botId)
+    const call = link.current!
+    const send = (text: string) => store.send(text, botId, { call: call.call })
     let next: VoiceEngine
     if (provider && VoiceSettings.isSpeechMode(provider)) {
       const transcribe = VoiceSettings.transcribeModel(provider)
@@ -92,6 +94,8 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
         },
         send,
       })
+      // The computer keeps the call, though it carries no voice model.
+      void call.start('speech', provider).catch(() => {})
       cloudStartedAt.current = Date.now()
       engineName.current = 'cloud'
     } else if (provider) {
@@ -99,12 +103,13 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       const voice = VoiceSettings.voice(provider)
       next =
         provider === 'openai'
-          ? new OpenAIRealtimeEngine(credential(provider, model, voice), op)
-          : new GeminiLiveEngine(model, voice, credential(provider, model, voice), op)
+          ? new OpenAIRealtimeEngine(model, voice, call)
+          : new GeminiLiveEngine(model, voice, call)
       cloudStartedAt.current = Date.now()
       engineName.current = provider
     } else {
       next = new OnDeviceEngine(send)
+      void call.start('device').catch(() => {})
       engineName.current = 'on_device'
     }
     // Picks up the computer's newest models for the next call; this one starts right away.
@@ -118,9 +123,22 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
         stopWatching = null
       }
     }
+    // A muted call stays muted on the engine that takes over.
+    next.muted = engine.current?.muted === true
     engine.current = next
     setSession(next)
     void next.start()
+  }
+
+  /** After the call settings close: a different engine picked there takes over the call, which goes on. */
+  const switchEngine = () => {
+    const provider = VoiceSettings.provider()
+    if (closed.current || VoiceSettings.engineChoice(provider) === engineChoice.current) return
+    countCloudMinutes()
+    engine.current?.end()
+    setNotice(null)
+    setBlocked(null)
+    begin(provider)
   }
 
   const rememberStatus = async () => {
@@ -131,21 +149,30 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
     }
   }
 
-  /** No on-device speech here (Linux, or a build without the helper): use a provider with a key, if any. */
+  /**
+   * No on-device speech here (Linux, or a build without the helper): use a provider with a key, if
+   * any. On device stays the pick, so closing the settings unchanged keeps that provider.
+   */
   const fallbackFromDevice = async () => {
+    const picked = engineChoice.current
     const configured = (await rememberStatus())?.providers.find((p) => p.configured)?.provider
-    if (closed.current) return
+    // Ended, or another engine was picked meanwhile.
+    if (closed.current || engineChoice.current !== picked) return
     if (configured) {
       setNotice(`${onDeviceUnavailableReason()} Using ${providerName(configured)}.`)
       begin(configured)
+      engineChoice.current = picked
     } else {
       setBlocked(`${onDeviceUnavailableReason()} Add an OpenAI or Gemini key in call settings.`)
+      // Nothing runs: the next settings close tries again, with a key added there.
+      engineChoice.current = ''
     }
   }
 
   useEffect(() => {
     const startedAt = Date.now()
     window.codync.speech.setCalling(true)
+    store.beginCall(link.current!.call)
     begin(VoiceSettings.provider())
     return () => {
       window.codync.speech.setCalling(false)
@@ -154,18 +181,21 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       countCloudMinutes()
       onSpeaking(false)
       interrupt.current = null
-      store.logCall(botId, Math.floor((Date.now() - startedAt) / 1000))
+      link.current?.end(Math.floor((Date.now() - startedAt) / 1000))
     }
   }, [])
+  useEffect(() => voiceSettingsClosed.subscribe(switchEngine), [])
 
   const phase = session?.phase ?? null
   useEffect(() => {
     if (!session) return
     onSpeaking(phase === 'speaking')
     interrupt.current = phase === 'speaking' ? () => session.interrupt() : null
+    // Once per call, so an engine taking over doesn't count or open it again.
     if (session.isActive && !counted.current) {
       counted.current = true
       analytics.track({ event: 'voice_call_started', engine: engineName.current })
+      store.callStarted(botId)
     }
     // A cloud engine that can't start or drops mid-call hands over to on-device voice.
     if (phase === 'failed' && session.provider && onDeviceAvailable()) {
@@ -178,18 +208,18 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   const speaking = phase === 'speaking'
   const muted = session?.muted === true
   const working = bot ? isWorking(bot) : false
-  const statusText =
-    phase === null || phase === 'starting'
-      ? 'Connecting'
-      : phase === 'speaking'
-        ? 'Speaking'
-        : phase === 'failed'
-          ? "Can't listen"
-          : muted
-            ? 'Muted'
-            : working
-              ? 'Working, listening'
-              : 'Listening'
+  const connecting = phase === null || phase === 'starting'
+  const statusText = connecting
+    ? 'Connecting'
+    : phase === 'speaking'
+      ? 'Speaking'
+      : phase === 'failed'
+        ? "Can't listen"
+        : muted
+          ? 'Muted'
+          : working
+            ? 'Working, listening'
+            : 'Listening'
   const failure = blocked ?? (phase === 'failed' ? session?.failure : null)
 
   return (
@@ -205,7 +235,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
           {bot ? <BotAvatar bot={bot} size={34} /> : <span className="call-avatar-empty" />}
         </button>
         <LevelDots
-          sample={() => ({ level: session?.level ?? 0, speaking: session?.phase === 'speaking', working })}
+          sample={() => ({ level: session?.level ?? 0, speaking: session?.phase === 'speaking', working, connecting: connecting && !blocked })}
           color={color}
           width={120}
           label={statusText}

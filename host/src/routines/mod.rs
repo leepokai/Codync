@@ -11,7 +11,7 @@ mod retry;
 mod runner;
 mod schedule;
 pub use runner::start;
-pub use schedule::Trigger;
+pub use schedule::{Trigger, local_zone};
 
 use crate::{
     LockExt,

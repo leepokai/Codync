@@ -181,6 +181,9 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         "You are a persistent agent the user delegates work to through Codync, from their phone or computer."
             .to_owned(),
     );
+    if cfg.lead {
+        lines.push(crate::chat::lead::BRIEF.to_owned());
+    }
     // Claude Code's own system prompt, which this is appended to, says the user is in its CLI.
     let engine = if cfg.backend == "custom" {
         "the coding agent".to_owned()

@@ -111,7 +111,7 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
     // The agent never answers: after the grace period its process is stopped and the turn ends.
     host.wait_for(&bot, Duration::from_secs(40), |e| e["kind"] == "notice" && e["data"]["text"] == "Stopped.").await;
     let sync = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(sync["bots"][0]["status"], "idle");
+    assert_eq!(common::bot(&sync, &bot)["status"], "idle");
 }
 
 #[tokio::test]
@@ -233,7 +233,7 @@ async fn fast_mode_switches_live_sessions_without_a_restart() {
     host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast on", "one")).await;
     assert_eq!(log().matches(FAST_ON).count(), 1);
     let sync = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(sync["bots"][0]["fastModeSupport"], "offered");
+    assert_eq!(common::bot(&sync, &bot)["fastModeSupport"], "offered");
 
     // Off and on again: the same agent process switches the live session before each turn.
     host.call("updateBot", json!({"id": bot, "fastMode": false})).await;
@@ -255,7 +255,8 @@ async fn an_agent_without_config_options_has_no_fast_mode() {
     let host = Host::start().await;
     let bot = host.bot("Plain", "tests/fixtures/fast_mode_agent.py").await;
     std::fs::write(host.home.join("Plain").join("plain"), "").unwrap();
-    let support = || async { common::snapshot(&host.base, &host.token).await["bots"][0]["fastModeSupport"].clone() };
+    let support =
+        || async { common::bot(&common::snapshot(&host.base, &host.token).await, &bot)["fastModeSupport"].clone() };
     assert_eq!(support().await, "unknown", "clients offer /fast until a session says");
 
     host.call("send", json!({"botId": bot, "text": "one"})).await;
@@ -277,7 +278,8 @@ async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
     host.call("updateBot", json!({"id": bot, "fastMode": true})).await;
     host.call("send", json!({"botId": bot, "text": "one"})).await;
     host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast off", "one")).await;
-    let state = &common::snapshot(&host.base, &host.token).await["bots"][0];
+    let sync = common::snapshot(&host.base, &host.token).await;
+    let state = common::bot(&sync, &bot);
     assert_eq!(state["fastModeSupport"], "refused");
     assert_eq!(state["fastModeIssue"], "requires extra usage");
     assert_eq!(state["fastMode"], true, "the user's choice stays");

@@ -47,6 +47,8 @@ pub struct GroupTurn {
     pub late: bool,
     /// The reply the room sees, or `None` for a pass.
     pub reply: oneshot::Sender<Result<Option<String>>>,
+    /// The user's message the room turn answers: one a voice call carried makes the reply the call's (`chat::calls`).
+    pub answers: Vec<String>,
 }
 
 /// Room turn epochs per group.
@@ -153,7 +155,15 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
             asked.insert(member.id.clone(), shown);
             let (reply, answer) = oneshot::channel();
             let busy = busy_elsewhere(hub, &member.id, lane);
-            let turn = GroupTurn { lane: lane.clone(), prompt, shown, epoch, late: busy, reply };
+            let turn = GroupTurn {
+                lane: lane.clone(),
+                prompt,
+                shown,
+                epoch,
+                late: busy,
+                reply,
+                answers: answers(&since_user),
+            };
             if hub.send_cmd(&member.id, Cmd::Group(turn)).is_err() {
                 continue;
             }
@@ -220,6 +230,7 @@ pub fn refresh(hub: &Hub, turn: &mut GroupTurn, me: &BotConfig) -> Result<()> {
         bail!("no longer in the group");
     }
     (turn.prompt, turn.shown) = ask(hub, &group, &members(hub, &group), me, &turn.lane)?;
+    turn.answers = answers(&since_last_user_message(hub, &turn.lane)?);
     Ok(())
 }
 
@@ -248,6 +259,11 @@ fn since_last_user_message(hub: &Hub, lane: &Lane) -> Result<Vec<Entry>> {
     let recent = hub.store.messages_after(lane, 0, HISTORY_LINES)?;
     let start = recent.iter().rposition(|e| e.kind == EntryKind::User.as_str()).unwrap_or(0);
     Ok(recent[start..].to_vec())
+}
+
+/// The user's message a room turn answers: the first of `since` (see [`since_last_user_message`]).
+fn answers(since: &[Entry]) -> Vec<String> {
+    since.first().filter(|e| e.kind == EntryKind::User.as_str()).map(|e| e.id.clone()).into_iter().collect()
 }
 
 /// Who answers the user: the members @-mentioned or replied to since the user's last message, or

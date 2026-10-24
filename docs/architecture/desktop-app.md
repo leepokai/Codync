@@ -40,7 +40,9 @@ same way; the shared desktop behavior covers macOS and Linux.
 
 When several computers are selected, the sidebar groups bots by computer, with connection
 status and update notices in each section. Drag a heading or press Alt+Up/Down on the
-heading to reorder sections. Click a heading to fold its bots.
+heading to reorder sections: as on the iPhone, a dragged heading lifts (a copy follows the
+pointer), every section folds into its heading, the others make room as it passes them, and
+they unfold on release (`BotRoster.tsx`). Click a heading to fold its bots.
 Order and folded sections stay on this device; the iPhone and other computers keep
 independent orders even when signed in to the same account. Filtering a computer out
 does not discard its position. One selected computer keeps a flat roster. Bots stay within

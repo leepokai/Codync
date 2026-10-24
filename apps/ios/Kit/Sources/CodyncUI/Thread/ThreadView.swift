@@ -15,6 +15,7 @@ public struct ThreadView: View {
     @State var replyingTo: Entry?
     @State var botChat: BotChatTarget?
     @State var openArtifact: ArtifactTarget?
+    @State var openCall: Entry?
     @State var editingGroup = false
     @State var details: DetailsRequest?
     @State var calling = false
@@ -74,6 +75,7 @@ public struct ThreadView: View {
             }
             .codyncSheet(item: $botChat) { BotConversationView(botId: botId, peerId: $0.id) }
             .codyncSheet(item: $openArtifact) { ArtifactView(target: $0) }
+            .codyncSheet(item: $openCall) { CallConversationView(line: $0) }
             .codyncSheet(item: $details) { request in
                 BotDetailsView(botId: request.botId ?? botId, request: request) { artifact in
                     details = nil
@@ -113,7 +115,8 @@ public struct ThreadView: View {
                         reply: e.isReplyable && model.mismatch == nil ? { reply(to: e) } : nil,
                         // In a group, the bot whose agent failed.
                         addFallback: { details = DetailsRequest(botId: e.data.author ?? e.botId) },
-                        openArtifact: { openArtifact = ArtifactTarget(botId: e.botId, id: $0.id, title: $0.title) })
+                        openArtifact: { openArtifact = ArtifactTarget(botId: e.botId, id: $0.id, title: $0.title) },
+                        openCall: { openCall = e })
                     .equatable()
             }
         }
@@ -320,7 +323,8 @@ extension ThreadView {
     /// scrolls up; the chat follows the newest message until they scroll away, and a reply is
     /// revealed steadily as it's written.
     var transcript: some View {
-        let items = ChatItem.build(model.chat(botId))
+        // What voice calls carried shows in each call's conversation, not in the chat.
+        let items = ChatItem.build(model.chat(botId).hidingCalls(live: model.liveCalls))
         var rows: [ConversationRow] = []
         if moreOnComputer {
             rows.append(ConversationRow("earlier") {

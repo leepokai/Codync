@@ -162,6 +162,7 @@ const map: Record<string, IconNode> = {
   'square.grid.3x3': L.Grid3x3,
   'square.on.square': L.Copy,
   star: L.Star,
+  'star.fill': L.Star,
   'stop.circle': L.CircleStop,
   'stop.fill': L.Square,
   terminal: L.Terminal,

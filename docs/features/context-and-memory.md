@@ -206,8 +206,10 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   to keep, and re-applies the instructions afterwards; it can't make a harness keep anything.
 - A session a harness has deleted (for example, one cleaned up after a month) can't be resumed. The bot
   starts fresh, but its memory remains.
-- Memory search is a substring scan, not semantic vectors. Voice transcripts aren't marked yet, so dreaming
-  treats them like typed text. Group rooms don't feed dreaming.
+- Memory search is a substring scan, not semantic vectors. A voice call's transcript feeds dreaming from the call's
+  line: what the user said counts as their own words (spoken, not typed), the voice's lines and what it relayed to
+  the bot (`from: voice`) are context only ([voice call](voice-call.md#the-call-on-the-host)). Group rooms don't
+  feed dreaming.
 - `search_history` covers the bot's own chat, not group chats it took part in. It finds messages by words, or
   reads back from a message id (`from`, then each page's `next`); `search_memory` gives each `MEMORY.md` line's
   source message, so a bot can check where a memory came from.

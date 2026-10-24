@@ -95,7 +95,6 @@ final class CloudSpeechEngine: VoiceEngine {
         } catch {
             return fail("Couldn't use the microphone: \(error.localizedDescription)")
         }
-        phase = .listening
     }
 
     func end() {
@@ -124,6 +123,8 @@ final class CloudSpeechEngine: VoiceEngine {
     // MARK: listening
 
     private func heard(_ pcm: Data, level: Float) {
+        // Listening once the microphone actually delivers.
+        if !ended, phase == .starting { phase = .listening }
         guard !ended, !muted, phase == .listening, Date.now >= deafUntil else { return }
         self.level = level
         if level > Self.threshold {

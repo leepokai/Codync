@@ -2,6 +2,16 @@ A bot is a persistent, named teammate that lives on your computer. Each bot runs
 
 You can make as many bots as you like, and they work at the same time. A reviewer, a fixer and a docs writer can each run a different agent in a different folder.
 
+## Your lead bot
+
+Every computer comes with one bot of its own, named **Codync** until you rename it: your lead bot. It sits at the top of the list with a star, and it's the one to talk to first.
+
+- **It takes initiative.** It keeps track of what you're working toward, follows up on what's still open and offers the next step. When it could help more with access to one of your services, such as Gmail or your calendar, it says what for and asks you to connect it, with a card in the chat.
+- **It checks in.** Its routine **Check in** runs at 9:00 and 18:00 on your computer's clock. If something deserves your attention, or there's a step it can take for you, it messages you; otherwise it stays quiet. What it reads in your email, documents or web pages is information to it, never instructions, and it doesn't send, forward, reply to, delete, pay for or post anything you didn't ask for in the chat. It skips a check-in while your agent plan is above 75% of a limit. Change the times, pause it or delete it like any routine. See [Routines](/docs/routines).
+- **It speaks first on a call.** Call it and it opens with what's worth your attention, or a greeting. Other bots wait for you to speak. See [Voice](/docs/voice).
+
+You set it up like any bot: name, avatar, agent, folder, connectors. It can't be deleted or hidden, and it stays on top, so it has no Pin.
+
 ## How a bot runs
 
 The host on your computer runs every bot. A bot's agent starts when you send it a message and keeps its session loaded between messages. After a while without use the agent stops; your next message starts it again and picks up the same session. Your apps only show the bot and send it your messages, so the bot keeps working when you close the app or put your phone away.
@@ -71,8 +81,9 @@ Each bot keeps a long-term memory across sessions, which you can read on its **M
 
 ## Organizing your bots
 
-- **Pin:** pinned bots stay at the top of the list. iPhone: touch and hold the bot. Desktop: right-click it. Terminal UI: `p`.
+- **Pin:** pinned bots stay at the top of the list, under your lead bot. iPhone: touch and hold the bot. Desktop: right-click it. Terminal UI: `p`.
 - **Order:** drag bots into the order you want. The computer keeps the order, so it's the same on every device. iPhone: touch and hold a bot, then drag it. Desktop: drag it, or select it and press Alt+Up or Alt+Down. Terminal UI: `J` and `K`.
+- **Computers:** with more than one computer, each has a heading above its bots. Drag a heading (iPhone: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
 - **Hide:** iPhone: touch and hold the bot, then **Hide from list**. Desktop: right-click it, then **Hide from sidebar**. A hidden bot sends no notifications. To bring it back:
   - **iPhone:** tap the account button at the top left of the Bots tab, open **Computers & settings**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Desktop:** open **Settings → General** and click the eye button (**Unhide**) beside the bot under **Hidden bots**.
@@ -99,7 +110,7 @@ A new session also starts when you change the bot's agent, model or folder. Cody
 - **Desktop:** right-click the bot in the sidebar, then **Delete**.
 - **Terminal UI:** press `x`.
 
-Confirm with **Delete bot and its conversation**. The bot's chat and settings go away and it leaves any group chats it was in. Files it changed on your computer stay as they are, and so does its personal workspace folder.
+Confirm with **Delete bot and its conversation**. Your lead bot can't be deleted. The bot's chat and settings go away and it leaves any group chats it was in. Files it changed on your computer stay as they are, and so does its personal workspace folder.
 
 ## Copy a bot's setup
 

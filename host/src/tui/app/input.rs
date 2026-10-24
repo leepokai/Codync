@@ -341,7 +341,9 @@ impl App {
                 }
             }
             KeyCode::Char('x') => {
-                if let Some(b) = self.bot() {
+                if self.bot().is_some_and(|b| b.lead) {
+                    self.flash("The lead bot can't be deleted");
+                } else if let Some(b) = self.bot() {
                     let (detail, note) = if b.group {
                         ("Its conversation goes away.".into(), "Its bots stay.".into())
                     } else {
@@ -362,7 +364,9 @@ impl App {
             }
             KeyCode::Char('e') => self.edit_bot(),
             KeyCode::Char('p') => {
-                if let Some(b) = self.bot() {
+                if self.bot().is_some_and(|b| b.lead) {
+                    self.flash("The lead bot always stays on top");
+                } else if let Some(b) = self.bot() {
                     let (id, pinned) = (b.id.clone(), !b.pinned);
                     self.call("updateBot", json!({"id": id, "pinned": pinned}), After::Nothing);
                 }

@@ -87,7 +87,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
-        "logCall" => {
+        "logCall" | "endCall" => {
             p.insert("seconds".into(), b["seconds"].as_u64().unwrap_or(0).into());
             Event::VoiceCallFinished
         }

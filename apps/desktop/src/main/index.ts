@@ -20,6 +20,7 @@ import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
 import { registerCloud } from './cloud'
 import { registerSSH } from './ssh'
+import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
 import { Island } from './island'
 import { registerErrorReports } from './error-reports'
@@ -242,6 +243,7 @@ if (yieldsToInstall()) {
     registerScreenIPC()
     registerCloud(account)
     registerSSH(() => BrowserWindow.getAllWindows())
+    registerSSHConfig()
     // Calls use the microphone (realtime voice); nothing else asks for permissions.
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))
     account.register(() => BrowserWindow.getAllWindows())

@@ -71,7 +71,7 @@ was walked through on an emulator against a real host.
 - **Notification subtitle**: "Task complete" / "Response needed" / "Task failed" is the
   notification's sub text, which Android's conversation layout doesn't draw (`PushService.kt`).
 - **Bots tile** refreshes when Quick Settings opens, not live; between two bots that need you
-  equally it picks the pinned one, the iPhone the most recent (`core/.../WidgetFeed.kt` `leadBot`).
+  equally it picks the pinned one, the iPhone the most recent (`core/.../WidgetFeed.kt` `mostUrgentBot`).
 - **Shared files**: leaving the chat during a download skips the share sheet when it finishes
   (the card shows *Downloaded*); shared copies are deleted after a day (`AppStoreFiles.kt`,
   `AttachmentFiles.kt`).

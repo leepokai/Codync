@@ -1,15 +1,15 @@
 import { ArrowBendDownRight, ArrowsClockwise, ChatCircleText, UsersThree } from "@phosphor-icons/react/ssr";
-import AgentMark, { type Agent } from "./agent-mark";
+import AgentMark, { agentName, type Agent } from "./agent-mark";
 import Eyebrow from "./eyebrow";
 import Halftone from "./halftone";
 import Points, { type Point } from "./points";
 import Reveal from "./reveal";
 
 // The bot's Agent card while Codex carries on for Claude Code (docs/features/agent-fallback.md).
-const chain: { name: string; agent: Agent; resets?: string; inUse?: boolean }[] = [
-  { name: "Claude Code", agent: "claude", resets: "3:00 PM" },
-  { name: "Codex", agent: "codex", inUse: true },
-  { name: "Gemini CLI", agent: "gemini" },
+const chain: { agent: Agent; resets?: string; inUse?: boolean }[] = [
+  { agent: "claude", resets: "3:00 PM" },
+  { agent: "codex", inUse: true },
+  { agent: "gemini" },
 ];
 
 const points: Point[] = [
@@ -54,12 +54,12 @@ export default function Fallbacks() {
           >
             <Halftone className="w-80 text-neutral-50 opacity-[0.1]" />
             <ol className="relative flex flex-col gap-2">
-              {chain.map(({ name, agent, resets, inUse }, i) => (
-                <li key={name} className="flex items-center gap-3 rounded-2xl bg-neutral-800 px-4 py-3.5">
+              {chain.map(({ agent, resets, inUse }, i) => (
+                <li key={agent} className="flex items-center gap-3 rounded-2xl bg-neutral-800 px-4 py-3.5">
                   <span className="w-4 text-sm text-neutral-500 tabular-nums">{i === 0 ? "" : i}</span>
                   <AgentMark agent={agent} className="size-[18px]" />
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className={`truncate font-medium ${resets ? "text-neutral-400" : "text-neutral-50"}`}>{name}</span>
+                    <span className={`truncate font-medium ${resets ? "text-neutral-400" : "text-neutral-50"}`}>{agentName[agent]}</span>
                     {resets ? <span className="text-xs text-neutral-500">Usage resets {resets}</span> : null}
                   </span>
                   {inUse ? (

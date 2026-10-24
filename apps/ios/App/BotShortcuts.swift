@@ -4,18 +4,23 @@ import CodyncUI
 
 struct OpenLiveModeIntent: AppIntent {
     static let title: LocalizedStringResource = "Open Live Mode"
-    static let description = IntentDescription("Open a bot's conversation and start voice chat. Connect a computer in Codync first.")
+    static let description = IntentDescription("Open a bot's conversation and start voice chat; with no bot chosen, your lead bot, which speaks first. Connect a computer in Codync first.")
     static let openAppWhenRun = true
 
-    @Parameter(title: "Bot", requestValueDialog: "Which bot would you like to talk to?")
-    var bot: ShortcutBotEntity
+    /// None: the lead bot.
+    @Parameter(title: "Bot")
+    var bot: ShortcutBotEntity?
 
     static var parameterSummary: some ParameterSummary {
         Summary("Open Live Mode with \(\.$bot)")
     }
 
     @MainActor func perform() async throws -> some IntentResult {
-        try await AppStore.shared.openShortcutLive(bot)
+        // No lead to call (an older computer, or one not synced yet): ask, as the action did before leads.
+        guard let target = bot ?? ShortcutBotQuery.lead(in: SharedStore.activeContext) else {
+            throw $bot.needsValueError("Which bot would you like to talk to?")
+        }
+        try await AppStore.shared.openShortcutLive(target)
         return .result()
     }
 }
@@ -59,7 +64,7 @@ struct SendTextToBotIntent: ForegroundContinuableIntent {
 
 struct BotShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: OpenLiveModeIntent(), phrases: ["Open Live Mode in \(.applicationName)"],
+        AppShortcut(intent: OpenLiveModeIntent(), phrases: ["Open Live Mode in \(.applicationName)", "Talk to \(.applicationName)"],
                     shortTitle: "Open Live Mode", systemImageName: "waveform")
         AppShortcut(intent: SendTextToBotIntent(), phrases: ["Send text with \(.applicationName)"],
                     shortTitle: "Send Text to Bot", systemImageName: "paperplane")

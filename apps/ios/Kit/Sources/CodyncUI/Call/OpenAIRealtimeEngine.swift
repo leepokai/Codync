@@ -26,9 +26,13 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     var provider: VoiceProvider? { .openAI }
     @ObservationIgnored var onActivityChanged: ((Bool) -> Void)?
 
-    /// A short-lived credential for the provider, minted by the computer that holds the key.
-    private let credential: @MainActor () async throws -> String
-    private let op: CallOperator
+    private let model: String
+    private let voice: String
+    /// The call on the computer: the client secret, the voice's instructions and tools, the transcript.
+    private let link: CallLink
+    private var session: CallSession?
+    /// Tool calls still running on the computer: replies wait, so the model gets each result first.
+    private var toolsRunning = 0
     private var pc: RTCPeerConnection?
     private var events: RTCDataChannel?
     private var mic: RTCAudioTrack?
@@ -39,9 +43,10 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     private var pending: [String] = []
     private var dropTimer: Task<Void, Never>?
 
-    init(credential: @escaping @MainActor () async throws -> String, op: CallOperator) {
-        self.credential = credential
-        self.op = op
+    init(model: String, voice: String, link: CallLink) {
+        self.model = model
+        self.voice = voice
+        self.link = link
     }
 
     func start() async {
@@ -49,8 +54,10 @@ final class OpenAIRealtimeEngine: VoiceEngine {
             return fail("Allow the microphone for Codync in Settings to talk to your bots.")
         }
         do {
-            let secret = try await credential()
+            let session = try await link.start("realtime", provider: .openAI, model: model, voice: voice)
             guard !ended else { return }
+            guard let secret = session.credential else { throw VoiceError("OpenAI sent no session credential.") }
+            self.session = session
             try await connect(secret: secret)
         } catch {
             guard !ended else { return }
@@ -126,13 +133,13 @@ final class OpenAIRealtimeEngine: VoiceEngine {
 
     func speak(reply: String) {
         guard !ended, !phase.isFailed else { return }
-        pending.append(op.reply(reply))
+        pending.append(link.reply(reply))
         flush()
     }
 
     func announce(_ notice: String) {
         guard !ended, !phase.isFailed else { return }
-        pending.append(op.notice(notice))
+        pending.append(link.notice(notice))
         flush()
     }
 
@@ -140,41 +147,64 @@ final class OpenAIRealtimeEngine: VoiceEngine {
 
     fileprivate func opened() {
         guard !ended else { return }
-        dropTimer?.cancel()
-        let tools: [[String: Any]] = CallOperator.tools.map {
-            ["type": "function", "name": $0.name, "description": $0.description, "parameters": $0.parameters]
+        let declared = session.flatMap { (try? JSONSerialization.jsonObject(with: $0.tools)) as? [[String: Any]] } ?? []
+        let tools: [[String: Any]] = declared.map {
+            ["type": "function", "name": $0["name"] ?? "", "description": $0["description"] ?? "", "parameters": $0["parameters"] ?? [:]]
         }
         send([
             "type": "session.update",
             "session": [
                 "type": "realtime",
-                "instructions": op.instructions,
+                "instructions": session?.instructions ?? "",
                 "tools": tools,
-                "audio": ["input": ["turn_detection": ["type": "semantic_vad"]]],
+                // What the user says is transcribed too, for the call's line in the chat.
+                "audio": ["input": [
+                    "turn_detection": ["type": "semantic_vad"],
+                    "transcription": ["model": VoiceSettings.transcribeModel(.openAI)],
+                ]],
             ] as [String: Any],
         ])
-        phase = .listening
-        flush()
     }
 
     fileprivate func received(_ data: Data) {
         guard !ended, let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
         switch msg["type"] as? String {
+        // Connected once the session has the instructions and tools, not when the channel opens.
+        case "session.updated" where phase == .starting:
+            dropTimer?.cancel()
+            phase = .listening
+            flush()
         case "input_audio_buffer.speech_started": level = muted ? 0 : 0.7
         case "input_audio_buffer.speech_stopped": level = 0
+        case "input_audio_buffer.committed": link.transcribing(true)
+        case "conversation.item.input_audio_transcription.failed": link.transcribing(false)
         case "output_audio_buffer.started": phase = .speaking
         case "output_audio_buffer.stopped", "output_audio_buffer.cleared": if phase == .speaking { phase = .listening }
         case "response.created": responding = true
         case "response.done":
             responding = false
             flush()
+        case "conversation.item.input_audio_transcription.completed":
+            link.add("user", msg["transcript"] as? String ?? "")
+            link.endTurn()
+        case "response.output_audio_transcript.done":
+            link.add("voice", msg["transcript"] as? String ?? "")
+            link.endTurn()
         case "response.function_call_arguments.done":
             guard let id = msg["call_id"] as? String, let name = msg["name"] as? String else { return }
-            let args = (msg["arguments"] as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
-            let output = op.call(name, arguments: args ?? [:])
-            send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": id, "output": output]])
-            // An empty entry asks for a response once this one is done, so the model speaks the result.
-            pending.append("")
+            let args = Data((msg["arguments"] as? String ?? "{}").utf8)
+            // The tool runs on the computer.
+            toolsRunning += 1
+            Task { [weak self, link] in
+                let output = String(decoding: await link.tool(name, arguments: args), as: UTF8.self)
+                guard let self else { return }
+                self.toolsRunning -= 1
+                guard !self.ended else { return }
+                self.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": id, "output": output]])
+                // An empty entry asks for a response once this one is done, so the model speaks the result.
+                self.pending.append("")
+                self.flush()
+            }
         case "error":
             let error = msg["error"] as? [String: Any]
             log.error("realtime: \(error?["message"] as? String ?? "?", privacy: .public)")
@@ -183,7 +213,8 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     }
 
     fileprivate func iceChanged(_ state: RTCIceConnectionState) {
-        guard !ended else { return }
+        // While starting, only a failure counts: the start timer runs until the session is set up.
+        guard !ended, phase != .starting || state == .failed else { return }
         switch state {
         case .connected, .completed: dropTimer?.cancel()
         case .disconnected:
@@ -200,7 +231,7 @@ final class OpenAIRealtimeEngine: VoiceEngine {
 
     /// Hands waiting replies (and tool results, as empty entries) to the model once it's free.
     private func flush() {
-        guard !responding, phase.isActive, events?.readyState == .open, !pending.isEmpty else { return }
+        guard !responding, toolsRunning == 0, phase.isActive, events?.readyState == .open, !pending.isEmpty else { return }
         for text in pending where !text.isEmpty {
             send(["type": "conversation.item.create", "item": [
                 "type": "message", "role": "user", "content": [["type": "input_text", "text": text]],

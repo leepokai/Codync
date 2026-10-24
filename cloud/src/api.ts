@@ -39,5 +39,10 @@ export async function sweep(env: Env, now: number): Promise<void> {
        WHERE status = 'pending' AND expires_at <= ?`,
     ).bind(now),
     env.DB.prepare("DELETE FROM audit_events WHERE created_at <= ?").bind(now - 30 * 86_400_000),
+    env.DB.prepare(
+      `DELETE FROM wechat_oidc
+       WHERE (access_expires_at IS NULL AND expires_at <= ?)
+          OR access_expires_at <= ?`,
+    ).bind(now, now),
   ]);
 }

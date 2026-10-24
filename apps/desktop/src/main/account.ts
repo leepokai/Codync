@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage, type BrowserWindow } from 'electron'
 import type { SignInFailure, SignInProvider } from '../shared/analytics'
+import { clerkStrategy, signInProviderName } from '../shared/sign-in'
 import type { AccountState } from '../shared/ipc'
 import { authenticate, AuthenticationEnded } from './auth'
 import { buildConfig, identity } from './environment'
@@ -194,11 +195,11 @@ export class AccountService extends EventEmitter {
       this.set({ error: "Sign-in setup isn't finished yet. You can continue using local pairing." })
       return 'error'
     }
-    const name = provider === 'apple' ? 'Apple' : 'Google'
+    const name = signInProviderName[provider]
     let failure: SignInFailure | null = null
     this.set({ busy: true, error: null })
     try {
-      const strategy = `oauth_${provider}`
+      const strategy = clerkStrategy(provider)
       const created = await this.request<SignInResource>('POST', '/v1/client/sign_ins', { strategy, redirect_url: REDIRECT })
       const prepared = await this.request<SignInResource>('POST', `/v1/client/sign_ins/${created.id}/prepare_first_factor`, { strategy, redirect_url: REDIRECT })
       const redirect = prepared.first_factor_verification?.external_verification_redirect_url

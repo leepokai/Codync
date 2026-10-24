@@ -51,9 +51,15 @@ object NativeAccounts {
 
     private fun Session.usableUserId(): String? = takeIf { it.status == Session.SessionStatus.ACTIVE && it.expireAt > System.currentTimeMillis() }?.user?.id
 
-    suspend fun signIn(apple: Boolean) {
+    internal suspend fun signIn(provider: SignInProvider) {
         require(Clerk.isInitialized.value) { "Wait for sign-in to finish loading." }
-        val result = Clerk.auth.signInWithOAuth(if (apple) OAuthProvider.APPLE else OAuthProvider.GOOGLE)
+        val oauth = when (provider) {
+            SignInProvider.Apple -> OAuthProvider.APPLE
+            SignInProvider.Google -> OAuthProvider.GOOGLE
+            SignInProvider.Wechat -> OAuthProvider.custom("oauth_custom_wechat")
+            SignInProvider.Hosted -> error("Hosted sign-in is a separate flow.")
+        }
+        val result = Clerk.auth.signInWithOAuth(oauth)
         when (result) {
             is ClerkResult.Failure -> throw signInError(result)
             is ClerkResult.Success -> {

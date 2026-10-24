@@ -51,6 +51,7 @@ class AccountScreenTest {
         compose.onNodeWithContentDescription("Add account").assertIsDisplayed()
         compose.onNodeWithText("Sign out").assertIsDisplayed()
         compose.onNodeWithText("Continue with Google").assertDoesNotExist()
+        compose.onNodeWithText("Continue with WeChat").assertDoesNotExist()
         compose.onNodeWithText("Start over").assertDoesNotExist()
         snapshot("signed-in")
         compose.onNodeWithText("Scan a computer's code").performClick()
@@ -65,8 +66,10 @@ class AccountScreenTest {
         compose.onNodeWithContentDescription("Add account").performClick()
         compose.onNodeWithText("Continue with Apple").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Continue with Google").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Continue with WeChat").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Add account").performScrollTo().performClick()
         compose.onNodeWithText("Continue with Google").assertDoesNotExist()
+        compose.onNodeWithText("Continue with WeChat").assertDoesNotExist()
         // The sign-in spinner intentionally keeps drawing; freeze it while checking disabled actions.
         compose.mainClock.autoAdvance = false
         compose.runOnUiThread { state.value = state.value.copy(busy = setOf("session")) }
@@ -82,18 +85,24 @@ class AccountScreenTest {
         compose.setContent { Hosted { AccountSwitcherView(state.value, viewModel(), {}, {}) } }
         val apple = compose.onNodeWithText("Continue with Apple").assertIsDisplayed().assertIsEnabled().fetchSemanticsNode().boundsInRoot
         val google = compose.onNodeWithText("Continue with Google").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val wechat = compose.onNodeWithText("Continue with WeChat").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue(apple.bottom <= google.top)
+        assertTrue(google.bottom <= wechat.top)
         assertEquals(apple.left, google.left, 1f)
         assertEquals(apple.right, google.right, 1f)
+        assertEquals(apple.left, wechat.left, 1f)
+        assertEquals(apple.right, wechat.right, 1f)
         compose.onNodeWithText("Other sign-in options").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Sign out").assertDoesNotExist()
         compose.runOnUiThread { state.value = state.value.copy(account = state.value.account.copy(ready = false, error = "Couldn't restore sign-in.")) }
         compose.onNodeWithText("Continue with Apple").assertIsNotEnabled()
         compose.onNodeWithText("Continue with Google").assertIsNotEnabled()
+        compose.onNodeWithText("Continue with WeChat").assertIsNotEnabled()
         compose.onNodeWithText("Couldn't restore sign-in.").performScrollTo().assertIsDisplayed()
         compose.runOnUiThread { state.value = state.value.copy(account = AccountState(ready = true, configured = false)) }
         compose.onNodeWithText("QR pairing only in this build").assertIsDisplayed()
         compose.onNodeWithText("Continue with Apple").assertDoesNotExist()
+        compose.onNodeWithText("Continue with WeChat").assertDoesNotExist()
         compose.onNodeWithText("Scan a computer's code").assertIsDisplayed()
         compose.onNodeWithText("Computers").assertIsDisplayed()
         snapshot("pairing-only")

@@ -92,6 +92,7 @@ final class AccountSession {
     enum SignInProvider: String {
         case google = "Google"
         case apple = "Apple"
+        case wechat = "WeChat"
     }
 
     func signIn(provider: SignInProvider = .google) async {
@@ -100,19 +101,26 @@ final class AccountSession {
             errorMessage = "Sign-in setup isn't finished yet. You can continue using local pairing."
             return
         }
-        let tracked: AnalyticsEvent.SignInProvider = provider == .apple ? .apple : .google
+        let tracked: AnalyticsEvent.SignInProvider =
+            switch provider {
+            case .apple: .apple
+            case .google: .google
+            case .wechat: .wechat
+            }
         Analytics.shared.capture(.signInStarted(tracked))
         isBusy = true
         errorMessage = nil
         defer { isBusy = false }
         do {
-            // Both providers use Clerk's transfer flow and activate the same kind of session.
+            // Each provider uses Clerk's transfer flow and activates the same kind of session.
             let result: TransferFlowResult
             switch provider {
             case .google:
                 result = try await clerk.auth.signInWithOAuth(provider: .google, prefersEphemeralWebBrowserSession: isSignedIn)
             case .apple:
                 result = try await clerk.auth.signInWithApple()
+            case .wechat:
+                result = try await clerk.auth.signInWithOAuth(provider: .custom("oauth_custom_wechat"), prefersEphemeralWebBrowserSession: isSignedIn)
             }
             switch result {
             case .signIn(let signIn):

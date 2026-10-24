@@ -8,6 +8,7 @@ import { useReduceMotion } from '../lib/theme'
 import { useTr } from '../lib/use-language'
 import { useAccount } from '../store/account'
 import googleLogo from '../assets/google.svg'
+import wechatLogo from '../assets/wechat.svg'
 import './account-welcome.css'
 
 const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
@@ -84,6 +85,16 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
               <HStack as="span" gap={10}>
                 <img src={googleLogo} alt="" width={20} height={20} />
                 {tr('Continue with Google')}
+              </HStack>
+            )}
+          </Button>
+          <Button kind="secondary" onClick={() => void account.signIn('wechat')} disabled={!account.isConfigured || account.isBusy} className="welcome-button">
+            {account.isBusy ? (
+              <Spinner size={18} />
+            ) : (
+              <HStack as="span" gap={10}>
+                <img src={wechatLogo} alt="" width={20} height={20} />
+                {tr('Continue with WeChat')}
               </HStack>
             )}
           </Button>

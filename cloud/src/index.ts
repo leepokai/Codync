@@ -6,6 +6,7 @@ import * as api from "./api";
 import { ApiError, type Ctx } from "./api";
 import type { ComputerRelay } from "./relay";
 import { nudgeReleaseGate } from "./release-gate";
+import { handleWechatOidc } from "./wechat-oidc";
 
 export { ComputerRelay } from "./relay";
 
@@ -28,6 +29,17 @@ export interface Env {
   CLERK_WEBHOOK_SECRET?: string;
   /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
   RELEASE_GATE_TOKEN?: string;
+  /** WeChat Open Platform website app. All five must be set or WeChat sign-in stays off. */
+  WECHAT_APP_ID?: string;
+  WECHAT_APP_SECRET?: string;
+  WECHAT_OIDC_CLIENT_ID?: string;
+  WECHAT_OIDC_CLIENT_SECRET?: string;
+  /** EC P-256 private JWK. Signs the id_token Clerk verifies. */
+  WECHAT_OIDC_PRIVATE_JWK?: string;
+  /** Comma-separated Clerk redirect URLs. The two Codync Clerk callbacks when unset. */
+  WECHAT_OIDC_REDIRECTS?: string;
+  /** New WeChat sign-ins per IP. */
+  WECHAT_LIMITER?: RateLimit;
 }
 
 type Handler = (c: Ctx, params: string[]) => Promise<unknown>;
@@ -69,6 +81,8 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/v1\/relay\/host$/, api.relayHost],
   // Any segment reaches the handler so a malformed computerId gets its 400 (§7.1).
   ["GET", /^\/v1\/relay\/device\/([^/]+)$/, api.relayDevice],
+  ["GET", /^\/v1\/wechat\/oidc\/(?:\.well-known\/openid-configuration|jwks|authorize|callback|userinfo)$/, (c) => handleWechatOidc(c)],
+  ["POST", /^\/v1\/wechat\/oidc\/token$/, (c) => handleWechatOidc(c)],
   ["POST", /^\/v1\/webhooks\/clerk$/, api.clerkWebhook],
   ["POST", new RegExp(`^/v1/hooks/${ID}/${ID}$`), api.routineHook],
 ];

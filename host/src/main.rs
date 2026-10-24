@@ -5,6 +5,7 @@ mod analytics;
 mod api;
 mod background;
 mod chat;
+mod cli;
 mod compat;
 mod environment;
 mod hub;
@@ -167,6 +168,8 @@ enum Sub {
     },
     /// Rotate the local API token used by this computer's own apps and helpers.
     ResetToken,
+    /// Send a message to a bot, optionally waiting for its reply.
+    Send(cli::send::Args),
     /// Message your bots from this terminal.
     Tui {
         /// Host to connect to (default: this computer). The API only answers local
@@ -338,6 +341,13 @@ async fn main() -> Result<()> {
         Sub::Serve { port, bind } => serve(&bind, port).await,
         Sub::Pair { port, json } => pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
+        Sub::Send(args) => {
+            let code = cli::send::run(args).await;
+            if code != 0 {
+                std::process::exit(code);
+            }
+            Ok(())
+        }
         Sub::Devices { port, action } => match action.unwrap_or(DevicesAction::List) {
             DevicesAction::List => {
                 let v = local_call(port, "devices", json!({})).await?;

@@ -100,11 +100,7 @@ impl Actor {
             composio.then_some("composio"),
         ];
         for name in builtin.into_iter().flatten() {
-            servers.push(json!({
-                "name": name, "command": exe,
-                "args": ["mcp", name, "--bot", self.cfg.id, "--port", port.to_string()],
-                "env": [],
-            }));
+            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", &self.cfg.id], port));
         }
         Ok(Value::Array(servers))
     }

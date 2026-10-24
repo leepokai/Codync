@@ -797,6 +797,7 @@
   "Install Gemini CLI (npm install -g @google/gemini-cli) and run `gemini` to sign in with Google.": "Installiere Gemini CLI (npm install -g @google/gemini-cli) und starte `gemini`, um dich mit Google anzumelden.",
   "Install Copilot CLI (curl -fsSL https://gh.io/copilot-install | bash) and run `copilot login`.": "Installiere Copilot CLI (curl -fsSL https://gh.io/copilot-install | bash) und führe `copilot login` aus.",
   "Install Qwen Code (its standalone installer), run `qwen` and type /auth.": "Installiere Qwen Code mit seinem eigenständigen Installationsprogramm, starte `qwen` und gib /auth ein.",
+  "Install Hermes Agent and run `hermes acp --setup` to choose a provider and model.": "Installiere Hermes Agent und führe `hermes acp --setup` aus, um einen Anbieter und ein Modell auszuwählen.",
   "Install goose and run `goose configure`.": "Installiere goose und führe `goose configure` aus.",
   "Install Kimi Code (curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash) and run `kimi login`.": "Installiere Kimi Code (curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash) und führe `kimi login` aus.",
   "Install Droid (curl -fsSL https://app.factory.ai/cli | sh) and sign in with `droid`.": "Installiere Droid (curl -fsSL https://app.factory.ai/cli | sh) und melde dich mit `droid` an.",

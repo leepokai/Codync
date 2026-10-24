@@ -345,7 +345,7 @@ It stays byte-identical until compaction or a new session.
 
 ### Instructions in every harness
 
-Codync runs 27 harnesses. The opening, with the bot's identity and memory, reaches each through the best channel
+Codync runs 28 harnesses. The opening, with the bot's identity and memory, reaches each through the best channel
 it offers (`Instructions` in `agent/bot`):
 
 1. **Claude: `_meta.systemPrompt`**, as above. claude-agent-acp 0.92 also advertises ACP's `systemPrompt`, but it
@@ -398,6 +398,7 @@ can, the user may keep it on for one bot ([Claude Code's own memory](#claude-cod
 | Gemini CLI | Its system prompt has the model edit `~/.gemini/GEMINI.md` | Nothing: no switch short of replacing its system prompt or its home folder |
 | Kilo Code | Memory tools, on per project | Nothing: the only per-process switch replaces the whole config |
 | Kiro | Memory with a global setting | Nothing: no per-workspace key |
+| Hermes Agent | `MEMORY.md` and `USER.md` in `~/.hermes/memories`, on, shared by every Hermes session | Nothing: its only switches are `memory.memory_enabled` and `user_profile_enabled` in the global `~/.hermes/config.yaml` |
 | OpenCode, Cursor, Kimi, Amp, Cline, Droid, Devin, others | None found | Nothing |
 
 ### Compaction

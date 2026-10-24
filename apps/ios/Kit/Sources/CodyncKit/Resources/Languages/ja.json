@@ -797,6 +797,7 @@
   "Install Gemini CLI (npm install -g @google/gemini-cli) and run `gemini` to sign in with Google.": "Gemini CLI (npm install -g @google/gemini-cli) をインストールし、`gemini` を実行して Google でサインインします。",
   "Install Copilot CLI (curl -fsSL https://gh.io/copilot-install | bash) and run `copilot login`.": "Copilot CLI (curl -fsSL https://gh.io/copilot-install | bash) をインストールし、`copilot login` を実行します。",
   "Install Qwen Code (its standalone installer), run `qwen` and type /auth.": "Qwen コード (スタンドアロン インストーラー) をインストールし、`qwen` を実行して /auth と入力します。",
+  "Install Hermes Agent and run `hermes acp --setup` to choose a provider and model.": "Hermes Agent をインストールし、`hermes acp --setup` を実行してプロバイダーとモデルを選択します。",
   "Install goose and run `goose configure`.": "goose をインストールし、`goose configure` を実行します。",
   "Install Kimi Code (curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash) and run `kimi login`.": "Kimi Code (curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash) をインストールし、`kimi login` を実行します。",
   "Install Droid (curl -fsSL https://app.factory.ai/cli | sh) and sign in with `droid`.": "Droid をインストールし (curl -fsSL https://app.factory.ai/cli | sh)、`droid` でサインインします。",

@@ -119,8 +119,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 - **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`): Claude Code
   (`autoMemoryEnabled` and `autoDreamEnabled` false, `CLAUDE_CODE_DISABLE_AUTO_MEMORY`), Copilot (its memory tools
   excluded), CodeBuddy, and Qwen Code (workspace settings, so only in a bot's own workspace: a project folder's
-  files are the user's). Gemini CLI, Kilo Code and Kiro have no switch Codync can use. Project knowledge goes in
-  the bot's own notes, and into the project's `CLAUDE.md` or `AGENTS.md` only when the user asks.
+  files are the user's). Gemini CLI, Kilo Code, Kiro and Hermes Agent have no switch Codync can use. Project
+  knowledge goes in the bot's own notes, and into the project's `CLAUDE.md` or `AGENTS.md` only when the user asks.
 - **Keeping it on.** Where Codync has the switch, the memory screen's "This bot" section offers "<harness>'s own
   memory" (bot field `harnessMemory`, `null` without a switch), off by default, with an info button: the bot may
   remember things twice, the two memories can disagree, and forgetting something in Codync doesn't reach it.

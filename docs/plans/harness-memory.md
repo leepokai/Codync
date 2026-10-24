@@ -16,7 +16,7 @@ not pushed), so treat the design below as the spec. Current behavior:
   something in Codync doesn't reach it; where to read it. The terminal asks the same on `m` before turning it on.
 - Offered where Codync controls it (`own_memory::switchable`): Claude Code, Copilot and CodeBuddy in any folder,
   Qwen Code only in the bot's own workspace (its switch is a file in the folder, and a project folder's files are
-  the user's). Gemini CLI, Kilo Code and Kiro have no switch Codync can use.
+  the user's). Gemini CLI, Kilo Code, Kiro and Hermes Agent have no switch Codync can use.
 - Kept on, the harness sets its memory itself (Claude Code's auto-dream too); Claude Code's `MEMORY.md` shows
   read-only in a "Claude Code" section. Changing it restarts the agent, which resumes its session where it can.
 - Wire, additive: bots carry `harnessMemory` (bool, `null` without a switch); `updateBot` takes it, and an edit

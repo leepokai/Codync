@@ -13,6 +13,18 @@ pub use remote::serve_remote;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
+/// ACP `McpServer` for `codync-host mcp <args…> --port <port>`. Its env names the data directory, where the token
+/// is: some agents start MCP servers with a filtered environment (Hermes keeps only PATH, HOME and a few more), so a
+/// custom `CODYNC_HOME` wouldn't reach the server otherwise.
+pub fn acp_server(name: &str, exe: &std::path::Path, args: &[&str], port: u16) -> Value {
+    let port = port.to_string();
+    let args: Vec<&str> = ["mcp"].into_iter().chain(args.iter().copied()).chain(["--port", &port]).collect();
+    json!({
+        "name": name, "command": exe, "args": args,
+        "env": [{"name": "CODYNC_HOME", "value": crate::service::data_dir()}],
+    })
+}
+
 #[derive(Clone, Copy)]
 pub enum Server {
     Chat,

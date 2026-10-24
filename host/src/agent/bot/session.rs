@@ -7,7 +7,7 @@ use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::agent::registry::Candidate;
 use crate::chat::{context, memory};
-use crate::store::run_session_key;
+use crate::store::{BotConfig, run_session_key};
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -240,8 +240,12 @@ impl Actor {
                     // keeps one for all its sessions), so the bot's own is set again.
                     let mut selected = if res.get("configOptions").is_some() || res.get("models").is_some() {
                         select_model_within(&conn.acp, &res, &sid, &self.cfg, SESSION_TIMEOUT).await?
-                    } else {
+                    } else if self.cfg.model_options.is_empty() {
                         Selected { options: res, ..Selected::default() }
+                    } else {
+                        // Nothing listed: no model is set again, but each saved setting still says why it isn't sent.
+                        let cfg = BotConfig { model: None, ..self.cfg.clone() };
+                        select_model_within(&conn.acp, &res, &sid, &cfg, SESSION_TIMEOUT).await?
                     };
                     // The agent refused one of the bot's settings (see `refused`).
                     if let Some((id, value, error)) = selected.rejected.take() {

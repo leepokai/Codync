@@ -363,6 +363,26 @@ fn bot_state(snapshot: &Value, bot: &str) -> Value {
 }
 
 #[tokio::test]
+async fn a_saved_setting_a_resumed_session_lists_nothing_for_is_still_said() {
+    // Reviewer on #204: a `session/load` answering with no lists skipped the check, so nothing said why.
+    if python_missing() {
+        return;
+    }
+    let mut host = Host::start().await;
+    let _vault = NoVault::of(&host);
+    let bot = host.fixture_bot("Bare", "effort_agent.py", "").await;
+    fixture_flag(&host, &bot, "bare");
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"reasoning_effort": "high"}})).await;
+    answer(&host, &bot, "one").await;
+    let issues = |state: Value| state["settingIssues"]["reasoning_effort"]["value"].clone();
+    assert_eq!(issues(bot_state(&host.snapshot().await, &bot)), "high", "a new session says it");
+    host.restart(|_| {}).await;
+    answer(&host, &bot, "two").await;
+    assert_eq!(calls(&host, &bot), ["session/new", "session/load"], "never sent");
+    assert_eq!(issues(bot_state(&host.snapshot().await, &bot)), "high", "so does a resumed one");
+}
+
+#[tokio::test]
 async fn a_session_that_lists_nothing_is_running_with_its_settings_unknown() {
     if python_missing() {
         return;

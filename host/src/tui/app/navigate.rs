@@ -192,6 +192,11 @@ impl App {
             KeyCode::Enter if picked.as_ref().is_some_and(|e| e.data["connectionRequest"]["status"] == "pending") => {
                 self.open_connection();
             }
+            KeyCode::Char('o') if picked.as_ref().is_some_and(|e| e.artifact().is_some()) => {
+                if let Some(artifact) = picked.as_ref().and_then(super::Entry::artifact) {
+                    self.fetch_artifact(&id, artifact, crate::tui::net::artifacts::ArtifactTo::Browser);
+                }
+            }
             KeyCode::Char('o') if picked.as_ref().is_some_and(super::Entry::unfolds) => {
                 if let Some(e) = picked
                     && !self.unfolded.remove(&e.id)

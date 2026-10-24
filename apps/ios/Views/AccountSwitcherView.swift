@@ -55,7 +55,7 @@ struct AccountSwitcherView: View {
 
             CardSection {
                 Button { showSettings = true } label: {
-                    RowLabel("Computers", systemImage: "desktopcomputer", chevron: true)
+                    RowLabel("Computers & settings", systemImage: "gearshape", chevron: true)
                 }
                 .buttonStyle(.plain)
                 if account.isSignedIn {

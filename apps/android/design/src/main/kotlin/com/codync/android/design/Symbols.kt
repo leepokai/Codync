@@ -32,12 +32,14 @@ import androidx.annotation.DrawableRes
     "bolt" -> R.drawable.sf_bolt
     "book.fill" -> R.drawable.sf_book_fill
     "book.pages" -> R.drawable.sf_book_pages
+    "books.vertical" -> R.drawable.sf_books_vertical
     "brain" -> R.drawable.sf_brain
     "bubble.left.and.bubble.right" -> R.drawable.sf_bubble_left_and_bubble_right
     "bubble.left.and.bubble.right.fill" -> R.drawable.sf_bubble_left_and_bubble_right_fill
     "calendar" -> R.drawable.sf_calendar
     "camera.fill" -> R.drawable.sf_camera_fill
     "chart.bar" -> R.drawable.sf_chart_bar
+    "chart.bar.doc.horizontal" -> R.drawable.sf_chart_bar_doc_horizontal
     "checklist" -> R.drawable.sf_checklist
     "checkmark" -> R.drawable.sf_checkmark
     "checkmark.circle" -> R.drawable.sf_checkmark_circle

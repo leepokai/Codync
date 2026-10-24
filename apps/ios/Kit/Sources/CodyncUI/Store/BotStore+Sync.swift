@@ -118,6 +118,7 @@ extension BotStore {
             }
             let known = entries[e.botId]?.first(where: { $0.id == e.id })
             upsert(e)
+            if let card = e.data.artifact { artifacts.announce(card) }
             bump(e.rev)
             acknowledgeVisibleConversations(e.botId, entry: e)
             let calls = Array(voiceCalls.values).filter { $0.botId == e.botId && e.rev > $0.startRev }
@@ -133,6 +134,8 @@ extension BotStore {
             setUsage(u)
         case let .screen(s):
             screen = s
+        case let .artifact(artifact):
+            artifacts.upsert(artifact)
         case .resync:
             restartEvents()
         case let .undecodable(type):

@@ -194,7 +194,7 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
     lines.push(format!("Messages: {}", crate::chat::outbox::INSTRUCTIONS));
     lines.push(String::new());
     lines.push(
-        "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line. In group chats, routines and ask_bot requests, send_message isn't available: your final reply is what gets delivered, so write it for its reader. An independent message_bot request reports to the user in your own chat: send_message is available for updates and the report; if you send none, your final text becomes the report. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
+        "Other conversations: your history is shared across them. A group chat turn starts with [Group chat: ...]; a request from another bot or a routine run says so in its first line. In group chats, routines and requests from other bots, send_message isn't available: your final reply is what gets delivered (to the room, the run's result or the bot that asked), so write it for its reader; group chats and requests from other bots can't use message_bot either. Replies to your own message_bot requests arrive as a turn of their own in this chat, starting with [Codync: ...]: carry on with the user's task from there, and your final reply goes to the user. These rules apply to the current turn, not later turns in this session. Only @-mention in group chats, and don't assume a group sees your private chat."
             .to_owned(),
     );
     lines.push(String::new());
@@ -269,12 +269,11 @@ mod tests {
     }
 
     #[test]
-    fn instructions_distinguish_ask_replies_from_independent_user_reports() {
+    fn instructions_say_where_bot_requests_and_their_replies_go() {
         let store = store();
         let system = render(&store, &cfg("Reporter", "Report outcomes"));
-        assert!(system.contains("ask_bot"));
-        assert!(system.contains("message_bot"));
-        assert!(system.contains("send_message is available"));
+        assert!(system.contains("requests from other bots, send_message isn't available"));
+        assert!(system.contains("Replies to your own message_bot requests arrive as a turn of their own"));
         assert!(system.contains("These rules apply to the current turn"));
     }
 

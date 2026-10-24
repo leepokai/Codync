@@ -14,6 +14,21 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
     case zh
     case zhHant = "zh-Hant"
     case en
+    case ja
+    case ko
+    case fr
+    case de
+    case es
+
+    public var catalogName: String { self == .zh ? "zh-Hans" : rawValue }
+
+    public static func resolved(preference: AppLanguage, languages: [String] = Locale.preferredLanguages) -> AppLanguage {
+        guard preference == .system else { return preference }
+        let tag = (languages.first ?? "en").lowercased().replacingOccurrences(of: "_", with: "-")
+        let base = String(tag.split(separator: "-").first ?? "en")
+        if base == "zh" { return systemScript(languages: languages) == .hant ? .zhHant : .zh }
+        return AppLanguage(rawValue: base).flatMap { $0 == .system ? nil : $0 } ?? .en
+    }
 
     public var id: String { rawValue }
 
@@ -31,7 +46,13 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
     }
 
     public static func preference(in store: UserDefaults = defaults) -> AppLanguage {
-        AppLanguage(rawValue: store.string(forKey: storageKey) ?? "") ?? .system
+        _ = LanguageUpdates.shared.revision
+        return AppLanguage(rawValue: store.string(forKey: storageKey) ?? "") ?? .system
+    }
+
+    public static func setPreference(_ language: AppLanguage, in store: UserDefaults = defaults) {
+        store.set(language.rawValue, forKey: storageKey)
+        LanguageUpdates.shared.changed()
     }
 
     public static func systemIsChinese(languages: [String] = Locale.preferredLanguages) -> Bool {
@@ -49,7 +70,7 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
     public static func usesChinese(preference: AppLanguage, systemIsChinese: Bool) -> Bool {
         switch preference {
         case .zh, .zhHant: true
-        case .en: false
+        case .en, .ja, .ko, .fr, .de, .es: false
         case .system: systemIsChinese
         }
     }
@@ -59,10 +80,9 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
         switch preference {
         case .zh: return Locale(identifier: "zh-Hans")
         case .zhHant: return Locale(identifier: "zh-Hant")
-        case .en: return Locale(identifier: "en")
+        case .en, .ja, .ko, .fr, .de, .es: return Locale(identifier: preference.rawValue)
         case .system:
-            guard systemIsChinese else { return Locale(identifier: "en") }
-            return systemScript() == .hant ? Locale(identifier: "zh-Hant") : Locale(identifier: "zh-Hans")
+            return Locale(identifier: resolved(preference: .system).catalogName)
         }
     }
 
@@ -73,6 +93,11 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
         case .zh: "简体中文"
         case .zhHant: "繁體中文"
         case .en: "English"
+        case .ja: "日本語"
+        case .ko: "한국어"
+        case .fr: "Français"
+        case .de: "Deutsch"
+        case .es: "Español"
         }
     }
 }
@@ -83,6 +108,7 @@ public enum L10n {
 
     private static let hans = load("zh-Hans")
     private static let hant = load("zh-Hant")
+    private static let catalogs = Dictionary(uniqueKeysWithValues: [AppLanguage.ja, .ko, .fr, .de, .es].map { ($0, load($0.catalogName)) })
 
     /// A missing or malformed table is logged and left empty, so the interface stays in English.
     private static func load(_ name: String) -> [String: String] {
@@ -122,8 +148,12 @@ public enum L10n {
         case .zh: return (hans, [:])
         case .zhHant: return (hant, hans)
         case .en: return nil
+        case .ja, .ko, .fr, .de, .es: return (catalogs[preference] ?? [:], [:])
         case .system:
-            guard systemIsChinese else { return nil }
+            if !systemIsChinese {
+                let resolved = AppLanguage.resolved(preference: .system, languages: systemLanguages)
+                return catalogs[resolved].map { ($0, [:]) }
+            }
             return AppLanguage.systemScript(languages: systemLanguages) == .hant ? (hant, hans) : (hans, [:])
         }
     }
@@ -227,7 +257,12 @@ public enum L10n {
     public static func resetLine(_ raw: String) -> String {
         guard let time = resetRemainder(raw) else { return tr(raw) }
         let preference = AppLanguage.preference()
-        guard AppLanguage.usesChinese(preference: preference, systemIsChinese: AppLanguage.systemIsChinese()) else { return raw }
+        guard AppLanguage.usesChinese(preference: preference, systemIsChinese: AppLanguage.systemIsChinese()) else {
+            if AppLanguage.resolved(preference: preference) == .en { return raw }
+            return compactTime(time) != nil
+                ? tr("resets in {time}").replacingOccurrences(of: "{time}", with: time)
+                : "\(tr("resets")) \(time)"
+        }
         if let spoken = compactTime(time) { return spoken + tr("after reset") }
         return "\(tr("resets")) \(time)"
     }

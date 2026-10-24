@@ -78,6 +78,10 @@ impl App {
             Submit::Handoff(entry) => {
                 self.sheet("editHandoff", json!({"entryId": entry, "text": values["text"]}), Reply::FieldsSaved);
             }
+            Submit::RenameArtifact { bot, artifact } => {
+                let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
+                self.sheet("renameArtifact", body, Reply::FieldsSaved);
+            }
         }
     }
 }

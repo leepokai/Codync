@@ -3,6 +3,7 @@
 
 use super::{Adapter, Conn, SessionCaps};
 use crate::agent::acp::{self, Acp};
+use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -23,6 +24,8 @@ pub(super) fn claude_meta(cfg: &BotConfig, system: &str) -> Value {
 
 /// Claude Code's own memory and its auto-dream stay off, so Codync's is the bot's one memory, unless the user kept
 /// them on; then Claude Code sets both itself ([design](../../../../docs/design/bot-memory.md#claude-codes-own-memory)).
+/// Claude's thinking shows as summaries, which the working steps a chat unfolds show: an SDK session otherwise
+/// leaves its text out. Whether Claude thinks stays the user's Claude Code setting.
 fn claude_options(cfg: &BotConfig) -> Value {
     // The bot's replies, memory and team management are Codync's own tools, which follow the bot's permission inside
     // Codync: the user's Claude Code auto-mode classifier mustn't refuse them (it blocked a reply naming the user's
@@ -32,19 +35,14 @@ fn claude_options(cfg: &BotConfig) -> Value {
         settings["autoMemoryEnabled"] = false.into();
         settings["autoDreamEnabled"] = false.into();
     }
-    json!({"options": {"settings": settings}})
+    json!({"options": {"settings": settings, "extraArgs": {"thinking-display": "summarized"}}})
 }
 
-/// Shell commands that may start the bot's agent over ACP, best first.
-/// `progress` receives short status lines ("Downloading Cursor…").
-pub(crate) async fn launch_commands(cfg: &BotConfig, progress: impl Fn(&str)) -> Result<Vec<String>> {
+/// Ways to start the bot's agent over ACP, best first: its own command, else its backend's.
+pub(crate) fn launch_commands(cfg: &BotConfig) -> Result<Vec<Candidate>> {
     Ok(match cfg.command.as_deref().map(str::trim) {
-        Some(c) if !c.is_empty() => vec![c.to_owned()],
-        _ => crate::agent::backends::launch_candidates(&cfg.backend, progress)
-            .await?
-            .iter()
-            .map(crate::agent::registry::Cmd::acp)
-            .collect(),
+        Some(c) if !c.is_empty() => vec![Candidate::Ready(Cmd { program: c.to_owned(), args: String::new() })],
+        _ => crate::agent::backends::launch_candidates(&cfg.backend)?,
     })
 }
 
@@ -588,5 +586,14 @@ for line in sys.stdin:
             kept.get("autoMemoryEnabled").is_none() && kept.get("autoDreamEnabled").is_none(),
             "Claude Code decides"
         );
+    }
+
+    #[test]
+    fn claude_streams_thinking_summaries() {
+        let cfg: BotConfig =
+            serde_json::from_value(json!({"id": "a", "name": "B", "backend": "claude", "cwd": "/work/app"})).unwrap();
+        let options = &claude_options(&cfg)["options"];
+        assert_eq!(options["extraArgs"]["thinking-display"], "summarized");
+        assert!(options.get("thinking").is_none(), "whether Claude thinks stays Claude Code's");
     }
 }

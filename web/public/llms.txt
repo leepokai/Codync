@@ -28,12 +28,18 @@ Key facts:
 - [codync-mem](https://www.codync.dev/codync-mem): the open-source Rust crate behind the bots' memory (Markdown files the bot keeps, and the rules for who may change them)
 - [Source code on GitHub](https://github.com/leepokai/Codync): README, install guide and docs
 - [Discord](https://discord.gg/KBAX3Qznxh): community, help and feedback
-- [Group chats and replies](https://github.com/leepokai/Codync/blob/main/docs/features/groups-and-replies.md)
-- [Bot collaboration](https://github.com/leepokai/Codync/blob/main/docs/features/bot-collaboration.md)
-- [Agent fallbacks](https://github.com/leepokai/Codync/blob/main/docs/features/agent-fallback.md)
-- [SSH computers](https://github.com/leepokai/Codync/blob/main/docs/guides/accounts-and-ssh.md#desktop-computers-approvals-and-ssh)
-- [Remote access and relay](https://github.com/leepokai/Codync/blob/main/docs/reference/remote-relay.md)
-- [Linux servers](https://github.com/leepokai/Codync/blob/main/docs/guides/linux-servers.md)
+- [User manual](https://www.codync.dev/docs): how to set up and use Codync, page by page
+- [Getting started](https://www.codync.dev/docs/getting-started)
+- [Bots](https://www.codync.dev/docs/bots) and [agents](https://www.codync.dev/docs/agents)
+- [Group chats](https://www.codync.dev/docs/groups)
+- [Teamwork](https://www.codync.dev/docs/teamwork)
+- [Routines](https://www.codync.dev/docs/routines)
+- [Memory](https://www.codync.dev/docs/memory)
+- [Connectors and skills](https://www.codync.dev/docs/connectors-and-skills)
+- [Agent fallbacks](https://www.codync.dev/docs/agent-fallbacks)
+- [Remote access](https://www.codync.dev/docs/remote-access): relay, direct connection, pairing, SSH computers
+- [Linux servers](https://www.codync.dev/docs/linux-servers)
+- [Privacy](https://www.codync.dev/docs/privacy): what stays on your computer and what Codync's services see
 
 ## Optional
 

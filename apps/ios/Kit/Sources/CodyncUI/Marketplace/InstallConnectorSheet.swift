@@ -21,6 +21,13 @@ struct InstallConnectorSheet: View {
         item.options.first { $0.id == optionId } ?? item.options.first
     }
 
+    private var missing: Bool {
+        option?.inputs.contains { $0.required && (values[$0.name] ?? $0.default ?? "").isEmpty } ?? true
+    }
+
+    /// After a try that failed, Add with nothing typed tries the connector it saved again.
+    private var retrying: Bool { installed != nil && !values.values.contains { !$0.isEmpty } }
+
     var body: some View {
         VStack(spacing: 0) {
             ModalHeader("Add connector") {
@@ -28,7 +35,7 @@ struct InstallConnectorSheet: View {
                     Spinner()
                 } else {
                     IconButton("Add", systemImage: "plus") { install() }
-                        .disabled(installed == nil && (option?.inputs.contains { $0.required && (values[$0.name] ?? $0.default ?? "").isEmpty } ?? true))
+                        .disabled(missing && !retrying)
                 }
             }
             form
@@ -108,13 +115,10 @@ struct InstallConnectorSheet: View {
         Task {
             do {
                 guard let client = model.client else { return }
-                let c: InstalledConnector
-                if let installed { c = try await client.connectors().first(where: { $0.id == installed.id }) ?? installed }
-                else {
-                    c = try await model.installConnector(item, option: option.id, inputs: values)
-                    installed = c
-                    values.removeAll()
-                }
+                // The host keeps the connector a try saved unless new values or another way to run it come in.
+                let c = try await model.installConnector(item, option: option.id, inputs: values)
+                installed = c
+                values.removeAll()
                 if c.needsSignIn {
                     try await ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL).signIn(c.id)
                 }

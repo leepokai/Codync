@@ -1,0 +1,111 @@
+The host, `codync-host`, runs on any 64-bit Linux machine, including a home server or a headless cloud VM. It needs no display. Your bots run on that machine, and you message them from the iPhone, from the desktop app on another computer over SSH, or from the terminal UI.
+
+## Requirements
+
+| You need | Why |
+| --- | --- |
+| x86_64 or arm64 Linux | Release builds exist for both. The distribution doesn't matter: the host is a static binary. |
+| `ca-certificates` | For HTTPS. Normal VM images have it. Bare container images need `apt-get install ca-certificates`; without it every command stops with `TLS setup failed: install the ca-certificates package`. |
+| systemd | Only for running the host as a background service. Without systemd, run `codync-host serve` under your own supervisor. |
+| Node.js (optional) | Claude Code, Codex and Pi run through adapters started with `npx`. Without Node, an agent's setup offers to add Codync's own copy (on glibc distributions; over SSH, run `codync-host node`). On musl distributions such as Alpine, install Node.js yourself. |
+| Your agents, signed in | The host runs the agent CLIs installed on this machine with their own logins. Sign in over SSH (`claude`, `codex login`, …) as the same user that runs the host. |
+
+## Install
+
+Run these as the user who owns the agents (not root, unless the agents are root's):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh -s -- --host-only
+# or: brew install leepokai/codync/codync-host
+codync-host install                    # background service; restarts after a crash
+sudo loginctl enable-linger "$USER"    # keeps it running after you log out of SSH
+codync-host status
+```
+
+- The script puts `codync-host` in `~/.local/bin` (`/usr/local/bin` as root; set `CODYNC_BIN_DIR` to choose), checks its checksum, and restarts the service when you run it again to upgrade.
+- `codync-host install` sets up a systemd user service and saves your current `PATH` into it, so install Node and your agents first. If you add an agent later and the host doesn't find it, run `codync-host install` again.
+- Run `codync-host install` from a real login session (an SSH login, not `sudo su user`), or systemd can't reach your user's services.
+
+`--host-only` also works on a Mac without a display.
+
+### Everyday commands
+
+| Command | What it does |
+| --- | --- |
+| `codync-host status` | Whether the service is installed and running |
+| `codync-host pair` | Shows a pairing QR code |
+| `codync-host tui` | Opens the terminal UI |
+| `codync-host stop` | Stops the service and keeps its setup and data |
+| `codync-host uninstall` | Removes the service and keeps your data in `~/.codync` |
+| `journalctl --user -u codync-host -f` | Follows the host's log |
+
+## Pair your phone
+
+With the host running, run `codync-host pair` over SSH. It prints a QR code in your terminal. On the iPhone, scan it from the welcome screen or from **Computers & settings → Pair a computer**. If scanning a terminal QR code is awkward, run `codync-host pair --json` and paste the `codync://pair` link into the field under the scanner.
+
+The code works once and expires after 10 minutes. More about pairing and accounts: [Remote access](/docs/remote-access).
+
+## Use the terminal UI
+
+The simplest way is to SSH into the server and run `codync-host tui` there.
+
+To run the terminal UI on your own machine instead, forward the server's port and pass the server's token. The host's API answers only local callers, which the tunnel makes you:
+
+```sh
+ssh -N -L 19333:127.0.0.1:19222 your-server &
+CODYNC_TOKEN=$(ssh your-server 'cat ~/.codync/token') codync-host tui --url http://127.0.0.1:19333
+```
+
+## Use the desktop app over SSH
+
+The desktop app on a Mac or Linux desktop can run the server's bots alongside its own. Open **Settings → Computers**, and under **Over SSH** choose **Add SSH computer**. Fill in the host (an SSH alias or hostname) and, if your SSH config doesn't already set them, the user, port and key. Sign-in must work with a key or ssh-agent: nothing prompts for a password. On the first connection, compare the host key fingerprint with the server's, then choose **Trust and connect**.
+
+From that computer's card you can also show its pairing code, turn the relay on or off, and choose **Add to account** to put the server in your Codync account.
+
+The desktop app on Windows doesn't connect to SSH computers.
+
+## Reach it from your phone
+
+You have three options, and you can combine them:
+
+- **Codync relay (on by default).** The host connects out to the relay, so the phone reaches the server from anywhere with nothing to open or configure.
+- **Tailscale (recommended for a direct connection).** Install Tailscale on the server and on the phone, then pair. The pairing code includes the server's Tailscale address. You don't need to open any port in the cloud firewall.
+- **Your own HTTPS reverse proxy.** Forward only `/channel` to the host and set `CODYNC_EXTERNAL_URL` with a systemd drop-in. Follow the steps and security rules in [Remote access](/docs/remote-access) exactly.
+
+The pairing code lists only Tailscale and private network addresses, plus any URL you set yourself. The host never advertises the server's public IP.
+
+To keep the server off the relay, run `codync-host cloud --disable`. The phone then needs Tailscale, a private network or your own URL, and devices approved through your account can't connect.
+
+## Firewall
+
+The host listens on port 19222 on every interface. Its API (the one apps on the same computer and SSH tunnels use) answers only callers on the server itself, so a public address doesn't expose it. From the network, the host answers only:
+
+- the end-to-end encrypted channel, which serves only devices you paired or approved;
+- a health check that reports the host's version, environment and identifiers (its install path and whether a bot is working are reported only to callers on the server itself);
+- local routine webhooks, which need the routine's key.
+
+Keep port 19222 closed in your cloud firewall anyway, unless you deliberately connect over a VPN or private network. Tailscale and the relay don't need it open.
+
+## Approve and manage devices without a desktop app
+
+If the server is in your account, phones ask for access with a 6-digit code. Approve them on the server:
+
+```sh
+codync-host access                   # pending requests, with each device's code
+codync-host access approve 123456    # by the code the phone shows, or the request id
+codync-host access deny 123456
+codync-host devices                  # devices that can use this computer
+codync-host devices revoke <key>     # removes one; it disconnects at once
+```
+
+## Limits on a headless server
+
+- **Remote screen and computer use need a desktop session.** They turn on only while a graphical session (Wayland or X11) runs, so on a server they stay off and nothing else is affected. On a Linux desktop, the screen helper needs glibc 2.39 or newer and GStreamer 1.22 or newer with the base, good and bad plugins, PipeWire and xdg-desktop-portal. See [Computer use](/docs/computer-use).
+- **Saved secrets need a keyring.** Connector credentials, voice API keys and agent API keys are encrypted with a key kept in the Secret Service (for example GNOME Keyring). The host's user needs a session D-Bus and an unlocked Secret Service; without one, saving such a secret fails with an error, and new bots start with no connectors turned on. Codync never falls back to storing them in plain text.
+- **No desktop app on the server itself.** The Linux desktop app needs a graphical session. Use the phone, the desktop app on another computer over SSH, or the terminal UI.
+- **Keeping the machine awake does nothing.** VMs don't sleep; if the host can't hold off sleep, it only logs a warning.
+- **Usage limits** come from the Claude Code and Codex installs on the server, the same as on a desktop.
+
+## Updates
+
+A host installed with the script and run as the background service updates itself: it checks once a day, while no bot is working. Homebrew installs update with `brew upgrade leepokai/codync/codync-host`, followed by `codync-host install`. Commands and details: [Updates](/docs/updates).

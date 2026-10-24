@@ -20,6 +20,7 @@ import { Composer } from './Composer'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
 import { TraceView } from './TraceView'
+import { workingSteps } from './trace-turns'
 import { useReading } from './reading'
 import { GroupEditorView } from '../bots/GroupEditorView'
 import { BotTemplateView } from '../bots/BotTemplateView'
@@ -27,6 +28,7 @@ import { BotEditorView } from '../bots/BotEditorView'
 import { FormSheet } from '../marketplace/pieces'
 import { CallView } from '../call/CallView'
 import { MacChatButton } from './MacChatButton'
+import { ArtifactView } from '../library/ArtifactView'
 import './thread.css'
 import './composer.css'
 import './chat-controls.css'
@@ -56,6 +58,8 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   // A group member's settings, opened from its notice.
   const [editingMember, setEditingMember] = useState<string | null>(null)
   const [routineRequest, setRoutineRequest] = useState(0)
+  // The artifact shown over the chat (a card or the Library opened it).
+  const [artifactId, setArtifactId] = useState<string | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const dock = useRef<HTMLDivElement>(null)
   // The width is measured, not rendered: resizing re-renders only when `wide` flips, or while the
@@ -110,6 +114,10 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   )
 
   const openTrace = useCallback(() => setShowTrace(true), [])
+  const openArtifact = useCallback((id: string) => {
+    setArtifactId(id)
+    setCompactDetails(false)
+  }, [])
 
   const presentRoutine = useCallback((id: string | null) => {
     setRoutineId(id)
@@ -131,6 +139,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
       tab={detailsTab}
       setTab={setDetailsTab}
       editGroup={() => setEditingGroup(true)}
+      openArtifact={openArtifact}
       share={() => {
         setCompactDetails(false)
         if (bot) setTemplateDraft(draftOf(bot))
@@ -167,14 +176,15 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
           </button>
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}
-        <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} />
+        <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
           {store.mismatch ? (
             <div className="composer-update-needed">
               <UpdateNeededCard />
             </div>
-          ) : (
+          ) : artifactId ? null : (
+            // The artifact over the chat has its own box (two would both take the voice shortcut).
             <Composer
               botId={botId}
               reply={replyTo}
@@ -189,6 +199,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             <CallView botId={botId} onSpeaking={setCallSpeaking} interrupt={interruptCall} onEnd={() => setCalling(false)} />
           </div>
         ) : null}
+        {artifactId ? <ArtifactView botId={botId} artifactId={artifactId} close={() => setArtifactId(null)} /> : null}
       </div>
       <ChatSidePanel
         open={panelOpen}
@@ -257,7 +268,7 @@ function ConnectionSubtitle() {
 /** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
 const PAGE = 40
 
-const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void }) {
+const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void }) {
   const store = useStore()
   const tr = useTr()
   const bot = store.bots.get(botId) ?? null
@@ -265,6 +276,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   // Rebuilt only when this chat changes: the store replaces a chat's list on every change.
   const entries = store.allEntries(botId)
   const all = useMemo(() => buildChat(entries), [entries])
+  const steps = useMemo(() => workingSteps(entries), [entries])
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
@@ -363,10 +375,10 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
           {items.length === 0 && bot ? <div className="transcript-intro">{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
           {items.map((item) => (
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
-              <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} />
+              <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} />
             </div>
           ))}
-          {bot ? <WorkingTransition bot={bot} visible={live} /> : null}
+          {bot ? <WorkingTransition bot={bot} visible={live} steps={steps} /> : null}
           <div className="chat-end" />
         </div>
       </div>
@@ -387,7 +399,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   )
 })
 
-function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void }) {
+function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void }) {
   if (item.kind === 'separator') {
     return <TimeSeparator date={item.date} />
   }
@@ -395,7 +407,7 @@ function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotCh
   const e = item.entry
   if (e.kind === 'notice' && e.data.routineId) return <RoutineNotice entry={e} open={() => openRoutine(e.data.routineId!)} />
 
-  return <ChatRow entry={e} groupStart={item.groupStart} chat={chat} openTrace={openTrace} onReply={onReply} openAgent={openAgent} />
+  return <ChatRow entry={e} groupStart={item.groupStart} chat={chat} openTrace={openTrace} onReply={onReply} openAgent={openAgent} openArtifact={openArtifact} />
 }
 
 /** The start of an empty group chat: who's in it and how the room works. */

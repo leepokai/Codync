@@ -119,8 +119,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 - **The harness's own memory** is off for every bot and for background jobs (`agent/own_memory.rs`): Claude Code
   (`autoMemoryEnabled` and `autoDreamEnabled` false, `CLAUDE_CODE_DISABLE_AUTO_MEMORY`), Copilot (its memory tools
   excluded), CodeBuddy, and Qwen Code (workspace settings, so only in a bot's own workspace: a project folder's
-  files are the user's). Gemini CLI, Kilo Code and Kiro have no switch Codync can use. Project knowledge goes in
-  the bot's own notes, and into the project's `CLAUDE.md` or `AGENTS.md` only when the user asks.
+  files are the user's). Gemini CLI, Kilo Code, Kiro and Hermes Agent have no switch Codync can use. Project
+  knowledge goes in the bot's own notes, and into the project's `CLAUDE.md` or `AGENTS.md` only when the user asks.
 - **Keeping it on.** Where Codync has the switch, the memory screen's "This bot" section offers "<harness>'s own
   memory" (bot field `harnessMemory`, `null` without a switch), off by default, with an info button: the bot may
   remember things twice, the two memories can disagree, and forgetting something in Codync doesn't reach it.
@@ -128,6 +128,14 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   harness runs its memory as it sets it, and Claude Code's `MEMORY.md` shows read-only in a "Claude Code" section
   (empty until it saves something). An edit to another harness turns the switch off. Using the harness's memory
   instead of Codync's is planned: [harness memory](../plans/harness-memory.md).
+- **Shared by every bot.** Gemini CLI (`~/.gemini/GEMINI.md`) and Hermes Agent (`~/.hermes/memories`) keep one
+  memory for all their sessions that Codync can't turn off (`own_memory::shared`, bot field `harnessMemoryShared`).
+  In place of the switch, "This bot" shows "<harness>'s own memory · Shared" with an info button (the host doesn't
+  read whether the user turned it off in the harness's settings, so the row names no state): every bot on that
+  harness reads and writes the same notes, and so does the harness outside Codync; forgetting in Codync doesn't reach
+  them, Codync can't show them, and a harness setting, where there is one (Hermes Agent's `memory.*` flags; Gemini CLI has none), turns them off for every session at once.
+  The terminal UI says it in the section's note. Kilo Code and Kiro aren't marked: how far their memory is shared
+  isn't confirmed.
 - **The apps** (iPhone, desktop, terminal) show "About you", "This bot", the dream log and Claude Code's notes,
   read-only: the user changes memory by telling the bot in the chat. Each layer shows its `MEMORY.md` facts with
   who wrote them (the `memory` method keeps the shape of the earlier entries: one per fact, `state` active), then
@@ -180,8 +188,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 ## Turns
 
 - Messages sent while the agent works are folded into one next turn, joined by blank lines.
-- Bot-to-bot requests occupy separate turns in the same queue; user messages are only folded together up to the next request. Requests never feed dreaming. See [bot collaboration](bot-collaboration.md).
-- Delegated turns do not set the restart marker: their waiter disappears on restart. Pending delegation notices become interrupted errors instead of automatically replaying work.
+- Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).
+- A request turn (the recipient's) doesn't set the restart marker: its pending notices become interrupted errors instead of automatically replaying work. A reply turn is the sender's own chat turn and sets it, so it resumes like a user turn.
 - Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
   the next turn). `session/new`, `session/load` and `session/fork` get three minutes before the agent is
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one

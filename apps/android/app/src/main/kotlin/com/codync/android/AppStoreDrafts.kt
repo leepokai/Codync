@@ -58,21 +58,21 @@ internal fun AppStore.persistDrafts() {
     }
 }
 
-/** Sends the chat's draft, quoting `replyTo` when there is one. */
-fun AppStore.sendDraft(botId: String, text: String, replyTo: ReplyQuote?, onQueued: () -> Unit) {
-    editDraft(botId, text)
-    val draft = state.value.drafts[botId] ?: return
+/** Sends draft `key` (the chat's, or one of its artifacts') to chat `botId`, quoting `replyTo` when there is one. */
+fun AppStore.sendDraft(key: String, botId: String, text: String, replyTo: ReplyQuote?, onQueued: () -> Unit) {
+    editDraft(key, text)
+    val draft = state.value.drafts[key] ?: return
     if (draft.text != text) return
     if (draft.text.isBlank() && draft.files.isEmpty()) return
-    action("draft-send:" + botId) {
+    action("draft-send:$key") {
         // Persist its nonce before the pending commit. Recovery removes a draft
         // already represented by a pending or confirmed send with this nonce.
         persistDrafts()
         draftWriter?.join()
-        check(savedDrafts[botId] == draft) { "Couldn't save this draft. Retry to send it." }
+        check(savedDrafts[key] == draft) { "Couldn't save this draft. Retry to send it." }
         val send = PendingSend(draft.nonce, botId, draft.text.trim(), System.currentTimeMillis(), files = draft.files, replyTo = replyTo)
         savePending(send)
-        mutableState.update { it.copy(drafts = it.drafts - botId) }
+        mutableState.update { it.copy(drafts = it.drafts - key) }
         persistDrafts()
         onQueued()
         action("send:" + send.nonce) { deliver(send) }

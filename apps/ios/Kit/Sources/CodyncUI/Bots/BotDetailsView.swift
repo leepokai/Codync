@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The details sheet's pages, as on the desktop inspector.
 enum DetailsTab: Hashable {
-    case details, memory, settings
+    case details, library, memory, settings
 }
 
 /// What to open the details sheet on.
@@ -16,11 +16,13 @@ struct DetailsRequest: Identifiable {
     var botId: String?
 }
 
-/// A bot's details (Grok Bot's): who it is, then its details, memory and settings. Settings save
+/// A bot's details (Grok Bot's): who it is, then its details, library, memory and settings. Settings save
 /// as you edit.
 struct BotDetailsView: View {
     let botId: String
     let routineId: String?
+    /// An artifact picked in the Library, for the chat's viewer.
+    let openArtifact: (ArtifactTarget) -> Void
     @State var tab: DetailsTab
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
@@ -29,8 +31,9 @@ struct BotDetailsView: View {
     @State private var saving: Task<Void, Never>?
     @State private var template: EditorRequest?
 
-    init(botId: String, request: DetailsRequest) {
+    init(botId: String, request: DetailsRequest, openArtifact: @escaping (ArtifactTarget) -> Void) {
         self.botId = botId
+        self.openArtifact = openArtifact
         routineId = request.routineId
         _tab = State(initialValue: request.tab)
     }
@@ -41,7 +44,8 @@ struct BotDetailsView: View {
         ScrollView {
             VStack(spacing: 0) {
                 if let bot { identity(bot) }
-                TabChoice(selection: $tab, options: [(.details, "Details"), (.memory, "Memory"), (.settings, "Settings")])
+                TabChoice(selection: $tab, options: [(.details, "Details")] + (model.hasLibrary ? [(.library, "Library")] : [])
+                    + [(.memory, "Memory"), (.settings, "Settings")])
                     .padding(.top, 18)
                 page.padding(.top, 20)
                     .environment(\.cardStyle, .outlined)
@@ -132,6 +136,8 @@ struct BotDetailsView: View {
                 }
                 RoutinesView(botId: botId, initialId: routineId) { dismiss() }
             }
+        case .library:
+            LibraryView(botId: botId, openArtifact: openArtifact)
         case .memory:
             MemoryCard(botId: botId)
         case .settings:

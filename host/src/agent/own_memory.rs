@@ -31,6 +31,14 @@ pub fn switchable(cfg: &BotConfig) -> bool {
     }
 }
 
+/// Whether the bot's harness keeps one memory of its own for all its sessions that Codync can't turn off: every bot
+/// on it, and the harness used outside Codync, share it. Gemini CLI's is `~/.gemini/GEMINI.md`, Hermes Agent's
+/// `~/.hermes/memories` ([design](../../../docs/design/bot-memory.md#instructions-in-every-harness)). The apps say so
+/// where other harnesses have a switch.
+pub fn shared(cfg: &BotConfig) -> bool {
+    matches!(cfg.backend.as_str(), "gemini" | "hermes")
+}
+
 /// Whether the user kept the bot's harness's own memory on beside Codync's.
 pub fn kept(cfg: &BotConfig) -> bool {
     cfg.harness_memory && switchable(cfg)
@@ -167,6 +175,9 @@ mod tests {
         assert!(kept(&bot("qwen", &own)));
         assert!(!switchable(&bot("qwen", "/work/app")), "Qwen Code's lives in the project's own files");
         assert!(!switchable(&bot("codex", &own)) && !switchable(&bot("gemini", &own)));
+        // Where there's no switch, the apps say when every bot on the harness shares its memory.
+        assert!(shared(&bot("gemini", &own)) && shared(&bot("hermes", "/work/app")));
+        assert!(!shared(&bot("claude", &own)) && !shared(&bot("codex", &own)));
         let mut off = bot("claude", &own);
         off.harness_memory = false;
         assert!(!kept(&off));

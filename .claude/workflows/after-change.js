@@ -71,7 +71,7 @@ const CHECKS = {
 
 const REVIEWERS = [
   { name: 'correctness', text: 'Lens: correctness: bugs, regressions, broken edge cases, error handling, data loss, security, and compatibility with older clients and hosts (docs/reference/compatibility.md). Report only real defects with a concrete failure scenario; style nits are not findings.' },
-  { name: 'completeness', text: 'Lens: completeness: every client the change should reach (iPhone, Android, desktop, terminal UI, per CLAUDE.md cross-platform rules), docs made stale by it, missing or weak tests, and the version bump and What\'s New rules. Report only real gaps; style nits are not findings.' },
+  { name: 'completeness', text: 'Lens: completeness: every client the change should reach (iPhone, Android, desktop, terminal UI, per CLAUDE.md cross-platform rules), docs made stale by it (the user manual in web/content/docs/ too, for anything users see or do differently: docs/guides/user-docs.md), missing or weak tests, and the version bump and What\'s New rules. Report only real gaps; style nits are not findings.' },
   { name: 'refactor', text: 'Lens: refactor (docs/guides/clean-code.md "After every change"): responsibility splits, files past ~500 lines, long functions, layer leaks, missed reuse, language best practices (Swift 6, Rust rust-skills, strict TypeScript, Compose). Only suggestions worth their diff.' },
 ]
 

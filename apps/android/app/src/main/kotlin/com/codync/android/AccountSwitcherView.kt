@@ -80,7 +80,7 @@ import com.kyant.shapes.RoundedRectangle
                     exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) { SignInButtons(state, store) }
             }
             CardSection {
-                row { RowLabel("Computers", "desktopcomputer", chevron = true, modifier = Modifier.plainButton(action = showSettings)) }
+                row { RowLabel("Computers & settings", "gearshape", chevron = true, modifier = Modifier.plainButton(action = showSettings)) }
                 if (current != null) row {
                     RowLabel("Sign out", "rectangle.portrait.and.arrow.right", Palette.danger,
                         modifier = Modifier.plainButton(enabled = !busy) { confirmSignOut = true })

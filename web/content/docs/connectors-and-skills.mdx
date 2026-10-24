@@ -1,0 +1,109 @@
+Connectors give your bots tools. Each one is an MCP server: GitHub, Linear, Notion, a database, or anything else that speaks the Model Context Protocol. Skills are written instructions a bot follows for a kind of task, such as a release checklist or a house style for reports.
+
+You add both in **Extensions**. They install on the computer, so every bot on that computer can use them, and each bot can turn any of them off.
+
+## Open Extensions
+
+- **Desktop app:** click **Extensions** at the bottom of the sidebar.
+- **iPhone:** tap the account button at the top left of the Bots tab, open **Computers & settings**, and tap the Extensions button on the computer's row.
+- **Terminal UI:** press `A`, or pick "Extensions: agents, connectors, skills…" from the action list. Tab switches between Agents, Connectors and Skills.
+
+The header names the computer everything installs on. Once you've added something, a count under it ("3 installed", **Connectors & skills**) opens your library, where you can sign in to a connector or remove one.
+
+## Add a connector from the registry
+
+The **Connectors** section starts with a short featured list, then pages through the official MCP Registry. Search by service name, or press **Load more connectors** to see more.
+
+1. Pick a connector. The **Add connector** sheet opens.
+2. If it can run more than one way, choose under **Runs**: hosted by the service, or on your computer as a package.
+3. Fill in any **Setup** fields it asks for, such as an API key. Keys are saved on that computer only.
+4. Press **Add**. Codync installs it, opens the service's sign-in page if it has one, and checks that the connector starts and lists its tools.
+
+A connector with nothing to fill in starts installing as soon as you pick it.
+
+Packages run with their own runtime, which must be installed on the computer: npm packages need Node.js (`npx`), PyPI packages need uv (`uvx`), container images need Docker, and NuGet packages need `dnx`. Codync installs the exact version the registry lists.
+
+MCPB bundles and packages that serve HTTP locally aren't listed. Add those as a custom connector.
+
+If the check fails because a key was wrong, type the correct key in the same sheet and press **Add** again: Codync replaces the connector it just saved with the new values. Pressing **Add** with nothing typed checks the saved connector again, for example after you finished signing in. You can also change a saved key later under **Extensions → Credentials → Saved connections**.
+
+### Sign in to a hosted connector
+
+Some hosted connectors ask you to sign in with your account on that service. The sign-in page opens right after you add it:
+
+- On the iPhone, it opens in the system sign-in sheet.
+- In the desktop app, it opens in your browser on the computer.
+
+The tokens stay on the computer and are refreshed when they expire. Until someone signs in, bots don't get the connector, and your library shows a **Sign in** button for it.
+
+Some services don't offer this kind of sign-in (GitHub is one). For those, add the server as a custom connector with its URL and a token header.
+
+## Add a custom connector
+
+Under **Make your own**, choose **Custom connector**, then one of:
+
+- **Command:** a command line that starts an MCP server. It runs on the computer in the bot's project folder, and quotes work like in a shell. Put keys under **Environment**, one `KEY=value` per line.
+- **URL:** a hosted MCP server. Add headers under **Headers**, one `Name: value` per line, or leave them empty if the service has you sign in.
+- **Config:** paste an MCP config from a README or another app (Claude, Cursor, VS Code), such as an `mcpServers` block. Every server in it is added.
+
+Everything you enter is saved on that computer only.
+
+## Apps through Composio
+
+Composio is in the featured connectors. Add it and sign in to your Composio account; no API key is needed. Your bots can then find and connect apps through Composio's own tools.
+
+If you'd rather use a Composio consumer key, add `https://connect.composio.dev/mcp` as a custom connector with the header `x-consumer-api-key: ck_…`.
+
+## When a bot asks you
+
+A bot can search the registry and ask you to connect something. The request shows up as a card in the chat:
+
+- **Connect a connector:** press **Connect**. The setup and sign-in open as if you'd picked it in Extensions. When it's done, the connector is turned on for that bot and the bot is told.
+- **Provide a secret:** the card names the connector and the field the bot needs. Type the value (or a 1Password `op://` reference) and press **Connect**. The value goes to that connector, is saved on the computer, and never appears in the conversation or reaches the bot.
+
+The cards themselves hold no credentials. You can answer them in the iPhone app, the desktop app, or the terminal UI (pick the card and press ↵). A request can be answered for 24 hours; after that, ask the bot for a new one.
+
+## Where credentials are kept
+
+- Keys, headers and sign-in tokens are encrypted in Codync's database on the computer. The encryption key is held by the system: Keychain on macOS, Credential Manager on Windows, and on Linux a Secret Service keyring (such as GNOME Keyring) that is unlocked in your user session.
+- Codync never falls back to plain text. If the keyring is locked or missing, you get an error instead.
+- Once unlocked, the key stays in the host's memory until the host stops. Locking the keyring afterwards doesn't remove it; stop the host to do that.
+- Your phone sends values to the computer over its end-to-end encrypted connection. Lists in the apps show only whether a value is set.
+- Bots reach connectors through Codync on the computer, which adds the saved values when the connector runs, so the values aren't handed to the agent. This isn't a sandbox: programs running as your user on that computer, including the agent's own shell commands, aren't kept away from them.
+- Credentials don't sync between computers. A copy of Codync's data moved to another machine can't decrypt them, so back up the system keychain along with it.
+
+**Extensions → Credentials** shows where values are stored, lets you replace a connection's saved values (they stay hidden), and connects 1Password: paste a service account token and use `op://vault/item/field` references in any credential field. Give that service account access to one dedicated vault only. The 1Password CLI must be installed on the computer.
+
+## Turn connectors and skills on or off per bot
+
+A connector or skill you add is turned on for every bot, and new bots start with all of them on (without a credential store, as on a [headless Linux server](/docs/linux-servers#limits-on-a-headless-server), new bots start with no connectors). To turn one off for a bot, open the bot's **Settings** tab:
+
+- **Desktop app:** click the bot's name at the top of the chat, then **Settings**.
+- **iPhone:** tap the bot's name at the top of the chat, then the **Settings** tab.
+- **Terminal UI:** press `e` on the bot, then use the **Connectors** and **Skills** fields (space toggles).
+
+The bot picks up the change on its next turn, in the same conversation.
+
+## Skills
+
+A skill is a folder with a `SKILL.md` file: a name, a line saying when to use it, and the instructions. A bot with a skill on is told its name, its description and where its instructions are, so it can read them when a task calls for it.
+
+- **Install one:** the **Skills** section of Extensions lists Anthropic's published skills. Press **Add**. Click any skill to read its instructions first.
+- **Write your own:** under **Make your own**, choose **Your own skill** and fill in **Name**, **When to use it** and **Instructions**.
+- **Let a bot write one:** ask a bot to save how it did something as a skill. A bot may also save one on its own after working out a task you're likely to want again. The chat shows "Saved the skill …" or "Updated the skill …". A skill a bot writes is on for that bot only; turn it on for other bots in their settings. A bot can change only the skills it wrote, and you can remove any skill from your library.
+
+### Use a skill with a slash command
+
+Type `/` at the start of a message to see that bot's commands: built-in ones first (such as `/fast` for [Fast mode](/docs/agents), when the bot's agent offers it), then the skills the bot has on. Picking a skill fills in `/<skill id>`; write the rest of your message and send it. The bot is told to read that skill first.
+
+- **Desktop app:** the list floats above the message box. Use ↑ and ↓, then Tab or Return. Escape hides it.
+- **iPhone:** the list sits above the message box. Tap a command.
+- **Terminal UI:** the list appears over the transcript. Use ↑ and ↓, then Tab or ↵.
+
+Any other `/command` goes to the agent as you typed it, so your agent's own commands keep working. In a [group chat](/docs/groups), the list shows every member's skills, and a skill message reaches each member that has it on.
+
+## Automatic updates
+
+Connectors installed from the registry as packages follow their upstream releases. Codync checks the registry from time to time and again just before the connector starts. When a newer version is published, it switches to it: a running connector keeps going, and the new version applies the next time it starts. If the check fails, the installed version stays, and Codync never moves a connector to an older version.
+
+Custom connectors are never updated automatically.

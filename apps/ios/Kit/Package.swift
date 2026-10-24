@@ -18,8 +18,13 @@ let package = Package(
     targets: [
         .target(name: "CodyncKit", resources: [
             .copy("Resources/ThirdPartyNotices"),
-            .copy("Resources/zh-Hans.json"),
-            .copy("Resources/zh-Hant.json"),
+            .copy("Resources/Languages/zh-Hans.json"),
+            .copy("Resources/Languages/zh-Hant.json"),
+            .copy("Resources/Languages/ja.json"),
+            .copy("Resources/Languages/ko.json"),
+            .copy("Resources/Languages/fr.json"),
+            .copy("Resources/Languages/de.json"),
+            .copy("Resources/Languages/es.json"),
             .process("Resources/ProviderIcons.xcassets"),
         ]),
         .target(

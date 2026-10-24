@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Market, MemorySheet, RoutineForm, RoutineList, SkillSheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Library, Market, MemorySheet, RoutineForm, RoutineList,
+    SkillSheet,
 };
 use super::{Editor, Mark};
 
@@ -51,6 +52,7 @@ pub enum Action {
     Market,
     Memory,
     Details,
+    Library,
     RefreshAgents,
     Pair,
     Usage,
@@ -62,12 +64,13 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 16] = [
+pub const ACTIONS: [(&str, &str, Action); 17] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
     ("Memory of this bot…", "M", Action::Memory),
     ("Details of this bot…", "R", Action::Details),
+    ("Library of this bot: artifacts and files…", "L", Action::Library),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Pair a phone…", "P", Action::Pair),
     ("Usage", "U", Action::Usage),
@@ -84,6 +87,8 @@ pub const ACTIONS: [(&str, &str, Action); 16] = [
 pub enum GotoItem {
     Bot(String),
     Action(Action),
+    /// Shows a hidden bot in the roster again.
+    Unhide(String),
 }
 
 pub struct Goto {
@@ -301,6 +306,7 @@ pub enum Overlay {
     BotChat(BotChatSheet),
     Routines(RoutineList),
     Routine(Box<RoutineForm>),
+    Library(Library),
     Market(Box<Market>),
     Agent(AgentSetup),
     Fields(Box<Fields>),
@@ -323,6 +329,8 @@ pub enum Click {
     },
     Filter(usize),
     Composer,
+    /// The working line: unfolds or folds the turn's steps.
+    Steps,
     /// A bot-message row (entry id): opens the conversation.
     BotChat(String),
 }

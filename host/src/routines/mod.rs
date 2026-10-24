@@ -225,6 +225,10 @@ impl Routines {
             "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>()})
     }
 
+    pub fn owns(&self, bot: &str, id: &str) -> bool {
+        self.state.locked().routines.iter().any(|r| r.id == id && r.bot_id == bot && !r.deleted)
+    }
+
     pub fn save(&self, hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
         let row = hub
             .store

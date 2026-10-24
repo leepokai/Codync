@@ -13,6 +13,13 @@
   max-width: 220px;
   max-height: 280px;
 }
+.attachment-image.icon,
+.attachment-placeholder.icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+}
 .attachment-image.full {
   max-width: 100%;
   max-height: 100%;

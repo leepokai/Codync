@@ -89,20 +89,16 @@ impl Connector {
     /// which keeps sign-in tokens fresh and works with agents that only speak stdio.
     /// A remote server still waiting for sign-in is left out.
     pub fn acp(&self, exe: &std::path::Path, port: u16) -> Option<Value> {
-        if self.command.is_some() {
-            return Some(
-                json!({"name":self.id,"command":exe,"args":["mcp","local","--connector",self.id,"--port",port.to_string()],"env":[]}),
-            );
-        }
-        self.url.as_ref()?;
-        if self.oauth.as_ref().is_some_and(|o| !o.signed_in()) {
-            return None;
-        }
-        Some(json!({
-            "name": self.id, "command": exe,
-            "args": ["mcp", "remote", "--connector", self.id, "--port", port.to_string()],
-            "env": [],
-        }))
+        let kind = if self.command.is_some() {
+            "local"
+        } else {
+            self.url.as_ref()?;
+            if self.oauth.as_ref().is_some_and(|o| !o.signed_in()) {
+                return None;
+            }
+            "remote"
+        };
+        Some(crate::mcp::acp_server(&self.id, exe, &[kind, "--connector", &self.id], port))
     }
 
     /// What clients see: everything but the secret values.
@@ -268,9 +264,12 @@ pub fn update_connectors<T>(
 
 fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {
     update_connectors(store, |all| {
+        // A registry server is installed once: installing it again replaces it under the id the bots know.
         if let Some(name) = c.registry_name.as_deref()
-            && let Some(existing) = all.iter().find(|x| x.registry_name.as_deref() == Some(name))
+            && let Some(existing) = all.iter_mut().find(|x| x.registry_name.as_deref() == Some(name))
         {
+            c.id.clone_from(&existing.id);
+            *existing = c;
             return Ok(existing.public());
         }
         c.id = unique_id(&c.name, &all.iter().map(|c| c.id.clone()).collect::<Vec<_>>());
@@ -331,12 +330,15 @@ mod tests {
         let exe = std::path::Path::new("/bin/codync-host");
         let config = c.acp(exe, 1).unwrap();
         assert_eq!(config["args"][1], "local");
-        assert_eq!(config["env"], json!([]));
+        let only_data_dir = json!([{"name": "CODYNC_HOME", "value": crate::service::data_dir()}]);
+        assert_eq!(config["env"], only_data_dir, "never the connector's secrets");
         assert!(!config.to_string().contains("secret"));
         assert!(c.public().get("env").is_none(), "secrets never leave the host");
         c.command = None;
         c.url = Some("https://example.com/mcp".into());
-        assert_eq!(c.acp(exe, 1).unwrap()["args"][1], "remote", "remote servers go through the proxy");
+        let remote = c.acp(exe, 1).unwrap();
+        assert_eq!(remote["args"][1], "remote", "remote servers go through the proxy");
+        assert_eq!(remote["env"], only_data_dir);
         c.oauth = Some(oauth::OAuth::default());
         assert!(c.acp(exe, 1).is_none(), "not signed in yet");
         assert_eq!(c.public()["auth"], "signedOut");

@@ -1,5 +1,6 @@
 import type { Entry, SharedFile } from '@shared/models'
 import { useStore } from '../../store/context'
+import type { DownloadState } from '../../store/file-downloads'
 import { Icon } from '../../components/Icon'
 import { IconButtonBase } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
@@ -7,12 +8,26 @@ import { Text } from '../../components/Text'
 import { attachmentSymbol, byteCount } from './Attachments'
 import './attachments.css'
 
+/** What the download button does now (also the Library's file rows). */
+export function downloadAction(state: DownloadState | undefined) {
+  return state?.kind === 'downloading' ? 'Cancel download' : state?.kind === 'failed' ? 'Retry download' : state?.kind === 'saved' ? 'Save again' : 'Download'
+}
+
+/** The line under a shared file's name: its size, the download's progress, or what went wrong. */
+export function downloadDetail(state: DownloadState | undefined, file: SharedFile) {
+  switch (state?.kind) {
+    case 'downloading': return `${byteCount(state.received)} of ${byteCount(file.size)}`
+    case 'failed': return state.message
+    case 'saved': return `${byteCount(file.size)} · Saved`
+    default: return byteCount(file.size)
+  }
+}
+
 export function FileDownloadCard({ entry, file }: { entry: Entry; file: SharedFile }) {
   const store = useStore()
   const state = store.fileDownloads.states.get(file.id)
   const busy = state?.kind === 'downloading'
-  const action = busy ? 'Cancel download' : state?.kind === 'failed' ? 'Retry download' : state?.kind === 'saved' ? 'Save again' : 'Download'
-  const detail = busy ? `${byteCount(state.received)} of ${byteCount(file.size)}` : state?.kind === 'failed' ? state.message : state?.kind === 'saved' ? `${byteCount(file.size)} · Saved` : byteCount(file.size)
+  const [action, detail] = [downloadAction(state), downloadDetail(state, file)]
   return <HStack gap={12} className="file-card">
     <Icon name={attachmentSymbol(file.name)} size={24} color="var(--secondary)" />
     <VStack grow>

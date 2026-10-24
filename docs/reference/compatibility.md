@@ -2,7 +2,7 @@
 
 Clients (iPhone, desktop app on macOS, Linux and Windows, terminal client) and the host update on
 different schedules: the iPhone app waits for App Review, the desktop app and standalone hosts
-update when their owner (or the opt-in automatic updater) installs a release. Any client can
+update when their owner (or the automatic updater, on by default for hosts that update themselves) installs a release. Any client can
 meet an older or a newer host.
 
 ## Rule
@@ -51,8 +51,9 @@ couldn't get the matching side yet.
 - **Additive changes need no floor change**: new fields (clients decode leniently; new
   Swift fields are optional), new methods, new enum values (kept as strings).
 - **Renaming, removing or changing the meaning** of anything an older client reads or sends:
-  change it, set `MIN_APP` to this release (its iPhone part ships with it: the change
-  touches `apps/ios/Kit/`, so `Submit iOS` includes it), add a row to the floor history, and re-record
+  change it, set `MIN_APP` to this release (the phone apps ship with it: `Submit iOS` and
+  `Submit Android` ship any release whose `MIN_APP` is above their store's version, even
+  without app changes), add a row to the floor history, and re-record
   the wire shape snapshot. That release isn't offered (downloads, updaters, Homebrew) until
   the App Store has the iPhone app (next section), so nobody is asked for an update that
   isn't there yet.

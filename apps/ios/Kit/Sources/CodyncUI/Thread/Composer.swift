@@ -14,6 +14,8 @@ struct Composer: View {
     var onCall: (() -> Void)?
     /// Interrupts the bot while it is speaking in a voice call.
     var onInterrupt: (() -> Void)?
+    /// An artifact's viewer: every message is about the artifact (a reply to its card), from a draft of its own.
+    var artifact: Artifact?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The field owns its text; the store only keeps a copy. A field bound straight to the
@@ -32,6 +34,7 @@ struct Composer: View {
     @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 22
 
     private var bot: Bot? { model.bots[botId] }
+    private var draftKey: String { artifact.map(BotStore.artifactDraftKey) ?? botId }
     private var working: Bool { bot?.isWorking(in: botId) == true }
 
     private var isEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
@@ -45,6 +48,7 @@ struct Composer: View {
 
     private var placeholder: String {
         let name = bot?.name ?? ""
+        if let artifact { return L10n.tr("Message about “{title}”").replacingOccurrences(of: "{title}", with: artifact.title) }
         if replyingTo != nil { return L10n.tr("Reply…") }
         if bot?.isGroup == true { return L10n.tr("Ask everyone · @ to ask one bot") }
         let key = working ? "Queue a message for {name}" : "Ask {name}"
@@ -263,21 +267,22 @@ struct Composer: View {
         .padding(.leading, 18)
         .padding(.trailing, 6)
         .padding(.vertical, boxPadding)
-        .onChange(of: botId, initial: true) {
+        .onChange(of: draftKey, initial: true) {
             dictation.stop()
-            draft = model.composerDraft(for: botId)
+            draft = model.composerDraft(for: draftKey)
         }
         // Another chat in the same view never inherits the reply.
         .onChange(of: botId) { replyingTo = nil }
         .onChange(of: replyingTo?.id) { if replyingTo != nil { focused = true } }
         .onDisappear { dictation.stop() }
         .onChange(of: draft) { _, value in
-            model.setComposerDraft(value, for: botId)
+            model.setComposerDraft(value, for: draftKey)
             // Starting a command: list the computer's skills again.
             if value == "/" { Task { await model.refreshPlugins() } }
         }
         .onChange(of: model.routineDrafts[botId]) { _, value in
-            guard let value else { return }
+            // A request for a routine belongs in the chat.
+            guard let value, artifact == nil else { return }
             draft = draft.isEmpty ? value : draft + "\n" + value
             model.routineDrafts.removeValue(forKey: botId)
             focused = true
@@ -408,7 +413,8 @@ struct Composer: View {
         if files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
         guard canSend else { return }
         withAnimation(Motion.reduced(Motion.conversation, reduceMotion)) {
-            guard model.sendComposerDraft(to: botId, replyTo: replyingTo, files: files) else { return }
+            guard model.sendComposerDraft(to: botId, draft: draftKey, replyTo: artifact?.replyQuote ?? replyingTo?.replyQuote,
+                                          files: files) else { return }
             draft = ""
             files = []
             replyingTo = nil

@@ -1,3 +1,5 @@
+import type { ArtifactCard } from './artifacts'
+
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
 
@@ -65,6 +67,8 @@ export interface Bot {
   sharedMemory: boolean
   /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
   harnessMemory: boolean | null
+  /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
+  harnessMemoryShared: boolean
   /** Moves whenever memory changes, so an open memory screen fetches it again. */
   memoryRev: number
   autoName: boolean
@@ -120,6 +124,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     createdBy: raw.createdBy ?? null,
     sharedMemory: raw.sharedMemory ?? raw.managedWorkspace ?? false,
     harnessMemory: raw.harnessMemory ?? null,
+    harnessMemoryShared: raw.harnessMemoryShared ?? false,
     memoryRev: raw.memoryRev ?? 0,
     autoName: raw.autoName ?? false,
     createdAt,
@@ -216,6 +221,8 @@ export interface ReplyQuote {
   author: string
   /** Its text (or file names), at most 500 characters. */
   text: string
+  /** The artifact, when it quotes an artifact card: the message is about that artifact. */
+  artifact?: string
 }
 
 export interface Attachment {
@@ -297,6 +304,9 @@ export interface EntryData {
   clientNonce?: string
   title?: string
   toolKind?: string
+  /** tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
+   * working steps; a host older than 2.25.0 leaves it out, and the steps then leave out the call too. */
+  bookkeeping?: boolean
   output?: string
   diffs?: FileDiff[]
   locations?: { path: string; line?: number }[]
@@ -316,6 +326,8 @@ export interface EntryData {
   botReactions?: BotReaction[]
   attachments?: Attachment[]
   files?: SharedFile[]
+  /** agent: an artifact the bot published (or updated) in this turn. */
+  artifact?: ArtifactCard
   callSeconds?: number
 }
 
@@ -357,7 +369,9 @@ export function isReplyable(e: Entry): boolean {
 /** The quote a sending reply shows until the computer's own replaces it. */
 export function quoteOf(e: Entry): ReplyQuote {
   const names = [...(e.data.attachments ?? []), ...(e.data.files ?? [])].map((f) => f.name).join(', ')
-  return { id: e.id, author: e.kind === 'user' ? 'user' : (e.data.author ?? e.botId), text: (e.data.text || names).slice(0, 500) }
+  const quote: ReplyQuote = { id: e.id, author: e.kind === 'user' ? 'user' : (e.data.author ?? e.botId), text: (e.data.text || names).slice(0, 500) }
+  if (e.data.artifact) quote.artifact = e.data.artifact.id
+  return quote
 }
 
 export interface UsageWindow {

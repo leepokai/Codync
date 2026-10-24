@@ -45,10 +45,16 @@ quotes itself.
 ## How a group answers (`host/src/chat/group.rs`, Grok Bot's design)
 
 - The user's message starts a *room turn* in the group: up to 3 rounds, 10 replies in all.
-- Who answers each round: the members @-mentioned (full name, name without spaces, or first
-  word; `@all` / `@everyone`) or replied to since the user's last message, or everyone if none
-  is. A reply to a member's message counts like `@`-mentioning it. Members speak one at a
-  time; each round starts one member later.
+- Who answers the first round: the members the user @-mentioned (full name, name without
+  spaces, or first word; `@all` / `@everyone`) or replied to, or everyone if none is. A reply to
+  a member's message counts like `@`-mentioning it.
+- Who answers a later round: only the members another member @-mentioned in this room turn
+  (a member's `@all` / `@everyone`: all the others) and who haven't spoken or been asked since
+  (one that passed after seeing the mention isn't asked again). Nobody named,
+  and the room turn ends after the round: a member brings a teammate in by naming it, and a
+  `(pass)` costs no extra rounds. Members speak one at a time; each round starts one member later.
+- `message_bot` is refused in a room turn (its reply would go to the member's own chat); members
+  @-mention each other instead ([bot collaboration](bot-collaboration.md)).
 - A group's `description` ("About") tells its members what the room is for.
 - A member runs the turn in its **own main session** (its history is unified across chats),
   told who's in the room and what was said since it last spoke there, framed as

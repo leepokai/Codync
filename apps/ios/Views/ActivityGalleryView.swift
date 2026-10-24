@@ -98,7 +98,7 @@ struct ActivityGalleryView: View {
 
     private func explanation(_ form: BotActivityPreview.Form) -> some View {
         let detail = switch form {
-        case .lockScreen: "The bot in its mood, its current step in the state's color, the running time and a thinking orb. When the bot needs you, Review opens the request."
+        case .lockScreen: "The bot in its mood, its current step in the state's color, the running time, a thinking orb and its progress. When the bot needs you, Review opens the request."
         case .compact: "The bot and a thinking orb beside the camera, outlined in the state's color. The orb becomes a check or warning when the task ends."
         case .minimal: "Just the orb when iOS displays multiple Live Activities."
         case .expanded: "Touch and hold the Dynamic Island for the current step and the running time, or Review when the bot needs you. Tap to open the conversation."

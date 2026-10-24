@@ -44,6 +44,10 @@ data class AppState(
     val busy: Set<String> = emptySet(),
     val historyComplete: Set<String> = emptySet(),
     val routines: Map<String, RoutineListing> = emptyMap(),
+    /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
+    val artifacts: ArtifactCache = ArtifactCache(),
+    /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */
+    val library: Map<String, List<LibraryItem>> = emptyMap(),
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */

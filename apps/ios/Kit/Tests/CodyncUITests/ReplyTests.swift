@@ -40,7 +40,7 @@ private func message(_ id: String, kind: String, final: Bool? = nil, text: Strin
     #expect(await until { store.connection == .online })
 
     store.setComposerDraft("Why?", for: "b1")
-    #expect(store.sendComposerDraft(to: "b1", replyTo: message("a", kind: "agent", final: true)))
+    #expect(store.sendComposerDraft(to: "b1", replyTo: message("a", kind: "agent", final: true).replyQuote))
     #expect(store.chat("b1").last?.data.replyTo?.id == "a")
     #expect(store.composerDraft(for: "b1").isEmpty)
     #expect(await until { await fake.replyTos == ["a"] })

@@ -43,8 +43,8 @@ import kotlinx.coroutines.launch
         saving = true; error = null
         scope.launch {
             try {
-                val connector = installed?.let { known -> store.installedConnectors().firstOrNull { it.id == known.id } ?: known }
-                    ?: store.installConnector(item, choice, values).also { installed = it; values = emptyMap() }
+                // The host keeps the connector a try saved unless new values or another way to run it come in.
+                val connector = store.installConnector(item, choice, values).also { installed = it; values = emptyMap() }
                 if (connector.needsSignIn) {
                     // The store finishes a chat's request itself once the sign-in comes back.
                     signingIn = true
@@ -59,7 +59,8 @@ import kotlinx.coroutines.launch
     }
     // Nothing to fill in: it adds itself.
     LaunchedEffect(item.name) { if (item.options.size == 1 && item.options[0].inputs.isEmpty()) install() }
-    val ready = installed != null || option?.complete(values) == true
+    // After a try that failed, Add with nothing typed tries the connector it saved again.
+    val ready = option?.complete(values) == true || (installed != null && values.values.all { it.isEmpty() })
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader("Add connector") {
             if (saving) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }

@@ -274,12 +274,14 @@ struct EmptyState: View {
 struct PageHeader<Trailing: View>: View {
     let title: String
     var pushed = false
+    var icon: String?
     let trailing: Trailing
     @Environment(\.dismiss) private var pop
 
-    init(_ title: String, pushed: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+    init(_ title: String, pushed: Bool = false, icon: String? = nil, @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.pushed = pushed
+        self.icon = icon
         self.trailing = trailing()
     }
 
@@ -288,25 +290,37 @@ struct PageHeader<Trailing: View>: View {
             ScreenHeader {
                 BackButton { pop() }
             } title: {
-                Text(L10n.tr(title)).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                headerTitle
             } trailing: {
                 trailing
             }
         } else {
-            ModalHeader(title) { trailing }
+            ModalHeader { headerTitle } trailing: { trailing }
         }
     }
 }
 
+private extension PageHeader {
+    var headerTitle: some View {
+        HStack(spacing: 8) {
+            if let icon {
+                Image(systemName: icon).font(.title2).accessibilityHidden(true)
+            }
+            Text(L10n.tr(title)).font(.body.weight(.semibold)).lineLimit(1)
+        }
+        .foregroundStyle(Palette.text)
+    }
+}
+
 extension PageHeader where Trailing == EmptyView {
-    init(_ title: String, pushed: Bool = false) { self.init(title, pushed: pushed) { EmptyView() } }
+    init(_ title: String, pushed: Bool = false, icon: String? = nil) { self.init(title, pushed: pushed, icon: icon) { EmptyView() } }
 }
 
 extension View {
     /// Tops a screen with its `PageHeader` in place of the system navigation bar.
-    func page(_ title: String, pushed: Bool = false) -> some View {
+    func page(_ title: String, pushed: Bool = false, icon: String? = nil) -> some View {
         VStack(spacing: 0) {
-            PageHeader(title, pushed: pushed)
+            PageHeader(title, pushed: pushed, icon: icon)
             self
         }
         .background(Palette.background)

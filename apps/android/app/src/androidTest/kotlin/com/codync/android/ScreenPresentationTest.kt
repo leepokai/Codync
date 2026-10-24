@@ -37,12 +37,12 @@ class ScreenPresentationTest {
         compose.onNodeWithContentDescription("Switch account").performClick()
         compose.onNodeWithText("Account").assertIsDisplayed()
         snapshot("account-sheet")
-        compose.onNodeWithText("Computers").performClick()
-        compose.onNodeWithText("Computers & settings").assertIsDisplayed()
+        compose.onNodeWithText("Computers & settings").performClick()
+        compose.onNodeWithText("Pair a computer").performScrollTo().assertIsDisplayed()
         back()
-        compose.onNodeWithText("Computers & settings").assertDoesNotExist()
+        compose.onNodeWithText("Pair a computer").assertDoesNotExist()
         compose.onNodeWithText("Account").assertIsDisplayed()
-        compose.onNodeWithText("Computers").performClick()
+        compose.onNodeWithText("Computers & settings").performClick()
         compose.onNodeWithText("Pair a computer").performScrollTo().performClick()
         compose.onNodeWithText("Install Codync", substring = true).assertIsDisplayed()
         back()
@@ -56,19 +56,31 @@ class ScreenPresentationTest {
     }
 
     @Test fun closingTheEditorDropsItsDraftAndANewGenerationRetiresIt() {
-        val state = mutableStateOf(fixture().copy(selectedBot = bot.id, historyComplete = setOf(bot.id)))
+        val state = mutableStateOf(fixture())
         compose.setContent { Hosted { CodyncApp(state.value, viewModel()) } }
-        compose.chatAction("Edit profile")
+        compose.rosterAction(bot.name, "Edit profile")
         compose.onNodeWithText("Settings").assertIsDisplayed()
         compose.onNodeWithContentDescription("Save").assertIsNotEnabled()
         compose.onNode(hasSetTextAction() and hasText(bot.name)).performTextReplacement("Discard this draft")
         snapshot("bot-settings-sheet")
         compose.onNodeWithContentDescription("Close").performClick()
         compose.onNodeWithText("Settings").assertDoesNotExist()
-        compose.chatAction("Edit profile")
+        compose.rosterAction(bot.name, "Edit profile")
         compose.onNode(hasSetTextAction() and hasText(bot.name)).assertIsDisplayed()
         compose.runOnUiThread { state.value = state.value.copy(generation = state.value.generation + 1) }
         compose.onNodeWithText("Settings").assertDoesNotExist()
+    }
+
+    @Test fun onlyABotsTouchAndHoldMenuStartsANewSession() {
+        val group = Bot("presentation-group", "Crew", kind = "group", members = listOf(bot.id))
+        compose.setContent { Hosted { CodyncApp(fixture().copy(bots = listOf(bot, group)), viewModel()) } }
+        compose.rosterAction(bot.name, "New session")
+        compose.onNodeWithText("Start a new session?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Start a new session?").assertDoesNotExist()
+        compose.rosterActions(group.name)
+        compose.onNodeWithText("Edit group").assertIsDisplayed()
+        compose.onNodeWithText("New session").assertDoesNotExist()
     }
 
     @Test fun largeTextKeepsSettingsActionsAndCompactOptionsWithinTheSheet() {

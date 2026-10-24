@@ -125,8 +125,14 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     let mut used = clines.get(first).map_or(0, |l| w(l));
     if draft.text.is_empty() {
         // The apps' wording.
-        let placeholder = if app.pick.is_some() {
-            "j k pick · ↵ reply · 1–6 react · f save files · c copy · esc".to_owned()
+        let placeholder = if let Some(pick) = &app.pick {
+            let artifact = app.lane(&b.id).iter().any(|e| &e.id == pick && e.artifact().is_some());
+            if artifact {
+                "j k pick · o open in the browser · f save as HTML · ↵ reply · 1–6 react · c copy · esc"
+            } else {
+                "j k pick · ↵ reply · 1–6 react · f save files · c copy · esc"
+            }
+            .to_owned()
         } else if app.reply.is_some() {
             tr("Reply…").into_owned()
         } else if b.group {

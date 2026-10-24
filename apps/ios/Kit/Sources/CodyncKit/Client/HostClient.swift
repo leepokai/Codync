@@ -7,6 +7,8 @@ public enum HostEvent: Sendable {
     case entry(Entry)
     case usage(Usage)
     case screen(ScreenState)
+    /// An artifact published or renamed (live only: the catch-up doesn't repeat them).
+    case artifact(Artifact)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -96,6 +98,7 @@ public struct HostClient: Sendable {
         struct EntryWrap: Decodable { var entry: Entry }
         struct UsageWrap: Decodable { var usage: Usage }
         struct ScreenWrap: Decodable { var screen: ScreenState }
+        struct ArtifactWrap: Decodable { var artifact: Artifact }
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
@@ -114,6 +117,9 @@ public struct HostClient: Sendable {
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
         case "screen":
             return (try? d.decode(ScreenWrap.self, from: data)).map { .screen($0.screen) }
+        case "artifact":
+            // Not worth a rewind: the catch-up has no artifacts, and the list fetches them anyway.
+            return (try? d.decode(ArtifactWrap.self, from: data)).map { .artifact($0.artifact) }
         case "resync":
             return .resync
         default:

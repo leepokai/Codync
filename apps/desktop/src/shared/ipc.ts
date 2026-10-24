@@ -60,7 +60,7 @@ export interface TraySummary {
   textSize: number
   usageIconStyle: 'character' | 'original'
   /** The menu bar is a system menu, so the main process translates its labels from this. */
-  script: 'hans' | 'hant' | null
+  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es'
 }
 
 /** Things the tray menu (or the app menu) asks the window to do. */
@@ -206,6 +206,12 @@ export interface CodyncBridge {
     install(): void
     setAutoCheck(on: boolean): void
     setAutoDownload(on: boolean): void
+  }
+  /** Artifacts shown in a frame of their own (`main/artifacts.ts`). */
+  artifacts: {
+    /** Makes `codync-artifact://<id>` serve this HTML. */
+    show(id: string, html: Uint8Array): Promise<void>
+    openInBrowser(id: string, html: Uint8Array): Promise<void>
   }
   files: {
     begin(file: SharedFile): Promise<string | null>

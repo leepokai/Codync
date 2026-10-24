@@ -13,6 +13,18 @@ pub use remote::serve_remote;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
+/// ACP `McpServer` for `codync-host mcp <args…> --port <port>`. Its env names the data directory, where the token
+/// is: some agents start MCP servers with a filtered environment (Hermes keeps only PATH, HOME and a few more), so a
+/// custom `CODYNC_HOME` wouldn't reach the server otherwise.
+pub fn acp_server(name: &str, exe: &std::path::Path, args: &[&str], port: u16) -> Value {
+    let port = port.to_string();
+    let args: Vec<&str> = ["mcp"].into_iter().chain(args.iter().copied()).chain(["--port", &port]).collect();
+    json!({
+        "name": name, "command": exe, "args": args,
+        "env": [{"name": "CODYNC_HOME", "value": crate::service::data_dir()}],
+    })
+}
+
 #[derive(Clone, Copy)]
 pub enum Server {
     Chat,
@@ -37,7 +49,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     let token: Arc<str> = token.trim().into();
     let bot: Arc<str> = bot.into();
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    // Requests run side by side (an ask_bot can take minutes); their replies share stdout.
+    // Requests run side by side (a manage approval can take minutes); their replies share stdout.
     let (replies, mut outbox) = mpsc::unbounded_channel::<Value>();
     tokio::spawn(async move {
         let mut out = tokio::io::stdout();
@@ -59,6 +71,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         Server::Chat => {
             let mut tools = crate::chat::outbox::tools();
             if let Some(list) = tools.as_array_mut() {
+                list.extend(crate::chat::artifacts::tools());
                 list.extend(crate::chat::profile::tools());
                 list.extend(crate::chat::fallbacks::tools());
                 list.push(crate::chat::reactions::tool());
@@ -144,7 +157,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Routines => ("routineCall", Duration::from_secs(30)),
         Server::Computer => ("computerCall", Duration::from_secs(60)),
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
-        Server::Team => ("teamCall", crate::chat::team::ASK_TIMEOUT + Duration::from_secs(30)),
+        Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_secs(120)),
         Server::Composio => ("composioCall", Duration::from_secs(120)),

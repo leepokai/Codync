@@ -2,7 +2,7 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Modifier, Style};
 
 use super::super::app::{ACTIONS, Action, App, Click, FILTERS, GotoItem, Mark};
 use super::super::l10n::tr;
@@ -70,28 +70,16 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                 let room = inner.width.saturating_sub(47);
                 put(buf, inner.x + 47, y, room, &truncate(&pv, usize::from(room)), ps.patch(base));
             }
+            GotoItem::Unhide(id) => {
+                let style = action_row(buf, inner, list_top, &mut y, &mut shown_actions, sel);
+                let name = app.bots.get(id).map_or("", |b| b.name.as_str());
+                put(buf, inner.x + 2, y, inner.width, &format!("{} {name}", tr("Unhide")), style);
+            }
             GotoItem::Action(a) => {
-                if !shown_actions {
-                    shown_actions = true;
-                    if y > list_top {
-                        y += 1;
-                    }
-                    put(
-                        buf,
-                        inner.x,
-                        y,
-                        inner.width,
-                        tr("ACTIONS").as_ref(),
-                        t.dim.patch(t.panel).add_modifier(Modifier::BOLD),
-                    );
-                    y += 1;
-                }
-                if sel {
-                    restyle(buf, Rect::new(inner.x - 1, y, inner.width + 2, 1), t.sel);
-                }
+                let style = action_row(buf, inner, list_top, &mut y, &mut shown_actions, sel);
                 if let Some((label, key, _)) = ACTIONS.iter().find(|x| x.2 == *a) {
                     let shown = tr(label);
-                    put(buf, inner.x + 2, y, inner.width, &shown, if sel { t.bold } else { t.secondary }.patch(base));
+                    put(buf, inner.x + 2, y, inner.width, &shown, style);
                     let language = super::super::l10n::language_title();
                     let hint = match (a, app.analytics) {
                         (Action::Analytics, Some(true)) => "on",
@@ -132,4 +120,24 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
         "↵ open   tab filter   ↑↓ move   esc close",
         t.dim.patch(t.panel),
     );
+}
+
+/// Starts an ACTIONS row: the section's title above the first one, the selection behind it.
+/// Returns the label's style.
+fn action_row(buf: &mut Buffer, inner: Rect, list_top: u16, y: &mut u16, titled: &mut bool, sel: bool) -> Style {
+    let t = theme();
+    if !*titled {
+        *titled = true;
+        if *y > list_top {
+            *y += 1;
+        }
+        put(buf, inner.x, *y, inner.width, tr("ACTIONS").as_ref(), t.dim.patch(t.panel).add_modifier(Modifier::BOLD));
+        *y += 1;
+    }
+    if sel {
+        restyle(buf, Rect::new(inner.x - 1, *y, inner.width + 2, 1), t.sel);
+        t.bold.patch(t.sel)
+    } else {
+        t.secondary.patch(t.panel)
+    }
 }

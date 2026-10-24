@@ -4,6 +4,7 @@ A hands-free call with one bot or group from the iPhone, Android or desktop chat
 On Linux the desktop app offers only the cloud engines (on-device speech is macOS only). The terminal
 UI has no calls (no audio stack); it shows the "Voice chat · 00:16" notice like every client.
 The bot is the same agent on the computer; the call only changes how you talk to it.
+On iOS, [Open Live Mode in Shortcuts](ios-shortcuts.md) can select a bot and start this call directly.
 
 ## On-device voice
 

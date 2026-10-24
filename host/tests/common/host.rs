@@ -74,6 +74,34 @@ impl Host {
         self.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
     }
 
+    /// The event stream (its catch-up, then live events), each event as it arrives.
+    pub async fn events(&self) -> tokio::sync::mpsc::UnboundedReceiver<Value> {
+        use futures::StreamExt as _;
+        let response = reqwest::Client::new()
+            .get(format!("{}/events?client=test", self.base))
+            .bearer_auth(&self.token)
+            .send()
+            .await
+            .unwrap();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let (mut body, mut buf) = (response.bytes_stream(), String::new());
+            while let Some(Ok(chunk)) = body.next().await {
+                buf.push_str(&String::from_utf8_lossy(&chunk));
+                while let Some(i) = buf.find('\n') {
+                    let line: String = buf.drain(..=i).collect();
+                    if let Some(data) = line.trim_end().strip_prefix("data:")
+                        && let Ok(event) = serde_json::from_str(data.trim_start())
+                        && tx.send(event).is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+        });
+        rx
+    }
+
     /// What a client holds after catching up (see `common::snapshot`).
     pub async fn snapshot(&self) -> Value {
         super::snapshot(&self.base, &self.token).await

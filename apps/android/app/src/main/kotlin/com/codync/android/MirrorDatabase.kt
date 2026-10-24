@@ -84,7 +84,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
-            MirrorEvent.Resync, MirrorEvent.Ignored -> Unit
+            // Artifacts live in memory (`AppStore.receiveArtifacts`).
+            MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged -> Unit
         }
     }
 

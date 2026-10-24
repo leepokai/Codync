@@ -10,6 +10,7 @@ import {
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 
 /** How a client reaches a host API. Only loopback today: the computer's own host or an SSH tunnel. */
 export type HostRoute = 'loopback' | 'direct' | 'relay'
@@ -66,6 +67,8 @@ export type HostEvent =
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
   | { type: 'usage'; usage: Usage }
+  /** An artifact was published, updated or renamed (not part of catch-up: apps fetch the `library` when they show it). */
+  | { type: 'artifact'; artifact: Artifact }
   | { type: 'screen'; screen: ScreenState }
   | { type: 'accessRequests'; requests: AccessRequest[] }
   | { type: 'cloud'; cloud: CloudStatus }
@@ -103,6 +106,10 @@ export function parseEvent(line: string): HostEvent | null {
     }
     case 'usage':
       return raw.usage ? { type, usage: raw.usage as Usage } : null
+    case 'artifact': {
+      const artifact = raw.artifact as Artifact | undefined
+      return artifact && typeof artifact.id === 'string' && typeof artifact.botId === 'string' ? { type, artifact } : null
+    }
     case 'screen': {
       const screen = normalizeScreen(raw.screen as ScreenState | undefined)
       return screen ? { type, screen } : null
@@ -122,6 +129,18 @@ export function parseEvent(line: string): HostEvent | null {
 export class HostClient {
   readFile(entryId: string, fileId: string, offset: number): Promise<{ data: string; size: number }> {
     return this.call('readFile', { entryId, fileId, offset })
+  }
+
+  library(botId: string): Promise<{ items: LibraryItem[] }> {
+    return this.call('library', { botId })
+  }
+
+  readArtifact(botId: string, artifactId: string, offset: number): Promise<ArtifactChunk> {
+    return this.call('readArtifact', { botId, artifactId, offset })
+  }
+
+  renameArtifact(botId: string, artifactId: string, title: string): Promise<{ artifact: Artifact }> {
+    return this.call('renameArtifact', { botId, artifactId, title })
   }
 
   constructor(readonly transport: HostTransport) {}

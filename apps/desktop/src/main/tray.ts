@@ -8,7 +8,7 @@ import { setShowInDock, showInDock } from './dock'
 import { identity } from './environment'
 import { islandSupported, type Island } from './island'
 import { islandLabel } from '../shared/island'
-import { systemScript, translate } from '../renderer/lib/l10n'
+import { resolvedLanguage, translate } from '../renderer/lib/l10n'
 import { launchAtLogin, setLaunchAtLogin } from './login-item'
 
 interface Deps {
@@ -58,9 +58,7 @@ export class Tray {
 
   /** Menu-bar labels are a system menu, so they translate here. Slots are filled after lookup. */
   private tr(text: string) {
-    // A summary's null script is English. Only a menu drawn before the first summary follows the computer.
-    const script = this.summary ? this.summary.script : systemScript(app.getLocale())
-    const preference = script === 'hant' ? 'zh-Hant' : script === 'hans' ? 'zh' : 'en'
+    const preference = this.summary?.language ?? resolvedLanguage('system', app.getLocale())
     return translate(text, preference, 'en')
   }
 

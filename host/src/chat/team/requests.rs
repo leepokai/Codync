@@ -1,31 +1,33 @@
-//! Admission, capacity and the wait graph for bot requests.
+//! Admission, capacity and the hop limit for bot messages.
 
 use crate::LockExt;
 use anyhow::{Result, bail};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Mutex;
-use tokio::sync::watch;
 
-use super::{BotRequest, MAX_PENDING_MESSAGES};
+use super::MAX_PENDING_MESSAGES;
 
 const MAX_REQUEST_HOPS: u8 = 8;
 pub(super) const MAX_PENDING_MESSAGES_PER_SENDER: usize = 16;
 
-pub(super) struct Request {
-    from: String,
-    to: String,
-    cancel: watch::Sender<bool>,
-}
-
-/// The wait graph includes queued requests, not only running recipients.
-/// Reserving an edge and checking for cycles happen under the same lock.
+/// Nothing waits on a message, so there is no wait graph: capacity and the chain's hop count
+/// bound what bots can start.
 #[derive(Default)]
 pub struct Requests(pub(super) Mutex<RequestState>);
 
+/// A running turn, as bot messages see it.
+#[derive(Clone, Copy)]
+pub enum Turn {
+    /// A turn in the bot's own chat, `hops` handoffs into a chain (0 for the user's own turn).
+    Chat(u8),
+    /// Answering another bot's request: the answer goes back in its reply, so it messages no one.
+    Request,
+}
+
 #[derive(Default)]
 pub(super) struct RequestState {
-    pub(super) pending: HashMap<String, Request>,
-    pub(super) active: HashMap<String, u8>,
+    /// Bots in a turn.
+    pub(super) active: HashMap<String, Turn>,
     pub(super) messages: usize,
     pub(super) messages_by_sender: HashMap<String, usize>,
 }
@@ -57,62 +59,30 @@ impl Requests {
         }
     }
 
-    pub(super) fn begin(&self, id: &str, from: &str, to: &str) -> Result<(watch::Receiver<bool>, u8)> {
-        let mut state = self.0.locked();
-        let hops = state.next_hop(from)?;
-        let requests = &mut state.pending;
-        if from == to {
-            bail!("a bot cannot ask itself");
-        }
-        if requests.len() >= 64 {
-            bail!("too many pending bot requests");
-        }
-        if requests.values().any(|r| r.from == from && r.to == to) {
-            bail!("already waiting for this bot");
-        }
-        let mut pending = vec![to];
-        let mut seen = HashSet::new();
-        while let Some(bot) = pending.pop() {
-            if bot == from {
-                bail!("this request would make bots wait for each other; finish the current request first");
-            }
-            if seen.insert(bot) {
-                pending.extend(requests.values().filter(|r| r.from == bot).map(|r| r.to.as_str()));
-            }
-        }
-        let (cancel, rx) = watch::channel(false);
-        requests.insert(id.to_owned(), Request { from: from.to_owned(), to: to.to_owned(), cancel });
-        Ok((rx, hops))
+    pub fn start_turn(&self, bot: &str, turn: Turn) {
+        self.0.locked().active.insert(bot.to_owned(), turn);
     }
 
-    pub fn cancel_from(&self, bot: &str) {
-        let mut state = self.0.locked();
-        state.active.remove(bot);
-        for request in state.pending.values().filter(|r| r.from == bot) {
-            request.cancel.send_replace(true);
-        }
-    }
-
-    pub fn start_turn(&self, bot: &str, request: Option<&BotRequest>) {
-        self.0.locked().active.insert(bot.to_owned(), request.map_or(0, |r| r.hops));
-    }
-
-    pub fn cancel_bot(&self, bot: &str) {
-        let mut state = self.0.locked();
-        state.active.remove(bot);
-        for request in state.pending.values().filter(|r| r.from == bot || r.to == bot) {
-            request.cancel.send_replace(true);
-        }
+    /// `bot`'s turn ended (or it was deleted): it can't send more until its next turn.
+    pub fn end_turn(&self, bot: &str) {
+        self.0.locked().active.remove(bot);
     }
 }
 
 impl RequestState {
     fn next_hop(&self, from: &str) -> Result<u8> {
-        let hops = *self.active.get(from).ok_or_else(|| anyhow::anyhow!("the requesting bot is no longer working"))?;
-        if hops >= MAX_REQUEST_HOPS {
-            bail!("bot request hop limit ({MAX_REQUEST_HOPS}) reached; ask the user before starting another chain");
+        match self.active.get(from) {
+            None => bail!("the requesting bot is no longer working"),
+            Some(Turn::Request) => {
+                bail!(
+                    "message_bot isn't available while answering another bot's request: say what you need in your reply"
+                )
+            }
+            Some(&Turn::Chat(hops)) if hops >= MAX_REQUEST_HOPS => {
+                bail!("bot request hop limit ({MAX_REQUEST_HOPS}) reached; ask the user before starting another chain")
+            }
+            Some(&Turn::Chat(hops)) => Ok(hops + 1),
         }
-        Ok(hops + 1)
     }
 }
 
@@ -121,35 +91,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exhausted_chain_rejects_messages_and_asks_without_reserving_capacity() {
+    fn exhausted_chain_rejects_messages_without_reserving_capacity() {
         let requests = Requests::default();
-        requests.0.locked().active.insert("a".into(), MAX_REQUEST_HOPS);
+        requests.start_turn("a", Turn::Chat(MAX_REQUEST_HOPS));
         let message = requests.reserve_message("a");
         assert!(message.unwrap_err().to_string().contains("hop limit"));
-        let ask = requests.begin("ask", "a", "b");
-        assert!(ask.unwrap_err().to_string().contains("hop limit"));
-        let state = requests.0.locked();
-        assert_eq!(state.messages, 0);
-        assert!(state.pending.is_empty());
-        drop(state);
-        requests.start_turn("a", None);
+        assert_eq!(requests.0.locked().messages, 0);
+        requests.start_turn("a", Turn::Chat(0));
         assert_eq!(requests.reserve_message("a").unwrap(), 1);
     }
 
     #[test]
     fn last_allowed_handoff_is_admitted() {
         let requests = Requests::default();
-        requests.0.locked().active.insert("a".into(), MAX_REQUEST_HOPS - 1);
+        requests.start_turn("a", Turn::Chat(MAX_REQUEST_HOPS - 1));
         assert_eq!(requests.reserve_message("a").unwrap(), MAX_REQUEST_HOPS);
-        let (_, hops) = requests.begin("ask", "a", "b").unwrap();
-        assert_eq!(hops, MAX_REQUEST_HOPS);
+    }
+
+    #[test]
+    fn a_bot_answering_a_request_cannot_send() {
+        let requests = Requests::default();
+        requests.start_turn("a", Turn::Request);
+        assert!(requests.reserve_message("a").unwrap_err().to_string().contains("answering another bot's request"));
+        assert_eq!(requests.0.locked().messages, 0);
+    }
+
+    #[test]
+    fn a_bot_outside_a_turn_cannot_send() {
+        let requests = Requests::default();
+        assert!(requests.reserve_message("a").unwrap_err().to_string().contains("no longer working"));
+        requests.start_turn("a", Turn::Chat(0));
+        requests.end_turn("a");
+        assert!(requests.reserve_message("a").is_err());
     }
 
     #[test]
     fn sender_quota_leaves_capacity_for_other_bots() {
         let requests = Requests::default();
         for bot in ["a", "b"] {
-            requests.start_turn(bot, None);
+            requests.start_turn(bot, Turn::Chat(0));
         }
         for _ in 0..MAX_PENDING_MESSAGES_PER_SENDER {
             requests.reserve_message("a").unwrap();
@@ -158,8 +138,6 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("from this bot (limit 16)"));
         assert_eq!(requests.0.locked().messages, MAX_PENDING_MESSAGES_PER_SENDER);
         requests.reserve_message("b").unwrap();
-        // Ask capacity is independent of message quotas.
-        requests.begin("ask", "a", "b").unwrap();
         requests.release_message("a");
         requests.reserve_message("a").unwrap();
         for _ in 0..MAX_PENDING_MESSAGES_PER_SENDER {
@@ -175,13 +153,13 @@ mod tests {
     fn global_capacity_still_bounds_messages_from_multiple_senders() {
         let requests = Requests::default();
         for bot in ["a", "b", "c", "d"] {
-            requests.start_turn(bot, None);
+            requests.start_turn(bot, Turn::Chat(0));
             for _ in 0..MAX_PENDING_MESSAGES_PER_SENDER {
                 requests.reserve_message(bot).unwrap();
             }
         }
         assert_eq!(requests.0.locked().messages, MAX_PENDING_MESSAGES);
-        requests.start_turn("e", None);
+        requests.start_turn("e", Turn::Chat(0));
         let result = requests.reserve_message("e");
         assert_eq!(result.unwrap_err().to_string(), "too many pending bot messages");
         assert!(!requests.0.locked().messages_by_sender.contains_key("e"));
@@ -193,7 +171,7 @@ mod tests {
     #[test]
     fn concurrent_reservations_cannot_exceed_the_sender_quota() {
         let requests = Requests::default();
-        requests.start_turn("a", None);
+        requests.start_turn("a", Turn::Chat(0));
         let barrier = std::sync::Barrier::new(MAX_PENDING_MESSAGES);
         let admitted = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..MAX_PENDING_MESSAGES)

@@ -13,7 +13,7 @@ struct FileDownloadCard: View {
             Image(systemName: AttachmentIcon.symbol(file.name)).font(.system(size: 24)).foregroundStyle(Palette.secondary)
             VStack(alignment: .leading, spacing: 3) {
                 Text(file.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(2)
-                Text(detail(state)).font(.caption2).foregroundStyle(Palette.secondary)
+                Text(Self.detail(state, size: file.size)).font(.caption2).foregroundStyle(Palette.secondary)
             }
             Spacer(minLength: 0)
             Button {
@@ -36,13 +36,27 @@ struct FileDownloadCard: View {
         if case .downloading = state { return true }
         return false
     }
-    private func detail(_ state: FileDownloads.State?) -> String {
-        let size = ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file)
+    /// The size, or how the download is going.
+    static func detail(_ state: FileDownloads.State?, size bytes: Int64) -> String {
+        let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
         switch state {
         case .downloading(let received): return "\(ByteCountFormatter.string(fromByteCount: received, countStyle: .file)) of \(size)"
         case .failed(let message): return "\(message) Tap to retry."
         case .saved: return "\(size) · Downloaded"
         case nil: return size
+        }
+    }
+}
+
+extension View {
+    /// The share sheet for a file of this chat once it's downloaded (`FileDownloads.export`). Off (`active`) while
+    /// a sheet over this view presents it instead.
+    func fileExportSheet(_ model: BotStore, botId: String, active: Bool = true) -> some View {
+        codyncSheet(item: Binding<FileDownloads.Export?>(get: {
+            guard active, let item = model.fileDownloads.export, item.botId == botId else { return nil }
+            return item
+        }, set: { if $0 == nil { model.fileDownloads.dismissExport() } })) { item in
+            FileExportSheet(url: item.url) { model.fileDownloads.dismissExport() }
         }
     }
 }

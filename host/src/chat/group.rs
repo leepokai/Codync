@@ -4,10 +4,12 @@
 //! transcript, but no agent. When the user writes, the group runs a *room turn*:
 //! up to [`MAX_ROUNDS`] rounds in which the members answer one at a time, each in
 //! its **own** session (a member's history is unified across its chats), told
-//! what was said since it last spoke. Everyone answers unless the new messages
-//! @-mention someone; a member with nothing to add says `(pass)`, and a round
-//! where nobody speaks ends the turn. A newer message in the same lane (or Stop)
-//! moves the lane's epoch, which ends a running room turn before its next speaker.
+//! what was said since it last spoke. In the first round everyone answers unless
+//! the user @-mentions someone; later rounds only ask the members another member
+//! @-mentioned and who haven't spoken or been asked since. A member with nothing
+//! to add says `(pass)`, and a round where nobody speaks ends the turn. A newer
+//! message in the same lane (or Stop) moves the lane's epoch, which ends a running
+//! room turn before its next speaker.
 
 use crate::LockExt;
 use crate::agent::bot::{Cmd, NoticeStyle};
@@ -17,9 +19,12 @@ use crate::store::{BotConfig, BotKind, Entry, EntryKind, Lane, Store};
 use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::oneshot;
 
 const MAX_ROUNDS: usize = 3;
+/// A member's turn that runs longer counts as a pass.
+const MEMBER_TIMEOUT: Duration = Duration::from_secs(600);
 /// Replies per room turn, across all rounds.
 const MAX_REPLIES: usize = 10;
 /// Room lines a member is shown per turn.
@@ -119,11 +124,14 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
     let mut last_reply: Option<(String, String, String)> = None;
     // Members busy elsewhere: their turn waits in their queue, and they answer on their own once free.
     let mut later: Vec<String> = vec![];
+    // The newest message each member was shown when last asked: what it passed on, it has seen.
+    let mut asked: HashMap<String, i64> = HashMap::new();
     'rounds: for round in 0..MAX_ROUNDS {
         let group = group(hub, group_id)?;
         let members = members(hub, &group);
         let since_user = since_last_user_message(hub, lane)?;
-        let mut speakers = responders(&members, &since_user);
+        let mut speakers =
+            if round == 0 { responders(&members, &since_user) } else { cited(&members, &since_user, &asked) };
         // Each round starts one member later, so the same bot doesn't always speak first.
         if !speakers.is_empty() {
             let offset = round % speakers.len();
@@ -142,6 +150,7 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
                 continue;
             }
             let (prompt, shown) = ask(hub, &group, &members, member, lane)?;
+            asked.insert(member.id.clone(), shown);
             let (reply, answer) = oneshot::channel();
             let busy = busy_elsewhere(hub, &member.id, lane);
             let turn = GroupTurn { lane: lane.clone(), prompt, shown, epoch, late: busy, reply };
@@ -159,7 +168,7 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
                 continue;
             }
             // A failed, cancelled or overdue member turn counts as a pass; its error shows in the room.
-            if let Ok(Ok(Ok(Some(text)))) = tokio::time::timeout(crate::chat::team::ASK_TIMEOUT, answer).await {
+            if let Ok(Ok(Ok(Some(text)))) = tokio::time::timeout(MEMBER_TIMEOUT, answer).await {
                 spoke += 1;
                 replies += 1;
                 last_reply = Some((member.id.clone(), member.name.clone(), text));
@@ -241,17 +250,49 @@ fn since_last_user_message(hub: &Hub, lane: &Lane) -> Result<Vec<Entry>> {
     Ok(recent[start..].to_vec())
 }
 
-/// Who answers: the members @-mentioned or replied to since the user's last message, or
+/// Who answers the user: the members @-mentioned or replied to since the user's last message, or
 /// everyone when nobody (or `@all` / `@everyone`) is.
 fn responders<'a>(members: &'a [BotConfig], messages: &[Entry]) -> Vec<&'a BotConfig> {
     let texts: Vec<&str> = messages.iter().filter_map(|e| e.data["text"].as_str()).collect();
-    let everyone = texts.iter().any(|t| mentions(t, "all") || mentions(t, "everyone"));
+    let everyone = texts.iter().any(|t| names_everyone(t));
     let replied = |m: &BotConfig| messages.iter().any(|e| e.data["replyTo"]["author"] == m.id.as_str());
-    let named: Vec<&BotConfig> = members
-        .iter()
-        .filter(|m| replied(m) || texts.iter().any(|t| handles(&m.name).iter().any(|h| mentions(t, h))))
-        .collect();
+    let named: Vec<&BotConfig> = members.iter().filter(|m| replied(m) || texts.iter().any(|t| names(t, m))).collect();
     if everyone || named.is_empty() { members.iter().collect() } else { named }
+}
+
+/// Who answers in a later round: the members another member @-mentioned since the user's last
+/// message (`@all` / `@everyone`: all the others) and who haven't spoken or been `asked` since.
+/// Nobody, and the room turn ends: a member pulls a teammate in by naming it.
+fn cited<'a>(members: &'a [BotConfig], messages: &[Entry], asked: &HashMap<String, i64>) -> Vec<&'a BotConfig> {
+    let mut cited_at: HashMap<&str, i64> = HashMap::new();
+    // The newest message each member answered or passed on.
+    let mut seen: HashMap<&str, i64> = asked.iter().map(|(id, seq)| (id.as_str(), *seq)).collect();
+    for e in messages.iter().filter(|e| e.kind == EntryKind::Agent.as_str()) {
+        let Some(author) = e.data["author"].as_str() else { continue };
+        let at = seen.entry(author).or_default();
+        *at = (*at).max(e.seq);
+        let text = e.data["text"].as_str().unwrap_or_default();
+        let everyone = names_everyone(text);
+        for member in members.iter().filter(|m| m.id != author) {
+            if everyone || names(text, member) {
+                cited_at.insert(&member.id, e.seq);
+            }
+        }
+    }
+    let pending = |m: &&BotConfig| {
+        cited_at.get(m.id.as_str()).is_some_and(|cited| seen.get(m.id.as_str()).is_none_or(|seen| seen < cited))
+    };
+    members.iter().filter(pending).collect()
+}
+
+/// `@all` or `@everyone` in `text`.
+fn names_everyone(text: &str) -> bool {
+    mentions(text, "all") || mentions(text, "everyone")
+}
+
+/// `member` @-mentioned in `text`.
+fn names(text: &str, member: &BotConfig) -> bool {
+    handles(&member.name).iter().any(|h| mentions(text, h))
 }
 
 /// Ways to @-mention a bot: its full name, without spaces, or its first word (lowercased).
@@ -297,8 +338,9 @@ fn member_prompt(hub: &Hub, group: &BotConfig, members: &[BotConfig], me: &BotCo
     }
     out.push(format!(
         "You have your full toolkit here. Do the work first, then answer: your final reply of this turn is \
-         the one message the room sees. Keep it short and conversational. @-mention another participant only \
-         when you need them to act. If you have nothing new worth adding, reply exactly \"{PASS}\". Never \
+         the one message the room sees. Keep it short and conversational. After this round, only the \
+         participants someone @-mentions answer again: @-mention another participant when you need their \
+         answer or action, and only then. If you have nothing new worth adding, reply exactly \"{PASS}\". Never \
          reveal private one-on-one context. Reactions are rare: react(emoji, to) only where a person would, \
          never to a question or a request, `to` naming whose newest message (\"user\" or a participant). With \
          nothing to add, a reaction and \"{PASS}\" agrees without a message."

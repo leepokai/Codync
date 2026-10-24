@@ -44,11 +44,16 @@ import kotlinx.coroutines.withContext
             else AttachmentCard(file)
         }
     }
-    CodyncSheet(viewing, { viewing = null }) { file ->
+    AttachmentImageSheet(viewing, botId, state, store) { viewing = null }
+}
+
+/** A sent image full size, in a sheet while `file` is set. */
+@Composable internal fun AttachmentImageSheet(file: Attachment?, botId: String, state: AppState, store: AppStore, dismiss: () -> Unit) {
+    CodyncSheet(file, dismiss) { shown ->
         Column(Modifier.fillMaxSize().background(Palette.background)) {
-            ModalHeader(file.name)
+            ModalHeader(shown.name)
             Box(Modifier.weight(1f).padding(12.dp), contentAlignment = Alignment.Center) {
-                AttachmentImage(file, botId, 4096, state, store, Modifier.fillMaxSize())
+                AttachmentImage(shown, botId, 4096, state, store, Modifier.fillMaxSize())
             }
         }
     }
@@ -66,7 +71,8 @@ import kotlinx.coroutines.withContext
 }
 
 /** A sent image, fetched from the computer once and then read from the cache; a placeholder until then. */
-@Composable private fun AttachmentImage(file: Attachment, botId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier) {
+@Composable internal fun AttachmentImage(file: Attachment, botId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier,
+    scale: ContentScale = ContentScale.Fit) {
     var image by remember(file.id, maxPixels) { mutableStateOf<ImageBitmap?>(null) }
     // Retried whenever the link changes: an image the computer couldn't send stays a placeholder, as on iOS.
     LaunchedEffect(file.id, maxPixels, state.actualConnection) {
@@ -78,7 +84,7 @@ import kotlinx.coroutines.withContext
         catch (_: Exception) { /* The placeholder stays; the next link change tries again. */ }
     }
     val bitmap = image
-    if (bitmap != null) Image(bitmap, contentDescription = null, modifier = modifier, contentScale = ContentScale.Fit)
+    if (bitmap != null) Image(bitmap, contentDescription = null, modifier = modifier, contentScale = scale)
     else Box(modifier.size(160.dp, 120.dp).clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser), contentAlignment = Alignment.Center) {
         Symbol("photo", size = 20.dp, tint = Palette.tertiary)
     }

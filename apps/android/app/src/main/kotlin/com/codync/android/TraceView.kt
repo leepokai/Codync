@@ -59,8 +59,14 @@ import kotlinx.serialization.json.jsonPrimitive
 internal fun runningTurn(entries: List<Entry>, working: Boolean): Long? =
     if (working) entries.filter { it.status != "queued" }.maxOfOrNull { it.turn } else null
 
+/** What the running turn has done so far, in order: the steps the working indicator unfolds. */
+internal fun workingSteps(entries: List<Entry>): List<Entry> {
+    val turn = runningTurn(entries, working = true)
+    return entries.filter { it.turn == turn && it.isWorkingStep }
+}
+
 /** The running turn's thoughts start `unfolded`, so its reasoning reads as it comes in. */
-@Composable private fun TraceRow(entry: Entry, unfolded: Boolean) {
+@Composable internal fun TraceRow(entry: Entry, unfolded: Boolean) {
     val d = entry.data
     var expanded by rememberSaveable { mutableStateOf(unfolded) }
     when (entry.kind) {

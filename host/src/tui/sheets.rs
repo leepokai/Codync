@@ -10,7 +10,9 @@ use ratatui::style::{Modifier, Style};
 use crate::tui::l10n::tr;
 use serde_json::Value;
 
+mod library_view;
 mod memory_view;
+pub use library_view::draw as library;
 pub use memory_view::draw as memory;
 
 use super::app::{App, Editor};

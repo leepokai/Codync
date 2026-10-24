@@ -11,14 +11,26 @@ If you made the change with Claude Code, also run the `after-change` workflow
 (`.claude/workflows/after-change.js`) from the change's worktree and paste its final report.
 -->
 
-## What's New
+## What's New: iPhone
 
 <!--
-Shown on the App Store when this PR ships in an iOS release. One bullet per user-visible
-iOS change, in both languages. Leave the bullets empty for changes iPhone users can't see
-(host, Linux, CI, docs); a section for the version in apps/ios/WhatsNew.md takes precedence; a release with
+Store notes, one section per phone app: iPhone goes to the App Store when this PR ships in an
+iOS release, Android to Google Play when it ships in an Android release. One bullet per change
+that app's users can see, in both languages. Leave a section's bullets empty when its users
+can't see the change (host, desktop, CI, docs, or only the other phone app). A section for the
+version in apps/ios/WhatsNew.md or apps/android/WhatsNew.md takes precedence; a release with
 neither gets a generic "Bug fixes and improvements".
 -->
+
+### zh-Hant
+
+-
+
+### en-US
+
+-
+
+## What's New: Android
 
 ### zh-Hant
 

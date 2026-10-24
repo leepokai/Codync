@@ -83,6 +83,15 @@ impl Mark {
     }
 }
 
+/// The harness's own memory as the bot's Memory screen shows it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OwnMemory {
+    /// Codync can turn it off: kept on, or off.
+    Switch(bool),
+    /// One memory for all the harness's sessions that Codync can't turn off (`own_memory::shared`).
+    Shared,
+}
+
 #[derive(Clone, Debug)]
 #[allow(clippy::struct_excessive_bools, reason = "mirrors the host's bot JSON")]
 pub struct Bot {
@@ -114,8 +123,8 @@ pub struct Bot {
     /// The bot that created this one; `None` when the user did.
     pub created_by: Option<String>,
     pub created_at: i64,
-    /// The harness's own memory kept on beside Codync's; `None` where it has no switch.
-    pub harness_memory: Option<bool>,
+    /// The harness's own memory beside Codync's; `None` where the screen says nothing about it.
+    pub harness_memory: Option<OwnMemory>,
     /// Agents that carry on, in order, when its own can't answer (`agent::fallback`).
     pub fallbacks: Vec<crate::store::Fallback>,
     /// The bot may set its own fallbacks.
@@ -300,7 +309,10 @@ impl Bot {
             manage_team: v["manageTeam"].as_bool(),
             created_by: v["createdBy"].as_str().map(str::to_owned),
             created_at: v["createdAt"].as_i64().unwrap_or(0),
-            harness_memory: v["harnessMemory"].as_bool(),
+            harness_memory: v["harnessMemory"]
+                .as_bool()
+                .map(OwnMemory::Switch)
+                .or_else(|| (v["harnessMemoryShared"] == true).then_some(OwnMemory::Shared)),
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
@@ -328,6 +340,11 @@ impl Bot {
     /// Agent `agent`'s rest, while it lasts at `now`.
     pub fn rests(&self, agent: &str, now: i64) -> Option<&Rest> {
         self.resting.iter().find(|r| r.agent == agent && r.until > now)
+    }
+
+    /// A turn is running: working, or waiting on the user.
+    pub fn busy(&self) -> bool {
+        matches!(self.status, Status::Working | Status::NeedsInput)
     }
 
     /// Whether the running turn talks in this chat.
@@ -424,6 +441,18 @@ impl Entry {
         self.kind == Kind::Agent && self.data["final"].as_bool().unwrap_or(false)
     }
 
+    /// A step the working line unfolds: thinking, narration, a tool call or a plan, never the bot's bookkeeping
+    /// (nor a call an older host didn't flag either way).
+    pub fn is_working_step(&self) -> bool {
+        match self.kind {
+            Kind::Thought => !self.text().trim().is_empty(),
+            Kind::Agent => !self.is_final() && !crate::chat::group::is_pass(self.text()),
+            Kind::Tool => self.data["bookkeeping"] == false,
+            Kind::Plan => true,
+            _ => false,
+        }
+    }
+
     /// A message the user can answer with a reply: theirs, or a final reply (the host checks too).
     pub fn takes_reply(&self) -> bool {
         self.kind == Kind::User || self.is_final()
@@ -437,6 +466,11 @@ impl Entry {
     /// What the chat shows as a message: the user's, and each turn's final reply.
     pub fn is_message(&self) -> bool {
         self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
+    }
+
+    /// An artifact card's artifact id (`docs/features/artifacts.md`): `o` opens it, `f` saves it.
+    pub fn artifact(&self) -> Option<&str> {
+        if self.is_final() { self.data["artifact"]["id"].as_str() } else { None }
     }
 
     /// A line that folds away a longer text: a handoff (`o` shows it).

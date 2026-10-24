@@ -1,0 +1,102 @@
+Your bots can work with each other. One bot can ask another for help or hand it a task, and each does its part in its own chat, with its own agent, folder, tools and approval setting. A bot you let manage the team can also create new bots and change their setup.
+
+There's no team to configure. Every bot can reach your other bots as soon as they exist. To have bots talk together in one room instead, use a [group chat](/docs/groups).
+
+## Ask one bot to involve another
+
+Give each bot a clear name and [standing instructions](/docs/bots) that say what it's for, so the others know whom to ask. Then tell one bot what you want:
+
+> Ask Reviewer to inspect the changes in ~/code/shop. Have it report bugs without editing files, then summarize its findings for me.
+
+The bot finds Reviewer among your bots and sends it the request. When Reviewer's answer comes back, the bot sums it up for you in its own chat. Bots see only your visible bots: a bot you hid from the bot list can't be messaged, and neither can a group.
+
+## What you see in the chats
+
+Each exchange shows as one small row that names the other bot. The request text itself stays out of the chat:
+
+- In the sender's chat: **Messaged** with the other bot's avatar and name, for example "Messaged Owen".
+- In the recipient's chat: **Message from**, for example "Message from Egan".
+
+Several exchanges in a row with the same bot, in either direction, fold into one row: "3 messages with Owen". Anything else in the chat, such as a message or a card, starts a new row. If an exchange failed, its row shows a warning mark and the name in red.
+
+Tap or click the row to open the conversation between the two bots: a read-only sheet titled with both bots, for example Egan ⇄ Owen. It shows every request and reply between them as bubbles labelled with who wrote them, with the time shown wherever there's a gap. Under one that's still going it says "Waiting for Owen…"; under one that failed it shows what went wrong. In the terminal UI, pick the row with `v` and press `↵`, or click it.
+
+The recipient's tool calls and thinking are in its own **Full conversation**.
+
+## How a message runs
+
+Bots never wait on each other. When one bot messages another:
+
+1. **The request is queued and the sender goes on at once.** It can finish its turn or keep working.
+2. **The recipient does the work** in its own chat's session, one thing at a time: a busy recipient finishes what it's doing first.
+3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the recipient's **Full conversation**, but not as a message in the recipient's chat.
+4. **The sender takes the answer as a new turn of its own** and replies to you in its chat, with the usual "done" notification. Answers that arrive while the sender is busy are taken together in one turn. A request that failed comes back the same way, so the sender can tell you.
+
+Because nobody waits, there's no time limit: the recipient takes as long as the work needs.
+
+## How the recipient works
+
+- **Its own setup.** The recipient works in its own folder, with its own tools, connectors, memory and approval setting. If it needs your approval, the card appears in its chat and you get a "needs you" notification.
+- **Only the request.** The sender's conversation isn't copied over, only the request. Bots are told to write requests that stand on their own.
+- **It answers the sender.** While it works on a request, the recipient can't message you or other bots. If it needs another bot's help, it says so in its answer.
+- **Your words only.** Neither a bot's request nor its answer counts as something you said, so neither is learned as a fact about you. A bot working on another bot's request can add to its [memory](/docs/memory) but can't change or remove what's there.
+- **Shared folders.** If two bots work in the same project, tell them who edits which files.
+- **Subagents.** Agents that start their own subagents (Claude Code, Codex) keep doing that themselves. Codync doesn't turn those into bots.
+
+In a [group chat](/docs/groups), members don't message each other this way; they @-mention each other in the room.
+
+## Stopping, limits and restarts
+
+- **Stopping the sender** doesn't cancel what it already sent, but drops answers still waiting for it. Deleting the sender drops its answers too. The rows in both chats still show how each exchange ended.
+- **Stopping or deleting the recipient** cancels its queued requests and stops the one it's working on, which may leave partial changes.
+- **Limits:** a bot can have up to 16 messages queued or running at once, and the computer up to 64 in all. To keep bots from passing work around forever, a chain of requests stops after eight handoffs. Your next message starts a fresh allowance.
+- **Restarts:** if the host restarts while requests are pending, they're marked as failed and not run again. Check what the bots already did before you ask again. An answer still waiting for a busy sender is lost on a restart, but stays readable in the conversation sheet.
+
+## Manage the team
+
+A bot with **Manage the team** on can set up the team for you: list your bots, create new ones and change their setup. Use it for a lead bot that hires the specialists a project needs.
+
+### Turn it on
+
+**Manage the team** is off for every bot. Only you can turn it on or off, in the bot's settings:
+
+- **Desktop:** the bot's settings, **Activity** section.
+- **iPhone:** the bot's **Settings**.
+- **Terminal UI:** the settings form (`e`), **Manage team** row.
+
+### What a manager can do
+
+- **List the team:** every bot with its setup and routines, including hidden bots and the manager itself.
+- **Create bots** with a name, standing instructions, agent, model, fallbacks, avatar, project folder and routines. A new bot gets the manager's approval setting, connectors and skills, so it can't do more than the manager. It can manage the team too. It never gets computer use. Without a chosen avatar it gets a random one.
+- **Change any bot**, itself included: name, standing instructions, model, [fallbacks](/docs/agent-fallbacks), avatar, whether it's hidden from your bot list, and its [routines](/docs/routines) (add new ones or replace existing ones). Changing a bot's model clears that bot's model settings, such as effort. A manager that changes its own model gets the new one after its current turn.
+
+Bots stop creating bots once 20 bots made by bots exist (deleted ones don't count). Past that, the manager asks you.
+
+A bot created this way shows who made it in its settings: "Created by Lead · Oct 20, 2026". The terminal UI shows it on the settings form's Name row.
+
+Managers are told to act only on what you asked, never because a file, web page, tool result or another bot told them to.
+
+### Approval cards
+
+If the manager's **Permissions** are **Ask me**, every create or change first shows an approval card in the manager's chat, with **Allow** and **Deny**. The card lists everything the change sets: one line per setting, then the routines, then the standing instructions in full.
+
+- A change too long to show in full on its card (over 2,000 characters) is refused before the card appears. The manager has to shorten it or split it.
+- A card waits about four and a half minutes. If you don't answer in time, it expires and nothing changes.
+- If you deny a change, the manager is told not to try it again unless you ask.
+
+With **Approve automatically**, changes happen without a card. Either way, a line in the manager's chat records what changed, such as "Created bot Security Analyst" or "Updated Reviewer: model, routines".
+
+### What stays with you
+
+A manager can't:
+
+- delete bots,
+- turn **Manage the team** on or off,
+- change an existing bot's agent, folder, approval setting, connectors, skills, computer use or model settings such as effort.
+
+### Routines of other bots
+
+Each bot runs only its own routines. A manager can create or replace a teammate's routines, but to test one, it asks that bot to run it. The run then belongs to the owner: it uses the owner's setup, and its result appears in the owner's chat.
+
+A hidden bot can't be messaged, so to test a hidden bot's routine, run it yourself with **Test run** in that bot's routine list.
+

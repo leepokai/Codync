@@ -81,7 +81,7 @@ import kotlinx.coroutines.launch
         snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
         list.scrollToEnd(animated = false)
     }
-    // The thinking disclosure can grow without a new chat entry. Follow its measured size,
+    // The working steps can grow without a new chat entry. Follow their measured size,
     // not its offset (scrolling itself changes offsets), and always yield to the reader.
     LaunchedEffect(list) {
         snapshotFlow {

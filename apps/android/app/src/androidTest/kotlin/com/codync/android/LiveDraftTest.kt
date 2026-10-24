@@ -32,7 +32,7 @@ class LiveDraftTest {
         compose.runOnUiThread { store.openBot(bot.id) }
         // A cached roster can arrive before startup finishes; wait for the chat itself.
         compose.waitUntil(10_000) { !store.state.value.loading && store.state.value.rosterLoaded &&
-            compose.onAllNodes(chatMenu).fetchSemanticsNodes().size == 1 }
+            compose.onAllNodes(chatTitle).fetchSemanticsNodes().size == 1 }
         val mainText = "Android unsent draft acceptance"
         if (phase == "prepare") {
             compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }

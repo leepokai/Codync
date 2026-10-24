@@ -98,6 +98,10 @@ const bridge: CodyncBridge = {
     setAutoCheck: (on) => ipcRenderer.send('updates:autoCheck', on),
     setAutoDownload: (on) => ipcRenderer.send('updates:autoDownload', on),
   },
+  artifacts: {
+    show: (id, html) => ipcRenderer.invoke('artifacts:show', id, html),
+    openInBrowser: (id, html) => ipcRenderer.invoke('artifacts:openInBrowser', id, html),
+  },
   files: {
     begin: (file) => ipcRenderer.invoke('files:begin', file),
     write: (id, offset, data) => ipcRenderer.invoke('files:write', id, offset, data),

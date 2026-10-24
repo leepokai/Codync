@@ -1,3 +1,5 @@
+import Observation
+import Synchronization
 import Foundation
 import Testing
 @testable import CodyncKit
@@ -119,5 +121,39 @@ struct AppLanguageTests {
         #expect(L10n.tr("Nothing installed", preference: .zh, systemIsChinese: false) == "还没有安装")
         #expect(L10n.tr("No setup needed.", preference: .zh, systemIsChinese: false) == "无需设置。")
         #expect(L10n.tr("FORWARDXU-MC3 · Connected", preference: .zh, systemIsChinese: false) == "FORWARDXU-MC3 · Connected")
+    }
+}
+
+
+extension AppLanguageTests {
+@Test func additionalLanguagesResolveRegionsAndLoadBundledCatalogs() {
+    for language in [AppLanguage.ja, .ko, .fr, .de, .es] {
+        #expect(AppLanguage.resolved(preference: .system, languages: [language.rawValue + "-XX"]) == language)
+        #expect(AppLanguage.resolved(preference: language, languages: ["zh-TW"]) == language)
+        let translated = L10n.tr("Settings", preference: language, systemIsChinese: false)
+        #expect(translated != "Settings")
+        #expect(L10n.tr("Settings", preference: .system, systemIsChinese: false, systemLanguages: [language.rawValue]) == translated)
+        #expect(L10n.tr("An unknown phrase", preference: language) == "An unknown phrase")
+        #expect(AppLanguage.locale(preference: language, systemIsChinese: true).language.languageCode?.identifier == language.rawValue)
+    }
+    #expect(AppLanguage.resolved(preference: .system, languages: ["pt-BR"]) == .en)
+}
+
+}
+
+
+extension AppLanguageTests {
+    @Test func changingLanguageInvalidatesObservedTranslationConsumers() {
+        let store = UserDefaults(suiteName: "language-observation-\(UUID().uuidString)")!
+        let changed = Mutex(false)
+        withObservationTracking {
+            _ = AppLanguage.preference(in: store)
+        } onChange: {
+            changed.withLock { $0 = true }
+        }
+        AppLanguage.setPreference(.ja, in: store)
+        #expect(changed.withLock { $0 })
+        #expect(AppLanguage.preference(in: store) == .ja)
+        store.removeObject(forKey: AppLanguage.storageKey)
     }
 }

@@ -51,6 +51,13 @@ if touches '^apps/desktop/'; then
     (cd "$snapshot/apps/desktop" && npm run typecheck && npm test)
 fi
 
+if touches '^web/'; then
+    staged_copy
+    echo "Checking the user manual (pages compile, links and anchors)..."
+    ln -s "$repo/web/node_modules" "$snapshot/web/node_modules"
+    (cd "$snapshot/web" && npm run check:docs)
+fi
+
 for dir in cloud relay discord; do
     if touches "^(cloud/|relay/|discord/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
         staged_copy

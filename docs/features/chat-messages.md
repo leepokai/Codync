@@ -21,13 +21,13 @@ it has no pointer tooltip or link-opening action.
   needs neither words nor a reaction gets nothing, as in a group.
 - File cards are separate final entries. Sharing a file preserves an intended final text
   reply; a files-only turn uses its filename for the completion summary. See
-  [file attachments](file-attachments.md#files-from-a-bot).
-- Group room turns, `ask_bot` requests and routines reject `send_message` and `send_file`: their reply is the
-  turn's last text, as before (`chat/group.rs`, `chat/team.rs`, `routines`).
-- An `ask_bot` reply stays in the recipient's trace and the request notice; it does
-  not also become a message to the user. The requesting bot uses it to answer the user.
-  Independent `message_bot` turns report to the user in the recipient's main chat, through
-  `send_message` or the final-text fallback, and do not add that report to the request notice.
+  [file attachments](file-attachments.md#files-from-a-bot). Artifact cards (`publish_artifact`) are final entries the
+  same way; see [artifacts](artifacts.md).
+- Group room turns, bot requests (`message_bot`) and routines reject `send_message` and `send_file`: their reply
+  is the turn's last text, as before (`chat/group.rs`, `chat/team.rs`, `routines`).
+- A bot request's reply stays in the recipient's trace and the request notice; it does
+  not also become a message to the user. It goes back to the requesting bot as a turn of its own in
+  that bot's main chat, and that turn's reply is an ordinary message to the user.
 - The rules reach the agent twice: the MCP server's instructions, and the frozen instruction
   snapshot (`chat/context.rs`).
 - The same server has `set_name {name}` and `set_instructions {instructions}` (`host/src/chat/profile.rs`): the
@@ -35,7 +35,7 @@ it has no pointer tooltip or link-opening action.
   settings would, and a notice ("Renamed to …", "Instructions updated") shows it in the main chat. A name set this
   way ends automatic naming. Its `save_skill` writes a skill for the bot, which the user can turn on for others
   ([skills bots write](marketplace.md)).
-- A bot-to-bot exchange (`ask_bot`, `message_bot`) is one compact notice row, "Messaged Owen" /
+- A bot-to-bot exchange (`message_bot`) is one compact notice row, "Messaged Owen" /
   "Message from Egan". Its text lives only in the bot conversation sheet it opens; follow-ups
   are normal bubbles. Consecutive exchanges with the same peer in the main chat (either
   direction, trace entries ignored) collapse into one "3 messages with Owen" row ([bot collaboration](bot-collaboration.md#notice-data)).
@@ -63,13 +63,30 @@ it has no pointer tooltip or link-opening action.
 ## While it works
 
 The working line under the last message shows the bot's activity; composing a `send_message`
-reads as **Typing…** (`activity()` in `agent/bot.rs`). The activity indicator shows an animated orb,
-a short status and elapsed time. It is not interactive and does not expand thinking text.
-Replies arrive as complete messages.
+reads as **Typing…** (`activity()` in `agent/bot/tool_entry.rs`). The activity indicator shows an
+animated orb, a short status and elapsed time, in a pill no wider than an agent bubble whose status
+truncates to one line. Replies arrive as complete messages.
 
-Full conversation remains available from the conversation menu. It contains narration, all
+The pill ends in a chevron, and a tap (click) unfolds the running turn's steps inside it:
+the turn's thinking text, narration (never a `(pass)`), tool calls (MCP tools included) and plan, in order, with each
+tool's output and diffs one more tap away. The pill widens to an agent bubble's width, the steps
+scroll inside it past 280 pt and follow new ones until the reader scrolls up, and each turn starts
+folded; the pill leaves with the turn. The host sets `bookkeeping` on every tool entry: `true` for
+the bot's own bookkeeping (a `send_message` call, a `memory` MCP call, or a call naming a file in a
+memory folder the bot sees), which the steps leave out, as the working line does. A host older than
+2.25.0 sets none, so its tool calls stay out of the steps too. A turn with no steps yet unfolds to
+**Nothing yet.**: some agents send no thinking text, and Claude's arrives only as its thinking ends.
+Claude Code leaves an SDK session's thinking text out unless asked, so Claude bots start with
+summaries shown (`--thinking-display summarized`, through `claudeCode.options.extraArgs` in
+`agent/bot/launch.rs`). Whether Claude thinks stays the user's Claude Code setting; when it does, a
+short thought's summary arrives in one piece when the thinking ends, a long one's in parts.
+
+Full conversation remains available through a message's Show what it did (its touch-and-hold
+menu on the iPhone and Android, its actions on the desktop). It contains narration, all
 thoughts, tools and previous turns, and follows new steps until the reader scrolls up.
-On the terminal, `t` opens Full conversation, and the working line retains the count of steps so far.
+On the terminal, `>` or a click on the working line unfolds the steps under it (their last
+14 lines), `t` opens Full conversation, and the working line keeps the count of steps so far;
+once the turn ends, its last message's `↳ N steps` line counts them the same way.
 
 ## Motion and scrolling
 

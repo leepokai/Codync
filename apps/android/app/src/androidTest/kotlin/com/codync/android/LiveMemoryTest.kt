@@ -27,9 +27,11 @@ class LiveMemoryTest {
             val before = runBlocking { channel.call("history", body("botId" to botId)) }
             val store = ViewModelProvider(compose.activity)[AppStore::class.java]
             compose.waitUntil(30_000) { store.state.value.bots.any { it.id == botId } }
-            assertTrue(store.state.value.bots.single { it.id == botId }.name.startsWith("Android memory acceptance"))
-            compose.runOnUiThread { store.openBot(botId) }
-            compose.chatAction("Edit profile")
+            val name = store.state.value.bots.single { it.id == botId }.name
+            assertTrue(name.startsWith("Android memory acceptance"))
+            // The memory card is in the whole settings form, the roster's Edit profile.
+            compose.runOnUiThread { store.openBot(null) }
+            compose.rosterAction(name, "Edit profile")
             val profile = "Android memory profile acceptance"
             compose.waitUntil(30_000) { compose.onAllNodesWithText(profile).fetchSemanticsNodes().size == 1 }
             compose.onNodeWithText("Android memory history acceptance").performScrollTo().assertIsDisplayed()

@@ -48,6 +48,7 @@ const map: Record<string, IconNode> = {
   'bubble.left.and.bubble.right': L.MessagesSquare,
   calendar: L.Calendar,
   'chart.bar': L.ChartColumn,
+  'chart.bar.doc.horizontal': L.FileChartColumn,
   checklist: L.ListChecks,
   checkmark: L.Check,
   'checkmark.circle': L.CircleCheck,

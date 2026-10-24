@@ -7,9 +7,11 @@ import Testing
     #expect(error.phase == .failed)
     #expect(error.title == "Failed")
     #expect(error.symbol != "checkmark")
+    #expect(error.progressStep == 4)
     let unknown = BotActivityPresentation(status: "new-host-status", activity: "")
     #expect(unknown.phase == .waiting)
     #expect(unknown.symbol != "checkmark")
+    #expect(unknown.progressStep < 4)
 }
 
 @Test func staleActivityStopsPresentingLiveProgress() {

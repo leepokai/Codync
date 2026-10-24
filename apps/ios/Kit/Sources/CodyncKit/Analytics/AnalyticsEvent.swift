@@ -39,6 +39,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Screen: String, Sendable {
         case bots, state, chat, trace, botDetails = "bot_details", memory, routines, marketplace
         case settings, computers, usage, account, pairing, voiceSettings = "voice_settings", remoteScreen = "remote_screen"
+        case library, artifact
     }
 
     public enum NotificationKind: String, Sendable {

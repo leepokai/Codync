@@ -21,7 +21,6 @@ struct SettingsView: View {
     @State private var confirmStartOver = false
     @State private var voice: VoiceTarget?
     @State private var aboutAnalytics = false
-    @AppStorage(AppLanguage.storageKey, store: AppLanguage.defaults) private var appLanguageRaw = AppLanguage.system.rawValue
 
     var body: some View {
         CardForm {
@@ -74,13 +73,7 @@ struct SettingsView: View {
 
             AppearanceSettings()
 
-            CardSection("Language", footer: languageFooter) {
-                ValueRow("App language") {
-                    ChoicePicker(selection: appLanguage, options: AppLanguage.allCases.map {
-                        ($0, AppLanguage.menuTitle($0, preference: appLanguage.wrappedValue, systemIsChinese: AppLanguage.systemIsChinese()))
-                    })
-                }
-            }
+            LanguageSettings()
 
             CardSection("Notifications", footer: "Get a result summary, a request for input, or a failure notice. Notification previews follow your iOS settings.") {
                 Toggle(isOn: $notificationsEnabled) { Text(L10n.tr("Push notifications")) }
@@ -148,7 +141,7 @@ struct SettingsView: View {
             [DialogAction("Start over", destructive: true) { Task { await app.startOver() } }]
         }
         .refreshable { await accounts.refreshCloud() }
-        .page("Computers & settings", pushed: pushed)
+        .page("Computers & settings", pushed: pushed, icon: "gearshape")
         // One screen, named for the way in (as on Android): Accounts → settings, the Computers sheet → computers.
         .tracked(.screenViewed(pushed ? .settings : .computers))
         .task { await accounts.refreshCloud() }
@@ -183,25 +176,6 @@ struct SettingsView: View {
         ), message: accounts.lastError, cancel: "OK", inPlace: true) { [] }
     }
 
-
-    /// Follow system names the script the iPhone is using, so Traditional is a choice of its own.
-    private var languageFooter: String {
-        switch AppLanguage.systemScript() {
-        case .hant:
-            "System language is Traditional Chinese. \"Follow system\" matches the iPhone. You can switch this app to Simplified Chinese or English."
-        case .hans:
-            "System language is Simplified Chinese. \"Follow system\" matches the iPhone. You can switch this app to Traditional Chinese or English."
-        case nil:
-            "System language is English. \"Follow system\" matches the iPhone. You can switch this app to Simplified or Traditional Chinese."
-        }
-    }
-
-    private var appLanguage: Binding<AppLanguage> {
-        Binding(
-            get: { AppLanguage(rawValue: appLanguageRaw) ?? .system },
-            set: { appLanguageRaw = $0.rawValue }
-        )
-    }
 
     private struct VoiceTarget: Identifiable {
         let store: BotStore

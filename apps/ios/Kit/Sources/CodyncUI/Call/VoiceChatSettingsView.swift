@@ -17,7 +17,12 @@ public struct VoiceChatSettingsView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            ModalHeader("Voice chat")
+            ModalHeader {
+                HStack(spacing: 8) {
+                    Image(systemName: "waveform").font(.title2).accessibilityHidden(true)
+                    Text(L10n.tr("Voice chat"))
+                }
+            }
             CardForm {
                 CardSection("Voice", footer: engineFooter) {
                     ValueRow("Engine") {

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import CodyncKit
 @testable import CodyncUI
@@ -73,6 +74,36 @@ import Testing
               data: EntryData(text: id, status: status), createdAt: 0, updatedAt: 0)
     }
     let entries = [entry("u1", turn: 1), entry("t1", turn: 1), entry("q", turn: 2, status: "queued")]
-    #expect(TraceView.runningTurn(entries, working: true) == 1)
-    #expect(TraceView.runningTurn(entries, working: false) == nil)
+    #expect(Entry.runningTurn(entries, working: true) == 1)
+    #expect(Entry.runningTurn(entries, working: false) == nil)
+}
+
+/// The working indicator unfolds the running turn's work, without what the chat or memory already show.
+@Test func workingStepsAreTheRunningTurnsWork() {
+    func entry(_ id: String, _ kind: String, turn: Int64 = 2, text: String? = nil, status: String? = nil,
+               final: Bool? = nil, bookkeeping: Bool? = nil) -> Entry {
+        var data = EntryData(text: text ?? id, status: status)
+        data.final = final
+        data.bookkeeping = bookkeeping
+        return Entry(id: id, seq: 0, botId: "b", rev: 0, kind: kind, turn: turn, data: data, createdAt: 0, updatedAt: 0)
+    }
+    let entries = [
+        entry("old", "tool", turn: 1), entry("u2", "user"), entry("thinking", "thought"), entry("blank", "thought", text: "  "),
+        entry("says", "agent"), entry("terminal", "tool", status: "in_progress", bookkeeping: false),
+        entry("memory", "tool", bookkeeping: true), entry("unflagged", "tool"),
+        entry("plan", "plan"), entry("reply", "agent", final: true), entry("card", "permission"),
+        entry("pass", "agent", text: "(pass)"),
+        entry("q", "user", turn: 3, status: "queued"),
+    ]
+    #expect(Entry.workingSteps(entries).map(\.id) == ["thinking", "says", "terminal", "plan"])
+}
+
+/// The unfolded steps are one scroll view that hugs them and scrolls past its cap.
+@MainActor @Test func aCappedScrollViewHugsItsContentAndScrollsPastTheCap() {
+    func height(_ content: CGFloat) -> CGFloat {
+        UIHostingController(rootView: CappedHeight(max: 280) { ScrollView { Color.clear.frame(height: content) } })
+            .sizeThatFits(in: CGSize(width: 390, height: 2000)).height
+    }
+    #expect(height(100) == 100)
+    #expect(height(1000) == 280)
 }

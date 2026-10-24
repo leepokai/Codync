@@ -1,6 +1,7 @@
 //! Agent → client: `session/update`s, permission requests and streamed text mapped onto entries.
 
 use super::fast_mode::Listing;
+use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
 use crate::hub::BotStatus;
@@ -82,12 +83,13 @@ impl Actor {
                     "locations": u["locations"].clone(),
                 });
                 merge_tool_content(&mut data, &u["content"]);
+                mark_bookkeeping(&self.cfg, &mut data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &data);
-                let title = data["title"].as_str().unwrap_or("Tool").to_owned();
+                let working = activity(&data).to_owned();
                 if let Some(e) = self.add(EntryKind::Tool, turn, data) {
                     self.tools.insert(tool_id, e.id);
                 }
-                self.set_activity(activity(&title));
+                self.set_activity(&working);
             }
             "tool_call_update" => {
                 let tool_id = u["toolCallId"].as_str().unwrap_or_default();
@@ -102,12 +104,12 @@ impl Actor {
                     e.data["locations"] = u["locations"].clone();
                 }
                 merge_tool_content(&mut e.data, &u["content"]);
+                mark_bookkeeping(&self.cfg, &mut e.data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &e.data);
-                let status = e.data["status"].as_str().unwrap_or_default().to_owned();
-                let title = e.data["title"].as_str().unwrap_or_default().to_owned();
+                let working = (e.data["status"] == "in_progress").then(|| activity(&e.data).to_owned());
                 self.hub.set_entry(&entry_id, &e.data);
-                if status == "in_progress" {
-                    self.set_activity(activity(&title));
+                if let Some(working) = working {
+                    self.set_activity(&working);
                 }
             }
             "compaction_update" => {
@@ -278,13 +280,12 @@ impl Actor {
     }
 
     /// A `send_message`: the user's next bubble, in the turn's lane, right away. Only in the
-    /// bot's own chat, including independent messages; a room, an ask or a routine reads
-    /// the turn's reply.
+    /// bot's own chat; a room, a bot request or a routine reads the turn's reply.
     pub(super) fn send_to_user(&mut self, text: String) -> anyhow::Result<()> {
         let Some(turn) = self.turn else { anyhow::bail!("no turn is running") };
-        if self.active_request.as_ref().is_some_and(crate::chat::team::BotRequest::expects_reply) {
+        if self.active_request.is_some() {
             anyhow::bail!(
-                "send_message isn't available in an ask: return your answer to the requesting bot as your final reply"
+                "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there"
             );
         }
         if self.active_group.is_some() || self.active_routine.is_some() {
@@ -372,112 +373,5 @@ impl Actor {
     pub(super) fn close_seg(&mut self) {
         self.flush(true);
         self.seg = Seg::None;
-    }
-}
-
-/// Folds ACP tool-call `content` into `{output, diffs}` on an entry's data.
-pub fn merge_tool_content(data: &mut Value, content: &Value) {
-    let Some(items) = content.as_array() else { return };
-    let mut out = String::new();
-    let mut diffs = vec![];
-    for item in items {
-        match item["type"].as_str() {
-            Some("diff") => {
-                let path = item["path"].as_str().unwrap_or_default();
-                let old = item["oldText"].as_str().unwrap_or_default();
-                let new = item["newText"].as_str().unwrap_or_default();
-                diffs.push(diff_summary(path, old, new));
-            }
-            Some("terminal") => {}
-            _ => {
-                let t = acp::content_text(item);
-                if !t.is_empty() {
-                    if !out.is_empty() {
-                        out.push('\n');
-                    }
-                    out.push_str(&t);
-                }
-            }
-        }
-    }
-    if !out.is_empty() {
-        data["output"] = acp::truncate(&out, 6000).into();
-    }
-    if !diffs.is_empty() {
-        data["diffs"] = diffs.into();
-    }
-}
-
-/// Changed-region summary: trims the common prefix/suffix and reports the middle.
-pub fn diff_summary(path: &str, old: &str, new: &str) -> Value {
-    let a: Vec<&str> = old.lines().collect();
-    let b: Vec<&str> = new.lines().collect();
-    let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
-    let suffix = a[prefix..].iter().rev().zip(b[prefix..].iter().rev()).take_while(|(x, y)| x == y).count();
-    let removed = &a[prefix..a.len() - suffix];
-    let added = &b[prefix..b.len() - suffix];
-    let mut unified = String::new();
-    for (sign, lines) in [('-', removed), ('+', added)] {
-        for l in lines {
-            unified.push(sign);
-            unified.push_str(l);
-            unified.push('\n');
-        }
-    }
-    json!({
-        "path": path,
-        "added": added.len(),
-        "removed": removed.len(),
-        "isNew": old.is_empty(),
-        "startLine": prefix + 1,
-        "patch": acp::truncate(&unified, 6000),
-    })
-}
-
-/// The working line for a tool call: composing a message reads as typing.
-fn activity(title: &str) -> &str {
-    if title.contains("send_message") {
-        "Typing…"
-    } else if ["memory__", "memory.", "bot-memory", "shared-memory"].iter().any(|m| title.contains(m)) {
-        // Memory stays out of the chat, its working line included: the memory settings show it.
-        "Thinking…"
-    } else {
-        title
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn memory_work_reads_as_thinking() {
-        assert_eq!(activity("mcp__chat__send_message"), "Typing…");
-        assert_eq!(activity("mcp__memory__edit_memory"), "Thinking…");
-        assert_eq!(activity("Write /Users/me/.codync/bots/b/bot-memory/trip.md"), "Thinking…");
-        assert_eq!(activity("Terminal"), "Terminal");
-    }
-
-    #[test]
-    fn diff_counts_changed_middle() {
-        let d = diff_summary("f", "a\nb\nc\n", "a\nB\nB2\nc\n");
-        assert_eq!(d["added"], 2);
-        assert_eq!(d["removed"], 1);
-        assert_eq!(d["startLine"], 2);
-        assert_eq!(d["patch"], "-b\n+B\n+B2\n");
-    }
-
-    #[test]
-    fn tool_content_merges_text_and_diffs() {
-        let mut data = json!({"output": "", "diffs": []});
-        merge_tool_content(
-            &mut data,
-            &json!([
-                {"type": "content", "content": {"type": "text", "text": "ok"}},
-                {"type": "diff", "path": "/a.rs", "oldText": "", "newText": "x\n"}
-            ]),
-        );
-        assert_eq!(data["output"], "ok");
-        assert_eq!(data["diffs"][0]["isNew"], true);
     }
 }

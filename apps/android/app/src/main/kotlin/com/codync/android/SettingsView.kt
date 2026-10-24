@@ -72,7 +72,7 @@ import kotlinx.serialization.json.put
     var aboutAnalytics by remember { mutableStateOf(false) }
     LaunchedEffect(state.contextId) { store.refreshCloud() }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        PageHeader("Computers & settings", pop)
+        PageHeader("Computers & settings", pop, icon = "gearshape")
         PullToRefresh(store::refreshComputers, Modifier.weight(1f)) { CardForm {
             CardSection("Computers", if (signedIn) "Computers in your account need your OK on the computer before this phone can use them."
                 else "Each bot runs on its own computer. Sign in to see the computers in your account.") {
@@ -92,7 +92,7 @@ import kotlinx.serialization.json.put
                     Row(Modifier.fillMaxWidth().plainButton(action = pair), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Symbol("qrcode.viewfinder", size = 20.dp, tint = Palette.text)
-                        Text("Pair a computer", style = Type.body, color = Palette.text)
+                        Text(tr("Pair a computer"), style = Type.body, color = Palette.text)
                     }
                 }
             }
@@ -102,7 +102,7 @@ import kotlinx.serialization.json.put
                     Row(Modifier.fillMaxWidth().plainButton { voice = true }, verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Symbol("waveform", size = 20.dp, tint = Palette.text)
-                        Text("Voice and API keys", Modifier.weight(1f), style = Type.body, color = Palette.text)
+                        Text(tr("Voice and API keys"), Modifier.weight(1f), style = Type.body, color = Palette.text)
                         Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
                     }
                 }
@@ -111,15 +111,7 @@ import kotlinx.serialization.json.put
             val setAppLanguage = LocalSetAppLanguage.current
             val systemChinese = LocalSystemChinese.current
             val phrases = LocalPhrases.current
-            val script = systemScript(java.util.Locale.getDefault().toLanguageTag())
-            CardSection("Language", footer = when (script) {
-                ChineseScript.Hant ->
-                    "System language is Traditional Chinese. \"Follow system\" matches the phone. You can switch this app to Simplified Chinese or English."
-                ChineseScript.Hans ->
-                    "System language is Simplified Chinese. \"Follow system\" matches the phone. You can switch this app to Traditional Chinese or English."
-                null ->
-                    "System language is English. \"Follow system\" matches the phone. You can switch this app to Simplified or Traditional Chinese."
-            }) {
+            CardSection("Language", footer = "Choose the language for this device. Unsupported system languages use English.") {
                 row {
                     ValueRow("App language") {
                         ChoicePicker(appLanguage, AppLanguage.entries.map {
@@ -154,7 +146,7 @@ import kotlinx.serialization.json.put
                     Row(Modifier.fillMaxWidth().plainButton(enabled = "session" !in state.busy) { confirmStartOver = true },
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Symbol("arrow.counterclockwise", size = 20.dp, tint = Palette.danger)
-                        Text("Start over", style = Type.body, color = Palette.danger)
+                        Text(tr("Start over"), style = Type.body, color = Palette.danger)
                     }
                 }
             }

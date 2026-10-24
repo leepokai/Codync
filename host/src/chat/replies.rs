@@ -10,19 +10,35 @@ use serde_json::{Value, json};
 /// How much of the answered message's text the reply keeps.
 const QUOTE_BYTES: usize = 500;
 
-/// What `send` stores as `replyTo`: the message answered (`id`, in `chat`), who wrote it (`"user"` or a bot id) and
-/// its text (or its files' names).
+/// What `send` stores as `replyTo`: the message answered (`id`, in `chat`), who wrote it (`"user"` or a bot id), its
+/// text (or its files' names), and the artifact when it's an artifact card.
 pub fn quote(store: &Store, chat: &str, id: &str) -> Result<Value> {
     let e = store.entry(id).filter(|e| e.bot_id == chat).ok_or_else(|| anyhow!("unknown message"))?;
     let user = e.kind == EntryKind::User.as_str();
     ensure!(user || (e.kind == EntryKind::Agent.as_str() && e.data["final"] == true), "only messages take replies");
     let author = if user { "user" } else { e.data["author"].as_str().unwrap_or(chat) };
-    Ok(json!({"id": e.id, "author": author, "text": acp::truncate(message_text(&e.data).trim(), QUOTE_BYTES)}))
+    let mut quote =
+        json!({"id": e.id, "author": author, "text": acp::truncate(message_text(&e.data).trim(), QUOTE_BYTES)});
+    if let Some(artifact) = e.data["artifact"]["id"].as_str() {
+        // Quoted under the artifact's current title: the card's text keeps the one it was published with.
+        if let Some(current) = crate::chat::artifacts::get(store, author, artifact) {
+            quote["text"] = crate::chat::artifacts::card_text(&current.title).into();
+        }
+        quote["artifact"] = artifact.into();
+    }
+    Ok(quote)
 }
 
-/// The note `me` reads before a reply's text: `[Codync: this replies to your message: "…"]`. Coming from
-/// Codync, it stands even when the quoted message is no longer in the agent's session.
+/// The note `me` reads before a reply's text: `[Codync: this replies to your message: "…"]`, or for its own artifact's
+/// card, where that artifact is (`artifacts::note`). Coming from Codync, it stands even when the quoted message is no longer
+/// in the agent's session.
 pub fn note(hub: &Hub, me: &str, reply: &Value) -> Option<String> {
+    if reply["author"] == me
+        && let Some(note) =
+            reply["artifact"].as_str().and_then(|artifact| crate::chat::artifacts::note(&hub.store, me, artifact))
+    {
+        return Some(note);
+    }
     let text = reply["text"].as_str()?.split_whitespace().collect::<Vec<_>>().join(" ");
     let whose = match reply["author"].as_str().unwrap_or_default() {
         "user" => "the user's earlier message".to_owned(),

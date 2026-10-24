@@ -1,0 +1,47 @@
+## What an artifact is
+
+An artifact is a page a bot makes for you to read as a whole or come back to: a report, a plan, a comparison, a tracker or a dashboard. The bot writes it as one HTML file, so it can have tables, charts and scripts of its own. Ask for one ("make me a page that tracks my applications"), and bots also make one on their own when a long answer reads better as a page.
+
+## In the chat
+
+An artifact shows in the bot's chat as a card: the top of the artifact, its title and **Artifact**. Click or tap the card to open it.
+
+The card always shows the newest version, even an older card from before the bot changed it.
+
+## Opening an artifact
+
+The artifact opens full size over the chat:
+
+- **Close artifact** (the X) goes back to the chat.
+- The title at the top renames it: click or tap it, type the new name (**Rename artifact**).
+- **Share artifact**: on the desktop, **Save as HTML** saves the file and **Open in browser** opens it in your default browser. On the iPhone, the share sheet gives you `<title>.html`.
+- Links in an artifact open in your browser. Its scripts run on their own, apart from Codync, and it keeps its own saved state (a tracker's ticks stay ticked).
+- **Terminal UI:** pick the card (`v`), then `o` opens it in your browser and `f` saves `<title>.html` to Downloads.
+
+An artifact can be up to 5 MB.
+
+## Changing an artifact
+
+The box at the bottom of an open artifact, **Message about “title”**, sends the bot a message about this artifact. The bot changes the same artifact instead of making a new one; the open artifact reloads with the new version, and every card for it shows it.
+
+You can also reply to the artifact's card in the chat; it reaches the bot the same way.
+
+An artifact a bot made during a routine run has no card in the chat, so there's no box: ask about it in the chat.
+
+## The Library
+
+Each bot's **Library** holds what was made or shared in its chat, newest first under **Today**, **Yesterday**, **This week** and **Earlier**:
+
+- its artifacts, which open as above; the menu on a row also has **Rename artifact** and the share actions,
+- files the bot shared, which download like their card in the chat,
+- files and images you sent; an image opens full size.
+
+Where to find it:
+
+- **Desktop:** click the bot's name at the top of the chat, then the **Library** tab.
+- **iPhone:** tap the bot's name at the top of the chat, then the **Library** tab.
+- **Terminal UI:** press `L` for the bot's Library tab. `Enter` or `o` opens an artifact in your browser, `f` saves any row to Downloads, and `r` renames an artifact.
+
+The Library looks through the bot's newest 500 messages with files.
+
+Artifacts are kept on your computer, in Codync's data folder. Deleting the bot deletes them.

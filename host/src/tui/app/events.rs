@@ -66,10 +66,14 @@ impl App {
                 self.upsert_bot(&v["bot"]);
                 self.memory_moved(&v["bot"]);
             }
+            Some("artifact") => self.artifact_changed(&v["artifact"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
                 {
+                    if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
+                        self.entry_added(&bot, &e);
+                    }
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }

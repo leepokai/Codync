@@ -39,14 +39,14 @@ class LiveRoutinesTest {
             compose.waitUntil(15_000) { "usage" !in store.state.value.busy }
             assertNull(store.state.value.error)
             compose.runOnUiThread { store.openBot(bot.id) }
-            compose.chatAction("Routines")
-            compose.onNodeWithContentDescription("Ask the bot for a routine").performClick()
+            compose.openChatDetails()
+            compose.onNodeWithContentDescription("Ask the bot for a routine").performScrollTo().performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction() and hasText("I want a routine that ")).fetchSemanticsNodes().size == 1 }
             compose.runOnUiThread { store.editDraft(bot.id, "") }
-            compose.chatAction("Routines")
+            compose.openChatDetails()
             compose.waitUntil(10_000) { "routines:${bot.id}" !in store.state.value.busy && store.state.value.routines[bot.id] != null }
             compose.onNodeWithText("No routines yet. Ask the bot for one, or set it up yourself with +.").assertIsDisplayed()
-            compose.onNodeWithContentDescription("Set up a routine").performClick()
+            compose.onNodeWithContentDescription("Set up a routine").performScrollTo().performClick()
             field(Input.Name).performTextReplacement("Schedule acceptance")
             field(Input.Instruction).performTextReplacement("Report a fake-agent acceptance result")
             field(Input.Cron).performTextReplacement("invalid cron")
@@ -62,7 +62,7 @@ class LiveRoutinesTest {
             // Each row's switch pauses and resumes it.
             toggle("Schedule acceptance").assertIsOn().performClick()
             compose.waitUntil(15_000) { store.state.value.routines.getValue(bot.id).routines.single().enabled == false && "routines:${bot.id}" !in store.state.value.busy }
-            compose.onNodeWithText("Schedule acceptance").performClick()
+            compose.onNodeWithText("Schedule acceptance").performScrollTo().performClick()
             compose.onNodeWithText("Edit routine").assertIsDisplayed()
             field(Input.Name).performTextReplacement("Edited schedule")
             waitEnabled("Save changes")
@@ -83,7 +83,7 @@ class LiveRoutinesTest {
                 put("triggers", triggers); put("enabled", false)
             }) }.jsonObject.getValue("routine").jsonObject
             compose.waitUntil(15_000) { store.state.value.routines.getValue(bot.id).routines.size == 2 && "routines:${bot.id}" !in store.state.value.busy }
-            compose.onNodeWithText("Preserve triggers").performClick()
+            compose.onNodeWithText("Preserve triggers").performScrollTo().performClick()
             field(Input.Name).performTextReplacement("Preserved triggers")
             waitEnabled("Save changes")
             compose.onNodeWithText("Save changes").performClick()
@@ -94,7 +94,7 @@ class LiveRoutinesTest {
             assertFalse(preserved.enabled)
 
             // A new webhook routine stays open on its URL and key.
-            compose.onNodeWithContentDescription("Set up a routine").performClick()
+            compose.onNodeWithContentDescription("Set up a routine").performScrollTo().performClick()
             field(Input.Name).performTextReplacement("Webhook acceptance")
             field(Input.Instruction).performTextReplacement("Report a fake webhook acceptance result")
             compose.onNodeWithContentDescription("When to run: Schedule").performScrollTo().performClick()
@@ -134,7 +134,7 @@ class LiveRoutinesTest {
         compose.waitUntil(10_000) { compose.onAllNodes(inEditor and isEnabled()).fetchSemanticsNodes().size > field.ordinal }
         return compose.onAllNodes(inEditor)[field.ordinal].performScrollTo()
     }
-    private fun toggle(routine: String) = compose.onNode(hasContentDescription(routine) and isToggleable())
+    private fun toggle(routine: String) = compose.onNode(hasContentDescription(routine) and isToggleable()).performScrollTo()
     private fun waitEnabled(label: String) {
         compose.waitUntil(10_000) { compose.onAllNodes(hasText(label) and isEnabled()).fetchSemanticsNodes().size == 1 }
     }

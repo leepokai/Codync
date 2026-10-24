@@ -123,6 +123,9 @@ def verify_routine_tools():
         call("delete_routine", {"id": extra["id"]})
         listed = call("list_routines", {})["routines"]
         assert len(listed) == 1 and listed[0]["name"] == "Edited through MCP"
+        # A routine that isn't this bot's doesn't run: the error says to ask its bot.
+        foreign = rpc("tools/call", {"name": "run_routine", "arguments": {"id": "another-bots-routine"}})
+        assert foreign.get("isError") and "message_bot" in foreign["content"][0]["text"], foreign
         call("run_routine", {"id": identifier_value})
         mcp.stdin.close()
 

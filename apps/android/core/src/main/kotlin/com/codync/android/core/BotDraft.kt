@@ -1,6 +1,7 @@
 package com.codync.android.core
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -44,8 +45,9 @@ data class BotDraft(
         // switch or fallback list must stay out (the host's booleans and lists don't take null).
         return JsonObject(WireJson.encodeToJsonElement(normalized).jsonObject.filterNot { (key, value) -> value == JsonNull && key in UNSET })
     }
-    /** A template carries the bot's setup, not its fallbacks (they name this computer's agents). */
-    fun template(): String = JsonObject(body().filterKeys { it !in setOf("id", "pinned", "hidden", "fallbacks", "selfFallbacks") }).toString()
+    /** A template carries the bot's setup, not its fallbacks (they name this computer's agents): readable JSON, keys sorted as on iOS. */
+    fun template(): String = TemplateJson.encodeToString(JsonObject.serializer(),
+        JsonObject(body().filterKeys { it !in setOf("id", "pinned", "hidden", "fallbacks", "selfFallbacks") }.toSortedMap()))
 
     /**
      * This draft with each field it hasn't changed from [base] (the bot as the form loaded it) taken from [fresh] (the
@@ -61,6 +63,7 @@ data class BotDraft(
         /** A new bot starts with a random face, like iOS. */
         val AVATAR_COLORS = listOf("black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray")
         private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks")
+        private val TemplateJson = Json { prettyPrint = true; prettyPrintIndent = "  " }
         val AVATAR_SHAPES = listOf("blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop")
 
         fun from(bot: Bot): BotDraft = BotDraft(bot.id, bot.name, bot.description, bot.avatarColor, bot.avatarShape,

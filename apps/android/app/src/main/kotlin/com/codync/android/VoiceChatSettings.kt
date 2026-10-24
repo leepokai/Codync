@@ -29,7 +29,11 @@ import kotlinx.coroutines.launch
     var settings by remember { mutableStateOf(VoicePreferences.load(context)) }
     fun change(next: VoiceSettings) { settings = next; store.voiceSettings(next) }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader("Voice chat")
+        ModalHeader({
+            Symbol("waveform", size = 24.dp, tint = Palette.text)
+            Spacer(Modifier.width(8.dp))
+            Text(tr("Voice chat"), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        })
         CardForm {
             val provider = engine
             var speech by remember(provider) { mutableStateOf(provider?.let(choices::speechMode) == true) }

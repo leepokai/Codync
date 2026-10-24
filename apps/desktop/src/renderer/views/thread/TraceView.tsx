@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { isWorkingIn, type Entry, type EntryData } from '@shared/models'
 import { CardSection, Disclosure } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -11,7 +11,8 @@ import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { MarkdownText } from './Markdown'
 import { CodeBox, DiffView } from './PermissionCard'
-import { runningTurn, scrolledToEnd, traceTurns } from './trace-turns'
+import { useFollowEnd } from './follow-end'
+import { runningTurn, traceTurns } from './trace-turns'
 import './trace.css'
 import { useTr } from '../../lib/use-language'
 
@@ -29,20 +30,11 @@ export function TraceView({ botId }: { botId: string }) {
   // The running turn's thoughts start unfolded.
   const bot = store.bots.get(botId)
   const running = runningTurn(all, !!bot && isWorkingIn(bot, botId))
-  const scroller = useRef<HTMLDivElement>(null)
-  // Opens at the end and follows new steps there until the reader scrolls up.
-  const atEnd = useRef(true)
-  useLayoutEffect(() => {
-    const el = scroller.current
-    if (el && atEnd.current) el.scrollTop = el.scrollHeight
-  })
-  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    atEnd.current = scrolledToEnd(e.currentTarget)
-  }
+  const follow = useFollowEnd()
   return (
     <SheetPage>
       <ModalHeader title={tr(`Full conversation`)} />
-      <div ref={scroller} className="thread-scroll" onScroll={onScroll}>
+      <div ref={follow.ref} className="thread-scroll" onScroll={follow.onScroll}>
         <VStack gap={14} className="trace-content">
           {sorted.length === 0 ? <Text tone="tertiary">{tr(`Nothing yet.`)}</Text> : null}
           {sorted.map(([turn, entries]) => (
@@ -74,7 +66,7 @@ function Label({ icon, weight, tone, children }: { icon: React.ReactNode; weight
 }
 
 /** The running turn's thoughts start `unfolded`, so its reasoning reads as it comes in. */
-function TraceRow({ entry, unfolded }: { entry: Entry; unfolded: boolean }) {
+export function TraceRow({ entry, unfolded }: { entry: Entry; unfolded: boolean }) {
   const tr = useTr()
   const [expanded, setExpanded] = useState(unfolded)
   const d = entry.data

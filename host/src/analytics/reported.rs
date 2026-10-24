@@ -147,6 +147,8 @@ pub enum Screen {
     RemoteScreen,
     ComputerAccess,
     Help,
+    Library,
+    Artifact,
     #[serde(other)]
     Other,
 }

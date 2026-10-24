@@ -33,14 +33,15 @@ import com.kyant.shapes.RoundedRectangle
             Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(detail(file, download), style = Type.caption2, color = Palette.secondary)
         }
-        Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry, file) }
+        Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file) }
             .semantics { contentDescription = (if (busy) "Cancel download " else "Download ") + file.name }, contentAlignment = Alignment.Center) {
             Symbol(if (busy) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
         }
     }
 }
 
-private fun detail(file: SharedFile, download: FileDownloadState?): String {
+/** A shared file's size, or how its download goes. */
+internal fun detail(file: SharedFile, download: FileDownloadState?): String {
     val size = formatBytes(file.size)
     return when (download) {
         is FileDownloadState.Downloading -> "${formatBytes(download.received)} of $size"

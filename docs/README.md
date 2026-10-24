@@ -12,6 +12,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Work on the macOS, Linux and Windows desktop app (Electron) | [Desktop app](architecture/desktop-app.md), [desktop styles](guides/desktop-styles.md) |
 | Build, install, restart and run checks | [Development](guides/development.md), [Codync Dev beside production](guides/dev-app.md) |
 | Write or refactor code in any module | [Clean code](guides/clean-code.md) |
+| Change something users see or do (keep the codync.dev manual current) | [User docs](guides/user-docs.md) |
 | Change an iPhone or desktop screen or button | [UI conventions](design/ui-conventions.md) |
 | Change the composer | [Composer behavior and checks](guides/composer.md) |
 | Ship app and host updates | [Updates](guides/updates.md), [client and host compatibility](reference/compatibility.md) |
@@ -37,7 +38,9 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
 - [Voice calls](features/voice-call.md)
+- [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)
+- [Artifacts and the Library](features/artifacts.md)
 - [Remote screen](features/remote-screen.md) and [computer use](features/computer-use.md)
 - [Computer identity and list ordering](features/computer-order.md)
 - [Notch island (desktop)](features/notch-island.md)

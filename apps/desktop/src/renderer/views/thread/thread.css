@@ -237,9 +237,14 @@
   margin-left: 88px;
   max-width: calc(100% - 88px);
 }
+/* The widest an agent bubble or card gets: most of the column, with room for a bubble's actions
+   (resolved against the conversation's container where it's used). */
+:root {
+  --agent-bubble-max: max(80px, min((100cqw + 32px) * 0.8 - 32px, 100cqw - 88px));
+}
 .message.agent .message-body {
   align-items: flex-start;
-  max-width: max(80px, min((100cqw + 32px) * 0.8 - 32px, 100cqw - 88px));
+  max-width: var(--agent-bubble-max);
   margin-right: 88px;
 }
 .bubble {
@@ -349,11 +354,35 @@
   display: flex;
   /* A column stretches the row to the pill's width, so a long activity truncates. */
   flex-direction: column;
+  width: fit-content;
+  max-width: var(--agent-bubble-max);
   padding: 12px;
   border-radius: var(--radius-xl);
   background: var(--bubble-agent);
   text-align: left;
   min-width: 0;
+  /* Unfolding widens the pill to a bubble's width in the same motion that grows it. */
+  interpolate-size: allow-keywords;
+  transition: width var(--layout);
+}
+.working.expanded {
+  width: 100%;
+}
+/* The steps never widen the pill themselves, so folding narrows it while they fold away. */
+.working .reveal {
+  contain: inline-size;
+}
+.working-toggle {
+  display: flex;
+  min-width: 0;
+  text-align: left;
+}
+/* The unfolded steps scroll inside the pill, so a long turn never runs down the chat. */
+.working-steps {
+  max-height: 280px;
+  overflow-y: auto;
+  padding-top: 12px;
+  font-size: var(--text-callout);
 }
 
 .call-overlay {

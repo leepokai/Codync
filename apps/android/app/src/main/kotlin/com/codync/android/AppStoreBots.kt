@@ -30,6 +30,9 @@ fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
     onSaved()
 }
 
+/** A saved bot's settings from its details, saved as they're edited: the chat stays where it is. */
+fun AppStore.saveSettings(draft: BotDraft) = command("updateBot", draft.body(), "settings:" + draft.id)
+
 fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor") {
     val payload = draft.body(state.value.bots)
     val active = ready()
@@ -58,7 +61,8 @@ fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot
     val active = ready()
     active.call("deleteBot", body("botId" to bot.id))
     mutableState.update { it.copy(selectedBot = it.selectedBot.takeUnless { id -> id == bot.id },
-        drafts = it.drafts.filterValues { draft -> draft.botId != bot.id }) }
+        // Its chat's draft and its artifacts' (`artifactDraftKey`).
+        drafts = it.drafts.filterKeys { key -> key != bot.id && !key.startsWith("${bot.id}/") }) }
     persistDrafts()
     onDeleted()
 }

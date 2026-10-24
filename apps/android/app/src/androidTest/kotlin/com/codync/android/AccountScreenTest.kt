@@ -43,7 +43,7 @@ class AccountScreenTest {
         compose.onNodeWithText("Account").assertIsDisplayed()
         val scan = compose.onNodeWithText("Scan a computer's code").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val identity = compose.onNodeWithText(first.email).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val computers = compose.onNodeWithText("Computers").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val computers = compose.onNodeWithText("Computers & settings").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue(scan.bottom < identity.top)
         assertTrue(identity.bottom < computers.top)
         compose.onNodeWithContentDescription(first.email).assertIsSelected().assertIsNotEnabled()
@@ -54,7 +54,7 @@ class AccountScreenTest {
         compose.onNodeWithText("Start over").assertDoesNotExist()
         snapshot("signed-in")
         compose.onNodeWithText("Scan a computer's code").performClick()
-        compose.onNodeWithText("Computers").performClick()
+        compose.onNodeWithText("Computers & settings").performClick()
         compose.onNodeWithContentDescription("Close").performClick()
         assertTrue(scanned && settings && closed)
     }
@@ -95,7 +95,7 @@ class AccountScreenTest {
         compose.onNodeWithText("QR pairing only in this build").assertIsDisplayed()
         compose.onNodeWithText("Continue with Apple").assertDoesNotExist()
         compose.onNodeWithText("Scan a computer's code").assertIsDisplayed()
-        compose.onNodeWithText("Computers").assertIsDisplayed()
+        compose.onNodeWithText("Computers & settings").assertIsDisplayed()
         snapshot("pairing-only")
     }
 

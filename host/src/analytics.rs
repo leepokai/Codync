@@ -87,6 +87,8 @@ pub enum Event {
     SkillInstalled,
     SkillRemoved,
     SkillWritten,
+    /// A bot's `publish_artifact`.
+    ArtifactPublished,
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
@@ -144,6 +146,7 @@ impl Event {
             Self::SkillInstalled => "skill_installed",
             Self::SkillRemoved => "skill_removed",
             Self::SkillWritten => "skill_written",
+            Self::ArtifactPublished => "artifact_published",
             Self::CredentialSaved => "credential_saved",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",

@@ -14,46 +14,30 @@ fun systemScript(tag: String): ChineseScript? {
 }
 
 /** The language of this app's own interface. Chats and bots are not translated. `Zh` stays stored as "zh". */
-enum class AppLanguage {
-    System, Zh, ZhHant, En;
+enum class AppLanguage(val stored: String, val title: String) {
+    System("system", "Follow system"), En("en", "English"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"),
+    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español");
 
-    fun usesChinese(systemIsChinese: Boolean): Boolean = when (this) {
-        Zh, ZhHant -> true
-        En -> false
-        System -> systemIsChinese
+    fun resolved(systemTag: String): AppLanguage {
+        if (this != System) return this
+        val base = systemTag.lowercase().replace('_', '-').substringBefore('-').substringBefore('.')
+        if (base == "zh") return if (systemScript(systemTag) == ChineseScript.Hant) ZhHant else Zh
+        return entries.firstOrNull { it != System && it.stored == base } ?: En
     }
 
-    /** The table this choice reads. A missing Traditional line can fall back to Simplified. */
-    fun resolvedScript(systemTag: String): ChineseScript? = when (this) {
+    fun usesChinese(systemIsChinese: Boolean): Boolean = this == Zh || this == ZhHant || (this == System && systemIsChinese)
+
+    fun resolvedScript(systemTag: String): ChineseScript? = when (resolved(systemTag)) {
         Zh -> ChineseScript.Hans
         ZhHant -> ChineseScript.Hant
-        En -> null
-        System -> systemScript(systemTag)
+        else -> null
     }
 
     companion object {
-        fun fromStored(raw: String?): AppLanguage = when (raw) {
-            "zh", "zh-Hans" -> Zh
-            "zh-Hant" -> ZhHant
-            "en" -> En
-            else -> System
-        }
-
-        fun stored(language: AppLanguage): String = when (language) {
-            System -> "system"
-            Zh -> "zh"
-            ZhHant -> "zh-Hant"
-            En -> "en"
-        }
-
-        /** Language names stay in that language. "Follow system" is translated with the interface. */
+        fun fromStored(raw: String?): AppLanguage = if (raw == "zh-Hans") Zh else entries.firstOrNull { it.stored == raw } ?: System
+        fun stored(language: AppLanguage): String = language.stored
         fun menuTitle(language: AppLanguage, preference: AppLanguage, systemIsChinese: Boolean, phrases: Map<String, String>): String =
-            when (language) {
-                System -> translate("Follow system", preference, systemIsChinese, phrases)
-                Zh -> "简体中文"
-                ZhHant -> "繁體中文"
-                En -> "English"
-            }
+            if (language == System) phrases["Follow system"] ?: "Follow system" else language.title
     }
 }
 
@@ -139,7 +123,7 @@ private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map
 }
 
 fun translate(text: String, preference: AppLanguage, systemIsChinese: Boolean, phrases: Map<String, String>): String {
-    if (!preference.usesChinese(systemIsChinese)) return text
+    if (preference == AppLanguage.En || (preference == AppLanguage.System && !systemIsChinese)) return text
     phrases[text]?.let { return it }
     templated(text, phrases)?.let { return it }
     val trimmed = text.trim()
@@ -149,9 +133,10 @@ fun translate(text: String, preference: AppLanguage, systemIsChinese: Boolean, p
 
 /** Defaults keep source strings, so a test that doesn't provide a language stays in English. */
 val LocalAppLanguage = staticCompositionLocalOf { AppLanguage.System }
+val LocalSystemTag = staticCompositionLocalOf { "en" }
 val LocalSystemChinese = staticCompositionLocalOf { false }
 val LocalPhrases = staticCompositionLocalOf { emptyMap<String, String>() }
 val LocalSetAppLanguage = staticCompositionLocalOf<(AppLanguage) -> Unit> { {} }
 
 @Composable fun tr(text: String): String =
-    translate(text, LocalAppLanguage.current, LocalSystemChinese.current, LocalPhrases.current)
+    translate(text, LocalAppLanguage.current.resolved(LocalSystemTag.current), LocalSystemChinese.current, LocalPhrases.current)

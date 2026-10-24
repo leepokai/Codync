@@ -152,11 +152,20 @@ export class AppModel extends Observable {
 
   /** Every computer's visible bots, computer by computer, each in its roster order. */
   get roster(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => store.roster)
+  }
+
+  /** Every computer's bots hidden from the roster, computer by computer, by name. */
+  get hiddenBots(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => store.hiddenBots)
+  }
+
+  private botsOnEveryComputer(bots: (store: BotStore) => Bot[]): RosterItem[] {
     const items: RosterItem[] = []
     for (const computer of this.computers) {
       const store = this.stores.get(computer.id)
       if (!store) continue
-      for (const bot of store.roster) items.push({ ref: { computerId: computer.id, botId: bot.id }, bot, computer: store.computer, store })
+      for (const bot of bots(store)) items.push({ ref: { computerId: computer.id, botId: bot.id }, bot, computer: store.computer, store })
     }
     return items
   }

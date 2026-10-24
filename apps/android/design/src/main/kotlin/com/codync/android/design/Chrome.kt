@@ -79,10 +79,16 @@ import kotlin.math.roundToInt
 @Composable fun BackButton(action: () -> Unit) = IconButton("Back", "chevron.left", action = action)
 
 /** A page's title row: the close button on a modal's first page, a back button once pushed in it. */
-@Composable fun PageHeader(title: String, pop: (() -> Unit)? = null, trailing: @Composable RowScope.() -> Unit = {}) {
-    if (pop != null) ScreenHeader({ BackButton(pop) },
-        { Text(tr(title), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis) }, trailing)
-    else ModalHeader(title, trailing)
+@Composable fun PageHeader(title: String, pop: (() -> Unit)? = null, icon: String? = null,
+    trailing: @Composable RowScope.() -> Unit = {}) {
+    val heading: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (icon != null) Symbol(icon, size = 24.dp, tint = Palette.text)
+            Text(tr(title), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+    if (pop != null) ScreenHeader({ BackButton(pop) }, heading, trailing)
+    else ModalHeader({ heading() }, trailing)
 }
 
 /** One tab of the system tab bar. */

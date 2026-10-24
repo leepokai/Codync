@@ -111,15 +111,7 @@ struct AttachmentList: View {
                 }
             }
         }
-        .codyncSheet(item: $viewing) { file in
-            VStack(spacing: 0) {
-                ModalHeader(file.name)
-                AttachmentImage(file: file, botId: botId, maxPixels: 4096)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(12)
-            }
-            .background(Palette.background)
-        }
+        .codyncSheet(item: $viewing) { AttachmentViewer(file: $0, botId: botId) }
     }
 
     private func card(_ file: Attachment) -> some View {
@@ -145,18 +137,35 @@ struct AttachmentList: View {
     }
 }
 
+/// A sent image full size.
+struct AttachmentViewer: View {
+    let file: Attachment
+    let botId: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader(file.name)
+            AttachmentImage(file: file, botId: botId, maxPixels: 4096)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(12)
+        }
+        .background(Palette.background)
+    }
+}
+
 /// A sent image, fetched from the computer once and then read from the cache.
-private struct AttachmentImage: View {
+struct AttachmentImage: View {
     let file: Attachment
     let botId: String
     let maxPixels: Int
+    var contentMode: ContentMode = .fit
     @Environment(BotStore.self) private var model
     @State private var image: CGImage?
 
     var body: some View {
         Group {
             if let image {
-                Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fit)
+                Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: contentMode)
             } else {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Palette.bubbleUser)

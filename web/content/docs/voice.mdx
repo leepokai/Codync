@@ -1,0 +1,113 @@
+You can talk to your bots two ways:
+
+- **Voice call:** a hands-free conversation with a bot or a group chat. You speak, the bot's replies are read aloud.
+- **Dictation:** speak into the message box, check the text, then send it yourself.
+
+Both work in the iPhone app and the desktop app. The terminal UI has no microphone, so it has neither, but it shows the notice a call leaves in the chat.
+
+A call doesn't change the bot. It's the same agent on your computer; you're just talking to it instead of typing.
+
+## Start a call
+
+When the message box is empty and the bot isn't working, the send button becomes **Call** (a waveform). Press it.
+
+The call bar floats at the top of the chat, and the chat stays readable and usable underneath. From left to right:
+
+- the bot's avatar: it pulses while the bot speaks, and tapping it then interrupts the reply
+- a line of dots that follows your voice while you speak, ripples while the bot speaks, and breathes slowly while it works
+- the provider's name, whenever audio leaves your device (see "What goes where" below)
+- **Call settings** (the gear), **Mute**, and **End call** (the red ✕)
+
+When the call ends, the chat gets a notice such as "Voice chat · 00:16", in every app.
+
+On the iPhone, the first call asks for Microphone and Speech Recognition access. The call keeps going if you leave Codync for the Home Screen.
+
+### From Shortcuts (iPhone)
+
+In the Shortcuts app, add Codync's **Open Live Mode** action and pick a **Bot**. Running it opens that bot's chat and starts a call. Siri runs it too: say "Open Live Mode in Codync". The computer has to be online; otherwise the action stops with an error instead of starting a call.
+
+## Choose a voice engine
+
+Open **Voice chat** settings from the call bar's gear, or:
+
+- **iPhone:** **Computers & settings → Voice chat → Voice and API keys**.
+- **Desktop app:** **Settings → Voice chat**.
+
+Under **Engine**, pick one. The choice is kept on this device and applies from your next call.
+
+| Engine | Needs | How it works |
+| --- | --- | --- |
+| **On device** (default) | Nothing | Your device turns speech into text and reads replies with the system voice |
+| **OpenAI** | Your OpenAI API key, kept on the computer | OpenAI's models hear you and speak |
+| **Gemini** | Your Google AI Studio key, kept on the computer | Google's models hear you and speak |
+
+### On device
+
+- You speak in the language set under **Language** (by default, your device's first language).
+- A pause ends what you said and sends it as an ordinary message. If the bot is busy, it's queued like any other message. Set the pause under **Send after a pause of** (1 s, 1.5 s or 2.5 s).
+- Each reply is read aloud in the language it's written in, skipping code blocks and formatting. Set **Reading speed** to Slower, Normal or Faster. The microphone pauses while a reply is read.
+- When the bot asks for approval, the call tells you; answer it in the chat.
+
+In the desktop app, on-device speech is available on macOS only. On Windows and Linux, calls use OpenAI or Gemini; without a key, the call asks you to add one in call settings.
+
+### OpenAI or Gemini
+
+Each provider has two modes, under **Mode**:
+
+- **Realtime:** a live conversation with the provider's realtime model. You can talk over replies.
+- **Speech:** the same loop as On device, using the provider's speech-to-text and text-to-speech models instead. What you say is sent when you pause, and replies are read aloud.
+
+In Realtime mode, the voice model works in front of your bot, and the bot still does the work. The voice model passes your requests to the bot as ordinary messages, reads the bot's replies out in shortened form, can tell you what the bot is doing ("what are you working on?") from its status and recent messages, and answers an approval for you once you've said which option. The chat stays the record: only the messages sent to the bot and the bot's replies are saved, and the small talk with the voice model isn't.
+
+Below the key you can pick the **Model** (or, in Speech mode, **Speech to text** and **Text to speech**) and the **Voice**. The default models follow each provider's newest ones. **This month** shows an estimate of the minutes used, counted on each device. The provider bills you; it isn't a bill.
+
+If a provider can't start, or the connection drops mid-call, the call switches to on-device voice without hanging up and says so under the bar. (In the desktop app this happens on macOS, where on-device speech exists.)
+
+## Add your API key
+
+Keys are entered on the computer, never on the phone:
+
+1. In the desktop app on that computer, open **Settings → Voice chat**. For a computer you reach over SSH from the desktop app, use the **Voice chat** button (waveform) on its card in **Settings → Computers & devices**.
+2. Pick **OpenAI** or **Gemini** as the engine. Use **Get a key from OpenAI** (or Gemini) if you need one.
+3. Paste the key and press **Save**. The computer checks it with the provider and keeps it only if it works; otherwise you see the provider's error.
+
+Once saved, the section shows **Key saved** with **Test key**, **Replace key** and **Remove key**. The iPhone shows whether the computer has a key and can test it, and tells you where to add one if it doesn't.
+
+The key is stored encrypted in Codync's vault on the computer (with the system keychain, as for [connector credentials](/docs/connectors-and-skills)), so one key serves the iPhone and the desktop app. It's never logged and never sent to the relay or to Codync's cloud.
+
+## What goes where
+
+| You use | Your audio | Your key |
+| --- | --- | --- |
+| On device | Stays on your device. Only the recognized text goes to the computer, as a message. Apple's speech recognition may use Apple's servers when on-device recognition isn't available for your language. | Not needed |
+| Realtime | Streams directly between your device and the provider (OpenAI over WebRTC, Gemini over a WebSocket). It doesn't pass through your computer or the relay. | Stays on the computer, which gives your device a short-lived credential for each call |
+| Speech mode, or dictation with a provider | Recordings go to your computer over the encrypted connection, and the computer sends them to the provider, with the names of the bots on the computer as spelling hints. The spoken replies come back the same way. | Stays on the computer |
+
+The relay only ever sees encrypted data. Whenever audio leaves your device, the call bar names the provider.
+
+## Dictation
+
+The microphone button (**Dictate**) sits beside the send button. Press it and speak: the words go into the message box, after anything you've already typed. Nothing is sent until you send it.
+
+While it listens, the microphone becomes a recording pill with a stop button, the time, and dots that follow your voice.
+
+### Pick the dictation engine
+
+The small arrow beside the microphone (**Dictation engine**) chooses **On device**, **OpenAI** or **Gemini**. It's kept on this device, separate from the call engine.
+
+- **On device:** words appear as they're recognized, in the language set for calls. On the iPhone, stop keeps what was recognized so far. In the desktop app, dictation keeps listening through pauses until you press stop.
+- **OpenAI or Gemini:** Codync first checks that the computer has the provider's key (if not, you get an error before anything is recorded). The pill appears once the microphone is open, so nothing you say is lost. Nothing is typed while you record. When you press stop, the pill shows "Transcribing…" and the text lands in the box when it arrives. It uses the **Speech to text** model from Voice chat settings, and the recording counts toward that provider's minutes this month.
+
+If dictation uses a provider that your calls don't, Voice chat settings show a separate section for it ("For dictation in the message box.") with its key status and speech-to-text model.
+
+Sending a message, starting a call or switching chats drops a dictation that is still recording or transcribing. A call takes the microphone.
+
+In the desktop app on Windows and Linux, the microphone works with OpenAI or Gemini; with On device picked, it tells you on-device speech isn't available there.
+
+### Voice input shortcut (Mac)
+
+In the desktop app on macOS, **Settings → General → System → Voice input shortcut** lets you dictate from any app: **Right ⌘ twice** (the default), **Left ⌘ twice**, or **Off**.
+
+Double-tap the key and dictation starts in the chat window's message box (the top bot's chat when none is open). Tap the key once more to stop and send what you said, once the last words are in. Press the pill's stop instead to keep the words without sending. If the notch island is on (**Settings → General → System → Show in Notch**), dictation goes into the island's message field instead. During a call the shortcut does nothing.
+
+The shortcut needs no Accessibility or Input Monitoring permission, and the app never sees what you type.

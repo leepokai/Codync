@@ -97,7 +97,14 @@ actor FakeRemote: RemoteTransport {
 
     nonisolated func computerUpdates() -> AsyncStream<Computer> { AsyncStream { _ in } }
 
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws { enqueued.append(clientNonce) }
+    private var enqueueError: (any Error)?
+    /// Every later `enqueue` throws `error`.
+    func failEnqueue(_ error: any Error) { enqueueError = error }
+
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws {
+        if let enqueueError { throw enqueueError }
+        enqueued.append(clientNonce)
+    }
     func cancelQueued(clientNonce: String) async -> MailboxCancel { cancelResult }
     func listQueued() async throws -> [QueuedItem] { enqueued.map { QueuedItem(nonce: $0, exp: nil, state: "queued") } }
 

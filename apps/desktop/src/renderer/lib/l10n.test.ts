@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { languageTitle, systemIsChinese, systemScript, translate, usesChinese } from './l10n.ts'
+import { appLanguages, resolvedLanguage, resetLine, languageTitle, systemIsChinese, systemScript, translate, usesChinese } from './l10n.ts'
 
 test('chinese follows the choice, and a system preference follows the computer', () => {
   assert.equal(usesChinese('zh', false), true)
@@ -134,4 +134,31 @@ test('known chrome becomes Chinese and everything else stays', () => {
     translate("Claude Code isn't set up on this computer. Install Claude Code and run `claude auth login`.", 'en', true),
     "Claude Code isn't set up on this computer. Install Claude Code and run `claude auth login`.",
   )
+})
+
+
+test('each supported locale follows regional system tags and explicit choices win', () => {
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es'] as const) {
+    assert.equal(resolvedLanguage('system', `${language.toUpperCase()}_XX.UTF-8`), language)
+    assert.equal(resolvedLanguage(language, 'zh-TW'), language)
+    assert.equal(usesChinese(language, 'zh-TW'), false)
+    assert.notEqual(translate('Settings', language), 'Settings')
+    assert.equal(translate('Settings', 'system', `${language}-XX`), translate('Settings', language))
+    assert.equal(translate('An unknown phrase', language), 'An unknown phrase')
+    assert.equal(translate('Remove {name}?', language).replaceAll('{name}', 'Done').includes('Done'), true)
+    assert.equal(resetLine('resets 3h 20m', language).includes('3h 20m'), true)
+    assert.notEqual(languageTitle(language, 'en', 'en'), 'Follow system')
+  }
+  assert.equal(new Set(appLanguages).size, 9)
+  assert.equal(resolvedLanguage('system', 'pt-BR'), 'en')
+  assert.equal(translate('Settings', 'en', 'ja-JP'), 'Settings')
+})
+
+
+test('English reset text remains literal and absolute dates do not become durations', () => {
+  assert.equal(resetLine('resets Sep 26 at 12pm', 'en'), 'resets Sep 26 at 12pm')
+  assert.equal(resetLine('resets 3h 20m', 'en'), 'resets 3h 20m')
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es'] as const) {
+    assert.equal(resetLine('resets Sep 26 at 12pm', language), `${translate('resets', language)} Sep 26 at 12pm`)
+  }
 })

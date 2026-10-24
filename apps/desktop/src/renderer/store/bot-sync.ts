@@ -2,6 +2,7 @@ import { isChat, type AccessRequest, type CloudStatus, type Entry } from '@share
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { BotMirror, type Connection } from './bot-mirror'
+import { Artifacts } from './artifacts'
 
 const DROP_GRACE = 5000
 const INITIAL_GRACE = 1000
@@ -26,6 +27,7 @@ function keptEntries(entries: Map<string, Entry[]>, keep: (e: Entry) => boolean)
  * graces, waiting for the link before an action, and read acknowledgements.
  */
 export class BotSync extends BotMirror {
+  readonly artifacts = new Artifacts(() => this.changed())
   private heldDrop: Connection | null = null
   private dropTimer: ReturnType<typeof setTimeout> | null = null
   private closeEvents: (() => void) | null = null
@@ -218,6 +220,9 @@ export class BotSync extends BotMirror {
         break
       case 'usage':
         this.usage = event.usage
+        break
+      case 'artifact':
+        this.artifacts.upsert(event.artifact)
         break
       case 'screen':
         this.screen = event.screen

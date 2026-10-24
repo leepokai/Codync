@@ -7,6 +7,7 @@ import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nati
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
+import { keepArtifactsInFrame, openWebLink, registerArtifacts, registerArtifactScheme } from './artifacts'
 import { registerHostProxy } from './host-proxy'
 import { readClipboardFiles, readFiles } from './files'
 import { Tray } from './tray'
@@ -85,8 +86,10 @@ function openChat() {
   // Closing hides: the window keeps the stores (and the menu bar's data) alive.
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))
+  keepArtifactsInFrame(chat.webContents)
+  // A new window (an artifact's target=_blank link or window.open, too) opens in the browser instead.
   chat.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    openWebLink(url)
     return { action: 'deny' }
   })
   void chat.loadURL(rendererURL('chat'))
@@ -153,6 +156,7 @@ function registerIPC(tray: Tray) {
   ipcMain.on('app:name', (e) => (e.returnValue = app.getName()))
   ipcMain.on('app:scheme', (e) => (e.returnValue = identity.scheme))
   registerFileSaves()
+  registerArtifacts()
   ipcMain.on('app:version', (e) => (e.returnValue = app.getVersion()))
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))
   ipcMain.on('app:openedAtLogin', (e) => (e.returnValue = openedAtLogin()))
@@ -209,6 +213,7 @@ if (yieldsToInstall()) {
   app.quit()
 } else {
   registerSchemes()
+  registerArtifactScheme()
   app.on('second-instance', (_e, argv) => {
     const url = urlFromArgv(argv)
     if (url) handleURL(url)

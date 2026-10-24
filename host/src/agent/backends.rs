@@ -4,17 +4,19 @@
 //! shell (GUI apps and launchd get a bare PATH), add the usual install dirs
 //! (Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), then look for
 //! each known CLI. Launching prefers the installed CLI's own ACP mode and falls
-//! back to the official ACP registry build (npx / uvx / downloaded binary).
+//! back to the official ACP registry build (npx / uvx / downloaded binary), which
+//! is resolved only when it's tried: an installed CLI that starts never downloads
+//! a second copy.
 
-use crate::LockExt;
 use crate::agent::{acp, node, registry};
 use crate::shell;
 use serde_json::{Value, json};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::path::Path;
 
+mod search_path;
 mod sign_in;
+pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{SignInCheck, cli_signed_in, refresh_sign_in, set_signed_in, signed_in};
 use sign_in::{claude_signed_in, exit_ok, qoder_signed_in, says_logged_in};
 
@@ -193,6 +195,20 @@ pub const HARNESSES: &[Harness] = &[
             windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.ps1 | iex\"",
         }),
         login: Some("{bin}"),
+        signed_in: None,
+    },
+    Harness {
+        id: "hermes",
+        name: "Hermes Agent",
+        bins: &["hermes"],
+        local: Some("{bin} acp"),
+        registry: None,
+        setup: "Install Hermes Agent and run `hermes acp --setup` to choose a provider and model.",
+        install: Some(Install::Scripts {
+            unix: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"iex (irm https://hermes-agent.nousresearch.com/install.ps1)\"",
+        }),
+        login: Some("{bin} acp --setup"),
         signed_in: None,
     },
     Harness {
@@ -422,123 +438,6 @@ pub fn harness(id: &str) -> Option<&'static Harness> {
     HARNESSES.iter().find(|h| h.id == id)
 }
 
-// MARK: PATH hydration
-
-static SEARCH_PATH: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
-
-/// `…/v22.1.0` → `[22, 1, 0]` (unparseable parts count as 0).
-fn node_version(dir: &Path) -> Vec<u32> {
-    dir.file_name()
-        .and_then(|n| n.to_str())
-        .map(|n| n.trim_start_matches('v').split('.').map(|p| p.parse().unwrap_or(0)).collect())
-        .unwrap_or_default()
-}
-
-fn well_known_dirs() -> Vec<PathBuf> {
-    let Some(home) = dirs::home_dir() else { return vec![] };
-    let mut dirs: Vec<PathBuf> =
-        ["/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin", "/usr/bin", "/bin"]
-            .iter()
-            .map(PathBuf::from)
-            .collect();
-    if cfg!(windows) {
-        // Global npm CLIs (%APPDATA%\npm), and Node itself.
-        dirs.extend(dirs::data_dir().map(|d| d.join("npm")));
-        dirs.extend(std::env::var_os("ProgramFiles").map(|d| PathBuf::from(d).join("nodejs")));
-        // oh-my-pi's binary install (%LOCALAPPDATA%\omp); a Bun install lands in ~/.bun/bin below.
-        dirs.extend(dirs::data_local_dir().map(|d| d.join("omp")));
-    }
-    for rel in [
-        ".local/bin",
-        ".bun/bin",
-        ".cargo/bin",
-        ".volta/bin",
-        ".asdf/shims",
-        ".local/share/mise/shims",
-        ".fnm/aliases/default/bin",
-        ".local/share/pnpm",
-        "Library/pnpm",
-        ".npm-global/bin",
-        ".opencode/bin",
-        ".deno/bin",
-        "go/bin",
-    ] {
-        dirs.push(home.join(rel));
-    }
-    // Every nvm-installed node, newest first (global npm CLIs live next to node).
-    if let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) {
-        let mut versions: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
-        // Numeric, not lexicographic: v22.1.0 is newer than v9.11.2.
-        versions.sort_by_key(|p| std::cmp::Reverse(node_version(p)));
-        dirs.extend(versions.into_iter().map(|p| p.join("bin")));
-    }
-    dirs
-}
-
-/// Re-detects the search path and exports it as this process's PATH, so every
-/// agent we spawn (and the `npx`/`node` they need) resolves the same way.
-pub fn hydrate_path() {
-    let mut seen = HashSet::new();
-    let mut path: Vec<PathBuf> = vec![];
-    let current = std::env::var("PATH").unwrap_or_default();
-    let login = shell::user_path().unwrap_or_default();
-    for p in std::env::split_paths(&current).chain(std::env::split_paths(&login)).chain(well_known_dirs()) {
-        if p.as_os_str().is_empty() || !p.is_dir() {
-            continue;
-        }
-        if seen.insert(p.clone()) {
-            path.push(p);
-        }
-    }
-    // Codync's Node last, so the computer's own comes first; listed even before it exists, so
-    // adding it (a separate `codync-host node` process) counts without another refresh.
-    for p in node::search_dirs() {
-        if seen.insert(p.clone()) {
-            path.push(p);
-        }
-    }
-    if let Ok(joined) = std::env::join_paths(&path) {
-        // SAFETY: called at startup and from the single refresh command, before/between spawns.
-        unsafe { std::env::set_var("PATH", joined) };
-    }
-    *SEARCH_PATH.locked() = path;
-}
-
-pub fn which(bin: &str) -> Option<PathBuf> {
-    let dirs = {
-        let cached = SEARCH_PATH.locked();
-        if cached.is_empty() {
-            std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default()
-        } else {
-            cached.clone()
-        }
-    };
-    dirs.into_iter().flat_map(|d| executable_names(bin).map(move |name| d.join(name))).find(|p| is_executable(p))
-}
-
-/// What `bin` can be called on disk: Windows adds the extensions it runs.
-fn executable_names(bin: &str) -> impl Iterator<Item = String> + '_ {
-    let extensions: &[&str] =
-        if cfg!(windows) && Path::new(bin).extension().is_none() { &[".exe", ".cmd", ".bat"] } else { &[""] };
-    extensions.iter().map(move |e| format!("{bin}{e}"))
-}
-
-fn is_executable(p: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-    }
-    #[cfg(not(unix))]
-    {
-        p.is_file()
-    }
-}
-
-pub fn on_path(bin: &str) -> bool {
-    which(bin).is_some()
-}
-
 // MARK: listing + launching
 
 /// Every harness the phone can pick, installed ones first.
@@ -607,19 +506,16 @@ pub fn is_known(id: &str) -> bool {
     harness(id).is_some() || registry::agent(id).is_some()
 }
 
-/// Ways to start this backend, best first. Local CLIs can be too old to speak
-/// ACP, so the registry build is kept as a fallback.
-pub async fn launch_candidates(id: &str, progress: impl Fn(&str)) -> anyhow::Result<Vec<registry::Cmd>> {
-    let mut out: Vec<registry::Cmd> = local_candidate(id).into_iter().collect();
+/// Ways to start this backend, best first: the installed CLI's own ACP mode, then the
+/// registry build, for a CLI that isn't installed, has no ACP mode of its own, or is too old for it.
+pub fn launch_candidates(id: &str) -> anyhow::Result<Vec<registry::Candidate>> {
     let h = harness(id);
-    let reg_id = h.map_or(Some(id), |h| h.registry);
-    if let Some(agent) = reg_id.and_then(registry::agent) {
-        match registry::command(&agent, &progress).await {
-            Ok(cmd) => out.push(cmd),
-            Err(e) if out.is_empty() => return Err(e),
-            Err(e) => tracing::info!(backend = id, error = format!("{e:#}"), "registry build unavailable"),
-        }
-    }
+    let build = h.map_or(Some(id), |h| h.registry).and_then(registry::agent);
+    let out: Vec<_> = local_candidate(id)
+        .map(registry::Candidate::Ready)
+        .into_iter()
+        .chain(build.map(registry::Candidate::Build))
+        .collect();
     if out.is_empty() {
         let hint = h.map_or("Check that it's installed on this computer.", |h| h.setup);
         let name = h.map_or(id, |h| h.name);
@@ -666,7 +562,7 @@ pub async fn login_command(id: &str) -> anyhow::Result<String> {
 }
 
 /// The installed CLI's own ACP mode, if it has one and it's installed.
-pub fn local_candidate(id: &str) -> Option<registry::Cmd> {
+fn local_candidate(id: &str) -> Option<registry::Cmd> {
     let h = harness(id)?;
     let template = h.local?;
     let path = h.bins.iter().find_map(|b| which(b))?;
@@ -675,30 +571,4 @@ pub fn local_candidate(id: &str) -> Option<registry::Cmd> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[cfg(unix)]
-    #[test]
-    fn detects_executables_on_search_path() {
-        let dir = std::env::temp_dir().join(format!("codync-bin-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let bin = dir.join("fake-harness");
-        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
-        *SEARCH_PATH.locked() = vec![dir.clone()];
-        assert!(which("fake-harness").is_none(), "not executable yet");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        assert_eq!(which("fake-harness"), Some(bin));
-        SEARCH_PATH.locked().clear();
-    }
-
-    #[test]
-    fn every_harness_is_unique() {
-        let ids: HashSet<_> = HARNESSES.iter().map(|h| h.id).collect();
-        assert_eq!(ids.len(), HARNESSES.len());
-    }
-}
+mod tests;

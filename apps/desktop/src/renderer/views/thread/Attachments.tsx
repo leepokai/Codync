@@ -50,22 +50,29 @@ export function AttachmentList({ attachments, botId }: { attachments: Attachment
           </HStack>
         ),
       )}
-      <Sheet open={viewing !== null} onClose={() => setViewing(null)} width={720} height={560}>
-        {viewing ? (
-          <SheetPage>
-            <ModalHeader title={viewing.name} />
-            <div className="attachment-viewer">
-              <AttachmentImage file={viewing} botId={botId} fit="full" />
-            </div>
-          </SheetPage>
-        ) : null}
-      </Sheet>
+      <AttachmentViewer file={viewing} botId={botId} close={() => setViewing(null)} />
     </VStack>
   )
 }
 
+/** A sent image full size, in a sheet. */
+export function AttachmentViewer({ file, botId, close }: { file: Attachment | null; botId: string; close: () => void }) {
+  return (
+    <Sheet open={file !== null} onClose={close} width={720} height={560}>
+      {file ? (
+        <SheetPage>
+          <ModalHeader title={file.name} />
+          <div className="attachment-viewer">
+            <AttachmentImage file={file} botId={botId} fit="full" />
+          </div>
+        </SheetPage>
+      ) : null}
+    </Sheet>
+  )
+}
+
 /** A sent image, fetched from the computer once and then read from the cache. */
-function AttachmentImage({ file, botId, fit }: { file: Attachment; botId: string; fit: 'thumbnail' | 'full' }) {
+export function AttachmentImage({ file, botId, fit }: { file: Attachment; botId: string; fit: 'icon' | 'thumbnail' | 'full' }) {
   const store = useStoreRef()
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
@@ -83,7 +90,7 @@ function AttachmentImage({ file, botId, fit }: { file: Attachment; botId: string
   }, [store, file.id, botId])
   if (!url) {
     return (
-      <div className="attachment-placeholder">
+      <div className={`attachment-placeholder ${fit}`}>
         <Icon name="photo" size={13} color="var(--tertiary)" />
       </div>
     )

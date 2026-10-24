@@ -1,0 +1,97 @@
+name: Submit Android
+
+# On each v* tag that changes the Android app, builds the signed bundle from that tag and uploads
+# it to a Google Play track (tools/play-submit.py), the counterpart of Submit iOS. Releases that
+# leave the Android app alone skip it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to upload, without the v, e.g. 2.25.0"
+        required: true
+      track:
+        description: "Play track: internal, alpha (closed testing) or production"
+        default: internal
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: android-submit
+  cancel-in-progress: false
+
+env:
+  TRACK: ${{ inputs.track || vars.PLAY_TRACK || 'internal' }}
+  VERSION: ${{ inputs.version || github.ref_name }}
+  # A manual run builds the version's tag, not the branch it was started from.
+  REF: ${{ inputs.version && format('refs/tags/v{0}', inputs.version) || github.ref }}
+
+jobs:
+  check:
+    if: github.repository == 'leepokai/Codync'
+    runs-on: ubuntu-latest
+    outputs:
+      ship: ${{ steps.check.outputs.ship }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+          fetch-depth: 0
+      - run: pip install pyjwt cryptography
+      - id: check
+        env:
+          PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
+        run: |
+          # A manual run ships the version even without Android changes.
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] && export FORCE=1
+          python3 tools/play-submit.py check "${VERSION#v}"
+
+  submit:
+    needs: check
+    if: needs.check.outputs.ship == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the signed bundle
+        working-directory: apps/android
+        env:
+          UPLOAD_KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
+          GOOGLE_SERVICES: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+          ORG_GRADLE_PROJECT_codyncUploadKeystorePassword: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$UPLOAD_KEYSTORE" | base64 -d > "$RUNNER_TEMP/upload.p12"
+          printf '%s' "$GOOGLE_SERVICES" > "$RUNNER_TEMP/google-services.json"
+          ./gradlew :app:bundleRelease \
+            -PcodyncUploadKeystore="$RUNNER_TEMP/upload.p12" \
+            -PcodyncGoogleServicesFile="$RUNNER_TEMP/google-services.json"
+      - run: pip install pyjwt cryptography
+      - name: Upload to Google Play
+        env:
+          PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr list --state merged --limit 200 --json body,mergeCommit > "$RUNNER_TEMP/prs.json"
+          PRS="$RUNNER_TEMP/prs.json" python3 tools/play-submit.py upload "${VERSION#v}" \
+            apps/android/app/build/outputs/bundle/release/app-release.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codync-android-${{ env.VERSION }}
+          path: |
+            apps/android/app/build/outputs/bundle/release/app-release.aab
+            apps/android/app/build/outputs/mapping/release/mapping.txt

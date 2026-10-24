@@ -1,10 +1,9 @@
 import { SSH_INSTALL_COMMAND, type SSHProfile, type SSHStatus } from '@shared/ssh'
-import { Button, IconButton } from '../../components/Controls'
+import { Button, IconButton, Reveal } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack, IconSlot, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { analytics } from '../../store/analytics'
-import { Reveal } from './parts'
 import { sshStatusDetail } from '@shared/ssh-startup'
 
 export function SSHRow({ profile, status, edit, attached = true }: { profile: SSHProfile; status: SSHStatus; attached?: boolean; edit: () => void }) {

@@ -58,6 +58,7 @@ import kotlinx.serialization.json.putJsonArray
 @Composable internal fun BotListView(state: AppState, store: AppStore, account: () -> Unit, manage: () -> Unit,
     newBot: () -> Unit, newGroup: () -> Unit, edit: (Bot) -> Unit, bottomInset: androidx.compose.ui.unit.Dp) {
     var confirmDelete by remember { mutableStateOf<Bot?>(null) }
+    var confirmNewSession by remember { mutableStateOf<Bot?>(null) }
     val roster = roster(state.bots)
     val reorder = remember { RosterReorder() }
     reorder.roster = roster.map(Bot::id)
@@ -87,11 +88,17 @@ import kotlinx.serialization.json.putJsonArray
                 Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
                     .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
                         else Modifier.animateItem())) {
-                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, edit = { edit(bot) }, delete = { confirmDelete = bot })
+                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, edit = { edit(bot) },
+                        newSession = { confirmNewSession = bot }, delete = { confirmDelete = bot })
                 }
             }
         }
         }
+    }
+    val restarting = confirmNewSession
+    CodyncDialog("Start a new session?", restarting != null, { confirmNewSession = null },
+        message = "The conversation stays here, but the agent starts with a fresh context.") {
+        listOf(DialogAction("New session") { restarting?.let { store.command("newSession", body("botId" to it.id)) } })
     }
     val deleting = confirmDelete
     CodyncDialog("Delete ${deleting?.name ?: "bot"}?", deleting != null, { confirmDelete = null },
@@ -153,11 +160,12 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
     return roster.map(Bot::id).toMutableList().apply { this[at] = neighbor.id; this[at + offset] = id }
 }
 
-@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, edit: () -> Unit, delete: () -> Unit) {
+@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, edit: () -> Unit, newSession: () -> Unit,
+    delete: () -> Unit) {
     Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
         Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state) }
     }) {
-        listOf(
+        listOfNotNull(
             MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = if (bot.pinned) "pin.slash" else "pin") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("pinned", !bot.pinned) }, "roster:" + bot.id)
             },
@@ -166,6 +174,8 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
             MenuItem("Mark as read", icon = "checkmark.message") {
                 store.command("markRead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)
             },
+            // A group has no agent session of its own.
+            MenuItem("New session", icon = "arrow.counterclockwise", action = newSession).takeIf { bot.kind != "group" },
             MenuItem("Hide from list", icon = "eye.slash") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("hidden", true) }, "roster:" + bot.id)
             },

@@ -1,8 +1,14 @@
-import hansPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/zh-Hans.json' with { type: 'json' }
-import hantPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/zh-Hant.json' with { type: 'json' }
+import jaPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/ja.json' with { type: 'json' }
+import koPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/ko.json' with { type: 'json' }
+import frPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/fr.json' with { type: 'json' }
+import dePhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/de.json' with { type: 'json' }
+import esPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/es.json' with { type: 'json' }
+import hansPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hans.json' with { type: 'json' }
+import hantPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hant.json' with { type: 'json' }
 
 /** This app's interface language. `zh` is Simplified, kept so a saved choice still means that. */
-export type AppLanguage = 'system' | 'zh' | 'zh-Hant' | 'en'
+export const appLanguages = ['system', 'en', 'zh', 'zh-Hant', 'ja', 'ko', 'fr', 'de', 'es'] as const
+export type AppLanguage = typeof appLanguages[number]
 
 /** Traditional is its own table. A boolean `true` from older callers means Simplified. */
 export type ChineseScript = 'hans' | 'hant'
@@ -32,7 +38,7 @@ export function systemIsChinese(language = typeof navigator === 'undefined' ? ''
 export function resolvedScript(preference: AppLanguage, system: string | boolean): ChineseScript | null {
   if (preference === 'zh') return 'hans'
   if (preference === 'zh-Hant') return 'hant'
-  if (preference === 'en') return null
+  if (preference !== 'system') return null
   return systemScript(languageTag(system))
 }
 
@@ -40,8 +46,16 @@ export function usesChinese(preference: AppLanguage, system: string | boolean): 
   return resolvedScript(preference, system) != null
 }
 
-function tables(script: ChineseScript): { primary: Record<string, string>; fallback: Record<string, string> } {
-  return script === 'hant' ? { primary: hant, fallback: hans } : { primary: hans, fallback: hans }
+export function resolvedLanguage(preference: AppLanguage, system: string | boolean): Exclude<AppLanguage, 'system'> {
+  if (preference !== 'system' && appLanguages.includes(preference)) return preference
+  const tag = languageTag(system).toLowerCase().replaceAll('_', '-').split('.')[0]
+  const base = tag.split('-')[0]
+  if (base === 'zh') return systemScript(tag) === 'hant' ? 'zh-Hant' : 'zh'
+  return ['ja', 'ko', 'fr', 'de', 'es'].includes(base) ? base as 'ja' | 'ko' | 'fr' | 'de' | 'es' : 'en'
+}
+
+const catalogs: Record<Exclude<AppLanguage, 'system'>, Record<string, string>> = {
+  en: {}, zh: hans, 'zh-Hant': hant, ja: jaPhrases, ko: koPhrases, fr: frPhrases, de: dePhrases, es: esPhrases,
 }
 
 /** One piece of a phrase key such as "Runs the official installer on {name}." */
@@ -123,9 +137,10 @@ function phrase(text: string, primary: Record<string, string>, fallback: Record<
 
 /** Exact chrome phrases, including a label whose JSX kept the surrounding spaces. */
 export function translate(text: string, preference: AppLanguage, system: string | boolean = 'en'): string {
-  const script = resolvedScript(preference, system)
-  if (!script) return text
-  const { primary, fallback } = tables(script)
+  const language = resolvedLanguage(preference, system)
+  if (language === 'en') return text
+  const primary = catalogs[language]
+  const fallback = language === 'zh-Hant' ? hans : {}
   const direct = phrase(text, primary, fallback)
   if (direct) return direct
   const trimmed = text.trim()
@@ -134,9 +149,15 @@ export function translate(text: string, preference: AppLanguage, system: string 
 
 /** "resets 3h 20m" / "resets in 2d 6h". Compact times become "3小时20分后重置". */
 export function resetLine(raw: string, preference: AppLanguage, system: string | boolean = 'en'): string {
-  if (!usesChinese(preference, system)) return raw
   const time = raw.startsWith('resets in ') ? raw.slice('resets in '.length) : raw.startsWith('resets ') ? raw.slice('resets '.length) : null
   if (time == null) return translate(raw, preference, system)
+  const language = resolvedLanguage(preference, system)
+  if (language === 'en') return raw
+  if (language !== 'zh' && language !== 'zh-Hant') {
+    return /^[0-9]+[dhm]( [0-9]+[dhm])*$/.test(time)
+      ? translate('resets in {time}', preference, system).replaceAll('{time}', time)
+      : `${translate('resets', preference, system)} ${time}`
+  }
   const spoken = compactTime(time, (key) => translate(key, preference, system))
   return spoken ? spoken + translate('after reset', preference, system) : `${translate('resets', preference, system)} ${time}`
 }
@@ -158,9 +179,10 @@ function compactTime(time: string, tr: (key: string) => string): string | null {
   return spoken || `0${tr('minute unit')}`
 }
 
+const nativeNames: Record<Exclude<AppLanguage, 'system'>, string> = {
+  en: 'English', zh: '简体中文', 'zh-Hant': '繁體中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español',
+}
+
 export function languageTitle(language: AppLanguage, preference: AppLanguage, system: string | boolean): string {
-  if (language === 'zh') return '简体中文'
-  if (language === 'zh-Hant') return '繁體中文'
-  if (language === 'en') return 'English'
-  return translate('Follow system', preference, system)
+  return language === 'system' ? translate('Follow system', preference, system) : nativeNames[language]
 }

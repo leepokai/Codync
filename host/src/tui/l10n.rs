@@ -18,6 +18,11 @@ enum AppLanguage {
     Zh,
     ZhHant,
     En,
+    Ja,
+    Ko,
+    Fr,
+    De,
+    Es,
 }
 
 impl AppLanguage {
@@ -26,6 +31,11 @@ impl AppLanguage {
             "zh" | "zh-Hans" => Self::Zh,
             "zh-Hant" => Self::ZhHant,
             "en" => Self::En,
+            "ja" => Self::Ja,
+            "ko" => Self::Ko,
+            "fr" => Self::Fr,
+            "de" => Self::De,
+            "es" => Self::Es,
             _ => Self::System,
         }
     }
@@ -36,6 +46,11 @@ impl AppLanguage {
             Self::Zh => "zh",
             Self::ZhHant => "zh-Hant",
             Self::En => "en",
+            Self::Ja => "ja",
+            Self::Ko => "ko",
+            Self::Fr => "fr",
+            Self::De => "de",
+            Self::Es => "es",
         }
     }
 
@@ -44,19 +59,49 @@ impl AppLanguage {
             Self::System => Self::Zh,
             Self::Zh => Self::ZhHant,
             Self::ZhHant => Self::En,
-            Self::En => Self::System,
+            Self::En => Self::Ja,
+            Self::Ja => Self::Ko,
+            Self::Ko => Self::Fr,
+            Self::Fr => Self::De,
+            Self::De => Self::Es,
+            Self::Es => Self::System,
         }
     }
 }
 
 static HANS: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/zh-Hans.json"))
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hans.json"))
         .expect("zh-Hans.json is a string map")
 });
 
 static HANT: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/zh-Hant.json"))
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hant.json"))
         .expect("zh-Hant.json is a string map")
+});
+
+static JA: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/ja.json"))
+        .expect("ja.json is a string map")
+});
+
+static KO: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/ko.json"))
+        .expect("ko.json is a string map")
+});
+
+static FR: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/fr.json"))
+        .expect("fr.json is a string map")
+});
+
+static DE: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/de.json"))
+        .expect("de.json is a string map")
+});
+
+static ES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/es.json"))
+        .expect("es.json is a string map")
 });
 
 static PREFERENCE: LazyLock<Mutex<AppLanguage>> = LazyLock::new(|| Mutex::new(read_preference()));
@@ -89,21 +134,31 @@ fn system_script_of(value: &str) -> Option<ChineseScript> {
     }
 }
 
-fn system_script() -> Option<ChineseScript> {
-    system_locale().as_deref().and_then(system_script_of)
+/// The table for the saved choice. Traditional falls back to Simplified for a missing line.
+fn resolved_language(preference: AppLanguage, locale: &str) -> AppLanguage {
+    if preference != AppLanguage::System {
+        return preference;
+    }
+    match system_script_of(locale) {
+        Some(ChineseScript::Hans) => AppLanguage::Zh,
+        Some(ChineseScript::Hant) => AppLanguage::ZhHant,
+        None => match AppLanguage::parse(locale.to_ascii_lowercase().split(['-', '_', '.']).next().unwrap_or("en")) {
+            AppLanguage::System => AppLanguage::En,
+            language => language,
+        },
+    }
 }
 
-/// The table for the saved choice. Traditional falls back to Simplified for a missing line.
 fn active_phrases() -> Option<&'static HashMap<String, String>> {
-    match *PREFERENCE.locked() {
+    match resolved_language(*PREFERENCE.locked(), &system_locale().unwrap_or_default()) {
         AppLanguage::Zh => Some(&HANS),
         AppLanguage::ZhHant => Some(&HANT),
-        AppLanguage::En => None,
-        AppLanguage::System => match system_script() {
-            Some(ChineseScript::Hant) => Some(&HANT),
-            Some(ChineseScript::Hans) => Some(&HANS),
-            None => None,
-        },
+        AppLanguage::Ja => Some(&JA),
+        AppLanguage::Ko => Some(&KO),
+        AppLanguage::Fr => Some(&FR),
+        AppLanguage::De => Some(&DE),
+        AppLanguage::Es => Some(&ES),
+        AppLanguage::En | AppLanguage::System => None,
     }
 }
 
@@ -113,6 +168,13 @@ pub(in crate::tui) fn reset_line(raw: &str) -> String {
         return tr(raw).into_owned();
     };
     let Some(table) = active_phrases() else { return raw.to_owned() };
+    if !std::ptr::eq(table, &raw const *HANS) && !std::ptr::eq(table, &raw const *HANT) {
+        return if compact_time_in(time, table).is_some() {
+            translate_with("resets in {time}", table).replace("{time}", time)
+        } else {
+            format!("{} {time}", translate_with("resets", table))
+        };
+    }
     match compact_time_in(time, table) {
         Some(spoken) => format!("{spoken}{}", translate_with("after reset", table)),
         None => format!("{} {time}", translate_with("resets", table)),
@@ -216,7 +278,8 @@ fn parse_template(template: &str) -> Option<Vec<Piece>> {
 }
 
 fn phrase_of<'a>(table: &'a HashMap<String, String>, key: &str) -> Option<&'a String> {
-    table.get(key).or_else(|| HANS.get(key))
+    // Only Traditional retains the legacy Simplified fallback; other languages keep English.
+    table.get(key).or_else(|| if std::ptr::eq(table, &raw const *HANT) { HANS.get(key) } else { None })
 }
 
 /// A sentence the host or a view already filled in, matched back to its `{token}` phrase.
@@ -298,15 +361,16 @@ pub(in crate::tui) fn language_title() -> Cow<'static, str> {
         AppLanguage::Zh => Cow::Borrowed("简体中文"),
         AppLanguage::ZhHant => Cow::Borrowed("繁體中文"),
         AppLanguage::En => Cow::Borrowed("English"),
-        AppLanguage::System => match system_script() {
-            Some(ChineseScript::Hant) => translate_with("Follow system", &HANT),
-            Some(ChineseScript::Hans) => translate_with("Follow system", &HANS),
-            None => Cow::Borrowed("Follow system"),
-        },
+        AppLanguage::Ja => Cow::Borrowed("日本語"),
+        AppLanguage::Ko => Cow::Borrowed("한국어"),
+        AppLanguage::Fr => Cow::Borrowed("Français"),
+        AppLanguage::De => Cow::Borrowed("Deutsch"),
+        AppLanguage::Es => Cow::Borrowed("Español"),
+        AppLanguage::System => tr("Follow system"),
     }
 }
 
-/// Follow system, then Simplified, then Traditional, then English. The choice is kept for the next run.
+/// Cycle all supported languages and keep the choice for the next run.
 pub(in crate::tui) fn cycle_language() -> Cow<'static, str> {
     let next = {
         let mut preference = PREFERENCE.locked();
@@ -326,6 +390,26 @@ pub(in crate::tui) fn cycle_language() -> Cow<'static, str> {
 #[cfg(test)]
 mod tests {
     use super::{AppLanguage, translate};
+
+    #[test]
+    fn additional_languages_resolve_regions_and_load_catalogs() {
+        for (language, table) in [
+            (AppLanguage::Ja, &*super::JA),
+            (AppLanguage::Ko, &*super::KO),
+            (AppLanguage::Fr, &*super::FR),
+            (AppLanguage::De, &*super::DE),
+            (AppLanguage::Es, &*super::ES),
+        ] {
+            assert_eq!(
+                super::resolved_language(AppLanguage::System, &format!("{}_XX.UTF-8", language.stored())),
+                language
+            );
+            assert_eq!(super::resolved_language(language, "zh_TW"), language);
+            assert_ne!(super::translate_with("Settings", table), "Settings");
+            assert_eq!(super::translate_with("Unknown phrase", table), "Unknown phrase");
+        }
+        assert_eq!(super::resolved_language(AppLanguage::System, "pt_BR"), AppLanguage::En);
+    }
 
     #[test]
     fn chinese_replaces_a_known_phrase_and_leaves_the_rest() {
@@ -362,10 +446,7 @@ mod tests {
     #[test]
     fn the_palette_label_reads_the_choice_without_locking_twice() {
         let title = super::language_title();
-        assert!(matches!(
-            title.as_ref(),
-            "跟随系统" | "跟隨系統" | "Follow system" | "简体中文" | "繁體中文" | "English"
-        ));
+        assert!(!title.is_empty());
     }
 
     #[test]
@@ -378,7 +459,8 @@ mod tests {
         assert_eq!(AppLanguage::System.next(), AppLanguage::Zh);
         assert_eq!(AppLanguage::Zh.next(), AppLanguage::ZhHant);
         assert_eq!(AppLanguage::ZhHant.next(), AppLanguage::En);
-        assert_eq!(AppLanguage::En.next(), AppLanguage::System);
+        assert_eq!(AppLanguage::En.next(), AppLanguage::Ja);
+        assert_eq!(AppLanguage::Es.next(), AppLanguage::System);
         assert_eq!(super::system_script_of("zh_TW.UTF-8"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh-HK"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh_CN.UTF-8"), Some(super::ChineseScript::Hans));

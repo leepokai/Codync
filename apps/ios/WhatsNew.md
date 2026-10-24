@@ -6,6 +6,48 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.25.0
+
+### zh-Hant
+- Bot 可以做 Artifact：報告、追蹤表、儀表板這類要回來看的內容會以卡片出現在聊天裡，點開看完整內容，直接在下方留言請它改，改好就自動更新。
+- 每個 Bot 的「資料庫」收齊它做的 Artifact，以及聊天裡分享過的檔案和圖片。
+- 可以建立使用 Hermes Agent 的 Bot。
+- Bot 之間交辦工作不必等待，對方的回覆會回到發問的 Bot，再由它回覆你。
+- 鎖定畫面的即時動態加上進度條，四格依任務進度填滿，顏色跟著狀態走。
+- 帳號選單裡的「電腦與設定」和它打開的頁面同名。
+- 新增聯結器失敗後再試一次，會使用你改好的金鑰。
+- 使用 Hermes Agent 或 Gemini CLI 的 Bot，記憶頁會說明它們自己的記憶由所有用同一個 agent 的 Bot 共用，Codync 沒辦法關掉。
+- Bot 工作中點一下狀態膠囊，就能在對話裡展開這一輪的思考、工具與 MCP 呼叫，太長時在膠囊內捲動。
+- 新增「Open Live Mode」捷徑，選擇 Bot 後直接開啟語音聊天。
+- 新增「Send Text to Bot」捷徑，可選擇 Bot 並傳送文字；預設在背景傳送，也可開啟「Open Chat」顯示對話。
+- 點對話上方的 Bot 會打開它的詳情、資料庫、記憶與設定；「新會話」改到 Bot 列表的長按選單。
+
+### en-US
+- Bots can make artifacts: reports, trackers and dashboards you come back to show as a card in the chat. Open one full screen and message the bot below it to change it; it updates in place.
+- Each bot's Library collects its artifacts and the files and images shared in the chat.
+- Create bots that run Hermes Agent.
+- Bots hand work to each other without waiting; the answer comes back to the bot that asked, which then replies to you.
+- Live Activities on the Lock Screen show a progress line that fills as the task moves, in the state's color.
+- The account sheet's Computers & settings row now has the same name as the page it opens.
+- Trying again after adding a connector failed uses the key you corrected.
+- For bots that run Hermes Agent or Gemini CLI, Memory explains that the agent's own memory is shared by every bot that runs it and Codync can't turn it off.
+- While a bot works, tap its status pill to unfold this turn's thinking, tool and MCP calls right in the chat; a long turn scrolls inside the pill.
+- Use Open Live Mode in Shortcuts to choose a bot and start voice chat.
+- Use Send Text to Bot to choose a bot and send text in the background by default, or enable Open Chat to show the conversation.
+- Tapping the bot at the top of its chat opens its Details, Library, Memory and Settings; New session moved to the bot's touch-and-hold menu in the list.
+
+## 2.24.0
+
+### zh-Hant
+- 設定與語音聊天的標題加入清楚的圖示。
+- 可在設定中自行選擇英文、簡體中文、繁體中文、日語、韓語、法語、德語或西班牙語，也可跟隨系統語言。
+- 語言偏好保留在這台裝置，聊天內容維持原文。
+
+### en-US
+- Identify Settings and Voice chat with clearer header icons.
+- Choose English, Simplified Chinese, Traditional Chinese, Japanese, Korean, French, German or Spanish in Settings, or follow your system language.
+- Keep your language preference on this device without translating your conversations.
+
 ## 2.23.1
 
 ### zh-Hant

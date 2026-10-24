@@ -35,20 +35,26 @@ extension BotStore {
         storage.composerDrafts[computer.id] = composerDrafts.isEmpty ? nil : composerDrafts
     }
 
+    /// The chat's draft, and the drafts of its artifacts (`artifactDraftKey`).
     func removeComposerDrafts(for botId: String) {
-        composerDrafts[botId] = nil
+        composerDrafts = composerDrafts.filter { $0.key != botId && !$0.key.hasPrefix("\(botId)/") }
         persistComposerDrafts()
     }
 
+    /// An artifact viewer's message box keeps its own draft, apart from the chat's.
+    static func artifactDraftKey(_ artifact: Artifact) -> String { "\(artifact.botId)/artifact/\(artifact.id)" }
+
     /// Transfer to the outbox now; an eventual acknowledgement must not erase a newer draft.
-    /// `replyTo`: the chat message it quotes.
+    /// `draft`: whose draft it is (the chat's when nil). `replyTo`: the chat message it quotes.
     @discardableResult
-    func sendComposerDraft(to botId: String, replyTo: Entry? = nil, files: [OutgoingFile] = []) -> Bool {
-        let text = composerDraft(for: botId)
+    func sendComposerDraft(to botId: String, draft key: String? = nil, replyTo: ReplyQuote? = nil,
+                           files: [OutgoingFile] = []) -> Bool {
+        let key = key ?? botId
+        let text = composerDraft(for: key)
         guard !retired, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
-        let pasted = composerPasted[botId] ?? []
-        send(text, to: botId, replyTo: replyTo?.replyQuote, nonce: UUID().uuidString, files: files, pasted: pasted)
-        setComposerDraft("", for: botId)
+        let pasted = composerPasted[key] ?? []
+        send(text, to: botId, replyTo: replyTo, nonce: UUID().uuidString, files: files, pasted: pasted)
+        setComposerDraft("", for: key)
         return true
     }
 
@@ -56,10 +62,11 @@ extension BotStore {
         send(text, to: botId, replyTo: nil, nonce: UUID().uuidString, files: files)
     }
 
-    private func send(_ text: String, to botId: String, replyTo: ReplyQuote?, nonce: String, files: [OutgoingFile] = [],
-                      pasted: [String] = []) {
+    @discardableResult
+    func send(_ text: String, to botId: String, replyTo: ReplyQuote?, nonce: String, files: [OutgoingFile] = [],
+              pasted: [String] = []) -> Task<SendProgress, Never>? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty || !files.isEmpty, !retired else { return }
+        guard !trimmed.isEmpty || !files.isEmpty, !retired else { return nil }
         var data = EntryData(text: trimmed, status: "sending", clientNonce: nonce)
         // Shown at once; the computer's own quote replaces it.
         data.replyTo = replyTo
@@ -76,13 +83,12 @@ extension BotStore {
         if let bot = bots[botId] { onSent?(bot, .sending) }
         // The relay mailbox holds text only: files wait for the computer.
         if canQueue, files.isEmpty, let remote = transport as? any RemoteTransport {
-            enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce)
-            return
+            return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce)
         }
-        deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted)
+        return deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted)
     }
 
-    private func deliver(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String] = []) {
+    private func deliver(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String] = []) -> Task<SendProgress, Never> {
         Task {
             do {
                 // Safe to repeat: the computer skips a nonce it already has.
@@ -98,54 +104,72 @@ extension BotStore {
                             ids?.append(id)
                         }
                     }
+                    try Task.checkCancellation()
                     return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
                                                  pasted: pasted)
                 }
                 outgoingFiles[nonce] = nil
                 upsert(e)
                 if let bot = bots[botId] { onSent?(bot, .delivered) }
+                return .delivered
             } catch {
                 if outgoingFiles[nonce] != nil { lastError = "Couldn't send the files: \(error.localizedDescription)" }
                 markLocal(nonce: nonce, botId: botId, status: "failed")
+                return .failed
             }
         }
     }
 
     /// The computer is offline: the message waits, sealed for it, in the relay mailbox.
-    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: String?, nonce: String) {
+    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: String?, nonce: String) -> Task<SendProgress, Never> {
         markLocal(nonce: nonce, botId: botId, status: "waiting")
         saveCache()
-        Task {
+        return Task {
+            defer { saveCache() }
             do {
+                try Task.checkCancellation()
                 try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo)
                 if let bot = bots[botId] { onSent?(bot, .queued) }
+                return .queued
             } catch MailboxError.hostOnline {
                 // Presence can race the stream state. Wait for the host's events channel
                 // before trying the normal API, instead of turning that race into a failure.
                 markLocal(nonce: nonce, botId: botId, status: "sending")
-                await deliverWhenOnline(text, botId: botId, replyTo: replyTo, nonce: nonce)
+                return await deliverWhenOnline(text, botId: botId, replyTo: replyTo, nonce: nonce)
+            } catch is CancellationError {
+                // The shortcut that sent it was cancelled: the failed message says enough.
+                markLocal(nonce: nonce, botId: botId, status: "failed")
+                return .failed
             } catch {
                 // A dropped relay link: the message's own "Failed to send" and Resend say enough.
                 if (error as? HostError)?.isTransient != true { lastError = error.localizedDescription }
                 markLocal(nonce: nonce, botId: botId, status: "failed")
+                return .failed
             }
-            saveCache()
         }
     }
 
-    private func deliverWhenOnline(_ text: String, botId: String, replyTo: String?, nonce: String) async {
+    private func deliverWhenOnline(_ text: String, botId: String, replyTo: String?, nonce: String) async -> SendProgress {
         let deadline = ContinuousClock.now + .seconds(30)
-        while !retired, connection != .online, ContinuousClock.now < deadline {
+        while !retired, !Task.isCancelled, connection != .online, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(200))
         }
-        guard !retired else { return }
+        guard !retired, !Task.isCancelled else {
+            markLocal(nonce: nonce, botId: botId, status: "failed")
+            return .failed
+        }
         guard connection == .online else {
             lastError = "The computer came online, but the message couldn't be sent. Retry it when the connection is ready."
             markLocal(nonce: nonce, botId: botId, status: "failed")
             saveCache()
-            return
+            return .failed
         }
-        deliver(text, botId: botId, replyTo: replyTo, nonce: nonce)
+        let delivery = deliver(text, botId: botId, replyTo: replyTo, nonce: nonce)
+        return await withTaskCancellationHandler {
+            await delivery.value
+        } onCancel: {
+            delivery.cancel()
+        }
     }
 
     /// Takes a waiting message back out of the mailbox, unless the computer already has it.

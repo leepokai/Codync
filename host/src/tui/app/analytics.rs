@@ -56,6 +56,7 @@ impl App {
             Overlay::Usage => Some(Screen::Usage),
             Overlay::Pair(_) => Some(Screen::Pairing),
             Overlay::Memory(_) => Some(Screen::Memory),
+            Overlay::Library(_) => Some(Screen::Library),
             Overlay::Routines(_) => Some(Screen::Routines),
             Overlay::Market(_) => Some(Screen::Marketplace),
             Overlay::Help(_) => Some(Screen::Help),

@@ -40,6 +40,7 @@ struct CodyncApp: App {
                 .environment(\.locale, AppLanguage.locale(
                     preference: AppLanguage(rawValue: appLanguageRaw) ?? .system,
                     systemIsChinese: AppLanguage.systemIsChinese()))
+                .onChange(of: appLanguageRaw) { _, _ in WidgetCenter.shared.reloadAllTimelines() }
                 // No scroll indicators anywhere in the app.
                 .scrollIndicators(.never)
                 .codyncSheet(isPresented: Binding(
@@ -127,8 +128,9 @@ final class AppStore {
 
     private init() {
         let session = AccountSession()
-        let storage = SharedStore.Context(accountID: session.userID)
-        SharedStore.activeAccountID = session.userID
+        // Keep the selected context while Clerk restores: background intents have no scene observer yet.
+        let storage = SharedStore.Context(accountID: session.isReady ? session.userID : SharedStore.activeAccountID)
+        SharedStore.activeAccountID = storage.accountID
         account = session
         Analytics.shared.userID = { [session] in session.userID }
         Analytics.shared.foregroundState = {

@@ -1,4 +1,4 @@
-"""Self-check for asc-submit.py: python3 tools/asc-submit-test.py"""
+"""Self-check for asc-submit.py and store_release.py: python3 tools/asc-submit-test.py"""
 
 import importlib.util
 import pathlib
@@ -10,10 +10,19 @@ sys.modules.setdefault("jwt", types.ModuleType("jwt"))
 spec = importlib.util.spec_from_file_location("asc_submit", pathlib.Path(__file__).with_name("asc-submit.py"))
 asc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(asc)
+import store_release  # noqa: E402, already loaded from tools/ by asc-submit.py
 
 template = pathlib.Path(__file__).parent.parent.joinpath(".github/pull_request_template.md").read_text()
-filled = template.replace("### zh-Hant\n\n-", "### zh-Hant\n\n- 例行任務改用同一個表單").replace(
-    "### en-US\n\n-", "### en-US\n\n- Routines use one form")
+
+
+def fill(platform, zh, en):
+    """The PR template with a bullet per language in `platform`'s What's New section."""
+    head, rest = template.split(f"## What's New: {platform}\n")
+    rest = rest.replace("### zh-Hant\n\n-", f"### zh-Hant\n\n- {zh}", 1).replace("### en-US\n\n-", f"### en-US\n\n- {en}", 1)
+    return f"{head}## What's New: {platform}\n{rest}"
+
+
+filled = fill("iPhone", "例行任務改用同一個表單", "Routines use one form")
 prs = [
     {"body": filled.replace("\n", "\r\n"), "mergeCommit": {"oid": "a"}},
     {"body": filled, "mergeCommit": {"oid": "b"}},  # duplicate bullet is dropped
@@ -23,19 +32,27 @@ prs = [
     # an empty template followed by a PR footer (shipped as "🤖 ..." in v2.4.3) adds nothing
     {"body": template + "\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nhttps://claude.ai/code/x",
      "mergeCommit": {"oid": "c"}},
-    # emoji are stripped (the App Store rejects them), so this repeats a bullet above
-    {"body": filled.replace("- Routines use one form", "- Routines use one form 🚀"), "mergeCommit": {"oid": "b"}},
+    # Android's bullets never reach the App Store, nor the iPhone's Google Play
+    {"body": fill("Android", "通知改經由 Firebase 送達", "Notifications arrive through Firebase"), "mergeCommit": {"oid": "c"}},
 ]
-assert asc.pr_notes(prs, {"a", "b", "c"}) == {
-    "zh-Hant": "- 例行任務改用同一個表單", "en-US": "- Routines use one form"}, asc.pr_notes(prs, {"a", "b", "c"})
-assert asc.pr_notes(prs, {"c"}) == {}
+assert store_release.pr_notes(prs, {"a", "b", "c"}, "iPhone") == {
+    "zh-Hant": "- 例行任務改用同一個表單", "en-US": "- Routines use one form"}, store_release.pr_notes(prs, {"a", "b", "c"}, "iPhone")
+assert store_release.pr_notes(prs, {"c"}, "iPhone") == {}
+assert store_release.pr_notes(prs, {"a", "b", "c"}, "Android") == {
+    "zh-Hant": "- 通知改經由 Firebase 送達", "en-US": "- Notifications arrive through Firebase"}
 print("ok")
 
-# WhatsNew.md loses its emoji too: v2.19.2's ❤️ and 🎉 failed the submission after 2.19.1 was pulled back.
+# A version's WhatsNew.md section, split by locale.
 with tempfile.TemporaryDirectory() as tmp:
-    asc.NOTES = pathlib.Path(tmp, "WhatsNew.md")
-    asc.NOTES.write_text("## 2.19.2\n\n### en-US\n\n- Bots react with a ❤️ or a 🎉\n\n## 2.19.1\n\n### en-US\n\n- Old\n")
-    assert asc.release_notes("2.19.2") == {"en-US": "- Bots react with a  or a"}, asc.release_notes("2.19.2")
+    notes = pathlib.Path(tmp, "WhatsNew.md")
+    notes.write_text("## 2.19.2\n\n### en-US\n\n- Bots react\n\n### zh-Hant\n\n## 2.19.1\n\n### en-US\n\n- Old\n")
+    assert store_release.release_notes(notes, "2.19.2") == {"en-US": "- Bots react"}
+    assert store_release.release_notes(notes, "2.19.3") == {}
+# The App Store rejects emoji: v2.19.2's ❤️ and 🎉 failed the submission after 2.19.1 was pulled back.
+# A bullet that repeats another once they're gone is dropped.
+assert asc.app_store_text("- Bots react with a ❤️ or a 🎉") == "- Bots react with a  or a"
+assert asc.app_store_text("- Routines use one form\n- Routines use one form 🚀\n\n- Next") == \
+    "- Routines use one form\n\n- Next"
 print("ok")
 
 # Release history: v2.2.3 changed only the Mac app, host and website; v2.3.1 changed kit/.
@@ -43,6 +60,11 @@ assert not asc.ios_changed("v2.2.2", "v2.2.3")
 assert asc.ios_changed("v2.3.0", "v2.3.1")
 assert not asc.ios_changed("v2.19.2", "v2.19.3")  # only WhatsNew.md under apps/ios
 assert asc.ios_changed("v2.19.1", "v2.19.2")
+# v2.24.0's host asks for 2.21.0 (MIN_APP): a store version below it ships again without changes.
+assert store_release.locked_out("2.20.1", "v2.24.0")
+assert not store_release.locked_out("2.21.0", "v2.24.0")
+assert not store_release.locked_out(None, "v2.24.0")
+assert not store_release.locked_out("2.1.0", "v2.2.0")  # predates MIN_APP
 print("ok")
 
 # The base version: skip the run's own version and any never sent or pulled back, keep a rejected one.

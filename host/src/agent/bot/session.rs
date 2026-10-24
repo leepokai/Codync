@@ -5,6 +5,7 @@ use super::launch::{Selected, claude_meta, launch_commands, select_model, start_
 use super::{Actor, Conn, Instructions, NoticeStyle};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
+use crate::agent::registry::Candidate;
 use crate::chat::{context, memory};
 use crate::store::run_session_key;
 use anyhow::{Result, anyhow, bail};
@@ -124,13 +125,27 @@ impl Actor {
             composio.then_some("composio"),
         ];
         for name in builtin.into_iter().flatten() {
-            servers.push(json!({
-                "name": name, "command": exe,
-                "args": ["mcp", name, "--bot", self.cfg.id, "--port", port.to_string()],
-                "env": [],
-            }));
+            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", &self.cfg.id], port));
         }
         Ok(Value::Array(servers))
+    }
+
+    /// Starts the agent one way: resolved first (a registry build can download), with the harness's own memory set
+    /// for the bot.
+    async fn start_candidate(
+        &self,
+        candidate: Candidate,
+        env: &[(String, String)],
+        budget: Duration,
+        progress: impl Fn(&str),
+    ) -> Result<Conn> {
+        let mut command = [candidate.resolve(progress).await?.acp()];
+        self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
+        let mut env = env.to_vec();
+        own_memory::apply(&self.cfg, &mut env, &mut command).await;
+        start_agent(&command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
+            tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
+        })
     }
 
     /// Makes sure the agent runs and `slot`'s session (main, or a routine run's) is live;
@@ -150,34 +165,30 @@ impl Actor {
         }
         if self.conn.is_none() {
             let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
-            let mut candidates = launch_commands(&self.cfg, move |msg: &str| {
+            let progress = move |msg: &str| {
                 let msg = msg.to_owned();
                 hub.set_runtime(&id, |r| r.activity = msg);
-            })
-            .await?;
-            self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
+            };
+            let candidates = launch_commands(&self.cfg)?;
             // Keys saved from an "environment variable" sign-in.
             let mut env = crate::agent::auth::env(&self.hub.store, &self.cfg.backend)?;
-            own_memory::apply(&self.cfg, &mut env, &mut candidates).await;
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});
                 env.push(("CODEX_CONFIG".into(), config.to_string()));
             }
             let mut last_err = None;
-            for (i, command) in candidates.iter().enumerate() {
-                let fallback_left = i + 1 < candidates.len();
+            let count = candidates.len();
+            for (i, candidate) in candidates.into_iter().enumerate() {
+                let fallback_left = i + 1 < count;
                 // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
-                match start_agent(command, &self.cfg.cwd, &env, budget).await {
+                match self.start_candidate(candidate, &env, budget, &progress).await {
                     Ok(conn) => {
                         self.conn = Some(conn);
                         break;
                     }
-                    Err(e) => {
-                        tracing::info!(command, error = format!("{e:#}"), "agent failed to start");
-                        last_err = Some(e);
-                    }
+                    Err(e) => last_err = Some(e),
                 }
             }
             if self.conn.is_none() {

@@ -1,9 +1,9 @@
-//! File copies run outside the actor; publication still belongs to its original turn.
+//! File copies run outside the actor; publication still belongs to its original turn. Artifact cards post the same way.
 use super::Actor;
 use crate::chat::files::{self, Snapshot};
 use crate::store::EntryKind;
 use anyhow::{Result, anyhow, ensure};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::{
     Arc,
@@ -82,9 +82,20 @@ impl Actor {
         ensure!(!self.stop_requested, "turn is stopping");
         ensure!(
             self.active_group.is_none() && self.active_request.is_none() && self.active_routine.is_none(),
-            "send_file is only available in the bot's own chat"
+            "send_file and artifact cards are only available in the bot's own chat"
         );
         self.turn.ok_or_else(|| anyhow!("no turn is running"))
+    }
+
+    /// A published artifact's card (`chat::artifacts`, its entry's `data`): a message of the turn, like a shared file.
+    pub(super) fn post_artifact(&mut self, data: Value) -> Result<String> {
+        let turn = self.can_send_file()?;
+        let text = data["text"].as_str().unwrap_or_default().to_owned();
+        self.close_seg();
+        let entry = self.add(EntryKind::Agent, turn, data).ok_or_else(|| anyhow!("couldn't save the artifact card"))?;
+        self.files.summary = Some(text);
+        self.set_activity("Working…");
+        Ok(entry.id)
     }
 
     pub(super) fn finish_file(&mut self, completed: Completed) {

@@ -46,9 +46,10 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** A rounded input box (`fieldBox`): a plain field on the ground color. */
+/** A rounded input box (`fieldBox`): a plain field on the ground color, or on the card color in an outlined card. */
 @Composable internal fun FieldBox(text: String, onChange: (String) -> Unit, prompt: String, minLines: Int = 1, maxLines: Int = 1,
-    style: TextStyle = Type.body, fill: Color = Palette.background, capitalize: Boolean = true, imeAction: ImeAction = ImeAction.Default,
+    style: TextStyle = Type.body, fill: Color = if (LocalCardStyle.current == CardStyle.Outlined) Palette.surface else Palette.background,
+    capitalize: Boolean = true, imeAction: ImeAction = ImeAction.Default,
     actions: KeyboardActions = KeyboardActions.Default) {
     Box(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(fill).padding(horizontal = 14.dp, vertical = 11.dp)) {
         PlainTextField(text, onChange, Modifier.fillMaxWidth(), prompt, singleLine = maxLines == 1, style = style, minLines = minLines,

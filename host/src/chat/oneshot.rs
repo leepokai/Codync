@@ -21,13 +21,17 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     if hub.store.kv_read(&format!("agent-env:{}", cfg.backend))?.is_some() {
         crate::market::vault::unlock(hub.clone()).await?;
     }
-    let mut env = crate::agent::auth::env(&hub.store, &cfg.backend)?;
-    let mut commands = crate::agent::bot::launch_commands(cfg, |_| {}).await?;
-    crate::agent::own_memory::turn_off(&cfg.backend, &cwd, &mut env, &mut commands).await;
+    let env = crate::agent::auth::env(&hub.store, &cfg.backend)?;
     let mut conn = None;
     let mut last_err = None;
-    for command in commands {
-        match crate::agent::bot::start_agent(&command, &cwd, &env, Duration::from_secs(60)).await {
+    for candidate in crate::agent::bot::launch_commands(cfg)? {
+        let started = async {
+            let mut command = [candidate.resolve(|_| {}).await?.acp()];
+            let mut env = env.clone();
+            crate::agent::own_memory::turn_off(&cfg.backend, &cwd, &mut env, &mut command).await;
+            crate::agent::bot::start_agent(&command[0], &cwd, &env, Duration::from_secs(60)).await
+        };
+        match started.await {
             Ok(c) => {
                 conn = Some(c);
                 break;

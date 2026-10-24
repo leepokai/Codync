@@ -23,6 +23,16 @@ public extension BotActivityPresentation {
     /// The caption stays quiet while the bot works and takes the state's color otherwise.
     var captionTint: Color { phase == .working ? Palette.secondary : tint }
 
+    /// How many of the progress line's four segments are filled, as on Android's Live update.
+    var progressStep: Int {
+        switch phase {
+        case .sending, .queued: 1
+        case .working, .stale, .waiting: 2
+        case .needsInput: 3
+        case .completed, .failed: 4
+        }
+    }
+
     var mood: CharacterAvatar.Mood {
         switch phase {
         case .working: .working
@@ -89,6 +99,22 @@ public struct ActivityCaption: View {
     }
 }
 
+/// The task's progress: four segments that fill as it moves, in the state's color.
+public struct ActivityProgress: View {
+    let state: BotActivityPresentation
+
+    public init(state: BotActivityPresentation) { self.state = state }
+
+    public var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<4, id: \.self) { index in
+                Capsule().fill(index < state.progressStep ? state.tint : state.tint.opacity(0.16))
+            }
+        }
+        .frame(height: 6)
+    }
+}
+
 /// Opens the conversation on the request; approval itself stays on the permission card.
 public struct ActivityReviewButton: View {
     let state: BotActivityPresentation
@@ -142,6 +168,7 @@ public struct BotActivityCard<Face: View, Mark: View>: View {
                 Spacer(minLength: 8)
                 mark
             }
+            ActivityProgress(state: state)
             if state.phase == .needsInput {
                 ActivityReviewButton(state: state, link: link).transition(.activityRow)
             }
@@ -149,7 +176,7 @@ public struct BotActivityCard<Face: View, Mark: View>: View {
         .padding(16)
         .animation(Motion.activityPhase, value: state)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(name), \(state.title). \(state.caption)")
+        .accessibilityLabel("\(name), \(state.title). \(state.caption). \(L10n.tr("Progress, step \(state.progressStep) of 4"))")
     }
 }
 

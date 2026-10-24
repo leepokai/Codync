@@ -87,7 +87,9 @@ abstract class CodyncWidget(private val kind: WidgetKind) : GlanceAppWidget() {
             val feed = remember(revision) { WidgetStore.feed(context) }
             val provider = remember(revision) { WidgetStore.provider(context, widget) }
             val team = remember(revision) { WidgetStore.team(context, widget) }
-            WidgetCard(feed, kind, provider, team, sample = false)
+            androidx.compose.runtime.key(revision) {
+                WidgetCard(feed, kind, provider, team, sample = false)
+            }
         }
     }
     override suspend fun providePreview(context: Context, widgetCategory: Int) {
@@ -264,16 +266,16 @@ private const val WARNING = 0xFFF0A030.toInt()
 
 @Composable private fun phrase(text: String): String {
     val context = LocalContext.current
-    val language = AppLanguageStore.get(context)
+    val language = AppLanguageStore.get(context).resolved(context.resources.configuration.locales[0].toLanguageTag())
     val table = AppLanguageStore.phrases(context, language)
-    return translate(text, language, java.util.Locale.getDefault().language == "zh", table)
+    return translate(text, language, language.usesChinese(false), table)
 }
 
 @Composable private fun resetSpoken(raw: String): String {
     val context = LocalContext.current
-    val language = AppLanguageStore.get(context)
+    val language = AppLanguageStore.get(context).resolved(context.resources.configuration.locales[0].toLanguageTag())
     val table = AppLanguageStore.phrases(context, language)
-    val systemChinese = java.util.Locale.getDefault().language == "zh"
+    val systemChinese = language.usesChinese(false)
     return spokenReset(raw, language.usesChinese(systemChinese)) { translate(it, language, systemChinese, table) }
 }
 

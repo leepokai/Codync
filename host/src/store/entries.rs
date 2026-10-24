@@ -162,6 +162,18 @@ impl Store {
         Ok(rows)
     }
 
+    /// A chat's messages with files (shared by a bot, attached by the user), newest first: its Library.
+    // ponytail: scans the chat's entries without an index; add one if a long chat's Library gets slow.
+    pub fn file_messages(&self, bot_id: &str, limit: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1
+               AND (json_array_length(data, '$.files') > 0 OR json_array_length(data, '$.attachments') > 0)
+             ORDER BY seq DESC LIMIT ?2"
+        ))?;
+        Ok(st.query_map(params![bot_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
     // ponytail: scans notices without an index; sign-ins are rare, add one if it shows up in profiles.
     pub fn pending_sign_ins(&self, backend: &str) -> Result<Vec<Entry>> {

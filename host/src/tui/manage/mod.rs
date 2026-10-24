@@ -9,6 +9,7 @@ mod agent;
 mod analytics;
 mod bot_chat;
 mod fields;
+mod library;
 mod market;
 mod memory;
 mod pages;
@@ -19,6 +20,7 @@ mod when;
 
 pub use analytics::AnalyticsSheet;
 pub use fields::handoff_fields;
+pub use library::{ArtifactTitles, LibraryItem};
 pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
 pub use pages::Page;
 pub use skill::SkillSheet;
@@ -43,6 +45,8 @@ pub enum Reply {
     MemoryFile(String),
     Routines(String),
     RoutineSaved,
+    /// A bot's Library (`library {botId}`).
+    Library(String),
     /// A routine's webhook URL and key: copied as a ready-to-run curl.
     Webhook,
     /// A bot conversation's fetched history.
@@ -77,6 +81,13 @@ pub struct BotChatSheet {
     /// Set by the last draw, for clamping the scroll and paging.
     pub max_scroll: Cell<usize>,
     pub page: Cell<usize>,
+}
+
+/// A bot's Library tab: its artifacts and the files shared in its chat, newest first.
+pub struct Library {
+    pub bot: String,
+    pub items: Option<Vec<LibraryItem>>,
+    pub cursor: usize,
 }
 
 pub struct RoutineList {
@@ -176,6 +187,10 @@ pub enum Submit {
     Import,
     /// A handoff card's text (the card's entry id).
     Handoff(String),
+    RenameArtifact {
+        bot: String,
+        artifact: String,
+    },
 }
 
 /// A few labeled text fields: an agent's keys, a connector's setup, a pasted MCP config.
@@ -240,18 +255,27 @@ impl App {
         }
     }
 
-    /// Saves a message's files to Downloads.
-    pub(super) fn save_files(&mut self, bot: &str, entry: &str, data: &Value) {
-        if self.download.take().is_some() {
+    /// `f` while a download runs: stops it.
+    fn cancel_download(&mut self) -> bool {
+        let running = self.download.take().is_some();
+        if running {
             self.flash("Download cancelled · f retries");
+        }
+        running
+    }
+
+    /// Saves a message's files, or its artifact, to Downloads.
+    pub(super) fn save_files(&mut self, bot: &str, entry: &str, data: &Value) {
+        if self.cancel_download() {
+            return;
+        }
+        if let Some(artifact) = data["artifact"]["id"].as_str() {
+            self.fetch_artifact(bot, artifact, super::net::artifacts::ArtifactTo::Downloads);
             return;
         }
         if let Some(meta) = data["files"].as_array().and_then(|files| files.first()) {
             match serde_json::from_value(meta.clone()) {
-                Ok(file) => {
-                    self.download = Some(self.client.download_file(entry.to_owned(), file, self.tx.clone()));
-                    self.flash("Downloading… · f cancels");
-                }
+                Ok(file) => self.download_shared(entry.to_owned(), file),
                 Err(error) => self.flash(&format!("Invalid file: {error}")),
             }
             return;
@@ -266,6 +290,17 @@ impl App {
             self.flash("No files on that message");
             return;
         }
+        self.save_uploads(bot, files);
+    }
+
+    /// Saves a file the bot shared (`readFile`), with progress; `f` again cancels.
+    fn download_shared(&mut self, entry: String, file: crate::chat::files::SharedFile) {
+        self.download = Some(self.client.download_file(entry, file, self.tx.clone()));
+        self.flash("Downloading… · f cancels");
+    }
+
+    /// Saves files the user attached (`(upload id, name)`, `readUpload`).
+    fn save_uploads(&mut self, bot: &str, files: Vec<(String, String)>) {
         self.flash("Saving…");
         self.client.spawn_download(bot.to_owned(), files, self.tx.clone());
     }
@@ -301,9 +336,11 @@ impl App {
 /// Opens `url` in this computer's browser, when the host is this computer.
 pub(super) fn open_browser(url: &str, host: &str) -> bool {
     let local = ["//127.0.0.1", "//localhost", "//[::1]"].iter().any(|h| host.contains(h));
-    if !local || url.is_empty() {
-        return false;
-    }
+    local && !url.is_empty() && open_here(std::ffi::OsStr::new(url))
+}
+
+/// Opens a link or file with this computer's default app for it (a web page: the browser).
+pub(in crate::tui) fn open_here(target: &std::ffi::OsStr) -> bool {
     let mut command = if cfg!(windows) {
         let mut c = std::process::Command::new("rundll32");
         c.arg("url.dll,FileProtocolHandler");
@@ -311,5 +348,5 @@ pub(super) fn open_browser(url: &str, host: &str) -> bool {
     } else {
         std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
     };
-    command.arg(url).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().is_ok()
+    command.arg(target).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().is_ok()
 }

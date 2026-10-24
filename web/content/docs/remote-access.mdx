@@ -1,0 +1,110 @@
+Your bots run on your computer. The iPhone app reaches that computer in one of two ways: **directly** (same Wi-Fi or local network, Tailscale, or an address you publish yourself) or through the **Codync relay**, a service on Cloudflare that passes encrypted traffic between your phone and your computer when they can't see each other. Both routes use the same end-to-end encrypted connection, and the phone picks one on its own.
+
+The desktop app and the terminal UI work differently: they talk to the host on the same computer, or to another computer over SSH. They don't use the relay.
+
+## How the phone picks a route
+
+Each time it connects, the phone first tries the computer's direct addresses. If none answers, it connects through the relay. When your network changes or you return to the app, it tries again, so it moves back to a direct connection when one becomes available.
+
+| Route | When it works | What you set up |
+| --- | --- | --- |
+| Wi-Fi or local network | Phone and computer are on the same network | Nothing |
+| Tailscale | Phone and computer are both on your Tailscale network | Tailscale on both |
+| Your own URL | You run an HTTPS reverse proxy in front of the host | See "Your own HTTPS reverse proxy" below |
+| Codync relay | Anywhere with internet | Nothing (on by default) |
+
+The host lists its Tailscale and private network addresses, plus any URL you set yourself. It never advertises a public IP address on its own.
+
+## Pairing
+
+Pairing introduces your phone and your computer to each other. The computer shows a one-time code as a QR code; the phone scans it and learns the computer's public keys and addresses. The computer in turn remembers your phone's key. From then on, each side can check that it's talking to the other, on any route.
+
+Show the code on the computer:
+
+- **Desktop app:** open Codync in the menu bar (macOS) or the tray (Windows, Linux) and choose **Pair iPhone…**. You can also open **Settings → Computers** and use the QR code button on the computer's card.
+- **Terminal:** run `codync-host pair`. It prints the QR code in the terminal. `codync-host pair --json` prints the link instead.
+- **Terminal UI:** press `^k` and choose **Pair a phone…**.
+
+Then, on the iPhone, scan it from the welcome screen, or later from **Computers & settings → Pair a computer** (tap the account button, then **Computers & settings**). You can also paste the `codync://pair` link instead of scanning.
+
+A code works once and expires after 10 minutes. If it has expired, show a new one on the computer. Pairing needs no account and works over any route, including the relay.
+
+## Signing in (optional)
+
+You can sign in with Apple or Google on the iPhone and in the desktop app. Signing in doesn't give any device access by itself. It lets your phone find the computers in your account without scanning a code:
+
+1. On the computer, sign in to the desktop app. The computer joins your account. For an SSH computer, choose **Add to account** on its card in **Settings → Computers**.
+2. On the iPhone, sign in with the same account and open **Computers & settings**. Your account's computers are listed there. Tap **Ask for access**. The phone shows a 6-digit code.
+3. On the computer, an **Access request** opens with a code. Choose **Approve** only if it matches the code on your phone exactly. If it doesn't, choose **Deny**: someone may be trying to get in.
+
+On a computer without the desktop app, use `codync-host access` to list requests and `codync-host access approve <code>` to approve one.
+
+Comparing the code is what stops anyone who controls the Codync cloud from slipping in their own device. In **Settings → Computers**, **Skip the 6-digit check** lets devices signed in to your account in without it. Leave it off unless you accept the risk the app warns about: anyone who gets into your account, or anyone who compromises Codync's cloud, could then add a device with full control of the computer. Devices paired with a QR code aren't affected by this setting.
+
+Devices approved through your account only work while the computer stays in touch with the Codync cloud. Devices paired with a QR code don't depend on it.
+
+## End-to-end encryption
+
+Everything between your phone and your computer is encrypted on one end and decrypted on the other: messages, files, approvals, bot output, terminals. The relay passes along data it can't read.
+
+- Each connection starts with a fresh key exchange, signed with the keys learned during pairing or approval.
+- Only you can add a device to a computer: by showing a pairing code on it, or by approving a request on it. The relay can't add one (unless you turned on **Skip the 6-digit check**).
+- A direct connection on your local network is encrypted too. Other devices on that network can still see that your phone is connecting to your computer.
+
+For what the relay does see (such as connection times and sizes), see [Privacy](/docs/privacy).
+
+## Turning the relay off
+
+In the desktop app, open **Settings → Computers** and turn off **Reach from anywhere** on the computer's card. On a computer without the desktop app, run `codync-host cloud --disable` (and `codync-host cloud --enable` to turn it back on). `codync-host cloud` shows the current state.
+
+With the relay off:
+
+- The phone reaches the computer only directly: Wi-Fi, Tailscale or your own URL.
+- Devices approved through your account can't connect. Devices paired with a QR code still can.
+- Deliveries to public routine webhooks no longer reach the computer. Local ones keep working. The relay still accepts deliveries at the old public URLs and keeps them, readable, for up to 72 hours; they run if you turn the relay back on within that time. To stop them, remove the URL from the sender, or delete the routine or replace its key while the relay is on.
+
+## Your own HTTPS reverse proxy
+
+If you already run a web server with a domain and TLS certificate, you can give the phone its own direct address, such as `https://codync.example.com`.
+
+1. **Forward only `/channel`** to the host (`http://127.0.0.1:19222` by default), at the root of a hostname, with WebSocket upgrades allowed.
+2. **Never forward `/api`, `/events`, `/term` or `/oauth`.** The host answers those only to programs on the same computer. A proxy on that computer makes every request it forwards look local, so forwarding them removes that protection.
+3. **Set `CODYNC_EXTERNAL_URL`** in the host's environment to the public URL, for example `CODYNC_EXTERNAL_URL=https://codync.example.com`. Separate several with commas. Each must be an `http://` or `https://` URL at the root of a host, with no path, query, user name or password; the host ignores any other entry and logs a warning.
+4. **Restart the host.** It reads the variable when it starts.
+
+The phone connects to `<url>/channel?v=1`. To check the proxy, open `<url>/channel` in a browser or with `curl`: a `400` (no WebSocket upgrade) or a `426 upgradeRequired` (an upgrade without `?v=1`) means requests reach the host. The phone's own connection gets `101`.
+
+On Linux, add the variable with a systemd drop-in:
+
+```sh
+systemctl --user edit codync-host
+# add these two lines, then save:
+# [Service]
+# Environment=CODYNC_EXTERNAL_URL=https://codync.example.com
+systemctl --user restart codync-host
+```
+
+If you run the host under your own supervisor instead of the installed service, start it with `CODYNC_EXTERNAL_URL=https://codync.example.com codync-host serve --bind 127.0.0.1`. Binding to `127.0.0.1` keeps the host reachable only through the proxy (and the relay).
+
+The host puts these URLs first in the pairing code and sends its current addresses on every connection, by any route. Paired phones save them on their own the next time they connect, so you don't need to pair again. Pair again only if the phone can't reach the computer at all: none of its saved addresses answers and the relay is off.
+
+## SSH computers in the desktop app
+
+The desktop app on macOS and Linux can also run bots on another computer you reach with SSH, such as a Linux server or a Mac mini. Open **Settings → Computers**, and under **Over SSH** choose **Add SSH computer**. The other computer needs `codync-host` installed. Codync opens an SSH tunnel to that computer's host using your SSH config and keys (or ssh-agent); your keys stay on the computer running the desktop app. On the first connection, check the host key fingerprint, then choose **Trust and connect**.
+
+The SSH tunnel serves only the desktop app. To use that computer from your phone, pair the phone with it directly. Details for servers: [Linux servers](/docs/linux-servers).
+
+## Public routine webhooks
+
+A routine can start when another service (GitHub, a monitoring tool, a script) sends it a webhook. Each webhook routine has a key and two addresses:
+
+- A **public URL** on the Codync relay. Services anywhere can reach it without you opening a port. If your computer is offline, the relay keeps deliveries for up to 72 hours and hands them over when it's back.
+- A **local URL** on the computer itself (`http://127.0.0.1:19222/...`).
+
+Webhook deliveries are **not** end-to-end encrypted. The relay receives them over HTTPS, can read their content, and stores the routine's key to check signatures. Your computer checks the key again before anything runs. Turning the relay off doesn't take the public URL down (see [Turning the relay off](#turning-the-relay-off)). Setting up webhook routines: [Routines](/docs/routines).
+
+## Removing a device's access
+
+- **On the computer:** in **Settings → Computers**, the list **Devices that can use** the computer has **Revoke access** for each device. Without the desktop app, use `codync-host devices` to list devices and `codync-host devices revoke <key>` to remove one. The device disconnects right away and has to pair or ask again.
+- **On the iPhone:** in **Computers & settings**, remove a paired computer, or revoke this phone's account access to one. The computer keeps its bots and chats.
+- **Remove from account** on a computer's card disconnects devices approved through the account. Devices paired with a QR code keep their access.

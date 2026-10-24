@@ -7,7 +7,9 @@ extension BotStore {
     public func retire() {
         let calls = Array(voiceCalls.values)
         voiceCalls.removeAll()
-        setActive(false)
+        isActive = false
+        stopTransport()
+        saveCache()
         retired = true
         fileDownloads.retire()
         for call in calls { call.end() }
@@ -22,6 +24,7 @@ extension BotStore {
         client = nil
         selection = nil
         screenRequest = nil
+        cancelVoiceCallRequest()
     }
 
     public func setActive(_ active: Bool) {
@@ -29,16 +32,14 @@ extension BotStore {
         isActive = active
         if active {
             // Returning to the foreground must not interrupt a live call's sends.
-            if voiceCalls.isEmpty || streamTask == nil { restartStream() }
-        } else if voiceCalls.isEmpty {
-            // Disconnect so the host knows we're gone and sends pushes instead.
-            stopTransport()
-            saveCache()
+            if !hasBackgroundWork || streamTask == nil { restartStream() }
+        } else {
+            stopIfIdle()
         }
     }
 
     public func restartStream() {
-        guard isActive || !voiceCalls.isEmpty, !retired else { return }
+        guard isActive || hasBackgroundWork, !retired else { return }
         stopTransport()
         if connection != .online { setConnection(.connecting) }
         streamTask = Task { [weak self] in await self?.runStream() }
@@ -54,7 +55,26 @@ extension BotStore {
 
     func endVoiceCall(_ id: UUID) {
         guard voiceCalls.removeValue(forKey: id) != nil else { return }
-        if !isActive && voiceCalls.isEmpty {
+        stopIfIdle()
+    }
+
+    func beginShortcutSend() throws {
+        try Task.checkCancellation()
+        guard !retired else { throw CancellationError() }
+        shortcutSends += 1
+        if streamTask == nil { restartStream() }
+    }
+
+    func endShortcutSend() {
+        shortcutSends -= 1
+        if !retired { stopIfIdle() }
+    }
+
+    private var hasBackgroundWork: Bool { !voiceCalls.isEmpty || shortcutSends > 0 }
+
+    private func stopIfIdle() {
+        if !isActive && !hasBackgroundWork {
+            // Disconnect so the host knows we're gone and sends pushes instead.
             stopTransport()
             saveCache()
         }

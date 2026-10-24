@@ -49,9 +49,10 @@ export class ComposerDrafts {
     this.save()
   }
 
+  /** The chat's draft and its artifacts' (`artifactDraftKey`). */
   removeBot(bot: string) {
     if (this.retired) return
-    this.values.delete(bot)
+    for (const key of [...this.values.keys()]) if (key === bot || key.startsWith(`${bot}/`)) this.values.delete(key)
     this.save()
   }
 

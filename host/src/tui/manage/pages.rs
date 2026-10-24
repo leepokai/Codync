@@ -1,5 +1,6 @@
-//! A bot's three pages, as in the desktop inspector and the iPhone's details: Details (whether it
-//! may use the computer, and its routines), Memory and Settings. Shift+←→ moves between them.
+//! A bot's pages of details, as in the desktop inspector and the iPhone's details: Details (whether it
+//! may use the computer, and its routines), Library (the artifacts it made and the files shared in its
+//! chat), Memory and Settings. Shift+←→ moves between them.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -8,16 +9,18 @@ use super::super::app::App;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Page {
     Details,
+    Library,
     Memory,
     Settings,
 }
 
 impl Page {
-    pub const ALL: [Self; 3] = [Self::Details, Self::Memory, Self::Settings];
+    pub const ALL: [Self; 4] = [Self::Details, Self::Library, Self::Memory, Self::Settings];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Details => "Details",
+            Self::Library => "Library",
             Self::Memory => "Memory",
             Self::Settings => "Settings",
         }
@@ -43,6 +46,7 @@ impl App {
     pub(in crate::tui) fn open_page(&mut self, page: Page) {
         match page {
             Page::Details => self.open_routines(),
+            Page::Library => self.open_library(),
             Page::Memory => self.open_memory(),
             Page::Settings => self.edit_bot(),
         }
@@ -56,8 +60,9 @@ mod tests {
     #[test]
     fn shift_arrows_move_between_pages_and_stop_at_the_ends() {
         let key = |code| KeyEvent::new(code, KeyModifiers::SHIFT);
-        assert_eq!(Page::Details.step(key(KeyCode::Right)), Some(Page::Memory));
-        assert_eq!(Page::Memory.step(key(KeyCode::Left)), Some(Page::Details));
+        assert_eq!(Page::Details.step(key(KeyCode::Right)), Some(Page::Library));
+        assert_eq!(Page::Memory.step(key(KeyCode::Left)), Some(Page::Library));
+        assert_eq!(Page::Library.step(key(KeyCode::Left)), Some(Page::Details));
         assert_eq!(Page::Settings.step(key(KeyCode::Right)), None);
         assert_eq!(Page::Details.step(key(KeyCode::Left)), None);
         assert_eq!(

@@ -36,9 +36,11 @@ test('drafts saved before quote replies stay with their chat', () => {
 test('deleting a bot removes its draft, but preserves other bots', () => {
   const drafts = new ComposerDrafts(storage(), 'drafts')
   drafts.set('bot', 'main')
+  drafts.set('bot/artifact/a', 'about the artifact')
   drafts.set('other', 'keep')
   drafts.removeBot('bot')
   assert.equal(drafts.get('bot'), '')
+  assert.equal(drafts.get('bot/artifact/a'), '')
   assert.equal(drafts.get('other'), 'keep')
 })
 

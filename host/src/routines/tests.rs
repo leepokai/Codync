@@ -68,6 +68,8 @@ fn duplicate_delivery_is_idempotent_and_cross_bot_edits_fail() {
     let second = routines.enqueue(&store, "bot", "routine", Value::Null, Some("same".into()), false).unwrap();
     assert_eq!(first["run"]["id"], second["run"]["id"]);
     assert!(routines.set_enabled(&store, "other", "routine", false).is_err());
+    assert!(routines.enqueue(&store, "other", "routine", Value::Null, None, true).is_err());
+    assert!(routines.owns("bot", "routine") && !routines.owns("other", "routine"));
     assert!(routines.enqueue(&store, "bot", "routine", Value::Null, None, false).is_err());
 }
 #[test]

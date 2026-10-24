@@ -24,6 +24,9 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var clientNonce: String?
     public var title: String?
     public var toolKind: String?
+    /// tool: whether it's the bot's own bookkeeping (composing its message, keeping its memory), left out of the
+    /// working steps; `nil` from a host older than 2.25.0.
+    public var bookkeeping: Bool?
     public var output: String?
     public var diffs: [FileDiff]?
     public var locations: [Location]?
@@ -55,6 +58,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var files: [SharedFile]?
     /// notice: a finished voice call's length.
     public var callSeconds: Int?
+    /// agent: an artifact card, the bot's artifact as published then (the newest version shows).
+    public var artifact: ArtifactRef?
 
     public init(text: String? = nil, status: String? = nil, clientNonce: String? = nil) {
         self.text = text
@@ -64,16 +69,19 @@ public struct EntryData: Codable, Hashable, Sendable {
 }
 
 /// The message a reply quotes: its entry, who wrote it (`user` or a bot id) and its text (at most 500
-/// characters, or its file names). A partial quote still decodes, so the message itself always shows.
+/// characters, or its file names), and the artifact when it is an artifact card. A partial quote still decodes, so the
+/// message itself always shows.
 public struct ReplyQuote: Codable, Hashable, Sendable {
     public var id: String
     public var author: String
     public var text: String
+    public var artifact: String?
 
-    public init(id: String, author: String, text: String) {
+    public init(id: String, author: String, text: String, artifact: String? = nil) {
         self.id = id
         self.author = author
         self.text = text
+        self.artifact = artifact
     }
 
     public init(from decoder: any Decoder) throws {
@@ -81,6 +89,7 @@ public struct ReplyQuote: Codable, Hashable, Sendable {
         id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
         author = try c.decodeIfPresent(String.self, forKey: .author) ?? ""
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        artifact = try c.decodeIfPresent(String.self, forKey: .artifact)
     }
 }
 

@@ -16,7 +16,7 @@
 use crate::LockExt;
 use crate::agent::acp::{AUTH_REQUIRED, Acp, Incoming, RpcError};
 use crate::agent::backends;
-use crate::agent::registry::{Cmd, env_prefix};
+use crate::agent::registry::{Candidate, Cmd, env_prefix};
 use crate::shell::quote as shell_quote;
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow, bail};
@@ -324,19 +324,26 @@ async fn reported_login(inbox: &mut mpsc::UnboundedReceiver<Incoming>) -> Option
 type Started = (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>, Value, Cmd);
 
 async fn start(store: &Store, backend: &str) -> Result<Started> {
+    let mut candidates = backends::launch_candidates(backend)?;
     // The installed CLI alone when there is one: resolving the registry build can mean a long download.
-    let candidates = match backends::local_candidate(backend) {
-        Some(local) => vec![local],
-        None => backends::launch_candidates(backend, |_| {}).await?,
-    };
+    if matches!(candidates.first(), Some(Candidate::Ready(_))) {
+        candidates.truncate(1);
+    }
     let env = env(store, backend)?;
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
     let mut last = None;
     let count = candidates.len();
-    for (i, cmd) in candidates.into_iter().enumerate() {
+    for (i, candidate) in candidates.into_iter().enumerate() {
         // A first `npx` run downloads the package: give the last candidate time.
         let budget = Duration::from_secs(if i + 1 < count { 20 } else { 180 });
+        let cmd = match candidate.resolve(|_| {}).await {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                last = Some(e);
+                continue;
+            }
+        };
         let (acp, mut rx) = match Acp::spawn(&cmd.acp(), &dir.to_string_lossy(), &env) {
             Ok(v) => v,
             Err(e) => {

@@ -51,6 +51,9 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var sharedMemory: Bool?
     /// Keeps the harness's own memory (Claude Code's…) on beside Codync's. Nil where it has no switch.
     public var harnessMemory: Bool?
+    /// The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI):
+    /// every bot on it shares it. Nil from an older host.
+    public var harnessMemoryShared: Bool?
     /// Moves whenever memory changes, so an open memory screen fetches it again.
     public var memoryRev: Int64?
     /// Created without a name: the host names it after its first few conversations.
@@ -147,7 +150,8 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
     public var replyQuote: ReplyQuote {
         let names = (data.attachments?.map(\.name) ?? []) + (data.files?.map(\.name) ?? [])
         let text = data.text.flatMap { $0.isEmpty ? nil : $0 } ?? names.joined(separator: ", ")
-        return ReplyQuote(id: id, author: kind == "user" ? "user" : data.author ?? botId, text: String(text.prefix(500)))
+        return ReplyQuote(id: id, author: kind == "user" ? "user" : data.author ?? botId, text: String(text.prefix(500)),
+                          artifact: data.artifact?.id)
     }
 
     public var date: Date { Date(milliseconds: createdAt) }
@@ -486,6 +490,7 @@ extension Bot {
         createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy)
         sharedMemory = try c.decodeIfPresent(Bool.self, forKey: .sharedMemory)
         harnessMemory = try c.decodeIfPresent(Bool.self, forKey: .harnessMemory)
+        harnessMemoryShared = try c.decodeIfPresent(Bool.self, forKey: .harnessMemoryShared)
         memoryRev = try c.decodeIfPresent(Int64.self, forKey: .memoryRev)
         autoName = try c.decodeIfPresent(Bool.self, forKey: .autoName) ?? false
         createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0

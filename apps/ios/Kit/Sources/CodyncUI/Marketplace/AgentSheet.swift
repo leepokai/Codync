@@ -16,13 +16,13 @@ struct NodeNotice: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Node.js isn't on \(model.hostName)").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
-                    Text("Some agents need it to run. Codync can add a copy just for them.")
+                    Text(L10n.tr("Node.js isn't on {name}").replacingOccurrences(of: "{name}", with: model.hostName)).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text)
+                    Text(L10n.tr("Some agents need it to run. Codync can add a copy just for them."))
                         .font(.caption)
                         .foregroundStyle(Palette.secondary)
                 }
                 // Compact on a phone: under the text, so the text keeps the row's width.
-                Button("Add Node.js", action: add)
+                Button(L10n.tr("Add Node.js"), action: add)
                     .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Palette.onAccent)
@@ -41,7 +41,7 @@ struct NodeNotice: View {
 
 /// Getting an agent ready on the computer: install it, add Node.js when it runs on Node and
 /// the computer has none, then sign in. Sign-in options come from the agent itself (ACP),
-/// plus Codync's own command for CLIs it knows. Bots are made from New chat, not here.
+/// plus Codync's own command for CLIs it knows. Bots are made from New bot, not here.
 struct AgentSheet: View {
     let initial: Backend
     /// Opened from a chat's sign-in request, whose agent refused a turn: the agent is asked
@@ -106,7 +106,7 @@ struct AgentSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(backend.name).font(.title3.weight(.semibold))
                         if let d = backend.description, !d.isEmpty {
-                            Text(d).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(3)
+                            Text(L10n.tr(d)).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(3)
                         }
                     }
                 }
@@ -140,7 +140,7 @@ struct AgentSheet: View {
             }
             signInSection
             if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger).textSelection(.enabled) }
+                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
             }
         }
     }
@@ -160,7 +160,7 @@ struct AgentSheet: View {
                 if checking {
                     ThinkingOrb(state: .connecting, size: 16, color: Palette.secondary)
                 } else {
-                    Button("Check again", systemImage: "arrow.clockwise") { Task { await check() } }
+                    Button(L10n.tr("Check again"), systemImage: "arrow.clockwise") { Task { await check() } }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.plain)
                         .foregroundStyle(Palette.secondary)
@@ -223,8 +223,8 @@ struct AgentSheet: View {
                     .frame(width: 26)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.body.weight(.medium)).foregroundStyle(Palette.text)
-                    Text(detail).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(3)
+                    Text(L10n.tr(title)).font(.body.weight(.medium)).foregroundStyle(Palette.text)
+                    Text(L10n.tr(detail)).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(3)
                 }
                 Spacer(minLength: 8)
                 if busy {
@@ -292,7 +292,7 @@ private struct AgentKeysForm: View {
             ScreenHeader {
                 BackButton(action: back).keyboardShortcut(.cancelAction)
             } title: {
-                Text(method.name).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                Text(L10n.tr(method.name)).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
             } trailing: {
                 if saving {
                     Spinner()
@@ -327,7 +327,7 @@ private struct AgentKeysForm: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     if let d = method.description { Text(d) }
-                    Text("Saved on \(model.hostName) only and given to \(backend.name) when it starts.")
+                    Text(L10n.tr("Saved on \(model.hostName) only and given to \(backend.name) when it starts."))
                     if let link = method.link, let url = URL(string: link) {
                         WebLink("Get a key", url: url)
                     }
@@ -338,7 +338,7 @@ private struct AgentKeysForm: View {
             }
             if !saved.isEmpty {
                 CardSection {
-                    Button("Remove saved keys", role: .destructive) {
+                    Button(L10n.tr("Remove saved keys"), role: .destructive) {
                         save(Dictionary(uniqueKeysWithValues: vars.map { ($0.name, "") }))
                     }
                     .buttonStyle(.plain)
@@ -346,7 +346,7 @@ private struct AgentKeysForm: View {
                 }
             }
             if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .textFieldStyle(.plain)
@@ -385,18 +385,18 @@ private struct SetupStepRow: View {
                 if done {
                     Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(Palette.onAccent)
                 } else {
-                    Text("\(number)").font(.caption.weight(.semibold)).foregroundStyle(Palette.secondary)
+                    Text(L10n.tr("\(number)")).font(.caption.weight(.semibold)).foregroundStyle(Palette.secondary)
                 }
             }
             .frame(width: 26, height: 26)
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium)).foregroundStyle(Palette.text)
-                Text(detail).font(.subheadline).foregroundStyle(Palette.secondary).textSelection(.enabled)
+                Text(L10n.tr(title)).font(.body.weight(.medium)).foregroundStyle(Palette.text)
+                Text(L10n.tr(detail)).font(.subheadline).foregroundStyle(Palette.secondary).textSelection(.enabled)
             }
             Spacer(minLength: 8)
             if let action {
-                Button(action.label, action: action.run)
+                Button(L10n.tr(action.label), action: action.run)
                     .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Palette.text)

@@ -1,0 +1,66 @@
+/* The approval card in the chat, and the command and diff boxes it shares with the trace. */
+.permission-card {
+  width: fit-content;
+  max-width: min(100%, 420px);
+  padding: 16px;
+  background: var(--bubble-agent);
+  border-radius: var(--radius-xl);
+}
+.permission-card-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+.permission-card-title {
+  overflow-wrap: anywhere;
+}
+.permission-card-details {
+  padding-top: 6px;
+}
+.permission-card-options {
+  background: var(--background);
+  border-radius: 14px;
+  margin-top: 4px;
+}
+.permission-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+}
+/* The other answers while one is on its way. */
+.permission-option.dimmed {
+  opacity: 0.4;
+}
+.permission-option-label {
+  flex: 1;
+}
+
+.code-box {
+  background: var(--code-background);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 240px;
+}
+.code-box.diff-box {
+  max-height: 260px;
+}
+.code-box-text {
+  margin: 0;
+  padding: 8px;
+  font-family: var(--mono);
+  font-size: calc(10px * var(--scale));
+  color: var(--text);
+  width: max-content;
+}
+.diff-header {
+  font-family: var(--mono);
+  font-size: var(--text-caption);
+  color: var(--secondary);
+}
+.diff-line {
+  white-space: pre;
+}

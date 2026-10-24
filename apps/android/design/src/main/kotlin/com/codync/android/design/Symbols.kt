@@ -21,6 +21,7 @@ import androidx.annotation.DrawableRes
     "arrow.right.to.line" -> R.drawable.sf_arrow_right_to_line
     "arrow.triangle.2.circlepath" -> R.drawable.sf_arrow_triangle_2_circlepath
     "arrow.triangle.branch" -> R.drawable.sf_arrow_triangle_branch
+    "arrow.turn.down.right" -> R.drawable.sf_arrow_turn_down_right
     "arrow.up" -> R.drawable.sf_arrow_up
     "arrow.up.doc.on.clipboard" -> R.drawable.sf_arrow_up_doc_on_clipboard
     "arrow.up.right" -> R.drawable.sf_arrow_up_right

@@ -141,6 +141,14 @@ pub fn status(store: &Store) -> Result<Value> {
 /// Checks the key with Composio, then keeps it. An empty key forgets Composio.
 pub async fn set_key(store: &Store, key: &str) -> Result<Value> {
     let key = key.trim();
+    if key.starts_with("ck_") {
+        bail!(
+            "This is a Composio Connect consumer key, not a Platform API key. \
+             Install Composio from Connectors and sign in with OAuth, or add \
+             https://connect.composio.dev/mcp as a custom connector with an \
+             x-consumer-api-key header."
+        );
+    }
     if key.is_empty() {
         let _guard = store.connector_lock.lock().map_err(|_| anyhow!("connector storage is busy"))?;
         super::vault::write(store, SLOT, "")?;
@@ -512,6 +520,15 @@ async fn tool(key: &str, slug: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn consumer_key_explains_connect_authentication_without_saving() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let error = set_key(&store, " ck_example ").await.unwrap_err().to_string();
+        assert!(error.contains("x-consumer-api-key"));
+        assert!(error.contains("OAuth"));
+        assert!(load(&store).unwrap().is_none());
+    }
 
     #[test]
     fn stale_refresh_cannot_restore_removed_or_replaced_credentials() {

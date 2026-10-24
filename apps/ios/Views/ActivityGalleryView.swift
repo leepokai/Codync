@@ -34,17 +34,23 @@ struct ActivityGalleryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Toggle(island ? "Show in Dynamic Island" : "Show Live Activities", isOn: $enabled)
+                    // Recorded from the switch itself: both galleries share the setting and stay alive.
+                    Toggle(isOn: Binding(get: { enabled }, set: { on in
+                        enabled = on
+                        Analytics.shared.capture(.settingChanged(.liveActivities, on: on))
+                    })) {
+                        Text(L10n.tr(island ? "Show in Dynamic Island" : "Show Live Activities"))
+                    }
                         .toggleStyle(.codync)
                         .font(.subheadline.weight(.medium))
-                    Text(island
+                    Text(L10n.tr(island
                          ? "The Dynamic Island shows the same Live Activity as the Lock Screen, so this switch turns off both."
-                         : "Starts when you send a task from this iPhone. Follow its progress, then open the conversation when your bot needs you.")
+                         : "Starts when you send a task from this iPhone. Follow its progress, then open the conversation when your bot needs you."))
                         .font(.footnote).foregroundStyle(Palette.secondary)
                     if !allowed {
-                        Text("Live Activities are turned off in iOS Settings.")
+                        Text(L10n.tr("Live Activities are turned off in iOS Settings."))
                             .font(.footnote).foregroundStyle(Palette.secondary)
-                        Button("Open iOS Settings") { openURL(URL(string: UIApplication.openSettingsURLString)!) }
+                        Button(L10n.tr("Open iOS Settings")) { openURL(URL(string: UIApplication.openSettingsURLString)!) }
                             .buttonStyle(.plain)
                             .font(.footnote.weight(.medium))
                             .foregroundStyle(Palette.accent)
@@ -54,9 +60,9 @@ struct ActivityGalleryView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("Preview").font(.subheadline.weight(.medium))
+                        Text(L10n.tr("Preview")).font(.subheadline.weight(.medium))
                         Spacer()
-                        Text("Sample task").font(.caption).foregroundStyle(Palette.secondary)
+                        Text(L10n.tr("Sample task")).font(.caption).foregroundStyle(Palette.secondary)
                     }
                     if forms.count > 1 {
                         ChoicePicker(selection: Binding(get: { form ?? forms[0] }, set: { form = $0 }), options: forms.map { ($0, $0.rawValue) })
@@ -76,7 +82,7 @@ struct ActivityGalleryView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(forms, id: \.self) { explanation($0) }
                 }
-                Text("iOS chooses the presentation based on your device and other active tasks. These previews don't start a Live Activity. Approvals are handled inside Codync.")
+                Text(L10n.tr("iOS chooses the presentation based on your device and other active tasks. These previews don't start a Live Activity. Approvals are handled inside Codync."))
                     .font(.footnote).foregroundStyle(Palette.secondary)
             }
             .padding(18).frame(maxWidth: 560).frame(maxWidth: .infinity)
@@ -98,8 +104,8 @@ struct ActivityGalleryView: View {
         case .expanded: "Touch and hold the Dynamic Island for the current step and the running time, or Review when the bot needs you. Tap to open the conversation."
         }
         return VStack(alignment: .leading, spacing: 4) {
-            Text(form.rawValue).font(.subheadline.weight(.medium)).accessibilityAddTraits(.isHeader)
-            Text(detail).font(.footnote).foregroundStyle(Palette.secondary)
+            Text(L10n.tr(form.rawValue)).font(.subheadline.weight(.medium)).accessibilityAddTraits(.isHeader)
+            Text(L10n.tr(detail)).font(.footnote).foregroundStyle(Palette.secondary)
         }
     }
 }
@@ -111,7 +117,7 @@ struct LockWidgetGalleryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 ChoicePicker(selection: $kind, options: [("bots", "Bots"), ("usage", "Usage limits")])
-                Text("Sample data").font(.caption).foregroundStyle(Palette.secondary)
+                Text(L10n.tr("Sample data")).font(.caption).foregroundStyle(Palette.secondary)
                 ForEach(AccessoryWidgetCard.Family.allCases, id: \.self) { family in
                     VStack(alignment: .leading, spacing: 10) {
                         Text(family.rawValue).font(.subheadline.weight(.medium))
@@ -124,9 +130,9 @@ struct LockWidgetGalleryView: View {
                             .environment(\.colorScheme, .dark)
                     }
                 }
-                Text("Touch and hold your Lock Screen → Customize → Lock Screen. Tap the widget area and choose Codync. Inline widgets go in the date row above the clock.")
+                Text(L10n.tr("Touch and hold your Lock Screen → Customize → Lock Screen. Tap the widget area and choose Codync. Inline widgets go in the date row above the clock."))
                     .font(.footnote).foregroundStyle(Palette.secondary)
-                Text("Choose Bots for task status or Usage limits for the highest reported limit. iOS applies your Lock Screen's color and style.")
+                Text(L10n.tr("Choose Bots for task status or Usage limits for the highest reported limit. iOS applies your Lock Screen's color and style."))
                     .font(.footnote).foregroundStyle(Palette.secondary)
             }
             .padding(18).frame(maxWidth: 560).frame(maxWidth: .infinity)

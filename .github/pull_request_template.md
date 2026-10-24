@@ -7,6 +7,8 @@
 <!--
 Required: run the change end to end locally (a real host plus every client it touches)
 and describe what you tried. Builds and unit tests alone aren't enough.
+If you made the change with Claude Code, also run the `after-change` workflow
+(`.claude/workflows/after-change.js`) from the change's worktree and paste its final report.
 -->
 
 ## What's New

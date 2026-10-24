@@ -97,8 +97,10 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
         }
     }
     if let Some(detail) = e.data["detail"].as_str().filter(|d| !d.trim().is_empty() && e.data["command"].is_null()) {
-        for l in detail.lines().take(4) {
-            out.lines.push(row(vec![Span::styled(truncate(l, inner), t.secondary)]));
+        // As the apps show it: wrapped, up to the length a team change's card is held to.
+        let detail: String = detail.chars().take(crate::chat::manage::MAX_CARD_DETAIL).collect();
+        for l in md::wrap(&[Span::styled(detail, t.secondary)], inner, &[], &[]) {
+            out.lines.push(row(l.spans));
         }
     }
     out.lines.push(row(vec![]));

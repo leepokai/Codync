@@ -20,17 +20,7 @@ impl App {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
                     {
-                        if v["query"].as_str() != Some(m.query.trim())
-                            || v["filter"].as_str() != Some(super::memory::FILTERS[m.filter])
-                            || v["offset"].as_u64() != Some(m.offset as u64)
-                        {
-                            continue;
-                        }
-                        let facts = v["facts"].as_array().cloned().unwrap_or_default();
-                        m.cursor = m.cursor.min(facts.len().saturating_sub(1));
-                        m.facts = Some(facts);
-                        m.total = v["total"].as_u64().and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
-                        m.next_offset = v["nextOffset"].as_u64().and_then(|n| usize::try_from(n).ok());
+                        m.show(v.clone());
                         m.busy = false;
                         m.error = None;
                     }
@@ -41,36 +31,19 @@ impl App {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
                     {
-                        m.mode = MemoryMode::Browse;
                         m.busy = false;
                     }
                 }
                 self.refresh_sheets();
             }
-            Reply::MemoryDetail(bot) => {
+            Reply::MemoryFile(bot) => {
                 for o in &mut self.overlays {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
+                        && let MemoryMode::File { detail, .. } = &mut m.mode
                     {
-                        m.mode = MemoryMode::Detail {
-                            text: format!(
-                                "{}\n\nSession timeline\n{}",
-                                s(&v["history"], "result"),
-                                s(&v["timeline"], "result")
-                            ),
-                            scroll: 0,
-                            id: s(&v["fact"], "id"),
-                            history_cursor: v["history"]["history_cursor"].as_i64(),
-                        };
-                    }
-                }
-            }
-            Reply::MemoryExport(bot) => {
-                for o in &mut self.overlays {
-                    if let Overlay::Memory(m) = o
-                        && m.bot == bot
-                    {
-                        m.mode = MemoryMode::Export { text: s(&v, "json"), scroll: 0 };
+                        *detail = Some(v.clone());
+                        m.busy = false;
                     }
                 }
             }
@@ -104,6 +77,7 @@ impl App {
                             let items = v["routines"].as_array().cloned().unwrap_or_default();
                             l.cursor = l.cursor.min(items.len().saturating_sub(1));
                             l.items = Some(items);
+                            l.runs = v["runs"].as_array().cloned().unwrap_or_default();
                         }
                     }
                 } else {
@@ -275,11 +249,7 @@ impl App {
                     }
                 }
             }
-            Reply::Memory(_)
-            | Reply::MemorySaved(_)
-            | Reply::MemoryDetail(_)
-            | Reply::MemoryExport(_)
-            | Reply::Routines(_) => {
+            Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {
                         Overlay::Memory(m) => {
@@ -305,6 +275,9 @@ impl App {
             match o {
                 Overlay::Memory(m) => {
                     calls.push(("memory", m.body(), After::Sheet(Reply::Memory(m.bot.clone()))));
+                    if let Some(body) = m.file_body() {
+                        calls.push(("memoryFile", body, After::Sheet(Reply::MemoryFile(m.bot.clone()))));
+                    }
                 }
                 Overlay::Routines(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));

@@ -57,20 +57,19 @@
   flex: 1;
   min-width: 0;
   height: 34px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
   white-space: nowrap;
-  font-size: calc(13px * var(--scale));
+  font-size: var(--text-body);
   font-weight: 500;
-  background: var(--chrome-fill);
   border: 1px solid var(--chrome-stroke);
   transition: background-color var(--hover), transform var(--hover);
 }
-.extensions:hover { background: color-mix(in srgb, var(--text) 10%, var(--surface)); }
+.extensions:hover { background: rgba(var(--text-rgb), 0.05); }
 .extensions:active,
 .sidebar-account:active { transform: scale(.97); }
 .extensions-logos { display: flex; flex: none; }
@@ -90,7 +89,7 @@
 }
 .update-badge:hover:not(:disabled) { opacity: .85; }
 .update-badge:active:not(:disabled) { transform: scale(.94); }
-.update-badge:disabled { opacity: .35; }
+.update-badge .spinner circle { stroke: currentColor; }
 @keyframes update-badge-in { from { opacity: 0; transform: scale(.6); } }
 
 @media (prefers-reduced-motion: reduce) {

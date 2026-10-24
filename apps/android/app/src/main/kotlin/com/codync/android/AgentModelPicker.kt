@@ -26,10 +26,11 @@ import kotlinx.coroutines.CancellationException
 
 /**
  * Models come from the selected computer's agent, never a bundled list (iOS `AgentModelPicker`).
- * The selected model's settings follow it; Fast mode is its own row while the agent offers it.
+ * The selected model's settings follow it; Fast mode is its own row while the agent offers it. Without [setFast] (a
+ * fallback's model), the bot's own session and Fast mode don't apply, so neither shows.
  */
 @Composable internal fun AgentModelPicker(state: AppState, load: suspend (String) -> AgentModels, backend: String, selection: String?,
-    options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: (Boolean) -> Unit) {
+    options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?) {
     val online = state.actualConnection is LinkState.Ready
     var catalog by remember(backend) { mutableStateOf<AgentModels?>(null) }
     var loading by remember(backend) { mutableStateOf(false) }
@@ -76,8 +77,10 @@ import kotlinx.coroutines.CancellationException
         if (backend != "custom" && !loading && note != null) Text(note, style = Type.caption, color = Palette.warning)
         else if (backend != "custom" && !loading && catalog?.models?.isEmpty() == true)
             Text("This agent doesn't advertise a model list. Leave Default or enter a model ID.", style = Type.caption, color = Palette.secondary)
-        Text("Changing the model starts a new agent session. Chat history is kept.", style = Type.caption, color = Palette.secondary)
-        val showsFast = (backend != "custom" && catalog?.fastMode == true) || fastMode || (bot?.backend == backend && bot.fastModeShown)
-        if (showsFast) SwitchRow("Fast mode", bot?.fastModeRefusal ?: "Faster replies for more usage, on models that offer it.", fastMode, setFast)
+        if (setFast != null) {
+            Text("Changing the model starts a new agent session. Chat history is kept.", style = Type.caption, color = Palette.secondary)
+            val showsFast = (backend != "custom" && catalog?.fastMode == true) || fastMode || (bot?.backend == backend && bot.fastModeShown)
+            if (showsFast) SwitchRow("Fast mode", bot?.fastModeRefusal ?: "Faster replies for more usage, on models that offer it.", fastMode, setFast)
+        }
     }
 }

@@ -34,7 +34,6 @@ impl Drop for Host {
 async fn start_host() -> Host {
     let home = std::env::temp_dir().join(format!("codync-e2e-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
-    common::seed_memory_runtime(&home);
     let (child, base) = common::serve(&home).await;
     let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
     Host { child, base, token, home }
@@ -543,6 +542,22 @@ async fn wire_shape_matches_the_snapshot() {
     let card = host.wait_for(&bot, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     host.wait_for(&bot, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    // A bot another bot created: its `createdBy`.
+    let lead = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
+    let lead = host
+        .call(
+            "createBot",
+            json!({"name": "Lead", "backend": "custom", "command": common::python_agent(&lead), "connectors": [],
+                "permission": "auto", "manageTeam": true}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    host.call("send", json!({"botId": lead, "text": "MANAGE create_bot {\"name\": \"Made\"}", "clientNonce": "n2"}))
+        .await;
+    let made = host.wait_for(&lead, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert!(made["data"]["text"].as_str().unwrap().starts_with("Done: "), "{made}");
 
     let hello = host.call("hello", json!({})).await;
     let min_app = hello["minApp"].as_str().unwrap().to_owned();

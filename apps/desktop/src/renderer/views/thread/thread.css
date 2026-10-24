@@ -1,4 +1,5 @@
 .thread-view {
+  position: relative;
   display: flex;
   height: 100%;
   overflow: hidden;
@@ -7,6 +8,8 @@
   /* Chat text follows the selected size without an extra platform offset. */
   --conversation: var(--chat);
   --md-scale: var(--chat-scale);
+  /* Messages and the composer share one readable column that grows with the text size. */
+  --column: calc(820px * var(--scale));
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -62,44 +65,43 @@
   -webkit-mask-image: linear-gradient(to bottom, #000, transparent 50%);
   mask-image: linear-gradient(to bottom, #000, transparent 50%);
 }
+@media (prefers-reduced-transparency: reduce) {
+  .top-fade::before {
+    backdrop-filter: none;
+  }
+}
 .title-pill {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 6px 12px 6px 8px;
+  padding: 7px 13px 7px 9px;
   background: var(--chrome-fill);
-  border: 1px solid var(--chrome-stroke);
-  border-radius: 999px;
-  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.12);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-m);
   max-width: 60%;
-}
-.title-pill {
   transition: opacity var(--layout), transform var(--layout);
+}
+.title-pill-chevron {
+  display: flex;
+  width: 0;
+  margin-left: -7px;
+  overflow: hidden;
+  opacity: 0;
+  transition: width var(--hover), margin var(--hover), opacity var(--hover);
+}
+.title-pill:hover .title-pill-chevron {
+  width: calc(10px * var(--scale));
+  margin-left: 0;
+  opacity: 1;
 }
 .title-pill.hidden-by-call {
   opacity: 0;
   transform: translateY(-8px);
 }
-.frosted-circle {
-  border-radius: 50%;
-  background: var(--frosted);
-  backdrop-filter: blur(20px);
-  display: flex;
-}
-.frosted-circle .icon-button {
-  border-radius: 50% !important;
-}
-.round-button {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--frosted);
-  backdrop-filter: blur(20px);
-  display: grid;
-  place-items: center;
-  flex: none;
+.title-pill-subtitle {
+  color: var(--secondary);
 }
 
 .transcript-frame {
@@ -111,9 +113,20 @@
   overflow-y: auto;
   overflow-anchor: none;
 }
+/* The scrolling body of the trace sheet, under its header. */
+.thread-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+/* Half a point at every resolution (the shared hairline is 1 px at 1x). */
+.thread-hairline {
+  height: 0.5px;
+  background: var(--border);
+  flex: none;
+}
 .transcript-content {
   container-type: inline-size;
-  max-width: 1120px;
+  max-width: var(--column);
   margin: 0 auto;
   /* The floating title pill and composer sit over the list; messages pass underneath. */
   padding: 64px 14px var(--composer-height, 70px);
@@ -123,8 +136,11 @@
   width: 100%;
   text-align: center;
   padding: 12px 0;
-  font-size: calc(10px * var(--scale));
+  font-size: var(--text-caption);
   color: var(--secondary);
+}
+.transcript-intro {
+  padding-top: 40px;
 }
 .intro-card {
   display: flex;
@@ -136,12 +152,65 @@
   padding: 0 24px;
   text-align: center;
 }
+.intro-card-path {
+  overflow-wrap: anywhere;
+}
+.intro-card-hint {
+  padding-top: 4px;
+  line-height: 1.5;
+}
+.intro-card-hint.balanced {
+  max-width: 360px;
+  text-wrap: balance;
+}
+/* Room under the last row. */
+.chat-end {
+  height: 8px;
+}
 
 .composer-dock {
   flex: none;
 }
+.composer-update-needed {
+  padding: 0 16px 8px;
+}
 
 /* Messages */
+/* Space above a row: more where a new speaker's run (or a card) starts. */
+.chat-row {
+  padding-top: 4px;
+}
+.chat-row.group-start {
+  padding-top: 12px;
+}
+.chat-row.notice {
+  padding-top: 10px;
+}
+/* A group message's reactions and thread line up past its author's avatar. */
+.chat-row-indent {
+  padding-left: 34px;
+}
+.time-separator {
+  text-align: center;
+  padding: 18px 0 6px;
+}
+.chat-notice {
+  text-align: center;
+}
+.chat-notice-error {
+  padding: 12px;
+  border-radius: var(--radius-m);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.chat-routine-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  margin: 0 auto;
+  font-size: var(--text-caption);
+  color: var(--secondary);
+}
 .message {
   display: flex;
   flex-direction: column;
@@ -175,7 +244,7 @@
 }
 .bubble {
   padding: 8px 10px;
-  border-radius: 16px;
+  border-radius: var(--radius-l);
   max-width: 100%;
   min-width: 0;
 }
@@ -190,13 +259,33 @@
 .bubble.agent {
   background: var(--chat-agent);
 }
+.file-message-cards {
+  display: grid;
+  gap: 6px;
+}
+.user-status-error {
+  margin-right: 4px;
+}
+.user-status-time {
+  opacity: 0;
+  transition: opacity var(--hover);
+}
+.user-status-time.shown {
+  opacity: 1;
+}
 .message-actions {
   position: absolute;
   bottom: 0;
   display: flex;
   align-items: center;
   gap: 2px;
+  opacity: 0;
+  pointer-events: none;
   transition: opacity var(--hover);
+}
+.message-actions.shown {
+  opacity: 1;
+  pointer-events: auto;
 }
 .message-actions.leading {
   right: calc(100% + 6px);
@@ -216,111 +305,55 @@
 }
 .reaction-chip {
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface);
 }
-.thread-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: var(--surface);
+.reaction-chip-bots > * + * {
+  margin-left: -5px;
+}
+/* The message a reply quotes, at the top of its bubble: one line, no wider than a short message. */
+.bubble-quote {
+  max-width: 320px;
+  margin-bottom: 4px;
+  user-select: none;
+}
+/* Agent-side cards (working, approvals) stop short of the far edge. */
+.agent-inset {
+  padding-right: 40px;
+}
+.chat-working {
+  --working-duration: 0.42s;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows var(--working-duration) var(--spring), opacity var(--working-duration) var(--ease-out);
+}
+.chat-working.shown {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.chat-working-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+.chat-working-content {
+  padding-top: 6px;
+  transform: translateY(6px) scale(0.98);
+  transform-origin: top left;
+  transition: transform var(--working-duration) var(--spring);
+}
+.chat-working.shown .chat-working-content {
+  transform: none;
 }
 .working {
   display: flex;
+  /* A column stretches the row to the pill's width, so a long activity truncates. */
   flex-direction: column;
-  gap: 8px;
   padding: 12px;
-  border-radius: 22px;
+  border-radius: var(--radius-xl);
   background: var(--bubble-agent);
   text-align: left;
   min-width: 0;
-}
-.thinking {
-  max-height: 180px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  text-align: left;
-}
-
-/* Composer */
-.mentions {
-  display: flex;
-  gap: 6px;
-  padding: 0 16px 6px;
-  overflow-x: auto;
-}
-.mention {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--surface);
-  flex: none;
-}
-.composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 8px 14px 14px;
-  max-width: 1120px;
-  margin: 0 auto;
-  width: 100%;
-}
-.symbol-swap {
-  animation: symbol-in var(--morph) both;
-}
-@keyframes symbol-in {
-  from {
-    opacity: 0;
-    transform: scale(0.6);
-  }
-}
-.file-chips {
-  display: flex;
-  gap: 6px;
-  padding: 8px 10px 0;
-  overflow-x: auto;
-}
-.file-chips:has(.attachment-tile) {
-  align-items: flex-start;
-}
-.attachment-tile {
-  position: relative;
-  width: 80px;
-  height: 80px;
-  flex: none;
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--surface);
-}
-.attachment-tile img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.attachment-remove {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.75);
-}
-.file-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--surface);
-  flex: none;
 }
 
 .call-overlay {
@@ -340,48 +373,31 @@
   }
 }
 
+/* The conversation's room for the panel changes in one step; the panel itself slides over it, out
+   of the flow, so a long chat is laid out once per open or close, not on every frame. */
+.side-panel-slot {
+  flex: none;
+}
 .side-panel {
-  height: 100%;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 7;
   display: flex;
+  background: var(--background);
+  transition: right var(--layout);
+  /* The margin lets the edge's drag area reach into the conversation. */
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+.side-panel-content {
+  height: 100%;
   flex: none;
-  opacity: 0;
-  transition: width var(--layout), opacity var(--morph);
-  overflow: hidden;
-}
-.side-panel.shown { opacity: 1; }
-.side-panel-border {
-  width: 1px;
-  background: var(--border);
-  flex: none;
-}
-@keyframes panel-slide {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-}
-.panel-slide.from-trailing {
-  animation: from-trailing var(--layout) both;
-}
-.panel-slide.from-leading {
-  animation: from-leading var(--layout) both;
-}
-@keyframes from-trailing {
-  from {
-    opacity: 0;
-    transform: translateX(30%);
-  }
-}
-@keyframes from-leading {
-  from {
-    opacity: 0;
-    transform: translateX(-30%);
-  }
 }
 
 /* A message arriving while the list follows the newest pops in from its bubble's side (Grok Bot's). */
 .row-in {
-  animation: row-in 0.24s cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: row-in 0.24s var(--ease-out) both;
   transform-origin: bottom left;
 }
 .row-in.mine {
@@ -394,12 +410,11 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .row-in {
-    animation: row-fade 0.12s both;
+  .chat-working, .chat-working-content {
+    transition: none;
+    transform: none;
   }
-}
-@keyframes row-fade {
-  from {
-    opacity: 0;
+  .row-in {
+    animation: fade-in 0.12s both;
   }
 }

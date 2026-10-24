@@ -1,6 +1,8 @@
 import type { CloudStatus, ClaimSignature } from '@shared/models'
+import { mayAutoClaim } from '../lib/auto-claim'
 import { Observable } from '../lib/observable'
-import { pref } from '../lib/prefs'
+import { isOlderCopy } from '../lib/older-copy'
+import { pref, type Pref } from '../lib/prefs'
 import { account } from './account'
 import type { AppModel } from './app-model'
 import type { BotStore } from './bot-store'
@@ -23,25 +25,6 @@ export interface CloudComputer {
   access?: string | null
 }
 
-export interface CloudDevice {
-  deviceId: string
-  deviceKey: string
-  name: string
-  platform?: string | null
-  createdAt?: number | null
-  lastUsedAt?: number | null
-  revoked?: boolean | null
-}
-
-export interface CloudGrant {
-  grantId: string
-  deviceId: string
-  deviceName?: string | null
-  platform?: string | null
-  scopes?: string[] | null
-  createdAt?: number | null
-}
-
 export class CloudError extends Error {
   constructor(
     readonly status: number,
@@ -55,11 +38,6 @@ export class CloudError extends Error {
       : (message ?? `Codync cloud error (${code})`),
     )
   }
-
-  /** A busy or failing cloud, or a session token that wasn't fresh yet: trying again later settles it. */
-  get isTransient() {
-    return this.status === 0 || this.status >= 500 || this.status === 429 || this.status === 401
-  }
 }
 
 async function request<T>(method: string, path: string, body?: unknown, signed = false): Promise<T> {
@@ -70,9 +48,34 @@ async function request<T>(method: string, path: string, body?: unknown, signed =
 
 /** Host identities whose cloud default has been applied (or found already on). */
 const cloudDefaultApplied = pref<string[]>('cloudDefaultApplied', [])
-/** The identities this computer claimed: a later key reset can clean them up. */
-const claimedComputerIds = pref<string[]>('claimedComputerIds', [])
-const keptOut = (userId: string) => pref<string[]>(`keptOutOfAccount.${userId}`, [])
+const userPrefs = new Map<string, Pref<string[]>>()
+/** A list kept for each user; one pref each, as each one listens for changes. */
+function userPref(name: string, userId: string) {
+  const key = `${name}.${userId}`
+  let list = userPrefs.get(key)
+  if (!list) userPrefs.set(key, (list = pref<string[]>(key, [])))
+  return list
+}
+/** Adds `id` to a list pref unless it's there. */
+function include(list: Pref<string[]>, id: string) {
+  if (!list.get().includes(id)) list.set([...list.get(), id])
+}
+/** The identities a user took out of their account here. */
+const keptOut = (userId: string) => userPref('keptOutOfAccount', userId)
+/**
+ * The identities of this computer seen in a user's account: a later key reset cleans them up, and
+ * one that leaves the account (a phone's "Remove from account" too) isn't added back on its own.
+ */
+const claimedIds = (userId: string) => userPref('claimedComputerIds', userId)
+/** `claimedComputerIds` from before it was kept per user: its ids go to the first user signed in here. */
+function moveClaimsToUser(userId: string) {
+  try {
+    const raw = localStorage.getItem('claimedComputerIds')
+    if (raw === null) return
+    localStorage.removeItem('claimedComputerIds')
+    for (const id of JSON.parse(raw) as string[]) include(claimedIds(userId), id)
+  } catch {}
+}
 
 /**
  * The signed-in account's side of this computer (mirrors kit's `CloudClient`): registering this device, the account's computers, claiming this
@@ -81,6 +84,12 @@ const keptOut = (userId: string) => pref<string[]>(`keptOutOfAccount.${userId}`,
 export class CloudModel extends Observable {
   computers: CloudComputer[] = []
   private registeredFor: string | null = null
+  /** This app's computers (their ids) when the account's computers were last listed. */
+  private listedWith: string | null = null
+  /** Bumped by each list request: only the latest one's answer is kept. */
+  private listVersion = 0
+  /** The latest list request: an earlier one it overtook answers with it. */
+  private listing: Promise<boolean> = Promise.resolve(false)
   private enablingCloud = false
   private autoClaiming = false
 
@@ -90,9 +99,10 @@ export class CloudModel extends Observable {
     app.subscribe(() => this.tick())
   }
 
+  /** What the user started shows its error; the app's own background calls (`quiet`) only log it. */
   private fail(error: unknown, quiet = false) {
-    if (quiet || (error instanceof CloudError && error.isTransient)) return
-    this.app.setError(error instanceof Error ? error.message : String(error))
+    if (quiet) console.warn('Codync cloud:', error)
+    else this.app.setError(error instanceof Error ? error.message : String(error))
   }
 
   private get userId() {
@@ -110,30 +120,55 @@ export class CloudModel extends Observable {
       this.registeredFor = null
       return
     }
+    const managed = this.app.managedStores.map((s) => s.computer.id).sort().join(' ')
     if (this.registeredFor !== user) {
       this.registeredFor = user
+      this.listedWith = managed
+      moveClaimsToUser(user)
       // Signed in: make this computer known to the account, then list its computers.
       void (async () => {
         try {
           await request('POST', 'v1/devices', { name: await deviceName(), platform: { darwin: 'macos', linux: 'linux', win32: 'windows' }[window.codync.platform] }, true)
         } catch (error) {
-          this.fail(error)
+          this.fail(error, true)
         }
-        await this.refresh()
+        await this.refresh(true)
       })()
+    } else if (this.listedWith !== managed) {
+      // A computer came or went here (a host reset to a new identity, an uninstalled host, an SSH
+      // computer): listed again, one that left shows how it is now, not as the last list had it.
+      this.listedWith = managed
+      void this.refresh(true)
     }
     this.applyCloudDefault()
     this.autoClaim()
   }
 
-  async refresh() {
-    if (!this.userId) return
+  /**
+   * Lists the account's computers; `quiet` when the app does it on its own. True when a list at least
+   * as new as this call's is shown: a newer request that overtook this one answers for it.
+   */
+  refresh(quiet = false): Promise<boolean> {
+    const user = this.userId
+    if (!user) return Promise.resolve(false)
+    return (this.listing = this.list(user, ++this.listVersion, quiet))
+  }
+
+  private async list(user: string, version: number, quiet: boolean): Promise<boolean> {
     try {
       const res = await request<{ computers: CloudComputer[] }>('GET', 'v1/computers', undefined, true)
+      // Signed out or into another account while it was on its way.
+      if (this.userId !== user) return false
+      // A newer list was asked for while this one was on its way (after a removal): that one is shown.
+      if (version !== this.listVersion) return this.listing
       this.computers = res.computers
       this.changed()
+      return true
     } catch (error) {
-      this.fail(error)
+      if (this.userId !== user) return false
+      if (version !== this.listVersion) return this.listing
+      this.fail(error, quiet)
+      return false
     }
   }
 
@@ -150,15 +185,15 @@ export class CloudModel extends Observable {
     if (store.cloud.enabled || this.enablingCloud) return
     this.enablingCloud = true
     void this.enableCloud(store)
-      .catch(() => {})
+      .catch((error: unknown) => this.fail(error, true))
       .finally(() => (this.enablingCloud = false))
   }
 
-  /** Signed in, this computer joins the account on its own, unless the user took it out of it. */
+  /** Signed in, this computer joins the account on its own (`mayAutoClaim`). */
   private autoClaim() {
     const user = this.userId
     const store = this.app.local
-    if (user && store && store.cloud?.owner?.userId === user) claimedComputerIds.set([store.computer.id])
+    if (user && store && store.cloud?.owner?.userId === user) include(claimedIds(user), store.computer.id)
     const target = this.autoClaimTarget
     if (!target || this.autoClaiming) return
     this.autoClaiming = true
@@ -175,13 +210,11 @@ export class CloudModel extends Observable {
   }
 
   private get autoClaimTarget(): BotStore | null {
-    // Only with the cloud on: joining needs it, and turning it back on is never done silently.
     const user = this.userId
     const store = this.app.local
-    if (!user || !store || store.connection.kind !== 'online') return null
-    const status = store.cloud
-    if (!status?.enabled || status.owner || keptOut(user).get().includes(store.computer.id)) return null
-    return store
+    if (!user || !store) return null
+    const host = { id: store.computer.id, online: store.connection.kind === 'online', cloud: store.cloud }
+    return mayAutoClaim(host, keptOut(user).get(), claimedIds(user).get()) ? store : null
   }
 
   /** §4.2 A: makes a computer this app manages part of the account; its cloud is turned on first. */
@@ -199,8 +232,8 @@ export class CloudModel extends Observable {
       const challenge = await request<{ claimId: string; nonce: string }>('POST', 'v1/claims', {})
       const signed = await client.call<ClaimSignature>('claimSign', { claimId: challenge.claimId, nonce: challenge.nonce, userId: user })
       await request('POST', `v1/claims/${challenge.claimId}/complete`, signed)
-      await this.refresh()
-      if (store === this.app.local) await this.forgetEarlierIdentities(store.computer.id)
+      // Only against a list that came back: one that didn't can't tell which earlier identities are gone.
+      if ((await this.refresh(true)) && store === this.app.local) await this.forgetEarlierIdentities(user, store.computer.id)
       return true
     } catch (error) {
       this.fail(error, quiet)
@@ -210,30 +243,33 @@ export class CloudModel extends Observable {
 
   /**
    * This computer's host got new keys (a reset data folder, a reinstall): the identities claimed
-   * before are dead copies of it, so they leave the account instead of showing up twice.
+   * before are dead copies of it, so they leave the account instead of showing up twice. One still
+   * online, or that couldn't be removed, stays listed for the next time.
    */
-  private async forgetEarlierIdentities(current: string) {
-    const earlier = new Set(claimedComputerIds.get().filter((id) => id !== current))
-    for (const c of this.computers) if (earlier.has(c.computerId) && !c.online) await this.removeFromAccount(c.computerId)
-    claimedComputerIds.set([current])
+  private async forgetEarlierIdentities(user: string, current: string) {
+    const seen = claimedIds(user)
+    const kept = [current]
+    for (const id of seen.get()) {
+      const entry = this.computers.find((c) => c.computerId === id)
+      if (id === current || !entry) continue
+      if (entry.online || !(await this.removeFromAccount(id, true))) kept.push(id)
+    }
+    seen.set(kept)
   }
 
   async unclaim(store: BotStore) {
     const user = this.userId
-    if (user) {
-      const out = keptOut(user)
-      if (!out.get().includes(store.computer.id)) out.set([...out.get(), store.computer.id])
-    }
+    if (user) include(keptOut(user), store.computer.id)
     try {
       await (await store.ready()).call('unclaim', {}, 30_000)
-      await this.refresh()
+      await this.refresh(true)
     } catch (error) {
       this.fail(error)
     }
   }
 
   async setCloud(store: BotStore, enabled: boolean) {
-    if (!cloudDefaultApplied.get().includes(store.computer.id)) cloudDefaultApplied.set([...cloudDefaultApplied.get(), store.computer.id])
+    include(cloudDefaultApplied, store.computer.id)
     try {
       if (enabled) await this.enableCloud(store)
       else await (await store.ready()).call<CloudStatus>('setCloud', { enabled: false }, 30_000)
@@ -247,41 +283,19 @@ export class CloudModel extends Observable {
     return (await store.ready()).call<CloudStatus>('setCloud', { enabled: true }, 30_000)
   }
 
-  async removeFromAccount(computerId: string) {
+  async removeFromAccount(computerId: string, quiet = false) {
     try {
       await request('DELETE', `v1/computers/${computerId}`)
-      await this.refresh()
+      await this.refresh(true)
+      return true
     } catch (error) {
-      this.fail(error)
+      this.fail(error, quiet)
+      return false
     }
   }
 
-  /** An offline account computer named like one this app uses or sees online: an earlier identity of it. */
   isOlderCopy(c: CloudComputer) {
-    if (c.online) return false
-    return this.app.computers.some((x) => x.id !== c.computerId && x.name === c.name) ||
-      this.computers.some((o) => o.computerId !== c.computerId && o.name === c.name && (this.app.store(o.computerId) !== null || !!o.online))
-  }
-
-  devices() {
-    return request<{ devices: CloudDevice[] }>('GET', 'v1/devices').then((r) => r.devices)
-  }
-
-  revokeDevice(deviceId: string) {
-    return request('DELETE', `v1/devices/${deviceId}`)
-  }
-
-  grants(computerId: string) {
-    return request<{ grants: CloudGrant[] }>('GET', `v1/computers/${computerId}/grants`).then((r) => r.grants)
-  }
-
-  revokeGrant(computerId: string, grantId: string) {
-    return request('DELETE', `v1/computers/${computerId}/grants/${grantId}`)
-  }
-
-  async renameComputer(computerId: string, name: string) {
-    await request('PATCH', `v1/computers/${computerId}`, { name })
-    await this.refresh()
+    return isOlderCopy(c, this.computers, this.app.computers)
   }
 }
 

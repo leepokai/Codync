@@ -41,6 +41,11 @@ public struct AgentIcon: View {
         }
     }
 
+    /// The logo alone, for places that take an `Image` (the system menu).
+    public static func image(registry: String?) -> Image {
+        if let name = registry.map({ "agent-\($0)" }), exists(name) { Image(name, bundle: .module) } else { Image(systemName: "terminal") }
+    }
+
     private static func exists(_ name: String) -> Bool {
         UIImage(named: name, in: .module, with: nil) != nil
     }

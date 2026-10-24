@@ -63,7 +63,7 @@ public enum SharedStore {
             get { read([ComputerID: Usage].self, "usage") ?? [:] }
             nonmutating set { write(newValue, "usage") }
         }
-        /// Unsent text, isolated by account, computer, bot and thread; not a transcript cache.
+        /// Unsent text, isolated by account, computer and bot; not a transcript cache.
         public var composerDrafts: [ComputerID: [String: String]] {
             get { read([ComputerID: [String: String]].self, "composerDrafts") ?? [:] }
             nonmutating set { write(newValue, "composerDrafts") }

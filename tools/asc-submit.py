@@ -6,9 +6,10 @@ Env: ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY (.p8 contents); DRY_RUN=1 prints
 SINCE (ISO 8601) ignores builds uploaded before it, so a tag run never submits an older build.
 Runs in a checkout with the release tags.
 
-A release whose tag changes nothing the iPhone app is built from since the last App Store
-version is skipped (FORCE=1 ships it anyway). Otherwise it starts the Xcode Cloud archive
-on the tag (only when SINCE is set or no build of the version exists yet) and waits for it.
+A release whose tag changes nothing the iPhone app is built from since the last version sent
+to App Review is skipped (FORCE=1 ships it anyway). Otherwise, when SINCE is set or no build of
+the version exists yet, it starts the Xcode Cloud archive on the tag (or on main while main is the
+tagged commit), then waits for the build.
 
 What's New comes from the version's section in apps/ios/WhatsNew.md, else from the
 "## What's New" bullets of the PRs merged since the last App Store version (PRS: `gh pr list
@@ -34,15 +35,18 @@ import jwt
 APP_ID = "6760984418"
 API = "https://api.appstoreconnect.apple.com/v1"
 WHATS_NEW = {"en-US": "Bug fixes and improvements.", "zh-Hant": "錯誤修正與改進。"}
-EDITABLE = {"PREPARE_FOR_SUBMISSION", "READY_FOR_REVIEW", "DEVELOPER_REJECTED", "REJECTED",
-            "METADATA_REJECTED", "INVALID_BINARY"}
+UNSENT = {"PREPARE_FOR_SUBMISSION", "READY_FOR_REVIEW", "DEVELOPER_REJECTED"}  # never sent, or pulled back
+EDITABLE = UNSENT | {"REJECTED", "METADATA_REJECTED", "INVALID_BINARY"}
 DONE = {"READY_FOR_DISTRIBUTION", "REPLACED_WITH_NEW_VERSION", "REMOVED_FROM_SALE"}
 DRY_RUN = os.environ.get("DRY_RUN") == "1"
 NOTES = Path(__file__).resolve().parent.parent / "apps/ios/WhatsNew.md"
 EMOJI = re.compile("[\U00010000-\U0010FFFF\u2600-\u27BF\uFE0F\u200D]")
 WORKFLOW_ID = "44342080-ce08-4dc1-be35-34ce6cbb41b5"  # Xcode Cloud "Release": Archive iOS for the App Store
 # What the iPhone app is built from; apps/project.yml counts except its version lines.
-IOS_PATHS = ["apps/ios", "apps/shared", "apps/Codync.xcodeproj/project.xcworkspace"]
+# The App Store notes and the Kit tests never reach the binary.
+# ponytail: project.yml's macOS Screen targets count too; diff only its iOS targets if that misfires.
+IOS_PATHS = ["apps/ios", "apps/shared", "apps/Codync.xcodeproj/project.xcworkspace",
+             ":(exclude)apps/ios/WhatsNew.md", ":(exclude)apps/ios/Kit/Tests"]
 
 
 def git(*args):
@@ -59,8 +63,9 @@ def ios_changed(base, tag):
 
 
 def release_notes(version):
-    """{locale: text} from the `## <version>` section, split by `### <locale>` headings."""
-    text = NOTES.read_text() if NOTES.exists() else ""
+    """{locale: text} from the `## <version>` section, split by `### <locale>` headings, without
+    emoji (the App Store rejects them)."""
+    text = EMOJI.sub("", NOTES.read_text()) if NOTES.exists() else ""
     section = re.search(rf"^## {re.escape(version)}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
     if not section:
         return {}
@@ -127,24 +132,52 @@ def all_pages(path):
     return items
 
 
+def store_versions():
+    """The app's last ten iOS App Store versions with their states."""
+    return call("GET", f"/apps/{APP_ID}/appStoreVersions?filter[platform]=IOS&limit=10"
+                "&fields[appStoreVersions]=versionString,appVersionState")["data"]
+
+
+def last_sent(versions, version):
+    """The newest other version sent to App Review. One never sent or pulled back (such as one a
+    failed run left behind) doesn't count, so its changes still ship; a rejected one does, so a
+    release without iPhone changes doesn't resubmit the rejected code."""
+    return next((v["attributes"]["versionString"] for v in versions
+                 if v["attributes"]["versionString"] != version
+                 and v["attributes"]["appVersionState"] not in UNSENT), None)
+
+
+def archive_ref(tag, refs):
+    """Which of Xcode Cloud's refs ({canonical name: id}) to archive `tag` from: the tag, else main
+    while main is the tagged commit. Xcode Cloud hears of a new tag through a GitHub webhook that
+    sometimes never comes (v2.20.4)."""
+    if f"refs/tags/{tag}" in refs:
+        return f"refs/tags/{tag}"
+    sha = git("rev-list", "-n", "1", tag)
+    main = git("ls-remote", "origin", "refs/heads/main").split("\t")[0]
+    return "refs/heads/main" if sha and sha == main and "refs/heads/main" in refs else None
+
+
 def start_archive(tag):
     repo = call("GET", f"/ciWorkflows/{WORKFLOW_ID}/repository")["data"]["id"]
-    ref = wait_for(f"Xcode Cloud to see {tag}", lambda: next((
-        r["id"] for r in all_pages(f"/scmRepositories/{repo}/gitReferences?limit=200")
-        if r["attributes"]["canonicalName"] == f"refs/tags/{tag}"), None), 15)
+
+    def source():
+        refs = {r["attributes"]["canonicalName"]: r["id"]
+                for r in all_pages(f"/scmRepositories/{repo}/gitReferences?limit=200")}
+        name = archive_ref(tag, refs)
+        return name and (name, refs[name])
+
+    name, ref = wait_for(f"Xcode Cloud to see {tag}", source, 15)
     run = call("POST", "/ciBuildRuns", {"data": {"type": "ciBuildRuns", "relationships": {
         "workflow": {"data": {"type": "ciWorkflows", "id": WORKFLOW_ID}},
         "sourceBranchOrTag": {"data": {"type": "scmGitReferences", "id": ref}}}}})["data"]
-    print(f"started Xcode Cloud build {run.get('attributes', {}).get('number', run['id'])} on {tag}")
+    print(f"started Xcode Cloud build {run.get('attributes', {}).get('number', run['id'])} on {name}")
 
 
 def main(version):
     tag = f"v{version}"
     since = datetime.fromisoformat(os.environ.get("SINCE", "2000-01-01T00:00:00Z"))
-    shipped = next((v["attributes"]["versionString"] for v in call(
-        "GET", f"/apps/{APP_ID}/appStoreVersions?filter[platform]=IOS&limit=10"
-        "&fields[appStoreVersions]=versionString")["data"]
-        if v["attributes"]["versionString"] != version), None)
+    shipped = last_sent(store_versions(), version)
     base = f"v{shipped}" if shipped and git("tag", "-l", f"v{shipped}") else \
         git("describe", "--tags", "--abbrev=0", "--match", "v*", f"{tag}^")
     if os.environ.get("FORCE") != "1" and base and not ios_changed(base, tag):
@@ -162,9 +195,7 @@ def main(version):
     print(f"build {build['attributes']['version']} ({build['id']})")
 
     def in_flight():
-        versions = call("GET", f"/apps/{APP_ID}/appStoreVersions?filter[platform]=IOS&limit=10"
-                        "&fields[appStoreVersions]=versionString,appVersionState")["data"]
-        return next((v for v in versions if v["attributes"]["appVersionState"] not in DONE), None)
+        return next((v for v in store_versions() if v["attributes"]["appVersionState"] not in DONE), None)
 
     current = in_flight()
     state = current and current["attributes"]["appVersionState"]

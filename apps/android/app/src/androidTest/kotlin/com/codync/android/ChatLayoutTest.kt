@@ -74,7 +74,7 @@ class ChatLayoutTest {
         compose.onAllNodesWithText("Reply from Dex").assertCountEquals(1)
         compose.onAllNodesWithText(answer).assertCountEquals(1)
         compose.onNode(hasText(answer) and hasClickAction()).performTouchInput { longClick(Offset(4f, 4f)) }
-        compose.onNodeWithText("Reply in thread").assertIsDisplayed()
+        compose.onNodeWithText("Reply").assertIsDisplayed()
         compose.onNodeWithText("Show what it did").assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         if (InstrumentationRegistry.getArguments().getString("layoutSnapshots") == "true") {
@@ -98,7 +98,7 @@ class ChatLayoutTest {
         compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
         compose.onNodeWithText("You").assertDoesNotExist()
         compose.onNodeWithText("Message actions").assertDoesNotExist()
-        compose.onNodeWithText("Reply in thread").assertDoesNotExist()
+        compose.onNodeWithText("Reply").assertDoesNotExist()
         compose.onAllNodesWithText(bot.name).assertCountEquals(1)
         val user = compose.onNode(hasText(sent) and hasClickAction())
         val agent = compose.onNode(hasText(reply) and hasClickAction())
@@ -115,7 +115,7 @@ class ChatLayoutTest {
             File(compose.activity.cacheDir, "layout-chat-preview.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         user.performTouchInput { longClick(Offset(4f, 4f)) }
-        compose.onNodeWithText("Reply in thread").assertIsDisplayed()
+        compose.onNodeWithText("Reply").assertIsDisplayed()
         compose.onNodeWithContentDescription("👍").assertIsDisplayed()
         compose.onNodeWithText("Copy").assertIsDisplayed()
         compose.onNodeWithText("Show what it did").assertDoesNotExist()

@@ -29,6 +29,10 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// or `refused` (it turned it off; `fastModeIssue` says why).
     public var fastModeSupport: String = "unknown"
     public var fastModeIssue: String?
+    /// Agents that carry on, in order, when the bot's own can't answer (`AgentFallback.swift`). Nil from an older host.
+    public var fallbacks: [BotFallback]?
+    /// The bot may set its own fallbacks. Nil from an older host.
+    public var selfFallbacks: Bool?
     public var pinned: Bool
     /// Where the user dragged it, lowest first (after pinned bots); ties sort by recent activity.
     public var position: Int = 0
@@ -39,6 +43,16 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var skills: [String]
     /// The bot can see and operate the computer's desktop (the built-in `computer` tools).
     public var computer: Bool
+    /// The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools). Nil from an older host.
+    public var manageTeam: Bool?
+    /// The bot that created this one; nil when the user did.
+    public var createdBy: String?
+    /// Uses the memory all the user's bots share ("About you"). Nil from an older host.
+    public var sharedMemory: Bool?
+    /// Keeps the harness's own memory (Claude Code's…) on beside Codync's. Nil where it has no switch.
+    public var harnessMemory: Bool?
+    /// Moves whenever memory changes, so an open memory screen fetches it again.
+    public var memoryRev: Int64?
     /// Created without a name: the host names it after its first few conversations.
     public var autoName: Bool = false
     public var createdAt: Int64
@@ -49,18 +63,21 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var status: String
     public var activity: String
     public var startedAt: Int64?
-    /// Where the running turn talks: the chat (a bot's own, or a group) and thread root.
+    /// Where the running turn talks: the bot's own chat, or a group.
     public var workingChat: String?
-    public var workingThread: String?
+    /// The fallback it runs on; nil on its own agent.
+    public var agentStep: AgentStep?
+    /// Agents of its chain resting now.
+    public var resting: [AgentRest] = []
     public var unread: Int
     public var lastMessage: String?
     public var lastAt: Int64
 
     public var isGroup: Bool { kind == "group" }
     public var isWorking: Bool { status == "working" || status == "needsInput" }
-    /// Working right now in this chat's main conversation (`thread == nil`) or in that thread.
-    public func isWorking(in chat: String, thread: String?) -> Bool {
-        isWorking && (workingChat ?? id) == chat && workingThread == thread
+    /// Working right now in this chat (not in a group it's in, or the reverse).
+    public func isWorking(in chat: String) -> Bool {
+        isWorking && (workingChat ?? id) == chat
     }
     public var needsInput: Bool { status == "needsInput" }
     public var folderName: String { managedWorkspace ? "Personal workspace" : (cwd as NSString).lastPathComponent }
@@ -78,8 +95,6 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
     public var seq: Int64
     /// The chat it's in: a bot's, or a group's.
     public var botId: String
-    /// The root message of the thread it's in; nil in the main chat.
-    public var threadId: String?
     public var rev: Int64
     /// user | agent | thought | tool | plan | permission | notice
     public var kind: String
@@ -88,11 +103,10 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
     public var createdAt: Int64
     public var updatedAt: Int64
 
-    public init(id: String, seq: Int64, botId: String, threadId: String? = nil, rev: Int64, kind: String, turn: Int64, data: EntryData, createdAt: Int64, updatedAt: Int64) {
+    public init(id: String, seq: Int64, botId: String, rev: Int64, kind: String, turn: Int64, data: EntryData, createdAt: Int64, updatedAt: Int64) {
         self.id = id
         self.seq = seq
         self.botId = botId
-        self.threadId = threadId
         self.rev = rev
         self.kind = kind
         self.turn = turn
@@ -101,25 +115,32 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
         self.updatedAt = updatedAt
     }
 
-    /// Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices.
+    /// Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. Of memory and context,
+    /// only a fresh conversation gets a line: memory lives in the bot's memory settings, a summary keeps the same
+    /// conversation going, and a kept handoff changed nothing.
     public var isChat: Bool {
         switch kind {
-        case "user", "permission", "notice": true
+        case "user", "permission": true
+        case "notice": data.memory == nil && data.memoryFile == nil && data.compaction == nil && data.handoff?.status != "kept"
         case "agent": data.final == true
         default: false
         }
     }
 
-    public var date: Date { Date(milliseconds: createdAt) }
-}
+    /// A message a reply can quote: the user's or a final bot reply, once the computer has it.
+    public var isReplyable: Bool {
+        (kind == "user" || (kind == "agent" && data.final == true)) && !id.hasPrefix("local-")
+    }
 
-public struct ThreadSummary: Codable, Hashable, Sendable {
-    public var count: Int
-    public var lastAt: Int64
-    /// Who replied, first reply first: bot ids, and `user`.
-    public var authors: [String]
-    /// Replies the user hasn't read (threads are read on their own).
-    public var unread: Int?
+    /// How a reply quotes this message until the computer's own quote arrives: who wrote it and its
+    /// text, or its file names.
+    public var replyQuote: ReplyQuote {
+        let names = (data.attachments?.map(\.name) ?? []) + (data.files?.map(\.name) ?? [])
+        let text = data.text.flatMap { $0.isEmpty ? nil : $0 } ?? names.joined(separator: ", ")
+        return ReplyQuote(id: id, author: kind == "user" ? "user" : data.author ?? botId, text: String(text.prefix(500)))
+    }
+
+    public var date: Date { Date(milliseconds: createdAt) }
 }
 
 public struct FileDiff: Codable, Hashable, Sendable {
@@ -348,12 +369,20 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var model: String?
     public var modelOptions: [String: String] = [:]
     public var fastMode: Bool?
+    /// Nil where the host has none (an older one), so it isn't sent.
+    public var fallbacks: [BotFallback]?
+    public var selfFallbacks: Bool?
     public var pinned: Bool?
     public var hidden: Bool?
     public var notify: Bool?
     public var connectors: [String]?
     public var skills: [String]?
     public var computer: Bool?
+    public var manageTeam: Bool?
+    /// Only sent when the user changes it: unset, the host picks by the bot's folder.
+    public var sharedMemory: Bool?
+    /// Only sent when the user changes it.
+    public var harnessMemory: Bool?
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
@@ -380,12 +409,31 @@ public struct BotDraft: Codable, Hashable, Sendable {
         model = bot.model
         modelOptions = bot.modelOptions
         fastMode = bot.fastMode
+        fallbacks = bot.fallbacks
+        selfFallbacks = bot.selfFallbacks
         pinned = bot.pinned
         hidden = bot.hidden
         notify = bot.notify
         connectors = bot.connectors
         skills = bot.skills
         computer = bot.computer
+        manageTeam = bot.manageTeam
+    }
+
+    /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
+    /// (the bot as the host has it now), so saving the form keeps a change made elsewhere: a bot that manages the
+    /// team, another device.
+    public func rebased(from base: BotDraft, onto fresh: BotDraft) -> BotDraft {
+        var draft = self
+        func follow<Value: Equatable>(_ field: WritableKeyPath<BotDraft, Value>) {
+            if self[keyPath: field] == base[keyPath: field] { draft[keyPath: field] = fresh[keyPath: field] }
+        }
+        follow(\.name); follow(\.description); follow(\.avatarColor); follow(\.avatarShape); follow(\.backend)
+        follow(\.command); follow(\.cwd); follow(\.permission); follow(\.model); follow(\.modelOptions)
+        follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
+        follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
+        follow(\.sharedMemory); follow(\.harnessMemory)
+        return draft
     }
 }
 
@@ -414,6 +462,9 @@ extension Bot {
         fastMode = try c.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false
         fastModeSupport = try c.decodeIfPresent(String.self, forKey: .fastModeSupport) ?? "unknown"
         fastModeIssue = try c.decodeIfPresent(String.self, forKey: .fastModeIssue)
+        // A chain that doesn't decode stays unknown (nil), so saving the settings never sends an empty one.
+        fallbacks = try? c.decodeIfPresent([BotFallback].self, forKey: .fallbacks)
+        selfFallbacks = try? c.decodeIfPresent(Bool.self, forKey: .selfFallbacks)
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
         position = try c.decodeIfPresent(Int.self, forKey: .position) ?? 0
         hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
@@ -421,6 +472,11 @@ extension Bot {
         connectors = try c.decodeIfPresent([String].self, forKey: .connectors) ?? []
         skills = try c.decodeIfPresent([String].self, forKey: .skills) ?? []
         computer = try c.decodeIfPresent(Bool.self, forKey: .computer) ?? false
+        manageTeam = try c.decodeIfPresent(Bool.self, forKey: .manageTeam)
+        createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy)
+        sharedMemory = try c.decodeIfPresent(Bool.self, forKey: .sharedMemory)
+        harnessMemory = try c.decodeIfPresent(Bool.self, forKey: .harnessMemory)
+        memoryRev = try c.decodeIfPresent(Int64.self, forKey: .memoryRev)
         autoName = try c.decodeIfPresent(Bool.self, forKey: .autoName) ?? false
         createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
         rev = try c.decodeIfPresent(Int64.self, forKey: .rev) ?? 0
@@ -428,7 +484,8 @@ extension Bot {
         activity = try c.decodeIfPresent(String.self, forKey: .activity) ?? ""
         startedAt = try c.decodeIfPresent(Int64.self, forKey: .startedAt)
         workingChat = try c.decodeIfPresent(String.self, forKey: .workingChat)
-        workingThread = try c.decodeIfPresent(String.self, forKey: .workingThread)
+        agentStep = try? c.decodeIfPresent(AgentStep.self, forKey: .agentStep)
+        resting = (try? c.decodeIfPresent([AgentRest].self, forKey: .resting)) ?? []
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt

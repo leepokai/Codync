@@ -35,13 +35,9 @@ class LiveManagementTest {
             compose.runOnUiThread { store.openBot(null) }
             compose.onNodeWithContentDescription("New").performClick()
             compose.onNodeWithText("New group chat").performClick()
-            compose.onNodeWithText("Add Member").performClick()
-            val search = hasSetTextAction() and hasText("Search bots")
-            compose.onNode(search).performTextReplacement(member.name)
-            compose.onNodeWithContentDescription("Add " + member.name).performClick()
-            compose.onNode(search).performTextReplacement(parent.name)
-            compose.onNodeWithContentDescription("Add " + parent.name).performClick()
-            compose.onNodeWithContentDescription("Remove " + member.name).assertIsDisplayed()
+            // The member tiles, not the roster rows behind the sheet (those share the bot's name).
+            compose.onNode(hasContentDescription(member.name) and isSelectable()).performScrollTo().performClick().assertIsSelected()
+            compose.onNode(hasContentDescription(parent.name) and isSelectable()).performScrollTo().performClick().assertIsSelected()
             compose.onNodeWithContentDescription("Create").performClick()
             compose.waitUntil(30_000) { store.state.value.bots.any { it.id == store.state.value.selectedBot && it.kind == "group" } }
             val group = store.state.value.bots.single { it.id == store.state.value.selectedBot }

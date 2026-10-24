@@ -15,6 +15,9 @@ data class AppState(
     val account: AccountState = AccountState(),
     val cloudComputers: List<CloudComputer> = emptyList(),
     val access: AccessTicket? = null,
+    val approvedAccess: Map<String, String> = emptyMap(),
+    /** The account computer an access request is running for: one at a time. */
+    val askingAccess: String? = null,
     val notifications: Boolean = true,
     val tasks: Boolean = true,
     val setupComplete: Boolean = false,
@@ -37,7 +40,6 @@ data class AppState(
     val selectedBot: String? = null,
     val navigationRequest: Int = 0,
     val navigationPage: LinkPage = LinkPage.Bots,
-    val thread: String? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
     val historyComplete: Set<String> = emptySet(),
@@ -46,7 +48,7 @@ data class AppState(
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */
     val screen: ScreenState? = null,
-    /** The remote screen viewer is open (`codync://screen`, the thread header, Computers). */
+    /** The remote screen viewer is open (`codync://screen`, the chat header, Computers). */
     val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */
     val unreadable: Boolean = false,

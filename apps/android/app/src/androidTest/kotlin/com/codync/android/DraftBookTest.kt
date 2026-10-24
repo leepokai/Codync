@@ -16,13 +16,16 @@ class DraftBookTest {
     private val computer = "AAAAAAAAAAAAAAAAAAAAAA"
     @After fun cleanup() { root.deleteRecursively() }
 
-    @Test fun reopeningRestoresEachChatAndThreadWithoutCrossingAccountsOrComputers() {
+    @Test fun reopeningRestoresEachChatWithoutCrossingAccountsOrComputers() {
         val file = File(root, "outgoing/file").apply { requireNotNull(parentFile).mkdirs(); writeText("saved attachment") }
         val main = ComposerDraft("bot", text = "Unsent main chat", files = listOf(OutgoingFile(file.path, "file.txt", file.length())))
-        val thread = ComposerDraft("bot", "thread", text = "Unsent reply")
-        DraftBook(root, computer).save(listOf(main, thread))
-        assertEquals(listOf(main, thread), DraftBook(root, computer).read())
-        assertNotEquals(main.lane, thread.lane)
+        val other = ComposerDraft("other", text = "Unsent elsewhere")
+        DraftBook(root, computer).save(listOf(main, other))
+        assertEquals(listOf(main, other), DraftBook(root, computer).read())
+        // A book saved with thread drafts keeps each chat's own.
+        File(root, "drafts-$computer.json").writeText("""[{"botId":"bot","threadId":"root","text":"Aside","nonce":"${other.nonce}"},
+            {"botId":"bot","threadId":null,"text":"Main","nonce":"${main.nonce}"}]""")
+        assertEquals(listOf("Main"), DraftBook(root, computer).read().map { it.text })
         assertTrue(DraftBook(root, "BBBBBBBBBBBBBBBBBBBBBB").read().isEmpty())
         val otherAccount = File(root, "other-account").apply { mkdirs() }
         assertTrue(DraftBook(otherAccount, computer).read().isEmpty())

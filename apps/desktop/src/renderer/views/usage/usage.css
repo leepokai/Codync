@@ -1,0 +1,25 @@
+/* A provider's character (ProviderMascot): sized by its caller. */
+.usage-mascot {
+  position: relative;
+  flex: none;
+  display: block;
+}
+.usage-mascot-logo {
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+/* The red "!" once a limit is nearly used up, on a white disc in both schemes. */
+.usage-mascot-alert {
+  position: absolute;
+  color: var(--danger);
+  background: #fff;
+  border-radius: 50%;
+}
+/* A usage limit's bar (UsageBar): thicker than a progress bar, on the bubble color. */
+.progress-track.usage-bar {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  background: var(--bubble-agent);
+}

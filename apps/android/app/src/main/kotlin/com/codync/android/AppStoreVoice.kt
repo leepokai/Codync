@@ -22,6 +22,8 @@ internal class VoiceBinding(val id: String, val botId: String, val generation: I
     var recording: () -> Int? = { null }
     /** What the voice service sees: the current engine, never the failure it fell back from. */
     val state = MutableStateFlow(VoiceState())
+    /** `voice_call_started` went out: once per call, with the engine that got it going. */
+    var reported = false
 }
 
 private val voiceHttp by lazy { OkHttpClient() }
@@ -67,6 +69,12 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
         override fun respond(entry: Entry, optionId: String) = this@begin.respond(entry, optionId)
     })
     call.recording = { null }
+    val kind = when {
+        provider == null -> VoiceEngineKind.OnDevice
+        choices.speechMode(provider) -> VoiceEngineKind.Cloud
+        provider == VoiceProvider.OpenAI -> VoiceEngineKind.OpenAI
+        else -> VoiceEngineKind.Gemini
+    }
     val engine: VoiceEngine = if (provider == null) {
         val audio = LocalVoiceAudio(getApplication(), VoicePreferences.language(getApplication()))
         call.recording = { audio.recordingSessionId }
@@ -98,7 +106,14 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
         val last = engine.state.first { status ->
             val current = voiceBinding === call && call.engine === engine
             val fallingBack = provider != null && status.phase == VoicePhase.Failed
-            if (current && !fallingBack) publish(call, status)
+            if (current && !fallingBack) {
+                publish(call, status)
+                // Live once it listens or talks; a cloud engine that failed first is reported as the one that took over.
+                if (!call.reported && (status.phase == VoicePhase.Listening || status.phase == VoicePhase.Speaking)) {
+                    call.reported = true
+                    Analytics.capture(AnalyticsEvent.VoiceCallStarted(kind))
+                }
+            }
             !current || fallingBack || status.phase == VoicePhase.Ended
         }
         if (provider == null || last.phase != VoicePhase.Failed || voiceBinding !== call) return@launch
@@ -125,7 +140,7 @@ private fun AppStore.countCloudMinutes(call: VoiceBinding) {
 /** What you said goes out as an ordinary message, unless the call has moved on. */
 private fun AppStore.sendFromCall(call: VoiceBinding, text: String) {
     if (state.value.generation != call.generation || state.value.voice?.id != call.id || state.value.loading) return
-    val send = PendingSend(UUID.randomUUID().toString(), call.botId, null, text, System.currentTimeMillis())
+    val send = PendingSend(UUID.randomUUID().toString(), call.botId, text, System.currentTimeMillis())
     action("save:" + send.nonce) { savePending(send); deliver(send) }
 }
 

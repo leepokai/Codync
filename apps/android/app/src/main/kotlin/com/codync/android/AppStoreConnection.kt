@@ -48,7 +48,8 @@ fun AppStore.setForeground(active: Boolean) {
     }
 }
 
-fun AppStore.pair(text: String) {
+/** Pairs with the computer in a `codync://pair` link: scanned or pasted ([PairedVia.Qr]) or opened from outside ([PairedVia.Link]). */
+internal fun AppStore.pair(text: String, via: PairedVia) {
     if (pairingJob?.isActive == true) return
     pairingJob = contextScope.launch {
         state.first { !it.loading }
@@ -56,16 +57,23 @@ fun AppStore.pair(text: String) {
         try {
             val pairing = Pairing.parse(text, BuildConfig.URL_SCHEME)
             val old = state.value.computers.firstOrNull()
-            require(old == null || old.id == pairing.computer.id) { "Use Start over to pair a different computer." }
+            require(old == null || old.id == pairing.computer.id) { "Remove this phone's computer in Computers & settings to pair a different one." }
             require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Start over before pairing again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
-            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100)).copy(color = old?.color)
+            // Picked on this phone: re-pairing keeps them (iOS `AccountStore.pair`).
+            val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100))
+            val computer = old?.let { paired.copy(color = it.color, route = it.route) } ?: paired
             withContext(Dispatchers.IO) { local.saveComputers(listOf(computer)); local.completeSetup() }
             mutableState.update { it.copy(computers = listOf(computer), setupComplete = true) }
+            Analytics.capture(AnalyticsEvent.ComputerPaired(via, computer.id))
+            Analytics.completeOnboarding(OnboardingVia.Paired)
             if (database == null) openMirror()
             connect()
         } catch (error: CancellationException) { throw error }
-        catch (error: Exception) { showError(error) }
+        catch (error: Exception) {
+            Analytics.capture(AnalyticsEvent.PairingFailed(PairingFailure.of(error)))
+            showError(error)
+        }
         finally { mutableState.update { it.copy(pairing = false) } }
     }
 }
@@ -105,12 +113,14 @@ fun AppStore.connect() {
                                 // The latest saved copy: its color may have changed since this link opened.
                                 val updated = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
                                 val hello = active.call("hello").jsonObject
-                                withContext(Dispatchers.IO) {
+                                val dropped = withContext(Dispatchers.IO) {
                                     local.saveComputers(listOf(updated))
                                     requireNotNull(database).setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
                                         BuildConfig.VERSION_NAME + "/" + hello["version"]?.jsonPrimitive?.content)
                                 }
-                                mutableState.update { it.copy(computers = listOf(updated)) }
+                                // Dropped chats page their earlier messages again.
+                                mutableState.update { it.copy(computers = listOf(updated),
+                                    historyComplete = if (dropped) emptySet() else it.historyComplete) }
                                 noteHello(hello)
                                 // The event catch-up is ordered by revision; bot revisions can
                                 // follow hundreds of historical entries. Load the current roster
@@ -174,7 +184,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             }
             withContext(Dispatchers.IO) { requireNotNull(database).apply(batch) }
             refresh()
-            acknowledgeVisible(readAfter(batch, state.value.readingScopes))
+            acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
         }
     } finally { source.cancel() }

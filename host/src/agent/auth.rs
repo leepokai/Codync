@@ -1,9 +1,11 @@
 //! Signing agents in the ACP way, so every agent that speaks ACP can be set up
 //! from Codync, not just the ones we know by name.
 //!
-//! A check starts the agent, reads the `authMethods` it advertises and takes the
-//! login it reports (`_auth/status_update`), or else tries `session/new`: `-32000`
-//! means it needs signing in. Methods come in three kinds:
+//! A check starts the agent and reads the `authMethods` it advertises. An agent that
+//! reports its login (`_auth/status_update`) is believed; when its report doesn't
+//! come, the harness's own CLI check decides, else it can't tell (a session proves
+//! nothing for it). Other agents get `session/new`: `-32000` means it needs signing
+//! in. Methods come in three kinds:
 //! - terminal: a command (the agent's `_meta.terminal-auth`, or its own binary
 //!   with `args`), run in a setup terminal (`term`);
 //! - agent: the agent signs itself in on `authenticate` (usually a browser on
@@ -21,6 +23,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -222,13 +225,11 @@ fn model_options(options: &Value, model: &str) -> Vec<Value> {
 async fn probe(store: &Store, backend: &str) -> Result<Status> {
     let (acp, mut inbox, init, cmd) = start(store, backend).await?;
     let methods = methods(backend, &init, &cmd);
-    // An agent that reports its login is believed over a session: Claude's adapter opens one
-    // without checking the login, which then fails at the first prompt.
-    if init["agentCapabilities"]["_meta"]["authStatus"].is_object()
-        && let Some(signed_in) = reported_login(&mut inbox).await
+    if let ControlFlow::Break(signed_in) =
+        login_without_session(&init, &mut inbox, backend, &env(store, backend)?).await
     {
         acp.kill().await;
-        return Ok(Status { signed_in: Some(signed_in), detail: None, methods });
+        return Ok(Status { signed_in, detail: None, methods });
     }
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
@@ -247,6 +248,29 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
         Err(_) => (None, None),
     };
     Ok(Status { signed_in, detail, methods })
+}
+
+/// `Break`: the login of an agent that reports it, never judged by a session: Claude's adapter
+/// opens one without checking the login, which then fails at the first prompt. When its report
+/// doesn't come (the adapter gives its own `claude auth status` 5 s, too few on many Windows
+/// computers), the harness's CLI check decides, with more time and the agent's `env`, else it
+/// can't tell. `Continue`: the agent doesn't report its login, so a session tells.
+async fn login_without_session(
+    init: &Value,
+    inbox: &mut mpsc::UnboundedReceiver<Incoming>,
+    backend: &str,
+    env: &[(String, String)],
+) -> ControlFlow<Option<bool>> {
+    if !init["agentCapabilities"]["_meta"]["authStatus"].is_object() {
+        return ControlFlow::Continue(());
+    }
+    if let Some(reported) = reported_login(inbox).await {
+        return ControlFlow::Break(Some(reported));
+    }
+    ControlFlow::Break(match backends::harness(backend) {
+        Some(h) => backends::cli_signed_in(h, env).await,
+        None => None,
+    })
 }
 
 /// The agent's first `_auth/status_update` (ACP `authStatus` extension): `kind: "none"` is signed
@@ -561,6 +585,22 @@ mod tests {
         assert_eq!(reported_login(&mut rx).await, Some(true));
         drop(tx);
         assert_eq!(reported_login(&mut rx).await, None, "an agent that goes quiet can't tell");
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_reports_its_login_is_never_judged_by_a_session() {
+        let reports = json!({"agentCapabilities": {"_meta": {"authStatus": {}}}});
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(Incoming::Notification {
+            method: "_auth/status_update".into(),
+            params: json!({"authStatus": {"kind": "none"}}),
+        })
+        .unwrap();
+        assert_eq!(login_without_session(&reports, &mut rx, "x", &[]).await, ControlFlow::Break(Some(false)));
+        drop(tx);
+        // No report and no CLI check: it can't tell, and still opens no session.
+        assert_eq!(login_without_session(&reports, &mut rx, "x", &[]).await, ControlFlow::Break(None));
+        assert_eq!(login_without_session(&json!({}), &mut rx, "x", &[]).await, ControlFlow::Continue(()));
     }
 
     #[test]

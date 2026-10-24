@@ -5,19 +5,30 @@ import os
 private let log = Logger(subsystem: "com.pokai.Codync", category: "BotStore")
 
 extension BotStore {
-    private func composerKey(_ botId: String, _ thread: String?) -> String {
-        // Encode the tuple so a main chat cannot collide with a thread's ID.
-        String(decoding: (try? JSONEncoder().encode([botId, thread])) ?? Data(), as: UTF8.self)
+    func composerDraft(for botId: String) -> String {
+        composerDrafts[botId] ?? ""
     }
 
-    func composerDraft(for botId: String, thread: String? = nil) -> String {
-        composerDrafts[composerKey(botId, thread)] ?? ""
-    }
-
-    func setComposerDraft(_ text: String, for botId: String, thread: String? = nil) {
+    func setComposerDraft(_ text: String, for botId: String) {
         guard !retired else { return }
-        composerDrafts[composerKey(botId, thread)] = text.isEmpty ? nil : text
+        if text.isEmpty {
+            composerPasted[botId] = nil
+        } else if let pasted = pastedInsertion(from: composerDrafts[botId] ?? "", to: text) {
+            composerPasted[botId, default: []].append(pasted)
+        }
+        composerDrafts[botId] = text.isEmpty ? nil : text
         persistComposerDrafts()
+    }
+
+    /// Drafts saved before 2.20.1 were keyed `["<bot>",null]`; a thread's (`["<bot>","<root>"]`) is dropped.
+    static func chatDrafts(_ saved: [String: String]) -> [String: String] {
+        saved.reduce(into: [:]) { drafts, row in
+            guard let old = try? JSONDecoder().decode([String?].self, from: Data(row.key.utf8)) else {
+                drafts[row.key] = row.value
+                return
+            }
+            if old.count == 2, let bot = old[0], old[1] == nil { drafts[bot] = row.value }
+        }
     }
 
     func persistComposerDrafts() {
@@ -25,38 +36,39 @@ extension BotStore {
     }
 
     func removeComposerDrafts(for botId: String) {
-        composerDrafts = composerDrafts.filter { key, _ in
-            let destination = try? JSONDecoder().decode([String?].self, from: Data(key.utf8))
-            return destination?.first != botId
-        }
+        composerDrafts[botId] = nil
         persistComposerDrafts()
     }
 
     /// Transfer to the outbox now; an eventual acknowledgement must not erase a newer draft.
+    /// `replyTo`: the chat message it quotes.
     @discardableResult
-    func sendComposerDraft(to botId: String, thread: String? = nil, files: [OutgoingFile] = []) -> Bool {
-        let text = composerDraft(for: botId, thread: thread)
+    func sendComposerDraft(to botId: String, replyTo: Entry? = nil, files: [OutgoingFile] = []) -> Bool {
+        let text = composerDraft(for: botId)
         guard !retired, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
-        send(text, to: botId, thread: thread, files: files)
-        setComposerDraft("", for: botId, thread: thread)
+        let pasted = composerPasted[botId] ?? []
+        send(text, to: botId, replyTo: replyTo?.replyQuote, nonce: UUID().uuidString, files: files, pasted: pasted)
+        setComposerDraft("", for: botId)
         return true
     }
 
-    /// `thread`: reply in the thread on that main-chat message.
-    public func send(_ text: String, to botId: String, thread: String? = nil, files: [OutgoingFile] = []) {
-        send(text, to: botId, thread: thread, nonce: UUID().uuidString, files: files)
+    public func send(_ text: String, to botId: String, files: [OutgoingFile] = []) {
+        send(text, to: botId, replyTo: nil, nonce: UUID().uuidString, files: files)
     }
 
-    private func send(_ text: String, to botId: String, thread: String?, nonce: String, files: [OutgoingFile] = []) {
+    private func send(_ text: String, to botId: String, replyTo: ReplyQuote?, nonce: String, files: [OutgoingFile] = [],
+                      pasted: [String] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !files.isEmpty, !retired else { return }
         var data = EntryData(text: trimmed, status: "sending", clientNonce: nonce)
+        // Shown at once; the computer's own quote replaces it.
+        data.replyTo = replyTo
         if !files.isEmpty {
             data.attachments = files.map { Attachment(id: $0.id.uuidString, name: $0.name, size: Int64($0.data.count)) }
             outgoingFiles[nonce] = files
         }
         let local = Entry(
-            id: "local-\(nonce)", seq: Int64.max, botId: botId, threadId: thread, rev: 0, kind: "user",
+            id: "local-\(nonce)", seq: Int64.max, botId: botId, rev: 0, kind: "user",
             turn: 0, data: data, createdAt: Int64(Date.now.timeIntervalSince1970 * 1000), updatedAt: 0
         )
         upsert(local)
@@ -64,13 +76,13 @@ extension BotStore {
         if let bot = bots[botId] { onSent?(bot, .sending) }
         // The relay mailbox holds text only: files wait for the computer.
         if canQueue, files.isEmpty, let remote = transport as? any RemoteTransport {
-            enqueue(remote, text: trimmed, botId: botId, thread: thread, nonce: nonce)
+            enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce)
             return
         }
-        deliver(trimmed, botId: botId, thread: thread, nonce: nonce)
+        deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted)
     }
 
-    private func deliver(_ text: String, botId: String, thread: String?, nonce: String) {
+    private func deliver(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String] = []) {
         Task {
             do {
                 // Safe to repeat: the computer skips a nonce it already has.
@@ -86,7 +98,8 @@ extension BotStore {
                             ids?.append(id)
                         }
                     }
-                    return try await client.send(botId: botId, text: text, clientNonce: nonce, threadId: thread, attachments: ids)
+                    return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
+                                                 pasted: pasted)
                 }
                 outgoingFiles[nonce] = nil
                 upsert(e)
@@ -99,18 +112,18 @@ extension BotStore {
     }
 
     /// The computer is offline: the message waits, sealed for it, in the relay mailbox.
-    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, thread: String?, nonce: String) {
+    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: String?, nonce: String) {
         markLocal(nonce: nonce, botId: botId, status: "waiting")
         saveCache()
         Task {
             do {
-                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, threadId: thread)
+                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo)
                 if let bot = bots[botId] { onSent?(bot, .queued) }
             } catch MailboxError.hostOnline {
                 // Presence can race the stream state. Wait for the host's events channel
                 // before trying the normal API, instead of turning that race into a failure.
                 markLocal(nonce: nonce, botId: botId, status: "sending")
-                await deliverWhenOnline(text, botId: botId, thread: thread, nonce: nonce)
+                await deliverWhenOnline(text, botId: botId, replyTo: replyTo, nonce: nonce)
             } catch {
                 // A dropped relay link: the message's own "Failed to send" and Resend say enough.
                 if (error as? HostError)?.isTransient != true { lastError = error.localizedDescription }
@@ -120,7 +133,7 @@ extension BotStore {
         }
     }
 
-    private func deliverWhenOnline(_ text: String, botId: String, thread: String?, nonce: String) async {
+    private func deliverWhenOnline(_ text: String, botId: String, replyTo: String?, nonce: String) async {
         let deadline = ContinuousClock.now + .seconds(30)
         while !retired, connection != .online, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(200))
@@ -132,7 +145,7 @@ extension BotStore {
             saveCache()
             return
         }
-        deliver(text, botId: botId, thread: thread, nonce: nonce)
+        deliver(text, botId: botId, replyTo: replyTo, nonce: nonce)
     }
 
     /// Takes a waiting message back out of the mailbox, unless the computer already has it.
@@ -194,7 +207,8 @@ extension BotStore {
         entries[entry.botId]?.removeAll { $0.id == entry.id }
         // The same clientNonce: if the computer got it after all, it won't run twice (the host
         // skips a nonce it has). Every seal still takes a fresh ephemeral key (§6.4).
-        send(text, to: entry.botId, thread: entry.threadId, nonce: entry.data.clientNonce ?? UUID().uuidString, files: files)
+        send(text, to: entry.botId, replyTo: entry.data.replyTo, nonce: entry.data.clientNonce ?? UUID().uuidString,
+             files: files)
     }
 
     /// A sent file's bytes: on disk after the first fetch (sent files never change).

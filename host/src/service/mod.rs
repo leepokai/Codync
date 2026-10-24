@@ -13,17 +13,17 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub use unix::{install, installed, require_executable, start, stop, uninstall};
+pub use unix::{install, installed, require_executable, start, started_by_service, stop, uninstall};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{install, installed, require_executable, start, stop, uninstall};
+pub use windows::{install, installed, require_executable, start, started_by_service, stop, uninstall};
 
 static BINARY_IDENTITY: OnceLock<(String, String)> = OnceLock::new();
 
@@ -80,8 +80,18 @@ pub(crate) fn home() -> PathBuf {
 }
 
 pub fn data_dir() -> PathBuf {
-    std::env::var_os("CODYNC_HOME")
-        .map_or_else(|| home().join(crate::environment::Environment::current().data_folder()), PathBuf::from)
+    std::env::var_os("CODYNC_HOME").map_or_else(default_data_dir, PathBuf::from)
+}
+
+#[cfg(not(test))]
+fn default_data_dir() -> PathBuf {
+    home().join(crate::environment::Environment::current().data_folder())
+}
+
+/// Unit tests never see a real host's data: tests that start a hub run its start-up clean-up, which deletes files.
+#[cfg(test)]
+fn default_data_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("codync-unit-{}", std::process::id()))
 }
 
 fn create_parent(file: &Path) -> Result<()> {
@@ -159,8 +169,11 @@ impl KeepAwake {
     }
 }
 
-/// Addresses the phone can try, best first: Tailscale, then LAN.
+/// Addresses the phone can try, best first: the ones set in `CODYNC_EXTERNAL_URL`, Tailscale, then LAN.
 pub fn addresses(port: u16) -> Vec<String> {
+    // Read once: every hello asks, and a bad entry warns once.
+    static EXTERNAL: LazyLock<Vec<String>> =
+        LazyLock::new(|| external_urls(&std::env::var("CODYNC_EXTERNAL_URL").unwrap_or_default()));
     let mut tailscale = vec![];
     let mut lan = vec![];
     for iface in if_addrs::get_if_addrs().unwrap_or_default() {
@@ -190,7 +203,37 @@ pub fn addresses(port: u16) -> Vec<String> {
     tailscale.dedup();
     lan.sort();
     lan.dedup();
-    tailscale.into_iter().chain(lan).collect()
+    EXTERNAL.iter().cloned().chain(tailscale).chain(lan).collect()
+}
+
+/// Where phones reach this host besides its own interfaces, such as an HTTPS reverse proxy that forwards
+/// `/channel`: comma-separated `http(s)://` URLs at the root of a host (phones dial `<url>/channel`). The pairing
+/// link and every `hello` carry them, so a phone keeps them when it refreshes its addresses.
+fn external_urls(var: &str) -> Vec<String> {
+    var.split(',')
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .filter_map(|u| match reqwest::Url::parse(u) {
+            Ok(url)
+                if matches!(url.scheme(), "http" | "https")
+                    && url.host().is_some()
+                    && url.username().is_empty()
+                    && url.password().is_none()
+                    && url.path() == "/"
+                    && url.query().is_none()
+                    && url.fragment().is_none() =>
+            {
+                Some(url.as_str().trim_end_matches('/').to_owned())
+            }
+            _ => {
+                tracing::warn!(
+                    url = u,
+                    "CODYNC_EXTERNAL_URL entry isn't an http(s) URL at the root of a host (no user or password); ignored"
+                );
+                None
+            }
+        })
+        .collect()
 }
 
 pub fn host_name() -> String {
@@ -366,6 +409,26 @@ mod tests {
 
     fn read(f: &Path) -> Value {
         serde_json::from_str(&std::fs::read_to_string(f).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn unit_tests_keep_out_of_the_real_data_folder() {
+        assert!(
+            std::env::var_os("CODYNC_HOME").is_some() || !data_dir().starts_with(home()),
+            "{}",
+            data_dir().display()
+        );
+    }
+
+    #[test]
+    fn external_urls_keep_http_addresses_only() {
+        assert_eq!(
+            external_urls(
+                " https://codync.example.com/ , ftp://x, nonsense,http://10.0.0.2:8080,https://x.com/codync,https://x.com/?a,https://u:p@x.com"
+            ),
+            ["https://codync.example.com", "http://10.0.0.2:8080"]
+        );
+        assert_eq!(external_urls(""), [] as [String; 0]);
     }
 
     #[test]

@@ -1,8 +1,10 @@
-import type { HostSnapshot } from '@shared/ipc'
+import { trackBody } from '@shared/analytics'
+import type { HostSnapshot, LocalHost } from '@shared/ipc'
 import type { AccessRequest, Bot, Computer } from '@shared/models'
-import { LoopbackTransport } from '../client/host-client'
+import { HostError, LoopbackTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
 import { account } from './account'
+import { analytics } from './analytics'
 import { BotStore } from './bot-store'
 import { CloudModel } from './cloud'
 import { DeviceComputerOrder } from './computer-order'
@@ -49,7 +51,6 @@ export class AppModel extends Observable {
   screenNeedsApproval = false
   screenError: string | null = null
   private screenSynced = false
-  private opened = false
   /** Whether the account was signed in when last seen; null until its state first arrives. */
   private signedIn: boolean | null = null
   /** Approvals closed with "later"; they come back when the request changes (its code arrives). */
@@ -76,6 +77,11 @@ export class AppModel extends Observable {
 
   async start() {
     window.codync.host.onChange((s) => this.setHost(s))
+    if (this.mirrors) {
+      // Once per launch; it goes out when this computer's host first answers.
+      analytics.track({ event: 'app_opened', at_login: window.codync.openedAtLogin })
+      window.codync.app.onCommand((c) => c.kind === 'windowOpened' && analytics.track({ event: 'window_opened' }))
+    }
     this.setHost(await window.codync.host.snapshot())
   }
 
@@ -83,6 +89,7 @@ export class AppModel extends Observable {
     const old = this.host.local
     this.host = snapshot
     const local = snapshot.local
+    this.connectAnalytics(local)
     if (!this.mirrors) return this.changed()
     if (local && (old?.computerId !== local.computerId || old.token !== local.token || !this.stores.has(local.computerId))) {
       if (old && old.computerId !== local.computerId) this.detach(old.computerId)
@@ -90,10 +97,7 @@ export class AppModel extends Observable {
       const computer: Computer = cached ?? { id: local.computerId, name: 'This computer', signKey: '', urls: [] }
       const store = new BotStore(computer, true, () => new LoopbackTransport(local.baseURL, local.token))
       this.attach(computer, store)
-      store.subscribe(() => {
-        this.syncScreen(store)
-        this.noteOpened(store)
-      })
+      store.subscribe(() => this.syncScreen(store))
     } else if (!local && old) {
       this.detach(old.computerId)
     }
@@ -134,6 +138,12 @@ export class AppModel extends Observable {
     this.computers = this.computers.filter((c) => c.id !== id)
     if (this.selection?.computerId === id) this.selection = null
     this.changed()
+  }
+
+  /** ⌘R, as the iPhone's pull to refresh: reconnect every computer and reload the account's computers. */
+  refresh() {
+    for (const store of this.stores.values()) store.restartStream()
+    void this.cloud.refresh()
   }
 
   store(id: string) {
@@ -233,18 +243,26 @@ export class AppModel extends Observable {
     })
   }
 
-  /** `app_opened` once per launch, when this computer's host first answers. */
-  private noteOpened(store: BotStore) {
-    if (this.opened || !store.hello) return
-    this.opened = true
-    store.track('app_opened')
+  /** App-level analytics go out through this computer's host (`track`) once it answers; null holds them. */
+  private connectAnalytics(local: LocalHost | null) {
+    if (!local) return analytics.connect(null)
+    const transport = new LoopbackTransport(local.baseURL, local.token)
+    analytics.connect(async (event) => {
+      try {
+        await transport.call('track', trackBody(event), 10_000)
+      } catch (error) {
+        // Unreachable: kept for the next try. Refused (a host without this event): dropped.
+        if (error instanceof HostError && error.isTransient) throw error
+        console.warn(`track ${event.event} failed`, error)
+      }
+    })
   }
 
   /** Sign-in and sign-out, not the state restored at launch. */
   private noteAccount() {
     if (!account.isReady) return
     const now = account.isSignedIn
-    if (this.signedIn !== null && now !== this.signedIn) this.local?.track(now ? 'signed_in' : 'signed_out')
+    if (this.signedIn !== null && now !== this.signedIn) analytics.track(now ? { event: 'signed_in', provider: account.provider ?? undefined } : { event: 'signed_out' })
     this.signedIn = now
   }
 

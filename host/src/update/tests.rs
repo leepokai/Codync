@@ -50,27 +50,6 @@ fn only_signed_platform_matched_manifests_are_accepted() {
     assert!(release::verify_manifest(&redirected, &signature, &public, "linux-arm64").is_err());
 }
 
-#[test]
-fn only_signed_compat_files_for_the_release_are_accepted() {
-    let key = SigningKey::from_bytes(&[17; 32]);
-    let public = B64.encode(key.verifying_key().as_bytes());
-    let sign = |bytes: &[u8]| B64.encode(key.sign(bytes).to_bytes());
-    let compat = br#"{"version": "3.0.0", "minApp": "2.9.0"}"#;
-    assert_eq!(release::verify_compat(compat, &sign(compat), &public, "3.0.0").unwrap(), "2.9.0");
-    // Another release's file, a forged one, or one without a readable minApp is refused.
-    assert!(release::verify_compat(compat, &sign(compat), &public, "3.0.1").is_err());
-    let other = B64.encode(SigningKey::from_bytes(&[18; 32]).verifying_key().as_bytes());
-    assert!(release::verify_compat(compat, &sign(compat), &other, "3.0.0").is_err());
-    let mut altered = compat.to_vec();
-    altered[30] = b'8';
-    assert!(release::verify_compat(&altered, &sign(compat), &public, "3.0.0").is_err());
-    let bad = br#"{"version": "3.0.0", "minApp": "soon"}"#;
-    assert!(release::verify_compat(bad, &sign(bad), &public, "3.0.0").is_err());
-    // A signed release manifest isn't a compat file.
-    let manifest = serde_json::to_vec(&manifest()).unwrap();
-    assert!(release::verify_compat(&manifest, &sign(&manifest), &public, "3.0.0").is_err());
-}
-
 fn archive(symlink: bool) -> Vec<u8> {
     let gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     let mut tar = tar::Builder::new(gzip);

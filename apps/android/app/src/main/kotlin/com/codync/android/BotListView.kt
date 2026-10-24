@@ -62,6 +62,8 @@ import kotlinx.serialization.json.putJsonArray
     val reorder = remember { RosterReorder() }
     reorder.roster = roster.map(Bot::id)
     val online = state.actualConnection is LinkState.Ready
+    // A computer that turned this phone away, or this computer's older identity, counts as none (iOS `availableStores`).
+    val usable = state.computers.isNotEmpty() && !state.isStale
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         ScrollEdge(Edge.Top, top + 64.dp)
@@ -69,7 +71,7 @@ import kotlinx.serialization.json.putJsonArray
             verticalAlignment = Alignment.CenterVertically) {
             AccountSwitcherButton(state, account)
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { ComputerFilterHeader(state, store, manage) }
-            NewMenuButton(enabled = state.computers.isNotEmpty(), groupEnabled = online, newBot, newGroup)
+            NewMenuButton(enabled = usable, groupEnabled = online, newBot, newGroup)
         }
     }) {
         // Pull to refresh reconnects and asks the account for its computers again (iOS `refreshable`).
@@ -78,7 +80,7 @@ import kotlinx.serialization.json.putJsonArray
             // A computer waiting for an update has its card instead; its bots may not be readable yet.
             state.mismatch?.let { mismatch -> item("update") { UpdateNeededCard(state, mismatch, Modifier.padding(vertical = 8.dp)) } }
             if (roster.isEmpty() && state.mismatch == null) item {
-                EmptyRoster(canCreate = state.computers.isNotEmpty(), hasComputer = state.computers.isNotEmpty(), create = newBot, showComputers = manage)
+                EmptyRoster(canCreate = usable, hasComputer = usable, create = newBot, showComputers = manage)
             }
             items(reorder.shown(roster), key = Bot::id) { bot ->
                 val lifted = reorder.dragged == bot.id
@@ -162,7 +164,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
             if (bot.kind == "group") MenuItem("Edit group", icon = "person.2", action = edit)
             else MenuItem("Edit profile", icon = "pencil", action = edit),
             MenuItem("Mark as read", icon = "checkmark.message") {
-                store.command("markRead", buildJsonObject { put("botId", bot.id); put("all", true) }, "roster:" + bot.id)
+                store.command("markRead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)
             },
             MenuItem("Hide from list", icon = "eye.slash") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("hidden", true) }, "roster:" + bot.id)
@@ -193,8 +195,8 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
                         overflow = TextOverflow.Ellipsis)
                 }
                 Spacer(Modifier.width(8.dp))
-                if (bot.lastAt > 0) Text(RelativeTime.day(bot.lastAt), style = Type.subheadline,
-                    color = if (bot.unread > 0) Palette.text else Palette.tertiary, maxLines = 1)
+                if (bot.lastAt > 0) Text(RelativeTime.day(bot.lastAt, yesterday = tr("Yesterday")), style = Type.subheadline,
+                    color = if (bot.unread > 0) Palette.text else Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) { Preview(bot, state) }
@@ -212,16 +214,16 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
     when {
         bot.status == "needsInput" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ThinkingOrb(ThinkingOrbState.Listening, 16.dp, Palette.warning)
-            Text(bot.activity.ifEmpty { "Needs your approval" }, style = Type.subheadline, color = Palette.warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(bot.activity.ifEmpty { "Needs your approval" }), style = Type.subheadline, color = Palette.warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         bot.status == "working" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ThinkingOrb(size = 13.dp, color = Palette.secondary)
-            Text(bot.activity.ifEmpty { "Working…" }, style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(bot.activity.ifEmpty { "Working…" }), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         bot.status == "error" -> Text(messagePreview(bot.lastMessage ?: "Something went wrong"), style = Type.subheadline, color = Palette.danger,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         else -> Text(messagePreview(bot.lastMessage ?: if (bot.kind == "group") "${bot.members.size} bots"
-            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) "Personal workspace" else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
+            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) tr("Personal workspace") else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
             style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -270,7 +272,7 @@ internal fun messagePreview(text: String): String {
         )
     }, label = "Computers, $summary. Filter conversations") {
         Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(summary, style = Type.system(12f).medium, color = Palette.secondary, maxLines = 1)
+            Text(summary, style = Type.system(12f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.down", size = 15.dp, tint = Palette.secondary)
         }
     }

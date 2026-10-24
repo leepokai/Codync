@@ -37,26 +37,35 @@
 .sidebar-header .sidebar-header-action {
   border-radius: 50% !important;
   border: 1px solid var(--chrome-stroke);
-  background: var(--chrome-fill);
   color: var(--text);
 }
 .sidebar-header .sidebar-header-action:hover {
-  background: color-mix(in srgb, var(--text) 5%, var(--chrome-fill));
+  background: rgba(var(--text-rgb), 0.05);
 }
 @media (prefers-reduced-transparency: reduce) {
   .sidebar:not(.compact) .sidebar-header::before { backdrop-filter: none; }
 }
 
+/* The roster's computer summary and filter (ComputerFilterHeader). */
+.computer-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 0;
+  font-size: var(--text-callout);
+  font-weight: 500;
+  color: var(--secondary);
+}
 .computer-filter-action {
   height: 32px;
-  min-width: 44px;
+  padding: 0 9px;
   justify-content: center;
   flex: none;
   border: 1px solid var(--chrome-stroke);
-  border-radius: 999px;
-  background: var(--chrome-fill);
+  border-radius: var(--radius-pill);
   transition: background-color var(--hover);
 }
 .computer-filter-action:hover {
-  background: color-mix(in srgb, var(--text) 5%, var(--chrome-fill));
+  background: rgba(var(--text-rgb), 0.05);
 }

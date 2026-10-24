@@ -1,144 +1,185 @@
 import CodyncKit
 import SwiftUI
 
+/// A bot's memory, read-only: what all your bots know about you, what this one knows, its dreams, and its harness's
+/// own notes when the user kept them on. The user changes memory by telling the bot.
 struct MemoryCard: View {
     let botId: String
     @Environment(BotStore.self) private var host
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var memory: MemoryStore?
-    @State private var editor: MemoryEditorTarget?
-    @State private var showDetail = false
-    @State private var backupMode: MemoryBackupMode?
-    @State private var confirmClear = false
+    @State private var section: Section = .bot
+    @State private var info: Info?
+    /// Entries and dreams showing all their lines.
+    @State private var unfolded: Set<Fold> = []
+
+    enum Section: Hashable { case yours, bot, dreams, harness }
+    /// What an info button explains.
+    enum Info: Identifiable { case harness, dreams; var id: Self { self } }
+    /// What a tap unfolds.
+    enum Fold: Hashable { case entry(Int64), dream(Int64) }
+
+    private var bot: Bot? { host.bots[botId] }
+    /// A long memory stops at a few lines, fewer when the screen is short (landscape); tapping it shows the rest.
+    private func lines(_ key: Fold) -> Int? {
+        if unfolded.contains(key) { return nil }
+        return verticalSizeClass == .compact ? 2 : 5
+    }
+
+    private func unfold(_ key: Fold) {
+        withAnimation(Motion.layout) { unfolded.formSymmetricDifference([key]) }
+    }
 
     var body: some View {
-        CardSection("Memory") {
-            if let memory { contents(memory) }
-            else { Text("Loading memory…").foregroundStyle(Palette.secondary) }
-        } accessory: {
-            HStack(spacing: 2) {
-                IconButton("Add memory", systemImage: "plus") { openEditor() }
-                    .disabled(memory == nil || memory?.busy == true)
-                if let memory { moreMenu(memory) }
+        VStack(spacing: 10) {
+            TabChoice(selection: Binding(get: { section }, set: { value in
+                withAnimation(Motion.layout) { section = value }
+                // Claude Code writes its notes outside Codync, so nothing moves `memoryRev`: read them again on the way in.
+                if value == .harness { Task { await memory?.load() } }
+            }), options: sections(memory?.view))
+            CardSection {
+                if let memory { contents(memory) }
+                else { Text(L10n.tr("Loading memory…")).foregroundStyle(Palette.secondary) }
             }
         }
-        .task(id: botId) {
-            let store = MemoryStore(botId: botId) { try await host.ready() }
+        .tracked(.screenViewed(.memory))
+        // Memory changes anywhere move the bot's `memoryRev`: fetch again.
+        .task(id: "\(botId)-\(bot?.memoryRev ?? 0)-\(bot?.sharedMemory ?? false)-\(bot?.harnessMemory ?? false)") {
+            let store = memory ?? MemoryStore(botId: botId) { try await host.ready() }
             memory = store
             await store.load()
         }
-        .codyncSheet(item: $editor) { target in
-            if let memory { MemoryEditorView(memory: memory, draft: target.draft) }
+        // Claude Code's section goes when its memory is turned off (on another device too).
+        .onChange(of: memory?.view.map { $0.projectMemory == nil } ?? false) { _, gone in
+            if gone && section == .harness { section = .bot }
         }
-        .codyncSheet(isPresented: $showDetail) {
-            if let memory { MemoryHistoryView(memory: memory) }
-        }
-        .codyncSheet(item: $backupMode) { mode in
-            if let memory { MemoryBackupView(memory: memory, mode: mode) }
-        }
-        .codyncDialog("Forget everything this bot remembers?", isPresented: $confirmClear) {
-            [DialogAction("Forget everything", destructive: true) {
-                Task { await memory?.action("clearMemory") }
-            }]
+        .codyncSheet(item: $info) { info in
+            switch info {
+            case .harness: if let bot { MemoryInfoSheet.harness(host.backendName(bot.backend), readable: bot.backend == "claude") }
+            case .dreams: MemoryInfoSheet.dreams
+            }
         }
     }
 
     @ViewBuilder private func contents(_ memory: MemoryStore) -> some View {
-        HStack(spacing: 8) {
-            SearchField("Search memories", text: Binding(get: { memory.query }, set: { memory.search($0) }))
-            ChoicePicker(selection: Binding(get: { memory.filter }, set: { filter in
-                withAnimation(Motion.layout) { memory.search(memory.query, filter: filter) }
-            }), options: Self.filters, fill: Palette.bubbleAgent)
-        }
-        if let error = memory.error { Text(error).foregroundStyle(Palette.danger).textSelection(.enabled) }
-        if !memory.loaded && memory.error == nil { Text("Loading memory…").foregroundStyle(Palette.secondary) }
-        if memory.loaded && memory.facts.isEmpty {
-            VStack(spacing: 8) {
-                Image(systemName: "brain").font(.title3).foregroundStyle(Palette.tertiary)
-                Text(memory.query.isEmpty && memory.filter == "all"
-                     ? "Nothing yet. Important details are remembered as you chat." : "No matching memories.")
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Palette.secondary)
+        if let error = memory.error { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
+        if let view = memory.view {
+            switch section {
+            case .yours, .bot: layer(memory, view: view)
+            case .dreams: dreams(view.dreams)
+            case .harness: harness(view.projectMemory)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
+        } else if memory.error == nil {
+            Text(L10n.tr("Loading memory…")).foregroundStyle(Palette.secondary)
         }
-        ForEach(memory.facts) { fact in
-            HStack(alignment: .top, spacing: 8) {
-                Button { openEditor(fact) } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            if fact.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Palette.secondary) }
-                            Text(fact.title).fontWeight(.semibold)
-                        }
-                        Text(fact.content).lineLimit(3)
-                        Text("\(fact.kind == "profile" ? "About you" : fact.memoryType) · \(Date(timeIntervalSince1970: Double(fact.createdAt) / 1000).formatted(date: .abbreviated, time: .omitted)) · \(fact.revisionCount) revisions")
-                            .font(.caption).foregroundStyle(Palette.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+    }
+
+    private func sections(_ view: MemoryView?) -> [(id: Section, label: String)] {
+        [(Section.yours, "About you"), (.bot, "This bot"), (.dreams, "Dreams")]
+            + (view?.projectMemory != nil ? [(.harness, host.backendName(bot?.backend ?? "claude"))] : [])
+    }
+
+    @ViewBuilder private func layer(_ memory: MemoryStore, view: MemoryView) -> some View {
+        let shared = section == .yours
+        let layer = shared ? view.yours : view.bot
+        if shared, let bot {
+            Toggle(isOn: Binding(get: { bot.sharedMemory ?? view.shared }, set: { host.setSharedMemory(bot, $0) })) {
+                Text(L10n.tr("Use what your bots share"))
+            }
+                .toggleStyle(.codync)
+        }
+        if !shared, let bot, let on = bot.harnessMemory {
+            let name = host.backendName(bot.backend)
+            let own = L10n.tr("{name}'s own memory").replacingOccurrences(of: "{name}", with: name)
+            HStack(spacing: 4) {
+                Text(own).lineLimit(1).layoutPriority(1)
+                IconButton(L10n.tr("About {name}'s own memory").replacingOccurrences(of: "{name}", with: name), systemImage: "info.circle") {
+                    withAnimation(Motion.layout) { info = .harness }
                 }
-                .buttonStyle(.plain)
-                factMenu(memory, fact)
+                Toggle(isOn: Binding(get: { on }, set: { host.setHarnessMemory(bot, $0) })) { EmptyView() }
+                    .toggleStyle(.codync)
+                    .accessibilityLabel(own)
             }
+        }
+        Text(L10n.tr(shared
+                     ? "Your name, time zone, people and lasting preferences, shared by your bots. {used} of {cap} in use. To change it, tell the bot."
+                     : "What this bot learned about you. {used} of {cap} in use. To change it, tell the bot.")
+            .replacingOccurrences(of: "{used}", with: "\(layer.used)")
+            .replacingOccurrences(of: "{cap}", with: "\(layer.cap)"))
+            .font(.footnote).foregroundStyle(Palette.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        if layer.entries.isEmpty {
+            empty("brain", shared ? "Nothing shared yet." : "Nothing yet. What this bot learns about you shows up here.")
+        }
+        ForEach(layer.entries) { entry in
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if entry.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Palette.secondary) }
+                    Text(entry.text).foregroundStyle(entry.archived ? Palette.tertiary : Palette.text).lineLimit(lines(.entry(entry.id)))
+                }
+                Text("\(author(entry)) · \(Date(milliseconds: entry.updatedAt).formatted(.relative(presentation: .named)))\(entry.archived ? " · archived" : "")")
+                    .font(.caption).foregroundStyle(Palette.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { unfold(.entry(entry.id)) }
             .padding(.vertical, 6)
         }
-        if memory.nextOffset != nil {
-            Button("Load more (\(memory.total))") { Task { await memory.load(more: true) } }
-                .buttonStyle(.plain).foregroundStyle(Palette.secondary).frame(maxWidth: .infinity)
+        if let files = view.files { MemoryFilesList(memory: memory, files: files, shared: shared) }
+    }
+
+    /// What dreaming did.
+    @ViewBuilder private func dreams(_ runs: [DreamRun]) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(L10n.tr("Between chats the bot tidies its memory from your own words."))
+                .font(.footnote).foregroundStyle(Palette.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            IconButton("About dreaming", systemImage: "info.circle") {
+                withAnimation(Motion.layout) { info = .dreams }
+            }
+        }
+        if runs.isEmpty { empty("moon", "No dreams yet.") }
+        ForEach(runs) { run in
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(Date(milliseconds: run.at).formatted(.relative(presentation: .named)))\(run.undone ? " · undone" : "")")
+                    .fontWeight(.semibold)
+                let limit = lines(.dream(run.id))
+                ForEach(run.added, id: \.id) { Text(L10n.tr("+ \($0.text)")).foregroundStyle(Palette.added).lineLimit(limit) }
+                ForEach(run.archived, id: \.id) { Text(L10n.tr("− \($0.text)")).foregroundStyle(Palette.removed).lineLimit(limit) }
+                ForEach(run.files ?? [], id: \.version) { Label("Added to \($0.name)", systemImage: "doc.text").foregroundStyle(Palette.secondary) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { unfold(.dream(run.id)) }
+            .padding(.vertical, 6)
         }
     }
 
-    private static let filters = [("all", "All"), ("profile", "About you"), ("pinned", "Pinned"), ("review", "Needs review")]
-        .map { (id: $0.0, label: $0.1) }
-
-    private func moreMenu(_ memory: MemoryStore) -> some View {
-        DropdownMenu {
-            [MenuItem("Refresh", icon: "arrow.clockwise") { Task { await memory.load() } },
-             MenuItem("Export", icon: "square.and.arrow.up") {
-                 withAnimation(Motion.layout) { backupMode = .export }
-                 Task { await memory.export() }
-             },
-             MenuItem("Import", icon: "square.and.arrow.down") { withAnimation(Motion.layout) { backupMode = .import } },
-             MenuItem("Forget everything", icon: "trash", destructive: true, divider: true) {
-                 withAnimation(Motion.layout) { confirmClear = true }
-             }]
-        } label: { menuLabel("More") }
+    @ViewBuilder private func harness(_ project: MemoryView.Project?) -> some View {
+        if let project {
+            Text(L10n.tr("Claude Code's own notes, read-only here."))
+                .font(.footnote).foregroundStyle(Palette.secondary)
+            Text(project.path).font(.caption).foregroundStyle(Palette.tertiary).textSelection(.enabled)
+            if project.text.isEmpty { empty("brain", "Nothing yet. Claude Code's notes show up here once it saves some.") }
+            else { Text(project.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+        }
     }
 
-    private func factMenu(_ memory: MemoryStore, _ fact: MemoryFact) -> some View {
-        DropdownMenu {
-            [MenuItem(fact.pinned ? "Unpin" : "Pin", icon: fact.pinned ? "pin.slash" : "pin") {
-                Task { await memory.action("pinMemory", fact: fact) }
-            },
-             MenuItem("History", icon: "clock.arrow.circlepath") {
-                 withAnimation(Motion.layout) { showDetail = true }
-                 Task { await memory.inspect(fact) }
-             }]
-            + (fact.reviewAfter != nil ? [MenuItem("Mark reviewed", icon: "checkmark.circle") {
-                Task { await memory.action("reviewMemory", fact: fact) }
-            }] : [])
-            + [MenuItem("Forget", icon: "trash", destructive: true, divider: true) {
-                Task { await memory.action("forgetMemory", fact: fact) }
-            }]
-        } label: { menuLabel("Memory actions") }
-        .disabled(memory.busy)
+    private func empty(_ icon: String, _ text: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon).font(.title3).foregroundStyle(Palette.tertiary)
+            Text(L10n.tr(text)).multilineTextAlignment(.center).foregroundStyle(Palette.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
     }
 
-    private func menuLabel(_ title: String) -> some View {
-        Image(systemName: "ellipsis")
-            .font(.body.weight(.medium))
-            .foregroundStyle(Palette.secondary)
-            .frame(width: 32, height: 32)
-            .contentShape(Rectangle())
-            .accessibilityLabel(title)
+    private func author(_ entry: MemoryEntry) -> String {
+        switch entry.author {
+        case "user": "You wrote it"
+        case "bot": "\(host.bots[entry.authorBot ?? ""]?.name ?? "A bot") remembered it"
+        case "dream": "Dreaming"
+        default: "Moved from the old memory"
+        }
     }
-
-    private func openEditor(_ fact: MemoryFact? = nil) {
-        withAnimation(Motion.layout) { editor = MemoryEditorTarget(draft: MemoryDraft(botId: botId, fact: fact)) }
-    }
-}
-
-private struct MemoryEditorTarget: Identifiable {
-    let id = UUID()
-    var draft: MemoryDraft
 }

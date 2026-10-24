@@ -19,12 +19,14 @@ fun AppStore.syncPush() = action("push") {
 fun AppStore.notifications(enabled: Boolean) = action("notificationSettings") {
     PushPreferences.enabled(getApplication(), enabled)
     mutableState.update { it.copy(notifications = enabled) }
+    Analytics.capture(AnalyticsEvent.SettingChanged(PhoneSetting.Push, enabled))
     if (!enabled) NotificationDisplay.cancel(getApplication(), 1)
     syncPush(); PushDelivery.schedule(getApplication())
 }
 fun AppStore.taskNotifications(enabled: Boolean) = action("taskSettings") {
     PushPreferences.tasks(getApplication(), enabled)
     mutableState.update { it.copy(tasks = enabled) }
+    Analytics.capture(AnalyticsEvent.SettingChanged(PhoneSetting.LiveActivities, enabled))
     if (!enabled) NotificationDisplay.cancel(getApplication(), 2)
     syncPush(); PushDelivery.schedule(getApplication())
 }

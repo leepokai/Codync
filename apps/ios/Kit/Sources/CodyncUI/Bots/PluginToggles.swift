@@ -13,7 +13,7 @@ struct PluginToggles: View {
     var body: some View {
         CardSection(title) {
             if items.isEmpty {
-                Text(empty).foregroundStyle(Palette.secondary)
+                Text(L10n.tr(empty)).foregroundStyle(Palette.secondary)
             }
             ForEach(items, id: \.id) { item in
                 HStack(spacing: 4) {

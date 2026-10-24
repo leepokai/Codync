@@ -72,11 +72,10 @@ files, image caches and composer drafts.
 The roster shows activity, previews, unread counts, groups and pin/hide actions;
 touch and hold a bot, then move it, to reorder (the order syncs through the host). Cached bots remain readable offline and are labeled as saved. An
 unreachable computer is distinguished from an empty online roster. Chat supports
-final replies, Markdown/code, permissions, reactions, threads, history and Full
-conversation.
+final replies, Markdown/code, permissions, reactions, quote replies (touch and hold a
+message, then Reply), history and Full conversation.
 
-Text and private attachment drafts survive process death separately for each bot
-and thread. Sends retain their nonce through durable queue commit and retry.
+Text and private attachment drafts survive process death separately for each bot. Sends retain their nonce through durable queue commit and retry.
 Uncertain sends require explicit retry with the same ID. Text can wait in the
 encrypted relay mailbox; files require a live computer. Files are capped at 100 MiB each and uploaded in 384 KiB chunks. Sharing
 uses a temporary copy rather than exposing the private cache.
@@ -120,8 +119,7 @@ isolated fake-agent host. Shared vectors come from
 [remote-relay-vectors.json](../../docs/reference/fixtures/remote-relay-vectors.json).
 
 `LiveChatTest` uses `liveHost=true` and a bot named `Android chat acceptance`
-running [fake_agent.py](../../host/tests/fake_agent.py). `LiveThreadTest` exercises
-replies. `LiveDraftTest` uses `draftPhase=prepare` and `restore` with an OS process
+running [fake_agent.py](../../host/tests/fake_agent.py). `LiveDraftTest` uses `draftPhase=prepare` and `restore` with an OS process
 stop between phases. File acceptance verifies a multi-chunk round trip byte for
 byte. `LiveRosterTest` offers separately opted-in read-only inspection of an
 existing connection; it is not the ordinary reset suite.

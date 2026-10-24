@@ -34,50 +34,40 @@ class LiveDraftTest {
         compose.waitUntil(10_000) { !store.state.value.loading && store.state.value.rosterLoaded &&
             compose.onAllNodes(chatMenu).fetchSemanticsNodes().size == 1 }
         val mainText = "Android unsent draft acceptance"
-        val replyText = "Android unsent reply acceptance"
         if (phase == "prepare") {
             compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
             compose.onNode(hasSetTextAction()).performTextReplacement(mainText)
-            compose.waitUntil(10_000) { store.state.value.drafts[ComposerDraft.lane(bot.id, null)]?.text == mainText }
+            compose.waitUntil(10_000) { store.state.value.drafts[bot.id]?.text == mainText }
             val source = File(context.cacheDir, "shared-attachments/draft-acceptance/draft.txt").apply {
                 requireNotNull(parentFile).mkdirs(); writeText("Private draft attachment acceptance")
             }
             val uri = FileProvider.getUriForFile(context, context.packageName + ".files", source)
-            compose.runOnUiThread { store.importFiles(listOf(uri)) { store.addDraftFiles(bot.id, null, it) } }
-            try { compose.waitUntil(10_000) { store.state.value.drafts[ComposerDraft.lane(bot.id, null)]?.files?.size == 1 } }
+            compose.runOnUiThread { store.importFiles(listOf(uri)) { store.addDraftFiles(bot.id, it) } }
+            try { compose.waitUntil(10_000) { store.state.value.drafts[bot.id]?.files?.size == 1 } }
             catch (_: Throwable) { throw AssertionError("Draft import failed: ${store.state.value.error}; busy=${store.state.value.busy}") }
-            val root = store.state.value.entries.first { it.botId == bot.id && it.isChat && it.threadId == null }.id
-            compose.runOnUiThread { store.editDraft(bot.id, root, replyText) }
-            try { compose.waitUntil(10_000) { book.read().any { it.botId == bot.id && it.threadId == root && it.text == replyText } &&
-                book.read().any { it.botId == bot.id && it.threadId == null && it.files.size == 1 && it.text == mainText } } }
+            try { compose.waitUntil(10_000) { book.read().any { it.botId == bot.id && it.files.size == 1 && it.text == mainText } } }
             catch (_: Throwable) {
-                val current = store.state.value.drafts[ComposerDraft.lane(bot.id, null)]
+                val current = store.state.value.drafts[bot.id]
                 throw AssertionError("Draft persistence failed: mainText=${current?.text == mainText}, files=${current?.files?.size}, error=${store.state.value.error}")
             }
-            val main = book.read().single { it.botId == bot.id && it.threadId == null }
-            metadata.writeText(buildJsonObject { put("nonce", main.nonce); put("thread", root) }.toString())
+            val main = book.read().single { it.botId == bot.id }
+            metadata.writeText(buildJsonObject { put("nonce", main.nonce) }.toString())
         } else {
             val saved = Json.parseToJsonElement(metadata.readText()).jsonObject
-            val root = saved.getValue("thread").jsonPrimitive.content
             val nonce = saved.getValue("nonce").jsonPrimitive.content
-            val main = store.state.value.drafts.getValue(ComposerDraft.lane(bot.id, null))
+            val main = store.state.value.drafts.getValue(bot.id)
             assertEquals(nonce, main.nonce)
             assertEquals("Private draft attachment acceptance", File(main.files.single().path).readText())
             compose.onNode(hasSetTextAction() and hasText(mainText)).assertIsDisplayed()
             compose.onNodeWithContentDescription("Remove draft.txt").assertIsDisplayed()
-            compose.runOnUiThread { store.openBot(bot.id, root) }
-            compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction() and hasText(replyText)).fetchSemanticsNodes().size == 1 }
-            compose.runOnUiThread { store.openBot(bot.id) }
-            compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction() and hasText(mainText)).fetchSemanticsNodes().size == 1 }
             compose.onNodeWithContentDescription("Send").performClick()
             compose.waitUntil(30_000) { store.state.value.entries.any { it.botId == bot.id && it.clientNonce == nonce } }
             val sent = store.state.value.entries.single { it.botId == bot.id && it.clientNonce == nonce }
-            assertFalse(store.state.value.drafts.containsKey(ComposerDraft.lane(bot.id, null)))
+            assertFalse(store.state.value.drafts.containsKey(bot.id))
             compose.waitUntil(10_000) { book.read().none { it.nonce == nonce } }
             compose.waitUntil(30_000) { store.state.value.entries.any { it.botId == bot.id && it.kind == "permission" && it.status == "pending" } }
             compose.onNodeWithText("Allow once").performClick()
             compose.waitUntil(30_000) { store.state.value.entries.any { it.botId == bot.id && it.seq > sent.seq && it.kind == "agent" && it.isChat } }
-            compose.runOnUiThread { store.editDraft(bot.id, root, "") }
             compose.waitUntil(10_000) { book.read().none { it.botId == bot.id } }
             metadata.delete()
         }

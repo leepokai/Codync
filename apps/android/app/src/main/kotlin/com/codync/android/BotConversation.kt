@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Bot
 import com.codync.android.core.BotConversationRow
 import com.codync.android.core.BotExchange
@@ -83,7 +84,7 @@ private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id =
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (error != null || rows.isEmpty() && fetched != null) item("empty") {
-                Text(error ?: "No messages yet.", Modifier.fillMaxWidth().padding(top = 24.dp), style = Type.footnote,
+                Text(tr(error ?: "No messages yet."), Modifier.fillMaxWidth().padding(top = 24.dp), style = Type.footnote,
                     color = if (error != null) Palette.danger else Palette.tertiary, textAlign = TextAlign.Center)
             }
             items(rows, key = { it.id }) { row ->
@@ -115,7 +116,7 @@ private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id =
             if (index > 0) Symbol("arrow.left.arrow.right", size = 13.dp, tint = Palette.tertiary)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 state.bots.firstOrNull { it.id == id }?.let { BotAvatar(it, state.bots, 22.dp) }
-                Text(state.authorName(id), style = Type.body.semibold, color = Palette.text, maxLines = 1)
+                Text(state.authorName(id), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

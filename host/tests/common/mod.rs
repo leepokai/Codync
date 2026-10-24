@@ -1,37 +1,10 @@
 //! Shared by the end-to-end tests.
 
-use std::path::{Path, PathBuf};
+pub mod host;
+
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
-
-/// The checksum-verified Engram release the test hosts share: `CODYNC_TEST_ENGRAM`, else the copy
-/// `packaging/engram/test-runtime.py` fetches once into `target/engram-test-runtime`. Without it
-/// each host downloads its own, slow enough that tests time out. `None` when offline.
-pub fn engram_fixture() -> Option<PathBuf> {
-    static FIXTURE: OnceLock<Option<PathBuf>> = OnceLock::new();
-    FIXTURE
-        .get_or_init(|| {
-            if let Some(binary) = std::env::var_os("CODYNC_TEST_ENGRAM") {
-                return Some(binary.into());
-            }
-            let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../packaging/engram/test-runtime.py");
-            let output = Command::new(python()).arg(script).output().ok().filter(|o| o.status.success())?;
-            Some(String::from_utf8_lossy(&output.stdout).trim().into())
-        })
-        .clone()
-}
-
-/// Use the checksum-verified release fixture so isolated hosts don't each download it.
-pub fn seed_memory_runtime(home: &Path) {
-    let Some(binary) = engram_fixture() else {
-        return;
-    };
-    let dir = home.join("engram/3.2.1");
-    std::fs::create_dir_all(&dir).expect("memory runtime folder");
-    std::fs::copy(binary, dir.join(if cfg!(windows) { "engram.exe" } else { "engram" })).expect("copy Engram fixture");
-    std::fs::write(dir.join(".installed"), "3.2.1").expect("mark fixture installed");
-}
 
 /// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
 /// picked here is only free for a moment; when something else takes it before the host binds, the
@@ -81,13 +54,14 @@ pub fn python() -> &'static str {
     if cfg!(windows) { "python" } else { "python3" }
 }
 
-/// The agent command that runs a Python fixture (quoted for `sh -c` / `cmd /c`).
+/// The agent command that runs a Python fixture (quoted for `sh -c` / `cmd /c`). UTF-8 mode makes it read the host's
+/// UTF-8 the way real agents do: Windows Python reads pipes in the ANSI code page, turning a `”` into a lone surrogate.
 pub fn python_agent(script: &Path) -> String {
     let path = script.display().to_string();
     if cfg!(windows) {
-        format!("{} -u \"{path}\"", python())
+        format!("{} -X utf8 -u \"{path}\"", python())
     } else {
-        format!("{} -u '{}'", python(), path.replace('\'', "'\\''"))
+        format!("{} -X utf8 -u '{}'", python(), path.replace('\'', "'\\''"))
     }
 }
 

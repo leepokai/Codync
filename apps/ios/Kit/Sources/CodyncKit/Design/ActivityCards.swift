@@ -73,14 +73,14 @@ public struct ActivityCaption: View {
 
     public var body: some View {
         HStack(spacing: 4) {
-            Text(state.caption)
+            Text(L10n.tr(state.caption))
                 .foregroundStyle(state.captionTint)
                 .contentTransition(.interpolate)
                 .layoutPriority(1)
             // No fixedSize on a timer Text: a Live Activity can't lay one out at its ideal width
             // and draws the whole card black. Unconstrained, it takes the width left over.
             if let since = state.elapsedStart(startedAt) {
-                Text("·").foregroundStyle(Palette.tertiary)
+                Text(L10n.tr("·")).foregroundStyle(Palette.tertiary)
                 Text(since, style: .timer).monospacedDigit().foregroundStyle(Palette.secondary)
             }
         }
@@ -103,7 +103,7 @@ public struct ActivityReviewButton: View {
     }
 
     private var label: some View {
-        Label("Review", systemImage: "hand.raised.fill")
+        Label(L10n.tr("Review"), systemImage: "hand.raised.fill")
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(Palette.onAccent)
             .frame(maxWidth: .infinity, minHeight: 34)
@@ -155,7 +155,7 @@ public struct BotActivityCard<Face: View, Mark: View>: View {
 
 public extension BotActivityCard where Face == ActivityAvatar, Mark == BotActivityIndicator {
     init(bot: Bot, state: BotActivityPresentation, startedAt: Date? = nil) {
-        self.init(name: bot.name, state: state, startedAt: startedAt) {
+        self.init(name: widgetName(bot), state: state, startedAt: startedAt) {
             ActivityAvatar(shape: bot.avatarShape, color: bot.avatarColor, state: state, size: 32)
         } mark: {
             BotActivityIndicator(state: state, size: 28)
@@ -271,8 +271,8 @@ public struct BotActivityPreview: View {
                 HStack(spacing: 10) {
                     islandFace(26)
                     VStack(spacing: 2) {
-                        Text(bot.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                        Text(state.caption).font(.system(size: 12)).foregroundStyle(state.captionTint)
+                        Text(widgetName(bot)).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        Text(L10n.tr(state.caption)).font(.system(size: 12)).foregroundStyle(state.captionTint)
                     }
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)

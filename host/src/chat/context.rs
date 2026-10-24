@@ -3,15 +3,14 @@
 //!
 //! The bot's instructions (name, description, skills, memory) are rendered once
 //! and kept as a [`Snapshot`] keyed by the ACP session and its *compaction
-//! epoch*. Harnesses that take a system prompt (Claude, via `_meta.systemPrompt`)
-//! get it as one; others get it in the first message of the session. The
-//! snapshot stays byte-identical, so the prompt cache stays warm, until the
+//! epoch*. How it reaches the agent depends on the harness (`agent::bot::Instructions`).
+//! The snapshot stays byte-identical, so the prompt cache stays warm, until the
 //! agent compacts its context (a `compaction_update`) or a new session starts.
 //! Profile edits in between are announced once as an `<agent_profile_update>`
 //! block on the next message and folded into the snapshot after the next
-//! compaction. Memory learned in between reaches the prompt the same way.
+//! compaction. Memory changes in between are told on the next message the same way
+//! (see `memory::change_notice`).
 
-use crate::chat::memory::{self, Memory};
 use crate::store::{BotConfig, Store};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -20,14 +19,18 @@ use serde::{Deserialize, Serialize};
 pub struct Identity {
     pub name: String,
     pub description: String,
-    pub skills: Vec<String>,
+    /// The skills block the agent is told (`market::skills_brief`), so a skill renamed or redescribed counts too.
+    #[serde(default)]
+    pub skills_brief: String,
 }
 
 impl Identity {
-    pub fn of(cfg: &BotConfig) -> Self {
-        let mut skills = cfg.skills.clone();
-        skills.sort();
-        Self { name: cfg.name.trim().to_owned(), description: cfg.description.trim().to_owned(), skills }
+    pub fn of(store: &Store, cfg: &BotConfig) -> Self {
+        Self {
+            name: cfg.name.trim().to_owned(),
+            description: cfg.description.trim().to_owned(),
+            skills_brief: crate::market::skills_brief(store, &cfg.skills).unwrap_or_default(),
+        }
     }
 }
 
@@ -42,9 +45,12 @@ pub struct Snapshot {
     pub system_identity: Identity,
     /// The identity the agent last heard of (`system` or a later update block).
     pub announced: Identity,
+    /// The memory revision `system` holds (`memory::current_revision` before it was rendered).
+    #[serde(default)]
+    pub memory: String,
 }
 
-// A bot talks in several lanes (its chat, threads, groups), each its own session: snapshots
+// A bot talks in several sessions (its chat and groups, routine runs), each with its own: snapshots
 // and epochs are kept per session.
 fn key(bot_id: &str, session: &str) -> String {
     format!("context.{bot_id}.{session}")
@@ -92,28 +98,42 @@ fn save(store: &Store, bot_id: &str, s: &Snapshot) -> Result<()> {
 }
 
 /// The snapshot for `session` at its current epoch, rendering a fresh one when
-/// the stored one belongs to another session or an earlier epoch. Reads memory files.
+/// the stored one belongs to another session or an earlier epoch.
 pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot> {
     let epoch = epoch(store, &cfg.id, session);
     let stored = load(store, &cfg.id, session);
     if let Some(s) = stored.as_ref().filter(|s| s.epoch == epoch && !s.system.is_empty()) {
         return Ok(s.clone());
     }
-    let identity = Identity::of(cfg);
+    let identity = Identity::of(store, cfg);
+    let memory = crate::chat::memory::current_revision(store, &cfg.id);
     let s = Snapshot {
         session: session.to_owned(),
         epoch,
         system: render(store, cfg),
         system_identity: identity.clone(),
-        // A re-render reaches only Claude, as its system prompt (see `mark_announced`): the agent
-        // still knows the identity it last heard, so an update it missed is still announced.
+        // A re-render reaches the agent only as Claude's system prompt or a re-sent profile (see `mark_announced`):
+        // until then it knows the identity it last heard, so an update it missed is still announced.
         announced: stored.map_or(identity, |old| old.announced),
+        memory,
     };
     save(store, &cfg.id, &s)?;
     Ok(s)
 }
 
-/// Memory the instructions show changed: every session of the bot re-renders them on its next turn.
+/// One session's instructions are rendered again on its next turn: before a compaction the host starts, so the
+/// compaction keeps them as they are now.
+pub fn refresh(store: &Store, bot_id: &str, session: &str) -> Result<()> {
+    match load(store, bot_id, session) {
+        Some(mut s) => {
+            s.system.clear();
+            save(store, bot_id, &s)
+        }
+        None => Ok(()),
+    }
+}
+
+/// Every session of the bot renders its instructions again on its next turn (after the move from the old memory).
 pub fn invalidate(store: &Store, bot_id: &str) -> Result<()> {
     for k in store.kv_prefix(&format!("context.{bot_id}.")) {
         match store.kv_get(&k).and_then(|v| serde_json::from_str::<Snapshot>(&v).ok()) {
@@ -127,21 +147,23 @@ pub fn invalidate(store: &Store, bot_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Records `system` (already handed to a new session) as that session's snapshot.
-pub fn adopt(store: &Store, cfg: &BotConfig, session: &str, system: String) -> Result<Snapshot> {
-    let identity = Identity::of(cfg);
+/// Records `system` (already handed to a new session), rendered at memory revision `memory`, as that session's
+/// snapshot.
+pub fn adopt(store: &Store, cfg: &BotConfig, session: &str, system: String, memory: String) -> Result<Snapshot> {
+    let identity = Identity::of(store, cfg);
     let s = Snapshot {
         session: session.to_owned(),
         epoch: epoch(store, &cfg.id, session),
         system,
         system_identity: identity.clone(),
         announced: identity,
+        memory,
     };
     save(store, &cfg.id, &s)?;
     Ok(s)
 }
 
-/// The bot's instructions, rendered live. Reads memory files.
+/// The bot's instructions, rendered live.
 pub fn render(store: &Store, cfg: &BotConfig) -> String {
     let name = cfg.name.trim();
     let mut lines = vec!["Agent profile:".to_owned()];
@@ -159,6 +181,15 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         "You are a persistent agent the user delegates work to through Codync, from their phone or computer."
             .to_owned(),
     );
+    // Claude Code's own system prompt, which this is appended to, says the user is in its CLI.
+    let engine = if cfg.backend == "custom" {
+        "the coding agent".to_owned()
+    } else {
+        crate::agent::fallback::name(&cfg.backend)
+    };
+    lines.push(format!(
+        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. To start over, the user starts a New session for this chat in Codync (the chat's menu in the apps, S in the terminal UI)."
+    ));
     lines.push(String::new());
     lines.push(format!("Messages: {}", crate::chat::outbox::INSTRUCTIONS));
     lines.push(String::new());
@@ -172,14 +203,13 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         lines.push(String::new());
         lines.push(skills);
     }
+    lines.push(String::new());
+    lines.push(codync_mem::compaction::KEEP.to_owned());
     let mut out = lines.join("\n");
-    match Memory::for_bot(&cfg.id).and_then(|mem| Ok((mem.recall(memory::RECENT_PROMPT_LIMIT)?, mem))) {
-        Ok((recall, mem)) => {
-            let (section, _) = memory::render(&recall, mem.location());
-            out.push_str("\n\n");
-            out.push_str(&section);
-        }
-        Err(error) => tracing::warn!(bot = %cfg.id, error = format!("{error:#}"), "no memory folder"),
+    let memory = crate::chat::memory::opening(store, cfg);
+    if !memory.is_empty() {
+        out.push_str("\n\n");
+        out.push_str(&memory);
     }
     out
 }
@@ -187,18 +217,18 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
 /// The `<agent_profile_update>` block to append to the next message when the
 /// bot's identity changed since the agent last heard it.
 pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Option<(String, Identity)> {
-    let identity = Identity::of(cfg);
+    let identity = Identity::of(store, cfg);
     if identity == snapshot.announced {
         return None;
     }
     let or_none = |s: &str, none: &str| if s.is_empty() { none.to_owned() } else { s.to_owned() };
-    let skills = crate::market::skills_brief(store, &cfg.skills).unwrap_or_else(|| "Skills: none.".into());
+    let skills = if identity.skills_brief.is_empty() { "Skills: none." } else { &identity.skills_brief };
     let text = [
         "<agent_profile_update>".to_owned(),
         "Your agent profile changed. This full update is authoritative and supersedes the Agent profile section in your instructions and every earlier profile update in this conversation.".to_owned(),
         format!("Current name: {}", or_none(&identity.name, "(no name)")),
         format!("Current description: {}", or_none(&identity.description, "(no description)")),
-        skills,
+        skills.to_owned(),
         "Use this identity until a future conversation summary folds it into the Agent profile section.".to_owned(),
         "</agent_profile_update>".to_owned(),
     ]
@@ -249,10 +279,17 @@ mod tests {
     }
 
     #[test]
+    fn instructions_place_the_user_in_codync_not_in_the_engine() {
+        let system = render(&store(), &cfg("Reporter", ""));
+        assert!(system.contains("not in Claude Code's own CLI, IDE or app"), "{system}");
+        assert!(system.contains("The engine Codync runs you on is Claude Code:"), "{system}");
+    }
+
+    #[test]
     fn snapshot_is_frozen_until_compaction_and_updates_are_announced_once() {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
-        let first = adopt(&store, &a, "s1", "SYSTEM v1".into()).expect("adopt");
+        let first = adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
         // Frozen: resolving again returns the same text, even though a live render differs.
         assert_eq!(resolve(&store, &a, "s1").expect("resolve").system, "SYSTEM v1");
         assert!(profile_update(&store, &first, &a).is_none());
@@ -276,10 +313,27 @@ mod tests {
     }
 
     #[test]
+    fn a_rewritten_skill_is_announced() {
+        let store = store();
+        let skill = |description: &str| {
+            let list = serde_json::json!([{"id": "release", "name": "Release", "description": description}]);
+            store.kv_set("skills", &list.to_string()).expect("save skills");
+        };
+        skill("When shipping");
+        let mut a = cfg("Fixer", "Fix bugs");
+        a.skills = vec!["release".into()];
+        let first = adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
+        assert!(profile_update(&store, &first, &a).is_none());
+        skill("When shipping a release or a hotfix");
+        let (text, _) = profile_update(&store, &first, &a).expect("the description changed");
+        assert!(text.contains("- Release: When shipping a release or a hotfix"), "{text}");
+    }
+
+    #[test]
     fn a_memory_change_re_renders_but_keeps_what_the_agent_heard() {
         let store = store();
         let a = cfg("Fixer", "Fix bugs");
-        adopt(&store, &a, "s1", "SYSTEM v1".into()).expect("adopt");
+        adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
         let b = cfg("Fixer", "Fix bugs and write tests");
         invalidate(&store, &a.id).expect("invalidate");
         let snap = resolve(&store, &b, "s1").expect("resolve");

@@ -55,6 +55,7 @@ import kotlin.math.sin
 
 /** First launch, before any setup: who the bots are, a glimpse of talking to one, one way forward (iOS `WelcomeView`). */
 @Composable internal fun WelcomeView(state: AppState, store: AppStore, start: () -> Unit) {
+    AnalyticsOnAppear(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Welcome))
     val still = reduceMotion()
     // 0 = nothing yet … 4 = everything shown. Each beat enters in turn.
     var beat by remember { mutableIntStateOf(if (still) 4 else 0) }
@@ -72,9 +73,9 @@ import kotlin.math.sin
                 Column(Modifier.padding(top = 24.dp)) {
                     ChatGlimpse(beat >= 2, Modifier.padding(bottom = 24.dp))
                     Column(Modifier.rise(beat >= 3), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Your coding agents,\nas teammates.", style = Type.system(34f, FontWeight.SemiBold).copy(letterSpacing = (-0.6).sp),
+                        Text(tr("Your coding agents,\nas teammates."), style = Type.system(34f, FontWeight.SemiBold).copy(letterSpacing = (-0.6).sp),
                             color = Palette.text)
-                        Text("Give each one a name and a project. They work on your computer while you're away.", style = Type.body, color = Palette.secondary)
+                        Text(tr("Give each one a name and a project. They work on your computer while you're away."), style = Type.body, color = Palette.secondary)
                         DemoButton(Modifier.padding(top = 4.dp))
                     }
                 }
@@ -149,7 +150,7 @@ private val CREW = listOf(
 /** Opens a short recording of the app in use on YouTube, for anyone who can't pair a computer yet. */
 @Composable internal fun DemoButton(modifier: Modifier = Modifier) {
     val uri = LocalUriHandler.current
-    Row(modifier.plainButton { uri.openUri("https://youtube.com/shorts/xtZ5WeyOewU") }, verticalAlignment = Alignment.CenterVertically,
+    Row(modifier.plainButton { uri.open("https://youtube.com/shorts/xtZ5WeyOewU", OutboundLink.Demo) }, verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Symbol("play.circle.fill", size = 17.dp, tint = Palette.text)
         Text("Watch the demo", style = Type.subheadline.medium, color = Palette.text)
@@ -161,22 +162,22 @@ private val CREW = listOf(
     val busy = "session" in state.busy
     val enabled = state.account.ready && !busy
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        WideButton(enabled = enabled, busy = busy, action = { store.signIn(apple = true) }) {
+        WideButton(enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.Apple) }) {
             Symbol("apple.logo", size = 20.dp, tint = Palette.onAccent)
-            Text("Continue with Apple")
+            Text(tr("Continue with Apple"))
         }
-        WideButton(primary = false, enabled = enabled, busy = busy, action = { store.signIn(apple = false) }) {
+        WideButton(primary = false, enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.Google) }) {
             Image(painterResource(R.drawable.google_logo), null, Modifier.size(20.dp))
-            Text("Continue with Google")
+            Text(tr("Continue with Google"))
         }
         // Clerk's own page covers the sign-ins that need another step (email codes, verification).
-        LinkButton("Other sign-in options", enabled = enabled, color = Palette.secondary, style = Type.footnote) { store.signIn(hosted = true) }
+        LinkButton("Other sign-in options", enabled = enabled, color = Palette.secondary, style = Type.footnote) { store.signIn(SignInProvider.Hosted) }
     }
 }
 
 /** The full-width 50-point button of the onboarding pages: headline label, a spinner while busy. */
 @Composable internal fun WideButton(title: String, primary: Boolean = true, enabled: Boolean = true, action: () -> Unit) =
-    WideButton(primary, enabled, action = action) { Text(title) }
+    WideButton(primary, enabled, action = action) { Text(tr(title)) }
 
 @Composable internal fun WideButton(primary: Boolean = true, enabled: Boolean = true, busy: Boolean = false, action: () -> Unit,
     label: @Composable () -> Unit) {

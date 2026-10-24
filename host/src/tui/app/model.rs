@@ -1,7 +1,10 @@
 //! What the host sends: bots, transcript entries, and the messages that carry them.
 
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
+
+use crate::agent::fallback::Reason;
 
 use super::super::manage::Reply;
 use super::tilde;
@@ -38,7 +41,6 @@ pub enum After {
     Tracked,
     Analytics,
     History(String),
-    Thread,
     Dirs,
     Pairing,
     Backends,
@@ -107,6 +109,21 @@ pub struct Bot {
     pub hidden: bool,
     pub notify: bool,
     pub computer: bool,
+    /// It creates bots and changes any bot's setup (`chat::manage`); `None` from a host without it.
+    pub manage_team: Option<bool>,
+    /// The bot that created this one; `None` when the user did.
+    pub created_by: Option<String>,
+    pub created_at: i64,
+    /// The harness's own memory kept on beside Codync's; `None` where it has no switch.
+    pub harness_memory: Option<bool>,
+    /// Agents that carry on, in order, when its own can't answer (`agent::fallback`).
+    pub fallbacks: Vec<crate::store::Fallback>,
+    /// The bot may set its own fallbacks.
+    pub self_fallbacks: bool,
+    /// The fallback agent it's on now; `None` on its own.
+    pub agent_step: Option<String>,
+    /// Agents of its chain resting now.
+    pub resting: Vec<Rest>,
     pub connectors: Vec<String>,
     pub skills: Vec<String>,
     pub status: Status,
@@ -118,9 +135,16 @@ pub struct Bot {
     /// A group chat: several bots and the user, no agent of its own.
     pub group: bool,
     pub members: Vec<String>,
-    /// Where the running turn talks: a chat (`None` = its own) and a thread in it.
+    /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
-    pub working_thread: Option<String>,
+}
+
+/// An agent of a bot's chain that rests (`agent::fallback::resting`) until `until` (epoch ms).
+#[derive(Deserialize, Clone, Debug)]
+pub struct Rest {
+    pub agent: String,
+    pub until: i64,
+    pub reason: Reason,
 }
 
 fn strs(v: &Value) -> Vec<String> {
@@ -215,6 +239,14 @@ impl Bot {
             hidden: v["hidden"].as_bool().unwrap_or(false),
             notify: v["notify"].as_bool().unwrap_or(true),
             computer: v["computer"].as_bool().unwrap_or(false),
+            manage_team: v["manageTeam"].as_bool(),
+            created_by: v["createdBy"].as_str().map(str::to_owned),
+            created_at: v["createdAt"].as_i64().unwrap_or(0),
+            harness_memory: v["harnessMemory"].as_bool(),
+            fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
+            self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
+            agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
+            resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),
             connectors: strs(&v["connectors"]),
             skills: strs(&v["skills"]),
             status: match v["status"].as_str() {
@@ -231,13 +263,17 @@ impl Bot {
             group: v["kind"] == "group",
             members: strs(&v["members"]),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
-            working_thread: v["workingThread"].as_str().map(str::to_owned),
         })
     }
 
-    /// Whether the running turn talks in this chat: its main lane (`None`) or that thread.
-    pub fn works_in(&self, thread: Option<&str>) -> bool {
-        self.away().is_none() && self.working_thread.as_deref() == thread
+    /// Agent `agent`'s rest, while it lasts at `now`.
+    pub fn rests(&self, agent: &str, now: i64) -> Option<&Rest> {
+        self.resting.iter().find(|r| r.agent == agent && r.until > now)
+    }
+
+    /// Whether the running turn talks in this chat.
+    pub fn works_here(&self) -> bool {
+        self.away().is_none()
     }
 
     /// The other chat (a group) the running turn talks in, if it isn't this bot's own.
@@ -276,8 +312,6 @@ pub struct Entry {
     pub kind: Kind,
     pub data: Value,
     pub created_at: i64,
-    /// The main-chat message whose thread this is in; `None` is the main chat.
-    pub thread_id: Option<String>,
 }
 
 impl Entry {
@@ -301,7 +335,6 @@ impl Entry {
                 kind,
                 data: v["data"].clone(),
                 created_at: v["createdAt"].as_i64().unwrap_or(0),
-                thread_id: v["threadId"].as_str().map(str::to_owned),
             },
         ))
     }
@@ -332,9 +365,34 @@ impl Entry {
         self.kind == Kind::Agent && self.data["final"].as_bool().unwrap_or(false)
     }
 
+    /// A message the user can answer with a reply: theirs, or a final reply (the host checks too).
+    pub fn takes_reply(&self) -> bool {
+        self.kind == Kind::User || self.is_final()
+    }
+
+    /// The text a reply quotes: the message's, or its files' names.
+    pub fn quoted(&self) -> String {
+        crate::store::message_text(&self.data)
+    }
+
     /// What the chat shows as a message: the user's, and each turn's final reply.
     pub fn is_message(&self) -> bool {
         self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
+    }
+
+    /// A line that folds away a longer text: a handoff (`o` shows it).
+    pub fn unfolds(&self) -> bool {
+        crate::tui::view::unfoldable(self).is_some()
+    }
+
+    /// A failure notice that offers adding a fallback agent (`A`).
+    pub fn adds_fallback(&self) -> bool {
+        self.kind == Kind::Notice && self.data["addFallback"] == true
+    }
+
+    /// A failed routine run's notice that offers running it again (`F`).
+    pub fn retries(&self) -> bool {
+        self.kind == Kind::Notice && self.data["retry"] == true && self.data["runId"].is_string()
     }
 
     /// A notice for a bot-to-bot message or request (`chat::team`).
@@ -388,7 +446,6 @@ mod tests {
                 {"optionId": "a", "name": "Allow", "kind": "allow_once"},
             ]}),
             created_at: 0,
-            thread_id: None,
         };
         assert!(e.pending());
         let kinds: Vec<String> = e.options().into_iter().map(|o| o.2).collect();

@@ -27,9 +27,10 @@ public final class BotStore {
         case online
         /// The relay says the computer isn't connected; messages can wait in its mailbox.
         case computerOffline(lastSeen: Date?)
-        /// Can't reach the computer at all (no direct route, no relay).
+        /// Can't reach the computer at all (no direct route, no relay), or it can't confirm this
+        /// device's access for now.
         case offline(String)
-        /// Revoked, lease expired, or the computer's identity changed.
+        /// Revoked, or the computer's identity changed.
         case unauthorized(String)
     }
 
@@ -68,6 +69,8 @@ public final class BotStore {
     /// Bots whose older history has been fully paged in.
     public internal(set) var historyComplete: Set<String> = []
     var composerDrafts: [String: String] = [:]
+    /// What was pasted into each draft, sent along so memory never takes it as the user's own words.
+    @ObservationIgnored var composerPasted: [String: [String]] = [:]
     public var routineDrafts: [String: String] = [:]
     public let fileDownloads = FileDownloads()
     public var lastError: String?
@@ -89,7 +92,8 @@ public final class BotStore {
     var onComputerChanged: (@MainActor (Computer) -> Void)?
 
     public let storage: SharedStore.Context
-    let makeTransport: @MainActor () async throws -> any HostTransport
+    /// Opens a channel to the computer as it is now: its route, and the addresses and keys merged since.
+    let makeTransport: @MainActor (Computer) async throws -> any HostTransport
     var transport: (any HostTransport)?
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
@@ -122,26 +126,27 @@ public final class BotStore {
     /// a spinner on it and takes no second answer.
     public internal(set) var answering: [String: String] = [:]
 
-    @ObservationIgnored var readingViews: [UUID: ReadingScope] = [:]
+    /// The chats on screen, by the view showing each.
+    @ObservationIgnored var readingViews: [UUID: String] = [:]
 
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.
     public convenience init(computer: Computer, storage: SharedStore.Context) {
-        self.init(computer: computer, storage: storage) {
-            try await HostConnector.connect(computer, identity: try DeviceIdentity.load(context: storage))
+        self.init(computer: computer, storage: storage) { current in
+            try await HostConnector.connect(current, identity: try DeviceIdentity.load(context: storage))
         }
     }
 
     init(computer: Computer, storage: SharedStore.Context,
          appVersion: String = AppVersion.current,
-         transport: @escaping @MainActor () async throws -> any HostTransport) {
+         transport: @escaping @MainActor (Computer) async throws -> any HostTransport) {
         self.appVersion = appVersion
         self.computer = computer
         self.storage = storage
         makeTransport = transport
         usage = storage.usage[computer.id] ?? Usage()
-        composerDrafts = storage.composerDrafts[computer.id] ?? [:]
+        composerDrafts = Self.chatDrafts(storage.composerDrafts[computer.id] ?? [:])
         loadCache()
     }
 
@@ -197,21 +202,24 @@ public final class BotStore {
         hello?.backends.first { $0.id == id }?.name ?? BackendInfo.name(id)
     }
 
-    public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
-
-    /// A bot's or group's main chat (thread replies are left out).
-    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.threadId == nil } }
-
-    /// Everything in a chat, threads included (the full conversation).
-    public func allEntries(_ botId: String) -> [Entry] { entries[botId] ?? [] }
-
-    /// A catch-up full of thread replies can leave only a few main-chat entries, or none.
-    public func canLoadOlder(_ botId: String) -> Bool {
-        !historyComplete.contains(botId) && allEntries(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+    /// The ACP registry id an agent's logo is under.
+    func agentRegistry(_ id: String) -> String {
+        hello?.backends.first { $0.id == id }?.registry ?? id
     }
 
-    /// The replies in the thread on `root`, oldest first.
-    public func replies(_ botId: String, root: String) -> [Entry] { (entries[botId] ?? []).filter { $0.threadId == root } }
+    /// An agent as the Agent pickers list it.
+    func agentLabel(_ backend: Backend) -> String {
+        backend.available ? backend.name : "\(backend.name) (not installed)"
+    }
+
+    public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
+
+    /// Everything in a bot's or group's chat this device has, oldest first (trace included).
+    public func chat(_ botId: String) -> [Entry] { entries[botId] ?? [] }
+
+    public func canLoadOlder(_ botId: String) -> Bool {
+        !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+    }
 
     /// A group's bots that still exist.
     public func members(of group: Bot) -> [Bot] { group.members.compactMap { bots[$0] } }

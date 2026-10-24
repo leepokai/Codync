@@ -136,11 +136,12 @@ final class OnDeviceEngine: VoiceEngine {
         self.request = request
         let input = engine.inputNode
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0), block: Self.tap(request) { [weak self] level in
-            Task { @MainActor in self?.level = level }
-        })
-        engine.prepare()
         do {
+            let format = try MicTap.format(of: input)
+            input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.tap(request) { [weak self] level in
+                Task { @MainActor in self?.level = level }
+            })
+            engine.prepare()
             try engine.start()
         } catch {
             log.error("audio engine: \(error.localizedDescription, privacy: .public)")
@@ -194,7 +195,8 @@ final class OnDeviceEngine: VoiceEngine {
 
     // MARK: audio-thread closures (built outside the main actor)
 
-    private nonisolated static func tap(_ request: SFSpeechAudioBufferRecognitionRequest,
+    /// Feeds the recognizer and reports the microphone's level, 0…1 (dictation uses it too).
+    nonisolated static func tap(_ request: SFSpeechAudioBufferRecognitionRequest,
                                         meter: @escaping @Sendable (Float) -> Void) -> AVAudioNodeTapBlock {
         { buffer, _ in
             request.append(buffer)

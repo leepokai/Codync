@@ -5,11 +5,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.core.view.WindowCompat
 import androidx.activity.viewModels
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
@@ -17,6 +22,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.codync.android.design.CodyncTheme
+import com.codync.android.design.LocalAppLanguage
+import com.codync.android.design.LocalPhrases
+import com.codync.android.design.LocalSetAppLanguage
+import com.codync.android.design.LocalSystemTag
+import com.codync.android.design.LocalSystemChinese
+import com.codync.android.design.systemScript
 import com.codync.android.design.OverlayRoot
 import coil3.ImageLoader
 import coil3.disk.DiskCache
@@ -28,26 +39,60 @@ class MainActivity : ComponentActivity() {
     private val store: AppStore by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppearancePreferences.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
-        Analytics.userId = { store.state.value.account.userId }
+        // Clerk's session, not the UI's copy of it: right as sign-in and sign-out happen.
+        Analytics.userId = NativeAccounts::activeUserId
         NotificationDisplay.channels(this)
         if (savedInstanceState == null) lifecycleScope.launch { CodyncWidgets.publishPreviews(applicationContext) }
         enableEdgeToEdge()
         setContent {
             val state by store.state.collectAsStateWithLifecycle()
-            val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { store.syncPush() }
+            val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                notificationsAnswered(applicationContext, granted, PromptSource.Automatic)
+                store.syncPush()
+            }
             LaunchedEffect(state.computers.isNotEmpty(), state.contextId) {
                 if (BuildConfig.PUSH_CONFIGURED && state.computers.isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 33 && !PushPreferences.asked(applicationContext)) {
                     PushPreferences.markAsked(applicationContext)
-                    notifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    // Already allowed (in Android settings): no prompt to answer.
+                    if (!notificationsAllowed(applicationContext)) notifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
             val images = remember(state.contextId, state.generation) { AccountImages.open(applicationContext, state.contextId) }
             DisposableEffect(images) { onDispose { AccountImages.close(images) } }
-            CompositionLocalProvider(LocalNetworkImages provides images) {
+            var appLanguage by remember { mutableStateOf(AppLanguageStore.get(applicationContext)) }
+            val systemTag = androidx.compose.ui.platform.LocalConfiguration.current.locales[0].toLanguageTag()
+            val phrases = remember(appLanguage, systemTag) { AppLanguageStore.phrases(applicationContext, appLanguage, systemTag) }
+            val systemChinese = remember(systemTag) { systemScript(systemTag) != null }
+            CompositionLocalProvider(
+                LocalNetworkImages provides images,
+                LocalAppLanguage provides appLanguage,
+                LocalSystemChinese provides systemChinese,
+                LocalSystemTag provides systemTag,
+                LocalPhrases provides phrases,
+                LocalSetAppLanguage provides { next ->
+                    appLanguage = next
+                    AppLanguageStore.set(applicationContext, next)
+                    lifecycleScope.launch {
+                        try { CodyncWidgets.update(applicationContext) }
+                        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) { android.util.Log.w("Codync", "Could not refresh widget language", error) }
+                    }
+                },
+            ) {
                 key(state.contextId, state.generation) {
-                    CodyncTheme { OverlayRoot { CodyncApp(state, store); LaunchLayer(state.loading) } }
+                    val appearance by AppearancePreferences.mode.collectAsStateWithLifecycle()
+                    val dark = appearance.isDark(isSystemInDarkTheme())
+                    val darkBars = dark || state.screenRequest != null
+                    SideEffect {
+                        WindowCompat.getInsetsController(window, window.decorView).apply {
+                            isAppearanceLightStatusBars = !darkBars
+                            isAppearanceLightNavigationBars = !darkBars
+                        }
+                    }
+                    CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, store); LaunchLayer(state.loading) } }
                 }
             }
         }
@@ -63,7 +108,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         handle(intent)
     }
-    override fun onStart() { super.onStart(); store.setForeground(true); Analytics.becameActive() }
+    override fun onStart() { super.onStart(); store.setForeground(true); Analytics.becameActive(applicationContext) }
     override fun onStop() {
         store.setForeground(false)
         // A rotation isn't a trip to the background.
@@ -72,9 +117,13 @@ class MainActivity : ComponentActivity() {
     }
     private fun handle(intent: Intent?) {
         val uri = intent?.data ?: return
+        intent.getStringExtra(NotificationDisplay.ALERT_KIND)?.let { category ->
+            intent.removeExtra(NotificationDisplay.ALERT_KIND)
+            NotificationKind.of(category)?.let { Analytics.capture(AnalyticsEvent.NotificationOpened(it)) }
+        }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "pair") {
             intent.data = null
-            store.pair(uri.toString())
+            store.pair(uri.toString(), PairedVia.Link)
         }
         // Retain the scoped, non-secret destination for Activity/process restoration.
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) store.openLink(uri)

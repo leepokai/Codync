@@ -24,7 +24,7 @@ struct RootView: View {
                     WelcomeView { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = true } }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 } else {
-                    PairingView(onSkip: { onboardingCompleted = true }) {
+                    PairingView(onSkip: { completeOnboarding(via: .skipped) }) {
                         if account.isSignedIn {
                             AccountSwitcherButton()
                         } else {
@@ -41,7 +41,7 @@ struct RootView: View {
         .onChange(of: accounts.computers.isEmpty && accounts.cloudComputers.isEmpty, initial: true) { _, empty in
             // Pairing, signing in to an account that has computers, or explicitly skipping completes
             // setup. Keep this device-level milestone across account changes and unpairing.
-            if !empty { onboardingCompleted = true }
+            if !empty { completeOnboarding(via: accounts.cloudComputers.isEmpty ? .paired : .account) }
         }
         .codyncDialog("Something went wrong", isPresented: errorShown, message: errorMessage, cancel: "OK", inPlace: true) { [] }
         .codyncOverlay(isPresented: Binding(get: { screenTarget.wrappedValue != nil }, set: { if !$0 { screenTarget.wrappedValue = nil } })) { close in
@@ -73,7 +73,7 @@ struct RootView: View {
     /// thread is open.
     private var tabs: some View {
         TabView(selection: Bindable(app).tab) {
-            Tab("Bots", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
+            Tab(L10n.tr("Bots"), systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
                 NavigationStack(path: path) {
                     BotListView()
                         .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
@@ -82,14 +82,22 @@ struct RootView: View {
                         }
                 }
             }
-            Tab("State", systemImage: "rectangle.stack.fill", value: AppTab.state) {
+            Tab(L10n.tr("State"), systemImage: "rectangle.stack.fill", value: AppTab.state) {
                 StateTab()
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
         }
         .tint(Palette.text)
+        .tracked(.screenViewed(app.tab == .bots ? .bots : .state))
         // Opening a bot (notification, widget, link) always lands on the Bots tab.
         .onChange(of: accounts.selection) { _, ref in if ref != nil { app.tab = .bots } }
+    }
+
+    /// Once per setup (Start over begins a new one): the first computer reached, or Skip.
+    private func completeOnboarding(via: AnalyticsEvent.OnboardingVia) {
+        guard !onboardingCompleted else { return }
+        onboardingCompleted = true
+        Analytics.shared.capture(.onboardingCompleted(via: via))
     }
 
     // MARK: one place for every computer's errors and screen requests
@@ -170,7 +178,7 @@ private struct StateTab: View {
             ScreenHeader {
                 EmptyView()
             } title: {
-                Text("State").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(L10n.tr("State")).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
                 IconButton("Usage limits", systemImage: "chart.bar") { app.showUsage = true }
             }
@@ -210,7 +218,7 @@ private struct UsageSheet: View {
             ScreenHeader {
                 IconButton("Close", systemImage: "xmark") { dismiss() }
             } title: {
-                Text("Usage").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(L10n.tr("Usage")).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
                 if let store, accounts.computers.count > 1 {
                     DropdownMenu {
@@ -237,6 +245,7 @@ private struct UsageSheet: View {
             }
         }
         .background(Palette.background)
+        .tracked(.screenViewed(.usage))
     }
 }
 
@@ -249,9 +258,9 @@ struct EmptyState: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: systemImage).font(.system(size: 40)).foregroundStyle(Palette.tertiary)
-            Text(title).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+            Text(L10n.tr(title)).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
             if let message {
-                Text(message).font(.subheadline).foregroundStyle(Palette.secondary)
+                Text(L10n.tr(message)).font(.subheadline).foregroundStyle(Palette.secondary)
             }
         }
         .multilineTextAlignment(.center)
@@ -265,12 +274,14 @@ struct EmptyState: View {
 struct PageHeader<Trailing: View>: View {
     let title: String
     var pushed = false
+    var icon: String?
     let trailing: Trailing
     @Environment(\.dismiss) private var pop
 
-    init(_ title: String, pushed: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+    init(_ title: String, pushed: Bool = false, icon: String? = nil, @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.pushed = pushed
+        self.icon = icon
         self.trailing = trailing()
     }
 
@@ -279,25 +290,37 @@ struct PageHeader<Trailing: View>: View {
             ScreenHeader {
                 BackButton { pop() }
             } title: {
-                Text(title).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                headerTitle
             } trailing: {
                 trailing
             }
         } else {
-            ModalHeader(title) { trailing }
+            ModalHeader { headerTitle } trailing: { trailing }
         }
     }
 }
 
+private extension PageHeader {
+    var headerTitle: some View {
+        HStack(spacing: 8) {
+            if let icon {
+                Image(systemName: icon).font(.title2).accessibilityHidden(true)
+            }
+            Text(L10n.tr(title)).font(.body.weight(.semibold)).lineLimit(1)
+        }
+        .foregroundStyle(Palette.text)
+    }
+}
+
 extension PageHeader where Trailing == EmptyView {
-    init(_ title: String, pushed: Bool = false) { self.init(title, pushed: pushed) { EmptyView() } }
+    init(_ title: String, pushed: Bool = false, icon: String? = nil) { self.init(title, pushed: pushed, icon: icon) { EmptyView() } }
 }
 
 extension View {
     /// Tops a screen with its `PageHeader` in place of the system navigation bar.
-    func page(_ title: String, pushed: Bool = false) -> some View {
+    func page(_ title: String, pushed: Bool = false, icon: String? = nil) -> some View {
         VStack(spacing: 0) {
-            PageHeader(title, pushed: pushed)
+            PageHeader(title, pushed: pushed, icon: icon)
             self
         }
         .background(Palette.background)
@@ -314,7 +337,7 @@ private extension View {
     }
 }
 
-/// Account computers this iPhone asked on its own after sign-in: the code to check, until they answer.
+/// Access requests still waiting after their sheet closed: the code to check, until the computer answers.
 private struct AccessBanners: View {
     @Environment(AccountStore.self) private var accounts
 
@@ -325,8 +348,8 @@ private struct AccessBanners: View {
                 HStack(spacing: 12) {
                     Spinner(size: 16)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Approve on \(name)").font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
-                        Text("Code \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
+                        Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                        Text(L10n.tr("Code \(ticket.code.prefix(3)) \(ticket.code.suffix(3))"))
                             .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
                     }
                     Spacer(minLength: 8)

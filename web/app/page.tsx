@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Hero from "./components/hero";
 import Film from "./components/film";
 import { Answers, Features } from "./components/features";
+import Fallbacks from "./components/fallbacks";
+import Computers from "./components/computers";
 import Surfaces from "./components/surfaces";
 import Privacy from "./components/privacy";
 import Compare from "./components/compare";
@@ -23,6 +25,8 @@ export default function Home() {
         <Film />
         <Answers />
         <Features />
+        <Fallbacks />
+        <Computers />
         <Surfaces />
         <Privacy />
         <Compare />

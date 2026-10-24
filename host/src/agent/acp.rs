@@ -37,10 +37,16 @@ type Pending = Arc<std::sync::Mutex<HashMap<i64, oneshot::Sender<Result<Value, V
 pub struct RpcError {
     pub code: i64,
     pub message: String,
+    /// The adapter's own category (`data.errorKind`: Claude's `rate_limit`, `overloaded`, …; codex-acp's
+    /// `data.codexErrorInfo` as `usage_limit_exceeded`), kept only when it's an identifier, as it can go to usage
+    /// analytics.
+    pub kind: Option<String>,
 }
 
 /// ACP's "authentication required".
 pub const AUTH_REQUIRED: i64 = -32000;
+/// JSON-RPC's "internal error".
+pub const INTERNAL_ERROR: i64 = -32603;
 
 impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -59,6 +65,13 @@ pub fn needs_sign_in(e: &anyhow::Error) -> bool {
     e.chain().any(rpc) || e.to_string().to_lowercase().contains("auth")
 }
 
+/// Whether a failed prompt may have left its session dead in the agent: an internal error the
+/// adapter gave no category. Claude's adapter answers every later prompt on a session whose query
+/// stream ended with one ("The Claude Agent session has ended") until the session is closed.
+pub fn may_end_session(e: &anyhow::Error) -> bool {
+    e.chain().filter_map(|c| c.downcast_ref::<RpcError>()).any(|r| r.code == INTERNAL_ERROR && r.kind.is_none())
+}
+
 /// A way an agent fails that the host itself recognizes, kept as a type so usage
 /// analytics can count it (`turn_finished.error`) without its text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,6 +82,8 @@ pub enum FailureKind {
     Timeout,
     /// The agent process went away mid-request.
     Exited,
+    /// The agent wouldn't take the bot's model.
+    NoModel,
 }
 
 #[derive(Debug)]
@@ -106,12 +121,33 @@ impl Answer {
                     Some(d) => format!("{msg} ({d})"),
                     None => msg,
                 };
-                Err(RpcError { code: e["code"].as_i64().unwrap_or_default(), message }.into())
+                let kind = e["data"]["errorKind"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .or_else(|| codex_kind(&e["data"]["codexErrorInfo"]))
+                    .filter(|k| {
+                        !k.is_empty() && k.len() <= 40 && k.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+                    });
+                Err(RpcError { code: e["code"].as_i64().unwrap_or_default(), message, kind }.into())
             }
             // The reader drops every waiter when the process goes away.
             Err(_) => Err(Failure::error(FailureKind::Exited, "agent process exited")),
         }
     }
+}
+
+/// codex-acp's category (`data.codexErrorInfo`: `"usageLimitExceeded"`, or `{"httpConnectionFailed": {…}}`) in the
+/// same form as Claude's `errorKind`: `usage_limit_exceeded`.
+fn codex_kind(info: &Value) -> Option<String> {
+    let name = info.as_str().or_else(|| info.as_object().and_then(|o| o.keys().next()).map(String::as_str))?;
+    let mut kind = String::with_capacity(name.len() + 4);
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            kind.push('_');
+        }
+        kind.push(c.to_ascii_lowercase());
+    }
+    Some(kind)
 }
 
 pub struct Acp {
@@ -364,6 +400,28 @@ mod tests {
         ]);
         assert_eq!(content_text(&v), "a\nb");
         assert_eq!(truncate("héllo", 2), "h…");
+    }
+
+    #[tokio::test]
+    async fn an_error_keeps_the_adapters_category_only_when_it_is_an_identifier() {
+        let kind = |data: Value| async move {
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(Err(json!({"code": -32603, "message": "Internal error", "data": data})));
+            let e = Answer { rx }.response().await.expect_err("an error answer");
+            e.downcast::<RpcError>().expect("an RpcError").kind
+        };
+        assert_eq!(kind(json!({"errorKind": "rate_limit"})).await.as_deref(), Some("rate_limit"));
+        assert_eq!(kind(json!({"errorKind": "Usage: /Users/me"})).await, None);
+        assert_eq!(kind(json!({"errorKind": ""})).await, None);
+        assert_eq!(kind(json!("details")).await, None);
+        assert_eq!(
+            kind(json!({"codexErrorInfo": "usageLimitExceeded"})).await.as_deref(),
+            Some("usage_limit_exceeded")
+        );
+        assert_eq!(
+            kind(json!({"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 502}}})).await.as_deref(),
+            Some("http_connection_failed")
+        );
     }
 
     #[cfg(unix)]

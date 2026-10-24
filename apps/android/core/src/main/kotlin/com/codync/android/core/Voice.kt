@@ -47,14 +47,14 @@ object SpokenText {
 /** Something a call says: a bot's reply, or a notice from the computer. */
 data class VoiceCue(val text: String, val notice: Boolean = false)
 
-/** Only newly finalized main-chat replies are spoken. The mirror remains the history owner. */
+/** Only newly finalized replies are spoken. The mirror remains the history owner. */
 class VoiceReplyGate(private val botId: String, private val startRev: Long, initial: List<Entry>) {
     private var previous = initial.associateBy(Entry::id)
     fun observe(entries: List<Entry>, bots: List<Bot>): List<VoiceCue> {
         val result = mutableListOf<VoiceCue>()
         val group = bots.firstOrNull { it.id == botId }?.kind == "group"
         for (entry in entries) {
-            if (entry.botId != botId || entry.threadId != null || entry.rev <= startRev) continue
+            if (entry.botId != botId || entry.rev <= startRev) continue
             val before = previous[entry.id]
             val author = entry.data.text("author")?.let { id -> bots.firstOrNull { it.id == id }?.name }
             if (entry.kind == "agent" && entry.data["final"]?.jsonPrimitive?.booleanOrNull == true &&

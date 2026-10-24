@@ -29,7 +29,11 @@ const questions: [string, string][] = [
   ],
   [
     "Which computers can run it?",
-    "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host.",
+    "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host, and the Mac and Linux apps add other machines over SSH, with their bots in the same sidebar.",
+  ],
+  [
+    "What happens when my agent runs out of usage?",
+    "Give the bot fallbacks and the next agent in its list, say Codex after Claude Code, carries on with the same turn, chat, memory and folder. The bot goes back to its own agent once that one resets. Without fallbacks, the chat offers to add one.",
   ],
   [
     "Is it safe to let bots work on my computer?",

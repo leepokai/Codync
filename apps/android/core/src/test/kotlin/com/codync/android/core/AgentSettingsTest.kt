@@ -18,8 +18,11 @@ class AgentSettingsTest {
 
     @Test fun `new bot defaults preserve host connectors and a nullable notification toggle turns off`() {
         val draft = BotDraft(command = "stale custom command")
-        assertTrue(draft.isValid)
+        assertFalse("an unnamed bot is only created, never saved", draft.isValid)
+        assertTrue(draft.copy(name = "Scout").isValid)
+        // Left unset, the host turns on every connector and skill.
         assertEquals(JsonNull, draft.body()["connectors"])
+        assertEquals(JsonNull, draft.body()["skills"])
         assertEquals(JsonNull, draft.body()["command"])
         // An unset switch is left out: the host's booleans don't take null.
         assertFalse("fastMode" in draft.body() || "notify" in draft.body())

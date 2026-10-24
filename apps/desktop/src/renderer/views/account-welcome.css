@@ -1,0 +1,66 @@
+/* First-run welcome (AccountWelcomeView). Its entrance beats stay inline: they follow state. */
+.welcome-restoring {
+  height: 100%;
+}
+.welcome-skip {
+  color: var(--secondary);
+}
+
+.welcome {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--background);
+}
+.welcome-column {
+  min-height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 24px 12px;
+}
+.welcome-glimpse {
+  padding-bottom: 24px;
+}
+/* A fixed display size: it doesn't follow the text size preference. */
+.welcome-title {
+  white-space: pre-line;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  line-height: 1.15;
+  color: var(--text);
+}
+.styled-button.welcome-button {
+  width: 100%;
+  min-height: 50px;
+  font-size: var(--text-body);
+  font-weight: 700;
+}
+
+.welcome-crew {
+  position: relative;
+  height: 170px;
+}
+.welcome-crew-member {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+.welcome-bubble {
+  padding: 9px 14px;
+  border-radius: 18px;
+}
+.welcome-bubble.user {
+  background: var(--bubble-user);
+}
+.welcome-bubble.agent {
+  background: var(--bubble-agent);
+  transform-origin: bottom left;
+  animation: welcome-bubble-in 0.45s var(--ease-out) both;
+}
+@keyframes welcome-bubble-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}

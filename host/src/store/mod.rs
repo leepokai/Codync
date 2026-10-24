@@ -8,11 +8,15 @@
 mod bots;
 mod devices;
 mod entries;
+mod memory;
 mod model;
 mod schema;
 
 pub use devices::{Device, DeviceSource, Scope};
-pub use model::{BotConfig, BotKind, BotRow, Entry, EntryKind, Lane, Permission, ReadScope, lane_key};
+pub use model::{
+    AVATAR_COLORS, AVATAR_SHAPES, BotConfig, BotKind, BotRow, Entry, EntryKind, Fallback, Lane, Permission,
+    message_text, run_session_key,
+};
 
 use crate::LockExt;
 use anyhow::Result;
@@ -59,6 +63,11 @@ impl Store {
     pub fn kv_set(&self, k: &str, v: &str) -> Result<()> {
         let c = self.db.locked();
         c.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, v])?;
+        Ok(())
+    }
+
+    pub fn kv_delete(&self, k: &str) -> Result<()> {
+        self.db.locked().execute("DELETE FROM kv WHERE k = ?1", [k])?;
         Ok(())
     }
 

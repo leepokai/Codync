@@ -16,13 +16,11 @@ pub(super) fn trace(buf: &mut Buffer, r: Rect, app: &mut App) {
     app.hits.trace = r;
     let full = app.trace == TraceMode::Full;
     let Some(b) = app.bot().cloned() else { return };
-    // The trace is the lane's: the main chat's turns, or the open thread's.
     let turns = app.lane_turns(&b.id);
     let latest = turns.last().copied().unwrap_or(0);
     let turn = app.trace_turn.unwrap_or(latest);
-    let live = turn == latest && b.status == Status::Working && b.works_in(app.thread.as_deref());
+    let live = turn == latest && b.status == Status::Working && b.works_here();
     let nth = turns.iter().position(|x| *x == turn).map_or(0, |i| i + 1);
-    let lane = if app.thread.is_some() { "thread" } else { "chat" };
     let x = put(
         buf,
         r.x + 1,
@@ -35,9 +33,9 @@ pub(super) fn trace(buf: &mut Buffer, r: Rect, app: &mut App) {
     // The keys hint only when the title leaves it room.
     let right = if r.width >= 64 { rput(buf, r.right() - 1, r.y, keys, t.dim) } else { r.right() };
     let title = if turns.is_empty() {
-        format!("· {} · {lane}", b.name)
+        format!("· {} · chat", b.name)
     } else {
-        format!("· {} · {lane} · turn {nth} of {}{}", b.name, turns.len(), if live { " · live" } else { "" })
+        format!("· {} · chat · turn {nth} of {}{}", b.name, turns.len(), if live { " · live" } else { "" })
     };
     let room = right.saturating_sub(x + 2);
     put(buf, x + 1, r.y, room, &truncate(&title, usize::from(room)), t.dim);
@@ -75,7 +73,7 @@ fn build_trace(app: &App, b: &Bot, turn: i64, width: usize, full: bool) -> Vec<L
     let text_rest = |width: usize| width.saturating_sub(13);
     let (diff_max, out_max) = if full { (400, 400) } else { (14, 6) };
     let mut speaker: Option<&str> = None;
-    for e in map.values().filter(|e| e.turn == turn && e.thread_id == app.thread) {
+    for e in map.values().filter(|e| e.turn == turn) {
         // In a group, each member's steps under its name.
         if b.group && e.kind != Kind::User {
             let author = e.data["author"].as_str();

@@ -134,13 +134,6 @@ public extension HostClient {
         return res.entries
     }
 
-    /// A thread's replies (the root is in the main chat).
-    func thread(botId: String, rootId: String) async throws -> [Entry] {
-        struct Res: Decodable { var entries: [Entry] }
-        let res: Res = try await call("thread", ["botId": botId, "rootId": rootId])
-        return res.entries
-    }
-
     /// The newest 200 bot-to-bot notices between a bot's chat and a peer, oldest first.
     func botConversation(botId: String, peerId: String) async throws -> [Entry] {
         struct Res: Decodable { var entries: [Entry] }
@@ -182,10 +175,9 @@ public extension HostClient {
         let _: Empty = try await call("reorderBots", ["ids": ids])
     }
 
-    /// The main chat, one thread (`threadId`), or everything (`all`).
-    func markRead(_ id: String, threadId: String? = nil, all: Bool = false) async throws {
-        struct Body: Encodable { var botId: String; var threadId: String?; var all: Bool }
-        let _: Empty = try await call("markRead", Body(botId: id, threadId: threadId, all: all))
+    /// The chat read; a no-op when nothing there is unread.
+    func markRead(_ id: String) async throws {
+        let _: Empty = try await call("markRead", ["botId": id])
     }
 
     /// Toggles the user's `emoji` reaction on a chat message.
@@ -195,11 +187,18 @@ public extension HostClient {
         return res.entry
     }
 
-    /// `threadId`: reply in the thread on that main-chat message.
-    func send(botId: String, text: String, clientNonce: String, threadId: String? = nil, attachments: [String]? = nil) async throws -> Entry {
-        struct Body: Encodable { var botId: String; var text: String; var clientNonce: String; var threadId: String?; var attachments: [String]? }
+    /// `replyTo`: the chat message this one quotes.
+    /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
+    func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, attachments: [String]? = nil,
+              pasted: [String]? = nil) async throws -> Entry {
+        struct Body: Encodable {
+            var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var attachments: [String]?
+            var pasted: [String]?
+        }
         struct Res: Decodable { var entry: Entry }
-        let res: Res = try await call("send", Body(botId: botId, text: text, clientNonce: clientNonce, threadId: threadId, attachments: attachments))
+        let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, attachments: attachments,
+                        pasted: pasted?.isEmpty == false ? pasted : nil)
+        let res: Res = try await call("send", body)
         return res.entry
     }
 

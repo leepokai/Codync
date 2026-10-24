@@ -2,12 +2,16 @@
 
 use super::{SKILLS_REPO, Skill, TIMEOUT, UA, get_json, save, skills, skills_dir, slug, unique_id};
 use crate::LockExt;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 static SKILL_CATALOG: Mutex<Option<(Instant, Value)>> = Mutex::new(None);
+static SKILLS_LOCK: Mutex<()> = Mutex::new(());
+
+/// `Skill::source` of a skill written in Codync rather than downloaded.
+const CUSTOM: &str = "custom";
 
 /// `name` and `description` from a SKILL.md front matter.
 fn front_matter(md: &str) -> (Option<String>, Option<String>) {
@@ -87,7 +91,7 @@ async fn catalog() -> Result<Value> {
 
 /// The anthropics/skills catalog for the Marketplace (bodies come one at a time from `skill_details`).
 pub async fn browse_skills(store: &crate::store::Store) -> Result<Value> {
-    let installed: Vec<String> = skills(store).into_iter().map(|s| s.id).collect();
+    let installed: Vec<String> = skills(store).into_iter().filter(|s| s.source == SKILLS_REPO).map(|s| s.id).collect();
     let items: Vec<Value> = catalog()
         .await?
         .as_array()
@@ -156,11 +160,34 @@ async fn download_dir(repo_path: &str, dest: &std::path::Path, depth: u8) -> Res
     Ok(())
 }
 
+/// Read/modify/write of the installed list, one at a time, so a skill a bot saves while another
+/// downloads can't drop either.
+fn update_skills<T>(store: &crate::store::Store, change: impl FnOnce(&mut Vec<Skill>) -> Result<T>) -> Result<T> {
+    let _guard = SKILLS_LOCK.locked();
+    let mut all = skills(store);
+    let result = change(&mut all)?;
+    save(store, "skills", &all)?;
+    Ok(result)
+}
+
+/// The downloaded skill already installed as `id`, or `None` once its folder is taken for the download (under the
+/// lock, so a skill written meanwhile picks another id). A written skill that has the id blocks the download.
+fn reserve_download(store: &crate::store::Store, id: &str) -> Result<Option<Value>> {
+    let _guard = SKILLS_LOCK.locked();
+    match skills(store).into_iter().find(|s| s.id == id) {
+        Some(s) if s.source == SKILLS_REPO => Ok(Some(s.public())),
+        Some(s) => bail!("The skill {} written in Codync has the id {id}: remove it to add this one", s.name),
+        None => {
+            std::fs::create_dir_all(skills_dir().join(id))?;
+            Ok(None)
+        }
+    }
+}
+
 pub async fn install_skill(store: &crate::store::Store, source: &str) -> Result<Value> {
     let id = slug(source);
-    let mut all = skills(store);
-    if let Some(s) = all.iter().find(|s| s.id == id) {
-        return Ok(s.public());
+    if let Some(installed) = reserve_download(store, &id)? {
+        return Ok(installed);
     }
     let dest = skills_dir().join(&id);
     download_dir(&format!("skills/{source}"), &dest, 2).await.context("downloading the skill")?;
@@ -171,33 +198,80 @@ pub async fn install_skill(store: &crate::store::Store, source: &str) -> Result<
         name: name.unwrap_or_else(|| source.to_owned()),
         description: description.unwrap_or_default(),
         source: SKILLS_REPO.into(),
+        written_by: None,
     };
-    all.push(s.clone());
-    save(store, "skills", &all)?;
-    Ok(s.public())
+    update_skills(store, |all| {
+        if !all.iter().any(|x| x.id == s.id) {
+            all.push(s.clone());
+        }
+        Ok(s.public())
+    })
 }
 
-/// A skill you write yourself: a name, when to use it, and the instructions.
-pub fn add_custom_skill(store: &crate::store::Store, b: &Value) -> Result<Value> {
-    let name =
-        b["name"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`name` is required"))?;
-    let description = b["description"].as_str().unwrap_or_default().trim().replace('\n', " ");
-    let body = b["instructions"].as_str().unwrap_or_default();
-    let mut all = skills(store);
-    let s = Skill {
-        id: unique_id(name, &all.iter().map(|s| s.id.clone()).collect::<Vec<_>>()),
-        name: name.to_owned(),
-        description,
-        source: "custom".into(),
-    };
+/// A skill written in Codync (by the user, or by the bot `written_by`): a name, when to use it, and the instructions.
+pub fn add_custom_skill(
+    store: &crate::store::Store,
+    name: &str,
+    description: &str,
+    body: &str,
+    written_by: Option<&str>,
+) -> Result<Skill> {
+    let name = name.trim();
+    if name.is_empty() {
+        bail!("`name` is required");
+    }
+    update_skills(store, |all| {
+        // A folder the list doesn't have yet (a download in progress) is taken too.
+        let folders = std::fs::read_dir(skills_dir()).into_iter().flatten().flatten();
+        let taken: Vec<String> =
+            all.iter().map(|s| s.id.clone()).chain(folders.filter_map(|f| f.file_name().into_string().ok())).collect();
+        let s = Skill {
+            id: unique_id(name, &taken),
+            name: one_line(name),
+            description: one_line(description),
+            source: CUSTOM.into(),
+            written_by: written_by.map(str::to_owned),
+        };
+        write_skill_md(&s, body)?;
+        all.push(s.clone());
+        Ok(s)
+    })
+}
+
+/// New text for a skill `bot` wrote; files beside its `SKILL.md` stay. The user's and other bots' skills stay as
+/// they are.
+pub fn update_custom_skill(
+    store: &crate::store::Store,
+    bot: &str,
+    id: &str,
+    name: &str,
+    description: &str,
+    body: &str,
+) -> Result<Skill> {
+    update_skills(store, |all| {
+        let s = all.iter_mut().find(|s| s.id == id).ok_or_else(|| anyhow!("There's no skill with the id {id}"))?;
+        if s.written_by.as_deref() != Some(bot) {
+            bail!("{} wasn't saved by you: only skills you saved can be changed", s.name);
+        }
+        s.name = one_line(name);
+        s.description = one_line(description);
+        write_skill_md(s, body)?;
+        Ok(s.clone())
+    })
+}
+
+/// A name or description for the front matter, which takes one line each.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn write_skill_md(s: &Skill, body: &str) -> Result<()> {
     std::fs::create_dir_all(s.dir())?;
     std::fs::write(
         s.dir().join("SKILL.md"),
-        format!("---\nname: {}\ndescription: {}\n---\n\n{body}\n", s.name, s.description),
+        format!("---\nname: {}\ndescription: {}\n---\n\n{}\n", s.name, s.description, body.trim()),
     )?;
-    all.push(s.clone());
-    save(store, "skills", &all)?;
-    Ok(s.public())
+    Ok(())
 }
 
 pub fn list_skills(store: &crate::store::Store) -> Value {
@@ -205,12 +279,13 @@ pub fn list_skills(store: &crate::store::Store) -> Value {
 }
 
 pub fn remove_skill(store: &crate::store::Store, id: &str) -> Result<()> {
-    let mut all = skills(store);
-    if let Some(s) = all.iter().find(|s| s.id == id) {
-        let _ = std::fs::remove_dir_all(s.dir());
-    }
-    all.retain(|s| s.id != id);
-    save(store, "skills", &all)
+    update_skills(store, |all| {
+        if let Some(s) = all.iter().find(|s| s.id == id) {
+            let _ = std::fs::remove_dir_all(s.dir());
+        }
+        all.retain(|s| s.id != id);
+        Ok(())
+    })
 }
 
 /// `/name rest` → `name` and the rest; the rest is `None` while the name is still being typed.
@@ -248,7 +323,7 @@ pub fn turn_on_installed_once(store: &crate::store::Store) -> Result<()> {
     if store.kv_get(DONE).is_some() {
         return Ok(());
     }
-    let ids: Vec<String> = skills(store).into_iter().map(|s| s.id).collect();
+    let ids = super::Installed::Skills.ids(store)?;
     for row in store.bots()? {
         let mut cfg = row.config;
         if row.deleted || cfg.is_group() || ids.iter().all(|id| cfg.skills.contains(id)) {
@@ -303,7 +378,8 @@ mod tests {
         assert_eq!(slash_command("hi /pdf"), None);
 
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
-        let pdf = Skill { id: "pdf".into(), name: "PDF".into(), description: String::new(), source: "custom".into() };
+        let pdf: Skill =
+            serde_json::from_value(json!({"id": "pdf", "name": "PDF", "source": "custom"})).expect("skill");
         save(&store, "skills", std::slice::from_ref(&pdf)).expect("save skills");
         let on = ["pdf".to_owned()];
         let asked = expand_command(&store, &on, "/pdf  merge these ").expect("an enabled skill");
@@ -319,7 +395,8 @@ mod tests {
     #[test]
     fn installed_skills_turn_on_once() {
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
-        let pdf = Skill { id: "pdf".into(), name: "PDF".into(), description: String::new(), source: "custom".into() };
+        let pdf: Skill =
+            serde_json::from_value(json!({"id": "pdf", "name": "PDF", "source": "custom"})).expect("skill");
         save(&store, "skills", &[pdf]).expect("save skills");
         let mut cfg: crate::store::BotConfig = serde_json::from_value(
             json!({"id": "a", "name": "a", "backend": "fixture", "command": "true", "cwd": "/tmp", "notify": false}),

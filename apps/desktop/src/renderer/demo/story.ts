@@ -1,7 +1,7 @@
 import type { Bot, EntryData, Usage } from '@shared/models'
 
 // The website demo's story: four bots on a small `pace` project (an isoWeek / weeklyTotals bug),
-// the "Ship room" group, a thread and a pending approval. Same story as web/public/screens.
+// the "Ship room" group, replies quoting earlier messages and a pending approval. Same story as web/public/screens.
 
 export const COMPUTER_ID = 'demo-mac'
 export const HOST_NAME = 'MacBook Pro'
@@ -27,11 +27,14 @@ export interface SeedEntry {
   /** Minutes ago. */
   at: number
   data: EntryData
-  threadId?: string
 }
 
-const user = (id: string, botId: string, at: number, text: string, threadId?: string): SeedEntry => ({ id, botId, kind: 'user', at, data: { text, status: 'sent' }, threadId })
-const reply = (id: string, botId: string, author: string, at: number, text: string, threadId?: string): SeedEntry => ({ id, botId, kind: 'agent', at, data: { text, final: true, author }, threadId })
+/** `quoting`: the bot reply it answers, quoted like the host does. */
+const user = (id: string, botId: string, at: number, text: string, quoting?: SeedEntry): SeedEntry => ({
+  id, botId, kind: 'user', at,
+  data: { text, status: 'sent', ...(quoting ? { replyTo: { id: quoting.id, author: quoting.data.author ?? botId, text: quoting.data.text ?? '' } } : {}) },
+})
+const reply = (id: string, botId: string, author: string, at: number, text: string): SeedEntry => ({ id, botId, kind: 'agent', at, data: { text, final: true, author } })
 const thought = (id: string, botId: string, at: number, text: string): SeedEntry => ({ id, botId, kind: 'thought', at, data: { text, author: botId } })
 const tool = (id: string, botId: string, at: number, title: string, toolKind: string, output = ''): SeedEntry => ({ id, botId, kind: 'tool', at, data: { title, toolKind, status: 'completed', output, author: botId } })
 
@@ -62,6 +65,9 @@ const isoWeekPatch = [
   '   return `${year}-W${String(week).padStart(2, "0")}`',
 ].join('\n')
 
+const relaySummary = reply('l2', 'relay', 'relay', 40, 'Added `weeklyTotals` to group run distance and time by ISO week, with a test for the 2026 to 2027 rollover. Reviewer found no blockers. An invalid-date guard is being added in Ship room.')
+const scoutGuard = reply('g3', 'ship', 'scout', 19, 'Added the guard: `weeklyTotals` now throws a `RangeError` on an invalid date, and all 5 tests pass. Weeks are still grouped in UTC, so say if they should follow the runner\'s local time instead.')
+
 export const entries: SeedEntry[] = [
   // Scout builds weeklyTotals.
   user('s1', 'scout', 58, 'Add a weeklyTotals(runs) helper that sums distance and time per ISO week, with a test.'),
@@ -77,18 +83,18 @@ export const entries: SeedEntry[] = [
   tool('r3', 'reviewer', 49, 'Read test/pace.test.js', 'read'),
   reply('r4', 'reviewer', 'reviewer', 48, 'I found no blockers. The ISO week math is right, including the New Year edge.\n\nTwo small things:\n- A bad date becomes a `"NaN-WNaN"` bucket instead of an error.\n- Weeks are grouped in UTC, so a late evening run west of UTC can land in the next week.'),
 
-  // Relay writes it up; a thread on its reply.
+  // Relay writes it up; a reply quotes its summary.
   user('l1', 'relay', 41, 'Summarize what changed in pace today for the team channel.'),
-  reply('l2', 'relay', 'relay', 40, 'Added `weeklyTotals` to group run distance and time by ISO week, with a test for the 2026 to 2027 rollover. Reviewer found no blockers. An invalid-date guard is being added in Ship room.'),
-  user('l3', 'relay', 38, 'Make it one line for the changelog.', 'l2'),
-  reply('l4', 'relay', 'relay', 38, 'Pace now shows your weekly distance and time totals.', 'l2'),
+  relaySummary,
+  user('l3', 'relay', 38, 'Make it one line for the changelog.', relaySummary),
+  reply('l4', 'relay', 'relay', 38, 'Pace now shows your weekly distance and time totals.'),
 
   // Ship room.
   user('g1', 'ship', 22, 'Is weeklyTotals ready to ship? One short sentence each.'),
   reply('g2', 'ship', 'reviewer', 21, 'Almost: the week math is right and all 4 tests pass, but a bad date gets bucketed as `"NaN-WNaN"` instead of raising an error. @Scout, can you add an invalid-date guard?'),
-  reply('g3', 'ship', 'scout', 19, 'Added the guard: `weeklyTotals` now throws a `RangeError` on an invalid date, and all 5 tests pass. Weeks are still grouped in UTC, so say if they should follow the runner\'s local time instead.'),
-  user('g4', 'ship', 17, 'UTC is right, keep it.', 'g3'),
-  reply('g5', 'ship', 'scout', 17, 'Got it, UTC stays. I left a comment above `weeklyTotals` so nobody flips it later.', 'g3'),
+  scoutGuard,
+  user('g4', 'ship', 17, 'UTC is right, keep it.', scoutGuard),
+  reply('g5', 'ship', 'scout', 17, 'Got it, UTC stays. I left a comment above `weeklyTotals` so nobody flips it later.'),
   reply('g6', 'ship', 'pacer', 15, 'Ship it once my `isoWeek` New Year fix lands. Dec 30, 2024 still comes out as 2024-W01 instead of 2025-W01.'),
 
   // Pacer waits for approval.

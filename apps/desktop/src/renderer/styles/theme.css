@@ -10,13 +10,18 @@
   --text: #141414;
   --text-rgb: 20, 20, 20;
   --secondary: #6b6b6b;
-  --tertiary: #767676;
+  --tertiary: #6e6e6e;
   --accent-fill: #000000;
   --accent: #000000;
   --on-accent: #ffffff;
   --accent-dim: #d9d9d9;
   --danger: #c23a2b;
+  /* Destructive buttons: a deeper red that keeps white text readable in both schemes. */
+  --danger-fill: #c23a2b;
+  --on-danger: #ffffff;
   --warning: #f0a030;
+  --on-warning: #000000;
+  --attention: #936000;
   --code-background: #f4f4f4;
   --added: #2e7d32;
   --removed: #c62828;
@@ -27,13 +32,38 @@
   --chat-user: #e2e2e2;
   /* Floating transcript controls (chevrons, Jump to latest, inspector actions). */
   --chat-button: #eeeeee;
-  --composer-fill: #f3f3f3;
-  --chrome-fill: #fafafa;
+  /* Light: the message box is the page color; dark: a lighter fill. */
+  --composer-fill: var(--background);
+  /* The 1px outline on floating layers: the message box, sheets, dialogs and menus. */
+  --outline: color-mix(in srgb, var(--text) 18%, transparent);
+  --chrome-fill: #f3f3f3;
   --chrome-stroke: rgba(0, 0, 0, 0.09);
-  --composer-stroke: rgba(0, 0, 0, 0.14);
-  --roster-selected: #e7e7e7;
+  --stroke-strong: rgba(0, 0, 0, 0.14);
+  --roster-selected: #ececec;
   /* Grok's frosted floating surfaces (title pill, call bar). */
   --frosted: rgba(244, 244, 244, 0.82);
+  /* The dim behind sheets and dialogs. */
+  --scrim: rgba(0, 0, 0, 0.4);
+  /* Sheets and dialogs: a card a step above the page, groups of rows and text fields as quiet
+     tints over it (they stack, so a field inside a group reads a step stronger). */
+  --sheet: #ffffff;
+  --group: rgba(var(--text-rgb), 0.04);
+  --field: rgba(var(--text-rgb), 0.06);
+  /* The chosen option in segmented choices and chips. */
+  --chip-on: #ffffff;
+  --chip-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+
+  /* Corner radii and shadows: one scale for every surface. */
+  --radius-xs: 6px;
+  --radius-s: 10px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+  --radius-xl: 22px;
+  --radius-pill: 999px;
+  --shadow-s: 0 2px 20px rgba(0, 0, 0, 0.06);
+  --shadow-m: 0 4px 32px rgba(0, 0, 0, 0.12);
+  --shadow-l: 0 8px 40px rgba(0, 0, 0, 0.25);
+  --shadow-xl: 0 12px 60px rgba(0, 0, 0, 0.3);
 
   /* The Mac text preference: conversation size / 12 pt scales the chrome too. */
   --scale: 1;
@@ -43,6 +73,8 @@
 
   /* Grok Bot's motion. */
   --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  /* Arrivals: fast out, a long settle, no overshoot. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --hover: 0.12s var(--ease);
   --fade: 0.12s var(--ease);
   --press: 0.05s var(--ease);
@@ -50,10 +82,22 @@
   /* Critically damped 0.3 s spring. */
   --spring: linear(0, 0.0712, 0.2244, 0.3992, 0.5638, 0.7018, 0.8077, 0.8834, 0.9342, 0.9663, 0.9853, 0.9958, 1.0009, 1.0028, 1.0029, 1);
   --layout: 0.3s var(--spring);
-  --conversation-motion: 0.42s var(--spring);
 
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
   --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace;
+}
+
+/* The type ramp (lib/fonts.ts maps the macOS style names onto it). It is declared again wherever
+   --scale is reset (the island stays at the default size), so it resolves against that scale. */
+:root,
+.island {
+  --text-large-title: calc(26px * var(--scale));
+  --text-title: calc(22px * var(--scale));
+  --text-title2: calc(17px * var(--scale));
+  --text-title3: calc(15px * var(--scale));
+  --text-body: calc(13px * var(--scale));
+  --text-callout: calc(12px * var(--scale));
+  --text-caption: calc(11px * var(--scale));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -66,13 +110,15 @@
     --text: #fafafa;
     --text-rgb: 250, 250, 250;
     --secondary: #a0a0a0;
-    --tertiary: #929292;
+    --tertiary: #9a9a9a;
     --accent-fill: #ffffff;
     --accent: #ffffff;
     --on-accent: #000000;
     --accent-dim: #333333;
     --danger: #f0a7a7;
+    --danger-fill: #b3261e;
     --code-background: #111111;
+    --attention: #ecaf52;
     --added: #8fd18b;
     --removed: #f0a7a7;
     --panel: #1b1b1b;
@@ -82,9 +128,15 @@
     --composer-fill: #2f2f2f;
     --chrome-fill: #181818;
     --chrome-stroke: rgba(255, 255, 255, 0.10);
-    --composer-stroke: rgba(255, 255, 255, 0.17);
+    --stroke-strong: rgba(255, 255, 255, 0.17);
     --roster-selected: #292929;
     --frosted: rgba(35, 35, 35, 0.82);
+    --scrim: rgba(0, 0, 0, 0.55);
+    --sheet: #161616;
+    --group: rgba(var(--text-rgb), 0.045);
+    --field: rgba(var(--text-rgb), 0.075);
+    --chip-on: rgba(var(--text-rgb), 0.15);
+    --chip-shadow: none;
   }
 }
 
@@ -95,7 +147,6 @@
     --press: 0s;
     --morph: 0s;
     --layout: 0s;
-    --conversation-motion: 0s;
   }
 }
 
@@ -140,8 +191,22 @@ button {
   border: none;
   padding: 0;
   margin: 0;
-  cursor: default;
   text-align: inherit;
+}
+/* Anything clickable shows the pointing hand; :where keeps it below each view's own cursor. */
+:where(button:not(:disabled), a[href], [role='button'], [role='tab'], [role='switch'], [role='menuitem'], [role='menuitemradio'], [role='option'], select, summary) {
+  cursor: pointer;
+}
+/* A drag in progress (lib/pointer-drag.ts, ResizeHandle) keeps its cursor wherever the pointer goes. */
+.pointer-dragging,
+.pointer-dragging *,
+.pointer-dragging *::after {
+  cursor: grabbing !important;
+}
+.col-resizing,
+.col-resizing *,
+.col-resizing *::after {
+  cursor: col-resize !important;
 }
 button:focus-visible,
 [role="separator"]:focus-visible {
@@ -179,6 +244,50 @@ textarea::placeholder {
 
 a {
   color: inherit;
+}
+
+/* Layout and text primitives (components/Stack.tsx, Text.tsx). */
+.hstack {
+  display: flex;
+}
+.vstack {
+  display: flex;
+  flex-direction: column;
+}
+.spacer {
+  flex: 1;
+}
+.icon-slot {
+  flex: none;
+}
+.truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.line-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Headings carry structure; each sets its own type with Text. */
+h1,
+h2,
+h3 {
+  margin: 0;
+  font: inherit;
+}
+
+/* The shared fade for views and rows that appear. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.fade-in {
+  animation: fade-in var(--fade) both;
 }
 
 /* Hover/press feedback shared by plain buttons (PressScale). */

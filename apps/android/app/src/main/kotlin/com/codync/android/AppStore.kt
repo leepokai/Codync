@@ -28,7 +28,6 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     internal var cloud: CloudClient? = null
     private var sessionJob: Job? = null
     internal var linkJob: Job? = null
-    internal val asked = mutableSetOf<String>()
     internal var attachments = AttachmentFiles(application, local.directory)
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
     internal val mutableState = MutableStateFlow(AppState())
@@ -132,7 +131,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         AccountImages.retire()
         channel?.close(); channel = null
         connectionJob = null; pairingJob = null; graceJob = null
-        actions.clear(); sends.clear(); downloadLocks.clear(); asked.clear(); cloud = null
+        actions.clear(); sends.clear(); downloadLocks.clear(); cloud = null
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
@@ -142,9 +141,11 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         contextScope = CoroutineScope(contextJob + Dispatchers.Main.immediate)
     }
 
-    internal fun sessionAction(operation: suspend () -> Unit) {
-        if (sessionJob?.isActive == true) return
+    internal fun sessionAction(wait: Boolean = false, operation: suspend () -> Unit) {
+        val previous = sessionJob
+        if (previous?.isActive == true && !wait) return
         sessionJob = viewModelScope.launch {
+            previous?.join()
             mutableState.update { it.copy(busy = it.busy + "session", error = null) }
             try { operation() }
             catch (error: CancellationException) { throw error }
@@ -162,8 +163,8 @@ class AppStore(application: Application) : AndroidViewModel(application) {
             database?.recoverInterrupted()
             val snapshot = requireNotNull(database).snapshot()
             val restored = book.recover(snapshot)
-            savedDrafts = restored.associateBy { it.lane }
-            mutableState.update { it.copy(drafts = restored.associateBy { draft -> draft.lane }) }
+            savedDrafts = restored.associateBy { it.botId }
+            mutableState.update { it.copy(drafts = restored.associateBy { draft -> draft.botId }) }
             attachments.retainPending(snapshot.pending.flatMap { it.files } + restored.flatMap { it.files })
         }
         draftBook = book

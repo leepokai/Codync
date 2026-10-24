@@ -1,6 +1,8 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { usePresence } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { useTr } from '../../lib/use-language'
+import { Spacer } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import type { BotStore } from '../../store/bot-store'
 import './settings.css'
 
@@ -14,11 +16,11 @@ export function deviceIcon(platform: string | null | undefined) {
 }
 
 /** Keeps `children` mounted while it fades and folds away. */
-export function Reveal({ show, children, style }: { show: boolean; children: ReactNode; style?: CSSProperties }) {
+export function Reveal({ show, children }: { show: boolean; children: ReactNode }) {
   const { mounted, shown } = usePresence(show)
   if (!mounted) return null
   return (
-    <div className={`settings-reveal ${shown ? 'shown' : ''}`} style={style}>
+    <div className={`settings-reveal ${shown ? 'shown' : ''}`}>
       <div>{children}</div>
     </div>
   )
@@ -26,10 +28,11 @@ export function Reveal({ show, children, style }: { show: boolean; children: Rea
 
 /** A section's title row (the CardSection heading). */
 export function SectionHeader({ title, children }: { title: string; children?: ReactNode }) {
+  const tr = useTr()
   return (
     <div className="settings-section-header">
-      <span role="heading" aria-level={3} style={{ ...font(13, 'semibold'), color: 'var(--text)' }}>{title}</span>
-      <span style={{ flex: 1 }} />
+      <Text as="h3" size="body" weight="semibold" tone="text">{tr(title)}</Text>
+      <Spacer />
       {children}
     </div>
   )

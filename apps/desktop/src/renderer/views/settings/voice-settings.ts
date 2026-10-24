@@ -55,6 +55,8 @@ export const configured = (s: VoiceStatus, p: VoiceProvider) => s.providers.some
 
 /** `device` (on-device speech) or a provider. */
 export const engine = pref('callEngine', 'device')
+/** The same choice for dictation into the message box, picked beside its mic. */
+export const dictationEngine = pref('dictationEngine', 'device')
 /** On-device reading speed (AVSpeechUtterance's scale: 0.5 is normal). */
 export const DEFAULT_RATE = 0.5
 export const rate = pref('callRate', DEFAULT_RATE)
@@ -104,10 +106,6 @@ export function rememberDefaults(p: VoiceProvider, d: VoiceDefaults | null | und
   if (d) defaultsPref(p).set(d)
 }
 
-export function rememberStatus(s: VoiceStatus) {
-  for (const entry of s.providers) rememberDefaults(entry.provider, entry.defaults)
-}
-
 export type ModelKind = keyof VoiceDefaults
 
 export const chosenModel = (p: VoiceProvider, kind: ModelKind) => modelPrefs[kind](p).get() ?? voiceDefaults(p)[kind]
@@ -137,7 +135,12 @@ export const voiceMinutes = (p: VoiceProvider, at = new Date()) => Math.floor((k
 
 // Host calls
 
-export const voiceStatus = (c: HostClient) => c.call<VoiceStatus>('voiceStatus')
+/** Which providers the computer has keys for; the newest models it reports become the defaults. */
+export async function voiceStatus(c: HostClient) {
+  const status = await c.call<VoiceStatus>('voiceStatus')
+  for (const entry of status.providers) rememberDefaults(entry.provider, entry.defaults)
+  return status
+}
 
 /** Checks the key with the provider before the computer keeps it; an empty key removes it. */
 export const setVoiceKey = (c: HostClient, p: VoiceProvider, key: string) => c.call<VoiceStatus>('setVoiceKey', { provider: p, key }, 30_000)

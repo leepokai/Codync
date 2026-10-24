@@ -36,15 +36,12 @@ staged_copy() {
     git archive "$(git write-tree)" | tar -x -C "$snapshot"
 }
 
-if touches '^(host/|packaging/(updates|engram)/|docs/reference/fixtures/remote-relay-vectors\.json)'; then
+if touches '^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vectors\.json)'; then
     staged_copy
     echo "Checking the host (cargo fmt, clippy, test)..."
-    # CI's pinned memory runtime (fetched once): without it every test turn waits on installing one.
-    engram=$(python3 "$repo/packaging/engram/test-runtime.py")
-    (cd "$snapshot/host" && export CARGO_TARGET_DIR="$repo/host/target/precommit" CODYNC_TEST_ENGRAM="$engram" &&
-        cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test --no-run &&
-        within 300 sh -c 'cargo test && cargo test --test memory_e2e -- --ignored &&
-            cargo test --bin codync-host native_memory_survives_restart -- --ignored')
+    (cd "$snapshot/host" && export CARGO_TARGET_DIR="$repo/host/target/precommit" &&
+        cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace --no-run &&
+        within 300 cargo test --workspace)
 fi
 
 if touches '^apps/desktop/'; then

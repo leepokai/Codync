@@ -36,3 +36,25 @@ Rules every change follows, in every part of the repository (host, iOS, desktop,
 - Leave the code you touch a bit cleaner than you found it, but keep cleanups inside your change's area and in separate `refactor` commits from behavior changes.
 - Prefer deleting and simplifying over adding. The smallest diff that fixes the problem in the right place wins.
 - Every changed piece of logic gets a test that would fail without the change; test behavior, not private details.
+
+## After every change: review, e2e, cleanup
+
+Once a code change works (its tests pass) and before commit, it goes through three stages, in this order:
+
+1. **Review**: three read-only reviewers at once: correctness (bugs, regressions, error handling, security, compatibility with older clients and hosts), completeness (every client the change should reach, stale docs, missing tests, version and What's New rules) and refactor (responsibility splits, files past ~500 lines, long functions, layer leaks, missed reuse, language best practices: Swift 6, Rust `rust-skills`, strict TypeScript, Compose). A verifier then tries to refute each correctness and completeness finding against the code.
+2. **Fix and cleanup**, one editor in one pass: the surviving findings at their root cause, the refactors worth their diff, and a cleanup of the change's own lines (dead code, duplication, unclear names, comments that restate the code, unused imports, places an existing helper should be reused); then the affected builds and tests run once.
+3. **End-to-end test** of the final code: the changed flows on the real apps, minimal or full as CLAUDE.md defines it, each walked once with short bot turns. A failure the change didn't cause is reported as preexisting. A real failure is fixed, and only the fixed flows are walked again.
+
+In Claude Code, the `after-change` workflow (`.claude/workflows/after-change.js`) runs all three: start it from the change's worktree with `{"change": "<what changed and which flows to walk>", "e2e": "minimal"}` (`"full"` for platform code, packaging or the desktop main process; `"base"` if the change isn't against `origin/dev`). It returns the confirmed and refuted findings, what the fix pass changed or skipped (refactors included), and the e2e checks. The worktree's `npm run dev` keeps running through it.
+
+In Codex, use the repository's [after-change skill](../../.agents/skills/after-change/SKILL.md). It uses Codex subagents for the three reviews and verification, then one editor and one E2E tester; without subagents, the coordinator performs the same stages. It accepts the same `change`, `base` and `e2e` inputs in ordinary language or as an object. For example:
+
+```text
+$after-change change="Fix desktop reconnect; walk disconnect and reconnect" base=origin/dev e2e=minimal
+```
+
+The skill lives in `.agents/skills/after-change`, the repository skill location supported by [Codex](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills). If it is missing from the current session's skill list, ask Codex to read that `SKILL.md` directly, or restart Codex to refresh discovery. This is a skill-driven workflow, not a Claude JavaScript runner or an automatic hook. Keep the two implementations aligned when changing this procedure.
+
+Once it's green, the change is committed, merged into `dev` and pushed. Only after that merge is pushed are the worktree's `npm run dev` (its Electron app and sandbox host) stopped and the worktree deleted (a failed merge or push keeps both): stop it, leave the worktree, then from the main checkout `git worktree remove --force <path>`, `git branch -D <branch>` and `npm run dev -- --prune` in `apps/desktop` (deletes its sandbox). Nothing started from the worktree keeps running.
+
+Agents touch only the change's own hunks, never another agent's uncommitted work. Keep refactors in `refactor` commits apart from the behavior change. The final report lists the review findings (fixed, or refuted and why), each e2e check that ran or couldn't and why, what the cleanup changed, and each refactor applied or skipped with one line why. Docs- or config-only changes skip this; a tool without subagents does the stages itself.

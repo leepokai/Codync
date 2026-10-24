@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Entry
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -53,7 +55,7 @@ import kotlinx.serialization.json.jsonPrimitive
     }
     val diffs = (d["diffs"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
     val hasDetail = !d.text("command").isNullOrEmpty() || !d.text("detail").isNullOrEmpty() || diffs.isNotEmpty()
-    Column(Modifier.padding(end = 40.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent).padding(16.dp),
+    Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(headline, style = Type.headline, color = Palette.text)
@@ -120,7 +122,7 @@ private fun outcome(d: JsonObject): String = when (d.text("status")) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol(if (isNew) "doc.badge.plus" else "doc.text", size = 14.dp, tint = Palette.secondary)
-            Text(path.substringAfterLast('/'), Modifier.weight(1f), style = Type.caption.monospaced, color = Palette.secondary, maxLines = 1)
+            Text(path.substringAfterLast('/'), Modifier.weight(1f), style = Type.caption.monospaced, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("+" + (diff["added"]?.jsonPrimitive?.intOrNull ?: 0), style = Type.caption.monospaced, color = Palette.added)
             Text("−" + (diff["removed"]?.jsonPrimitive?.intOrNull ?: 0), style = Type.caption.monospaced, color = Palette.removed)
         }

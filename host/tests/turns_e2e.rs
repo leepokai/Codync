@@ -1,5 +1,5 @@
 //! A real host driving scripted ACP agents: Stop on an agent that ignores it, room turns
-//! that a newer group message replaced, and Fast mode across session resumes.
+//! that a newer group message replaced, a reaction as the whole reply, and Fast mode across session resumes.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -28,7 +28,6 @@ impl Host {
     async fn start() -> Self {
         let home = std::env::temp_dir().join(format!("codync-turns-e2e-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        common::seed_memory_runtime(&home);
         let (child, base) = common::serve(&home).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
         Self { child, base, token, home }
@@ -72,6 +71,20 @@ impl Host {
                 return e;
             }
             assert!(Instant::now() < deadline, "timed out; history: {:?}", self.entries(chat).await);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    /// Polls until every bot is idle.
+    async fn wait_idle(&self) {
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while common::snapshot(&self.base, &self.token).await["bots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["status"] != "idle")
+        {
+            assert!(Instant::now() < deadline, "a turn didn't finish");
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
@@ -140,12 +153,65 @@ async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
     assert_eq!(finals.count(), 1);
 }
 
-/// A final reply that starts with `speed` and quotes `word` from its prompt.
+#[tokio::test]
+async fn a_reaction_can_be_the_whole_reply() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Warm", "tests/fixtures/team_agent.py").await;
+    let finals = |entries: Vec<Value>| {
+        entries.into_iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true).count()
+    };
+
+    // In its own chat: the heart on the user's message is the reply; what the agent wrote stays in the trace.
+    let thanks = host.call("send", json!({"botId": bot, "text": "THANKS"})).await;
+    let heart = json!([{"bot": bot, "emoji": "❤️"}]);
+    host.wait_for(&bot, Duration::from_secs(60), |e| {
+        e["id"] == thanks["entry"]["id"] && e["data"]["botReactions"] == heart
+    })
+    .await;
+    host.wait_idle().await;
+    let entries = host.entries(&bot).await;
+    assert!(entries.iter().any(|e| e["data"]["text"] == "Reacted with a heart" && e["data"]["final"] == false));
+    assert_eq!(finals(entries), 0);
+
+    // Reactions stay rare: thanked again right away, it holds back, and still says nothing.
+    let again = host.call("send", json!({"botId": bot, "text": "THANKS"})).await;
+    host.wait_for(&bot, Duration::from_secs(60), |e| e["data"]["text"] == "Held back a reaction").await;
+    host.wait_idle().await;
+    let entries = host.entries(&bot).await;
+    assert!(entries.iter().any(|e| e["id"] == again["entry"]["id"] && e["data"]["botReactions"].is_null()));
+    assert_eq!(finals(entries), 0);
+
+    // A message that needs neither words nor a reaction: the bot passes, and the user sees nothing.
+    host.call("send", json!({"botId": bot, "text": "OK"})).await;
+    host.wait_for(&bot, Duration::from_secs(60), |e| e["data"]["text"] == "(pass)").await;
+    host.wait_idle().await;
+    assert_eq!(finals(host.entries(&bot).await), 0);
+
+    // In a room: the member reacts to the user's message and passes.
+    let group = host.call("createBot", json!({"name": "Room", "kind": "group", "members": [bot]})).await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let asked = host.call("send", json!({"botId": group, "text": "REACT if you agree"})).await;
+    let thumb = json!([{"bot": bot, "emoji": "👍"}]);
+    host.wait_for(&group, Duration::from_secs(60), |e| {
+        e["id"] == asked["entry"]["id"] && e["data"]["botReactions"] == thumb
+    })
+    .await;
+    host.wait_idle().await;
+    assert_eq!(finals(host.entries(&group).await), 0);
+}
+
+/// A final reply that starts with `speed` and ends with `word`, the user's message: the instructions before it in
+/// the prompt may hold the word too.
 fn speed_reply(speed: &'static str, word: &'static str) -> impl Fn(&Value) -> bool {
     move |e: &Value| {
         e["kind"] == "agent"
             && e["data"]["final"] == true
-            && e["data"]["text"].as_str().is_some_and(|t| t.starts_with(speed) && t.contains(word))
+            && e["data"]["text"].as_str().is_some_and(|t| t.starts_with(speed) && t.trim_end().ends_with(word))
     }
 }
 
@@ -226,4 +292,23 @@ async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
     host.call("send", json!({"botId": bot, "text": "three"})).await;
     host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast off", "three")).await;
     assert_eq!(log().matches(FAST_ON).count(), 2);
+}
+
+#[tokio::test]
+async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Ended", "tests/fixtures/ended_session_agent.py").await;
+    host.call("send", json!({"botId": bot, "text": "hello"})).await;
+    host.wait_for(&bot, Duration::from_secs(60), |e| e["kind"] == "agent" && e["data"]["text"] == "pong").await;
+    host.call("send", json!({"botId": bot, "text": "end-this-session"})).await;
+    host.wait_for(&bot, Duration::from_secs(30), |e| {
+        e["kind"] == "notice" && e["data"]["text"].as_str().is_some_and(|t| t.contains("session has ended"))
+    })
+    .await;
+    // Left open, the ended session would refuse this one too.
+    host.call("send", json!({"botId": bot, "text": "still there?"})).await;
+    host.wait_for(&bot, Duration::from_secs(30), |e| e["kind"] == "agent" && e["data"]["text"] == "still here").await;
 }

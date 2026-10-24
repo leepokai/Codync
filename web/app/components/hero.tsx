@@ -1,7 +1,8 @@
 "use client";
 
 import { motion, MotionConfig } from "framer-motion";
-import { DeviceMobile, LinuxLogo, OpenAiLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
+import { DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
+import AgentMark, { type Agent } from "./agent-mark";
 import { AppleLogo } from "./apple-logo";
 import DownloadButton from "./download-button";
 import Halftone from "./halftone";
@@ -15,12 +16,12 @@ import { GITHUB, PRODUCT_HUNT } from "../links";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
-// Agents named in the subtitle, each with its mark (Simple Icons; OpenAI's mark from Phosphor).
-const agents: [name: string, icon: string | null][] = [
-  ["Claude Code", "https://cdn.simpleicons.org/claude/ffffff"],
-  ["Codex", null],
-  ["Gemini", "https://cdn.simpleicons.org/googlegemini/ffffff"],
-  ["Cursor", "https://cdn.simpleicons.org/cursor/ffffff"],
+// Agents named in the subtitle, each with its mark.
+const agents: [name: string, agent: Agent][] = [
+  ["Claude Code", "claude"],
+  ["Codex", "codex"],
+  ["Gemini", "gemini"],
+  ["Cursor", "cursor"],
 ];
 
 export default function Hero() {
@@ -78,15 +79,10 @@ export default function Hero() {
             <motion.p {...rise(0.1)} className="mt-8 max-w-[36rem] text-lg leading-relaxed text-neutral-400">
               The open-source Grok Bot alternative, 100% free. Persistent AI teammates on your own computer, for code
               and everyday life. Run{" "}
-              {agents.map(([name, icon], i) => (
+              {agents.map(([name, agent], i) => (
                 <span key={name}>
                   <span className="inline-flex items-baseline gap-1.5 font-medium whitespace-nowrap text-neutral-50">
-                    {icon ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- brand marks from Simple Icons
-                      <img src={icon} alt="" width={18} height={18} className="size-[0.9em] self-center" />
-                    ) : (
-                      <OpenAiLogo size="0.95em" weight="fill" className="self-center" />
-                    )}
+                    <AgentMark agent={agent} className="size-[0.9em] self-center" />
                     {name}
                     {i < agents.length - 2 ? "," : ""}
                   </span>

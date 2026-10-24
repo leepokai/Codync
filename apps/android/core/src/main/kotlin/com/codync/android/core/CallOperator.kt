@@ -114,7 +114,7 @@ class CallOperator(private val botId: String, private val target: CallTarget) {
         return buildJsonObject { put("answered", pick.second) }
     }
 
-    private val chat: List<Entry> get() = target.entries.filter { it.botId == botId && it.threadId == null }.sortedBy(Entry::seq)
+    private val chat: List<Entry> get() = target.entries.filter { it.botId == botId }.sortedBy(Entry::seq)
     private val pendingApproval: Entry? get() = chat.lastOrNull { it.kind == "permission" && it.status == "pending" }
 
     /** A permission card's options: id → name. */

@@ -15,9 +15,22 @@ Desktop development and builds on macOS generate SF Symbols automatically, inclu
 | Desktop packaging | `npm run dist:<platform>:main` | `npm run dist:<platform>:dev` |
 | Foreground host | `CODYNC_ENV=main cargo run -- serve` | `cargo run -- serve` |
 
-`<platform>` is `mac`, `linux`, or `win`. Desktop `npm run dev` uses the development identity. An unpackaged run needs a matching development host binary; it takes the first that exists of `CODYNC_HOST_BIN`, `apps/desktop/build/native/codync-host` (left by `dist:mac:dev`, or rebuilt alone with `node tools/native-host.mjs dev`) and `host/target/debug/codync-host`, so after a `dist:mac:dev` a plain `cargo build` isn't picked up. On Linux, install a development host as `~/.local/bin/codync-dev-host`; the production binary remains `codync-host`.
+`<platform>` is `mac`, `linux`, or `win`. Desktop `npm run dev` uses the development identity; in a linked worktree it runs a [sandbox](#worktree-sandboxes). In the main checkout, an unpackaged run needs a matching development host binary; it takes the first that exists of `CODYNC_HOST_BIN`, `apps/desktop/build/native/codync-host` (left by `dist:mac:dev`, or rebuilt alone with `node tools/native-host.mjs dev`) and `host/target/debug/codync-host`, so after a `dist:mac:dev` a plain `cargo build` isn't picked up. On Linux, install a development host as `~/.local/bin/codync-dev-host`; the production binary remains `codync-host`.
 
 Xcode configurations separate environment from optimization: `Debug` and `Release` use production; `DevDebug` and `DevRelease` use development. The `iOS` archive remains `Release`, preserving Xcode Cloud's existing production scheme. Configure schemes through `apps/project.yml`, then regenerate with `xcodegen generate --spec apps/project.yml`.
+
+## Worktree sandboxes
+
+`npm run dev` decides by checkout. The main checkout (its `.git` is a folder) runs the default Codync Dev: the launchd/systemd host on 19223 and `~/.codync-dev`, the one a physical iPhone pairs with. A linked worktree (its `.git` is a file) runs a sandbox beside it, so any number of worktrees and agents test at once:
+
+- Host data in `~/.codync-dev-<worktree folder>`, which also holds the app's session, account and single-instance lock (`desktop/`). The window and menu bar read `Codync Dev (<name>)`.
+- A port from 19300–19399, picked free on the first run and kept in that folder's `sandbox.json`, so a paired simulator stays paired.
+- A host built from the worktree's own code (`node tools/native-host.mjs dev`; on Linux `cargo build`, honoring `CARGO_TARGET_DIR`; or `CODYNC_HOST_BIN`), started and stopped with the app, logging to `host.log`. No launchd/systemd service, and the dev cloud is off.
+- The run prints the commands that pair a phone or simulator (`codync-host pair`) and open the terminal UI against the sandbox. Give each sandbox its own simulator: a simulator holds one Codync Dev.
+
+Flags go after `npm run dev --`: `--shared` takes the default Codync Dev from a worktree (quit the main checkout's first); `--sandbox` runs a sandbox from the main checkout, for a second session on `dev`; `--name <name>` runs the sandbox of that name, for another copy of the same checkout; `--cloud` lets the sandbox host use the dev cloud (each sandbox then shows as another computer); `--cdp` opens the DevTools protocol on the sandbox port + 10000; `--list` shows every sandbox; `--prune` deletes the ones whose worktree is gone, so run it after removing worktrees.
+
+Still shared: macOS sees every unpackaged run as the same Electron app, so permissions and notifications are shared and a `codync-dev://` sign-in callback may reach another copy (test sign-in on the default Codync Dev); Codync Screen and computer use need the packaged `Codync Dev.app`; a global shortcut (the approval island's) goes to whichever app registered it first.
 
 ## Resource ownership
 

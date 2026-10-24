@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Analytics from "./analytics";
 import JsonLd from "./json-ld";
 import { APP_STORE } from "./links";
 import { DESCRIPTION, SITE } from "./site";
@@ -67,6 +68,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-black text-neutral-200">
         <JsonLd />
+        <Analytics />
         {children}
       </body>
     </html>

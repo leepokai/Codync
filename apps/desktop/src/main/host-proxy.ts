@@ -1,5 +1,6 @@
 import { ipcMain, type WebContents } from 'electron'
 import type { CallError } from '../shared/ipc'
+import { noteAnalyticsSetting } from './analytics'
 
 // Loopback HTTP + SSE for the renderer. The host has no CORS (it's a loopback API for local
 // apps), so requests leave from the main process.
@@ -36,7 +37,10 @@ async function call(baseURL: string, token: string, method: string, body: unknow
     } catch {}
     throw { status: res.status, message } satisfies CallError
   }
-  return text ? JSON.parse(text) : {}
+  const value: unknown = text ? JSON.parse(text) : {}
+  // The main process keeps the analytics setting for when there's no host (`host_setup_failed`).
+  noteAnalyticsSetting(baseURL, method, value)
+  return value
 }
 
 function stream(sender: WebContents, id: string, url: string, token: string) {

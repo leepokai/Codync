@@ -7,12 +7,13 @@ struct CommandList: View {
     let pick: (SlashCommand) -> Void
 
     var body: some View {
-        // Scrolls only once it's taller than the room it gets.
-        ViewThatFits(in: .vertical) {
-            rows
-            ScrollView { rows }.scrollIndicators(.hidden)
+        // Hugs its rows; scrolls only once they're taller than 280 points.
+        CappedHeight(max: 280) {
+            ViewThatFits(in: .vertical) {
+                rows
+                ScrollView { rows }.scrollIndicators(.hidden)
+            }
         }
-        .frame(maxHeight: 280, alignment: .bottom)
         .glass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
@@ -42,5 +43,20 @@ struct CommandList: View {
             }
         }
         .padding(.vertical, 6)
+    }
+}
+
+/// Offers its content at most `max` points of height and takes the content's own height: a
+/// `frame(maxHeight:)` grows to the cap whenever there's room, leaving the card half empty.
+private struct CappedHeight: Layout {
+    let max: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let offer = ProposedViewSize(width: proposal.width, height: min(proposal.height ?? max, max))
+        return subviews.first?.sizeThatFits(offer) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
     }
 }

@@ -5,60 +5,11 @@ use super::str_arg;
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
 use crate::market;
+use crate::market::{Installed, connector_ids, enable_new};
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
-
-/// Everything a bot can turn on: installed connectors and connected apps.
-pub(super) fn connector_ids(store: &crate::store::Store) -> Result<Vec<String>> {
-    Ok(market::list_connectors(store)?["items"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|c| c["id"].as_str().map(str::to_owned))
-        .collect())
-}
-
-/// What the computer installs for its bots.
-#[derive(Clone, Copy)]
-enum Installed {
-    Connectors,
-    Skills,
-}
-
-impl Installed {
-    fn ids(self, store: &crate::store::Store) -> Result<Vec<String>> {
-        match self {
-            Self::Connectors => connector_ids(store),
-            Self::Skills => Ok(market::skills(store).into_iter().map(|s| s.id).collect()),
-        }
-    }
-}
-
-/// A connector or skill installed on the computer is on for every bot; each bot can turn it off.
-fn enable_new(hub: &Hub, kind: Installed, before: &[String]) -> Result<()> {
-    let new: Vec<String> = kind.ids(&hub.store)?.into_iter().filter(|id| !before.contains(id)).collect();
-    if new.is_empty() {
-        return Ok(());
-    }
-    for row in hub.store.bots()? {
-        if row.deleted || row.config.is_group() {
-            continue;
-        }
-        let (key, mut on) = match kind {
-            Installed::Connectors => ("connectors", row.config.connectors),
-            Installed::Skills => ("skills", row.config.skills),
-        };
-        for id in &new {
-            if !on.contains(id) {
-                on.push(id.clone());
-            }
-        }
-        hub.update_bot(&json!({"id": row.config.id, key: on}))?;
-    }
-    Ok(())
-}
 
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
     Ok(ControlFlow::Break(match method {
@@ -224,7 +175,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let s = if b["source"].is_string() {
                 market::install_skill(&hub.store, str_arg(&b, "source")?).await?
             } else {
-                market::add_custom_skill(&hub.store, &b)?
+                let text = |k: &str| b[k].as_str().unwrap_or_default();
+                market::add_custom_skill(&hub.store, text("name"), text("description"), text("instructions"), None)?
+                    .public()
             };
             enable_new(hub, Installed::Skills, &before)?;
             json!({"skill": s})
@@ -235,47 +188,4 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::store::BotConfig;
-
-    #[tokio::test]
-    async fn new_installs_turn_on_for_every_bot() {
-        let dir = std::env::temp_dir().join(format!("codync-connectors-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
-        for (id, on) in [("a", json!([])), ("b", json!(["old"]))] {
-            let cfg: BotConfig = serde_json::from_value(
-                json!({"id": id, "name": id, "backend": "fixture", "command": "true", "cwd": dir, "connectors": on, "notify": false}),
-            )
-            .expect("bot config");
-            store.save_bot(&cfg).expect("save bot");
-        }
-        let connector = |id: &str| -> market::Connector {
-            serde_json::from_value(json!({"id": id, "name": id, "url": "https://example.com/mcp"})).expect("connector")
-        };
-        market::save_connectors(&store, &[connector("old")]).expect("save");
-        let hub = Hub::new(
-            store,
-            "test".into(),
-            crate::remote::identity::Identity::load_or_create(&dir).expect("identity"),
-            "test".into(),
-            19222,
-        );
-        hub.start().expect("start");
-        let before = connector_ids(&hub.store).expect("ids");
-        market::save_connectors(&hub.store, &[connector("old"), connector("linear")]).expect("save");
-        enable_new(&hub, Installed::Connectors, &before).expect("enable");
-        let on = |id: &str| hub.store.bot(id).expect("read").expect("bot").config.connectors;
-        assert_eq!(on("a"), ["linear"], "the new connector is on; one turned off stays off");
-        assert_eq!(on("b"), ["old", "linear"]);
-        hub.store.kv_set("skills", r#"[{"id":"pdf","name":"PDF"}]"#).expect("install a skill");
-        enable_new(&hub, Installed::Skills, &[]).expect("enable");
-        let skills = |id: &str| hub.store.bot(id).expect("read").expect("bot").config.skills;
-        assert_eq!((skills("a"), skills("b")), (vec!["pdf".to_owned()], vec!["pdf".to_owned()]), "new skills too");
-        let _ = std::fs::remove_dir_all(dir);
-    }
 }

@@ -50,6 +50,8 @@ import com.codync.android.core.RoutineDraft
 import com.codync.android.core.RoutineScheduleDraft
 import com.codync.android.core.RoutineSchedulePreview
 import com.codync.android.core.RoutineWebhook
+import com.codync.android.core.canEdit
+import com.codync.android.core.routineRepeats
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import java.text.DateFormat
@@ -75,12 +77,12 @@ import kotlinx.coroutines.launch
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Routines", Modifier.weight(1f).padding(start = 2.dp), style = Type.system(13f).semibold, color = Palette.text)
-            IconButton("Ask the bot for a routine", "text.bubble", enabled = online) { store.editDraft(bot.id, null, "I want a routine that "); dismiss() }
+            IconButton("Ask the bot for a routine", "text.bubble", enabled = online) { store.editDraft(bot.id, "I want a routine that "); dismiss() }
             IconButton("Set up a routine", "plus", enabled = online) { editing = "" }
             IconButton("Close routines", "xmark", action = dismiss)
         }
         val routines = listing?.routines.orEmpty()
-        if (routines.isEmpty()) Text(if (listing != null) "No routines yet. Ask the bot for one, or set it up yourself with +." else "Loading routines…",
+        if (routines.isEmpty()) Text(tr(if (listing != null) "No routines yet. Ask the bot for one, or set it up yourself with +." else "Loading routines…"),
             Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface).padding(14.dp),
             style = Type.system(12f).copy(lineHeight = Type.system(12f).lineHeight * 1.25f), color = Palette.secondary)
         else Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface).padding(horizontal = 14.dp)) {
@@ -97,8 +99,8 @@ import kotlinx.coroutines.launch
             }
         }
     }
-    // Item-based, so the editor always gets the routine it was opened on.
-    CodyncSheet(editing, { editing = null }) { id ->
+    // Item-based, so the editor always gets the routine it was opened on; it opens once that routine is listed.
+    CodyncSheet(editing?.takeIf { listing.canEdit(it) }, { editing = null }) { id ->
         RoutineEditor(bot.id, listing?.routines?.firstOrNull { it.id == id }, state, store) { saved ->
             // A new webhook routine stays open: its URL and key exist only now.
             editing = if (id.isEmpty() && saved?.hasWebhook == true) saved.id else null
@@ -120,6 +122,7 @@ import kotlinx.coroutines.launch
     var error by remember { mutableStateOf<String?>(null) }
     var advanced by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var choosingZone by remember { mutableStateOf(false) }
     var started by remember { mutableStateOf(false) }
     val busy = "routines:$botId" in state.busy
     val online = state.actualConnection is LinkState.Ready
@@ -164,15 +167,26 @@ import kotlinx.coroutines.launch
                 if (!loaded) IconLabel("Loading schedule…", "clock", Palette.secondary, style = Type.body)
                 else when (draft.schedule.kind) {
                     "cron" -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Field("Cron") {
-                            FieldBox(draft.schedule.expression, { draft = draft.copy(schedule = draft.schedule.copy(expression = it)) }, "0 9 * * 1-5",
-                                style = Type.body.monospaced, fill = Palette.bubbleUser, capitalize = false)
+                        val schedule = draft.schedule
+                        fun change(edit: RoutineScheduleDraft) { draft = draft.copy(schedule = edit) }
+                        val current = preview.takeIf { checked == schedule }
+                        Field("Repeat") {
+                            ChoicePicker(schedule.calendarStyle, routineRepeats, { change(schedule.repeating(it, current?.cronExpression)) }, label = "Repeat")
                         }
-                        Field("Time zone") {
-                            FieldBox(draft.schedule.zone, { draft = draft.copy(schedule = draft.schedule.copy(zone = it)) }, "Asia/Taipei",
-                                fill = Palette.bubbleUser, capitalize = false)
+                        when (schedule.calendarStyle) {
+                            "hourly" -> Field("At minute") { ChoicePicker(schedule.minute, MINUTES, { change(schedule.copy(minute = it)) }, label = "At minute") }
+                            "daily", "weekdays" -> TimeField(schedule) { change(it) }
+                            "weekly" -> {
+                                Field("On") { ChoicePicker(schedule.weekday, WEEKDAYS, { change(schedule.copy(weekday = it)) }, label = "On") }
+                                TimeField(schedule) { change(it) }
+                            }
+                            else -> Field("Cron") {
+                                FieldBox(schedule.expression, { change(schedule.copy(expression = it)) }, "0 9 * * 1-5",
+                                    style = Type.body.monospaced, fill = Palette.bubbleUser, capitalize = false)
+                            }
                         }
-                        SchedulePreview(if (checked == draft.schedule) preview else null, previewError)
+                        Field("Time zone") { ZoneButton(schedule.zone) { choosingZone = true } }
+                        SchedulePreview(current, previewError, cronHint = schedule.calendarStyle == "custom")
                     }
                     "webhook" -> if (routine?.hasWebhook == true) RoutineWebhookPanel(botId, routine.id, online, store)
                         else Note("Runs each time something is posted to its URL. Save to get the URL and key.")
@@ -186,7 +200,7 @@ import kotlinx.coroutines.launch
                     Text("Run settings", style = Type.subheadline, color = Palette.secondary)
                     Symbol("chevron.down", Modifier.rotate(turn), size = 11.dp, tint = Palette.secondary)
                     Spacer(Modifier.weight(1f))
-                    if (!advanced) Text("Timeout ${draft.timeoutSeconds}s", style = Type.subheadline, color = Palette.tertiary)
+                    if (!advanced) Text("Timeout ${draft.timeoutText}", style = Type.subheadline, color = Palette.tertiary)
                 }
                 AnimatedVisibility(advanced, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
                     exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
@@ -225,24 +239,45 @@ import kotlinx.coroutines.launch
     CodyncDialog("Delete routine?", confirmDelete, { confirmDelete = false }, "This deletes the routine and stops its future runs. This can't be undone.") {
         listOf(DialogAction("Delete routine", destructive = true) { routine?.let { store.routineAction(botId, it.id, "deleteRoutine") { saved(null) } } })
     }
+    CodyncSheet(choosingZone, { choosingZone = false }) {
+        ZonePicker(draft.schedule.zone) { draft = draft.copy(schedule = draft.schedule.copy(zone = it)); choosingZone = false }
+    }
 }
 
-/** One quiet line under the cron fields: what the host read, or why it can't. */
-@Composable private fun SchedulePreview(preview: RoutineSchedulePreview?, error: String?) {
+private fun Int.twoDigits() = toString().padStart(2, '0')
+private val HOURS = (0..23).map { it to it.twoDigits() }
+private val MINUTES = (0..59).map { it to it.twoDigits() }
+// Monday first; the host counts 0 = Sunday … 6 = Saturday.
+private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4 to "Thursday", 5 to "Friday", 6 to "Saturday", 0 to "Sunday")
+
+/** "At": the hour and minute a daily, weekday or weekly schedule runs. */
+@Composable private fun TimeField(schedule: RoutineScheduleDraft, change: (RoutineScheduleDraft) -> Unit) = Field("At") {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChoicePicker(schedule.hour, HOURS, { change(schedule.copy(hour = it)) }, label = "Hour")
+        Text(":", style = Type.body, color = Palette.secondary)
+        ChoicePicker(schedule.minute, MINUTES, { change(schedule.copy(minute = it)) }, label = "Minute")
+    }
+}
+
+/** One quiet line under the schedule fields: what the host read, or why it can't (with the cron fields' order while it checks a Custom one). */
+@Composable private fun SchedulePreview(preview: RoutineSchedulePreview?, error: String?, cronHint: Boolean) {
     Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         when {
-            error != null -> Text(error, style = Type.caption, color = Palette.danger)
+            error != null -> Text(tr(error), style = Type.caption, color = Palette.danger)
             preview != null -> {
                 Text(preview.summary, style = Type.caption.medium, color = Palette.text)
-                preview.nextRunAt?.let { Text("Next ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))}", style = Type.caption, color = Palette.secondary) }
-                preview.warning?.let { Text(it, style = Type.caption, color = Palette.secondary) }
+                preview.nextRunAt?.let {
+                    val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
+                    Text(tr("Next {when}").replace("{when}", whenText), style = Type.caption, color = Palette.secondary)
+                }
+                preview.warning?.let { Text(tr(it), style = Type.caption, color = Palette.secondary) }
             }
-            else -> Text("minute  hour  day  month  weekday", style = Type.caption.monospaced, color = Palette.tertiary)
+            cronHint -> Text("minute  hour  day  month  weekday", style = Type.caption.monospaced, color = Palette.tertiary)
         }
     }
 }
 
-@Composable private fun Note(text: String) = Text(text, Modifier.padding(start = 4.dp), style = Type.caption, color = Palette.secondary)
+@Composable private fun Note(text: String) = Text(tr(text), Modifier.padding(start = 4.dp), style = Type.caption, color = Palette.secondary)
 
 /** A saved webhook routine's address and key: copy either, reveal or replace the key (iOS `RoutineWebhookPanel`). */
 @Composable private fun RoutineWebhookPanel(botId: String, id: String, online: Boolean, store: AppStore) {
@@ -290,7 +325,7 @@ import kotlinx.coroutines.launch
                     else "POST with Authorization: Bearer <key>. For GitHub, use content type application/json and the key as the secret. " +
                         "Deliveries wait up to 72 hours while this computer is off. They pass through the Codync cloud, which can read them.")
             }
-            error != null -> Text(error.orEmpty(), Modifier.padding(start = 4.dp), style = Type.caption, color = Palette.danger)
+            error != null -> Text(tr(error.orEmpty()), Modifier.padding(start = 4.dp), style = Type.caption, color = Palette.danger)
             else -> Note("Loading webhook…")
         }
     }

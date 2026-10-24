@@ -44,6 +44,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
@@ -149,7 +150,7 @@ internal object LiveUpdates {
 @Composable private fun Caption(phase: TaskPhase, started: Long) {
     val caption = if (phase.live) (if (phase == TaskPhase.NeedsInput) "Review the proposed changes." else "Running the test suite.") else phase.title
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(caption, Modifier.weight(1f, fill = false), style = Type.system(12f), color = if (phase == TaskPhase.Working) Palette.secondary else phase.tint(), maxLines = 1)
+        Text(caption, Modifier.weight(1f, fill = false), style = Type.system(12f), color = if (phase == TaskPhase.Working) Palette.secondary else phase.tint(), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (phase.live) {
             Text("·", style = Type.system(12f), color = Palette.tertiary)
             Text(elapsed(started), style = Type.system(12f).monospacedDigit, color = Palette.secondary)
@@ -192,7 +193,7 @@ private val TaskPhase.mood get() = when (this) { TaskPhase.Working -> "working";
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CharacterAvatar("blob", "green", 40.dp, phase.mood)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Reviewer", style = Type.system(14f).semibold, color = Palette.text, maxLines = 1)
+                Text(tr("Reviewer"), style = Type.system(14f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Caption(phase, started)
             }
             PhaseMark(phase, 20.dp)
@@ -234,7 +235,7 @@ private val TaskPhase.mood get() = when (this) { TaskPhase.Working -> "working";
                 colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White))
             Text(when { phase.live && phase != TaskPhase.NeedsInput -> elapsed(started); phase == TaskPhase.NeedsInput -> "Needs you"
                 phase == TaskPhase.Completed -> "Done"; phase == TaskPhase.Failed -> "Failed"; else -> phase.title },
-                style = Type.system(12f).semibold.monospacedDigit, color = Color.White, maxLines = 1)
+                style = Type.system(12f).semibold.monospacedDigit, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {

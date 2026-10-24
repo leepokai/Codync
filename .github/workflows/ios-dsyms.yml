@@ -1,0 +1,45 @@
+name: iOS dSYMs
+
+# After Submit iOS, uploads the dSYMs from that release's Xcode Cloud archive to PostHog, so iPhone
+# crash reports show function, file and line (tools/upload-dsyms.py). By hand: any version.
+on:
+  workflow_run:
+    workflows: ["Submit iOS"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version whose dSYMs to upload, e.g. 2.19.2"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    # A manual Submit iOS ran on a branch, not the release commit: run this by hand after it.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'push'
+    # posthog-cli reads dSYMs with Xcode's dwarfdump.
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyjwt cryptography
+      - run: npm install -g @posthog/cli@0.18.9
+      - name: Upload dSYMs
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: "649427"
+          VERSION: ${{ inputs.version }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [[ -n "$VERSION" ]]; then REF="v${VERSION#v}"; else REF="$RELEASE_SHA"; fi
+          python3 tools/upload-dsyms.py "$REF"

@@ -1,0 +1,46 @@
+//! How the terminal shows a bot's fallback chain (`agent::fallback`): the agent it's on, and each step's state.
+
+use super::super::app::{App, Bot};
+use super::time::now_ms;
+use super::usage::when_future;
+use crate::agent::fallback::Reason;
+use crate::store::Fallback;
+
+/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Gemini CLI · default (usage resets 15:00)".
+pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
+    let item = format!("{} {} · {}", i + 1, app.agent_name(&f.backend), f.model.as_deref().unwrap_or("default"));
+    if bot.and_then(|b| b.agent_step.as_deref()) == Some(f.backend.as_str()) {
+        format!("{item} (in use)")
+    } else if let Some(note) = bot.and_then(|b| rest_note(b, &f.backend)) {
+        format!("{item} ({note})")
+    } else {
+        item
+    }
+}
+
+/// A resting agent's state: "usage resets 15:00" or "resting until 15:00".
+pub(in crate::tui) fn rest_note(bot: &Bot, agent: &str) -> Option<String> {
+    let rest = bot.rests(agent, now_ms())?;
+    Some(if rest.reason == Reason::UsageLimit {
+        format!("usage resets {}", when_future(rest.until))
+    } else {
+        format!("resting until {}", when_future(rest.until))
+    })
+}
+
+/// The Details page's line while the bot runs on a fallback: "Using Codex until Claude Code resets 15:00".
+pub(in crate::tui) fn using_line(app: &App, bot: &Bot) -> Option<String> {
+    let agent = bot.agent_step.as_deref()?;
+    let own = app.agent_name(&bot.backend);
+    let using = app.agent_name(agent);
+    Some(match bot.rests(&bot.backend, now_ms()) {
+        Some(rest) => format!("Using {using} until {own} resets {}", when_future(rest.until)),
+        None => format!("Using {using} while {own} can't answer"),
+    })
+}
+
+/// The Details page's chain: "Fallbacks: 1 Codex · gpt-5.5 (in use) · 2 Gemini CLI · default".
+pub(in crate::tui) fn chain_line(app: &App, bot: &Bot) -> Option<String> {
+    let steps: Vec<String> = bot.fallbacks.iter().enumerate().map(|(i, f)| step_item(app, Some(bot), i, f)).collect();
+    (!steps.is_empty()).then(|| format!("Fallbacks: {}", steps.join(" · ")))
+}

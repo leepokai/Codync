@@ -111,7 +111,7 @@ export class CallOperator {
     const name = this.store.bots.get(this.botId)?.name ?? 'bot'
     const n = Math.min(Math.max(count, 1), 20)
     const messages = this.store
-      .chat(this.botId)
+      .allEntries(this.botId)
       .filter(isChat)
       .slice(-n)
       .map((e) => ({
@@ -135,6 +135,6 @@ export class CallOperator {
   }
 
   private get pendingApproval(): Entry | undefined {
-    return this.store.chat(this.botId).findLast((e) => e.kind === 'permission' && e.data.status === 'pending')
+    return this.store.allEntries(this.botId).findLast((e) => e.kind === 'permission' && e.data.status === 'pending')
   }
 }

@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
+import com.codync.android.design.AvatarPalette
 import com.codync.android.design.LocalDismissModal
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
@@ -21,7 +22,7 @@ import org.junit.Rule
 import org.junit.Test
 import java.io.File
 
-/** Read-only UI fixtures: no test taps Save or Create, so production bots are never changed. */
+/** Read-only UI fixtures for the bot settings and the New bot / New group chat dialogs: no test taps Save or Create, so production bots are never changed. */
 class BotEditorTest {
     @get:Rule val compose = createComposeRule()
     private val scout = BotDraft(id = "fixture", name = "Scout", avatarShape = "blob", avatarColor = "blue")
@@ -54,19 +55,44 @@ class BotEditorTest {
         assertTrue(closed)
     }
 
-    @Test fun newBotsStayUnnamedAndNeedTheComputerToCreate() {
-        render(BotDraft(avatarShape = "blob", avatarColor = "blue"))
+    @Test fun aNewBotIsItsFaceAndAnOptionalName() {
+        compose.setContent { Hosted { NewBotView(fixture(), viewModel()) } }
         compose.onNodeWithText("New bot").assertIsDisplayed()
-        compose.onNodeWithText("Name").assertDoesNotExist()
+        compose.onNode(hasSetTextAction() and hasText("Name your bot")).assertIsDisplayed().assertIsFocused()
         compose.onNodeWithContentDescription("Create").assertIsEnabled()
-        compose.onNodeWithContentDescription("Agent: Claude").performScrollTo().assertIsDisplayed()
-        snapshot("bot-editor-new-preview.png")
+        compose.onNodeWithContentDescription("Agent: Claude").assertDoesNotExist()
+        compose.onNodeWithContentDescription("teardrop shape").performClick().assertIsSelected()
+        compose.onNodeWithContentDescription("Gray").performClick().assertIsSelected()
+        // Every shape and color shows at once: the grids wrap instead of scrolling sideways.
+        (AvatarPalette.shapes.map { "$it shape" } + AvatarPalette.colors.keys.map { it.replaceFirstChar(Char::uppercase) })
+            .forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
+        snapshot("new-bot-preview.png")
     }
 
     @Test fun anOfflineNewBotCannotBeCreated() {
-        render(BotDraft(avatarShape = "blob", avatarColor = "blue"), fixture().copy(actualConnection = LinkState.Connecting))
+        compose.setContent { Hosted { NewBotView(fixture().copy(actualConnection = LinkState.Connecting), viewModel()) } }
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
         compose.onNodeWithText("Connect this computer to create the bot.").assertIsDisplayed()
+    }
+
+    @Test fun aNewGroupIsNamedAfterThePickedBotsUntilNamed() {
+        val bots = listOf(Bot("a", "Scout", avatarShape = "blob"), Bot("b", "Reviewer", avatarShape = "hex"))
+        compose.setContent { Hosted { NewGroupView(fixture().copy(bots = bots), viewModel()) } }
+        compose.onNodeWithText("New group chat").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
+        compose.onNode(hasSetTextAction() and hasText("Name your group")).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Scout").performClick().assertIsSelected()
+        compose.onNodeWithContentDescription("Reviewer").performClick().assertIsSelected()
+        compose.onNode(hasSetTextAction() and hasText("Scout, Reviewer")).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Create").assertIsEnabled()
+        compose.onNodeWithContentDescription("Scout").performClick().assertIsNotSelected()
+        snapshot("new-group-preview.png")
+    }
+
+    @Test fun aNewGroupWithoutBotsSaysToCreateOneFirst() {
+        compose.setContent { Hosted { NewGroupView(fixture(), viewModel()) } }
+        compose.onNodeWithText("No bots yet. Create a bot first.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
     }
 
     @Test fun workspaceAndPermissionsUseMenusWhileNotificationsAndPluginsUseRealSwitches() {

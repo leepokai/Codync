@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, ChoicePicker, IconButton, Spinner } from '../../components/Controls'
+import { Button, CardSection, IconButton, SegmentedChoice, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { HStack, Spacer, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { emptyDraft, errorText, sameDraft, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
-import { Field, RoutineWebhookPanel } from './RoutineWebhookPanel'
+import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { Field } from '../bots/parts'
+import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
+import { RoutineWebhookPanel } from './RoutineWebhookPanel'
+import { currentZone } from './time-zones'
 import './routines.css'
+import { useTr } from '../../lib/use-language'
 
-const caption = { ...font('caption'), paddingLeft: 4, lineHeight: 1.4 } as const
+
+const saveShortcut = window.codync.platform === 'darwin' ? '⌘S' : 'Ctrl+S'
 
 export function RoutineEditorView({ botId, routine, saved }: {
   botId: string
@@ -16,6 +22,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   /** Called after a save (the routine) or a delete (null). */
   saved: (routine: Routine | null) => void
 }) {
+  const tr = useTr()
   const store = useStore()
   const [name, setName] = useState(routine?.name ?? '')
   const [instruction, setInstruction] = useState(routine?.instruction ?? '')
@@ -36,7 +43,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   // Anything the bot set up (a one-off time, an interval, events, several triggers) stays as it is until replaced.
   const keepsOriginal = routine ? (routine.triggers.length === 1 ? !['cron', 'webhook'].includes(routine.triggers[0]!.type) : routine.triggers.length > 0) : false
   const options = [
-    ...(routine && keepsOriginal ? [{ id: 'keep', label: routine.triggerDescriptions.join(' · ') }] : []),
+    ...(keepsOriginal ? [{ id: 'keep', label: 'Set by bot' }] : []),
     { id: 'cron', label: 'Schedule' },
     { id: 'webhook', label: 'Webhook' },
   ]
@@ -47,9 +54,9 @@ export function RoutineEditorView({ botId, routine, saved }: {
       const client = await store.ready()
       const result = await client.call<RoutineSchedulePreview>('routineSchedule', {
         triggers: routine?.triggers ?? [],
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timeZone: currentZone(Intl.DateTimeFormat().resolvedOptions().timeZone),
       })
-      const draft = { ...result.draft, calendarStyle: 'custom' }
+      const draft = { ...result.draft, calendarStyle: repeatChoice(result.draft.calendarStyle) }
       if (!['cron', 'webhook'].includes(draft.kind)) draft.kind = 'keep'
       setSchedule(draft)
       setPreview(result)
@@ -132,132 +139,94 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const triggerFields = () => {
     switch (schedule.kind) {
       case 'cron':
-        return (
-          <div className="routine-cron" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div className="routine-cron-fields">
-              <Field label="Cron">
-                <input
-                  className="routine-input"
-                  style={font('body', undefined, 'monospaced')}
-                  value={schedule.expression}
-                  placeholder="0 9 * * 1-5"
-                  spellCheck={false}
-                  autoCorrect="off"
-                  onChange={(e) => update({ expression: e.target.value })}
-                />
-              </Field>
-              <Field label="Time zone">
-                <input className="routine-input" value={schedule.zone} placeholder="Asia/Taipei" spellCheck={false} autoCorrect="off" onChange={(e) => update({ zone: e.target.value })} />
-              </Field>
-            </div>
-            <div style={{ paddingLeft: 4 }}>
-              {previewError ? (
-                <span style={{ ...font('caption'), color: 'var(--danger)', lineHeight: 1.4 }}>{previewError}</span>
-              ) : shownPreview ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span style={font('caption', 'medium')}>{shownPreview.summary}</span>
-                  {shownPreview.nextRunAt ? (
-                    <span style={{ ...font('caption'), color: 'var(--secondary)' }}>
-                      Next {new Date(shownPreview.nextRunAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                    </span>
-                  ) : null}
-                  {shownPreview.warning ? <span style={{ ...font('caption'), color: 'var(--secondary)' }}>{shownPreview.warning}</span> : null}
-                </div>
-              ) : (
-                <span style={{ ...font('caption', undefined, 'monospaced'), color: 'var(--tertiary)', whiteSpace: 'pre' }}>minute  hour  day  month  weekday</span>
-              )}
-            </div>
-          </div>
-        )
+        return <RoutineScheduleFields schedule={schedule} update={update} preview={shownPreview} error={previewError} />
       case 'webhook':
         return routine && routine.triggers.some((t) => t.type === 'webhook' || t.type === 'event') ? (
           <RoutineWebhookPanel botId={botId} routineId={routine.id} />
         ) : (
-          <span style={{ ...caption, color: 'var(--secondary)' }}>Runs each time something is posted to its URL. Save to get the URL and key.</span>
+          <Note icon="link" title="Runs each time something is posted to its URL." detail="Save to get the URL and key." />
         )
       default:
-        return <span style={{ ...caption, color: 'var(--secondary)' }}>Set up by the bot. Pick Schedule or Webhook to replace it.</span>
+        return <Note icon="sparkles" title={routine?.triggerDescriptions.join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule or Webhook to replace it." />
     }
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 700, minHeight: 0, background: 'var(--background)', color: 'var(--text)', ...font(13) }}>
-      <ModalHeader title={routine ? 'Edit routine' : 'Set up a routine'} />
+    <VStack className="routine-editor">
+      <ModalHeader icon={schedule.kind === 'webhook' ? 'link' : 'clock'} title={routine ? 'Edit routine' : 'Set up a routine'} />
       {/* The card fits the form; it scrolls only when taller than the window allows. */}
-      <fieldset className="routine-form" disabled={busy || !loaded} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 20 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <fieldset className="routine-form" disabled={busy || !loaded}>
+        <VStack gap={24} className="routine-form-body">
+          <VStack gap={16}>
             <Field label="Name">
               <input className="routine-input" value={name} placeholder="e.g. Morning summary" onChange={(e) => setName(e.target.value)} />
             </Field>
             <Field label="Instruction">
               <textarea className="routine-input" value={instruction} placeholder="Describe what this bot should do each time it runs." onChange={(e) => setInstruction(e.target.value)} />
             </Field>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Field label="When to run">
-              <ChoicePicker selection={schedule.kind} options={options} onChange={(kind) => update({ kind })} fits />
-            </Field>
+          </VStack>
+          <VStack gap={10}>
+            <HStack gap={12}>
+              <Text tone="text" grow>{tr(`When to run`)}</Text>
+              <SegmentedChoice selection={schedule.kind} options={options} onChange={(kind) => update({ kind })} />
+            </HStack>
             {loaded ? (
               triggerFields()
             ) : (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--secondary)' }}>
+              <HStack as="span" gap={6} className="routine-loading">
                 <Icon name="clock" size={12} />
                 Loading schedule…
-              </span>
+              </HStack>
             )}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <button
-              className="press"
-              aria-expanded={advanced}
-              onClick={() => setAdvanced((a) => !a)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 4, ...font('compactSecondary'), color: 'var(--secondary)', width: '100%' }}
-            >
+          </VStack>
+          <VStack gap={10}>
+            <button className="press routine-advanced" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
               Run settings
-              <span style={{ display: 'flex', transform: `rotate(${advanced ? 180 : 0}deg)`, transition: 'transform var(--layout)' }}>
+              <span className={`routine-chevron ${advanced ? 'open' : ''}`}>
                 <Icon name="chevron.down" size={10} weight="semibold" />
               </span>
-              <span style={{ flex: 1 }} />
-              {!advanced ? <span style={{ color: 'var(--tertiary)' }}>Timeout {timeout}s</span> : null}
+              <Spacer />
+              {!advanced ? <Text tone="tertiary">Timeout {durationText(timeout)}</Text> : null}
             </button>
             {advanced ? (
-              <div className="routine-fade" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Field label="Timeout (seconds)">
-                  <input className="routine-input" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
-                </Field>
-                <span style={{ ...caption, color: 'var(--secondary)' }}>A run is stopped after this long. 1 second to 24 hours.</span>
+              <div className="routine-fade">
+                <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
+                  <LabeledRow label="Timeout">
+                    <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
+                    <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
+                  </LabeledRow>
+                </CardSection>
               </div>
             ) : null}
-          </div>
-        </div>
+          </VStack>
+        </VStack>
       </fieldset>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 20, flex: 'none' }}>
+      <VStack gap={12} className="routine-editor-footer">
         {previewError !== null ? (
-          <button className="press" style={{ alignSelf: 'flex-start' }} disabled={store.isOffline} onClick={() => void checkSchedule()}>
+          <button className="press routine-retry" disabled={store.isOffline} onClick={() => void checkSchedule()}>
             Check schedule again
           </button>
         ) : null}
         {!loaded && error !== null ? (
-          <button className="press" style={{ alignSelf: 'flex-start' }} onClick={() => void loadSchedule()}>
+          <button className="press routine-retry" onClick={() => void loadSchedule()}>
             Retry loading schedule
           </button>
         ) : null}
-        {schedule.kind !== 'cron' && previewError ? <span style={{ ...font('caption'), color: 'var(--danger)' }}>{previewError}</span> : null}
+        {schedule.kind !== 'cron' && previewError ? <Text size="caption" tone="danger">{previewError}</Text> : null}
         {error ? (
-          <span style={{ display: 'flex', gap: 6, alignItems: 'flex-start', ...font('callout'), color: 'var(--danger)', userSelect: 'text' }}>
-            <Icon name="exclamationmark.circle" size={12} style={{ marginTop: 1 }} />
+          <HStack as="span" gap={6} align="flex-start" className="routine-error">
+            <Icon name="exclamationmark.circle" size={12} className="routine-error-icon" />
             {error}
-          </span>
+          </HStack>
         ) : null}
         {store.isOffline ? (
-          <span style={{ display: 'flex', gap: 6, alignItems: 'center', ...font('caption'), color: 'var(--danger)' }}>
+          <HStack as="span" gap={6} className="routine-offline">
             <Icon name="wifi.slash" size={10} />
             Connect to this computer to save your routine.
-          </span>
+          </HStack>
         ) : null}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <HStack gap={4}>
           {routine ? (
             <>
               <IconButton title="Delete routine" icon="trash" onClick={() => setConfirmDelete(true)} />
@@ -276,18 +245,19 @@ export function RoutineEditorView({ botId, routine, saved }: {
               />
             </>
           ) : null}
-          <span style={{ flex: 1 }} />
-          <Button disabled={!canSave} onClick={() => void save()} title="Save (⌘S)">
+          <Spacer />
+          <Button disabled={!canSave} onClick={() => void save()} title={`Save (${saveShortcut})`}>
             {busy ? <Spinner size={12} /> : null}
             {busy ? 'Saving…' : routine ? 'Save changes' : 'Create routine'}
+            {busy ? null : <span className="button-shortcut">{saveShortcut}</span>}
           </Button>
-        </div>
-      </div>
+        </HStack>
+      </VStack>
 
       <Dialog
         open={confirmDelete}
-        title="Delete routine?"
-        message="This deletes the routine and stops its future runs. This can't be undone."
+        title={tr('Delete routine?')}
+        message={tr("This deletes the routine and stops its future runs. This can't be undone.")}
         actions={[
           {
             title: 'Delete routine',
@@ -305,6 +275,21 @@ export function RoutineEditorView({ botId, routine, saved }: {
         ]}
         onClose={() => setConfirmDelete(false)}
       />
-    </div>
+    </VStack>
+  )
+}
+
+/** A trigger that has no fields here: what it does, and what to do about it. */
+function Note({ icon, title, detail }: { icon: string; title: string; detail: string }) {
+  return (
+    <CardSection>
+      <HStack gap={12} align="flex-start" className="routine-note">
+        <Icon name={icon} size={13} color="var(--secondary)" className="routine-note-icon" />
+        <VStack gap={3}>
+          <Text size="callout" weight="medium" tone="text">{title}</Text>
+          <Text size="callout" tone="secondary">{detail}</Text>
+        </VStack>
+      </HStack>
+    </CardSection>
   )
 }

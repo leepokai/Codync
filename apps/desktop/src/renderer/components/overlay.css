@@ -9,21 +9,33 @@
 .modal-dim {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--scrim);
   opacity: 0;
   transition: opacity var(--layout);
 }
 .modal-content {
+  /* Inside a sheet the page's fills step up to the sheet's: the ground is the card, grouped
+     rows and tiles are tints over it, text fields and secondary buttons a step stronger. */
+  --background: var(--sheet);
+  --surface: var(--group);
+  --bubble-agent: var(--group);
+  --bubble-user: var(--field);
   position: relative;
-  background: var(--background);
-  border-radius: 20px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  background: var(--sheet);
+  border-radius: var(--radius-xl);
   overflow: hidden;
-  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-xl);
   opacity: 0;
   transform: scale(0.96);
   transition: opacity var(--layout), transform var(--layout);
   display: flex;
   flex-direction: column;
+}
+/* A card that fits its content lets its page shrink to the card and scroll inside. */
+.modal-content > * {
+  min-height: 0;
 }
 .modal-card.shown .modal-dim {
   opacity: 1;
@@ -39,13 +51,32 @@
   pointer-events: none;
 }
 
+/* A sheet's title row: an optional icon tile, the title over a quiet line, trailing actions. */
 .modal-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 48px;
-  padding: 0 10px 0 16px;
+  gap: 12px;
+  min-height: 60px;
+  padding: 12px 12px 4px 20px;
   flex: none;
+}
+.modal-title {
+  flex: 1;
+  min-width: 0;
+}
+/* A title too long for one line wraps into even lines, so a name in it stays whole. */
+.modal-title h2 {
+  text-wrap: balance;
+}
+.modal-header-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-s);
+  background: var(--field);
+  color: var(--text);
 }
 
 /* Sheets, dialogs and menus: one subtle outline over the fill. */
@@ -58,7 +89,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border: 1px solid var(--outline);
   border-radius: inherit;
   pointer-events: none;
   z-index: 1;
@@ -83,40 +114,44 @@
 .dialog-dim {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--scrim);
 }
+/* A question with its answers on the right, Cancel first (macOS alerts' order). */
 .dialog-card {
   position: relative;
   transform: scale(0.98);
   transition: transform var(--fade);
-  width: min(320px, calc(100vw - 48px));
-  padding: 18px;
-  background: var(--bubble-agent);
-  border-radius: 22px;
-  box-shadow: 0 10px 48px rgba(0, 0, 0, 0.25);
+  width: min(340px, calc(100vw - 48px));
+  padding: 20px;
+  background: var(--sheet);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 .dialog-text {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  text-align: center;
   color: var(--text);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 .dialog-buttons {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 .dialog-button {
-  font-size: calc(12px * var(--scale));
-  font-weight: 500;
+  font-size: var(--text-body);
+  font-weight: 600;
   text-align: center;
-  padding: 8px 0;
-  border-radius: 999px;
-  background: var(--bubble-user);
+  min-height: calc(30px * var(--scale));
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  background: var(--field);
   color: var(--text);
   transition: transform var(--press), opacity var(--press);
 }
@@ -124,9 +159,24 @@
   background: var(--accent-fill);
   color: var(--on-accent);
 }
+/* A sheet's content: a full-height column on the sheet's color (SheetPage). */
+.sheet-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--background);
+}
+/* Forms in a sheet line up with its title. */
+.modal-content .card-form-content {
+  padding: 8px 20px 20px;
+}
+
+[data-modal-card]:focus {
+  outline: none;
+}
 .dialog-button.destructive {
-  background: var(--danger);
-  color: #fff;
+  background: var(--danger-fill);
+  color: var(--on-danger);
 }
 .dialog-button:active {
   transform: scale(0.98);
@@ -154,15 +204,20 @@
   opacity: 1;
 }
 .anchored-panel {
+  position: absolute;
   background: var(--bubble-agent);
-  border-radius: 14px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
   overflow: hidden;
   transform: scale(0.98);
   transition: transform var(--layout);
 }
 .anchored.shown .anchored-panel {
   transform: none;
+}
+/* Quick reactions above a message's menu rows. */
+.menu-reactions {
+  padding-bottom: 4px;
 }
 .menu-panel {
   padding: 6px;
@@ -182,8 +237,8 @@
   gap: 10px;
   width: 100%;
   padding: 6px 10px;
-  border-radius: 8px;
-  font-size: calc(12px * var(--scale));
+  border-radius: var(--radius-s);
+  font-size: var(--text-callout);
   color: var(--text);
   transition: background-color var(--hover);
 }

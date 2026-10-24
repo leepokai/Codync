@@ -90,7 +90,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
         "decideAccessRequest" => {
             let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
-            crate::remote::cloud::decide(hub, str_arg(&b, "requestId")?, approve).await?;
+            let id = str_arg(&b, "requestId")?;
+            crate::remote::cloud::decide(hub, id, approve, crate::remote::cloud::Approval::Code).await?;
             json!({})
         }
         "unclaim" => {

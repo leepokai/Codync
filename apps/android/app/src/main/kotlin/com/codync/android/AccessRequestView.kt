@@ -34,28 +34,29 @@ import com.kyant.shapes.RoundedRectangle
 import com.codync.android.design.*
 import kotlinx.coroutines.delay
 
-private enum class AccessPhase { Asking, Code, Approved, Ended }
+private enum class AccessPhase { Renew, Asking, Code, Approved, Ended }
 
 /** Asks an account computer for this phone: the code to check on it, until it answers (iOS `AccessRequestView`). */
 @Composable internal fun AccessRequestView(state: AppState, store: AppStore, computer: CloudComputer) {
     val dismiss = LocalDismissModal.current
     val ticket = state.access?.takeIf { it.computerId == computer.computerId }
-    val approved = state.computers.any { it.id == computer.computerId }
+    var requestId by remember { mutableStateOf(ticket?.requestId) }
+    var confirmRenewal by remember { mutableStateOf(computer.isGranted && ticket == null) }
+    var renewRequest by remember { mutableStateOf(false) }
+    val approved = requestId != null && state.approvedAccess[computer.computerId] == requestId
+    LaunchedEffect(ticket?.requestId) { ticket?.requestId?.let { requestId = it; renewRequest = false } }
     // The request ran and is over without an approval: denied, expired, or it failed.
     var asked by remember { mutableStateOf("access" in state.busy) }
     var ended by remember { mutableStateOf<String?>(null) }
     val asking = "access" in state.busy
-    LaunchedEffect(Unit) { if (!asking && !approved) store.requestAccess(computer) }
+    LaunchedEffect(Unit) { if (!asking && !approved && ticket == null && !confirmRenewal) store.requestAccess(computer) }
     LaunchedEffect(asking, approved) {
         if (asking) asked = true
         else if (asked && !approved) { ended = state.error ?: "${computer.name} didn't approve this request."; store.clearError(); asked = false }
     }
-    LaunchedEffect(approved) {
-        if (!approved) return@LaunchedEffect
-        Analytics.capture(AnalyticsEvent.ComputerPaired, mapOf("via" to "account", "computer" to Analytics.computerTag(computer.computerId)))
-        delay(1000); dismiss()
-    }
+    LaunchedEffect(approved) { if (approved) { delay(1000); dismiss() } }
     val phase = when {
+        confirmRenewal -> AccessPhase.Renew
         approved -> AccessPhase.Approved
         ticket != null -> AccessPhase.Code
         ended != null -> AccessPhase.Ended
@@ -69,6 +70,13 @@ private enum class AccessPhase { Asking, Code, Approved, Ended }
             AnimatedContent(phase, transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) }, label = "Access") { shown ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     when (shown) {
+                        AccessPhase.Renew -> {
+                            Text("This phone already has approval. If access no longer works, request a new approval on the computer.",
+                                style = Type.body, color = Palette.secondary, textAlign = TextAlign.Center)
+                            Text("This replaces this phone's current approval. The computer must be online to show the new code.",
+                                style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
+                            SecondaryButton("Request new approval") { confirmRenewal = false; renewRequest = true; store.requestAccess(computer, renew = true) }
+                        }
                         AccessPhase.Approved -> IconLabel("${computer.name} approved this phone", "checkmark.circle.fill", Palette.added, style = Type.headline)
                         AccessPhase.Code -> {
                             val code = ticket?.code.orEmpty()
@@ -90,7 +98,7 @@ private enum class AccessPhase { Asking, Code, Approved, Ended }
                         }
                         AccessPhase.Ended -> {
                             Text(ended.orEmpty(), style = Type.body, color = Palette.secondary, textAlign = TextAlign.Center)
-                            SecondaryButton("Ask again") { ended = null; store.requestAccess(computer) }
+                            SecondaryButton("Ask again") { ended = null; store.requestAccess(computer, renew = renewRequest) }
                         }
                         AccessPhase.Asking -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Spinner()

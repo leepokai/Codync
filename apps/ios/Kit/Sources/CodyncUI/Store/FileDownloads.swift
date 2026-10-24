@@ -19,7 +19,6 @@ public final class FileDownloads {
         public let id: String
         public let url: URL
         public let botId: String
-        public let threadId: String?
     }
     public private(set) var states: [String: State] = [:]
     public var export: Export?
@@ -53,7 +52,7 @@ public final class FileDownloads {
                 }
                 guard !Task.isCancelled, !retired else { try await writer.remove(url); return }
                 states[file.id] = .saved
-                let item = Export(id: file.id, url: url, botId: entry.botId, threadId: entry.threadId)
+                let item = Export(id: file.id, url: url, botId: entry.botId)
                 exported = item
                 export = item
             } catch is CancellationError {

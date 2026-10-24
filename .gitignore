@@ -23,3 +23,6 @@ brag-output*/
 
 # Launch video projects
 videos/
+
+# Python bytecode
+__pycache__/

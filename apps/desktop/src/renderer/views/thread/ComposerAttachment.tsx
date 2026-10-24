@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isImageName } from '@shared/models'
 import { Icon } from '../../components/Icon'
-import { font } from '../../lib/fonts'
+import { Text } from '../../components/Text'
 import type { OutgoingFile } from '../../store/bot-store'
 import { attachmentSymbol } from './Attachments'
 
@@ -33,8 +33,8 @@ export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remov
   return (
     <span className="file-chip">
       <Icon name={attachmentSymbol(file.name)} size={10} color="var(--secondary)" />
-      <span style={{ ...font('footnote'), color: 'var(--text)', maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</span>
-      <button aria-label={`Remove ${file.name}`} title="Remove" style={{ display: 'flex' }} onClick={remove}>
+      <Text size="footnote" tone="text" truncate className="file-chip-name">{file.name}</Text>
+      <button className="file-chip-remove" aria-label={`Remove ${file.name}`} title="Remove" onClick={remove}>
         <Icon name="xmark" size={10} weight="bold" color="var(--secondary)" />
       </button>
     </span>

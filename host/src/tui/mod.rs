@@ -2,8 +2,10 @@
 //! same HTTP + SSE API as the phone and desktop apps (locally: no pairing needed).
 
 mod app;
+mod appearance;
 mod connections;
 mod drafts;
+mod l10n;
 mod manage;
 mod md;
 mod net;
@@ -102,6 +104,7 @@ pub async fn run(url: String, token: Option<String>) -> Result<()> {
         }
         if dirty && !in_shell {
             app.tick();
+            app.report_screen();
             term.draw(|f| view::draw(f, &mut app))?;
             dirty = false;
         }

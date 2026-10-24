@@ -16,8 +16,10 @@ const appleLogo: IconNode = [
 
 // The closest Lucide icon for each SF Symbol, for platforms without SF Symbols (Linux, Windows).
 const map: Record<string, IconNode> = {
+  archivebox: L.Archive,
   'arrow.clockwise': L.RotateCw,
   'arrow.counterclockwise': L.RotateCcw,
+  'arrow.uturn.backward': L.Undo2,
   'arrow.down': L.ArrowDown,
   'arrow.down.to.line': L.Download,
   'arrow.down.circle': L.CircleArrowDown,
@@ -30,6 +32,7 @@ const map: Record<string, IconNode> = {
   'arrow.right.to.line': L.ArrowRightToLine,
   'arrow.triangle.2.circlepath': L.RefreshCw,
   'arrow.triangle.branch': L.GitBranch,
+  'arrow.turn.down.right': L.CornerDownRight,
   'arrow.up': L.ArrowUp,
   'arrow.up.right.square': L.SquareArrowOutUpRight,
   'arrowshape.turn.up.left': L.Reply,
@@ -39,6 +42,7 @@ const map: Record<string, IconNode> = {
   book: L.BookOpen,
   'book.closed': L.Book,
   'book.pages': L.BookOpenText,
+  brain: L.Brain,
   'bubble.left': L.MessageSquare,
   'bubble.left.fill': L.MessageSquare,
   'bubble.left.and.bubble.right': L.MessagesSquare,
@@ -112,6 +116,7 @@ const map: Record<string, IconNode> = {
   macstudio: L.Server,
   magnifyingglass: L.Search,
   mic: L.Mic,
+  moon: L.Moon,
   'mic.fill': L.Mic,
   'mic.slash': L.MicOff,
   'mic.slash.fill': L.MicOff,
@@ -161,6 +166,7 @@ const map: Record<string, IconNode> = {
   terminal: L.Terminal,
   'text.bubble': L.MessageSquareText,
   tray: L.Inbox,
+  'tray.and.arrow.up': L.ArchiveRestore,
   trash: L.Trash2,
   waveform: L.AudioLines,
   wifi: L.Wifi,

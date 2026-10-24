@@ -1,186 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { ModalHeader, useDismiss } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
+import { HStack, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import {
-  appConnected, emptyPage, errorText, hasHiddenItems, market, replacePage, revealMore, sleep, visible,
-  type ComposioApp, type ComposioConnect, type ComposioStatus,
+  errorText, market, sleep,
+  type ComposioApp, type ComposioConnect,
 } from './market-models'
-import { AppLogo, ErrorText, Field, FormSheet, ItemGrid, MarketRow, MarketSection, SkeletonGrid, TileIcon, WebLink, filled, lineClamp } from './pieces'
-import { pluginsFor } from './plugins'
+import { AppLogo, ErrorText, Field, filled } from './pieces'
+import { useTr } from '../../lib/use-language'
 
-// Apps through Composio (host/src/market/composio.rs): set up a key once, connect
-// apps with Composio's hosted sign-in, then turn them on per bot like any
-// other connector.
-
-export { AppLogo }
-
-/** The Marketplace's "Apps" section. */
-export function ComposioSection({ query, searchToken }: {
-  query: string
-  /** Bumped by the Marketplace when the user submits a search. */
-  searchToken: number
-}) {
-  const store = useStore()
-  const [status, setStatus] = useState<ComposioStatus | null>(null)
-  const [apps, setApps] = useState(emptyPage<ComposioApp>)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [settingUp, setSettingUp] = useState(false)
-  const [connecting, setConnecting] = useState<ComposioApp | null>(null)
-  const request = useRef(0)
-  const queryRef = useRef(query)
-  queryRef.current = query
-
-  const load = async () => {
-    const client = store.client
-    if (!client) return
-    const id = ++request.current
-    const search = queryRef.current
-    setLoading(true)
-    try {
-      const s = await market.composioStatus(client)
-      const page = s.configured ? await market.composioApps(client, search) : []
-      if (request.current !== id) return
-      setStatus(s)
-      setApps(replacePage(page, (a) => a.slug))
-      setError(null)
-    } catch (e) {
-      if (request.current === id) setError(errorText(e))
-    } finally {
-      if (request.current === id) setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void load()
-    return () => void request.current++
-  }, [searchToken])
-
-  const configured = status?.configured === true
-  return (
-    <MarketSection title="Apps">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {!configured ? (
-          <ItemGrid>
-            <MarketRow
-              title="Composio"
-              subtitle="Gmail, Slack, GitHub, Notion and 1,000 more apps"
-              added={false}
-              busy={status === null && loading}
-              addLabel="Set up"
-              icon={<TileIcon name="square.grid.3x3" />}
-              onAdd={() => setSettingUp(true)}
-            />
-          </ItemGrid>
-        ) : loading ? (
-          <SkeletonGrid />
-        ) : apps.items.length === 0 ? (
-          <span style={{ color: 'var(--secondary)' }}>{query ? `No apps match “${query}”.` : "Couldn't load apps."}</span>
-        ) : (
-          <ItemGrid>
-            {visible(apps).map((app) => (
-              <MarketRow
-                key={app.slug}
-                title={app.name}
-                subtitle={app.description ?? app.slug}
-                added={appConnected(app)}
-                addLabel="Connect"
-                icon={<AppLogo url={app.logo} name={app.name} />}
-                onAdd={() => setConnecting(app)}
-              />
-            ))}
-          </ItemGrid>
-        )}
-        {!loading && hasHiddenItems(apps) && configured ? (
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Button kind="secondary" onClick={() => setApps(revealMore)}>Load more apps</Button>
-          </div>
-        ) : null}
-        {error ? <span style={{ ...font('footnote'), color: 'var(--danger)' }}>{error}</span> : null}
-        {configured ? (
-          <button style={{ display: 'flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start', ...font('footnote'), color: 'var(--tertiary)' }} onClick={() => setSettingUp(true)}>
-            <Icon name="key" size={10} />
-            Composio settings
-          </button>
-        ) : null}
-      </div>
-      <FormSheet open={settingUp} onClose={() => setSettingUp(false)}>
-        <ComposioKeySheet
-          status={status}
-          done={(s) => {
-            setStatus(s)
-            void load()
-          }}
-        />
-      </FormSheet>
-      <FormSheet open={connecting !== null} onClose={() => setConnecting(null)}>
-        {connecting ? (
-          <ComposioConnectSheet
-            key={connecting.slug}
-            app={connecting}
-            done={() => {
-              void load()
-              void pluginsFor(store).refresh()
-            }}
-          />
-        ) : null}
-      </FormSheet>
-    </MarketSection>
-  )
-}
-
-/** Paste (or remove) the Composio API key; the host checks it with Composio first. */
-export function ComposioKeySheet({ status, done }: { status: ComposioStatus | null; done: (s: ComposioStatus) => void }) {
-  const store = useStore()
-  const dismiss = useDismiss()
-  const [key, setKey] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const save = async (key: string) => {
-    const client = store.client
-    if (!client) return
-    setSaving(true)
-    try {
-      done(await market.setComposioKey(client, key))
-      dismiss()
-    } catch (e) {
-      setError(errorText(e))
-    }
-    setSaving(false)
-  }
-
-  const keyUrl = status?.keyUrl ?? 'https://platform.composio.dev'
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
-      <ModalHeader title="Composio" trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={!key.trim()} onClick={() => void save(key)} />} />
-      <CardForm>
-        <CardSection
-          title="Composio API key"
-          footer={`Composio signs you in to apps like Gmail and Slack and runs their tools for your bots. The key stays on ${store.hostName}.`}
-        >
-          <Field label="API key" value={key} onChange={setKey} secret placeholder={status?.configured ? 'Saved (paste to replace)' : 'ak_…'} />
-          {URL.canParse(keyUrl) ? <WebLink title="Get a key from Composio" url={keyUrl} style={font('footnote')} /> : null}
-        </CardSection>
-        {status?.configured ? (
-          <CardSection footer="Bots lose the apps you connected until you add a key again.">
-            <button style={{ color: 'var(--danger)' }} onClick={() => void save('')}>Remove key</button>
-          </CardSection>
-        ) : null}
-        {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
-      </CardForm>
-    </div>
-  )
-}
 
 /**
  * Connects one app: Composio's sign-in page (opened here, finished anywhere),
  * or a form for apps that use a key.
  */
 export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioApp; requestId?: string; done: () => void }) {
+  const tr = useTr()
   const store = useStore()
   const dismiss = useDismiss()
   const [plan, setPlan] = useState<ComposioConnect | null>(null)
@@ -273,39 +111,39 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
       : null
 
   const waitingRow = (text: string) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <HStack gap={8}>
       <Spinner />
-      <span style={{ color: 'var(--secondary)' }}>{text}</span>
-    </div>
+      <Text tone="secondary">{text}</Text>
+    </HStack>
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
+    <SheetPage>
       <ModalHeader title={`Connect ${app.name}`} trailing={trailing} />
       <CardForm>
         <CardSection>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 0' }}>
+          <HStack gap={14} className="market-card-header">
             <AppLogo url={app.logo} name={app.name} size={52} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-              <span style={font('title3', 'semibold')}>{app.name}</span>
-              {app.description ? <span style={{ ...font('subheadline'), color: 'var(--secondary)', ...lineClamp(3) }}>{app.description}</span> : null}
-            </div>
-          </div>
+            <VStack gap={2} shrink>
+              <Text size="title3" weight="semibold">{app.name}</Text>
+              {app.description ? <Text size="subheadline" tone="secondary" lines={3}>{app.description}</Text> : null}
+            </VStack>
+          </HStack>
         </CardSection>
         {connected ? (
           <CardSection footer={`Turn ${app.name} on for a bot in the bot's settings, under Connectors.`}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--added)' }}>
+            <HStack as="span" gap={6} className="composio-connected">
               <Icon name="checkmark.circle.fill" size={12} />
               Connected
-            </span>
+            </HStack>
           </CardSection>
         ) : needsFields ? (
           <CardSection footer={`Sent to Composio, which keeps it for ${app.name}.`}>
             {(plan?.fields ?? []).map((f) => (
-              <div key={f.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <VStack key={f.name} gap={4}>
                 <Field label={f.label} value={values[f.name] ?? ''} secret={f.secret} placeholder={f.label} onChange={(v) => setValues((old) => ({ ...old, [f.name]: v }))} />
-                {f.description ? <span style={{ ...font('caption'), color: 'var(--secondary)' }}>{f.description + (f.required ? '' : ' (optional)')}</span> : null}
-              </div>
+                {f.description ? <Text size="caption" tone="secondary">{f.description + (f.required ? '' : tr(` (optional)`))}</Text> : null}
+              </VStack>
             ))}
           </CardSection>
         ) : plan?.status === 'redirect' ? (
@@ -325,6 +163,6 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
         ) : null}
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>
-    </div>
+    </SheetPage>
   )
 }

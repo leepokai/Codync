@@ -188,7 +188,7 @@ class PushService : FirebaseMessagingService() {
                         alert = PushAlert.decode(local.identity().openPush(sealed, computerId).toString(Charsets.UTF_8))
                     }
                 } catch (_: Exception) { /* Locked/unavailable key: show only a generic fallback. */ }
-                NotificationDisplay.alert(context, scope, computerId, botId, alert)
+                NotificationDisplay.alert(context, scope, computerId, botId, alert, data["category"])
             } catch (_: Exception) { /* A malformed push cannot crash the Firebase service. */ }
             }
         }
@@ -198,6 +198,8 @@ class PushService : FirebaseMessagingService() {
 internal object NotificationDisplay {
     const val ALERTS = "codync-alerts"
     const val TASKS = "codync-tasks"
+    /** The tapped alert's kind (the host's `AlertKind`), for `notification_opened`. */
+    const val ALERT_KIND = "codync:alertKind"
     fun channels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(ALERTS, "Bot updates", NotificationManager.IMPORTANCE_HIGH))
@@ -207,18 +209,20 @@ internal object NotificationDisplay {
         val url = Uri.Builder().scheme(BuildConfig.URL_SCHEME).authority("bot").appendPath(bot).appendQueryParameter("scope", scope).appendQueryParameter("computer", computer).build()
         return Intent(context, MainActivity::class.java).setAction(Intent.ACTION_VIEW).setData(url)
     }
-    private fun builder(context: Context, scope: String, computer: String, bot: String, channel: String): NotificationCompat.Builder {
-        val pending = PendingIntent.getActivity(context, 0, open(context, scope, computer, bot), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    /** An alert's tap carries its kind; its own request code keeps it apart from the same bot's task. */
+    private fun builder(context: Context, scope: String, computer: String, bot: String, channel: String, alertKind: String? = null): NotificationCompat.Builder {
+        val intent = open(context, scope, computer, bot).apply { alertKind?.let { putExtra(ALERT_KIND, it) } }
+        val pending = PendingIntent.getActivity(context, if (alertKind != null) 1 else 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val generic = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.app_name)).setContentText("A bot has an update.").build()
         return NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification).setContentIntent(pending)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(generic).setGroup("$scope/$computer")
     }
     /** The alert's title, what happened and its text; with the chat's face, a conversation from the bot. */
-    fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert) {
+    fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert, kind: String?) {
         channels(context)
         val tag = "$scope/$computer/$bot"
-        val builder = builder(context, scope, computer, bot, ALERTS).setContentTitle(alert.title).setContentText(alert.body)
+        val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty()).setContentTitle(alert.title).setContentText(alert.body)
             .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
             .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
         alert.conversation(bot)?.let { conversation ->

@@ -1,7 +1,9 @@
 import { SSH_INSTALL_COMMAND, type SSHProfile, type SSHStatus } from '@shared/ssh'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { font } from '../../lib/fonts'
+import { HStack, IconSlot, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
+import { analytics } from '../../store/analytics'
 import { Reveal } from './parts'
 import { sshStatusDetail } from '@shared/ssh-startup'
 
@@ -32,13 +34,13 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
   return (
     <div className="settings-card settings-appear">
       <div className="settings-row">
-        <span style={{ width: 22, display: 'flex', justifyContent: 'center', color: 'var(--secondary)' }}>
+        <IconSlot width={22} tone="secondary">
           <Icon name="terminal" size={13} />
-        </span>
-        <div className="settings-stack" style={{ flex: 1 }}>
-          <span style={font('callout', 'medium')}>{profile.name || profile.host}</span>
-          <span style={{ ...font('caption'), color: problem ? 'var(--warning)' : 'var(--secondary)' }}>{line}</span>
-        </div>
+        </IconSlot>
+        <VStack grow className="settings-stack">
+          <Text size="callout" weight="medium">{profile.name || profile.host}</Text>
+          <Text size="caption" tone={problem ? 'attention' : 'secondary'}>{line}</Text>
+        </VStack>
         {active ? (
           <IconButton title="Disconnect" icon="stop.circle" onClick={() => bridge.disconnect(profile.id)} />
         ) : (
@@ -49,26 +51,26 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
       </div>
       <Reveal show={status.kind === 'confirmHostKey'}>
         {status.kind === 'confirmHostKey' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ ...font('caption'), color: 'var(--secondary)' }}>
+          <VStack gap={6}>
+            <Text size="caption" tone="secondary">
               First connection to {status.name}. Check that its host key fingerprint matches what the computer's owner sees (
-              <code style={{ fontFamily: 'var(--mono)' }}>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>).
-            </span>
+              <code className="settings-mono">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>).
+            </Text>
             {status.fingerprints.map((f) => (
-              <span key={f} className="selectable" style={font('caption', undefined, 'monospaced')}>{f}</span>
+              <Text key={f} size="caption" mono className="selectable">{f}</Text>
             ))}
-            <div style={{ display: 'flex', gap: 8 }}>
+            <HStack align="stretch" gap={8}>
               <Button onClick={() => bridge.trustHostKey(profile.id)}>Trust and connect</Button>
               <Button kind="secondary" onClick={() => bridge.disconnect(profile.id)}>Cancel</Button>
-            </div>
-          </div>
+            </HStack>
+          </VStack>
         ) : null}
       </Reveal>
       <Reveal show={status.kind === 'notInstalled' && !dev}>
-        <div className="settings-row" style={{ gap: 6 }}>
+        <HStack gap={6} className="settings-row">
           <span className="settings-code selectable">{SSH_INSTALL_COMMAND}</span>
-          <IconButton title="Copy install command" icon="doc.on.doc" onClick={() => window.codync.app.copy(SSH_INSTALL_COMMAND)} />
-        </div>
+          <IconButton title="Copy install command" icon="doc.on.doc" onClick={() => { analytics.track({ event: 'link_opened', link: 'install_command' }); window.codync.app.copy(SSH_INSTALL_COMMAND) }} />
+        </HStack>
       </Reveal>
     </div>
   )

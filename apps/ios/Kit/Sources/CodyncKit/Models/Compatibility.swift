@@ -11,7 +11,7 @@ public enum VersionMismatch: Equatable, Sendable {
 
     /// The oldest host this app works with. Raise it only when the app starts depending on
     /// something older hosts don't have (an optional feature hides its control instead).
-    public static let minHost = "2.12.0"
+    public static let minHost = "2.20.1"
 
     /// Checks this app (`app`) against a host's version and `minApp` (nil from hosts that predate it).
     public static func check(app: String, minHost: String = minHost, hostVersion: String, minApp: String?) -> VersionMismatch? {
@@ -72,7 +72,9 @@ public enum AppStoreRelease {
             struct Result: Decodable { var version: String? }
             var results: [Result]
         }
-        var request = URLRequest(url: URL(string: "https://itunes.apple.com/lookup?id=\(appID)")!)
+        // Apple's CDN keeps the bare URL for up to a day after a release; a query string of its own skips it.
+        let url = URL(string: "https://itunes.apple.com/lookup?id=\(appID)&_=\(Int(Date.now.timeIntervalSince1970))")!
+        var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await session.data(for: request)

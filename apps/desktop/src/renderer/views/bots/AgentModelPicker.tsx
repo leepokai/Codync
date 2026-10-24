@@ -1,17 +1,23 @@
 import { useEffect, useRef } from 'react'
 import { ChoicePicker, IconButton, Pill, Spinner } from '../../components/Controls'
-import { font } from '../../lib/fonts'
+import { HStack, Spacer, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import type { AgentModelsState } from './agent-models'
+import { useTr } from '../../lib/use-language'
+
 
 /** The bot's model and its options, from the list `useAgentModels` loaded for its agent. */
-export function AgentModelPicker({ backend, models, selection, onChange, options: chosen, onOptionsChange }: {
+export function AgentModelPicker({ backend, models, selection, onChange, options: chosen, onOptionsChange, sessionNote = true }: {
   backend: string
   models: AgentModelsState
   selection: string | null | undefined
   onChange: (model: string | null) => void
   options: Record<string, string>
   onOptionsChange: (options: Record<string, string>) => void
+  /** Says that a change starts a new session: true for a bot's own model, not for one it hasn't used yet. */
+  sessionNote?: boolean
 }) {
+  const tr = useTr()
   const { catalog, loading, failure } = models
   const custom = backend === 'custom'
 
@@ -40,52 +46,52 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>Model</span>
-        <span style={{ flex: 1 }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+    <VStack gap={6}>
+      <HStack gap={8}>
+        <Text tone="text" className="model-picker-label">{tr(`Model`)}</Text>
+        <Spacer />
+        <HStack gap={4} shrink>
           {custom ? null : (
             // Loading and refresh share one fixed slot, so the row never grows for loading.
-            <div style={{ width: 28, height: 28, display: 'grid', placeItems: 'center', flex: 'none' }}>
-              <div style={{ gridArea: '1 / 1', opacity: loading ? 0 : 1, transition: 'opacity var(--fade)', pointerEvents: loading ? 'none' : undefined }}>
+            <div className="model-picker-slot">
+              <div className={`model-picker-refresh ${loading ? 'hidden' : ''}`}>
                 <IconButton title={failure ? 'Retry model list' : 'Refresh model list'} icon="arrow.clockwise" disabled={loading} onClick={models.reload} />
               </div>
               {loading ? (
-                <div className="fade-in" style={{ gridArea: '1 / 1', display: 'flex' }} aria-label="Loading available models">
+                <HStack align="stretch" className="fade-in" aria-label="Loading available models">
                   <Spinner size={12} />
-                </div>
+                </HStack>
               ) : null}
             </div>
           )}
           {custom || (!loading && (!catalog || empty)) ? (
-            <Pill outlined style={{ minWidth: 0, maxWidth: 160 }}>
-              <input value={value} placeholder="Default" spellCheck={false} onChange={(e) => set(e.target.value)} style={{ textAlign: 'right', width: 142, maxWidth: '100%', minWidth: 0, color: 'var(--text)', userSelect: 'text' }} />
+            <Pill outlined className="model-picker-pill">
+              <input className="model-picker-input" value={value} placeholder="Default" spellCheck={false} onChange={(e) => set(e.target.value)} />
             </Pill>
           ) : (
-            <div style={{ display: 'flex', minWidth: 0 }}>
+            <HStack align="stretch" shrink>
               <ChoicePicker selection={value} options={options} onChange={set} />
-            </div>
+            </HStack>
           )}
-        </div>
-      </div>
+        </HStack>
+      </HStack>
       {modelOptions.map((o) => {
         const fallback = o.values.find((v) => v.id === o.default)?.name
         const choices = [{ id: '', label: fallback ? `Default · ${fallback}` : 'Default' }, ...o.values.map((v) => ({ id: v.id, label: v.name }))]
         return (
-          <div key={o.id} className="fade-in" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>{o.name}</span>
-            <span style={{ flex: 1 }} />
+          <HStack key={o.id} gap={8} className="fade-in">
+            <Text tone="text" className="model-picker-label">{o.name}</Text>
+            <Spacer />
             <ChoicePicker selection={chosen[o.id] ?? ''} options={choices} onChange={(v) => setOption(o.id, v)} />
-          </div>
+          </HStack>
         )
       })}
       {!custom && !loading && failure ? (
-        <span style={{ ...font('caption'), color: 'var(--warning)' }}>{failure}</span>
+        <Text size="caption" tone="attention">{failure}</Text>
       ) : !custom && !loading && empty ? (
-        <span style={{ ...font('caption'), color: 'var(--secondary)' }}>This agent doesn't advertise a model list. Leave Default or enter a model ID.</span>
+        <Text size="caption" tone="secondary">{tr(`This agent doesn't advertise a model list. Leave Default or enter a model ID.`)}</Text>
       ) : null}
-      <span style={{ ...font('caption'), color: 'var(--secondary)' }}>Changing the model starts a new agent session. Chat history is kept.</span>
-    </div>
+      {sessionNote ? <Text size="caption" tone="secondary">{tr(`Changing the model starts a new agent session. Chat history is kept.`)}</Text> : null}
+    </VStack>
   )
 }

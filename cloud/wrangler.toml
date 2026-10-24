@@ -41,8 +41,10 @@ name = "HOOK_LIMITER"
 namespace_id = "1021"
 simple = { limit = 60, period = 60 }
 
+# Sweep expired requests and nonces; wake the release gate (src/release-gate.ts).
+# src/index.ts routes on these exact strings (SWEEP_CRON, RELEASE_GATE_CRON): change both together.
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["*/15 * * * *", "*/5 * * * *"]
 
 # dev: the deployed test environment at dev-api.codync.dev (Clerk development instance).
 [env.dev]

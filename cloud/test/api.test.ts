@@ -539,8 +539,12 @@ describe("cron", () => {
     expect((await call("GET", `/v1/access-requests/${id}`, { token: u.token })).body.status).toBe("expired");
     const decision = await call("POST", `/v1/host/access-requests/${id}/decision`, { key: host.sign, body: { decision: "approve" } });
     expect(decision.body.error.code).toBe("requestExpired");
-    await worker.scheduled(createScheduledController(), env);
+    await worker.scheduled(createScheduledController({ cron: "*/15 * * * *" }), env);
     const row = await env.DB.prepare("SELECT status, host_nonce FROM access_requests WHERE id = ?").bind(id).first();
     expect(row).toEqual({ status: "expired", host_nonce: null });
+  });
+
+  it("refuses a cron it has no job for", async () => {
+    await expect(worker.scheduled(createScheduledController({ cron: "*/3 * * * *" }), env)).rejects.toThrow("unknown cron");
   });
 });

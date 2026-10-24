@@ -1,6 +1,6 @@
+import type { SignInProvider } from '@shared/analytics'
 import { Observable, useModel } from '../lib/observable'
-
-export type SignInProvider = 'apple' | 'google'
+import { analytics } from './analytics'
 
 export interface AccountInfo {
   userId: string
@@ -19,6 +19,8 @@ export class AccountSession extends Observable {
   errorMessage: string | null = null
   user: AccountInfo | null = null
   cloudURL: string | null = null
+  /** The last sign-in started here, for `signed_in`. */
+  provider: SignInProvider | null = null
 
   get isSignedIn() {
     return this.user !== null
@@ -41,7 +43,10 @@ export class AccountSession extends Observable {
   }
 
   async signIn(provider: SignInProvider) {
-    await window.codync.account.signIn(provider)
+    this.provider = provider
+    analytics.track({ event: 'sign_in_started', provider })
+    const reason = await window.codync.account.signIn(provider)
+    if (reason) analytics.track({ event: 'sign_in_failed', provider, reason })
   }
 
   async signOut() {

@@ -65,3 +65,14 @@ import Testing
     let deliveredItems = ChatItem.build([delivered])
     #expect(pendingItems.map(\.id) == deliveredItems.map(\.id))
 }
+
+/// The trace unfolds the turn running now, not a queued message that already holds the next turn.
+@Test func traceRunningTurnSkipsQueuedMessages() {
+    func entry(_ id: String, turn: Int64, status: String? = nil) -> Entry {
+        Entry(id: id, seq: 0, botId: "b", rev: 0, kind: "user", turn: turn,
+              data: EntryData(text: id, status: status), createdAt: 0, updatedAt: 0)
+    }
+    let entries = [entry("u1", turn: 1), entry("t1", turn: 1), entry("q", turn: 2, status: "queued")]
+    #expect(TraceView.runningTurn(entries, working: true) == 1)
+    #expect(TraceView.runningTurn(entries, working: false) == nil)
+}

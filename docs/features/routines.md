@@ -7,11 +7,15 @@ conversation details panel and the iPhone's **More → Routines** show a compact
 that " in the composer; **+** opens the form for doing it by hand. A row opens
 the same form filled in, with delete and test run beside Save; the row's switch
 pauses and resumes. Run results appear in the chat. The form is name, instruction, a **When to run** type (Schedule or Webhook, the two
-Claude Code routines also offer besides GitHub events) and a run timeout; cron is
-written directly as five fields plus an IANA time zone, and the host checks it and
-shows the summary and next run. One-off times, intervals, events and multiple
+Claude Code routines also offer besides GitHub events) and a run timeout. A schedule
+picks how often it repeats (Hourly, Daily, Weekdays, Weekly, or Custom for a cron
+written as five fields), the time and day, and an IANA time zone chosen from a list
+filtered as you type (the device's own zone by default); the host compiles the
+cron, checks it and shows the summary and next run. One-off times, intervals, events and multiple
 triggers are left to the bot: editing such a routine shows its current triggers as
-the selected type and keeps them until Schedule or Webhook replaces them. The TUI (`n` form with a typed When, `c` asks the bot) match.
+the selected type and keeps them until Schedule or Webhook replaces them. The TUI (`n` form with a typed When: `daily 09:00`, `weekdays 09:00`,
+`weekly mon 09:00`, `hourly :30`, `every 2h`, a cron or `webhook`, optionally ending
+in a time zone that Tab completes; `c` asks the bot) match.
 A saved webhook routine's form shows its public URL and key (copy, reveal, replace
 with confirmation; TUI `w` copies a curl command and `W` replaces the
 key). Creation/update notices open the routine.
@@ -20,8 +24,8 @@ key). Creation/update notices open the routine.
 
 The editor keeps task fields first, then a When to run type menu and its settings.
 Inputs use the shared palette with a visible filled surface. New recurring schedules
-default to a typed cron expression and an explicit IANA time zone; the host
-describes it and shows the next run. Run timeout is under an animated Run settings
+default to Daily at 09:00 in the device's time zone; Custom takes a typed cron. The
+host describes the schedule and shows the next run. Run timeout is under an animated Run settings
 expansion. A fixed footer keeps Create routine / Save changes and inline errors
 visible while the form scrolls.
 The layout uses the same light/dark tokens, type family and custom controls as the
@@ -32,6 +36,11 @@ rest of Codync, with Reduce Motion support.
 Every agent receives the `routines` MCP server automatically; no marketplace
 installation is needed. Its tools are `list_routines`, `save_routine`,
 `set_routine_enabled`, `delete_routine`, `run_routine` and `routine_webhook`.
+They reach only the bot's own routines, so every bot test-runs its own with
+`run_routine`, also when another bot asks it to (such as a
+[team manager](bot-collaboration.md#team-management)). A bot never
+runs another bot's routine: `run_routine` with an id that isn't its own fails
+with a hint to ask that bot with `message_bot` instead.
 The same setup guidance is included in newly rendered agent context and MCP
 initialization instructions.
 
@@ -45,7 +54,8 @@ a schedule alone should not trigger an unsolicited test execution.
 
 A deterministic ACP fixture exercises the actual advertised MCP subprocess:
 initialize, discover all six tools, reject an invalid schedule, create, read,
-edit, pause/resume, fetch webhook credentials, delete, and execute a test run.
+edit, pause/resume, fetch webhook credentials, delete, refuse a routine that
+isn't the bot's, and execute a test run.
 This verifies tool wiring and persisted behavior; it does not guarantee how every
 provider model will interpret an ambiguous natural-language request.
 
@@ -72,9 +82,18 @@ next deadlines and run records are saved in SQLite (`routines.v1`). Due triggers
 are coalesced into one run per routine; only one routine per bot is dispatched at a
 time. Bot actors serialize routine work with ordinary conversation work.
 
-Each run gets its own conversation thread and agent session. Final results appear
-in the main conversation and use normal encrypted push delivery. Returning `(pass)`
-or no text completes silently. A test run can run a paused routine. Pausing or
+A run talks in the bot's chat: a "Routine · <name>" notice, then the run's trace and
+its reply, which is the result, all in the turn the notice takes when the run begins (a
+message sent meanwhile gets the next one). It runs in a fresh agent session of its own
+(`routines::session_slot`, kept in kv `lane.session.<bot>@<bot>/routine-<run>` so a
+restart can resume it, and forgotten once the run's outcome is saved). When the run ends, the agent stops if nothing else has a
+session open (it ran just for the run; not on Windows, see
+[agent processes](../architecture/conversation-runtime.md)); otherwise only the run's
+session closes (agents that can close sessions). Either way a frequent schedule
+doesn't keep a set of MCP servers alive per run. A successful run alerts with its
+reply through normal encrypted push delivery; a failed or interrupted one leaves a
+"Routine could not finish" notice. Returning `(pass)` or no text completes silently.
+Replying to a run's result goes to the bot's main session, with the result quoted. A test run can run a paused routine. Pausing or
 deleting cancels pending runs; work already running can finish. Deleting a bot
 cancels its pending work. Missed intervals coalesce rather than replaying a backlog.
 
@@ -82,14 +101,42 @@ Pending runs survive a restart. The actor claims a run only when it reaches the
 front of its queue, using the latest saved instruction. Runs interrupted during
 execution become `recovering` and load their existing agent session. If the
 provider cannot load it, they become `interrupted` instead of replaying the task
-in a new session. Session recovery cannot guarantee exactly-once external side
-effects; inspect the transcript before retrying an interrupted action.
+in a new session (the retry rules below still apply). Session recovery cannot
+guarantee exactly-once external side effects; inspect the transcript before retrying
+an interrupted action.
+
+### Failed runs (`routines/retry.rs`)
+
+A failed or interrupted run is tried again only when that can't repeat work. The
+host checks the run's turn for a tool call whose ACP kind isn't `read`, `search`,
+`fetch` or `think` (an unknown kind counts as acting; `store::acted_in_turn`).
+
+- **Nothing acted** (a rate limit, an agent that didn't start, a session it couldn't
+  reload): a new run with the same event waits 1, 5, then
+  15 minutes (`attempt`, `notBefore`). The failure's notice is an info line ending in
+  "Trying again in N minutes." with no alert; the routines list shows "Retrying at …"
+  (TUI: `retry <when>`). A scheduled fire or a test run while it waits runs it at once,
+  and a scheduled run that fails while the next fire is already queued has that fire
+  as its retry ("Trying again now."). A waiting retry doesn't make the routine busy
+  (deliveries queue as usual) and the bot's Stop leaves it; pausing or deleting the
+  routine cancels it. A paused routine (unless it was a test run) isn't retried
+  automatically.
+- **It acted, hit its time limit (it could hold the bot that long again; this includes an
+  agent whose session setup ran past it), or the three
+  retries failed**: the failure notice (error style, alert)
+  carries `retry: true` and the run keeps its event (`retryable`). The notice's retry
+  button (TUI: `F`, or `F` on a picked notice) calls `retryRoutineRun`, which runs the
+  work again with that event, also for a paused test run, and takes the button off.
+  Only a routine's latest such failure keeps its event (an older one's button goes),
+  so failed webhook payloads can't pile up; deleting the routine (or its bot) drops the
+  event and the button. Retrying while the routine has an active run is refused
+  (busy); a paused routine is refused until it's resumed.
 
 Each run has a timeout (default one hour, configurable from 1 to 86400 seconds).
-A hung agent is terminated so subsequent work can proceed. Completed results are
-persisted before publication, with stable transcript IDs to avoid duplicate
-results after restart. Failed publication retries without rerunning the agent.
-The latest 1000 terminal runs are retained globally, plus active/unpublished runs;
+A hung agent is terminated so subsequent work can proceed. A run's outcome is
+saved before it is reported, and a failure notice has a stable transcript ID, so a
+restart never reports it twice. Failed reporting retries without rerunning the agent.
+The latest 1000 terminal runs are retained globally, plus active, unpublished and retryable runs;
 the panel returns the latest 200 runs per bot. Deduplication lasts while the
 corresponding run record is retained.
 
@@ -125,7 +172,8 @@ the same checks (`host/src/routines/hooks.rs`); the protocol is
 - **Delivery**: `X-Delivery-Id`, `X-GitHub-Delivery` or `Idempotency-Key`
   deduplicates retries against retained run records. Bodies are limited to 64 KB.
   A paused routine refuses (`409`); a non-matching event is accepted and ignored.
-  While the routine is running, the local endpoint answers `409` and the cloud
+  While the routine has a run under way or queued (a retry waiting for its time
+  doesn't count), the local endpoint answers `409` and the cloud
   queue retries later (30 s doubling to 15 min).
 - **Offline**: the cloud keeps public deliveries for up to 72 hours and hands them
   over one at a time once the host is back; the host acknowledges each.
@@ -148,7 +196,8 @@ All normal methods use the existing authenticated host API / authorized E2E chan
 | `saveRoutine` | `botId`, optional `id`, `name`, `instruction`, `schedule` form or `triggers`, optional `enabled`, `timeoutSeconds` |
 | `setRoutineEnabled` | `botId`, `id`, `enabled` |
 | `deleteRoutine` | `botId`, `id` |
-| `runRoutine` | `botId`, `id` |
+| `runRoutine` | `botId`, `id` (a waiting retry runs now instead) |
+| `retryRoutineRun` | `botId`, `runId` of a failed run whose notice offers a retry; returns the new `run` |
 | `routineWebhook` | `botId`, `id`, optional `rotate`; returns `url` (public or null), `localUrl`, `key`, `connected` |
 
 The local-only `routineCall` backs the MCP tools. Each MCP instance is scoped to
@@ -182,7 +231,13 @@ checks real scheduled execution, webhook credentials, delivery deduplication,
 pause/delete/edit while queued, crash recovery in the same session, unsupported
 session recovery, hung-agent timeout, recurring work after failure, single-host
 ownership, silent completion, and the advertised routine MCP server (including key
-rotation). Unit tests cover timezone calculation, invalid schedules, event filters,
+rotation). `host/tests/routine_retry_e2e.rs` checks a webhook run that failed before
+acting waiting 1 minute with its event (and running at once on a test run), and one
+that acted waiting for `retryRoutineRun`, which reuses the event once. Unit tests cover
+the retry ladder, a queued scheduled fire standing in for the retry, paused routines,
+keeping only the latest failure's event, the user retry's busy/paused refusals and
+deleting the routine (`routines/retry.rs`), waiting retries vs. Stop, the tick and a
+scheduled fire (`routines/runner.rs`), timezone calculation, invalid schedules, event filters,
 persistence, pause/resume, bot ownership, bearer/HMAC checks, GitHub event mapping and
 the relay's hook registration, acks and retries. `cloud/test/hooks.test.ts` covers the
 edge checks, queue limits, deduplication, ordering, retry and expiry; the cloud e2e
@@ -210,8 +265,8 @@ the routine by name. No reference routine was run, paused or deleted during this
 comparison.
 
 Codync retains that compact sidebar and the chat-based setup path, while providing
-a direct editor where cron is typed as written (the earlier frequency/clock pickers
-were removed as too heavy). Existing duration intervals keep their cadence until
+a direct editor: a light Repeat choice with the time and day for the common
+schedules, and Custom for a cron typed as written. Existing duration intervals keep their cadence until
 explicitly replaced. Editing hydrates the original expression, timezone and interval
 exactly; compound and provider-event triggers retain a lossless Keep existing
 triggers fallback. Expired one-shot timestamps are preserved when editing other fields.
@@ -222,9 +277,14 @@ Edit with bot includes the routine ID in a draft without sending it.
 
 ## Cron scheduling contract
 
-All newly configured recurring schedules in the editors use `cron` (sent as
-`calendarStyle: custom` with the typed expression) and run through the host's
-existing Croner scheduler. The host keeps preset compilation for its API. Cron generation, parsing, validation, timezone checks, descriptions and next-run
+All newly configured recurring schedules in the editors use `cron` and run through
+the host's existing Croner scheduler. The editors send the Repeat choice as
+`calendarStyle` (`hourly`, `daily`, `weekdays`, `weekly`) with the hour, minute and
+weekday, or `custom` with the typed expression, and the host compiles it. A loaded
+schedule in a style the editors don't offer (every few minutes, several days,
+monthly) opens as Custom with its cron unchanged; switching to Custom starts from
+the cron the host compiled (empty while the host is still checking the last change).
+Cron generation, parsing, validation, timezone checks, descriptions and next-run
 calculation all live in `host/src/routines/editor.rs` and `schedule.rs`. The Swift
 draft is only a Codable form DTO. The editor debounces preview requests, discards
 stale responses, shows host errors and disables Save until the current draft is

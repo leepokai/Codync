@@ -21,6 +21,8 @@ public struct CloudComputer: Codable, Hashable, Sendable, Identifiable {
 
     public var id: ComputerID { computerId }
     public var isOnline: Bool { online ?? false }
+    /// This device was approved on it through the account.
+    public var isGranted: Bool { access == "granted" }
 }
 
 /// A started access request, after both nonces were exchanged: `code` is ready to show.

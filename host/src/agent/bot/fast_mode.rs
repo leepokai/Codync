@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 /// Where a session's config options come from.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Listing {
-    /// `session/new`, `session/load` or `session/fork`.
+    /// `session/new` or `session/load`.
     Session,
     /// The answer to our own Fast mode switch.
     Switch,

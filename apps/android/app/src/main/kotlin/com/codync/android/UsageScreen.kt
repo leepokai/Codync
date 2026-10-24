@@ -73,8 +73,8 @@ import kotlin.math.roundToInt
     Column(Modifier.fillMaxWidth().padding(top = 60.dp, start = 24.dp, end = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Symbol("chart.bar", size = 48.dp, tint = Palette.tertiary)
-        Text(title, style = Type.title3.semibold, color = Palette.text, textAlign = TextAlign.Center)
-        Text(message, style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
+        Text(tr(title), style = Type.title3.semibold, color = Palette.text, textAlign = TextAlign.Center)
+        Text(tr(message), style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
     }
 }
 
@@ -94,19 +94,21 @@ import kotlin.math.roundToInt
         provider.tightest?.let { top ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row {
-                    Text(top.label, Modifier.weight(1f), style = Type.subheadline, color = Palette.text)
+                    Text(tr(top.title), Modifier.weight(1f), style = Type.subheadline, color = Palette.text)
                     Text(percent(top.percent), style = Type.subheadline.monospacedDigit, color = Palette.text)
                 }
                 UsageTicks(top.percent ?: 0.0, tint, 15.dp)
-                top.resetsShort()?.let { Text(it, Modifier.fillMaxWidth(), style = Type.caption.monospacedDigit, color = Palette.tertiary, textAlign = TextAlign.End) }
+                val reset = top.resetsShort()
+                if (reset != null) Text(resetLine(reset), Modifier.fillMaxWidth(), style = Type.caption.monospacedDigit, color = Palette.tertiary, textAlign = TextAlign.End)
             }
         }
         AnimatedVisibility(!collapsed, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
             exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (window in provider.windows) {
-                    DetailRow(window.label, percent(window.percent))
-                    window.resetsShort()?.let { DetailRow("${window.label} reset", it.removePrefix("resets ")) }
+                    DetailRow(tr(window.title), percent(window.percent))
+                    val reset = window.resetsShort()
+                    if (reset != null) DetailRow(tr("Resets"), resetLine(reset))
                 }
                 DetailRow("Source", provider.sourceLabel)
                 DetailRow("Updated", provider.updatedAt?.takeIf { it > 0 }?.let(::updatedAt) ?: "Not reported")
@@ -127,7 +129,7 @@ private fun updatedAt(milliseconds: Long): String {
 
 @Composable private fun DetailRow(label: String, value: String) {
     Row {
-        Text(label, Modifier.weight(1f), style = Type.footnote, color = Palette.secondary)
+        Text(tr(label), Modifier.weight(1f), style = Type.footnote, color = Palette.secondary)
         Text(value, style = Type.footnote.monospacedDigit, color = Palette.text)
     }
 }

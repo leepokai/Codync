@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { Button, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { HStack, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import type { Approval } from '../../store/app-model'
 import { useApp } from '../../store/context'
 import { deviceIcon, errorText, Reveal, spacedCode } from './parts'
+import { useTr } from '../../lib/use-language'
+
 
 /**
  * A device asks for access through the account (spec §4.2 B). The code is the only thing that
@@ -13,6 +16,7 @@ import { deviceIcon, errorText, Reveal, spacedCode } from './parts'
  * Closing puts the request off (the sheet's onClose defers it).
  */
 export function ApprovalSheet({ approval }: { approval: Approval }) {
+  const tr = useTr()
   const app = useApp()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,45 +35,44 @@ export function ApprovalSheet({ approval }: { approval: Approval }) {
     }
   }
 
-  const center = { textAlign: 'center' as const }
   return (
-    <div style={{ width: 420, display: 'flex', flexDirection: 'column' }}>
-      <ModalHeader title="Access request" />
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '0 24px 24px' }}>
+    <VStack className="settings-approval">
+      <ModalHeader icon="lock.shield" title={tr(`Access request`)} />
+      <VStack align="center" gap={16} className="settings-approval-body">
         <Icon name={deviceIcon(request.platform)} size={40} weight="light" color="var(--secondary)" />
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-          <div style={{ ...font('title3', 'semibold'), ...center }}>
+        <VStack align="center" gap={4}>
+          <Text as="div" size="title3" weight="semibold" className="settings-centered">
             {request.deviceName} wants to use {approval.store.hostName}
-          </div>
-          {request.email ? <div style={{ ...font('callout'), color: 'var(--secondary)' }}>Signed in as {request.email}</div> : null}
-        </div>
+          </Text>
+          {request.email ? <Text as="div" size="callout" tone="secondary">Signed in as {request.email}</Text> : null}
+        </VStack>
         {request.code ? (
           <>
-            <div className="selectable settings-appear" style={{ ...font(48, 'semibold', 'monospaced'), color: 'var(--text)' }} aria-label={`Code ${request.code.split('').join(' ')}`}>
+            <Text as="div" size={48} weight="semibold" mono tone="text" className="selectable settings-appear" aria-label={`Code ${request.code.split('').join(' ')}`}>
               {spacedCode(request.code)}
-            </div>
-            <div style={{ ...font('callout'), color: 'var(--secondary)', ...center }}>
+            </Text>
+            <Text as="div" size="callout" tone="secondary" className="settings-centered">
               Approve only if {request.deviceName} shows exactly this code. If it doesn't, deny: someone may be trying to get in.
-            </div>
+            </Text>
           </>
         ) : (
           <>
             <Spinner />
-            <div style={{ ...font('callout'), color: 'var(--secondary)' }}>Waiting for {request.deviceName} to show its code…</div>
+            <Text as="div" size="callout" tone="secondary">Waiting for {request.deviceName} to show its code…</Text>
           </>
         )}
         <Reveal show={error !== null}>
-          <div style={{ ...font('caption'), color: 'var(--danger)', ...center }}>{error}</div>
+          <Text as="div" size="caption" tone="danger" className="settings-centered">{error}</Text>
         </Reveal>
-        <div style={{ display: 'flex', gap: 12 }}>
+        <HStack align="stretch" gap={12}>
           <Button kind="secondary" onClick={() => void decide(false)} disabled={busy}>
             Deny
           </Button>
           <Button onClick={() => void decide(true)} disabled={busy || !request.code}>
             Approve
           </Button>
-        </div>
-      </div>
-    </div>
+        </HStack>
+      </VStack>
+    </VStack>
   )
 }

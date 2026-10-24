@@ -32,6 +32,7 @@ MAP = {
     "arrow.right.to.line": "keyboard_tab",
     "arrow.triangle.2.circlepath": "sync",
     "arrow.triangle.branch": "call_split",
+    "arrow.turn.down.right": "subdirectory_arrow_right",
     "arrow.up": "arrow_upward",
     "arrow.up.doc.on.clipboard": "content_paste_go",
     "arrow.up.right": "arrow_outward",

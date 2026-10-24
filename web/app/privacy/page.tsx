@@ -9,7 +9,7 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: October 15, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: October 19, 2026</p>
 
         <Section title="Overview">
           Codync lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
@@ -33,7 +33,8 @@ export default function Privacy() {
             Only usage analytics. They are on by default; turn them off on each phone and each computer in Settings (Share usage analytics), and that device stops sending right away.
           </p>
           <ul className="list-disc pl-5 space-y-2">
-            <li><strong>What we record:</strong> which features you use, such as opening the app, creating or deleting a bot, sending a message (with the number of attachments, not the files), starting a routine or a voice call, and installing a connector from the catalog. Each event carries the app version, the platform and the agent and model a bot uses.</li>
+            <li><strong>What we record:</strong> which features you use, such as opening the app and its screens, setting up and pairing a device (and whether you allow notifications), creating or deleting a bot, sending a message (with the number of attachments, not the files), starting a routine or a voice call, and installing a connector from the catalog. Each event carries the app version, the platform and the agent and model a bot uses.</li>
+            <li><strong>On codync.dev:</strong> page views and clicks on download and outbound links, counted without cookies; counting them stores nothing on your device.</li>
             <li><strong>Crash and error reports:</strong> when an app crashes or hits an unexpected error, or an agent fails to answer, we record what kind of error it was and where in Codync&apos;s own code it happened (type, function names and line numbers). The error&apos;s message is never sent, and file paths are cut down to Codync&apos;s own files.</li>
             <li><strong>What we never record:</strong> your messages, prompts, code, files, file names or paths, bot names, credentials or anything your agents produce. We don&apos;t store your IP address: it is only used to look up your approximate location (country and city), which is kept with the events.</li>
             <li><strong>Who it&apos;s linked to:</strong> your Codync account when you&apos;re signed in; otherwise a random ID created on that device.</li>

@@ -29,6 +29,6 @@
   align-items: flex-start;
   padding: 18px;
   margin-top: 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-l);
   background: var(--surface);
 }

@@ -4,18 +4,28 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 
+use super::super::app::PairCode;
 use super::super::md::{truncate, width as w};
 use super::buffer::{centered, frame_box, put, u};
 use super::style::theme;
 
-pub(super) fn pair(buf: &mut Buffer, area: Rect, url: Option<&str>) {
+pub(super) fn pair(buf: &mut Buffer, area: Rect, code: &PairCode) {
     let t = theme();
-    let Some(url) = url else {
-        let r = centered(area, 40, 5);
-        let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
-        put(buf, inner.x, inner.y + 1, inner.width, "Getting the pairing code…", t.secondary.patch(t.panel));
-        return;
+    let (text, style) = match code {
+        PairCode::Ready(url) => return qr(buf, area, url),
+        PairCode::Loading => ("Getting the pairing code…", t.secondary),
+        PairCode::Failed(e) => (e.as_str(), t.red),
     };
+    let r = centered(area, 56, 6);
+    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
+    put(buf, inner.x, inner.y + 1, inner.width, text, style.patch(t.panel));
+    if matches!(code, PairCode::Failed(_)) {
+        put(buf, inner.x, inner.bottom() - 1, inner.width, "r try again · esc close", t.dim.patch(t.panel));
+    }
+}
+
+fn qr(buf: &mut Buffer, area: Rect, url: &str) {
+    let t = theme();
     let qr = qrcode::QrCode::new(url.as_bytes())
         .map(|c| c.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build())
         .unwrap_or_default();
@@ -51,4 +61,5 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, url: Option<&str>) {
         t.secondary.patch(t.panel),
     );
     put(buf, inner.x, y + 1, inner.width, &truncate(url, usize::from(inner.width)), t.dim.patch(t.panel));
+    put(buf, inner.x, inner.bottom() - 1, inner.width, "r new code · esc close", t.dim.patch(t.panel));
 }

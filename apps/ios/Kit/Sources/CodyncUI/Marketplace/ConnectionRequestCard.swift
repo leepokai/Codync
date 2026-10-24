@@ -34,13 +34,13 @@ struct ConnectionRequestCard: View {
             }
             // The card has no fill, so each field gets one.
             if pending, request.kind == "login" {
-                TextField("Username or email", text: $username)
+                TextField(L10n.tr("Username or email"), text: $username)
                     .plainTextInput()
                     .pill(fill: Palette.bubbleAgent)
-                SecureField("Password or op:// reference", text: $value)
+                SecureField(L10n.tr("Password or op:// reference"), text: $value)
                     .plainTextInput()
                     .pill(fill: Palette.bubbleAgent)
-                Text("Saved securely on this computer. The bot types it into the sign-in page but never sees it.")
+                Text(L10n.tr("Saved securely on this computer. The bot types it into the sign-in page but never sees it."))
                     .font(.caption).foregroundStyle(Palette.secondary)
             } else if pending, request.kind == "secret" {
                 Text("\(request.field ?? "Credential") · \(request.location ?? "")")
@@ -48,10 +48,10 @@ struct ConnectionRequestCard: View {
                 SecureField("Credential or op:// reference", text: $value)
                     .plainTextInput()
                     .pill(fill: Palette.bubbleAgent)
-                Text("Saved securely on this computer. Never added to the conversation.")
+                Text(L10n.tr("Saved securely on this computer. Never added to the conversation."))
                     .font(.caption).foregroundStyle(Palette.secondary)
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(Palette.danger) }
+            if let error { Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger) }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -172,8 +172,8 @@ struct CredentialsView: View {
             ModalHeader("Credentials") {}
             CardForm {
                 CardSection("Storage") {
-                    Text(status?.provider ?? "System credential store")
-                    Text("Encrypted on the connected computer.")
+                    Text(L10n.tr(status?.provider ?? "System credential store"))
+                    Text(L10n.tr("Encrypted on the connected computer."))
                         .foregroundStyle(Palette.secondary)
                 }
                 CardSection("Saved connections") {
@@ -184,27 +184,27 @@ struct CredentialsView: View {
                         .buttonStyle(.plain)
                     }
                     if !model.installedConnectors.contains(where: { !$0.keys.isEmpty }) {
-                        Text("No saved connection credentials yet.")
+                        Text(L10n.tr("No saved connection credentials yet."))
                             .font(.caption).foregroundStyle(Palette.secondary)
                     }
-                    Text("Values stay hidden. Select a connection to replace its credentials.")
+                    Text(L10n.tr("Values stay hidden. Select a connection to replace its credentials."))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 LoginsSection()
                 CardSection("1Password", footer: "Use a service account with read access only to a dedicated shared vault. The 1Password CLI must be installed on the computer.") {
-                    Text(status?.onePasswordConnected == true ? "Connected" : "Connect a shared vault")
+                    Text(L10n.tr(status?.onePasswordConnected == true ? "Connected" : "Connect a shared vault"))
                     CredentialFieldRow("Service account token") {
-                        SecureField("Paste your token", text: $token).plainTextInput()
+                        SecureField(L10n.tr("Paste your token"), text: $token).plainTextInput()
                     }
-                    Button("Connect") { save(token) }.buttonStyle(PrimaryButtonStyle()).disabled(busy || token.isEmpty)
+                    Button(L10n.tr("Connect")) { save(token) }.buttonStyle(PrimaryButtonStyle()).disabled(busy || token.isEmpty)
                     if status?.onePasswordConnected == true {
-                        Button("Disconnect") { save("") }.buttonStyle(SecondaryButtonStyle()).disabled(busy)
+                        Button(L10n.tr("Disconnect")) { save("") }.buttonStyle(SecondaryButtonStyle()).disabled(busy)
                     }
-                    Text("Use op://vault/item/field in a connector's credential field. Codync retrieves the value when the connector runs.")
+                    Text(L10n.tr("Use op://vault/item/field in a connector's credential field. Codync retrieves the value when the connector runs."))
                         .font(.footnote).foregroundStyle(Palette.secondary)
                 }
                 if busy { Spinner() }
-                if let error { Text(error).foregroundStyle(Palette.danger) }
+                if let error { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .background(Palette.background)
@@ -259,12 +259,12 @@ private struct LoginsSection: View {
                 TextField("name@example.com", text: $username).plainTextInput()
             }
             CredentialFieldRow("Password") {
-                SecureField("Password or op:// reference", text: $password).plainTextInput()
+                SecureField(L10n.tr("Password or op:// reference"), text: $password).plainTextInput()
             }
-            Button("Save sign-in") { save() }
+            Button(L10n.tr("Save sign-in")) { save() }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(busy || site.isEmpty || password.isEmpty)
-            if let error { Text(error).font(.footnote).foregroundStyle(Palette.danger) }
+            if let error { Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger) }
         }
         .task { await load() }
         .onDisappear { password = "" }
@@ -319,7 +319,7 @@ private struct ConnectorCredentialEditor: View {
                         SecureField(key, text: Binding(get: { fields[key] ?? "" }, set: { fields[key] = $0 })).plainTextInput()
                     }
                 }
-                if let error { Text(error).foregroundStyle(Palette.danger) }
+                if let error { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .background(Palette.background)
@@ -352,8 +352,8 @@ private struct CredentialFieldRow<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.caption).foregroundStyle(Palette.secondary)
-            content.accessibilityLabel(title)
+            Text(L10n.tr(title)).font(.caption).foregroundStyle(Palette.secondary)
+            content.accessibilityLabel(L10n.tr(title))
         }
     }
 }

@@ -56,6 +56,7 @@ const footerLinks: [label: string, href: string][] = [
   ["Claude Code on iPhone", "/claude-code-iphone"],
   ["Codex on iPhone", "/codex-iphone"],
   ["Compare", "/compare"],
+  ["codync-mem", "/codync-mem"],
   ["Terms", "/terms"],
   ["Privacy", "/privacy"],
   ["Discord", DISCORD],

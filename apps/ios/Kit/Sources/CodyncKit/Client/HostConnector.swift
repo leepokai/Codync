@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Opens channels to computers (§7.5) and pairs new ones from a QR (§4.1).
 public enum HostConnector {
@@ -96,7 +97,10 @@ final class URLSessionSocket: ChannelSocket {
     func ping() async throws {
         if relay { return try await send(#"{"t":"ping"}"#) }
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            // URLSession can answer a ping twice when the socket closes; a continuation resumes once.
+            let waiting = OSAllocatedUnfairLock<CheckedContinuation<Void, Error>?>(initialState: c)
             task.sendPing { error in
+                guard let c = waiting.withLock({ $0.take() }) else { return }
                 if let error { c.resume(throwing: error) } else { c.resume() }
             }
         }

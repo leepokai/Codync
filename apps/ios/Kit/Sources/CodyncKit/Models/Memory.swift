@@ -1,97 +1,80 @@
 import Foundation
 
-public struct MemoryFact: Codable, Identifiable, Hashable, Sendable {
-    public var id: String
-    public var title: String
-    public var content: String
-    public var createdAt: Int64
-    public var kind: String
-    public var memoryType: String
-    public var scope: String
-    public var topicKey: String?
+/// One memory entry.
+public struct MemoryEntry: Decodable, Identifiable, Hashable, Sendable {
+    public var id: Int64
+    /// The bot whose own layer holds it; nil for what all bots share.
+    public var bot: String?
+    /// active · archived
+    public var state: String
+    public var text: String
+    /// user · bot · dream · imported
+    public var author: String
+    public var authorBot: String?
     public var pinned: Bool
-    public var reviewAfter: String?
-    public var revisionCount: Int
-    public var source: String?
+    public var updatedAt: Int64
+
+    public var archived: Bool { state == "archived" }
 }
 
-public struct MemoryListing: Decodable, Sendable {
-    public var facts: [MemoryFact]
-    public var total: Int
-    public var nextOffset: Int?
+public struct MemoryLayer: Decodable, Hashable, Sendable {
+    public var entries: [MemoryEntry]
+    public var used: Int
+    public var cap: Int
 }
 
-public struct MemoryDetail: Decodable, Sendable {
-    public var fact: MemoryFact
-    public var history: History
-    public var timeline: Timeline
-
-    public struct History: Decodable, Sendable {
-        public var result: String
-        public var history_cursor: Int?
+/// One dreaming run: what it added and archived (`undone` when an older app undid it).
+public struct DreamRun: Decodable, Identifiable, Hashable, Sendable {
+    public struct Change: Decodable, Hashable, Sendable {
+        public var id: Int64
+        public var text: String
     }
-    public struct Timeline: Decodable, Sendable { public var result: String }
+    /// A long-form file the run added a line to.
+    public struct FileNote: Decodable, Hashable, Sendable {
+        public var name: String
+        public var shared: Bool
+        public var version: Int64
+    }
+    public var id: Int64
+    public var at: Int64
+    public var undone: Bool
+    public var added: [Change]
+    public var archived: [Change]
+    public var files: [FileNote]?
 }
 
-public struct MemoryDraft: Encodable, Sendable {
-    public var botId: String
-    public var id: String?
-    public var title: String
-    public var content: String
-    public var scope: String
-    public var memoryType: String
-    public var topicKey: String
-
-    public init(botId: String, fact: MemoryFact? = nil) {
-        self.botId = botId
-        id = fact?.id
-        title = fact?.title ?? ""
-        content = fact?.content ?? ""
-        scope = fact?.scope ?? "project"
-        memoryType = fact?.memoryType ?? "learning"
-        topicKey = fact?.topicKey ?? ""
+/// A bot's memory as its screen shows it.
+public struct MemoryView: Decodable, Hashable, Sendable {
+    public struct Project: Decodable, Hashable, Sendable {
+        public var path: String
+        public var text: String
     }
+    /// Whether this bot uses what all bots share.
+    public var shared: Bool
+    public var yours: MemoryLayer
+    public var bot: MemoryLayer
+    public var dreams: [DreamRun]
+    /// Claude Code's own notes for the bot's project folder, read-only.
+    public var projectMemory: Project?
+    /// The long-form files of both layers.
+    public var files: MemoryFiles?
+}
+
+/// The text a single change of a composer's draft inserted, when it is long enough that the user pasted it
+/// rather than typed it: typing, predictions and dictation add a word at a time.
+public func pastedInsertion(from old: String, to new: String, minimum: Int = 24) -> String? {
+    let old = Array(old), new = Array(new)
+    guard new.count - old.count >= minimum else { return nil }
+    var prefix = 0
+    while prefix < old.count, old[prefix] == new[prefix] { prefix += 1 }
+    var suffix = 0
+    while suffix < old.count - prefix, old[old.count - 1 - suffix] == new[new.count - 1 - suffix] { suffix += 1 }
+    let inserted = String(new[prefix..<(new.count - suffix)])
+    return inserted.count >= minimum ? inserted : nil
 }
 
 extension HostClient {
-    public func memory(botId: String, query: String = "", filter: String = "all", offset: Int = 0) async throws -> MemoryListing {
-        struct Body: Encodable { var botId: String; var query: String; var filter: String; var offset: Int }
-        return try await call("memory", Body(botId: botId, query: query, filter: filter, offset: offset), timeout: 240)
-    }
-
-    public func saveMemory(_ draft: MemoryDraft) async throws {
-        let _: Empty = try await call("saveMemory", draft, timeout: 240)
-    }
-
-    public func memoryAction(_ method: String, botId: String, id: String? = nil, pinned: Bool? = nil) async throws {
-        struct Body: Encodable { var botId: String; var id: String?; var pinned: Bool? }
-        let _: Empty = try await call(method, Body(botId: botId, id: id, pinned: pinned), timeout: 240)
-    }
-
-    public func memoryDetail(botId: String, id: String, cursor: Int? = nil) async throws -> MemoryDetail {
-        struct Body: Encodable { var botId: String; var id: String; var historyCursor: Int? }
-        return try await call("memoryDetail", Body(botId: botId, id: id, historyCursor: cursor), timeout: 240)
-    }
-
-    public func exportMemory(botId: String) async throws -> String {
-        struct Response: Decodable { var json: String?; var uploadId: String? }
-        let result: Response = try await call("exportMemory", ["botId": botId], timeout: 240)
-        if let id = result.uploadId {
-            let data = try await readUpload(botId: botId, id: id)
-            guard let text = String(data: data, encoding: .utf8) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
-            return text
-        }
-        return result.json ?? ""
-    }
-
-    public func importMemory(botId: String, json: String) async throws {
-        let data = Data(json.utf8)
-        if data.count > 384 * 1024 {
-            let id = UUID().uuidString.lowercased()
-            try await upload(botId: botId, id: id, name: "engram-backup.json", data: data)
-            let _: Empty = try await call("importMemory", ["botId": botId, "uploadId": id], timeout: 240)
-        } else {
-            let _: Empty = try await call("importMemory", ["botId": botId, "json": json], timeout: 240)
-        }
+    public func memory(botId: String) async throws -> MemoryView {
+        try await call("memory", ["botId": botId])
     }
 }

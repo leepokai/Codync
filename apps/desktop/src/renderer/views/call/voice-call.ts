@@ -31,7 +31,7 @@ export function watchVoiceCall(store: BotStore, botId: string, handlers: { speak
       }
       if (!e.data.final || finals.has(e.id)) continue
       finals.add(e.id)
-      if (e.kind !== 'agent' || e.threadId || e.rev <= startRev || !e.data.text) continue
+      if (e.kind !== 'agent' || e.rev <= startRev || !e.data.text) continue
       // In a group, a reply is said with its speaker's name.
       const speaker = inGroup ? nameOf(e.data.author) : undefined
       handlers.speak(speaker ? `${speaker}: ${e.data.text}` : e.data.text)

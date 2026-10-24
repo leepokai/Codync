@@ -1,6 +1,8 @@
 import type { UsageProvider, UsageWindow } from '@shared/models'
 import { prefs, usePref } from '../../lib/prefs'
-import { UsageBar } from '../settings/UsageLimits'
+import { usePixelRatio } from '../../lib/theme'
+import { useResetLine, useTr } from '../../lib/use-language'
+import { UsageBar } from '../usage/UsageBar'
 import { mascotDataURL } from '../usage/ProviderMascot'
 import { providerTintCSS, resetDescription, tightest, windowTitle } from '../usage/usage-model'
 import type { IslandModel } from './island-model'
@@ -11,8 +13,9 @@ import type { IslandModel } from './island-model'
 /** A provider's character for the black island, whatever the system appearance. */
 function Mascot({ provider, size }: { provider: UsageProvider; size: number }) {
   const [style] = usePref(prefs.usageIconStyle)
-  const src = mascotDataURL(provider, size, style, true)
-  return src ? <img src={src} alt="" width={size} height={size} style={{ flex: 'none' }} /> : null
+  const ratio = usePixelRatio()
+  const src = mascotDataURL(provider, size, style, true, ratio)
+  return src ? <img src={src} alt="" width={size} height={size} className="island-mascot" /> : null
 }
 
 /** The limit closest to running out, across providers. */
@@ -30,12 +33,16 @@ export function UsageMeter({ model }: { model: IslandModel }) {
   const top = tightestOverall(model.summary.usage)
   if (!top) return null
   const { provider, window } = top
+  const tr = useTr()
+  const line = useResetLine()
+  const title = tr(windowTitle(window))
   const reset = resetDescription(window)
+  const spoken = reset ? line(reset) : ''
   return (
     <button
       className="island-meter"
-      title={`${provider.name} · ${windowTitle(window)} · ${Math.round(window.percent)}%${reset ? ` · ${reset}` : ''}`}
-      aria-label={`Usage: ${provider.name} ${windowTitle(window)} ${Math.round(window.percent)} percent`}
+      title={`${provider.name} · ${title} · ${Math.round(window.percent)}%${spoken ? ` · ${spoken}` : ''}`}
+      aria-label={`Usage: ${provider.name} ${title} ${Math.round(window.percent)} percent`}
       onClick={() => model.setTab('usage')}
     >
       <Mascot provider={provider} size={15} />
@@ -50,6 +57,8 @@ export function UsageMeter({ model }: { model: IslandModel }) {
 /** Every provider's limits side by side, each window a bar with when it resets. */
 export function UsageView({ model }: { model: IslandModel }) {
   const usage = model.summary.usage
+  const tr = useTr()
+  const line = useResetLine()
   if (!usage.length) {
     return (
       <div className="island-card island-empty">
@@ -70,10 +79,10 @@ export function UsageView({ model }: { model: IslandModel }) {
           </div>
           {provider.windows.slice(0, 3).map((w) => (
             <div key={w.id} className="island-usage-row">
-              <span className="island-usage-title">{windowTitle(w)}</span>
+              <span className="island-usage-title">{tr(windowTitle(w))}</span>
               <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
               <span className="island-usage-value">{`${Math.round(w.percent)}%`}</span>
-              <span className="island-usage-reset">{resetDescription(w)?.replace('resets ', '') ?? ''}</span>
+              <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
             </div>
           ))}
         </div>

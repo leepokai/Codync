@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -16,105 +15,19 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
-import com.codync.android.core.CatalogPage
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.ComposioApp
-import com.codync.android.core.ComposioStatus
 import com.codync.android.design.*
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
-
-// Apps through Composio (host/src/market/composio.rs): set up a key once, connect apps with
-// Composio's hosted sign-in, then turn them on per bot like any other connector.
-
-/** The Extensions page's "Apps" section (iOS `ComposioSection`). */
-@Composable internal fun ComposioSection(query: String, searchToken: Int, state: AppState, store: AppStore) {
-    var status by remember { mutableStateOf<ComposioStatus?>(null) }
-    var apps by remember { mutableStateOf(CatalogPage<ComposioApp>()) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var settingUp by remember { mutableStateOf(false) }
-    var connecting by remember { mutableStateOf<ComposioApp?>(null) }
-    var reload by remember { mutableIntStateOf(0) }
-    LaunchedEffect(searchToken, reload) {
-        loading = true
-        try {
-            val answer = store.composioStatus()
-            val page = if (answer.configured) store.composioApps(query, null).items else emptyList()
-            status = answer; apps = CatalogPage<ComposioApp>().append(page) { it.slug }; error = null
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message ?: "Couldn't load apps." }
-        finally { loading = false }
-    }
-    MarketSection("Apps") {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            when {
-                status?.configured != true -> MarketRow("Composio", "Gmail, Slack, GitHub, Notion and 1,000 more apps", added = false,
-                    busy = status == null && loading, addLabel = "Set up", icon = { TileIcon("square.grid.3x3") }) { settingUp = true }
-                loading -> SkeletonRows()
-                apps.items.isEmpty() -> Text(if (query.isEmpty()) "Couldn't load apps." else "No apps match “$query”.", style = Type.body, color = Palette.secondary)
-                else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (app in apps.visible) MarketRow(app.name, app.description ?: app.slug, app.connected, addLabel = "Connect",
-                        icon = { AppLogo(app.logo, app.name) }) { connecting = app }
-                }
-            }
-            if (!loading && apps.hasHidden && status?.configured == true)
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SecondaryButton("Load more apps") { apps = apps.reveal() } }
-            error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
-            if (status?.configured == true) Row(Modifier.plainButton { settingUp = true }, verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Symbol("key", size = 14.dp, tint = Palette.tertiary)
-                Text("Composio settings", style = Type.footnote, color = Palette.tertiary)
-            }
-        }
-    }
-    CodyncSheet(settingUp, { settingUp = false }) { ComposioKeySheet(status, state, store) { status = it; reload++ } }
-    CodyncSheet(connecting, { connecting = null }) { ComposioConnectSheet(it, state, store) { reload++; store.refreshPlugins() } }
-}
-
-/** Paste (or remove) the Composio API key; the host checks it with Composio first (iOS `ComposioKeySheet`). */
-@Composable internal fun ComposioKeySheet(status: ComposioStatus?, state: AppState, store: AppStore, done: (ComposioStatus) -> Unit) {
-    val dismiss = LocalDismissModal.current
-    val scope = rememberCoroutineScope()
-    var key by remember { mutableStateOf("") }
-    var saving by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    fun save(value: String) {
-        saving = true; error = null
-        scope.launch {
-            try { done(store.composioKey(value)); dismiss() }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { error = failure.message ?: "The key wasn't confirmed." }
-            finally { saving = false }
-        }
-    }
-    Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader("Composio") {
-            if (saving) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
-            else IconButton("Save", "checkmark", enabled = key.isNotBlank()) { save(key.trim()) }
-        }
-        CardForm(Modifier.weight(1f)) {
-            CardSection("Composio API key", "Composio signs you in to apps like Gmail and Slack and runs their tools for your bots. The key stays on ${state.hostName}.") {
-                row { PlainInput(key, { key = it }, if (status?.configured == true) "Saved (paste to replace)" else "ak_…", secret = true) }
-                row { WebLink("Get a key from Composio", status?.keyUrl ?: "https://platform.composio.dev", Type.footnote) }
-            }
-            if (status?.configured == true) CardSection(footer = "Bots lose the apps you connected until you add a key again.") {
-                row { LinkButton("Remove key", enabled = !saving, color = Palette.danger) { save("") } }
-            }
-            error?.let { CardSection { row { ErrorRow(it) } } }
-        }
-    }
-}
 
 /**
  * Connects one app (iOS `ComposioConnectSheet`): Composio's sign-in page, opened here and
@@ -165,7 +78,7 @@ import kotlinx.coroutines.launch
                         AppLogo(app.logo, app.name, 52.dp)
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(app.name, style = Type.title3.semibold, color = Palette.text)
-                            app.description?.let { Text(it, style = Type.subheadline, color = Palette.secondary, maxLines = 3) }
+                            app.description?.let { Text(it, style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }

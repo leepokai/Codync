@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { isChat, type Entry } from '@shared/models'
+import type { Entry } from '@shared/models'
 import { groupExchanges, type BotExchange, type ChatSlot } from './bot-exchange'
 
 export type ChatItem =
@@ -9,14 +9,14 @@ export type ChatItem =
 
 /**
  * Chat-visible entries plus time separators (gaps > 1 h) and author grouping. A bot's messages
- * arrive whole (Grok Bot's `send_message`); what it writes along the way is trace. `grouped`
- * (the main transcript, not threads) folds runs of bot exchanges with one peer into one item.
+ * arrive whole (Grok Bot's `send_message`); what it writes along the way is trace. Runs of bot
+ * exchanges with one peer fold into one item.
  */
-export function buildChat(entries: Entry[], grouped = false): ChatItem[] {
+export function buildChat(entries: Entry[]): ChatItem[] {
   const out: ChatItem[] = []
   let lastDate: number | null = null
   let lastAuthor: string | null = null
-  const slots: ChatSlot[] = grouped ? groupExchanges(entries) : entries.filter(isChat).map((entry) => ({ entry, exchanges: null }))
+  const slots: ChatSlot[] = groupExchanges(entries)
   for (const { entry: e, exchanges } of slots) {
     const id = e.kind === 'user' && e.data.clientNonce ? `user-${e.data.clientNonce}` : e.id
     if (lastDate === null || e.createdAt - lastDate > 3_600_000) {
@@ -68,19 +68,19 @@ const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.g
 export const relativeTime = {
   time: (ms: number) => time.format(new Date(ms)),
   /** Chat separator: Today 3:27 AM · Yesterday 5:20 PM · Sep 16 9:02 AM */
-  separator(ms: number) {
+  separator(ms: number, tr: (text: string) => string = (text) => text) {
     const date = new Date(ms)
     const now = new Date()
     const yesterday = new Date(now.getTime() - 86_400_000)
-    const day = sameDay(date, now) ? 'Today' : sameDay(date, yesterday) ? 'Yesterday' : monthDay.format(date)
+    const day = sameDay(date, now) ? tr('Today') : sameDay(date, yesterday) ? tr('Yesterday') : monthDay.format(date)
     return `${day} ${time.format(date)}`
   },
   /** Roster stamp: 3:45 AM · Yesterday · Wednesday · Sep 16 */
-  day(ms: number) {
+  day(ms: number, tr: (text: string) => string = (text) => text) {
     const date = new Date(ms)
     const now = new Date()
     if (sameDay(date, now)) return time.format(date)
-    if (sameDay(date, new Date(now.getTime() - 86_400_000))) return 'Yesterday'
+    if (sameDay(date, new Date(now.getTime() - 86_400_000))) return tr('Yesterday')
     if (now.getTime() - ms < 6 * 86_400_000) return weekday.format(date)
     return monthDay.format(date)
   },

@@ -1,0 +1,17 @@
+/* PairingCode: the pairing window and the Computers page's pairing sheet. */
+.pairing {
+  padding: 16px;
+}
+/* White in both schemes, so cameras read the code. */
+.pairing-qr {
+  padding: 10px;
+  background: #fff;
+  border-radius: var(--radius-m);
+}
+.pairing-qr img {
+  display: block;
+  image-rendering: pixelated;
+}
+.pairing-note {
+  text-align: center;
+}

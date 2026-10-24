@@ -11,23 +11,22 @@ import kotlinx.serialization.json.*
 
 // Composer drafts (saved as you type) and the files that go with them.
 
-fun AppStore.editDraft(botId: String, thread: String?, text: String) {
+fun AppStore.editDraft(botId: String, text: String) {
     if (state.value.loading) return
-    val lane = ComposerDraft.lane(botId, thread)
-    val current = state.value.drafts[lane]
+    val current = state.value.drafts[botId]
     if (current?.text == text || current == null && text.isEmpty()) return
-    try { updateDraft((current ?: ComposerDraft(botId, thread)).copy(text = text)) }
+    try { updateDraft((current ?: ComposerDraft(botId)).copy(text = text)) }
     catch (error: Exception) { showError(error) }
 }
 
-fun AppStore.addDraftFiles(botId: String, thread: String?, files: List<OutgoingFile>) {
+fun AppStore.addDraftFiles(botId: String, files: List<OutgoingFile>) {
     check(!state.value.loading) { "Wait for the account to finish opening before adding files." }
-    val current = state.value.drafts[ComposerDraft.lane(botId, thread)] ?: ComposerDraft(botId, thread)
+    val current = state.value.drafts[botId] ?: ComposerDraft(botId)
     updateDraft(current.copy(files = current.files + files))
 }
 
-fun AppStore.removeDraftFile(botId: String, thread: String?, file: OutgoingFile) = action("draft-file:" + file.path) {
-    val current = state.value.drafts[ComposerDraft.lane(botId, thread)] ?: return@action
+fun AppStore.removeDraftFile(botId: String, file: OutgoingFile) = action("draft-file:" + file.path) {
+    val current = state.value.drafts[botId] ?: return@action
     updateDraft(current.copy(files = current.files - file))
     draftWriter?.join()
     check(savedDrafts.values.none { draft -> draft.files.any { it.path == file.path } }) { "Couldn't save the attachment removal. Retry before leaving this chat." }
@@ -36,7 +35,7 @@ fun AppStore.removeDraftFile(botId: String, thread: String?, file: OutgoingFile)
 
 private fun AppStore.updateDraft(draft: ComposerDraft) {
     val book = draftBook ?: return
-    val drafts = if (draft.text.isEmpty() && draft.files.isEmpty()) state.value.drafts - draft.lane else state.value.drafts + (draft.lane to draft)
+    val drafts = if (draft.text.isEmpty() && draft.files.isEmpty()) state.value.drafts - draft.botId else state.value.drafts + (draft.botId to draft)
     book.validate(drafts.values, checkPaths = false)
     mutableState.update { it.copy(drafts = drafts) }
     persistDrafts()
@@ -50,7 +49,7 @@ internal fun AppStore.persistDrafts() {
             while (isActive) {
                 val saving = state.value.drafts.values.toList()
                 withContext(Dispatchers.IO) { book.save(saving) }
-                savedDrafts = saving.associateBy { it.lane }
+                savedDrafts = saving.associateBy { it.botId }
                 if (state.value.drafts.values.toList() == saving) break
             }
         } catch (error: CancellationException) { throw error }
@@ -59,21 +58,21 @@ internal fun AppStore.persistDrafts() {
     }
 }
 
-fun AppStore.sendDraft(botId: String, thread: String?, text: String, onQueued: () -> Unit) {
-    editDraft(botId, thread, text)
-    val lane = ComposerDraft.lane(botId, thread)
-    val draft = state.value.drafts[lane] ?: return
+/** Sends the chat's draft, quoting `replyTo` when there is one. */
+fun AppStore.sendDraft(botId: String, text: String, replyTo: ReplyQuote?, onQueued: () -> Unit) {
+    editDraft(botId, text)
+    val draft = state.value.drafts[botId] ?: return
     if (draft.text != text) return
     if (draft.text.isBlank() && draft.files.isEmpty()) return
-    action("draft-send:" + lane) {
+    action("draft-send:" + botId) {
         // Persist its nonce before the pending commit. Recovery removes a draft
         // already represented by a pending or confirmed send with this nonce.
         persistDrafts()
         draftWriter?.join()
-        check(savedDrafts[lane] == draft) { "Couldn't save this draft. Retry to send it." }
-        val send = PendingSend(draft.nonce, botId, thread, draft.text.trim(), System.currentTimeMillis(), files = draft.files)
+        check(savedDrafts[botId] == draft) { "Couldn't save this draft. Retry to send it." }
+        val send = PendingSend(draft.nonce, botId, draft.text.trim(), System.currentTimeMillis(), files = draft.files, replyTo = replyTo)
         savePending(send)
-        mutableState.update { it.copy(drafts = it.drafts - lane) }
+        mutableState.update { it.copy(drafts = it.drafts - botId) }
         persistDrafts()
         onQueued()
         action("send:" + send.nonce) { deliver(send) }

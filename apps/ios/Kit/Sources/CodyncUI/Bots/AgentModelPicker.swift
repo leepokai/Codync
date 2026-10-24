@@ -9,7 +9,8 @@ struct AgentModelPicker: View {
     @Binding var selection: String?
     /// The selected model's settings (effort, fast…); they belong to one model.
     @Binding var options: [String: String]
-    @Binding var fastMode: Bool
+    /// Nil when picking a fallback's model: the bot's own Fast mode applies to it, and no session restarts.
+    var fastMode: Binding<Bool>?
     /// The saved bot: whether its own sessions offer Fast mode, and why the agent refused it.
     var bot: Bot?
     @Environment(BotStore.self) private var store
@@ -69,7 +70,8 @@ struct AgentModelPicker: View {
     }
 
     private var showsFastMode: Bool {
-        (backend != "custom" && catalog?.fastMode == true) || fastMode
+        guard let fastMode else { return false }
+        return (backend != "custom" && catalog?.fastMode == true) || fastMode.wrappedValue
             || (bot?.backend == backend && bot?.fastModeShown == true)
     }
 
@@ -80,9 +82,9 @@ struct AgentModelPicker: View {
                 options = [:]
             }
             .task(id: requestKey) { await load() }
-        if showsFastMode {
+        if showsFastMode, let fastMode {
             SwitchRow("Fast mode", detail: bot?.fastModeRefusal ?? "Faster replies for more usage, on models that offer it.",
-                      isOn: $fastMode)
+                      isOn: fastMode)
                 .transition(.opacity)
         }
     }
@@ -90,7 +92,7 @@ struct AgentModelPicker: View {
     private var modelRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("Model")
+                Text(L10n.tr("Model"))
                     .foregroundStyle(Palette.text)
                     .fixedSize()
                 Spacer(minLength: 0)
@@ -120,18 +122,20 @@ struct AgentModelPicker: View {
             }
             if backend != "custom", !loading {
                 if let failure {
-                    Text(failure)
+                    Text(L10n.tr(failure))
                         .font(.caption)
                         .foregroundStyle(Palette.warning)
                 } else if catalog?.models.isEmpty == true {
-                    Text("This agent doesn't advertise a model list. Leave Default or enter a model ID.")
+                    Text(L10n.tr("This agent doesn't advertise a model list. Leave Default or enter a model ID."))
                         .font(.caption)
                         .foregroundStyle(Palette.secondary)
                 }
             }
-            Text("Changing the model starts a new agent session. Chat history is kept.")
-                .font(.caption)
-                .foregroundStyle(Palette.secondary)
+            if fastMode != nil {
+                Text(L10n.tr("Changing the model starts a new agent session. Chat history is kept."))
+                    .font(.caption)
+                    .foregroundStyle(Palette.secondary)
+            }
         }
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: modelOptions.map(\.id))
     }

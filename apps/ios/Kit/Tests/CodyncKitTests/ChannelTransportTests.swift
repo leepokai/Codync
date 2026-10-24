@@ -382,3 +382,10 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     #expect(await waitFor(t.states()) { if case .failed = $0 { true } else { false } } == .failed("Paired."))
     await t.shutdown()
 }
+
+@Test func lapsedLeaseIsRetriedNotARevocation() throws {
+    let reject = { (code: String) in ChannelTransport.rejection(try ChannelTransport.decodeWire(#"{"t":"reject","code":"\#(code)"}"#)) }
+    // The computer couldn't confirm the account's approval lately: the channel keeps trying.
+    guard case .wait(.failed) = try reject("leaseExpired") else { Issue.record("expected a retrying failure"); return }
+    guard case .stop(.unauthorized) = try reject("revoked") else { Issue.record("expected a revocation"); return }
+}

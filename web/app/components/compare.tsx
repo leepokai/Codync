@@ -7,7 +7,6 @@ import { GITHUB } from "../links";
 const same = [
   "Persistent, named bots with their own instructions and project",
   "Group chats where bots answer in turn and read each other",
-  "Reply threads on any message",
   "Bots asking each other for help",
   "Approval cards: allow once, always allow, deny",
   "Per-bot memory that carries across sessions",

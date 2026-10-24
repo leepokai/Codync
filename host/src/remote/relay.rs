@@ -246,11 +246,8 @@ async fn session(hub: &Arc<Hub>, base: &str) -> Result<Option<u16>> {
                     s.pull();
                 }
             }
-            _ = poll.tick() => {
-                if hub.cloud.status().owner.is_some() {
-                    s.pull();
-                }
-            }
+            // Also without an owner: a claim whose `cloud.changed` never arrived is picked up here.
+            _ = poll.tick() => s.pull(),
             Some(_) = s.pulls.join_next() => s.deliver_held().await?,
         }
     }

@@ -53,7 +53,7 @@ struct PermissionCard: View {
                     }
                     .padding(.top, 6)
                 } label: {
-                    Text("Details").font(.caption.weight(.medium)).foregroundStyle(Palette.secondary)
+                    Text(L10n.tr("Details")).font(.caption.weight(.medium)).foregroundStyle(Palette.secondary)
                 }
             }
 
@@ -66,6 +66,7 @@ struct PermissionCard: View {
             }
         }
         .padding(16)
+        .frame(maxWidth: 420, alignment: .leading)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .padding(.trailing, 40)
     }
@@ -158,8 +159,8 @@ struct DiffView: View {
                 Image(systemName: diff.isNew ? "doc.badge.plus" : "doc.text")
                 Text((diff.path as NSString).lastPathComponent).lineLimit(1)
                 Spacer()
-                Text("+\(diff.added)").foregroundStyle(Palette.added)
-                Text("−\(diff.removed)").foregroundStyle(Palette.removed)
+                Text(L10n.tr("+\(diff.added)")).foregroundStyle(Palette.added)
+                Text(L10n.tr("−\(diff.removed)")).foregroundStyle(Palette.removed)
             }
             .font(.caption.monospaced())
             .foregroundStyle(Palette.secondary)

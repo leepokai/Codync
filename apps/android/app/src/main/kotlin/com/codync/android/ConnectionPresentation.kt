@@ -1,6 +1,7 @@
 package com.codync.android
 
 import com.codync.android.core.CloudComputer
+import com.codync.android.core.Computer
 import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 
@@ -54,29 +55,42 @@ internal fun connectionSummary(state: AppState): String = when {
 
 /**
  * The computer this phone uses won't come back as it is: it turned this phone away, or it's offline
- * while an account computer with its name is online, the same machine under a new identity
- * (iOS `AccountStore.isStale`). Removing it is the fix.
+ * while an account computer with its name that joined after it was last seen is online, the same
+ * machine under a new identity (iOS `AccountStore.isStale`). Account computers offer access recovery; only independently paired computers offer removal.
  */
 internal val AppState.isStale: Boolean get() {
     val computer = computers.firstOrNull() ?: return false
     return when (val link = connection) {
-        is LinkState.Failed -> link.unauthorized || renamedCopyOnline(computer.id, computer.name)
-        is LinkState.ComputerOffline -> renamedCopyOnline(computer.id, computer.name)
+        is LinkState.Failed -> link.unauthorized || renamedCopyOnline(computer)
+        is LinkState.ComputerOffline -> renamedCopyOnline(computer)
         else -> false
     }
 }
 
-private fun AppState.renamedCopyOnline(id: String, name: String) =
-    cloudComputers.any { it.computerId != id && it.name == name && it.online == true }
+private fun AppState.renamedCopyOnline(computer: Computer): Boolean {
+    val seen = cloudComputers.firstOrNull { it.computerId == computer.id }?.lastSeenAt ?: (connection as? LinkState.ComputerOffline)?.lastSeenAt
+    return cloudComputers.any { it.computerId != computer.id && it.name == computer.name && it.online == true && replacedBy(it.computerId, seen) }
+}
 
 /**
- * An offline account computer named like one this phone uses or sees online: most likely the same
- * machine under an earlier identity (its host keys were reset), left behind in the account.
+ * A computer last [seen] no later than account computer [id] joined the account was replaced by it;
+ * seen after, it ran beside it: another machine with the same name. Without both times the name decides.
+ */
+private fun AppState.replacedBy(id: String, seen: Long?): Boolean {
+    seen ?: return true
+    val claimed = cloudComputers.firstOrNull { it.computerId == id }?.claimedAt ?: return true
+    return seen <= claimed
+}
+
+/**
+ * An offline account computer named like one this phone uses or sees online, and [replacedBy] it: most
+ * likely the same machine under an earlier identity (its host keys were reset), left behind in the account.
  */
 internal fun AppState.isOlderCopy(computer: CloudComputer): Boolean {
     if (computer.online == true) return false
+    val seen = computer.lastSeenAt
     // The current copy may be paired with its code without being listed in the account.
-    return computers.any { it.id != computer.computerId && it.name == computer.name }
+    return computers.any { it.id != computer.computerId && it.name == computer.name && replacedBy(it.id, seen) }
         || cloudComputers.any { other -> other.computerId != computer.computerId && other.name == computer.name
-            && (computers.any { it.id == other.computerId } || other.online == true) }
+            && (computers.any { it.id == other.computerId } || other.online == true) && replacedBy(other.computerId, seen) }
 }

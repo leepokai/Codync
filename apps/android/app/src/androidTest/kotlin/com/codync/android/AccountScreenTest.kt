@@ -17,6 +17,10 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /** The account sheet and Computers & settings. Read-only: no test confirms a sign-out, route, removal or reset. */
 class AccountScreenTest {
@@ -63,7 +67,10 @@ class AccountScreenTest {
         compose.onNodeWithText("Continue with Google").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Add account").performScrollTo().performClick()
         compose.onNodeWithText("Continue with Google").assertDoesNotExist()
+        // The sign-in spinner intentionally keeps drawing; freeze it while checking disabled actions.
+        compose.mainClock.autoAdvance = false
         compose.runOnUiThread { state.value = state.value.copy(busy = setOf("session")) }
+        compose.mainClock.advanceTimeBy(300)
         compose.onNodeWithContentDescription("Signing in").assertIsDisplayed()
         compose.onNodeWithContentDescription(second.email).assertIsNotEnabled()
         compose.onNodeWithContentDescription("Add account").assertIsNotEnabled()
@@ -108,8 +115,9 @@ class AccountScreenTest {
         var paired = 0; var popped = 0; var extensions = 0
         compose.setContent { Hosted { SettingsView(state, viewModel(), { popped++ }, { paired++ }, {}) { extensions++ } } }
         compose.onNodeWithText("Computers & settings").assertIsDisplayed()
-        compose.onAllNodesWithText(computer.name).assertCountEquals(1)
+        compose.onNode(hasText(computer.name) and hasClickAction()).assertIsDisplayed()
         compose.onNodeWithText("1 bot · Wi-Fi/Tailscale").assertIsDisplayed()
+        snapshot("computer-card")
         compose.onNodeWithContentDescription("Extensions").performClick()
         assertEquals(1, extensions)
         compose.onNodeWithText("Pair a computer").performClick()
@@ -124,7 +132,7 @@ class AccountScreenTest {
         compose.onNodeWithText("Start over?").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Start over?").assertDoesNotExist()
-        compose.onNodeWithText(computer.name).performScrollTo().performTouchInput { longClick() }
+        compose.onNode(hasText(computer.name) and hasClickAction()).performScrollTo().performTouchInput { longClick() }
         compose.onNodeWithText("Remove").performClick()
         compose.onNodeWithText("Remove ${computer.name}?").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
@@ -147,6 +155,16 @@ class AccountScreenTest {
         assertEquals(listOf(cloud, cloud), asked)
     }
 
+    @Test fun whileOneComputerIsAskedForAccessTheOthersWait() {
+        val asked = CloudComputer("asked-computer", "Asked computer", "asked-key", online = true)
+        val other = CloudComputer("other-computer", "Other computer", "other-key", online = true)
+        val state = fixture().copy(cloudComputers = listOf(asked, other), askingAccess = asked.computerId)
+        compose.setContent { Hosted { SettingsView(state, viewModel(), null, {}, {}, {}) } }
+        val buttons = compose.onAllNodesWithText("Ask for access")
+        buttons[0].assertIsEnabled()
+        buttons[1].assertIsNotEnabled()
+    }
+
     @Test fun thePendingAccessBannerShowsTheCodeAndCancels() {
         var cancelled = false
         compose.setContent { Hosted { AccessBanner(AccessTicket("request", Long.MAX_VALUE, "123456", "computer", "key"), "Fixture computer") { cancelled = true } } }
@@ -154,6 +172,131 @@ class AccountScreenTest {
         compose.onNodeWithText("Code 123 456").assertIsDisplayed()
         compose.onNodeWithContentDescription("Cancel request").performClick()
         assertTrue(cancelled)
+    }
+
+    @Test fun anUnreachableAccountComputerOffersAccessInsteadOfRemoval() {
+        val cloud = CloudComputer(computer.id, computer.name, computer.signKey, online = true, access = "granted")
+        val state = fixture().copy(computers = listOf(computer), cloudComputers = listOf(cloud),
+            connection = LinkState.Failed("This phone cannot reach the computer.", 403))
+        var asked: CloudComputer? = null
+        compose.setContent { Hosted { SettingsView(state, viewModel(), null, {}, { asked = it }, {}) } }
+        compose.onNodeWithText("This phone cannot reach the computer.").assertIsDisplayed()
+        compose.onNodeWithText("Ask for access").performClick()
+        assertEquals(cloud, asked)
+        compose.onNodeWithContentDescription("Remove").assertDoesNotExist()
+        compose.onNodeWithText(computer.name).performTouchInput { longClick() }
+        compose.onNodeWithText("Remove").assertDoesNotExist()
+        compose.onNodeWithText("Revoke this phone's access").assertIsDisplayed()
+    }
+
+    @Test fun aRevokedSavedComputerDoesNotBlockAskingItsReplacement() {
+        val old = CloudComputer(computer.id, computer.name, computer.signKey, online = false)
+        val replacement = CloudComputer("replacement", "New computer", "new-key", online = true)
+        val state = fixture().copy(computers = listOf(computer), cloudComputers = listOf(old, replacement),
+            connection = LinkState.Failed("Access revoked.", 403))
+        var asked: CloudComputer? = null
+        compose.setContent { Hosted { SettingsView(state, viewModel(), null, {}, { asked = it }, {}) } }
+        compose.onAllNodesWithText("Ask for access")[1].assertIsEnabled().performClick()
+        assertEquals(replacement, asked)
+        compose.onNodeWithText("Remove this phone's computer to use this one", substring = true).assertDoesNotExist()
+    }
+
+    @Test fun anExistingPairingDoesNotPretendANewRequestWasApproved() {
+        val cloud = CloudComputer(computer.id, computer.name, computer.signKey, online = true, access = "granted")
+        val state = mutableStateOf(fixture().copy(computers = listOf(computer), cloudComputers = listOf(cloud),
+            access = AccessTicket("new-request", Long.MAX_VALUE, "123456", computer.id, computer.signKey), busy = setOf("access")))
+        compose.setContent { Hosted { AccessRequestView(state.value, viewModel(), cloud) } }
+        compose.onNodeWithText("123 456").assertIsDisplayed()
+        compose.onNodeWithText("${computer.name} approved this phone").assertDoesNotExist()
+        compose.runOnUiThread { state.value = state.value.copy(access = null, busy = emptySet(), approvedAccess = mapOf(computer.id to "new-request")) }
+        compose.onNodeWithText("${computer.name} approved this phone").assertIsDisplayed()
+    }
+
+    @Test fun existingApprovalRequiresAnExplicitRenewal() {
+        val cloud = CloudComputer(computer.id, computer.name, computer.signKey, online = true, access = "granted")
+        compose.setContent { Hosted { AccessRequestView(fixture().copy(computers = listOf(computer)), viewModel(), cloud) } }
+        compose.onNodeWithText("Request new approval").assertIsDisplayed()
+        compose.onNodeWithText("${computer.name} approved this phone").assertDoesNotExist()
+        compose.onNodeWithText("Waiting for approval…").assertDoesNotExist()
+    }
+
+    @Test fun anApprovedHandoffWaitsForAnActiveSessionOperation() {
+        lateinit var store: AppStore
+        val release = CompletableDeferred<Unit>()
+        val calls = mutableListOf<String>()
+        compose.setContent { store = viewModel() }
+        compose.runOnUiThread {
+            store.sessionAction { calls.add("first"); release.await(); calls.add("finished") }
+            store.sessionAction(wait = true) { calls.add("approved") }
+        }
+        compose.runOnIdle { assertEquals(listOf("first"), calls) }
+        compose.runOnUiThread { release.complete(Unit) }
+        compose.waitUntil { calls.size == 3 }
+        compose.runOnIdle { assertEquals(listOf("first", "finished", "approved"), calls) }
+    }
+
+    @Test fun approvalRemainsVisibleWhileTheComputerHandoffWaits() {
+        lateinit var store: AppStore
+        val release = CompletableDeferred<Unit>()
+        compose.setContent { store = viewModel() }
+        compose.waitUntil { !store.state.value.loading }
+        compose.runOnUiThread {
+            store.mutableState.value = store.state.value.copy(computers = listOf(computer),
+                access = AccessTicket("approved-request", Long.MAX_VALUE, "123456", "replacement", "new-key"),
+                busy = setOf("access"))
+            store.sessionAction { release.await() }
+            store.useApprovedComputer(Computer("replacement", "New computer", "new-key"), "approved-request")
+            // The access polling action ends as soon as the cloud confirms approval.
+            store.mutableState.value = store.state.value.copy(access = null, busy = store.state.value.busy - "access")
+        }
+        compose.runOnIdle {
+            assertEquals("approved-request", store.state.value.approvedAccess["replacement"])
+            assertEquals(computer, store.state.value.computers.single())
+        }
+        // Retire this test's generation so releasing the queue cannot persist a pairing.
+        compose.runOnUiThread {
+            store.mutableState.value = store.state.value.copy(generation = store.state.value.generation + 1)
+            release.complete(Unit)
+        }
+        compose.waitUntil { "session" !in store.state.value.busy }
+    }
+
+    @Test fun explicitRenewalReplacesANegotiatingAccessAction() {
+        lateinit var store: AppStore
+        var cancelled = false
+        val cleanupStarted = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
+        compose.setContent { store = viewModel() }
+        compose.waitUntil { !store.state.value.loading }
+        val target = CloudComputer(computer.id, computer.name, computer.signKey, online = true, access = "granted")
+        compose.runOnUiThread {
+            store.cloud = null
+            store.action("access") {
+                try { awaitCancellation() } finally {
+                    withContext(NonCancellable) {
+                        cleanupStarted.complete(Unit)
+                        releaseCleanup.await()
+                        cancelled = true
+                    }
+                }
+            }
+            store.requestAccess(target)
+        }
+        compose.runOnIdle { assertFalse(cancelled) } // Ordinary repeated asks don't replace it.
+        compose.runOnUiThread { store.requestAccess(target, renew = true) }
+        compose.waitUntil { cleanupStarted.isCompleted }
+        compose.runOnIdle {
+            assertFalse(cancelled)
+            assertTrue("renewAccess" in store.state.value.busy)
+            assertNull(store.state.value.error) // Replacement hasn't reached the missing-cloud check.
+        }
+        compose.runOnUiThread { releaseCleanup.complete(Unit) }
+        compose.waitUntil { cancelled && "access" !in store.state.value.busy && "renewAccess" !in store.state.value.busy }
+        compose.runOnIdle {
+            // The replacement actually ran; merely cancelling the old job cannot produce this error.
+            assertEquals("Sign in to reach your account.", store.state.value.error)
+            assertNull(store.state.value.askingAccess)
+        }
     }
 
     private fun snapshot(name: String) {

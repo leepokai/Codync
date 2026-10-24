@@ -17,8 +17,7 @@ import com.codync.android.design.*
 
 /** A bot's character, or a group's members. */
 @Composable internal fun BotAvatar(bot: Bot, bots: List<Bot>, size: Dp = 44.dp) {
-    if (bot.kind == "group") GroupAvatar(bot.members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
-        .map { AvatarFace(it.avatarShape, it.avatarColor, it.status) }, size)
+    if (bot.kind == "group") GroupAvatar(bot.memberBots(bots).map { AvatarFace(it.avatarShape, it.avatarColor, it.status) }, size)
     else CharacterAvatar(bot.avatarShape, bot.avatarColor, size, bot.status)
 }
 

@@ -114,13 +114,13 @@ class VoiceTest {
         audio.text("Late recognition", true); runCurrent()
         assertFalse(session.speak("A late reply")); assertEquals(1, audio.closed)
     }
-    @Test fun replyGateIgnoresHistoryOtherBotsThreadsAndAlreadyFinalizedReplies() {
-        fun entry(id: String, rev: Long, bot: String = "active", thread: String? = null, final: Boolean = true) = Entry(
-            id, rev, bot, thread, rev, "agent", data = buildJsonObject { put("text", id); put("final", final) })
+    @Test fun replyGateIgnoresHistoryOtherBotsAndAlreadyFinalizedReplies() {
+        fun entry(id: String, rev: Long, bot: String = "active", final: Boolean = true) = Entry(
+            id, rev, bot, rev, "agent", data = buildJsonObject { put("text", id); put("final", final) })
         val old = entry("old", 5); val streaming = entry("streaming", 9, final = false)
         val gate = VoiceReplyGate("active", 10, listOf(old, streaming))
         val values = listOf(entry("old", 20), entry("streaming", 21), entry("reply", 22),
-            entry("thread", 23, thread = "root"), entry("other", 24, bot = "other"), entry("history", 6))
+            entry("other", 24, bot = "other"), entry("history", 6))
         val bots = listOf(Bot("active", "Ada"))
         assertEquals(listOf("streaming", "reply"), gate.observe(values, bots).map(VoiceCue::text))
         assertTrue(gate.observe(values, bots).isEmpty())

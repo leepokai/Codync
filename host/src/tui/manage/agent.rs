@@ -7,6 +7,11 @@ use super::super::app::{After, App, Editor, Overlay};
 use super::{AgentSetup, Fields, Input, Reply, SetupRow, Submit, ctrl, s};
 
 impl App {
+    /// What the user calls agent `id` on this computer ("Claude Code").
+    pub fn agent_name(&self, id: &str) -> String {
+        self.backends.iter().find(|b| b["id"] == id).and_then(|b| b["name"].as_str()).unwrap_or(id).to_owned()
+    }
+
     /// `recheck`: opened from a chat's sign-in request, whose agent refused a turn, so the agent
     /// is asked again however signed in it looked.
     pub fn open_agent(&mut self, backend: &str, recheck: bool) {

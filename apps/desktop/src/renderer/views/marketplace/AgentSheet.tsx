@@ -3,12 +3,14 @@ import type { Backend } from '@shared/models'
 import { agentIconURL } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { ModalHeader } from '../../components/Overlay'
+import { ModalHeader, SheetPage } from '../../components/Overlay'
+import { HStack, IconSlot, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
-import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
+import { useTr } from '../../lib/use-language'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
-import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled, lineClamp } from './pieces'
+import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
 import { SetupTerminalView } from './SetupTerminal'
 
 type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null } | { kind: 'keys'; method: AuthMethod }
@@ -32,7 +34,7 @@ export function agentTint(registry: string | null | undefined) {
 /** An agent's registry logo on a rounded tile. */
 export function AgentTile({ registry, icon, tile, radius }: { registry?: string | null; icon: number; tile: number; radius: number }) {
   return (
-    <div style={{ width: tile, height: tile, flex: 'none', borderRadius: radius, background: 'var(--bubble-agent)', display: 'grid', placeItems: 'center', color: 'var(--text)' }}>
+    <div className="agent-tile" style={{ width: tile, height: tile, borderRadius: radius }}>
       <TintedAgentIcon registry={registry} size={icon} />
     </div>
   )
@@ -45,10 +47,8 @@ function TintedAgentIcon({ registry, size }: { registry?: string | null; size: n
   return (
     <span
       aria-hidden
-      style={{
-        display: 'inline-block', width: size, height: size, flex: 'none', background: agentTint(registry),
-        WebkitMaskImage: `url("${url}")`, WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center',
-      }}
+      className="agent-icon"
+      style={{ width: size, height: size, background: agentTint(registry), WebkitMaskImage: `url("${url}")` }}
     />
   )
 }
@@ -59,13 +59,14 @@ function TintedAgentIcon({ registry, size }: { registry?: string | null; size: n
  */
 export function NodeNotice({ onAdd }: { onAdd: () => void }) {
   const store = useStore()
+  const tr = useTr()
   return (
     <div className="node-notice fade-in">
       <Icon name="shippingbox" size={15} color="var(--secondary)" />
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-        <span style={{ ...font('subheadline', 'semibold'), color: 'var(--text)' }}>Node.js isn't on {store.hostName}</span>
-        <span style={{ ...font('caption'), color: 'var(--secondary)' }}>Some agents need it to run. Codync can add a copy just for them.</span>
-      </span>
+      <VStack as="span" gap={2} grow>
+        <Text size="subheadline" weight="semibold" tone="text">{tr("Node.js isn't on {name}").replaceAll('{name}', store.hostName)}</Text>
+        <Text size="caption" tone="secondary">{tr(`Some agents need it to run. Codync can add a copy just for them.`)}</Text>
+      </VStack>
       <Button onClick={onAdd}>Add Node.js</Button>
     </div>
   )
@@ -75,7 +76,7 @@ export function NodeNotice({ onAdd }: { onAdd: () => void }) {
  * Getting an agent ready on the computer: install it, add Node.js when it runs on Node and
  * the computer has none, then sign in. Sign-in
  * options come from the agent itself (ACP), plus Codync's own command for
- * CLIs it knows. Bots are made from New chat, not here.
+ * CLIs it knows. Bots are made from New bot, not here.
  */
 /** `recheck`: opened from a chat's sign-in request, whose agent refused a turn, so the agent is
  *  asked again however signed in it looked. */
@@ -155,14 +156,14 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
 
   const optionRow = (key: string, title: string, detail: string, icon: string, action: () => void, busy = false) => (
     <button key={key} className="option-row" disabled={authenticating !== null} onClick={action}>
-      <span aria-hidden style={{ width: 26, display: 'flex', justifyContent: 'center', color: 'var(--secondary)', flex: 'none' }}>
+      <IconSlot width={26} tone="secondary" aria-hidden>
         <Icon name={icon} size={13} />
-      </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-        <span style={{ ...font('body', 'medium'), color: 'var(--text)' }}>{title}</span>
-        <span style={{ ...font('subheadline'), color: 'var(--secondary)', ...lineClamp(3) }}>{detail}</span>
-      </span>
-      <span style={{ minWidth: 8 }} />
+      </IconSlot>
+      <VStack as="span" gap={2} grow>
+        <Text size="body" weight="medium" tone="text">{title}</Text>
+        <Text size="subheadline" tone="secondary" lines={3}>{detail}</Text>
+      </VStack>
+      <span className="agent-row-gap" />
       {busy ? <ThinkingOrb size={16} color="var(--secondary)" /> : <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
     </button>
   )
@@ -188,18 +189,13 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
   }
 
   const overview = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
-      <ModalHeader title={backend.name} />
+    <SheetPage>
+      <ModalHeader
+        icon={<AgentTile registry={backend.registry ?? backend.id} icon={18} tile={32} radius={9} />}
+        title={backend.name}
+        subtitle={backend.description || undefined}
+      />
       <CardForm>
-        <CardSection>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 0' }}>
-            <AgentTile registry={backend.registry ?? backend.id} icon={30} tile={52} radius={14} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-              <span style={font('title3', 'semibold')}>{backend.name}</span>
-              {backend.description ? <span style={{ ...font('subheadline'), color: 'var(--secondary)', ...lineClamp(3) }}>{backend.description}</span> : null}
-            </div>
-          </div>
-        </CardSection>
         {curated ? (
           <CardSection>
             <SetupStepRow
@@ -227,24 +223,24 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
             ? `Browser sign-ins open on ${host} itself. Away from it? Use Remote screen to finish there.`
             : null}
         >
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <SetupStepRow number={1 + Number(curated) + Number(backend.node !== undefined)} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
-            </div>
+          <HStack>
+            <VStack grow>
+              <SetupStepRow number={1 + Number(curated) + Number(Boolean(backend.node))} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
+            </VStack>
             {checking ? (
               <ThinkingOrb state="connecting" size={16} color="var(--secondary)" />
             ) : (
-              <button title="Check again" aria-label="Check again" style={{ display: 'flex', color: 'var(--secondary)' }} onClick={() => void check()}>
+              <button title="Check again" aria-label="Check again" className="agent-check-again" onClick={() => void check()}>
                 <Icon name="arrow.clockwise" size={13} />
               </button>
             )}
-          </div>
-          {signedIn !== true && auth?.detail ? <span className="selectable" style={{ ...font('footnote'), color: 'var(--secondary)', whiteSpace: 'pre-wrap' }}>{auth.detail}</span> : null}
+          </HStack>
+          {signedIn !== true && auth?.detail ? <Text size="footnote" tone="secondary" className="selectable agent-auth-detail">{auth.detail}</Text> : null}
           {options}
         </CardSection>
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>
-    </div>
+    </SheetPage>
   )
 
   return <SlideStack base={overview} top={routed} />
@@ -258,6 +254,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
   back: () => void
   done: (auth: AgentAuth) => void
 }) {
+  const tr = useTr()
   const store = useStore()
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -279,17 +276,17 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
 
   const missing = vars.some((v) => !v.optional && !values[v.name] && !saved.includes(v.name))
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
+    <SheetPage>
       <ScreenHeader
         title={method.name}
         onBack={back}
         trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={missing} onClick={() => void save(filled(values))} />}
       />
       <CardForm>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <VStack gap={6}>
           <CardSection title={method.name}>
             {vars.map((v) => (
-              <div key={v.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <VStack key={v.name} gap={4}>
                 <Field
                   label={v.label}
                   value={values[v.name] ?? ''}
@@ -297,26 +294,26 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
                   placeholder={saved.includes(v.name) ? 'Saved (type to replace)' : v.name}
                   onChange={(x) => setValues((old) => ({ ...old, [v.name]: x }))}
                 />
-                <span style={{ ...font('caption'), color: 'var(--secondary)' }}>{v.label + (v.optional ? ' (optional)' : '')}</span>
-              </div>
+                <Text size="caption" tone="secondary">{v.label + (v.optional ? tr(` (optional)`) : '')}</Text>
+              </VStack>
             ))}
           </CardSection>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 4px', ...font('caption'), color: 'var(--tertiary)' }}>
+          <VStack gap={6} className="agent-keys-notes">
             {method.description ? <span>{method.description}</span> : null}
             <span>Saved on {store.hostName} only and given to {backend.name} when it starts.</span>
             {method.link && URL.canParse(method.link) ? <WebLink title="Get a key" url={method.link} /> : null}
-          </div>
-        </div>
+          </VStack>
+        </VStack>
         {saved.length ? (
           <CardSection>
-            <button style={{ color: 'var(--danger)' }} onClick={() => void save(Object.fromEntries(vars.map((v) => [v.name, ''])))}>
+            <button className="market-danger-button" onClick={() => void save(Object.fromEntries(vars.map((v) => [v.name, ''])))}>
               Remove saved keys
             </button>
           </CardSection>
         ) : null}
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>
-    </div>
+    </SheetPage>
   )
 }
 
@@ -327,23 +324,24 @@ function SetupStepRow({ number, title, detail, done, action }: {
   done: boolean
   action: { label: string; run: () => void } | null
 }) {
+  const tr = useTr()
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0' }} aria-label={`${title}. ${detail}${done ? '. Done' : ''}`}>
-      <span aria-hidden style={{ width: 26, height: 26, borderRadius: '50%', flex: 'none', display: 'grid', placeItems: 'center', background: done ? 'var(--accent-fill)' : 'var(--bubble-agent)', transition: 'background-color var(--fade)' }}>
+    <HStack gap={12} className="agent-step-row" aria-label={`${tr(title)}. ${tr(detail)}${done ? `. ${tr('Done')}` : ''}`}>
+      <span aria-hidden className={`agent-step-number${done ? ' done' : ''}`}>
         {done
           ? <Icon name="checkmark" size={10} weight="bold" color="var(--on-accent)" />
-          : <span style={{ ...font('caption', 'semibold'), color: 'var(--secondary)' }}>{number}</span>}
+          : <Text size="caption" weight="semibold" tone="secondary">{number}</Text>}
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-        <span style={{ ...font('body', 'medium'), color: 'var(--text)' }}>{title}</span>
-        <span className="selectable" style={{ ...font('subheadline'), color: 'var(--secondary)' }}>{detail}</span>
-      </span>
-      <span style={{ minWidth: 8 }} />
+      <VStack as="span" gap={2} grow>
+        <Text size="body" weight="medium" tone="text">{title}</Text>
+        <Text size="subheadline" tone="secondary" className="selectable">{detail}</Text>
+      </VStack>
+      <span className="agent-row-gap" />
       {action ? (
-        <button className="capsule-action" style={{ ...font('subheadline', 'semibold'), padding: '7px 14px' }} onClick={action.run}>
-          {action.label}
+        <button className="capsule-action agent-step-action" onClick={action.run}>
+          {tr(action.label)}
         </button>
       ) : null}
-    </div>
+    </HStack>
   )
 }

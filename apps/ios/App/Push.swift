@@ -92,8 +92,16 @@ final class PushRegistrar {
         }
     }
 
-    func requestAuthorization() async -> Bool {
-        let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+    /// Shows the system prompt; `source` is the button that asked (the app never asks on its own).
+    func requestAuthorization(from source: AnalyticsEvent.PromptSource) async -> Bool {
+        let granted: Bool
+        do {
+            granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+        } catch {
+            log.error("notification authorization failed: \(error.localizedDescription)")
+            return false
+        }
+        Analytics.shared.capture(.notificationsAnswered(granted: granted, source: source))
         if granted { UIApplication.shared.registerForRemoteNotifications() }
         return granted
     }

@@ -1,7 +1,8 @@
 import type { VersionMismatch } from '@shared/compat'
 import { Button } from '../components/Controls'
 import { Icon } from '../components/Icon'
-import { font } from '../lib/fonts'
+import { HStack, VStack } from '../components/Stack'
+import { Text } from '../components/Text'
 import { useApp, useStore } from '../store/context'
 import { UpdateButton, useUpdates } from './UpdateButton'
 
@@ -43,15 +44,15 @@ export function UpdateNeededCard() {
     ? updates && <UpdateButton updates={updates} kind="primary" />
     : restartsHost && <Button onClick={() => window.codync.host.restart()}>{`Update ${store.hostName}`}</Button>
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14, background: 'var(--surface)', borderRadius: 16 }}>
+    <HStack align="flex-start" gap={12} className="update-needed">
       <Icon name="arrow.down.circle" size={15} color="var(--warning)" />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
-        <div style={{ ...font('subheadline', 'semibold'), color: 'var(--text)' }}>{updateNeededText.title(mismatch, store.hostName)}</div>
-        <div style={{ ...font('footnote'), color: 'var(--secondary)' }}>
+      <VStack gap={6} grow>
+        <Text as="div" size="subheadline" weight="semibold" tone="text">{updateNeededText.title(mismatch, store.hostName)}</Text>
+        <Text as="div" size="footnote" tone="secondary">
           {updateNeededText.detail(mismatch, store.hostName, store.hostVersion?.version, store.hello?.os, !updatesApp && !restartsHost)}
-        </div>
-        {button ? <div style={{ marginTop: 4, alignSelf: 'flex-start' }}>{button}</div> : null}
-      </div>
-    </div>
+        </Text>
+        {button ? <div className="update-needed-action">{button}</div> : null}
+      </VStack>
+    </HStack>
   )
 }

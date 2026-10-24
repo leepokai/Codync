@@ -1,0 +1,4 @@
+{
+  "includeBranches": ["dev", "main"],
+  "autoReview": ["open", "push"]
+}

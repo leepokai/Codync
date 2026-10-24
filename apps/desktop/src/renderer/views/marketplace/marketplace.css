@@ -20,12 +20,23 @@
   top: 8px;
   right: 8px;
 }
+.market-installed-body {
+  flex: 1;
+  min-height: 0;
+}
+.market-empty {
+  padding: 40px 0;
+  text-align: center;
+}
 
-/* Installed ⇄ page: slides like `.move(edge:)` + opacity. */
+/* Installed ⇄ page: slides like `.move(edge:)` + opacity. The base page sizes the stack (so a
+   card that fits its content fits it) and the page on top takes the same box. */
 .market-stack {
   position: relative;
   height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background: var(--background);
 }
 .market-layer {
@@ -34,6 +45,11 @@
   display: flex;
   flex-direction: column;
   transition: transform var(--layout), opacity var(--layout);
+}
+.market-layer:first-child {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .market-layer.off-leading {
   transform: translateX(-100%);
@@ -53,17 +69,24 @@
   padding: 0 14px;
   height: 38px;
   background: var(--bubble-agent);
-  border-radius: 12px;
+  border-radius: var(--radius-m);
 }
 .market-search input {
   flex: 1;
   min-width: 0;
+}
+.market-search-clear {
+  display: flex;
+  color: var(--tertiary);
 }
 
 .market-section {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.market-section-title {
+  padding-left: 4px;
 }
 
 .agent-grid {
@@ -84,7 +107,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   background: var(--bubble-agent);
 }
 
@@ -95,7 +118,7 @@
   text-align: left;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   min-width: 0;
   background: transparent;
   transition: background-color var(--hover), transform var(--press);
@@ -106,27 +129,102 @@
 .agent-card:active {
   transform: scale(0.98);
 }
+.agent-card-line {
+  max-width: 100%;
+}
+
+/* An agent's registry logo on a rounded tile; size and radius come from the caller. */
+.agent-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--bubble-agent);
+  color: var(--text);
+}
+/* The logo as a mask over its tint (agentTint can be a gradient). */
+.agent-icon {
+  display: inline-block;
+  flex: none;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}
 
 .market-row {
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 10px 12px;
-  border-radius: 16px;
+  border-radius: var(--radius-l);
   min-width: 0;
   transition: background-color var(--hover);
 }
 .market-row.openable:hover {
   background: color-mix(in srgb, var(--bubble-agent) 60%, transparent);
 }
+.market-row-icon {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  display: grid;
+}
+/* The trailing "adding…" orb or "added" check, as wide as the capsule they replace. */
+.market-row-status {
+  width: 60px;
+  flex: none;
+}
+.market-row-added {
+  color: var(--secondary);
+}
+
+/* Logo tiles (ServiceLogo, AppLogo); size and corner radius follow the size prop. */
+.market-logo {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--bubble-agent);
+}
+.service-logo {
+  overflow: hidden;
+}
+.service-logo-initial {
+  font-family: ui-rounded, var(--font);
+}
+.market-logo-image {
+  position: absolute;
+  inset: 0;
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  box-sizing: border-box;
+}
+.market-logo-image.loaded {
+  display: block;
+}
+/* Favicons sit on white in both schemes. */
+.service-logo-image {
+  background: #fff;
+}
+.market-tile {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-m);
+  background: var(--bubble-agent);
+  display: grid;
+  place-items: center;
+  color: var(--text);
+}
 
 /* The quiet capsule action ("Add", "Install"). */
 .capsule-action {
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--text);
   padding: 7px 16px;
   background: var(--bubble-agent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   white-space: nowrap;
   flex: none;
   transition: transform var(--press), opacity var(--press);
@@ -135,9 +233,36 @@
   transform: scale(0.98);
   opacity: 0.85;
 }
+.agent-step-action {
+  padding: 7px 14px;
+}
 
 .skeleton {
   animation: market-pulse 0.9s ease-in-out infinite alternate;
+}
+.skeleton-row {
+  padding: 10px 12px;
+}
+.skeleton-icon {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: var(--radius-m);
+  background: var(--bubble-agent);
+}
+.skeleton-title,
+.skeleton-subtitle {
+  background: var(--bubble-agent);
+}
+.skeleton-title {
+  width: 120px;
+  height: 12px;
+  border-radius: var(--radius-xs);
+}
+.skeleton-subtitle {
+  width: 190px;
+  height: 10px;
+  border-radius: 5px;
 }
 @keyframes market-pulse {
   to {
@@ -155,6 +280,25 @@
   text-decoration: underline;
   text-align: left;
 }
+.plain-link.small {
+  font-size: var(--text-caption);
+  font-weight: 400;
+}
+
+/* A full screen's top bar (ScreenHeader), its title centered over the whole bar. */
+.market-screen-header {
+  position: relative;
+  height: 44px;
+  padding: 0 12px;
+  flex: none;
+  background: var(--background);
+}
+.market-screen-title {
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  text-align: center;
+}
 
 .option-row {
   display: flex;
@@ -164,6 +308,59 @@
 }
 .option-row:disabled {
   opacity: 0.5;
+}
+/* At least 8 pt between a row's text and its trailing control, on top of the gaps. */
+.agent-row-gap {
+  min-width: 8px;
+}
+
+/* The logo and name at the top of a details sheet. */
+.market-card-header {
+  padding: 4px 0;
+}
+.agent-step-row {
+  padding: 4px 0;
+}
+.agent-step-number {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bubble-agent);
+  transition: background-color var(--fade);
+}
+.agent-step-number.done {
+  background: var(--accent-fill);
+}
+.agent-check-again {
+  display: flex;
+  color: var(--secondary);
+}
+.agent-auth-detail {
+  white-space: pre-wrap;
+}
+.agent-keys-notes {
+  padding: 0 4px;
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--tertiary);
+}
+.market-danger-button {
+  color: var(--danger);
+}
+
+.composio-connected {
+  color: var(--added);
+}
+
+/* SkillSheet's "added" check, in the place of the Add button. */
+.skill-added {
+  width: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--secondary);
 }
 
 .plain-row-button {
@@ -178,11 +375,35 @@
 }
 textarea.market-field {
   field-sizing: content;
+  line-height: 1.3;
+}
+.market-field.mono {
+  font-size: var(--text-callout);
+  font-weight: 400;
+  font-family: var(--mono);
+}
+/* A connector/sign-in request in the chat: an outlined card, no fill. */
+.request-card {
+  width: 100%;
+  max-width: 400px;
+  box-sizing: border-box;
+  align-self: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+.request-card-trailing {
+  flex: none;
+}
+.request-card-status {
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--secondary);
 }
 /* A chat request card has no fill, so each of its fields gets one (fill, no border). */
 .request-card .market-field {
   padding: 7px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-s);
   background: var(--bubble-agent);
   box-sizing: border-box;
 }
@@ -198,19 +419,56 @@ textarea.market-field {
 .setup-terminal .xterm-viewport {
   background: transparent !important;
 }
-
-.fade-in {
-  animation: market-fade-in var(--fade) both;
+.setup-terminal-surface {
+  width: 100%;
+  height: 100%;
 }
-@keyframes market-fade-in {
-  from {
-    opacity: 0;
-  }
+.setup-terminal-status {
+  padding: 10px 16px;
+  font-size: var(--text-caption);
+  font-weight: 400;
 }
 
 .market-heading { display: flex; align-items: center; gap: 12px; padding-right: 10px; flex-wrap: wrap; }
+.market-heading-titles {
+  white-space: nowrap;
+}
+.market-computer-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--secondary);
+}
+/* "N installed": the first connectors' logos, overlapping, then the count. */
+.market-installed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.market-installed-logos > * + * {
+  margin-left: -8px;
+}
+.market-installed-text {
+  white-space: nowrap;
+}
+.market-remove {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--secondary);
+}
 @media (max-width: 640px) {
   .market-page-content { padding: 28px 18px; }
   .item-grid { grid-template-columns: minmax(0, 1fr); }
   .agent-grid { grid-template-columns: minmax(0, 1fr); }
+}
+/* An agent's logo in a sheet's title row, on the same tile as a symbol. */
+.modal-header > .agent-tile {
+  background: var(--field);
 }

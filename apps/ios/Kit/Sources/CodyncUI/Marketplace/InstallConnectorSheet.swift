@@ -57,16 +57,19 @@ struct InstallConnectorSheet: View {
             if item.options.count > 1 {
                 CardSection("Runs") {
                     ChoiceList(selection: $optionId, options: item.options.map { o in
-                        (id: o.id, label: o.kind == "remote" ? "Hosted by \(item.title)" : "On \(model.hostName) (\(o.kind))", detail: nil)
+                        (id: o.id, label: o.kind == "remote"
+                            ? L10n.tr("Hosted by {name}").replacingOccurrences(of: "{name}", with: item.title)
+                            : L10n.tr("On {name} ({kind})").replacingOccurrences(of: "{name}", with: model.hostName).replacingOccurrences(of: "{kind}", with: o.kind),
+                         detail: nil)
                     })
                 }
             }
             if let option {
-                CardSection("Setup", footer: "Keys are saved on \(model.hostName) only.") {
+                CardSection("Setup", footer: L10n.tr("Keys are saved on {name} only.").replacingOccurrences(of: "{name}", with: model.hostName)) {
                     if option.inputs.isEmpty {
                         Text(option.kind == "remote"
-                            ? "No keys needed here. If \(item.title) wants you to sign in, its sign-in page opens next."
-                            : "No setup needed.")
+                            ? L10n.tr("No keys needed here. If {name} wants you to sign in, its sign-in page opens next.").replacingOccurrences(of: "{name}", with: item.title)
+                            : L10n.tr("No setup needed."))
                             .foregroundStyle(Palette.secondary)
                     }
                     ForEach(option.inputs) { input in
@@ -80,14 +83,14 @@ struct InstallConnectorSheet: View {
                             }
                             .plainTextInput()
                             if let d = input.description {
-                                Text(d + (input.required ? "" : " (optional)")).font(.caption).foregroundStyle(Palette.secondary)
+                                Text(d + (input.required ? "" : L10n.tr(" (optional)"))).font(.caption).foregroundStyle(Palette.secondary)
                             }
                         }
                     }
                 }
             }
             if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .textFieldStyle(.plain)

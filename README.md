@@ -49,12 +49,12 @@ Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, 
 
 - **Free and open source.** No subscription, no paid tier, Apache 2.0 licensed. It runs on your computer with the agents and accounts you already have.
 - **Bring any coding agent.** Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode, Pi, Grok Build and ~40 more — everything in the [ACP registry](https://agentclientprotocol.com/registry). Installed agents are found automatically, the rest are fetched on first use, and every bot picks its own. Mix them freely: a Claude bot can ask a Codex bot for a review.
-- **Many bots, one team.** Run as many bots as you like side by side, each with its own agent, project folder and approvals, all working at once. Put several in a **group chat** and they answer in turn, like a team channel; `@name` picks who replies. Start a **thread** on any message to branch off without cluttering the main chat.
+- **Many bots, one team.** Run as many bots as you like side by side, each with its own agent, project folder and approvals, all working at once. Put several in a **group chat** and they answer in turn, like a team channel; `@name` picks who replies. **Reply** to any message, yours or a bot's, right in the chat.
 - **Built in Rust.** `codync-host` is one small, fast Rust binary for macOS, Windows and Linux (static on Linux, runs on any distro) that drives every agent, keeps the transcripts and serves every client.
 - **One app per kind of device.** Native SwiftUI on the iPhone, one desktop app for Mac, Windows and Linux (Electron), and a terminal UI for SSH.
-- **A Grok Bot, Muse and Dots alternative.** Persistent named bots, group chats, reply threads, bots asking each other for help, approval cards, per-bot memory, remote screen, voice calls and "needs you / done" notifications — the same features, without being tied to one model or one subscription.
+- **A Grok Bot, Muse and Dots alternative.** Persistent named bots, group chats, quote replies, bots asking each other for help, approval cards, per-bot memory, remote screen, voice calls and "needs you / done" notifications — the same features, without being tied to one model or one subscription.
 - **Reach your computer from anywhere, free.** The hosted Cloudflare relay is included at no cost: no Tailscale, no VPN, no port forwarding. Traffic is end-to-end encrypted between your phone and your computer, so the relay only forwards ciphertext. Same Wi-Fi or Tailscale? The phone connects directly instead.
-- **Every computer, one app.** Sign in and your iPhone lists every computer on your account (Mac, Windows PC, Linux desktop, server or cloud VM); tap **Connect**, confirm a 6-digit code on that computer, and its bots show up next to the others. A new bot can live on any of them, and the Mac app reaches your SSH machines too. Each computer approves each device itself, so an account alone never unlocks a computer.
+- **Every computer, one app.** Sign in and your iPhone lists every computer on your account (Mac, Windows PC, Linux desktop, server or cloud VM); open Computers and tap **Ask for access**, confirm a 6-digit code on that computer, and its bots show up next to the others. A new bot can live on any of them, and the Mac app reaches your SSH machines too. Each computer approves each device itself, so an account alone never unlocks a computer.
 - **Remote screen.** See and control your computer from the iPhone over WebRTC (hardware H.264), and let bots use the screen themselves through the built-in `computer` tool.
 - **Voice calls.** Talk to a bot hands-free from the iPhone and hear its replies read aloud.
 - **Private push.** Notification text is sealed to your phone's key, so the push relay never sees what your bots said.
@@ -74,7 +74,7 @@ The host (`codync-host`, Rust) runs on macOS, Windows and Linux; every client ta
 **Looking for the former native Mac app (SwiftUI + AppKit)?** Version 2.7.0 moved Mac and
 Linux to one Electron desktop app. The native implementation is preserved in Git history;
 see the [changelog and source lookup commands](#changelog) and the
-[archived AppKit chat implementation notes](docs/archive/macos-chat-swiftui.md).
+[archived AppKit chat implementation notes](docs/archive/macos-chat-swiftui-2026-10-05.md).
 
 ## How it works
 
@@ -84,8 +84,8 @@ Local / SSH client  ⇄ loopback HTTP + SSE                             ⇄ cody
 Host notifications → APNs worker (relay/) → iPhone
 ```
 
-- **Bots** have a name, a character avatar, standing instructions, an agent backend, a project folder and a permission policy. Each bot has **a persistent main chat and optional reply threads**; the agent sessions underneath are an implementation detail (resumed with `session/load`, restarted with *New session*).
-- **Group chats** hold several bots and you. Each message starts a short room turn: the bots you @-mention (or everyone) reply one at a time, each in its own session, and can react to each other, up to 3 rounds. See [group chats and threads](docs/features/groups-and-threads.md).
+- **Bots** have a name, a character avatar, standing instructions, an agent backend, a project folder and a permission policy. Each bot has **one persistent chat**, where you can reply to any message; the agent sessions underneath are an implementation detail (resumed with `session/load`, restarted with *New session*).
+- **Group chats** hold several bots and you. Each message starts a short room turn: the bots you @-mention (or everyone) reply one at a time, each in its own session, and can react to each other, up to 3 rounds. See [group chats and replies](docs/features/groups-and-replies.md).
 - **Bots can ask each other for help.** Tell one “ask Reviewer to check these changes.” The built-in `team` MCP server lets it discover your other visible bots and wait for a reply. Requests appear in both chats; each recipient keeps its own agent, folder and approvals. Native subagents stay under the coding agent's control. See [bot collaboration](docs/features/bot-collaboration.md).
 - **The chat only shows what matters**: your messages, each turn's final reply, approval cards and notices. Every tool call, diff, plan and thought is one tap away in *Full conversation*. While a bot works, its row shows what it's doing right now.
 - **Agents are detected automatically**: the host hydrates PATH from your login shell (plus Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), finds every harness you have installed, and prefers its native ACP mode. Anything else in the official [ACP registry](https://agentclientprotocol.com/registry) can be picked too — Codync fetches it on first use (npx, uvx or a checksummed binary).
@@ -179,7 +179,7 @@ Data lives in `~/.codync`. The local bearer token authorizes loopback helpers an
 
 **Which agents can it run?** Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more through the [ACP registry](https://agentclientprotocol.com/registry). Each bot picks its own.
 
-**How is it different from Grok Bot, Muse or Dots?** The same bot-based way of working (named bots, group chats, threads, approvals, memory), but open source, free, running on your own computer and with any coding agent. Side-by-side pages: [codync.dev/compare](https://www.codync.dev/compare).
+**How is it different from Grok Bot, Muse or Dots?** The same bot-based way of working (named bots, group chats, replies, approvals, memory), but open source, free, running on your own computer and with any coding agent. Side-by-side pages: [codync.dev/compare](https://www.codync.dev/compare).
 
 **Where does my data go?** Bots, chats and memory stay on your computer. The phone reaches it directly on the same network, or through an end-to-end encrypted relay that can't read your messages.
 
@@ -231,7 +231,7 @@ Details: [desktop app](docs/architecture/desktop-app.md).
 **Native Mac source (SwiftUI + AppKit).** The last native revision is `1055636`, the parent
 of migration commit `41135ac`. It includes `apps/macos/` and the Mac code paths in `kit/`.
 The chat used `MacChatList`, an AppKit `NSScrollView` hosting SwiftUI message rows;
-see the [archived implementation notes](docs/archive/macos-chat-swiftui.md).
+see the [archived implementation notes](docs/archive/macos-chat-swiftui-2026-10-05.md).
 
 ```bash
 git show 1055636:apps/macos/Views/ChatWindow.swift

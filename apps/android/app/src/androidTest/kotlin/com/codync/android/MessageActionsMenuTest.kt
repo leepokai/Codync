@@ -43,7 +43,7 @@ class MessageActionsMenuTest {
         val bubble = compose.onNode(hasText(text, substring = true) and hasClickAction())
         bubble.performTouchInput { longClick() }
         compose.onNodeWithContentDescription("👍").assertIsDisplayed().assertIsNotSelected()
-        compose.onNodeWithText("Reply in thread").assertIsDisplayed()
+        compose.onNodeWithText("Reply").assertIsDisplayed()
         compose.onNodeWithText("Show what it did").assertIsDisplayed()
         compose.onNodeWithText("Copy").performClick()
         compose.onNodeWithText("Copy").assertDoesNotExist()
@@ -60,13 +60,40 @@ class MessageActionsMenuTest {
         compose.runOnUiThread { clipboard.clearPrimaryClip() }
     }
 
+    @Test fun replyQuotesTheMessageInTheComposerUntilCancelled() {
+        val bot = Bot("reply-preview", "Scout")
+        val text = "The saved route works."
+        val reply = Entry("reply", 1, bot.id, rev = 1, kind = "agent", data = buildJsonObject { put("text", text); put("final", true) })
+        val quoted = Entry("quoted", 2, bot.id, rev = 2, kind = "user", data = buildJsonObject {
+            put("text", "Ship it"); put("replyTo", buildJsonObject { put("id", reply.id); put("author", bot.id); put("text", text) })
+        })
+        val state = AppState(loading = false, selectedBot = bot.id, bots = listOf(bot), connection = LinkState.Ready(HostRoute.Direct),
+            historyComplete = setOf(bot.id), entries = listOf(reply, quoted))
+        compose.setContent { Hosted { ChatScreen(state, viewModel(), {}) } }
+        // The sent reply shows what it quotes.
+        compose.onNodeWithText("“$text”").assertIsDisplayed()
+        compose.onNode(hasText(text) and hasClickAction()).performTouchInput { longClick() }
+        compose.onNodeWithText("Reply").performClick()
+        compose.onAllNodesWithText("“$text”").assertCountEquals(2)
+        compose.onNodeWithText("Reply…").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Cancel reply").performClick()
+        compose.onAllNodesWithText("“$text”").assertCountEquals(1)
+        compose.onNodeWithContentDescription("Cancel reply").assertDoesNotExist()
+        // An older host can't quote: no Reply.
+        compose.setContent { Hosted { ChatScreen(state.copy(hello = buildJsonObject { put("version", "2.20.0") }), viewModel(), {}) } }
+        compose.onNode(hasText(text) and hasClickAction()).performTouchInput { longClick() }
+        compose.onNodeWithText("Copy").assertIsDisplayed()
+        compose.onNodeWithText("Reply").assertDoesNotExist()
+        back()
+    }
+
     @Test fun reactionsAndOptionsCloseTheMenuAndRunOnce() {
         val invoked = mutableListOf<String>()
         compose.setContent { Hosted {
             Box(Modifier.fillMaxSize().safeDrawingPadding().padding(top = 80.dp)) {
                 Text("Action callback preview", Modifier.contextActions(ReactionPick(listOf("👍", "❤️"), listOf("👍")) { invoked.add(it) },
                     preview = { Text("Action callback preview") }) {
-                    listOf(MenuItem("Reply in thread") { invoked.add("thread") }, MenuItem("Copy") { invoked.add("copy") })
+                    listOf(MenuItem("Reply") { invoked.add("reply") }, MenuItem("Copy") { invoked.add("copy") })
                 })
             }
         } }
@@ -75,7 +102,7 @@ class MessageActionsMenuTest {
         compose.onNodeWithContentDescription("👍").assertIsSelected().performClick()
         compose.onNodeWithText("Copy").assertDoesNotExist()
         assertEquals(listOf("👍"), invoked)
-        for ((label, event) in listOf("Reply in thread" to "thread", "Copy" to "copy")) {
+        for ((label, event) in listOf("Reply" to "reply", "Copy" to "copy")) {
             bubble.performTouchInput { longClick() }
             compose.onNodeWithText(label).performClick()
             compose.onNodeWithText(label).assertDoesNotExist()

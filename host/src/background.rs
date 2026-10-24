@@ -1,12 +1,6 @@
 //! Background services started alongside the host API.
 
-use crate::{
-    agent::{backends, registry},
-    hub::Hub,
-    market,
-    remote::relay,
-    screen, update, usage, voice,
-};
+use crate::{agent::registry, hub::Hub, market, remote::relay, screen, update, usage, voice};
 use std::sync::Arc;
 
 pub fn start(hub: &Arc<Hub>) {
@@ -14,7 +8,10 @@ pub fn start(hub: &Arc<Hub>) {
     tokio::spawn(market::refresh_first_page());
     tokio::spawn(market::automatic_loop(hub.clone()));
     tokio::spawn(voice::refresh_loop(hub.clone()));
-    tokio::spawn(backends::refresh_sign_in());
+    tokio::spawn({
+        let hub = hub.clone();
+        async move { market::agent_sign_in::refresh(&hub).await }
+    });
     tokio::spawn(usage::poll(hub.clone()));
     tokio::spawn(update::automatic_loop(hub.clone()));
     tokio::spawn(screen::serve_helpers(hub.screen.clone()));

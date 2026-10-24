@@ -62,28 +62,6 @@ pub fn verify_manifest(bytes: &[u8], signature: &str, public_key: &str, platform
     Ok(release)
 }
 
-/// The signed compat file published beside a release: the iPhone app version it needs,
-/// readable before downloading the release (docs/reference/compatibility.md).
-pub fn verify_compat(bytes: &[u8], signature: &str, public_key: &str, version: &str) -> Result<String> {
-    let key: [u8; 32] =
-        B64.decode(public_key.trim())?.try_into().map_err(|_| anyhow::anyhow!("invalid update public key"))?;
-    let signature = Signature::from_slice(&B64.decode(signature.trim())?)?;
-    VerifyingKey::from_bytes(&key)?.verify_strict(bytes, &signature).context("compat signature is invalid")?;
-    let compat: serde_json::Value = serde_json::from_slice(bytes).context("reading the signed compat file")?;
-    ensure!(compat["version"] == version, "compat file is for another release");
-    let min_app = compat["minApp"].as_str().context("compat file has no minApp")?;
-    ensure!(crate::compat::parse(min_app).is_some(), "compat file has an invalid minApp");
-    Ok(min_app.to_owned())
-}
-
-/// `release`'s `minApp` from its signed compat file (releases before 2.5.0 have none).
-pub async fn min_app(release: &Release) -> Result<String> {
-    let url = format!("{RELEASES}/download/v{}/codync-host-{}.compat.json", release.version, release.platform);
-    let bytes = download(&url, 4 * 1024).await?;
-    let signature = download(&format!("{url}.sig"), 1024).await?;
-    verify_compat(&bytes, std::str::from_utf8(&signature)?, PUBLIC_KEY, &release.version)
-}
-
 pub async fn download(url: &str, limit: usize) -> Result<Vec<u8>> {
     let mut response = crate::http()
         .get(url)

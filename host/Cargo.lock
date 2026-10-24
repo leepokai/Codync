@@ -586,7 +586,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codync-host"
-version = "2.17.5"
+version = "2.24.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -595,6 +595,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "codync-mem",
  "croner",
  "crossterm",
  "dirs",
@@ -629,6 +630,16 @@ dependencies = [
  "uuid",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "codync-mem"
+version = "0.3.2"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]

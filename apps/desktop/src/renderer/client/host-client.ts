@@ -147,16 +147,14 @@ export class HostClient {
     return (await this.call<{ entries: Entry[] }>('history', { botId, beforeSeq, limit })).entries
   }
 
-  async thread(botId: string, rootId: string) {
-    return (await this.call<{ entries: Entry[] }>('thread', { botId, rootId })).entries
-  }
-
   async botConversation(botId: string, peerId: string) {
     return (await this.call<{ entries: Entry[] }>('botConversation', { botId, peerId })).entries
   }
 
-  async send(botId: string, text: string, clientNonce: string, threadId: string | null, attachments: string[] | null) {
-    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, threadId, attachments })).entry
+  /** `pasted`: what the user pasted rather than typed, which memory never takes as their own words. `replyTo`: the
+   * chat message this one replies to. */
+  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: string | null = null) {
+    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}) })).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

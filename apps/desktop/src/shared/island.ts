@@ -109,6 +109,8 @@ const BAR = 26
 
 export const isActive = (b: Pick<IslandBot, 'status'>) => b.status === 'working' || b.status === 'needsInput'
 export const isOpenMode = (mode: IslandMode) => mode !== 'hidden' && mode !== 'peek' && mode !== 'compact'
+/** Leaving the message tab hides its recording pill, so dictation still going there stops (keeping the words). */
+export const stopsDictation = (from: IslandTab, to: IslandTab, dictating: boolean) => dictating && from === 'message' && to !== 'message'
 
 export function islandMode(
   summary: IslandSummary,
@@ -199,4 +201,4 @@ export function notchOf(screens: NotchScreen[], bounds: { x: number; width: numb
 }
 
 /** The setting's name: a notch on the Mac, the top edge elsewhere. */
-export const islandLabel = (platform: string) => (platform === 'darwin' ? 'Show in notch' : 'Show at top of screen')
+export const islandLabel = (platform: string) => (platform === 'darwin' ? 'Show in Notch' : 'Show at top of screen')

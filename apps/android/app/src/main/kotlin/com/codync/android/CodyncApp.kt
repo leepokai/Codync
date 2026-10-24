@@ -23,12 +23,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.CloudComputer
 import com.codync.android.core.GroupDraft
 import com.codync.android.design.*
 
 private enum class Root { Loading, Welcome, Pairing, Tabs }
+
+/** A bot's settings to open, at its fallbacks from a chat's "Add a fallback" (iOS `DetailsRequest`). */
+private data class BotEditRequest(val draft: BotDraft, val atFallbacks: Boolean = false)
 
 /** The app's root, as iOS `RootView`: the welcome and pairing until set up, then the tabs, with every sheet on top. */
 @Composable fun CodyncApp(state: AppState, store: AppStore) {
@@ -39,14 +43,16 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var showUsage by rememberSaveable { mutableStateOf(false) }
     var showMarketplace by rememberSaveable { mutableStateOf(false) }
+    var creatingBot by rememberSaveable { mutableStateOf(false) }
+    var creatingGroup by rememberSaveable { mutableStateOf(false) }
     var access by remember { mutableStateOf<CloudComputer?>(null) }
-    var editor by remember { mutableStateOf<BotDraft?>(null) }
+    var editor by remember { mutableStateOf<BotEditRequest?>(null) }
     var groupEditor by remember { mutableStateOf<GroupDraft?>(null) }
     var handledNavigation by rememberSaveable { mutableIntStateOf(state.navigationRequest) }
     var handledGeneration by rememberSaveable { mutableIntStateOf(state.generation) }
     fun closeAll() {
         showAccount = false; accountSettings = false; showComputers = false; showPairing = false; showMarketplace = false
-        access = null; editor = null; groupEditor = null
+        creatingBot = false; creatingGroup = false; access = null; editor = null; groupEditor = null
     }
     // A new account or a fresh start drops whatever was open for the old one.
     LaunchedEffect(state.generation) { if (handledGeneration != state.generation) { closeAll(); showUsage = false; handledGeneration = state.generation } }
@@ -61,12 +67,8 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
         }
     }
     val signedIn = state.account.userId != null
-    AnalyticsMilestones(state)
+    // Signed in, setup counts as complete (`loadContext`): the account's computers are asked for access from Computers.
     val onboarding = !state.setupComplete && state.computers.isEmpty() && state.cloudComputers.isEmpty()
-    // Signing in to an account that has computers completes setup, as pairing or skipping does.
-    LaunchedEffect(state.cloudComputers.isNotEmpty(), state.loading) {
-        if (!state.loading && !state.setupComplete && state.cloudComputers.isNotEmpty()) store.skipSetup()
-    }
     val root = when {
         state.loading -> Root.Loading
         onboarding && !welcomed && !signedIn -> Root.Welcome
@@ -74,6 +76,7 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
         else -> Root.Tabs
     }
     BackHandler(root == Root.Pairing && !signedIn) { welcomed = false }
+    val edit = { bot: Bot -> if (bot.kind == "group") groupEditor = GroupDraft.from(bot) else editor = BotEditRequest(BotDraft.from(bot)) }
     val openMarketplace = { showAccount = false; accountSettings = false; showComputers = false; showMarketplace = true }
     Box(Modifier.fillMaxSize().background(Palette.background)) {
         AnimatedContent(root, transitionSpec = {
@@ -92,38 +95,55 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
                     }
                 }
                 Root.Tabs -> MainTabs(state, store, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },
-                    newBot = { editor = BotDraft() }, newGroup = { groupEditor = GroupDraft() },
-                    edit = { bot -> if (bot.kind == "group") groupEditor = GroupDraft.from(bot) else editor = BotDraft.from(bot) }) {
-                    ChatScreen(state, store) { bot -> if (bot.kind == "group") groupEditor = GroupDraft.from(bot) else editor = BotDraft.from(bot) }
+                    newBot = { creatingBot = true }, newGroup = { creatingGroup = true },
+                    edit = edit) {
+                    ChatScreen(state, store, edit) { bot -> editor = BotEditRequest(BotDraft.from(bot), atFallbacks = true) }
                 }
             }
         }
     }
     // The account sheet holds its own push (Computers & settings), as the iOS sheet's NavigationStack.
     CodyncSheet(showAccount && (state.setupComplete || signedIn) && !state.loading, { showAccount = false; accountSettings = false }) {
+        // Counted by the top page, outside NavStack: it composes the page below again while sliding.
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(if (accountSettings) AnalyticsScreen.Settings else AnalyticsScreen.Account))
         NavStack(listOfNotNull("account", "settings".takeIf { accountSettings }), key = { it }, pop = { accountSettings = false }) { page ->
             if (page == "account") AccountSwitcherView(state, store, { accountSettings = true }) { showPairing = true }
             else SettingsView(state, store, { accountSettings = false }, { showPairing = true }, { access = it }, openMarketplace)
         }
     }
     CodyncSheet(showComputers && !state.loading, { showComputers = false }) {
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Computers))
         SettingsView(state, store, null, { showPairing = true }, { access = it }, openMarketplace)
     }
     CodyncSheet(access, { access = null }) { AccessRequestView(state, store, it) }
-    CodyncSheet(showPairing && !state.loading, { showPairing = false }) { PairingView(state, store, inModal = true) }
-    CodyncSheet(showUsage && !state.loading, { showUsage = false }) { UsageScreen(state, store::refreshUsage, store::reloadUsage) }
-    CodyncSheet(showMarketplace && root == Root.Tabs, { showMarketplace = false }) { MarketplaceView(state, store) }
+    CodyncSheet(showPairing && !state.loading, { showPairing = false }) {
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Pairing))
+        PairingView(state, store, inModal = true)
+    }
+    CodyncSheet(showUsage && !state.loading, { showUsage = false }) {
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Usage))
+        UsageScreen(state, store::refreshUsage, store::reloadUsage)
+    }
+    CodyncSheet(showMarketplace && root == Root.Tabs, { showMarketplace = false }) {
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Marketplace))
+        MarketplaceView(state, store)
+    }
+    CodyncSheet(creatingBot && !state.loading, { creatingBot = false }) { key(state.contextId, state.generation) { NewBotView(state, store) } }
+    CodyncSheet(creatingGroup && !state.loading, { creatingGroup = false }) { key(state.contextId, state.generation) { NewGroupView(state, store) } }
+    // A bot or group's editor is its details.
     CodyncSheet(groupEditor.takeIf { !state.loading }, { groupEditor = null }) { draft ->
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotDetails))
         key(state.contextId, state.generation, draft.id) { GroupEditor(state, draft, store) }
     }
-    CodyncSheet(editor.takeIf { !state.loading }, { editor = null }) { draft ->
-        key(state.contextId, state.generation, draft.id) { BotEditor(state, draft, store) }
+    CodyncSheet(editor.takeIf { !state.loading }, { editor = null }) { request ->
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotDetails))
+        key(state.contextId, state.generation, request.draft.id) { BotEditor(state, request.draft, store, request.atFallbacks) }
     }
     // The remote screen opens over the app once its sheets have slid away.
     LaunchedEffect(state.screenRequest) { if (state.screenRequest != null) { closeAll(); showUsage = false } }
     ScreenLayer(state, store)
-    // One place for errors the screen showing them doesn't handle itself (pairing, access, the editors do).
-    val inline = root == Root.Pairing || showPairing || access != null || editor != null || groupEditor != null
+    // One place for errors the screen showing them doesn't handle itself (pairing, access, the new and edit sheets do).
+    val inline = root == Root.Pairing || showPairing || access != null || creatingBot || creatingGroup || editor != null || groupEditor != null
     CodyncDialog("Something went wrong", state.error != null && !inline, store::clearError, state.error, cancel = "OK") { emptyList() }
 }
 
@@ -134,25 +154,8 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     if (!visible.currentState && !visible.targetState) return
     Overlay {
         AnimatedVisibility(visible, enter = fadeIn(Motion.layout()), exit = fadeOut(Motion.fade())) {
+            AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.RemoteScreen))
             ScreenView(state, store, state.screenRequest?.watching, store::closeScreen)
         }
-    }
-}
-
-/** The app-level analytics events (iOS reports the same): setup finished, signed in, signed out. */
-@Composable private fun AnalyticsMilestones(state: AppState) {
-    var setup by remember { mutableStateOf<Boolean?>(null) }
-    var user by remember { mutableStateOf<String?>(null) }
-    var known by remember { mutableStateOf(false) }
-    LaunchedEffect(state.loading, state.setupComplete) {
-        if (state.loading) return@LaunchedEffect
-        if (setup == false && state.setupComplete) Analytics.capture(AnalyticsEvent.OnboardingCompleted)
-        setup = state.setupComplete
-    }
-    LaunchedEffect(state.account.ready, state.account.userId) {
-        if (!state.account.ready) return@LaunchedEffect
-        val now = state.account.userId
-        if (known && now != user) Analytics.capture(if (now != null) AnalyticsEvent.SignedIn else AnalyticsEvent.SignedOut)
-        user = now; known = true
     }
 }

@@ -62,3 +62,19 @@ import Testing
     #expect(refused.fastModeState == .refused)
     #expect(refused.fastModeRefusal?.contains("requires extra usage") == true)
 }
+
+@Test func settingsDraftTakesChangesMadeElsewhereAndKeepsItsOwnEdits() {
+    var base = BotDraft(name: "Lead", avatarColor: "red", avatarShape: "blob")
+    base.model = "sonnet"
+    var draft = base
+    draft.notify = false
+    var fresh = base
+    fresh.model = "opus"
+    fresh.name = "Boss"
+    var expected = fresh
+    expected.notify = false
+    #expect(draft.rebased(from: base, onto: fresh) == expected)
+    // A field edited here stays, even when the host changed it too.
+    draft.model = "haiku"
+    #expect(draft.rebased(from: base, onto: fresh).model == "haiku")
+}

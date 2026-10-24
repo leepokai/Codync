@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Icon } from '../../components/Icon'
 import { usePresence } from '../../components/Overlay'
+import { useTr } from '../../lib/use-language'
 import { returnRuns, type SlashCommand } from './slash-commands'
 
 /**
@@ -39,6 +40,7 @@ export function CommandMenu({ commands, index, hover, pick }: {
   pick: (command: SlashCommand) => void
 }) {
   const open = commands.length > 0
+  const tr = useTr()
   const { mounted, shown } = usePresence(open)
   const last = useRef(commands)
   if (open) last.current = commands
@@ -59,15 +61,15 @@ export function CommandMenu({ commands, index, hover, pick }: {
             role="option"
             aria-selected={i === index}
             className={`menu-row ${i === index ? 'highlight' : ''}`}
-            title={c.detail || c.title}
+            title={tr(c.detail || c.title)}
             onMouseEnter={() => hover(i)}
             // Keep the caret in the field.
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => pick(c)}
           >
             <span className="menu-icon"><Icon name={c.icon} size={12} color="var(--secondary)" /></span>
-            <span className="command-title">{c.title}</span>
-            <span className={`command-detail ${c.warning ? 'warning' : ''}`}>{c.detail}</span>
+            <span className="command-title">{tr(c.title)}</span>
+            <span className={`command-detail ${c.warning ? 'warning' : ''}`}>{tr(c.detail)}</span>
           </button>
         ))}
       </div>

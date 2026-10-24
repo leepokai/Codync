@@ -2,69 +2,55 @@ import { memo } from 'react'
 import { folderName, isGroup, isWorking, needsInput, type Bot } from '@shared/models'
 import { AvatarWithStatus } from '../components/Avatar'
 import { Icon } from '../components/Icon'
+import { HStack, VStack } from '../components/Stack'
+import { Text } from '../components/Text'
 import { ThinkingOrb } from '../components/ThinkingOrb'
-import { font } from '../lib/fonts'
 import { messagePreview } from '../lib/message-preview'
+import { useTr } from '../lib/use-language'
 import type { BotStore } from '../store/bot-store'
 
 /** A roster row: avatar with status, name, and the live activity or last message (Grok Bot's desktop sidebar). */
 export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer, members }: { bot: Bot; store: BotStore; compact: boolean; usingComputer: boolean; members: Bot[] }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 0 : 10, padding: '9px 0', width: '100%', justifyContent: compact ? 'center' : 'flex-start' }}>
+    <HStack gap={compact ? 0 : 10} justify={compact ? 'center' : 'flex-start'} className="bot-row">
       <AvatarWithStatus bot={bot} members={members} size={30} />
-      <div
-        aria-hidden={compact}
-        style={{
-          display: 'flex', flexDirection: 'column', gap: 2, lineHeight: 'calc(16px * var(--scale))', minWidth: 0, overflow: 'hidden',
-          width: compact ? 0 : undefined, flex: compact ? 'none' : 1, opacity: compact ? 0 : 1,
-          transition: 'opacity var(--layout)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, minWidth: 0 }}>
+      <VStack gap={2} className={`bot-row-text ${compact ? 'collapsed' : ''}`} aria-hidden={compact}>
+        <HStack align="baseline" gap={4} shrink>
           {bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}
-          <span style={{ ...font('body', bot.unread > 0 ? 'semibold' : 'medium'), color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bot.name}</span>
+          <Text size="body" weight={bot.unread > 0 ? 'semibold' : 'medium'} tone="text" truncate>{bot.name}</Text>
           {usingComputer ? <Icon name="cursorarrow.motionlines" size={10} color="var(--accent)" title="Using the computer" /> : null}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
+        </HStack>
+        <HStack gap={6} shrink>
+          <HStack align="stretch" grow>
             <Preview bot={bot} store={store} />
-          </div>
-          {bot.unread > 0 ? (
-            <span
-              style={{
-                ...font('caption2', 'semibold'), color: 'var(--on-accent)', background: 'var(--accent-fill)', borderRadius: 999,
-                padding: '0 6px', minWidth: 18, height: 18, display: 'grid', placeItems: 'center', flex: 'none',
-              }}
-            >
-              {bot.unread}
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </div>
+          </HStack>
+          {bot.unread > 0 ? <span className="unread-badge">{bot.unread}</span> : null}
+        </HStack>
+      </VStack>
+    </HStack>
   )
 })
 
-const line: React.CSSProperties = { ...font('callout'), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }
-
 /** Live activity while working, otherwise the last message (Grok Bot row behavior). */
 function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
+  const tr = useTr()
+  const place = bot.managedWorkspace ? tr('Personal workspace') : folderName(bot)
   if (needsInput(bot)) {
     return (
-      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--warning)', minWidth: 0 }}>
+      <HStack as="span" gap={6} shrink>
         <ThinkingOrb state="listening" size={16} color="var(--warning)" />
-        <span style={line}>{bot.activity || 'Needs your approval'}</span>
-      </span>
+        <Text size="callout" tone="attention" truncate>{tr(bot.activity || 'Needs your approval')}</Text>
+      </HStack>
     )
   }
   if (isWorking(bot)) {
     return (
-      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--secondary)', minWidth: 0 }}>
+      <HStack as="span" gap={6} shrink>
         <ThinkingOrb size={13} color="var(--secondary)" />
-        <span style={line}>{bot.activity || 'Working…'}</span>
-      </span>
+        <Text size="callout" tone="secondary" truncate>{tr(bot.activity || 'Working…')}</Text>
+      </HStack>
     )
   }
-  if (bot.status === 'error') return <span style={{ ...line, color: 'var(--danger)' }}>{messagePreview(bot.lastMessage ?? 'Something went wrong')}</span>
-  return <span style={{ ...line, color: 'var(--secondary)' }}>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? `${bot.members.length} bots` : `${store.backendName(bot.backend)} · ${folderName(bot)}`))}</span>
+  if (bot.status === 'error') return <Text size="callout" tone="danger" truncate>{messagePreview(bot.lastMessage ?? tr(`Something went wrong`))}</Text>
+  return <Text size="callout" tone="secondary" truncate>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? `${bot.members.length} bots` : `${store.backendName(bot.backend)} · ${place}`))}</Text>
 }

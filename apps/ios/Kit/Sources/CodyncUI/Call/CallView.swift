@@ -20,6 +20,8 @@ struct CallView: View {
     /// One line under the bar, e.g. why the call fell back to on-device voice.
     @State private var notice: String?
     @State private var settings = false
+    /// `voice_call_started` went out for this call.
+    @State private var reported = false
 
     private var bot: Bot? { model.bots[botId] }
     private var color: Color { bot.map { AvatarPalette.color($0.avatarColor) } ?? Palette.accent }
@@ -38,7 +40,6 @@ struct CallView: View {
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: notice)
         .onAppear {
             startedAt = .now
-            Analytics.shared.capture(.voiceCallStarted)
             begin(cloud: VoiceSettings.provider)
         }
         .onDisappear {
@@ -52,6 +53,11 @@ struct CallView: View {
         .onChange(of: session?.phase) { _, phase in
             isSpeaking = phase == .speaking
             interrupt = phase == .speaking ? { session?.interrupt() } : nil
+            // Counted once audio flows, so it names the engine the call ended up on.
+            if phase?.isActive == true, !reported, let session {
+                reported = true
+                Analytics.shared.capture(.voiceCallStarted(session.analyticsName))
+            }
             // A cloud engine that can't start or drops mid-call hands over to on-device voice.
             if case .failed(let message) = phase, let provider = session?.provider {
                 countCloudMinutes()
@@ -133,7 +139,7 @@ struct CallView: View {
     private var bar: some View {
         HStack(spacing: 10) {
             avatar
-            CallLevelDots(level: session?.level ?? 0, speaking: session?.phase == .speaking,
+            LevelDots(level: session?.level ?? 0, speaking: session?.phase == .speaking,
                           working: bot?.isWorking == true, color: color, reduceMotion: reduceMotion)
                 .frame(minWidth: Self.dotsWidth, maxWidth: Self.dotsMaxWidth, minHeight: Self.dotsHeight, maxHeight: Self.dotsHeight)
                 .accessibilityLabel(statusText)
@@ -209,43 +215,6 @@ struct CallView: View {
         case .failed: "Can't listen"
         case .listening where session?.muted == true: "Muted"
         case .listening: bot?.isWorking == true ? "Working, listening" : "Listening"
-        }
-    }
-}
-
-/// The dotted line in the call bar: it follows your voice while listening, ripples while
-/// the bot talks, breathes while it works, and rests as faint dots otherwise.
-private struct CallLevelDots: View {
-    let level: Float
-    let speaking: Bool
-    let working: Bool
-    let color: Color
-    let reduceMotion: Bool
-
-    var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { context in
-            Canvas { canvas, size in
-                let t = context.date.timeIntervalSinceReferenceDate
-                let spacing: CGFloat = 8
-                let count = max(1, Int(size.width / spacing))
-                for i in 0..<count {
-                    let x = CGFloat(i) * spacing + spacing / 2
-                    let wave = (sin(Double(i) * 0.55 - t * 6) + 1) / 2
-                    let amount: Double = if speaking {
-                        0.5 + 0.5 * wave
-                    } else if level > 0.05 {
-                        max(0.2, Double(level)) * (0.45 + 0.55 * wave)
-                    } else if working {
-                        0.25 * ((sin(t * 2.4) + 1) / 2)
-                    } else {
-                        0.08
-                    }
-                    let height = 4 + CGFloat(amount) * (size.height - 4)
-                    let rect = CGRect(x: x - 1.25, y: (size.height - height) / 2, width: 2.5, height: height)
-                    let tint = speaking ? Palette.accent : color
-                    canvas.fill(Path(roundedRect: rect, cornerRadius: 1.25), with: .color(tint.opacity(0.5 + 0.5 * amount)))
-                }
-            }
         }
     }
 }

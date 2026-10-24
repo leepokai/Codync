@@ -22,10 +22,10 @@ public struct IconButton: View {
     }
 
     public var body: some View {
-        Button(title, systemImage: systemImage, action: action)
+        Button(L10n.tr(title), systemImage: systemImage, action: action)
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
-            .help(title)
+            .help(L10n.tr(title))
     }
 }
 
@@ -96,7 +96,7 @@ public struct ModalHeader<Title: View, Trailing: View>: View {
 
 public extension ModalHeader where Title == Text {
     init(_ title: String, @ViewBuilder trailing: () -> Trailing) {
-        self.init(title: { Text(title) }, trailing: trailing)
+        self.init(title: { Text(L10n.tr(title)) }, trailing: trailing)
     }
 }
 

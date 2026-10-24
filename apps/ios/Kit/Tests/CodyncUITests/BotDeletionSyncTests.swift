@@ -10,7 +10,7 @@ import Testing
     let computer = Computer(id: UUID().uuidString, name: "Mac", signKey: "test")
     let fake = FakeRemote(.ready(.direct))
     await fake.setHello(#"{"hostId":"h1","name":"Mac","version":"\#(VersionMismatch.minHost)","os":"macos","backends":[],"rev":10}"#)
-    let store = BotStore(computer: computer, storage: storage) { fake }
+    let store = BotStore(computer: computer, storage: storage) { _ in fake }
     defer { store.retire() }
     let bot = try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"gone","name":"Deleted while offline","rev":9}"#.utf8))
     let entry = try JSONDecoder().decode(Entry.self, from: Data(#"{"id":"e1","botId":"gone","seq":1,"rev":8,"kind":"user","turn":1,"data":{"text":"cached"},"createdAt":1,"updatedAt":1}"#.utf8))
@@ -18,7 +18,6 @@ import Testing
     store.upsert(entry)
     store.selection = bot.id
     store.setComposerDraft("draft", for: bot.id)
-    store.setComposerDraft("thread draft", for: bot.id, thread: "root")
     store.rev = 9
     store.hostVersion = HostVersion(version: "2.11.1", minApp: nil)
     let task = Task { await store.runEvents(HostClient(transport: fake)) }
@@ -41,9 +40,8 @@ import Testing
     #expect(store.chat(bot.id).isEmpty)
     #expect(store.selection == nil)
     #expect(store.composerDraft(for: bot.id).isEmpty)
-    #expect(store.composerDraft(for: bot.id, thread: "root").isEmpty)
     store.saveCache()
-    let restored = BotStore(computer: computer, storage: storage) { fake }
+    let restored = BotStore(computer: computer, storage: storage) { _ in fake }
     defer { restored.retire() }
     #expect(restored.bots[bot.id] == nil)
     #expect(restored.chat(bot.id).isEmpty)

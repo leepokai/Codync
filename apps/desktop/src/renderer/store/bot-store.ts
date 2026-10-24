@@ -1,16 +1,18 @@
 import {
   isWorking,
   needsInput,
-  type AnalyticsEvent,
+  normalizeBot,
   type Bot,
   type BotDraft,
   type DirListing,
   type Entry,
   type GroupDraft,
   type Hello,
+  type ReplyQuote,
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import type { HostClient } from '../client/host-client'
 import { FileDownloads } from './file-downloads'
 import { BotSync, sleep } from './bot-sync'
 
@@ -21,6 +23,14 @@ export interface OutgoingFile {
   id: string
   name: string
   data: Uint8Array
+}
+
+/** What a message carries besides its text; `replyTo` shows on the bubble until the computer's own quote replaces it. */
+export interface SendOptions {
+  files?: OutgoingFile[]
+  nonce?: string
+  pasted?: string[]
+  replyTo?: ReplyQuote | null
 }
 
 /** Anything larger is refused by the computer. */
@@ -39,16 +49,17 @@ export class BotStore extends BotSync {
 
   private outgoingFiles = new Map<string, OutgoingFile[]>()
 
-  send(text: string, botId: string, thread: string | null = null, files: OutgoingFile[] = [], nonce: string = crypto.randomUUID()) {
+  send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null }: SendOptions = {}) {
     const trimmed = text.trim()
     if ((!trimmed && !files.length) || this.retired) return
     const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
+    if (replyTo) data.replyTo = replyTo
     if (files.length) {
       data.attachments = files.map((f) => ({ id: f.id, name: f.name, size: f.data.length }))
       this.outgoingFiles.set(nonce, files)
     }
     this.upsert({
-      id: `local-${nonce}`, seq: Number.MAX_SAFE_INTEGER, botId, threadId: thread, rev: 0, kind: 'user',
+      id: `local-${nonce}`, seq: Number.MAX_SAFE_INTEGER, botId, rev: 0, kind: 'user',
       turn: 0, data, createdAt: Date.now(), updatedAt: 0,
     })
     this.changed()
@@ -67,7 +78,7 @@ export class BotStore extends BotSync {
               ids.push(id)
             }
           }
-          return client.send(botId, trimmed, nonce, thread, ids)
+          return client.send(botId, trimmed, nonce, ids, pasted, replyTo?.id ?? null)
         }, true)
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
@@ -84,7 +95,7 @@ export class BotStore extends BotSync {
     const text = entry.data.text ?? ''
     if (!text && !files.length) return
     this.entries.set(entry.botId, this.allEntries(entry.botId).filter((e) => e.id !== entry.id))
-    this.send(text, entry.botId, entry.threadId ?? null, files, entry.data.clientNonce ?? crypto.randomUUID())
+    this.send(text, entry.botId, { files, nonce: entry.data.clientNonce, replyTo: entry.data.replyTo })
   }
 
   discard(entry: Entry) {
@@ -128,6 +139,11 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('newSession', { botId }))
   }
 
+  /** Back to the bot's own agent from a fallback: now if it's idle, else from its next turn. The host posts the chat line. */
+  switchBack(botId: string) {
+    this.perform((c) => c.call('switchBack', { botId }), true)
+  }
+
   logCall(botId: string, seconds: number) {
     this.perform((c) => c.call('logCall', { botId, seconds }))
   }
@@ -157,11 +173,6 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
-  /** Fire-and-forget; the host holds it until this computer answers and drops it on a no. */
-  track(event: AnalyticsEvent) {
-    void this.withLink((c) => c.call('track', { event })).catch((error: unknown) => console.warn(`track ${event} failed`, error))
-  }
-
   /** Toggles the user's reaction; shown at once, then replaced by the host's copy. */
   react(entry: Entry, emoji: string) {
     const list = this.entries.get(entry.botId)
@@ -182,15 +193,14 @@ export class BotStore extends BotSync {
     })
   }
 
-  respond(entry: Entry, option: string | null) {
+  /** A card's button: `entry` shows `choice` as answering (its spinner) while `op` runs. */
+  private answer(entry: Entry, choice: string, op: (c: HostClient) => Promise<unknown>) {
     if (this.answering.has(entry.id)) return
-    this.answering.set(entry.id, option ?? '')
+    this.answering.set(entry.id, choice)
     this.changed()
     void (async () => {
       try {
-        await this.withLink((c) => c.call('respondPermission', { entryId: entry.id, optionId: option }), true)
-        // The card's own update follows on the events stream; hold the spinner until then.
-        await sleep(2000)
+        await this.withLink(op, true)
       } catch (error) {
         this.lastError = error instanceof Error ? error.message : String(error)
       }
@@ -199,13 +209,44 @@ export class BotStore extends BotSync {
     })()
   }
 
-  /** The roster's "Mark as read": the chat and all its threads. */
+  respond(entry: Entry, option: string | null) {
+    this.answer(entry, option ?? '', async (c) => {
+      await c.call('respondPermission', { entryId: entry.id, optionId: option })
+      // The card's own update follows on the events stream; hold the spinner until then.
+      await sleep(2000)
+    })
+  }
+
+  /** Saves the user's version of a handoff that hasn't been sent; whether it did. */
+  async editHandoff(entry: Entry, text: string) {
+    try {
+      await this.withLink((c) => c.call('editHandoff', { entryId: entry.id, text }), true)
+      return true
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error)
+      this.changed()
+      return false
+    }
+  }
+
+  /** Carries on with the bot's current conversation instead of the handoff. */
+  keepConversation(entry: Entry) {
+    this.answer(entry, 'handoff', (c) => c.call('keepConversation', { entryId: entry.id }))
+  }
+
+  /** Runs a failed routine run's work again, from its notice; the notice's update drops the button. */
+  retryRoutineRun(entry: Entry) {
+    const runId = entry.data.runId
+    if (runId) this.answer(entry, 'retry', (c) => c.call('retryRoutineRun', { botId: entry.botId, runId }))
+  }
+
+  /** The roster's "Mark as read". */
   markAllRead(botId: string) {
     const bot = this.bots.get(botId)
     if (!bot || bot.unread <= 0) return
     this.bots.set(botId, { ...bot, unread: 0 })
     this.changed()
-    this.perform((c) => c.call('markRead', { botId, threadId: null, all: true }), true)
+    this.perform((c) => c.call('markRead', { botId }), true)
   }
 
   private patchBot(bot: Bot, change: Partial<BotDraft>) {
@@ -217,6 +258,21 @@ export class BotStore extends BotSync {
 
   setPinned(bot: Bot, pinned: boolean) {
     this.patchBot(bot, { pinned })
+  }
+
+  /** Whether the bot may see and use the computer's screen. */
+  setComputer(bot: Bot, computer: boolean) {
+    this.patchBot(bot, { computer })
+  }
+
+  /** Whether the bot uses the memory all bots share. */
+  setSharedMemory(bot: Bot, sharedMemory: boolean) {
+    this.patchBot(bot, { sharedMemory })
+  }
+
+  /** Whether the bot's harness keeps its own memory on beside Codync's. */
+  setHarnessMemory(bot: Bot, harnessMemory: boolean) {
+    this.patchBot(bot, { harnessMemory })
   }
 
   setHidden(bot: Bot, hidden: boolean) {
@@ -250,16 +306,17 @@ export class BotStore extends BotSync {
   async createGroup(name: string, description: string, members: string[]) {
     const draft: GroupDraft = { kind: 'group', name, description, members }
     const res = await (await this.ready()).call<{ bot: Bot }>('createBot', draft)
-    this.bots.set(res.bot.id, res.bot)
-    this.selection = res.bot.id
+    const bot = normalizeBot(res.bot)
+    this.bots.set(bot.id, bot)
+    this.selection = bot.id
     this.onRosterChanged?.()
     this.changed()
-    return res.bot
+    return bot
   }
 
   async updateGroup(draft: GroupDraft) {
     const res = await (await this.ready()).call<{ bot: Bot }>('updateBot', draft)
-    this.bots.set(res.bot.id, res.bot)
+    this.bots.set(res.bot.id, normalizeBot(res.bot))
     this.changed()
   }
 
@@ -274,14 +331,6 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('updateBot', draft), true)
   }
 
-  async loadThread(botId: string, root: string) {
-    if (!this.client) return
-    try {
-      for (const e of await this.client.thread(botId, root)) this.upsert(e)
-      this.changed()
-    } catch {}
-  }
-
   /** The history between a bot and one peer. Never upserted: old notices would break `loadOlder`'s paging. */
   async botConversation(botId: string, peerId: string): Promise<Entry[]> {
     return (await this.ready()).botConversation(botId, peerId)
@@ -292,10 +341,11 @@ export class BotStore extends BotSync {
     const res = draft.id
       ? await client.call<{ bot: Bot }>('updateBot', { ...draft, model: draft.model ?? null })
       : await client.call<{ bot: Bot }>('createBot', draft)
-    this.bots.set(res.bot.id, res.bot)
+    const bot = normalizeBot(res.bot)
+    this.bots.set(bot.id, bot)
     this.onRosterChanged?.()
     this.changed()
-    return res.bot
+    return bot
   }
 
   async refreshBackends() {
@@ -321,7 +371,7 @@ export class BotStore extends BotSync {
 
   async loadOlder(botId: string) {
     if (!this.client || this.historyComplete.has(botId)) return
-    const first = this.chat(botId).find((e) => e.seq > 0 && e.seq !== Number.MAX_SAFE_INTEGER)?.seq ?? Number.MAX_SAFE_INTEGER
+    const first = this.allEntries(botId).find((e) => e.seq > 0 && e.seq !== Number.MAX_SAFE_INTEGER)?.seq ?? Number.MAX_SAFE_INTEGER
     try {
       const older = await this.client.history(botId, first, 100)
       if (older.length < 100) this.historyComplete.add(botId)

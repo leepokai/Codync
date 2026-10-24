@@ -61,14 +61,15 @@ import com.kyant.shapes.Capsule
 
 /**
  * One endless conversation with a bot or a group, as iOS `ThreadView`: only deliberate messages
- * show; tool calls and thinking live in "Full conversation". A thread opens over it as a sheet.
+ * show; tool calls and thinking live in "Full conversation". `editFallbacks` opens a bot's settings at its fallbacks.
  */
-@Composable fun ChatScreen(state: AppState, store: AppStore, edit: (Bot) -> Unit) {
+@Composable fun ChatScreen(state: AppState, store: AppStore, edit: (Bot) -> Unit, editFallbacks: (Bot) -> Unit = edit) {
     val bot = state.bots.firstOrNull { it.id == state.selectedBot } ?: return
-    key(state.contextId, state.generation, bot.id) { ThreadView(bot, state, store, edit) }
+    key(state.contextId, state.generation, bot.id) { ThreadView(bot, state, store, edit, editFallbacks) }
 }
 
-@Composable private fun ThreadView(bot: Bot, state: AppState, store: AppStore, edit: (Bot) -> Unit) {
+@Composable private fun ThreadView(bot: Bot, state: AppState, store: AppStore, edit: (Bot) -> Unit, editFallbacks: (Bot) -> Unit) {
+    AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Chat))
     val context = LocalContext.current
     var confirmNewSession by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -87,8 +88,12 @@ import com.kyant.shapes.Capsule
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    // The main chat ignores an open thread: it stays put underneath.
-    val chatState = state.copy(thread = null, trace = false)
+    // The message the composer quotes, until it sends or this chat closes.
+    var replyId by rememberSaveable(bot.id) { mutableStateOf<String?>(null) }
+    val replyTo = state.entries.firstOrNull { it.id == replyId && it.botId == bot.id }
+    val reply = { entry: Entry -> replyId = entry.id }
+    // The chat ignores Full conversation over it: it stays put underneath.
+    val chatState = state.copy(trace = false)
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         // Down to just above the header's bottom; the bottom one stops under Jump to latest.
         ScrollEdge(Edge.Top, top + 84.dp)
@@ -105,12 +110,14 @@ import com.kyant.shapes.Capsule
             // Nothing sent now could be read on the other side.
             val mismatch = state.mismatch
             if (mismatch != null) UpdateNeededCard(state, mismatch, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
-            else MessageComposer(bot, null, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
-                onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null)
+            else MessageComposer(bot, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
+                onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null,
+                replyTo = replyTo, cancelReply = { replyId = null })
         }
     }) {
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
-            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine) { peer = it }
+            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine, reply = reply,
+            addFallback = editFallbacks) { peer = it }
     }
     CodyncDialog("Start a new session?", confirmNewSession, { confirmNewSession = false },
         message = "The conversation stays here, but the agent starts with a fresh context.") {
@@ -126,10 +133,14 @@ import com.kyant.shapes.Capsule
         message = "Allow the microphone in Android settings to talk to your bot.") {
         listOf(DialogAction("Open settings") { openAppSettings(context) })
     }
-    // A thread over the chat, and "Full conversation" over either.
-    CodyncSheet(state.thread, { store.openBot(bot.id) }) { root -> RepliesView(bot, root, state, store, connect) }
-    CodyncSheet(state.trace, { store.showTrace(false) }) { TraceView(bot, state.thread, state) }
-    CodyncSheet(routines, { routines = false }) { RoutinesScreen(bot, state, store, routineId) }
+    CodyncSheet(state.trace, { store.showTrace(false) }) {
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Trace))
+        TraceView(bot, state)
+    }
+    CodyncSheet(routines, { routines = false }) {
+        AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Routines))
+        RoutinesScreen(bot, state, store, routineId)
+    }
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
@@ -145,8 +156,9 @@ import com.kyant.shapes.Capsule
             Symbol("chevron.left", size = 32.dp, tint = Palette.text)
         }
         val host = state.computers.firstOrNull()?.name.orEmpty()
+        val connected = tr(connectionLabel(state))
         DropdownMenu({ buildList {
-            add(MenuItem("$host · ${connectionLabel(state)}", enabled = false))
+            add(MenuItem("$host · $connected", enabled = false))
             add(MenuItem("Reconnect", icon = "arrow.clockwise") { store.reconnect() })
             add(MenuItem("Details", icon = "info.circle", divider = true) { edit(bot) })
             add(MenuItem("Full conversation", icon = "list.bullet.rectangle", action = trace))
@@ -203,17 +215,17 @@ import com.kyant.shapes.Capsule
                 else -> Symbol("wifi.slash", size = 11.dp, tint = Palette.secondary)
             }
         }
-        Text(connectionLabel(state), style = Type.system(10f).medium, color = Palette.secondary, maxLines = 1)
+        Text(connectionLabel(state), style = Type.system(10f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 /** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
 @Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
-    indicatorTop: Dp, openRoutine: (String) -> Unit, openPeer: (String) -> Unit) {
-    val entries = state.entries.filter { it.botId == bot.id && it.threadId == null && it.isChat }
-    val pending = state.pending.filter { it.botId == bot.id && it.threadId == null }
+    indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, addFallback: (Bot) -> Unit, openPeer: (String) -> Unit) {
+    val entries = state.entries.filter { it.botId == bot.id && it.isChat }
+    val pending = state.pending.filter { it.botId == bot.id }
     val items = chatItems(entries, pending)
-    val working = bot.isWorking(bot.id, null) && state.connection is LinkState.Ready
+    val working = bot.isWorking(bot.id) && state.connection is LinkState.Ready
     val more = bot.id !in state.historyComplete
     // Pull to refresh reconnects, like Reconnect in the title menu, until the link is back.
     ConversationList(items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop) {
@@ -229,65 +241,17 @@ import com.kyant.shapes.Capsule
                 is ChatItem.Separator -> TimeSeparator(item.at)
                 is ChatItem.Message -> {
                     val routine = item.entry.data.text("routineId").takeIf { item.entry.kind == "notice" }
-                    if (routine != null) RoutineNotice(item.entry) { openRoutine(routine) }
+                    if (routine != null) RoutineNotice(item.entry, retrying = "retry:" + item.entry.id in state.busy,
+                        retry = { store.retryRoutineRun(item.entry) }) { openRoutine(routine) }
                     else ChatRow(item.entry, item.groupStart, bot, state, store, openTrace = { store.showTrace(true) },
-                        reply = { store.openBot(bot.id, item.entry.id) }, connect = connect)
+                        // An update card takes the composer's place, so there's nothing to reply with.
+                        reply = if (item.entry.isReplyable && state.mismatch == null) { { reply(item.entry) } } else null, connect = connect,
+                        addFallback = addFallback)
                 }
                 is ChatItem.Pending -> PendingBubble(item.send, item.groupStart, state, store)
                 is ChatItem.Exchanges -> BotMessageRow(item.group, state) { openPeer(item.group.peerId) }
             }
         }
-        if (working) item("working") { WorkingIndicator(bot, currentThinking(state.entries, bot.id, null)) }
-    }
-}
-
-/** A thread: the message it started on, its replies, and a box to continue there. */
-@Composable private fun RepliesView(bot: Bot, rootId: String, state: AppState, store: AppStore, connect: ConnectionRequestActions) {
-    val root = state.entries.firstOrNull { it.botId == bot.id && it.id == rootId }
-    val replies = state.entries.filter { it.botId == bot.id && it.threadId == rootId && it.isChat }
-    val pending = state.pending.filter { it.botId == bot.id && it.threadId == rootId }
-    val working = bot.isWorking(bot.id, rootId) && state.connection is LinkState.Ready
-    var composerHeight by remember { mutableIntStateOf(0) }
-    val density = LocalDensity.current
-    val dismiss = LocalDismissModal.current
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().height(56.dp).padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Thread", style = Type.body.semibold, color = Palette.text)
-                    Text(bot.name, style = Type.caption, color = Palette.tertiary, maxLines = 1)
-                }
-                IconButton("Close thread", "xmark", action = dismiss)
-            }
-            Box(Modifier.fillMaxWidth().height(0.5.dp).background(Palette.border))
-            val items = chatItems(replies, pending)
-            Box(Modifier.weight(1f)) { ConversationList(items.lastOrNull()?.id, replies.lastOrNull()?.rev, working,
-                PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = with(density) { composerHeight.toDp() } + 8.dp)) {
-                if (root != null) {
-                    item("root") { ChatRow(root, true, bot, state, store, openTrace = { store.showTrace(true) }, reply = null, connect = connect) }
-                    item("count") {
-                        val count = (root.data["thread"] as? kotlinx.serialization.json.JsonObject)?.get("count")
-                            ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() } ?: 0
-                        Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(if (count == 0) "No replies yet" else if (count == 1) "1 reply" else "$count replies", style = Type.caption, color = Palette.tertiary)
-                            Box(Modifier.weight(1f).height(1.dp).background(Palette.border))
-                        }
-                    }
-                }
-                items(items.filter { it !is ChatItem.Separator }, key = { it.id }) { item ->
-                    when (item) {
-                        is ChatItem.Message -> ChatRow(item.entry, item.groupStart, bot, state, store, openTrace = { store.showTrace(true) }, reply = null, connect = connect)
-                        is ChatItem.Pending -> PendingBubble(item.send, item.groupStart, state, store)
-                        is ChatItem.Separator, is ChatItem.Exchanges -> {}
-                    }
-                }
-                if (working) item("working") { WorkingIndicator(bot, currentThinking(state.entries, bot.id, rootId)) }
-            } }
-        }
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }) {
-            val mismatch = state.mismatch
-            if (mismatch != null) UpdateNeededCard(state, mismatch, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
-            else MessageComposer(bot, rootId, state, store, onCall = null)
-        }
+        if (working) item("working") { WorkingIndicator(bot) }
     }
 }

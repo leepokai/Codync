@@ -60,6 +60,19 @@ class CloudClientTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun `an error page that isn't JSON still fails with its status`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setResponseCode(502).setBody("<html><body>Bad gateway</body></html>"))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            val error = try { client.computers(); error("Expected a cloud error") } catch (error: CloudError) { error }
+            assertEquals(502, error.status)
+            assertEquals("http502", error.code)
+            assertTrue(error.isTransient)
+        } finally { server.shutdown() }
+    }
+
     @Test fun `mismatched host identity cannot start an access request`() = runBlocking {
         val server = MockWebServer()
         server.start()
@@ -109,19 +122,14 @@ class CloudClientTest {
         } finally { server.shutdown() }
     }
 
-    @Test fun `an unknown device has no grants to revoke and removing a computer deletes it from the account`() = runBlocking {
+    @Test fun `an unknown device has no grants to revoke`() = runBlocking {
         val server = MockWebServer()
         server.start()
         try {
             server.enqueue(MockResponse().setBody("""{"devices":[]}"""))
-            server.enqueue(MockResponse().setBody("{}"))
             val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
             client.revokeAccess(id)
-            client.removeComputer(id)
             assertEquals("/v1/devices", server.takeRequest().path)
-            val remove = server.takeRequest()
-            assertEquals("DELETE", remove.method)
-            assertEquals("/v1/computers/$id", remove.path)
         } finally { server.shutdown() }
     }
 }

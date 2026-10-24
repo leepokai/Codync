@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { isImageName, type Attachment } from '@shared/models'
 import { Icon } from '../../components/Icon'
-import { ModalHeader, Sheet } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
+import { HStack, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { useStoreRef } from '../../store/context'
+import './attachments.css'
 
 /** The symbol for a file by its extension. */
 export function attachmentSymbol(name: string) {
@@ -32,38 +34,38 @@ export function byteCount(bytes: number) {
 export function AttachmentList({ attachments, botId }: { attachments: Attachment[]; botId: string }) {
   const [viewing, setViewing] = useState<Attachment | null>(null)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+    <VStack align="flex-end" gap={4}>
       {attachments.map((file) =>
         isImageName(file.name) ? (
-          <button key={file.id} aria-label={file.name} onClick={() => setViewing(file)} style={{ borderRadius: 16, overflow: 'hidden', maxWidth: 220, maxHeight: 280, display: 'flex' }}>
-            <AttachmentImage file={file} botId={botId} style={{ maxWidth: 220, maxHeight: 280 }} />
+          <button key={file.id} className="attachment-image-button" aria-label={file.name} onClick={() => setViewing(file)}>
+            <AttachmentImage file={file} botId={botId} fit="thumbnail" />
           </button>
         ) : (
-          <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bubble-user)', borderRadius: 16 }}>
+          <HStack key={file.id} gap={8} className="attachment-file">
             <Icon name={attachmentSymbol(file.name)} size={16} color="var(--secondary)" />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-              <span style={{ ...font('subheadline'), color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{file.name}</span>
-              <span style={{ ...font('caption2'), color: 'var(--tertiary)' }}>{byteCount(file.size)}</span>
-            </div>
-          </div>
+            <VStack gap={1} shrink>
+              <Text size="subheadline" tone="text" truncate className="attachment-file-name">{file.name}</Text>
+              <Text size="caption2" tone="tertiary">{byteCount(file.size)}</Text>
+            </VStack>
+          </HStack>
         ),
       )}
       <Sheet open={viewing !== null} onClose={() => setViewing(null)} width={720} height={560}>
         {viewing ? (
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
+          <SheetPage>
             <ModalHeader title={viewing.name} />
-            <div style={{ flex: 1, minHeight: 0, padding: 12, display: 'grid', placeItems: 'center' }}>
-              <AttachmentImage file={viewing} botId={botId} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+            <div className="attachment-viewer">
+              <AttachmentImage file={viewing} botId={botId} fit="full" />
             </div>
-          </div>
+          </SheetPage>
         ) : null}
       </Sheet>
-    </div>
+    </VStack>
   )
 }
 
 /** A sent image, fetched from the computer once and then read from the cache. */
-function AttachmentImage({ file, botId, style }: { file: Attachment; botId: string; style?: React.CSSProperties }) {
+function AttachmentImage({ file, botId, fit }: { file: Attachment; botId: string; fit: 'thumbnail' | 'full' }) {
   const store = useStoreRef()
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
@@ -81,10 +83,10 @@ function AttachmentImage({ file, botId, style }: { file: Attachment; botId: stri
   }, [store, file.id, botId])
   if (!url) {
     return (
-      <div style={{ width: 160, height: 120, borderRadius: 16, background: 'var(--bubble-user)', display: 'grid', placeItems: 'center' }}>
+      <div className="attachment-placeholder">
         <Icon name="photo" size={13} color="var(--tertiary)" />
       </div>
     )
   }
-  return <img src={url} alt="" style={{ display: 'block', ...style }} />
+  return <img src={url} alt="" className={`attachment-image ${fit}`} />
 }

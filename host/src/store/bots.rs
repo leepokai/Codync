@@ -1,6 +1,6 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
-use super::model::{BotConfig, BotRow, EntryKind, LastMessage, ReadScope};
+use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text};
 use super::{Store, logged, next_rev};
 use crate::LockExt;
 use anyhow::Result;
@@ -63,10 +63,17 @@ impl Store {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
         c.execute("UPDATE bots SET rev = ?2, deleted = 1, session_id = NULL WHERE id = ?1", params![id, rev])?;
-        c.execute("DELETE FROM kv WHERE k IN (SELECT 'read.' || id FROM entries WHERE bot_id = ?1)", [id])?;
         c.execute("DELETE FROM entries WHERE bot_id = ?1", [id])?;
-        // Lane state (see `lane_key`) it owned, or that bots kept in it.
-        c.execute("DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2", [format!("lane.*.{id}@*"), format!("lane.*@{id}*")])?;
+        codync_mem::store::drop_bot(&c, id)?;
+        // Its dreaming bookmark, notices' revisions and the record of its moved memory.
+        c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("memory.*{id}*")])?;
+        // Its routine runs' sessions (see `run_session_key`).
+        c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("lane.session.{id}@*")])?;
+        // Its fallback chain's place and each agent's parked session (`agent::bot::fallback::park`).
+        c.execute(
+            "DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2",
+            [format!("fallback.*.{id}"), format!("fallback.*.{id}.*")],
+        )?;
         // ponytail: snapshots of replaced sessions stay until the bot goes; prune by session if kv grows.
         c.execute(
             "DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2",
@@ -81,89 +88,37 @@ impl Store {
         Ok(())
     }
 
-    /// Main chat read: bumps the bot's `read_rev`. A thread never opened counts from `read_rev`
-    /// (see `unread`), so it keeps the old one: reading the chat doesn't read its threads.
+    /// The chat read: bumps the bot's `read_rev`.
     pub fn mark_read(&self, id: &str) -> Result<i64> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
-        c.execute(
-            "INSERT OR IGNORE INTO kv(k, v)
-             SELECT DISTINCT 'read.' || thread_id, (SELECT read_rev FROM bots WHERE id = ?1)
-             FROM entries WHERE bot_id = ?1 AND thread_id IS NOT NULL",
-            [id],
-        )?;
         c.execute("UPDATE bots SET read_rev = ?2, rev = ?2 WHERE id = ?1", params![id, rev])?;
         Ok(rev)
     }
 
-    /// One thread read (kv `read.<root>`); the bot's row changes too, since its badge does.
-    pub fn mark_thread_read(&self, id: &str, root: &str) -> Result<i64> {
-        let c = self.db.locked();
-        let rev = next_rev(&c)?;
-        c.execute("UPDATE bots SET rev = ?2 WHERE id = ?1", params![id, rev])?;
-        c.execute(
-            "INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2",
-            params![format!("read.{root}"), rev.to_string()],
-        )?;
-        Ok(rev)
-    }
-
-    /// The main chat and every thread read.
-    pub fn mark_all_read(&self, id: &str) -> Result<i64> {
-        let rev = self.mark_read(id)?;
-        let c = self.db.locked();
-        c.execute(
-            "UPDATE kv SET v = ?2 WHERE k IN (SELECT 'read.' || id FROM entries WHERE bot_id = ?1 AND thread_id IS NULL)",
-            params![id, rev.to_string()],
-        )?;
-        Ok(rev)
-    }
-
-    /// Final agent messages + pending permission cards newer than what the user has read in
-    /// `scope`. A thread counts from when it was last read (never read: the main chat's
-    /// `read_rev`). A thread root or a reacted-to message doesn't count again when it
-    /// changes: the user replied or reacted, so they have seen it.
-    pub fn unread(&self, id: &str, read_rev: i64, scope: ReadScope) -> i64 {
-        let mut args: Vec<&dyn rusqlite::ToSql> = vec![&id, &read_rev];
-        let filter = match &scope {
-            ReadScope::All => "",
-            ReadScope::Chat => "AND thread_id IS NULL",
-            ReadScope::Thread(root) => {
-                args.push(root);
-                "AND thread_id = ?3"
-            }
-        };
+    /// Final agent messages + pending permission cards newer than what the user has read. A reacted-to message
+    /// doesn't count again when it changes: the user reacted, so they have seen it. A bot's reaction isn't a change
+    /// either (`contentRev`, see `Hub::bot_react`).
+    pub fn unread(&self, id: &str, read_rev: i64) -> i64 {
         let c = self.db.locked();
         let n = c.query_row(
-            &format!(
-                "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 {filter} AND
-                   ((kind = 'agent' AND json_extract(data, '$.final') = 1) OR
-                    (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
-                   json_extract(data, '$.reactions') IS NULL AND
-                   CASE WHEN thread_id IS NULL THEN rev > ?2 AND json_extract(data, '$.thread') IS NULL
-                        ELSE rev > COALESCE((SELECT CAST(v AS INTEGER) FROM kv WHERE k = 'read.' || thread_id), ?2) END"
-            ),
-            args.as_slice(),
+            "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND
+               ((kind = 'agent' AND json_extract(data, '$.final') = 1) OR
+                (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
+               json_extract(data, '$.reactions') IS NULL AND
+               COALESCE(json_extract(data, '$.contentRev'), rev) > ?2",
+            params![id, read_rev],
             |r| r.get(0),
         );
         logged("unread", n).unwrap_or(0)
     }
 
-    /// Roots whose summary shows unread replies.
-    pub fn unread_roots(&self, id: &str) -> Vec<String> {
-        let c = self.db.locked();
-        let roots = c
-            .prepare("SELECT id FROM entries WHERE bot_id = ?1 AND json_extract(data, '$.thread.unread') > 0")
-            .and_then(|mut st| st.query_map([id], |r| r.get(0))?.collect());
-        logged("unread roots", roots).unwrap_or_default()
-    }
-
-    /// Newest chat-visible line in the main chat for the roster preview, with its author
+    /// Newest chat-visible line for the roster preview, with its author
     /// (`None` for the user; a group reply names the bot that wrote it).
     pub fn last_message(&self, id: &str) -> Option<LastMessage> {
         let c = self.db.locked();
         let row = c.query_row(
-            "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND thread_id IS NULL AND
+            "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
              ORDER BY seq DESC LIMIT 1",
             [id],
@@ -172,17 +127,8 @@ impl Store {
                 let data: String = r.get(1)?;
                 let at: i64 = r.get(2)?;
                 let data = serde_json::from_str::<Value>(&data).unwrap_or_default();
-                let mut text = data["text"].as_str().unwrap_or_default().to_owned();
                 // A files-only message previews as its file names.
-                if text.is_empty() {
-                    let names: Vec<&str> = data["attachments"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|a| a["name"].as_str())
-                        .collect();
-                    text = names.join(", ");
-                }
+                let text = message_text(&data);
                 let author =
                     (kind != EntryKind::User.as_str()).then(|| data["author"].as_str().unwrap_or(id).to_owned());
                 Ok(LastMessage { text, at, author })
@@ -216,6 +162,8 @@ mod tests {
             model: None,
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,
+            fallbacks: vec![],
+            self_fallbacks: true,
             pinned: false,
             position: 0,
             hidden: false,
@@ -223,6 +171,10 @@ mod tests {
             connectors: vec![],
             skills: vec![],
             computer: false,
+            manage_team: false,
+            created_by: None,
+            shared_memory: None,
+            harness_memory: false,
             auto_name: false,
             created_at: 0,
         };
@@ -232,27 +184,26 @@ mod tests {
             .insert_entry(&Lane::main("b1"), EntryKind::Agent, 1, &serde_json::json!({"text": "yo", "final": false}))
             .unwrap();
         assert!(a.rev > u.rev);
-        assert_eq!(s.unread("b1", 0, ReadScope::All), 0, "narration is not unread");
+        assert_eq!(s.unread("b1", 0), 0, "narration is not unread");
         let a2 = s.update_entry(&a.id, &serde_json::json!({"text": "yo!", "final": true})).unwrap().unwrap();
-        assert_eq!(s.unread("b1", 0, ReadScope::All), 1);
+        assert_eq!(s.unread("b1", 0), 1);
         assert_eq!(s.entries_since(a2.rev - 1, 500).unwrap().len(), 1);
         assert_eq!(s.entries_since(0, 1).unwrap().len(), 1, "fresh sync is capped per bot");
         assert_eq!(s.last_message("b1").unwrap().text, "yo!");
         let r = s.mark_read("b1").unwrap();
-        assert_eq!(s.unread("b1", r, ReadScope::All), 0);
+        assert_eq!(s.unread("b1", r), 0);
         assert_eq!(s.history("b1", a.seq, 10).unwrap().len(), 1);
         assert_eq!(s.bot("b1").unwrap().unwrap().config.permission, Permission::Ask);
         assert!(s.bot("missing").unwrap().is_none());
 
-        // Reading the chat leaves a thread nobody opened unread.
         let reply = serde_json::json!({"text": "done", "final": true});
-        s.insert_entry(&Lane::in_thread("b1", &u.id), EntryKind::Agent, 2, &reply).unwrap();
-        let r = s.mark_read("b1").unwrap();
-        assert_eq!(s.unread("b1", r, ReadScope::Thread(&u.id)), 1);
-        assert_eq!(s.unread("b1", r, ReadScope::All), 1);
-
         // A deleted bot stays deleted, and its winding-down actor leaves no lines behind.
+        s.kv_set("fallback.session.b1.codex", "s1").unwrap();
+        s.kv_set("fallback.on.b1", "codex").unwrap();
+        s.kv_set("fallback.on.b10", "codex").unwrap();
         s.delete_bot("b1").unwrap();
+        assert_eq!((s.kv_get("fallback.session.b1.codex"), s.kv_get("fallback.on.b1")), (None, None));
+        assert!(s.kv_get("fallback.on.b10").is_some(), "another bot's");
         assert!(s.insert_entry(&Lane::main("b1"), EntryKind::Notice, 3, &reply).is_err());
         s.save_bot(&cfg).unwrap();
         assert!(s.bot("b1").unwrap().unwrap().deleted);

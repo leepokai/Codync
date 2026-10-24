@@ -1,37 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
-import { draftOf, type BotDraft, type DirListing } from '@shared/models'
+import { restLine, restOf, withBackend } from '@shared/fallbacks'
+import { draftOf, type Bot, type BotDraft, type DirListing } from '@shared/models'
+import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
 import { CardSection, ChoicePicker, DropdownMenu, IconButton, Pill, SearchField, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
-import { AVATAR_COLORS, AVATAR_SHAPES } from '../../lib/theme'
+import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
+import { HStack, IconSlot, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
 import { AgentModelPicker } from './AgentModelPicker'
-import { errorText, fillDefaults, isValid, lastPathComponent, normalized, usePlugins, type Plugins } from './drafts'
+import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
+import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
-import { MemoryCard } from './MemoryView'
-import { AnchoredPanel, AutoTextArea, Field, SwitchRow } from './parts'
+import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
 import './bots.css'
+import { useTr } from '../../lib/use-language'
 
-/** Create or edit a bot in a modal: the settings form plus Close / Save. */
+
+/** Edit a bot in a modal: the settings form plus Close / Save. New bots start in `NewBotView`. */
 export function BotEditorView({ draft: initial }: { draft: BotDraft }) {
+  const tr = useTr()
   const store = useStore()
   const dismiss = useDismiss()
   const plugins = usePlugins(store)
-  const isNew = !initial.id
-  const [draft, setDraft] = useState(() => (isNew ? fillDefaults(store, initial, { connectors: [], skills: [] }) : initial))
+  const [draft, setDraft] = useState(initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const online = store.connection.kind === 'online'
-
-  // A new bot's connectors and skills start on once the computer has listed them.
-  useEffect(() => {
-    if (isNew && plugins) setDraft((d) => fillDefaults(store, d, plugins))
-  }, [isNew, plugins, store])
+  useFollowSaved(initial.id ? store.bots.get(initial.id) : undefined, setDraft)
 
   const save = () => {
     if (!isValid(draft) || saving || !online) return
@@ -39,29 +39,32 @@ export function BotEditorView({ draft: initial }: { draft: BotDraft }) {
     setError(null)
     store
       .save(normalized(draft))
-      .then((bot) => {
-        dismiss()
-        if (isNew) store.setSelection(bot.id)
-      })
+      .then(dismiss)
       .catch((e: unknown) => setError(errorText(e)))
       .finally(() => setSaving(false))
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
+    <SheetPage>
       <ModalHeader
-        title={isNew ? 'New bot' : 'Settings'}
-        trailing={saving ? <Spinner /> : <IconButton title={isNew ? 'Create' : 'Save'} icon="checkmark" disabled={!isValid(draft) || saving || !online} onClick={save} />}
+        title={tr(`Settings`)}
+        trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={!isValid(draft) || saving || !online} onClick={save} />}
       />
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div className="bot-editor-body">
         <BotSettingsForm draft={draft} onChange={setDraft} error={error} plugins={plugins} />
       </div>
-    </div>
+    </SheetPage>
   )
 }
 
+/**
+ * Which settings a form shows: all of them (the editor sheet), what changes often
+ * (instructions, model, fast mode: the inspector's Details tab) or the rest (its Settings tab).
+ */
+export type FormPart = 'all' | 'often' | 'rarely'
+
 /** The desktop inspector next to a conversation: the same form, saved as you edit. */
-export function BotSettingsPanel({ botId }: { botId: string }) {
+export function BotSettingsPanel({ botId, part }: { botId: string; part: FormPart }) {
   const store = useStore()
   const plugins = usePlugins(store)
   const [draft, setDraft] = useState<BotDraft | null>(null)
@@ -73,6 +76,7 @@ export function BotSettingsPanel({ botId }: { botId: string }) {
     setDraft(bot ? draftOf(bot) : null)
     // Only a different bot reloads the form; the host's echo of a save must not undo typing.
   }, [botId])
+  useFollowSaved(store.bots.get(botId), change)
 
   // Autosave a moment after the last change.
   useEffect(() => {
@@ -87,16 +91,30 @@ export function BotSettingsPanel({ botId }: { botId: string }) {
     return () => clearTimeout(timer)
   }, [draft])
 
-  return draft ? <BotSettingsForm draft={draft} onChange={change} error={error} plugins={plugins} /> : null
+  return draft ? <BotSettingsForm draft={draft} onChange={change} error={error} plugins={plugins} part={part} /> : null
 }
 
-/** Bot settings: a big avatar (Grok Bot's), then sections in the Settings style (`CardSection`). */
-function BotSettingsForm({ draft, onChange, error, plugins }: {
+/** The bot that created this one with its team tools, and when. */
+function CreatedBy({ bot, creator }: { bot: Bot; creator: string }) {
+  const tr = useTr()
+  const store = useStore()
+  const date = new Date(bot.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return (
+    <ValueRow label="Created by">
+      <Text truncate>{`${store.bots.get(creator)?.name ?? tr(`A bot`)} · ${date}`}</Text>
+    </ValueRow>
+  )
+}
+
+/** Bot settings, in sections in the Settings style (`CardSection`). */
+function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   draft: BotDraft
   onChange: (update: (d: BotDraft) => BotDraft) => void
   error: string | null
   plugins: Plugins | null
+  part?: FormPart
 }) {
+  const tr = useTr()
   const store = useStore()
   const [pickingAvatar, setPickingAvatar] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
@@ -114,68 +132,110 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
   const connectors = plugins?.connectors ?? []
   const skills = plugins?.skills ?? []
 
+  const instructions = (
+    <Field label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
+      <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
+    </Field>
+  )
+  const model = [
+    <AgentModelPicker key="model" backend={draft.backend} models={models} selection={draft.model} onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions} />,
+    (draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved)) ? (
+      // Shown while the agent offers it (its model list, or the bot's own sessions), or while it's on.
+      <div key="fast" className="fade-in">
+        <SwitchRow
+          title="Fast mode"
+          detail={(saved && fastModeRefusal(saved)) ?? 'Faster replies for more usage, on models that offer it.'}
+          on={draft.fastMode ?? false}
+          onChange={(on) => set('fastMode', on)}
+        />
+      </div>
+    ) : null,
+  ]
+
+  const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
+  const agent = (
+    <VStack key="agent" gap={8}>
+      <ValueRow label="Agent" detail={ownRest ? restLine(ownRest, Date.now()) : null}>
+        <ChoicePicker
+          selection={draft.backend}
+          options={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
+          onChange={(id) => onChange((d) => withBackend(d, id))}
+        />
+      </ValueRow>
+      {backend && !backend.available ? <Text size="caption" tone="attention">{backend.installHint}</Text> : null}
+      {draft.backend === 'custom' ? (
+        <input
+          className="field-box fade-in bot-command"
+          value={draft.command ?? ''}
+          placeholder="ACP command, e.g. my-agent --acp"
+          spellCheck={false}
+          onChange={(e) => set('command', e.target.value || null)}
+        />
+      ) : null}
+    </VStack>
+  )
+  // While the bot runs on a fallback, the Agent card starts with it.
+  const step = saved?.agentStep ? <AgentStepBanner key="step" bot={saved} /> : null
+  // Only from a host that has them (its bots say).
+  const fallbacks = saved && saved.selfFallbacks !== null ? [
+    <FallbacksRow key="fallbacks" draft={draft} bot={saved} onChange={onChange} />,
+    <SwitchRow
+      key="self"
+      title="Let the bot change its fallbacks"
+      detail="It can set this list itself, for example when you ask it to."
+      on={draft.selfFallbacks ?? true}
+      onChange={(on) => set('selfFallbacks', on)}
+    />,
+  ] : null
+
+  if (part === 'often') {
+    return (
+      <div className="bot-form">
+        <div className="bot-form-content">
+          <CardSection title="Instructions">{instructions}</CardSection>
+          <CardSection title="Agent">
+            {step}
+            {agent}
+            {model}
+            {fallbacks}
+          </CardSection>
+          {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="bot-form">
       <div className="bot-form-content">
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <button ref={avatarRef} className="avatar-button" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>
-            <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={56} />
-          </button>
-          <AnchoredPanel open={pickingAvatar} onClose={() => setPickingAvatar(false)} anchor={avatarRef}>
-            <div style={{ padding: 14, width: 300 }}>
-              <AvatarPicker shape={draft.avatarShape} color={draft.avatarColor} onShape={(s) => set('avatarShape', s)} onColor={(c) => set('avatarColor', c)} />
-            </div>
-          </AnchoredPanel>
-        </div>
-
         <CardSection title="Profile">
-          {/* A new bot is named from its first conversations (Grok Bot's flow); rename it any time after. */}
-          {draft.id ? (
-            <Field label="Name">
-              <input className="field-box" value={draft.name} placeholder="Name" onChange={(e) => set('name', e.target.value)} />
-            </Field>
-          ) : null}
-          <Field label="Standing instructions" detail="Rules that always apply. Put task-specific requests in the chat instead.">
-            <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
+          <ValueRow label="Avatar">
+            <button ref={avatarRef} className="avatar-button small" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>
+              <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} />
+            </button>
+            <AnchoredPanel open={pickingAvatar} onClose={() => setPickingAvatar(false)} anchor={avatarRef}>
+              <div className="avatar-picker-panel">
+                <AvatarPicker shape={draft.avatarShape} color={draft.avatarColor} onShape={(s) => set('avatarShape', s)} onColor={(c) => set('avatarColor', c)} />
+              </div>
+            </AnchoredPanel>
+          </ValueRow>
+          <Field label="Name">
+            <input className="field-box" value={draft.name} placeholder="Name" onChange={(e) => set('name', e.target.value)} />
           </Field>
+          {part === 'all' ? instructions : null}
+          {/* Only a row when a bot made it: CardSection gives every child a row. */}
+          {saved?.createdBy ? <CreatedBy bot={saved} creator={saved.createdBy} /> : null}
         </CardSection>
 
-        <CardSection title="Agent">
+        {/* In the inspector the agent and its model are on the Details tab; what's left is where it works. */}
+        <CardSection title={part === 'all' ? 'Agent' : 'Workspace'}>
+          {part === 'all' ? step : null}
           <ValueRow label="Computer">
-            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{store.hostName}</span>
+            <Text truncate>{store.hostName}</Text>
           </ValueRow>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <ValueRow label="Agent">
-              <ChoicePicker
-                selection={draft.backend}
-                options={[...backends.map((b) => ({ id: b.id, label: b.available ? b.name : `${b.name} (not installed)` })), { id: 'custom', label: 'Custom command' }]}
-                onChange={(id) => set('backend', id)}
-              />
-            </ValueRow>
-            {backend && !backend.available ? <span style={{ ...font('caption'), color: 'var(--warning)' }}>{backend.installHint}</span> : null}
-            {draft.backend === 'custom' ? (
-              <input
-                className="field-box fade-in"
-                style={font('callout', undefined, 'monospaced')}
-                value={draft.command ?? ''}
-                placeholder="ACP command, e.g. my-agent --acp"
-                spellCheck={false}
-                onChange={(e) => set('command', e.target.value || null)}
-              />
-            ) : null}
-          </div>
-          <AgentModelPicker backend={draft.backend} models={models} selection={draft.model} onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions} />
-          {(draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved)) ? (
-            // Shown while the agent offers it (its model list, or the bot's own sessions), or while it's on.
-            <div className="fade-in">
-              <SwitchRow
-                title="Fast mode"
-                detail={(saved && fastModeRefusal(saved)) ?? 'Faster replies for more usage, on models that offer it.'}
-                on={draft.fastMode ?? false}
-                onChange={(on) => set('fastMode', on)}
-              />
-            </div>
-          ) : null}
+          {part === 'all' ? agent : null}
+          {part === 'all' ? model : null}
+          {part === 'all' ? fallbacks : null}
           <ValueRow
             label="Workspace"
             detail={
@@ -191,8 +251,8 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
                 { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
               ]}
             >
-              <Pill outlined style={{ gap: 6, color: 'var(--text)' }}>
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>{draft.cwd ? lastPathComponent(draft.cwd) : 'Personal'}</span>
+              <Pill outlined className="workspace-pill">
+                <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr(`Personal`)}</Text>
                 <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
               </Pill>
             </DropdownMenu>
@@ -218,7 +278,7 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
 
         <CardSection title="Activity">
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />
-          {store.screen ? (
+          {store.screen && part === 'all' ? (
             <SwitchRow
               title="Use the computer"
               detail={
@@ -232,6 +292,15 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
               }
               on={draft.computer ?? false}
               onChange={(on) => set('computer', on)}
+            />
+          ) : null}
+          {/* Only from a host that has it (its bots say). */}
+          {[...store.bots.values()].some((b) => b.manageTeam !== null) ? (
+            <SwitchRow
+              title="Manage the team"
+              detail="Let this bot create bots and change any bot's setup, its own included. The bots it creates can too."
+              on={draft.manageTeam ?? false}
+              onChange={(on) => set('manageTeam', on)}
             />
           ) : null}
         </CardSection>
@@ -251,9 +320,7 @@ function BotSettingsForm({ draft, onChange, error, plugins }: {
           onChange={(ids) => set('skills', ids)}
           onInfo={(s) => setViewingSkill({ id: s.id, name: s.name, description: s.detail })}
         />
-        {draft.id ? <MemoryCard botId={draft.id} /> : null}
-
-        {error ? <span className="fade-in" style={{ ...font('footnote'), color: 'var(--danger)' }}>{error}</span> : null}
+        {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
       </div>
       <FormSheet open={viewingSkill !== null} onClose={() => setViewingSkill(null)}>
         {viewingSkill ? <SkillSheet key={viewingSkill.name} skill={viewingSkill} /> : null}
@@ -281,9 +348,10 @@ function PluginToggles({ title, empty, items, selection, onChange, onInfo }: {
   /** Shows an item's details from an info button beside its switch. */
   onInfo?: (item: { id: string; name: string; detail: string }) => void
 }) {
+  const tr = useTr()
   return (
     <CardSection title={title}>
-      {items.length ? null : <span style={{ color: 'var(--secondary)' }}>{empty}</span>}
+      {items.length ? null : <Text tone="secondary">{tr(empty)}</Text>}
       {items.map((item) => {
         const row = (
           <SwitchRow
@@ -295,34 +363,13 @@ function PluginToggles({ title, empty, items, selection, onChange, onInfo }: {
           />
         )
         return onInfo ? (
-          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>{row}</div>
+          <HStack key={item.id} gap={4}>
+            <div className="plugin-toggle">{row}</div>
             <IconButton title={`About ${item.name}`} icon="info.circle" onClick={() => onInfo(item)} />
-          </div>
+          </HStack>
         ) : row
       })}
     </CardSection>
-  )
-}
-
-function AvatarPicker({ shape, color, onShape, onColor }: { shape: string; color: string; onShape: (s: string) => void; onColor: (c: string) => void }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="swatch-row">
-        {AVATAR_SHAPES.map((s) => (
-          <button key={s} className={`swatch ${s === shape ? 'on' : ''}`} aria-label={`${s} shape`} aria-pressed={s === shape} onClick={() => onShape(s)}>
-            <CharacterAvatar shape={s} color={color} size={36} />
-          </button>
-        ))}
-      </div>
-      <div className="swatch-row">
-        {AVATAR_COLORS.map((c) => (
-          <button key={c.id} className={`swatch ${c.id === color ? 'on' : ''}`} aria-label={c.label} aria-pressed={c.id === color} onClick={() => onColor(c.id)}>
-            <span style={{ width: 26, height: 26, borderRadius: '50%', background: c.hex, display: 'block' }} />
-          </button>
-        ))}
-      </div>
-    </div>
   )
 }
 
@@ -333,10 +380,10 @@ function FolderPicker({ start, onPick }: { start: string | null; onPick: (path: 
   const [forward, setForward] = useState(true)
   const current = stack[stack.length - 1] ?? null
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+    <SheetPage>
+      <HStack>
         {stack.length > 1 ? (
-          <div className="fade-in" style={{ paddingLeft: 10, display: 'flex' }}>
+          <HStack align="stretch" className="fade-in folder-back">
             <IconButton
               title="Back"
               icon="chevron.left"
@@ -345,13 +392,13 @@ function FolderPicker({ start, onPick }: { start: string | null; onPick: (path: 
                 setStack((s) => s.slice(0, -1))
               }}
             />
-          </div>
+          </HStack>
         ) : null}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="folder-title">
           <ModalHeader title={current ? lastPathComponent(current) : 'Folders'} />
         </div>
-      </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      </HStack>
+      <div className="folder-levels">
         <FolderLevel
           key={stack.length}
           path={current}
@@ -363,7 +410,7 @@ function FolderPicker({ start, onPick }: { start: string | null; onPick: (path: 
           }}
         />
       </div>
-    </div>
+    </SheetPage>
   )
 }
 
@@ -389,24 +436,24 @@ function FolderLevel({ path, forward, onPick, onOpen }: { path: string | null; f
 
   return (
     <div className={`bot-form level-slide ${forward ? 'from-trailing' : 'from-leading'}`}>
-      <div className="bot-form-content" style={{ gap: 14 }}>
+      <div className="bot-form-content folder-level-content">
         <SearchField value={filter} onChange={setFilter} />
         {listing ? (
           <>
             <CardSection footer={listing.path}>
-              <button className="press" style={{ display: 'flex', alignItems: 'center', gap: 8, ...font('headline'), color: 'var(--accent)' }} onClick={() => onPick(listing.path)}>
+              <button className="press folder-use" onClick={() => onPick(listing.path)}>
                 <Icon name="checkmark.circle.fill" size={13} />
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{`Use “${lastPathComponent(listing.path)}”`}</span>
+                <Text truncate>{`Use “${lastPathComponent(listing.path)}”`}</Text>
               </button>
             </CardSection>
             {dirs.length ? (
               <CardSection>
                 {dirs.map((dir) => (
-                  <button key={dir.path} className="press" style={{ display: 'flex', alignItems: 'center', gap: 10 }} onClick={() => onOpen(dir.path)}>
-                    <span style={{ width: 20, display: 'flex', justifyContent: 'center' }}>
+                  <button key={dir.path} className="press folder-row" onClick={() => onOpen(dir.path)}>
+                    <IconSlot width={20}>
                       <Icon name={dir.isGit ? 'arrow.triangle.branch' : 'folder'} size={12} color={dir.isGit ? 'var(--accent)' : 'var(--secondary)'} />
-                    </span>
-                    <span style={{ flex: 1, minWidth: 0, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dir.name}</span>
+                    </IconSlot>
+                    <Text tone="text" truncate grow>{dir.name}</Text>
                     <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />
                   </button>
                 ))}
@@ -414,11 +461,11 @@ function FolderLevel({ path, forward, onPick, onOpen }: { path: string | null; f
             ) : null}
           </>
         ) : error ? (
-          <span style={{ color: 'var(--danger)' }}>{error}</span>
+          <Text tone="danger">{error}</Text>
         ) : (
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <HStack align="stretch" justify="center">
             <Spinner size={20} />
-          </div>
+          </HStack>
         )}
       </div>
     </div>

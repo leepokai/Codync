@@ -134,7 +134,7 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 | `id` | 是 | 必須等於 `computerId(sk)`，否則拒絕 |
 | `sk`, `bk` | 是 | host 公鑰 |
 | `code` | 是 | 16 random bytes，b64url；一次性、10 分鐘；host 最多同時 5 組（新的擠掉最舊的） |
-| `urls` | 否 | 直連候選（既有 `service::addresses`，`http://ip:port` 形式），可為空 |
+| `urls` | 否 | 直連候選（`service::addresses`）：先 `CODYNC_EXTERNAL_URL` 設的網址（`https://host` 等，只能是 host 根路徑），再 Tailscale，再 LAN（`http://ip:port`）；可為空 |
 | `cloud` | 否 | host 使用的 cloud base URL（`https://…`；DEBUG build 另允許 `http://127.0.0.1:*`／`http://localhost:*`）；缺 = host 關閉雲端 |
 | `name` | 否 | 顯示名稱 |
 
@@ -168,7 +168,7 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 
 **B. 手機取得存取權**（commit-then-reveal SAS，ZRTP／BLE numeric comparison 同型）：
 1. 手機登入後 `POST /v1/devices`（Clerk + 該 device key 的 `Codync-Sig`）。
-2. `GET /v1/computers`（帶 `Codync-Sig` 則回傳每台的 `access`）。 iPhone 的 Bots 首頁直接列出尚未連線的帳號電腦，點 **Connect** 進入存取申請，不需掃 QR Code；核准後顯示該電腦的 bots。首次裝置授權仍由電腦上的使用者確認。
+2. `GET /v1/computers`（帶 `Codync-Sig` 則回傳每台的 `access`）。 手機在「電腦與設定」（Computers）列出帳號裡的電腦，不需掃 QR Code；存取申請只在使用者點該電腦的 **Ask for access** 後才開始（登入或重新整理都不會自動申請），點下後才顯示 6 位數代碼；關閉申請畫面後，等待中的申請仍以橫幅顯示代碼，直到電腦回應。核准後顯示該電腦的 bots。首次裝置授權仍由電腦上的使用者確認。
 3. 對 `access == "none"` 的電腦：手機產生 32 random bytes `nD`（只存記憶體），`POST /v1/computers/{id}/access-requests {"commit": b64url(SHA-256("codync/sascommit/v1" ‖ dk ‖ nD))}` → `{requestId, expiresAt}`。
 4. Worker 通知 DO → host 拉 state → 看到新申請（含 `commit`）→ host 產生 32 random bytes `nH`（存本機記憶體，每個 requestId 只產生一次）→ `POST /v1/host/access-requests/{id}/nonce {"nonce": nH}`（已有 host nonce → `409 conflict`，host 不得換）。
 5. 手機輪詢 `GET /v1/access-requests/{id}`（每 2 秒）→ 出現 `hostNonce` 後才 `POST /v1/access-requests/{id}/reveal {"nonce": nD}` → Worker 存入並通知 DO `cloud.changed`。手機此時計算 SAS 顯示「在電腦上確認代碼 123456」。
@@ -189,6 +189,7 @@ host 的授權裝置表（`host/src/api/devices.rs`）每一列：`key, name, pl
 - 狀態拉取成功時才延長 lease；連不到雲端就讓 lease 自然到期。
 - `lease_until` 過期的列視同不存在（不必立即刪；下次拉取時清）。
 - 每次連上 relay（含重連）：先完成一次 state 拉取（最多等 10 秒）才送 `acl`／`ready`；拉取成功之前，`source=account` 的列在直連與中繼上都不接受握手。
+- 連線期間每 5 分鐘再拉一次，有沒有 owner 都拉：漏接的 `cloud.changed`（例如剛被 claim）由此補上；成功的拉取也清掉 `lastError`。
 - 表有任何變動 → `acl_ver` 前進（§7.3 規則）→ 發佈 ACL。
 
 ACL（host 簽章，DO 驗證；逐位元組簽章，不做 JSON 正規化；向量 `acl`）：
@@ -311,7 +312,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 
 | 類別 | 方法 | 允許的 caller |
 |---|---|---|
-| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `teamCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud` | `Caller::Local`（loopback + token） |
+| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud` | `Caller::Local`（loopback + token） |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
 | screen scope | `screenPrepare`, `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
 | control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
@@ -416,7 +417,7 @@ Channel 訊息與 DO 訊息的 `t` 值不重疊：channel 只有 `hello`/`welcom
 
 ### 7.5 Client 連線策略（Apple 與整合測試共通）
 
-1. 平行對所有 `urls`（`http://h:p` → `ws://h:p/channel?v=1`）開 WebSocket 並握手；**1.5 秒**內第一個完成握手的勝出。
+1. 平行對所有 `urls`（`http://h:p` → `ws://h:p/channel?v=1`，`https://h` → `wss://h/channel?v=1`）開 WebSocket 並握手；**1.5 秒**內第一個完成握手的勝出。
 2. 都失敗且有 `cloud` → 連 `{cloud}/v1/relay/device/{computerId}`。每次收到 `presence online:true` 就（重新）送 `hello`；`online:false` → 狀態 `computerOffline(lastSeen)`，保持 socket（可用 mailbox），等下一個 `online:true`。
 3. 兩者都不可用 → `offline("Can't reach …")`，退避重試。
 4. App 回前景、網路路徑改變（`NWPathMonitor`）→ 重新跑 1–3（可能從中繼換回直連）；events 以當前 `rev` 重新訂閱。

@@ -38,7 +38,77 @@ The bot is the same agent on the computer; the call only changes how you talk to
   or switching accounts ends its calls and closes the transport.
 - Final replies and approval notices are delivered from the store's incoming events
   directly to the audio session, rather than waiting for a SwiftUI view update.
-  Replayed final replies, other bots and thread replies are not read into this call.
+  Replayed final replies and other bots' replies are not read into this call.
+
+## Dictation
+
+The composer's mic (beside send / call, as in Grok Bot) types what you say into the box with the
+same on-device recognizer and the call's language setting; nothing is sent until you send it.
+Words appear as they're recognized, after what's already typed. While it listens the mic becomes
+a recording pill (stop, the time, dots that follow your voice), on the iPhone and the desktop, and
+a call takes the microphone from it. On the desktop, dictation ends only on the pill's stop (or the
+shortcut's tap), which waits for the last words, on an error (shown in the window), or when another
+window takes the speech helper; it doesn't stop on a pause. On the iPhone the pill's stop keeps what
+was recognized so far. The desktop island's message field has the same mic and pill.
+
+A `chevron.up` beside the composer's mic picks dictation's engine, kept on the device apart from the
+call engine (`dictationEngine`): **On device** (the above), or **OpenAI** / **Gemini** on the user's
+own key. With a provider, the mic first checks that the computer holds its key (`voiceStatus`; no key
+means an error before anything is recorded), then records; the pill (and its time) appears only once
+the microphone is open, so nothing said before it is lost; nothing is typed while recording. The
+pill's stop turns the pill into "Transcribing…" and the whole recording goes through
+`voiceTranscribe` with the call settings' speech-to-text model; the text lands after what's in the
+box when it arrives (typing goes on while it records). The recording goes in 20 s pieces (one
+channel message each on the iPhone; under the host's 2 MB request body on the desktop), three at a
+time, joined in order; a tail under half a second stays with the piece before, and the first piece
+that fails fails the dictation. Under half a second of audio in all is dropped. Sending a message,
+starting a call or switching chats drops a dictation still recording or transcribing. The
+recording's length counts toward the provider's minutes this month. The island's mic stays
+on-device (its window doesn't reach the host).
+
+- Desktop (`views/thread/dictation.ts`, the model, tested with a stub platform; the helper,
+  microphone and host wired in `dictation-platform.ts`; pieces in `dictation-pieces.ts`; menu in
+  `DictationEngineMenu.tsx`): on-device speech is the speech helper, macOS only. Linux and Windows
+  show the mic too, for a provider; with **On device** picked each press says on-device speech isn't
+  available there. An unpackaged `npm run dev` can't use the helper: macOS stops it because the dev
+  Electron has no speech usage description, so test it in a packaged build (`dist:mac:dev`), like
+  calls.
+- Desktop: the speech helper serves one window at a time. When another window starts it (the
+  island while the chat window dictates or calls, or the other way round), `main/speech.ts` tells
+  the window that lost it (`stopped`) and ignores that window's stop.
+- iPhone (`Thread/Dictation.swift`, pill in `Thread/RecordingPill.swift`, menu in
+  `Thread/DictationEngineMenu.swift`, dots shared with the call bar in `LevelDots.swift`):
+  `SFSpeechRecognizer` on device; with no microphone route (some simulators) the mic does nothing.
+  A provider's errors (no key, no connection) show in a dialog.
+- Android has no composer mic yet.
+- The terminal UI has no microphone, so no mic.
+
+### Voice input shortcut
+
+Desktop on macOS, set in **Settings → General → System** (*Voice input shortcut*: off, the right ⌘
+twice (the default) or the left ⌘ twice; `voiceShortcut` in `host-prefs.json`). From any app, a
+double tap of that key starts dictation into the [notch island](notch-island.md)'s message field
+while the island is on, else into the chat window's composer (the top bot when no chat is open).
+One more tap stops it and sends what was said once the last words are in; the pill's stop leaves
+the words in the field unsent, and an error leaves nothing for the tap to send.
+Double-tapping to stop counts as that one tap, not a new start. While a call is on (any engine),
+the shortcut does nothing: the call has the microphone.
+
+- `apps/desktop/src/main/voice-shortcut.ts` keeps an `osascript -l JavaScript` process with an
+  `NSEvent` global monitor for modifier changes, plus the seconds since the last key press or
+  mouse click. Neither needs the Accessibility or Input Monitoring grant, and the app never sees
+  what is typed. The chat window reports calls (`voice:calling`) so taps are dropped meanwhile.
+- `shared/voice-shortcut.ts` decides what counts: a press under 0.3 s with no other modifier held
+  and no key pressed or click meanwhile is a tap; a second tap starting within 0.4 s of the first,
+  with no key pressed or click since the first, is a double tap. ⌘C, ⌘V and ⌘-clicks with the
+  same key are neither.
+- The renderer side is `Dictation.shortcutKey` (`views/thread/dictation.ts`), shared by the
+  composer and the island's model; `VoiceKeyRouter` (`shared/voice-shortcut.ts`) decides whether
+  a tap starts, sends or does nothing. The chat window queues taps for its composer in
+  `views/thread/voice-shortcut-keys.ts`.
+- macOS only: Windows and Linux have no ⌘ or on-device speech, and a modifier-only shortcut
+  there would need a native keyboard hook. The iPhone, Android and the terminal UI have no global
+  keyboard shortcut.
 
 ## Background verification
 
@@ -126,7 +196,10 @@ is there and can test it. Picking a cloud engine shows its key form instead of t
 to the provider's key page, **Test** (the computer checks a new key with the provider and keeps it
 only if it works, otherwise the provider's error is shown; with a key saved, it mints a call
 credential for the chosen model and voice), a model picker, a voice picker, and minutes used this month.
-Speech mode adds speech-to-text and text-to-speech pickers and the pause length. The model list comes from the provider through the computer (`voiceModels`: OpenAI `GET /v1/models`
+Speech mode adds speech-to-text and text-to-speech pickers and the pause length; dictating with
+the provider shows its speech-to-text picker too. When dictation's engine is a provider the call
+engine isn't, that provider gets its own section below with just the key and speech-to-text picker
+("For dictation in the message box."), so its key can be added without switching the call engine; its **Test** lists the key's models instead of minting a call credential. The model list comes from the provider through the computer (`voiceModels`: OpenAI `GET /v1/models`
 ids sorted into realtime, transcribe and tts models; Gemini `GET v1beta/models` by
 `bidiGenerateContent` / `generateContent` and name; translation and diarization models left out), fetched after a successful test and each time the form opens. The call bar
 shows the provider's name next to the dots whenever audio leaves the device.
@@ -175,7 +248,8 @@ The realtime model is an operator in front of the bot, not a replacement for it 
 - No key on the computer, invalid key, quota or network failure at start, or a dropped connection mid-call: the
   call switches to On device without hanging up, with a one-line notice under the bar.
 - Usage is billed by the provider to the user. The key form shows minutes used this month
-  (`VoiceUsage`, counted on each device while a cloud engine is live) as an estimate, not a bill.
+  (`VoiceUsage`, counted on each device while a cloud engine is live and for each recording
+  dictated with the provider) as an estimate, not a bill.
 
 ### Verification
 

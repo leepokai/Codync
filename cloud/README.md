@@ -4,8 +4,9 @@ Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/reference/remo
 
 - **`/v1` API** (`src/api.ts`, route groups in `src/routes/`): Clerk-authenticated account routes (devices, claims, computers, access
   requests, grants), `Codync-Sig`-authenticated host routes (`/v1/host/*`), the Clerk webhook, and a
-  15-minute cron that expires requests and prunes nonces, and the public routine webhook route
-  `POST /v1/hooks/:computerId/:routineId` (spec §7.8). D1 schema: `migrations/` (later files rebuild some tables).
+  15-minute cron that expires requests and prunes nonces, a 5-minute cron that runs the release gate
+  while a release waits behind GitHub's latest mark or the Homebrew tap trails it (`src/release-gate.ts`), and the public routine
+  webhook route `POST /v1/hooks/:computerId/:routineId` (spec §7.8). D1 schema: `migrations/` (later files rebuild some tables).
 - **`ComputerRelay`** (`src/relay.ts`): one Durable Object per computer (SQLite storage, WebSocket
   Hibernation). It admits device sockets against the host-signed ACL, forwards channel frames it can't
   read, reports presence, holds the offline mailbox, and queues routine webhook deliveries (`hookbox`,
@@ -59,9 +60,14 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 |---|---|---|
 | `CLERK_SECRET_KEY` | secret | JWKS for session tokens |
 | `CLERK_WEBHOOK_SECRET` | secret | Svix signature on `/v1/webhooks/clerk` (`user.deleted`) |
+| `RELEASE_GATE_TOKEN` | secret, main only | fine-grained GitHub token, *Actions: write* on `leepokai/Codync`: dispatches the release gate |
 | `CLERK_ISSUER` | var | Clerk Frontend API URL; tokens must carry this `iss` |
 | `CLERK_AUTHORIZED_PARTIES` | var, optional | comma-separated; a token with `azp` must match |
 | `CLERK_JWT_KEY` | var, dev/e2e only | public key for networkless verification |
+
+`RELEASE_GATE_TOKEN` is a fine-grained token without expiry. If it's revoked, set a new one with
+`npx wrangler secret put RELEASE_GATE_TOKEN`: without a working token the release gate runs only after
+each release, and only the Worker's cron logs show it (`GitHub graphql: 401`, `release gate dispatch: 403`).
 
 New computers are limited to 10 per IP per minute with the Workers Rate Limiting binding
 `REGISTER_LIMITER` (`[[ratelimits]]`; each environment needs its own `namespace_id`).

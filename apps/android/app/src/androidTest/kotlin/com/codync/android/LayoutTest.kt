@@ -41,6 +41,7 @@ class LayoutTest {
         compose.onNodeWithText("New group chat").assertIsDisplayed()
         compose.onNodeWithText("New bot").performClick()
         compose.onNodeWithContentDescription("Create").assertIsDisplayed()
+        compose.onNode(hasSetTextAction() and hasText("Name your bot")).assertIsDisplayed()
         compose.onNodeWithContentDescription("Close").performClick()
         compose.onNodeWithContentDescription("Create").assertDoesNotExist()
         compose.onNode(tab("State")).performClick().assertIsSelected()

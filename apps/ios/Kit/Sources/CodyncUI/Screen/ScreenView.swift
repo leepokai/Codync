@@ -58,6 +58,7 @@ public struct ScreenView: View {
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .preferredColorScheme(.dark)
+        .tracked(.screenViewed(.remoteScreen))
         .onAppear {
             OrientationLock.viewerAppeared()
             start()
@@ -190,12 +191,12 @@ public struct ScreenView: View {
             }
         case .live, .closed:
             if screen?.input != true {
-                Text("View only. To allow control, open Codync → Settings → Computer access on the computer.")
+                Text(L10n.tr("View only. To allow control, open Codync → Settings → Computer access on the computer."))
                     .font(.caption).padding(12)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 24)
             } else if let error = session.lastError {
-                Text(error)
+                Text(L10n.tr(error))
                     .font(.caption)
                     .padding(8)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -227,9 +228,9 @@ private struct Overlay: View {
             } else {
                 Spinner(size: 22)
             }
-            Text(text).font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
+            Text(L10n.tr(text)).font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
             if let retry {
-                Button("Try again", systemImage: "arrow.clockwise", action: retry)
+                Button(L10n.tr("Try again"), systemImage: "arrow.clockwise", action: retry)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.secondary)
             }

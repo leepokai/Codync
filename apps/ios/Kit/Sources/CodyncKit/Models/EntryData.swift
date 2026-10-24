@@ -2,8 +2,21 @@ import Foundation
 
 public struct EntryData: Codable, Hashable, Sendable {
     public var connectionRequest: ConnectionRequest?
+    /// A memory line an older host put in the chat. Memory lives in the bot's memory settings, so it isn't shown.
+    public var memory: MemoryLine?
+    public var memoryFile: MemoryLine?
+    /// notice: the agent summarized its context.
+    public var compaction: Compaction?
+    /// notice: the bot's chat starts over with this handoff.
+    public var handoff: HandoffCard?
     public var routineId: String?
     public var runId: String?
+    /// notice: a failed routine run the user can run again (`retryRoutineRun`).
+    public var retry: Bool?
+    /// notice: the bot moved to another agent of its chain, or back to its own.
+    public var agentSwitch: AgentSwitch?
+    /// notice (error): the bot has no fallbacks and its agent ran out of usage or was rate limited: offer to add one.
+    public var addFallback: Bool?
     public var text: String?
     public var final: Bool?
     /// user: queued | sent | cancelled | failed · tool: pending | in_progress | completed | failed · permission: pending | answered | cancelled | expired
@@ -20,7 +33,7 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var detail: String?
     public var cwd: String?
     public var entries: [PlanItem]?
-    /// notice: info | error | divider
+    /// notice: info | error
     public var style: String?
     /// Structured conversation data added to the existing team-tool notice.
     public var botMessage: BotMessage?
@@ -30,10 +43,12 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var targetBotId: String?
     /// The bot that wrote it (a group shows who spoke).
     public var author: String?
-    /// On a main-chat message that has a thread: its replies.
-    public var thread: ThreadSummary?
+    /// user: the message it replies to, as the computer quoted it.
+    public var replyTo: ReplyQuote?
     /// The user's emoji reactions, oldest first.
     public var reactions: [String]?
+    /// The bots' reactions, one per bot, oldest first.
+    public var botReactions: [BotReaction]?
     /// Files sent with a user message.
     public var attachments: [Attachment]?
     /// Immutable files explicitly sent by the bot.
@@ -45,6 +60,49 @@ public struct EntryData: Codable, Hashable, Sendable {
         self.text = text
         self.status = status
         self.clientNonce = clientNonce
+    }
+}
+
+/// The message a reply quotes: its entry, who wrote it (`user` or a bot id) and its text (at most 500
+/// characters, or its file names). A partial quote still decodes, so the message itself always shows.
+public struct ReplyQuote: Codable, Hashable, Sendable {
+    public var id: String
+    public var author: String
+    public var text: String
+
+    public init(id: String, author: String, text: String) {
+        self.id = id
+        self.author = author
+        self.text = text
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        author = try c.decodeIfPresent(String.self, forKey: .author) ?? ""
+        text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+    }
+}
+
+/// A memory line from an older host, known only to keep it out of the chat.
+public struct MemoryLine: Codable, Hashable, Sendable {}
+
+/// One bot's emoji on a message.
+public struct BotReaction: Codable, Hashable, Sendable {
+    public var bot: String
+    public var emoji: String
+}
+
+extension EntryData {
+    /// The bots' reactions by emoji, in the order each first appeared.
+    public var botReactionGroups: [(emoji: String, bots: [String])] {
+        (botReactions ?? []).reduce(into: []) { groups, r in
+            if let i = groups.firstIndex(where: { $0.emoji == r.emoji }) {
+                groups[i].bots.append(r.bot)
+            } else {
+                groups.append((r.emoji, [r.bot]))
+            }
+        }
     }
 }
 

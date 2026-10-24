@@ -118,7 +118,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
 @Composable private fun RequestLogo(request: ConnectionRequest, state: AppState) {
     when (request.kind) {
         "agent" -> Box(Modifier.size(46.dp).clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent), contentAlignment = Alignment.Center) {
-            AgentIcon(agentBackends(state).firstOrNull { it.id == request.backend }?.registry ?: request.backend, 26.dp)
+            AgentIcon(request.backend?.let { agentRegistry(state, it) }, 26.dp)
         }
         "app" -> AppLogo(request.logo, request.title)
         // A login's site is a domain, or an app's name (no logo to find for that).

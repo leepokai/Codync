@@ -5,7 +5,8 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Click, Editor, Mark, SlashAction, Status};
+use super::super::app::{App, Click, Editor, Entry, Mark, SlashAction, Status};
+use super::super::l10n::tr;
 use super::super::md::{truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, rput, u};
 use super::set_cursor;
@@ -33,8 +34,7 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         x = put(buf, x, r.y, 2, "‹", t.bold) + 1;
     }
     put_line(buf, x, r.y, 2, &avatar(app, &b));
-    let title = if app.thread.is_some() { format!("Thread · {}", b.name) } else { b.name.clone() };
-    x = put(buf, x + 3, r.y, r.width / 3, &title, t.bold) + 2;
+    x = put(buf, x + 3, r.y, r.width / 3, &b.name, t.bold) + 2;
     let (status, ss) = match b.mark() {
         Mark::Need => ("◆ needs you".to_owned(), t.amber),
         Mark::Work => (format!("{} working {}", spin(app), elapsed(b.started_at)), t.secondary),
@@ -43,9 +43,7 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     };
     let sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
     let room = sx.saturating_sub(x + 2);
-    if app.thread.is_some() {
-        put(buf, x, r.y, room, "esc back to the chat", t.dim);
-    } else if b.group {
+    if b.group {
         let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
         put(buf, x, r.y, room, &truncate(&format!("group · {}", names.join(", ")), usize::from(room)), t.secondary);
     } else if !narrow {
@@ -84,26 +82,43 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     let inner = usize::from(r.width.saturating_sub(4)).max(1);
     let (clines, cursor) = composer_lines(&draft, inner);
     let ch = u(clines.len().clamp(1, 8));
-    // Attached files: one row of names above the text.
+    // The message it replies to, then attached files: a row each above the text.
+    let quote = app.replying_to().map(Entry::quoted);
+    let qh = u16::from(quote.is_some());
     let files = app.draft_files();
     let fh = u16::from(!files.is_empty());
-    let box_top = r.bottom().saturating_sub(ch + fh + 2);
+    let box_top = r.bottom().saturating_sub(ch + qh + fh + 2);
     let typing = app.typing && app.overlays.is_empty();
     let rule = if typing { t.text } else { t.line };
     hline(buf, r.x, box_top, r.width, rule);
-    hline(buf, r.x, box_top + fh + ch + 1, r.width, rule);
+    hline(buf, r.x, box_top + qh + fh + ch + 1, r.width, rule);
+    if let Some(quote) = quote {
+        let quote = super::roster::plain(&quote);
+        let hint = if typing { "" } else { "esc cancels" };
+        let room = r.width.saturating_sub(u(w(hint)) + 6);
+        put(
+            buf,
+            r.x + 3,
+            box_top + 1,
+            room,
+            &format!("↳ “{}”", truncate(&quote, usize::from(room).saturating_sub(3))),
+            t.secondary,
+        );
+        rput(buf, r.right() - 1, box_top + 1, hint, t.dim);
+    }
     if fh > 0 {
         let names: Vec<String> = files
             .iter()
             .map(|p| format!("▤ {}", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()))
             .collect();
         let hint = if draft.text.is_empty() { "⌫ removes" } else { "" };
-        put(buf, r.x + 3, box_top + 1, r.width.saturating_sub(u(w(hint)) + 6), &names.join("  "), t.secondary);
-        rput(buf, r.right() - 1, box_top + 1, hint, t.dim);
+        let row = box_top + qh + 1;
+        put(buf, r.x + 3, row, r.width.saturating_sub(u(w(hint)) + 6), &names.join("  "), t.secondary);
+        rput(buf, r.right() - 1, row, hint, t.dim);
     }
-    let comp_top = box_top + fh;
+    let comp_top = box_top + qh + fh;
     put(buf, r.x + 1, comp_top + 1, 1, "›", if typing { t.bold } else { t.dim });
-    let comp_rect = Rect::new(r.x, box_top, r.width, ch + fh + 2);
+    let comp_rect = Rect::new(r.x, box_top, r.width, ch + qh + fh + 2);
     app.hits.clicks.push((comp_rect, Click::Composer));
     let first = clines.len().saturating_sub(usize::from(ch)).min(cursor.1.saturating_sub(usize::from(ch) - 1));
     // Where the first composer line's text ends, so the chip on its right never covers it.
@@ -111,12 +126,11 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     if draft.text.is_empty() {
         // The apps' wording.
         let placeholder = if app.pick.is_some() {
-            let reply = if app.thread.is_some() { "↵ reply" } else { "↵ thread" };
-            format!("j k pick · {reply} · 1–6 react · f save files · c copy · esc")
-        } else if app.thread.is_some() {
-            "Reply…".to_owned()
+            "j k pick · ↵ reply · 1–6 react · f save files · c copy · esc".to_owned()
+        } else if app.reply.is_some() {
+            tr("Reply…").into_owned()
         } else if b.group {
-            "Message everyone · @ to ask one bot".to_owned()
+            tr("Ask everyone · @ to ask one bot").into_owned()
         } else {
             format!("Message {}…", b.name)
         };
@@ -128,8 +142,8 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             put(buf, r.x + 3, comp_top + 1 + u(i), r.width.saturating_sub(4), l, t.text);
         }
     }
-    // Only a turn in this lane holds a message back; in a group a new one ends the round instead.
-    let here = b.works_in(app.thread.as_deref());
+    // Only a turn in this chat holds a message back; in a group a new one ends the round instead.
+    let here = b.works_here();
     let chip = if typing {
         match b.status {
             Status::Working if here && b.group => "goes in after this reply",
@@ -138,13 +152,11 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             _ => "",
         }
     } else if app.pick.is_some() {
-        if draft.text.is_empty() { "" } else { "↵ opens its thread · esc cancels" }
+        if draft.text.is_empty() { "" } else { "↵ replies to it · esc cancels" }
     } else if matches!(b.status, Status::Working | Status::NeedsInput) {
         "s stops"
-    } else if app.thread.is_none() {
-        "i to type · r reply in thread"
     } else {
-        "i to type"
+        "i to type · r reply"
     };
     if (draft.text.is_empty() || !typing) && used + w(chip) + 6 <= usize::from(r.width) {
         rput(buf, r.right() - 1, comp_top + 1, chip, t.dim);

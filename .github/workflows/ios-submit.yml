@@ -1,6 +1,7 @@
 name: Submit iOS
 
-# On each v* tag that changes the iPhone app, starts the Xcode Cloud archive on that tag,
+# On each v* tag that changes the iPhone app, starts the Xcode Cloud archive on that tag
+# (or on main while main is the tagged commit, when Xcode Cloud never heard of the tag),
 # waits for the upload and submits it for App Review. Host/macOS-only releases skip iOS.
 on:
   push:

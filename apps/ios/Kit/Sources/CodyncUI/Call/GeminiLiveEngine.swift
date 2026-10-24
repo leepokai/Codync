@@ -257,7 +257,7 @@ final class GeminiLiveEngine: VoiceEngine {
         try input.setVoiceProcessingEnabled(true)
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: Self.playFormat)
-        let format = input.outputFormat(forBus: 0)
+        let format = try MicTap.format(of: input)
         input.installTap(onBus: 0, bufferSize: 2048, format: format, block: MicTap.pcm16k(from: format) { [weak self] pcm, level in
             let audio = pcm.base64EncodedString()
             Task { @MainActor in self?.captured(audio, level: level) }

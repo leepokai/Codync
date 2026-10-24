@@ -48,8 +48,5 @@ private fun AppStore.setDownload(fileId: String, download: FileDownloadState?) =
     it.copy(fileDownloads = if (download == null) it.fileDownloads - fileId else it.fileDownloads + (fileId to download))
 }
 
-/** The chat or thread the message is in (a thread's first message too) is the one open. */
-private fun AppStore.showing(entry: Entry): Boolean {
-    val current = state.value
-    return foreground && current.selectedBot == entry.botId && (current.thread == entry.threadId || current.thread == entry.id)
-}
+/** The chat the message is in is the one open. */
+private fun AppStore.showing(entry: Entry): Boolean = foreground && state.value.selectedBot == entry.botId

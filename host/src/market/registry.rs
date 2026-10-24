@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 /// Well-known connectors shown before you search, by MCP Registry name.
 /// Names that aren't in the registry (yet) are simply skipped.
 const FEATURED: &[&str] = &[
+    "io.github.ComposioHQ/composio",
     "io.github.github/github-mcp-server",
     "app.linear/linear",
     "com.notion/mcp",

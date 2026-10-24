@@ -293,7 +293,7 @@ public struct GroupAvatar: View {
                 if members.count == 4 {
                     place(members[3], size * 0.5, .bottomTrailing)
                 } else {
-                    Text("+\(members.count - 3)")
+                    Text(L10n.tr("+\(members.count - 3)"))
                         .font(.system(size: size * 0.24, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
                         .frame(width: size * 0.5, height: size * 0.5)

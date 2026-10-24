@@ -33,11 +33,14 @@ data class Bot(
     val connectors: List<String> = emptyList(),
     val skills: List<String> = emptyList(),
     val computer: Boolean = false,
+    /** The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools); null from an older host. */
+    val manageTeam: Boolean? = null,
+    /** The bot that created this one; null when the user did. */
+    val createdBy: String? = null,
     val autoName: Boolean = false,
     val createdAt: Long = 0,
     val startedAt: Long? = null,
     val workingChat: String? = null,
-    val workingThread: String? = null,
     val lastMessage: String? = null,
     val lastAt: Long = 0,
     val status: String = "idle",
@@ -50,7 +53,18 @@ data class Bot(
     val unread: Int = 0,
     val rev: Long = 0,
     val deleted: Boolean = false,
+    /** Agents that carry on, in order, when its own can't answer (out of usage, rate limited, signed out…); null from an older host. */
+    val fallbacks: List<Fallback>? = null,
+    /** The bot may set its own fallbacks, for example when the user asks it to; null from an older host. */
+    val selfFallbacks: Boolean? = null,
+    /** The fallback it runs on right now; null on its own agent. */
+    val agentStep: AgentStep? = null,
+    /** Agents of its chain resting now. */
+    val resting: List<Resting> = emptyList(),
 ) {
+    /** [agent]'s rest, unless it's over. */
+    fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }
+
     /** An agent bot unless its agent said it has no Fast mode, or one that has it on (so it can be turned off). */
     val fastModeShown: Boolean get() = kind != "group" && (fastMode || fastModeSupport != "unsupported")
 
@@ -58,9 +72,11 @@ data class Bot(
     val fastModeRefusal: String? get() = if (fastMode && fastModeSupport == "refused")
         "The agent turned it off: ${fastModeIssue ?: "not available"}. Switch it off and on to try again." else null
 
-    /** Working right now in this chat's main conversation (`thread == null`) or in that thread. */
-    fun isWorking(chat: String, thread: String?): Boolean =
-        status in listOf("working", "needsInput") && (workingChat ?: id) == chat && workingThread == thread
+    /** A group's bots, in member order, from [bots]. */
+    fun memberBots(bots: List<Bot>): List<Bot> = members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
+
+    /** Working right now in this chat (its own, or a group it's in). */
+    fun isWorking(chat: String): Boolean = status in listOf("working", "needsInput") && (workingChat ?: id) == chat
 }
 
 object HostClient {

@@ -104,7 +104,7 @@ Dynamic Island 固定黑底，文字採淺色；Lock Screen 卡片配合系統�
 
 ## Halftone 與 Thinking Orbs（2026-09-26）
 
-Bot 的角色頭像使用 `CharacterAvatar` 點陣；provider 圖示由 `ProviderMascot` 選擇，小尺寸可使用隨 app 打包的官方 provider 圖示。15 pt 用 7 × 7、20–26 pt 用 9 × 9、28 pt 以上用 13 × 13 網格，保留鏤空眼睛並提高小尺寸墨色。iOS App 與 widgets 共用 provider 呈現邏輯；桌面 App 的對應實作在 `apps/desktop/src/renderer/views/usage/ProviderMascot.tsx`。
+Bot 的角色頭像使用 `CharacterAvatar` 點陣；provider 圖示由 `ProviderMascot` 選擇，小尺寸可使用隨 app 打包的官方 provider 圖示。15 pt 用 7 × 7、20–26 pt 用 9 × 9、28 pt 以上用 13 × 13 網格，保留鏤空眼睛並提高小尺寸墨色。桌面另依裝置像素限制密度（13 格至少 52 px、9 格至少 27 px），1x 螢幕因此用較疏的網格；2x 以下還把點距對齊整數像素，讓點間距一致，點落在像素中心或角落以保持銳利（`apps/desktop/src/renderer/lib/dot-grid.ts`）。iPhone 螢幕至少 2x，維持原本網格；Android 目前仍只依 dp 選網格。iOS App 與 widgets 共用 provider 呈現邏輯；桌面 App 的對應實作在 `apps/desktop/src/renderer/views/usage/ProviderMascot.tsx`。
 
 狀態圖示以 [Jakub Antalik 的 thinking-orbs](https://github.com/Jakubantalik/thinking-orbs) 為來源，這次原生移植四種實際使用的造型：
 

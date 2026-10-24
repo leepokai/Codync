@@ -34,6 +34,18 @@ protocol VoiceEngine: AnyObject, Observable {
     func announce(_ notice: String)
 }
 
+extension VoiceEngine {
+    /// The engine's name in analytics.
+    var analyticsName: AnalyticsEvent.VoiceEngine {
+        if self is CloudSpeechEngine { return .cloud }
+        return switch provider {
+        case .openAI: .openai
+        case .gemini: .gemini
+        case nil: .onDevice
+        }
+    }
+}
+
 struct VoiceError: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
@@ -46,6 +58,13 @@ enum VoiceSettings {
 
     static var provider: VoiceProvider? {
         UserDefaults.standard.string(forKey: engineKey).flatMap(VoiceProvider.init(rawValue:))
+    }
+
+    /// The same choice for dictation into the message box, picked beside its mic.
+    static let dictationEngineKey = "dictationEngine"
+
+    static var dictationProvider: VoiceProvider? {
+        UserDefaults.standard.string(forKey: dictationEngineKey).flatMap(VoiceProvider.init(rawValue:))
     }
 
     static func modelKey(_ provider: VoiceProvider) -> String { "callModel.\(provider.rawValue)" }
@@ -120,6 +139,21 @@ enum VoiceSettings {
 }
 
 enum MicTap {
+    /// Bytes per second of what `pcm16k` hands out: 16 kHz mono PCM16.
+    static let bytesPerSecond = 16000 * 2
+
+    struct Unavailable: LocalizedError {
+        var errorDescription: String? { "no microphone is available right now" }
+    }
+
+    /// The microphone's format. With no usable input (no microphone, a route change, an
+    /// interruption) it's 0 Hz, and a tap on it raises an exception that ends the app: throws instead.
+    static func format(of input: AVAudioInputNode) throws -> AVAudioFormat {
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw Unavailable() }
+        return format
+    }
+
     /// Microphone → 16 kHz mono PCM16 (little-endian) with a loudness level, 0…1. Built off the
     /// main actor: the block runs on the audio thread.
     nonisolated static func pcm16k(from format: AVAudioFormat,

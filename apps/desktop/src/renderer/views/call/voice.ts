@@ -1,15 +1,16 @@
+import type { HostClient } from '../../client/host-client'
 import { Observable } from '../../lib/observable'
 import {
   addVoiceUsage,
   chosenModel,
   chosenVoice,
+  dictationEngine,
   engine,
   isVoiceProvider,
   language,
   mode,
   pause,
   rate,
-  rememberStatus,
   voiceInfo,
   type VoiceProvider,
 } from '../settings/voice-settings'
@@ -36,12 +37,16 @@ export const VoiceSettings = {
     const value = engine.get()
     return isVoiceProvider(value) ? value : null
   },
+  /** The provider picked for dictation; null for on-device. */
+  dictationProvider: (): VoiceProvider | null => {
+    const value = dictationEngine.get()
+    return isVoiceProvider(value) ? value : null
+  },
   model: (p: VoiceProvider) => chosenModel(p, 'realtime'),
   transcribeModel: (p: VoiceProvider) => chosenModel(p, 'transcribe'),
   speechModel: (p: VoiceProvider) => chosenModel(p, 'speech'),
   voice: chosenVoice,
   isSpeechMode: (p: VoiceProvider) => mode(p).get() === 'speech',
-  remember: rememberStatus,
   /** A pause this long (seconds) ends what you're saying and sends it. */
   pause: () => (pause.get() > 0 ? pause.get() : 1.5),
   /** AVSpeechUtterance's rate (0…1, 0.5 normal), as the Mac stores it. */
@@ -185,6 +190,11 @@ export function wav(chunks: Int16Array[]): Uint8Array {
   let at = 44
   for (const c of chunks) for (let i = 0; i < c.length; i++, at += 2) v.setInt16(at, c[i]!, true)
   return out
+}
+
+/** Speech to text for one recording (a 16 kHz WAV) on the host, which holds the provider's key. */
+export async function transcribeOnHost(client: HostClient, provider: VoiceProvider, model: string, audio: Uint8Array) {
+  return (await client.call<{ text: string }>('voiceTranscribe', { provider, model, audio: toBase64(audio) }, 60_000)).text
 }
 
 export function toBase64(bytes: Uint8Array) {

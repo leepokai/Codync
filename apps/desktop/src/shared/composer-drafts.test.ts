@@ -7,33 +7,38 @@ function storage() {
   return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value) } }
 }
 
-test('drafts survive reopening with whitespace and isolate bots, threads and accounts', () => {
+test('drafts survive reopening with whitespace and isolate bots and accounts', () => {
   const disk = storage()
   const drafts = new ComposerDrafts(disk, 'account/computer')
   const text = '  中文\nunfinished 🐱\n'
-  drafts.set('bot', null, text)
-  drafts.set('bot', 'thread', 'reply')
-  drafts.set('other', null, 'other draft')
+  drafts.set('bot', text)
+  drafts.set('other', 'other draft')
   const reopened = new ComposerDrafts(disk, 'account/computer')
   assert.equal(reopened.get('bot'), text)
-  assert.equal(reopened.get('bot', 'thread'), 'reply')
   assert.equal(reopened.get('other'), 'other draft')
   assert.equal(new ComposerDrafts(disk, 'other-account/computer').get('bot'), '')
   assert.equal(new ComposerDrafts(disk, 'account/other-computer').get('bot'), '')
-  reopened.set('bot', null, '')
+  reopened.set('bot', '')
   assert.equal(new ComposerDrafts(disk, 'account/computer').get('bot'), '')
-  assert.equal(reopened.get('bot', 'thread'), 'reply')
   assert.equal(reopened.get('other'), 'other draft')
 })
 
-test('deleting a bot removes its main and thread drafts, but preserves other bots', () => {
+test('drafts saved before quote replies stay with their chat', () => {
+  const disk = storage()
+  disk.setItem('drafts', JSON.stringify([['["bot",null]', 'unsent'], ['["bot","root"]', 'aside'], ['other', 'new']]))
+  const drafts = new ComposerDrafts(disk, 'drafts')
+  assert.equal(drafts.get('bot'), 'unsent')
+  assert.equal(drafts.get('other'), 'new')
+  drafts.set('other', 'newer')
+  assert.equal(disk.getItem('drafts'), JSON.stringify([['bot', 'unsent'], ['other', 'newer']]))
+})
+
+test('deleting a bot removes its draft, but preserves other bots', () => {
   const drafts = new ComposerDrafts(storage(), 'drafts')
-  drafts.set('bot', null, 'main')
-  drafts.set('bot', 'thread', 'reply')
-  drafts.set('other', null, 'keep')
+  drafts.set('bot', 'main')
+  drafts.set('other', 'keep')
   drafts.removeBot('bot')
   assert.equal(drafts.get('bot'), '')
-  assert.equal(drafts.get('bot', 'thread'), '')
   assert.equal(drafts.get('other'), 'keep')
 })
 
@@ -42,22 +47,22 @@ test('malformed or unavailable persistence does not destroy editable in-memory t
   const drafts = new ComposerDrafts(disk, 'drafts')
   let updates = 0
   const unsubscribe = drafts.subscribe(() => updates++)
-  drafts.set('bot', null, 'kept')
+  drafts.set('bot', 'kept')
   assert.equal(drafts.get('bot'), 'kept')
   assert.equal(updates, 1)
   unsubscribe()
-  drafts.set('bot', null, 'next')
+  drafts.set('bot', 'next')
   assert.equal(updates, 1)
 })
 
 test('late edits from a retired store cannot overwrite a reopened conversation', () => {
   const disk = storage()
   const previous = new ComposerDrafts(disk, 'account/computer')
-  previous.set('bot', null, 'old text')
+  previous.set('bot', 'old text')
   previous.retire()
   const current = new ComposerDrafts(disk, 'account/computer')
-  current.set('bot', null, 'new text')
-  previous.set('bot', null, 'late edit')
+  current.set('bot', 'new text')
+  previous.set('bot', 'late edit')
   previous.clear()
   assert.equal(new ComposerDrafts(disk, 'account/computer').get('bot'), 'new text')
 })

@@ -12,7 +12,9 @@ struct CodyncApp: App {
     /// What the App Store has: greys out an update it doesn't have yet, reminds of newer ones.
     @State private var updates = AppUpdates()
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
+    @AppStorage(AppLanguage.storageKey, store: AppLanguage.defaults) private var appLanguageRaw = AppLanguage.system.rawValue
     /// Cold launch with a computer to reach: the splash covers its connect and catch-up.
     @State private var launching = !AppStore.shared.accounts.computers.isEmpty
     init() {
@@ -28,9 +30,17 @@ struct CodyncApp: App {
                 .environment(app.accounts)
                 .environment(app.account)
                 // A computer needs a newer app: its App Store page has the Update button.
-                .environment(\.appUpdate, AppUpdateAction { UIApplication.shared.open(AppStoreRelease.page) })
+                .environment(\.appUpdate, AppUpdateAction {
+                    Analytics.shared.capture(.linkOpened(.appStore))
+                    UIApplication.shared.open(AppStoreRelease.page)
+                })
                 .environment(updates)
                 .tint(Palette.accent)
+                .background(AppearanceWindow(appearance: appearance).frame(width: 0, height: 0))
+                .environment(\.locale, AppLanguage.locale(
+                    preference: AppLanguage(rawValue: appLanguageRaw) ?? .system,
+                    systemIsChinese: AppLanguage.systemIsChinese()))
+                .onChange(of: appLanguageRaw) { _, _ in WidgetCenter.shared.reloadAllTimelines() }
                 // No scroll indicators anywhere in the app.
                 .scrollIndicators(.never)
                 .codyncSheet(isPresented: Binding(
@@ -55,11 +65,10 @@ struct CodyncApp: App {
                     }
                 }
                 .onOpenURL { url in app.open(url) }
-                .onChange(of: onboardingCompleted) { _, done in if done { Analytics.shared.capture(.onboardingCompleted) } }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     switch phase {
                     case .active: Analytics.shared.becameActive()
-                    case .background: Analytics.shared.enteredBackground()
+                    case .background: BackgroundTime.run("Analytics") { await Analytics.shared.enteredBackground() }
                     default: break
                     }
                     // Only leaving for the background disconnects; `.inactive` (Control Center,
@@ -75,7 +84,7 @@ struct CodyncApp: App {
                 .task {
                     // Simulator/UI-test pairing: SIMCTL_CHILD_CODYNC_PAIR_URL=codync://pair?...
                     if let s = ProcessInfo.processInfo.environment["CODYNC_PAIR_URL"], let p = Pairing(string: s) {
-                        _ = try? await app.pair(p)
+                        _ = try? await app.pair(p, via: .link)
                     }
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .state; app.showUsage = true }
                     if ProcessInfo.processInfo.environment["CODYNC_STATE_SURFACE"] != nil { app.tab = .state }
@@ -123,6 +132,12 @@ final class AppStore {
         SharedStore.activeAccountID = session.userID
         account = session
         Analytics.shared.userID = { [session] in session.userID }
+        Analytics.shared.foregroundState = {
+            let allowed = await PushRegistrar.shared.isAllowed()
+            // Unreadable (WidgetKit's error carries nothing to act on): `app_opened` leaves the count out.
+            let widgets = try? await WidgetCenter.shared.currentConfigurations().count
+            return (allowed.map { $0 ? .allowed : .denied } ?? .notAsked, widgets)
+        }
         CrashReports.shared.start()
         contextID = storage.id
         (accounts, cloud) = Self.makeAccounts(storage, session: session)
@@ -189,10 +204,26 @@ final class AppStore {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    func pair(_ pairing: Pairing) async throws -> Computer {
-        let computer = try await accounts.pair(pairing, deviceName: UIDevice.current.name, platform: "ios")
-        Analytics.shared.capture(.computerPaired, ["via": "qr", "computer": Analytics.computerTag(computer.id)])
-        return computer
+    /// A scanned, pasted or opened pairing link; one that can't be read is recorded before it's shown.
+    func pairing(from link: String) throws -> Pairing {
+        do { return try Pairing.parse(link) } catch { throw pairingFailed(error) }
+    }
+
+    /// `via`: `qr` scanned or pasted here, `link` opened from the Camera app.
+    func pair(_ pairing: Pairing, via: AnalyticsEvent.PairVia) async throws -> Computer {
+        do {
+            let computer = try await accounts.pair(pairing, deviceName: UIDevice.current.name, platform: "ios")
+            Analytics.shared.capture(.computerPaired(via: via, computer: computer.id))
+            return computer
+        } catch {
+            throw pairingFailed(error)
+        }
+    }
+
+    /// Records why pairing failed (nothing when it was called off) and hands the error on.
+    private func pairingFailed(_ error: any Error) -> any Error {
+        if let reason = AnalyticsEvent.PairingFailure(error) { Analytics.shared.capture(.pairingFailed(reason)) }
+        return error
     }
 
     func open(_ url: URL) {
@@ -206,7 +237,7 @@ final class AppStore {
             // Scanned with the Camera app: pair right away.
             let accounts = accounts
             Task {
-                do { _ = try await pair(try Pairing.parse(url)) } catch { accounts.lastError = error.localizedDescription }
+                do { _ = try await pair(try pairing(from: url.absoluteString), via: .link) } catch { accounts.lastError = error.localizedDescription }
             }
         case "bot":
             guard let ref = storage.reference(from: url), accounts.store(for: ref.computerId) != nil else { return }
@@ -273,17 +304,22 @@ final class AppStore {
         guard let cloud else { return }
         let accounts = accounts
         do {
-            let identity = try DeviceIdentity.load(context: accounts.storage)
-            if let device = try await cloud.devices().first(where: { $0.deviceKey == identity.publicKey }) {
-                for grant in try await cloud.grants(id) where grant.deviceId == device.deviceId {
-                    try await cloud.revokeGrant(id, grantId: grant.grantId)
-                }
-            }
+            try await cloud.revokeDeviceAccess(id)
             accounts.forget(id)
             await accounts.refreshCloud()
         } catch {
             accounts.lastError = error.localizedDescription
         }
+    }
+
+    /// Forgets a computer here. Approved through the account, its grant goes too, or it would come
+    /// straight back as an account row; a failed revoke (offline) still forgets it, and its error says
+    /// why the grant stayed.
+    func removeComputer(_ id: ComputerID) async {
+        let accounts = accounts
+        if accounts.cloudComputers.first(where: { $0.computerId == id })?.isGranted == true { await revokeAccess(id) }
+        // A revoke that went through forgot it already.
+        if accounts.computers.contains(where: { $0.id == id }) { accounts.forget(id) }
     }
 }
 
@@ -318,10 +354,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let ctx = info["ctx"] as? String
         let computerId = info["computerId"] as? String
         let botId = info["botId"] as? String
+        let kind = AnalyticsEvent.NotificationKind(category: response.notification.request.content.categoryIdentifier)
         // UIKit saves application state from this completion. The async delegate
         // bridge can complete off the main thread even after MainActor.run.
         Task { @MainActor in
             defer { completionHandler() }
+            if let kind { Analytics.shared.capture(.notificationOpened(kind)) }
             guard let ctx, let computerId, let botId else { return }
             // Only open it in the account it was sent to, on a computer that account still has.
             let accounts = AppStore.shared.accounts
@@ -334,6 +372,27 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         // The chat already shows it live.
         []
+    }
+}
+
+/// Background time for work that has to finish after the app leaves the screen (the analytics
+/// batch); without it iOS suspends the app with the work half done.
+@MainActor
+private final class BackgroundTime {
+    private var id = UIBackgroundTaskIdentifier.invalid
+
+    static func run(_ name: String, _ work: @escaping @MainActor @Sendable () async -> Void) {
+        let time = BackgroundTime()
+        let task = Task { await work() }
+        // Out of time: give the work up rather than have iOS end the app for overrunning.
+        time.id = UIApplication.shared.beginBackgroundTask(withName: name) { task.cancel(); time.end() }
+        Task { await task.value; time.end() }
+    }
+
+    private func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
     }
 }
 

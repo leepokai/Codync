@@ -27,7 +27,9 @@ they return. Computer names and bots never become ordering keys, and an ordering
 entry never grants access to a computer or imports another device's SSH connection.
 
 On iOS, touch and hold a computer heading, then drag up or down and release to save
-the order; its bots follow when it's dropped. Cancelling a drag leaves the saved order unchanged. A tap folds or expands
+the order. The computer moves with its bots: while the heading is lifted, every computer's
+bots fold into their headings (rows kept at no height, so the system's drag keeps its place),
+and they unfold under their computers when it's dropped. Cancelling a drag leaves the saved order unchanged. A tap folds or expands
 the section; Move up/down accessibility actions are also available. The desktop
 app supports heading drags and Alt+Up/Down on macOS, Linux and Windows.
 The terminal UI connects to one host, so it has no cross-computer ordering.
@@ -47,7 +49,8 @@ appears on top. Hidden bots keep their position for when they return.
   removed, so the system does the reordering: holding still opens the row's menu, and dragging
   the lifted row moves it, also once the menu shows, unless the finger goes into the menu. Lifted,
   the row is a rounded card: it fills while the system holds its drag item (`BotListView.lift`). A bot
-  dropped among another computer's bots goes back. The drop saves the order (`BotListView.moveLines`,
+  moves only among its own computer's bots: dropped above or below them, among another computer's,
+  it goes first or last. The drop saves the order (`BotListView.moveLines`,
   `BotStore.reorder`). VoiceOver: Move up / Move down. SwiftUI's own drag and drop can't do this:
   with a context menu on the row, a drag never starts on iPhone.
 - **Desktop:** drag a row, or Alt+Up/Down on the selected bot (macOS, Linux, Windows).

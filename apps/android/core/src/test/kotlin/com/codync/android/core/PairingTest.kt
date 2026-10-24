@@ -42,6 +42,13 @@ class PairingTest {
         assertFails<IllegalArgumentException> { Pairing.parse("https://example.test/?v=3", "codync") }
     }
 
+    @Test fun `a rejected link says why`() {
+        fun kind(text: String) = assertFails<PairingProblem> { Pairing.parse(text, "codync") }.kind
+        assertEquals(PairingProblem.Kind.NotPairingLink, kind("https://example.test/?v=3"))
+        assertEquals(PairingProblem.Kind.OutdatedHost, kind(link(params + ("v" to "2"))))
+        assertEquals(PairingProblem.Kind.Invalid, kind(link(params + ("sk" to "invalid"))))
+    }
+
     @Test fun `unsafe direct endpoints are removed and at least one route must remain`() {
         val pairing = Pairing.parse(link(params + ("urls" to "javascript:alert(1),http://user:pass@host.test")), "codync")
         assertEquals(emptyList<String>(), pairing.computer.urls)

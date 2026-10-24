@@ -317,7 +317,6 @@ mod tests {
             kind: Kind::Notice,
             data: json!({"connectionRequest":request}),
             created_at: 0,
-            thread_id: None,
         };
         app.overlays.push(Overlay::Fields(Box::new(fields(&e))));
     }
@@ -406,7 +405,6 @@ mod tests {
             kind: Kind::Notice,
             data: json!({"connectionRequest":request}),
             created_at: 0,
-            thread_id: None,
         };
         app.entries.entry("bot".into()).or_default().insert(1, e);
         app.selected = Some("bot".into());
@@ -429,7 +427,6 @@ mod tests {
             kind: Kind::Notice,
             data: json!({"connectionRequest":{"kind":"login","status":"pending"}}),
             created_at: 0,
-            thread_id: None,
         };
         let f = fields(&e);
         assert!(!f.inputs[0].secret);

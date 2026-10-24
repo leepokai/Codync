@@ -5,7 +5,8 @@ import SwiftUI
 struct RoutinesView: View {
     let botId: String
     var initialId: String?
-    var close: (() -> Void)?
+    /// Goes back to the chat once a request to the bot is in the composer.
+    var leave: (() -> Void)?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var routines: [Routine] = []
@@ -18,20 +19,19 @@ struct RoutinesView: View {
     @State private var loadError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: close == nil ? 10 : 16) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Routines")
-                    .font(.system(size: 13, weight: .semibold))
+                Text(L10n.tr("Routines"))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Palette.text)
                     .padding(.leading, 2)
                 Spacer(minLength: 0)
                 askInChat
                 IconButton("Set up a routine", systemImage: "plus") { open(nil) }
                     .disabled(model.isOffline)
-                if let close { IconButton("Close routines", systemImage: "xmark", action: close) }
             }
             if let loadError { Text(loadError).font(.caption).foregroundStyle(Palette.danger) }
-            if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let error { Text(L10n.tr(error)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             listing
         }
         .foregroundStyle(Palette.text)
@@ -46,8 +46,8 @@ struct RoutinesView: View {
                 do { try await Task.sleep(for: .seconds(3)) } catch { break }
             } while !Task.isCancelled
         }
-        // Item-based, so the editor always gets the routine it was opened on.
-        .codyncSheet(item: $editing) { target in
+        // Item-based, so the editor always gets the routine it was opened on; it opens once that routine is listed.
+        .codyncSheet(item: Binding(get: { editing.flatMap { $0.isReady(in: routines) ? $0 : nil } }, set: { editing = $0 })) { target in
             RoutineEditorView(botId: botId, routine: routines.first { $0.id == target.routineId }) { saved in
                 if let i = routines.firstIndex(where: { $0.id == saved?.id }), let saved { routines[i] = saved }
                 else if let saved { routines.append(saved) }
@@ -59,29 +59,26 @@ struct RoutinesView: View {
                 }
                 Task { await load() }
             }
+            // The list is part of bot details; a routine's editor is the routines screen, as on the desktop.
+            .tracked(.screenViewed(.routines))
         }
     }
 
     private var listing: some View {
         VStack(alignment: .leading, spacing: 0) {
             if routines.isEmpty {
-                Text(loaded ? "No routines yet. Ask the bot for one, or set it up yourself with +." : "Loading routines…")
+                Text(L10n.tr(loaded ? "No routines yet. Ask the bot for one, or set it up yourself with +." : "Loading routines…"))
                     .font(.system(size: 12))
                     .lineSpacing(3)
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .outlinedCard(vertical: 14)
             } else {
-                VStack(spacing: 0) {
+                VStack(spacing: 8) {
                     ForEach(routines) { routine in
-                        if routine.id != routines.first?.id { Hairline() }
-                        row(routine)
+                        row(routine).outlinedCard(vertical: 0)
                     }
                 }
-                .padding(.horizontal, 14)
-                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
     }
@@ -127,7 +124,7 @@ struct RoutinesView: View {
 
     private func runLabel(_ run: RoutineRun) -> String {
         switch run.status {
-        case "pending": "Queued"
+        case "pending": run.notBefore.map(retrying) ?? "Queued"
         case "starting": "Starting"
         case "running": "Running"
         case "recovering": "Resuming after restart"
@@ -137,12 +134,18 @@ struct RoutinesView: View {
         }
     }
 
+    /// A retry of a run that failed before acting, waiting until `at` (Unix ms).
+    private func retrying(_ at: Int64) -> String {
+        let date = Date(milliseconds: at)
+        return date > .now ? "Retrying at \(date.formatted(date: .omitted, time: .shortened))" : "Retrying"
+    }
+
     private func animate(_ change: () -> Void) { withAnimation(Motion.reduced(Motion.layout, reduceMotion), change) }
     private func open(_ id: String?) { animate { editing = EditorTarget(id: UUID().uuidString, routineId: id) } }
     private func edit(_ text: String) {
         animate {
             model.routineDrafts[botId] = text
-            close?()
+            leave?()
         }
     }
     private func action(_ method: String, _ routine: Routine, enabled: Bool? = nil) {
@@ -169,8 +172,14 @@ struct RoutinesView: View {
     }
 }
 
-private struct EditorTarget: Identifiable {
+struct EditorTarget: Identifiable {
     /// One per opening; kept when a new routine is saved and the editor stays on it.
     let id: String
     let routineId: String?
+
+    /// A routine's editor waits until the routine is listed: a chat link can name one before the
+    /// first load (or the next poll), and an empty form would save defaults over it.
+    func isReady(in routines: [Routine]) -> Bool {
+        routineId == nil || routines.contains { $0.id == routineId }
+    }
 }

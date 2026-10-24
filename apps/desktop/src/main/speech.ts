@@ -16,6 +16,9 @@ function helperPath() {
   return candidates.find((c): c is string => !!c && existsSync(c)) ?? null
 }
 
+/** Whether this build can transcribe on device. */
+export const speechAvailable = () => process.platform === 'darwin' && helperPath() !== null
+
 let child: ChildProcessWithoutNullStreams | null = null
 let listener: WebContents | null = null
 /** Bumped per start: a stopping process may still deliver its final result, an older one may not. */
@@ -27,6 +30,8 @@ function emit(event: SpeechEvent) {
 
 function start(sender: WebContents, locale: string | null) {
   stop()
+  // Another window's dictation or call loses the helper, and its exit (an older generation) won't say so.
+  if (listener && listener !== sender) emit({ type: 'stopped' })
   listener = sender
   const path = helperPath()
   if (!path) return emit({ type: 'error', message: "On-device speech isn't available in this build." })
@@ -73,9 +78,12 @@ function locales() {
 }
 
 export function registerSpeech() {
-  ipcMain.on('speech:available', (e) => (e.returnValue = process.platform === 'darwin' && helperPath() !== null))
+  ipcMain.on('speech:available', (e) => (e.returnValue = speechAvailable()))
   ipcMain.on('speech:locales', (e) => (e.returnValue = locales()))
   ipcMain.on('speech:start', (e, locale: string | null) => start(e.sender, locale))
-  ipcMain.on('speech:stop', () => stop())
+  // Only the window using the helper stops it: one that lost it to another window has nothing to stop.
+  ipcMain.on('speech:stop', (e) => {
+    if (e.sender === listener) stop()
+  })
   app.on('before-quit', stop)
 }

@@ -1,16 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// What the iPhone reports. Bot and message events come from the computer's host instead.
-public enum AnalyticsEvent: String, Sendable {
-    case appOpened = "app_opened"
-    case onboardingCompleted = "onboarding_completed"
-    case computerPaired = "computer_paired"
-    case signedIn = "signed_in"
-    case signedOut = "signed_out"
-    case voiceCallStarted = "voice_call_started"
-}
-
 /// Product analytics: batches events to PostHog, on unless turned off in Settings.
 /// Only the app calls it; widgets and the notification extension never do.
 @MainActor
@@ -52,22 +42,30 @@ public final class Analytics {
     public static let enabledKey = "analyticsEnabled"
     private static let installKey = "analyticsInstallID"
     private static let identifiedKey = "analyticsIdentifiedUsers"
+    private static let sessionKey = "analyticsSession"
     private static let batchSize = 20
     private static let maxPending = 500
     private static let flushDelay = Duration.seconds(30)
 
     /// The signed-in Codync account, read at capture time; nil = anonymous install ID.
     public var userID: @MainActor () -> String? = { nil }
+    /// What `app_opened` says about this iPhone, read on each trip to the foreground; nil = unknown.
+    public var foregroundState: @MainActor () async -> (notifications: AnalyticsEvent.Notifications?, widgets: Int?) = { (nil, nil) }
     private let defaults: UserDefaults
     private let upload: @Sendable (Data) async -> Bool
     private(set) var pending: [Event] = []
     private var timer: Task<Void, Never>?
-    private var sending = false
+    /// The batch on its way.
+    private var sending: Task<Void, Never>?
     private var foreground = false
+    private var session = AnalyticsSession()
+    /// The session the last launch ended in: where a crash MetricKit reports now happened.
+    private let lastLaunchSession: String?
 
     init(defaults: UserDefaults = .standard, upload: @escaping @Sendable (Data) async -> Bool = Analytics.post) {
         self.defaults = defaults
         self.upload = upload
+        lastLaunchSession = defaults.string(forKey: Self.sessionKey)
     }
 
     public var isEnabled: Bool { defaults.object(forKey: Self.enabledKey) as? Bool ?? true }
@@ -75,36 +73,48 @@ public final class Analytics {
     /// Turning it off drops everything not yet sent.
     public func setEnabled(_ enabled: Bool) {
         defaults.set(enabled, forKey: Self.enabledKey)
-        guard !enabled else { return flush() }
+        guard !enabled else {
+            flush()
+            return
+        }
         pending = []
         timer?.cancel()
         timer = nil
     }
 
-    /// `properties` are public names, never content.
-    public func capture(_ event: AnalyticsEvent, _ properties: [String: String] = [:]) {
-        record(event.rawValue, properties.mapValues(Value.string))
+    public func capture(_ event: AnalyticsEvent) {
+        record(event.name, event.properties)
+    }
+
+    func record(_ name: String, _ extra: [String: Value]) {
+        guard isEnabled else { return }
+        record(name, extra, sessionID: currentSession())
+    }
+
+    /// A crash MetricKit reported from the last launch, in the session that launch ended in.
+    func recordCrash(_ properties: [String: Value]) {
+        guard isEnabled else { return }
+        record("$exception", properties, sessionID: lastLaunchSession)
     }
 
     /// One event for the signed-in account (merging the install ID into it once), else the install ID.
-    func record(_ name: String, _ extra: [String: Value]) {
-        guard isEnabled else { return }
+    private func record(_ name: String, _ extra: [String: Value], sessionID: String?) {
         if let user = userID() {
             var identified = defaults.stringArray(forKey: Self.identifiedKey) ?? []
             if !identified.contains(user) {
-                enqueue("$identify", user, ["$anon_distinct_id": .string(installID)])
+                enqueue("$identify", user, ["$anon_distinct_id": .string(installID)], sessionID)
                 identified.append(user)
                 defaults.set(identified, forKey: Self.identifiedKey)
             }
-            enqueue(name, user, extra)
+            enqueue(name, user, extra, sessionID)
         } else {
-            enqueue(name, installID, extra)
+            enqueue(name, installID, extra, sessionID)
         }
     }
 
     /// A computer's analytics key, the same hash its host sends: joins `computer_paired` with that
     /// computer's events without revealing the id the relay knows it by.
-    public static func computerTag(_ id: ComputerID) -> String {
+    nonisolated public static func computerTag(_ id: ComputerID) -> String {
         SHA256.hash(data: Data("codync-analytics:\(id)".utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -112,27 +122,35 @@ public final class Analytics {
     public func becameActive() {
         guard !foreground else { return }
         foreground = true
-        capture(.appOpened)
+        Task {
+            let state = await foregroundState()
+            capture(.appOpened(notifications: state.notifications, widgets: state.widgets))
+        }
     }
 
-    public func enteredBackground() {
+    /// Sends everything queued and returns once it's sent or failed; the app holds background time for it.
+    public func enteredBackground() async {
         foreground = false
-        flush()
+        await sending?.value
+        await flush()?.value
     }
 
-    func flush() {
+    /// The upload it started; nil when nothing needs to (or can) go now.
+    @discardableResult
+    func flush() -> Task<Void, Never>? {
         timer?.cancel()
         timer = nil
-        guard !sending, !pending.isEmpty, isEnabled,
-              let body = try? JSONEncoder().encode(Batch(api_key: Self.apiKey, batch: pending)) else { return }
+        guard sending == nil, !pending.isEmpty, isEnabled,
+              let body = try? JSONEncoder().encode(Batch(api_key: Self.apiKey, batch: pending)) else { return nil }
         let sent = Set(pending.map(\.uuid))
-        sending = true
-        Task {
+        let task = Task {
             let ok = await upload(body)
-            sending = false
+            sending = nil
             if ok { pending.removeAll { sent.contains($0.uuid) } }
             if !pending.isEmpty { scheduleFlush() }
         }
+        sending = task
+        return task
     }
 
     private var installID: String {
@@ -142,9 +160,17 @@ public final class Analytics {
         return id
     }
 
-    private func enqueue(_ name: String, _ distinctID: String, _ extra: [String: Value]) {
+    /// Kept for the next launch, whose crash reports belong to it.
+    private func currentSession() -> String {
+        let id = session.id(at: .now)
+        defaults.set(id, forKey: Self.sessionKey)
+        return id
+    }
+
+    private func enqueue(_ name: String, _ distinctID: String, _ extra: [String: Value], _ sessionID: String?) {
         var properties = Self.common.merging(extra) { $1 }
         properties["$process_person_profile"] = .bool(true)
+        properties["$session_id"] = sessionID.map(Value.string)
         pending.append(Event(event: name, distinct_id: distinctID,
                              timestamp: Date.now.ISO8601Format(), properties: properties))
         if pending.count > Self.maxPending { pending.removeFirst(pending.count - Self.maxPending) }

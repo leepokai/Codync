@@ -206,8 +206,9 @@ extension ChannelTransport {
         case "unauthorized", "revoked":
             return .stop(.unauthorized(message ?? "This device isn't allowed on that computer anymore."))
         case "leaseExpired":
-            // The computer couldn't confirm the account's approval lately; it may again.
-            return .wait(.unauthorized(message ?? "Your computer couldn't confirm this device's access. Retrying."))
+            // The computer couldn't confirm the account's approval lately; it may again, so this
+            // isn't a refusal: the channel keeps retrying.
+            return .wait(.failed(message ?? "Your computer couldn't confirm this device's access. Retrying."))
         case "unsupportedVersion":
             return .stop(.failed(HostError.upgradeRequired.localizedDescription))
         case "pairingClosed":

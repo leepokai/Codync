@@ -251,7 +251,7 @@ private val MenuShape = RoundedRectangle(26.dp)
         Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
             if (leading != null) Symbol(leading, size = 21.dp, tint = ink)
         }
-        Text(item.title, Modifier.weight(1f), style = if (bold) Type.body.semibold else Type.body, color = ink,
+        Text(tr(item.title), Modifier.weight(1f), style = if (bold) Type.body.semibold else Type.body, color = ink,
             maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (item.children != null) Symbol("chevron.right", size = 16.dp, tint = Palette.secondary)
     }

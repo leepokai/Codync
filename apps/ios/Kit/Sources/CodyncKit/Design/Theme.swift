@@ -95,7 +95,7 @@ public enum RelativeTime {
     public static func day(_ date: Date, now: Date = .now) -> String {
         let cal = Calendar.current
         if cal.isDate(date, inSameDayAs: now) { return date.formatted(date: .omitted, time: .shortened) }
-        if cal.isDateInYesterday(date) { return String(localized: "Yesterday") }
+        if cal.isDateInYesterday(date) { return L10n.tr("Yesterday") }
         if now.timeIntervalSince(date) < 6 * 86_400 { return date.formatted(.dateTime.weekday(.wide)) }
         return date.formatted(.dateTime.month(.abbreviated).day())
     }
@@ -103,10 +103,16 @@ public enum RelativeTime {
     /// Chat separator: Today 3:27 AM · Yesterday 5:20 PM · Sep 16 9:02 AM
     public static func separator(_ date: Date) -> String {
         let cal = Calendar.current
-        let day = cal.isDateInToday(date) ? String(localized: "Today")
-            : cal.isDateInYesterday(date) ? String(localized: "Yesterday")
+        let day = cal.isDateInToday(date) ? L10n.tr("Today")
+            : cal.isDateInYesterday(date) ? L10n.tr("Yesterday")
             : date.formatted(.dateTime.month(.abbreviated).day())
         return day + " " + date.formatted(date: .omitted, time: .shortened)
+    }
+
+    /// A time to come: 3:00 PM today, otherwise Tue 3:00 PM.
+    public static func clock(_ date: Date, now: Date = .now) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        return Calendar.current.isDate(date, inSameDayAs: now) ? time : "\(date.formatted(.dateTime.weekday(.abbreviated))) \(time)"
     }
 
     public static func until(_ date: Date, now: Date = .now) -> String {

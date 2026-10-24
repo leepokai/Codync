@@ -12,7 +12,7 @@ struct SignInButtons: View {
                 ZStack {
                     HStack(spacing: 10) {
                         Image(systemName: "apple.logo").font(.system(size: 20))
-                        Text("Continue with Apple")
+                        Text(L10n.tr("Continue with Apple"))
                     }
                     .opacity(account.isBusy ? 0 : 1)
                     if account.isBusy { Spinner(size: 18) }

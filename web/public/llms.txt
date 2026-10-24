@@ -7,7 +7,7 @@ Key facts:
 - Price: $0, every feature included. No subscription, no paid tier, no in-app purchases. You pay only your agent's provider, through the plan or API key you already have (for example Claude Code with a Claude plan, Codex with a ChatGPT plan).
 - Where it runs: `codync-host`, one Rust binary, on macOS, Windows (x64, bundled in the desktop app) or Linux (desktop or headless server, static binary for x86_64 and arm64). Bots, chats and memory stay on that computer.
 - Clients: native SwiftUI iPhone app (iOS 18+), one Electron desktop app for macOS, Windows and Linux, and a terminal UI (`codync-host tui`) that works over SSH.
-- Features: persistent bots with their own agent, project folder and instructions; group chats where bots answer in turn; reply threads; bots asking each other for help; approval cards (allow once, always allow, deny) on the phone; per-bot memory; routines on a schedule or webhook; connectors from the MCP registry, apps through Composio, and skills; remote screen over WebRTC; voice calls; "needs you" and "done" push notifications.
+- Features: persistent bots with their own agent, project folder and instructions; group chats where bots answer in turn; quote replies; bots asking each other for help; approval cards (allow once, always allow, deny) on the phone; per-bot memory; routines on a schedule or webhook; connectors from the MCP registry, apps through Composio, and skills; agent fallbacks (when a bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent in its list carries on in the same chat); SSH computers in the Mac and Linux desktop app, their bots in the same sidebar; remote screen over WebRTC; voice calls; "needs you" and "done" push notifications.
 - Remote access: a free Cloudflare relay, end-to-end encrypted between phone and computer, or a direct connection on the same network or Tailscale. No account required; pairing is a QR code.
 - Not affiliated with Grok Bot, Muse, Dots, Anthropic, OpenAI or any agent vendor.
 
@@ -25,10 +25,13 @@ Key facts:
 - [Website](https://www.codync.dev): overview, pricing and FAQ
 - [Free AI agent app](https://www.codync.dev/free-ai-agent-app): what free means and what the bots do
 - [Comparisons](https://www.codync.dev/compare): Codync side by side with similar apps
+- [codync-mem](https://www.codync.dev/codync-mem): the open-source Rust crate behind the bots' memory (Markdown files the bot keeps, and the rules for who may change them)
 - [Source code on GitHub](https://github.com/leepokai/Codync): README, install guide and docs
 - [Discord](https://discord.gg/KBAX3Qznxh): community, help and feedback
-- [Group chats and threads](https://github.com/leepokai/Codync/blob/main/docs/features/groups-and-threads.md)
+- [Group chats and replies](https://github.com/leepokai/Codync/blob/main/docs/features/groups-and-replies.md)
 - [Bot collaboration](https://github.com/leepokai/Codync/blob/main/docs/features/bot-collaboration.md)
+- [Agent fallbacks](https://github.com/leepokai/Codync/blob/main/docs/features/agent-fallback.md)
+- [SSH computers](https://github.com/leepokai/Codync/blob/main/docs/guides/accounts-and-ssh.md#desktop-computers-approvals-and-ssh)
 - [Remote access and relay](https://github.com/leepokai/Codync/blob/main/docs/reference/remote-relay.md)
 - [Linux servers](https://github.com/leepokai/Codync/blob/main/docs/guides/linux-servers.md)
 

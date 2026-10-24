@@ -73,8 +73,8 @@ class VoiceEnginesTest {
         override fun send(text: String) { sent += text }
         override fun respond(entry: Entry, optionId: String) { answered += entry.id to optionId }
     }
-    private fun entry(id: String, seq: Long, kind: String, data: JsonObjectBuilder.() -> Unit, bot: String = "ada", thread: String? = null) =
-        Entry(id, seq, bot, thread, seq, kind, data = buildJsonObject(data))
+    private fun entry(id: String, seq: Long, kind: String, data: JsonObjectBuilder.() -> Unit, bot: String = "ada") =
+        Entry(id, seq, bot, seq, kind, data = buildJsonObject(data))
     private val card = entry("card", 4, "permission", {
         put("status", "pending"); put("title", "Run npm test")
         putJsonArray("options") {
@@ -86,8 +86,7 @@ class VoiceEnginesTest {
     @Test fun theOperatorRelaysToTheBotAndAnswersApprovalsByName() {
         val desk = Desk(listOf(Bot("ada", "Ada", description = "web app", status = "working", activity = "Running tests")), listOf(
             entry("u", 1, "user", { put("text", "Run the tests") }),
-            entry("a", 2, "agent", { put("text", "**Started** `npm test`"); put("final", true) }),
-            entry("t", 3, "agent", { put("text", "In a thread"); put("final", true) }, thread = "root"), card))
+            entry("a", 2, "agent", { put("text", "**Started** `npm test`"); put("final", true) }), card))
         val operator = CallOperator("ada", desk)
         assertTrue(operator.instructions.startsWith("You are the voice on a phone call between the user and Ada (web app), a coding agent"))
         assertTrue("[Ada replied]" in operator.instructions)

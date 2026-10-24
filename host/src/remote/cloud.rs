@@ -328,14 +328,18 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
     let state: State = serde_json::from_value(call(hub, base, Method::GET, "/v1/host/state", None).await?)
         .context("reading the cloud state")?;
     apply_grants(hub, &state.grants)?;
-    update_status(hub, |s| s.owner = state.owner);
+    // A pull that works also settles an earlier failed one.
+    update_status(hub, |s| {
+        s.owner = state.owner;
+        s.last_error = None;
+    });
     sync_requests(hub, base, state.requests).await;
     if approval(&hub.store) == Approval::Auto {
         // The SAS exchange still runs (the device's commit must match); only the user's comparison is skipped.
         let ready: Vec<String> =
             hub.cloud.requests.locked().iter().filter(|r| r.code.is_some()).map(|r| r.id.clone()).collect();
         for id in ready {
-            if let Err(e) = decide(hub, &id, true).await {
+            if let Err(e) = decide(hub, &id, true, Approval::Auto).await {
                 tracing::warn!(error = format!("{e:#}"), request_id = id, "couldn't auto-approve an access request");
             }
         }
@@ -516,7 +520,8 @@ async fn deny(hub: &Hub, base: &str, id: &str) {
 
 /// `decideAccessRequest`: approving adds the device the user saw (its key, the SAS they
 /// compared) with the grant the cloud returns; nothing else can add an account device.
-pub async fn decide(hub: &Hub, id: &str, approve: bool) -> Result<()> {
+/// `how`: the user compared the code, or the computer approves on its own (`Approval::Auto`).
+pub async fn decide(hub: &Hub, id: &str, approve: bool, how: Approval) -> Result<()> {
     let base = base(hub)?;
     let r =
         hub.cloud.requests.locked().iter().find(|r| r.id == id).cloned().ok_or_else(|| anyhow!("unknown request"))?;
@@ -534,7 +539,7 @@ pub async fn decide(hub: &Hub, id: &str, approve: bool) -> Result<()> {
         .as_str()
         .filter(|g| g.starts_with("grt_"))
         .ok_or_else(|| anyhow!("the cloud gave no grant"))?;
-    hub.store.put_device(&Device {
+    let device = Device {
         key: b64(&r.device_key),
         name: r.device_name.chars().take(100).collect(),
         platform: r.platform,
@@ -544,8 +549,10 @@ pub async fn decide(hub: &Hub, id: &str, approve: bool) -> Result<()> {
         lease_until: Some(now_ms() + LEASE_MS),
         created_at: now_ms(),
         last_seen_at: None,
-    })?;
+    };
+    hub.store.put_device(&device)?;
     tracing::info!(grant_id = grant, "account device approved");
+    crate::analytics::device_paired(hub, crate::analytics::Via::Account, &device.platform, how == Approval::Auto);
     hub.auth_changed();
     Ok(())
 }
@@ -735,7 +742,7 @@ mod tests {
         let nh =
             |id: &str| nonces.iter().find(|(p, _)| p.contains(id)).unwrap().1["nonce"].as_str().unwrap().to_owned();
         assert_eq!(hub.cloud.requests_json()[0]["code"], Value::Null, "no code before the reveal");
-        let early = decide(&hub, "req_ok", true).await.unwrap_err();
+        let early = decide(&hub, "req_ok", true, Approval::Code).await.unwrap_err();
         assert!(early.is::<Conflict>(), "approve before the reveal is refused");
         assert_eq!(hub.cloud.status().owner.unwrap().user_id, "user_1");
 
@@ -752,7 +759,7 @@ mod tests {
         let nh_ok: [u8; 32] = crypto::unb64_n(&nh("req_ok")).unwrap();
         assert_eq!(list[0]["code"], crypto::sas_code(&hub.identity.sign_pub(), &dk, &nd, &nh_ok));
 
-        decide(&hub, "req_ok", true).await.unwrap();
+        decide(&hub, "req_ok", true, Approval::Code).await.unwrap();
         let d = hub.store.device(&b64(&dk)).unwrap();
         assert_eq!((d.source, d.grant_id.as_deref()), (DeviceSource::Account, Some("grt_new")));
         assert_eq!(hub.cloud.requests_json().len(), 0);
@@ -781,6 +788,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_pull_that_works_clears_an_earlier_error() {
+        let hub = temp_hub();
+        let fake = Arc::new(FakeCloud::default());
+        let base = fake_cloud(fake.clone()).await;
+        *fake.state.lock().unwrap() = json!({"owner": null, "grants": [], "requests": []});
+        update_status(&hub, |s| s.last_error = Some("couldn't get the cloud state".into()));
+        pull(&hub, &base).await.unwrap();
+        assert_eq!(hub.cloud.status().last_error, None, "Settings stops showing a relay error that's gone");
+    }
+
+    #[tokio::test]
     async fn host_nonces_are_rationed() {
         let hub = temp_hub();
         let fake = Arc::new(FakeCloud::default());
@@ -802,6 +820,6 @@ mod tests {
         hub.cloud.requests.locked().clear();
         pull(&hub, &base).await.unwrap();
         assert_eq!(fake.posts.lock().unwrap().len(), SAS_NONCES_PER_HOUR);
-        assert!(hub.cloud.status().last_error.is_some(), "the Mac hears about it");
+        assert!(hub.cloud.status().last_error.is_some(), "the Mac hears about it, though the pull worked");
     }
 }

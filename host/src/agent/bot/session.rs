@@ -1,7 +1,7 @@
 //! The bot's ACP sessions: starting its agent, new/load, routine runs' sessions.
 
 use super::fast_mode::Listing;
-use super::launch::{Selected, claude_meta, launch_commands, select_model, start_agent, system_prompt};
+use super::launch::{Selected, claude_meta, launch_commands, select_model_within, start_agent, system_prompt};
 use super::{Actor, Conn, Instructions, NoticeStyle};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
@@ -239,7 +239,7 @@ impl Actor {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
                     let mut selected = if res.get("configOptions").is_some() || res.get("models").is_some() {
-                        select_model(&conn.acp, &res, &sid, &self.cfg).await?
+                        select_model_within(&conn.acp, &res, &sid, &self.cfg, SESSION_TIMEOUT).await?
                     } else {
                         Selected { options: res, ..Selected::default() }
                     };
@@ -285,7 +285,7 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
-        let mut selected = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        let mut selected = select_model_within(&conn.acp, &res, &sid, &self.cfg, SESSION_TIMEOUT).await?;
         self.refused(slot, &mut selected)?;
         self.note_options(&sid, &selected.options, Listing::Session);
         self.opened_session(slot, &sid, &selected);
@@ -319,5 +319,5 @@ impl Actor {
     }
 }
 
-/// How long `session/new` and `session/load` may take.
+/// How long `session/new` and `session/load` may take, and then setting the bot's model on the session.
 const SESSION_TIMEOUT: Duration = Duration::from_secs(180);

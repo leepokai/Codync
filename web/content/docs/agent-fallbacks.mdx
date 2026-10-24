@@ -15,12 +15,14 @@ Fallbacks live in the bot's **Agent** card, under Model:
 In the desktop and iPhone apps:
 
 1. Next to **Fallbacks**, press **+**.
-2. In **Add fallback**, choose the **Agent** and its **Model**.
-3. Add up to three. Use each row's ⋯ menu to **Move up**, **Move down** or **Remove**.
+2. In **Add fallback**, choose the **Agent**, its **Model** and, where the model has one, its **Effort level**.
+3. Add up to three. Use each row's ⋯ menu to **Edit…**, **Move up**, **Move down** or **Remove**. **Edit…** opens **Edit fallback**, where you change the fallback's model and Effort level; its agent stays.
+
+Each fallback keeps its own Effort level for its own agent and model; the bot's own settings never carry over to it. Its row shows what's saved, or, while the bot is running on it, what that agent's session reports, such as "Effort level · In use: High".
 
 Each agent can appear once, and the bot's own agent isn't offered. The info button next to Fallbacks explains the feature.
 
-In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `a` changes its agent, `[` and `]` move it, and `x` removes it.
+In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `e` changes its effort level (the first press loads the agent's list), `a` changes its agent, `[` and `]` move it, and `x` removes it. A setting the list doesn't offer stays as saved and shows as "saved ‹high›".
 
 Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it.
 

@@ -76,7 +76,12 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
     let mut listing: Option<Result<Value, String>> = None;
     // A model switch can be the first to list the settings, so plan from what the session lists now.
     let listed = current.clone();
-    let steps = config_steps(&listed, model, &cfg.model_options);
+    let steps = if listed["configOptions"].is_array() {
+        config_steps(&listed, model, &cfg.model_options)
+    } else {
+        // Nothing listed to set them on, so none is sent, but each saved setting still gets its notice.
+        cfg.model_options.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
+    };
     for (i, (id, value)) in steps.iter().copied().enumerate() {
         let is_model = model.is_some() && legacy.is_none() && i == 0;
         if !is_model {
@@ -123,6 +128,23 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
         }
     }
     Ok(Selected { options: current, left_out, unconfirmed, model_unlisted: !fresh, rejected: None })
+}
+
+/// [`select_model`] within `budget`: an agent that doesn't answer its model and settings calls in time is stopped,
+/// as a hung `session/new` is, since it would otherwise hold the bot, and its Stop, forever.
+pub(crate) async fn select_model_within(
+    acp: &Acp,
+    res: &Value,
+    sid: &str,
+    cfg: &BotConfig,
+    budget: Duration,
+) -> Result<Selected> {
+    if let Ok(selected) = tokio::time::timeout(budget, select_model(acp, res, sid, cfg)).await {
+        return selected;
+    }
+    acp.kill().await;
+    let message = format!("the agent didn't answer while setting the bot's model within {}s", budget.as_secs());
+    Err(acp::Failure::error(acp::FailureKind::Timeout, message))
 }
 
 /// What `select_model` did: the session's options as it last listed them, the settings it left out (id, value and
@@ -452,19 +474,22 @@ mod tests {
     }
 
     /// An ACP agent over stdio for `select_model`: answers `cursor/list_available_models` with A offering high and
-    /// B only low (or, for a `reported` ending in `!`, with an error), reports model `reported` after the model setter,
+    /// B only low (or, for a `reported` ending in `!`, with an error; ending in `~`, never), reports model `reported`
+    /// after the model setter,
     /// and logs every setter.
     fn wire_agent(dir: &std::path::Path, reported: &str) -> String {
         let script = dir.join("agent.py");
         let body = r#"
 import json, sys
-REPORTED = sys.argv[1].rstrip("!")
+REPORTED = sys.argv[1].rstrip("!~")
 FAIL = sys.argv[1].endswith("!")
+HANG = sys.argv[1].endswith("~")
 def send(v): print(json.dumps({"jsonrpc": "2.0", **v}), flush=True)
 for line in sys.stdin:
     m = json.loads(line); method, rid, p = m.get("method"), m.get("id"), m.get("params", {})
     if rid is None: continue
     if method == "initialize": send({"id": rid, "result": {"protocolVersion": 1}})
+    elif method == "cursor/list_available_models" and HANG: continue
     elif method == "cursor/list_available_models" and FAIL:
         send({"id": rid, "error": {"code": -32603, "message": "list exploded"}})
     elif method == "cursor/list_available_models":
@@ -529,6 +554,33 @@ for line in sys.stdin:
     }
 
     #[tokio::test]
+    async fn an_agent_that_never_answers_setup_is_stopped_in_time() {
+        // Greptile on #204: a hung `cursor/list_available_models` held the bot, and its Stop, forever.
+        let dir = std::env::temp_dir().join(format!("codync-select-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn =
+            start_agent(&wire_agent(&dir, "A~"), dir.to_str().unwrap(), &[], Duration::from_secs(20)).await.unwrap();
+        let res = json!({"sessionId": "s1", "configOptions": [{"id": "model", "category": "model", "type": "select",
+            "currentValue": "B", "options": [{"value": "A"}, {"value": "B"}]}]});
+        let cfg: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "cursor",
+            "model": "A", "modelOptions": {"effort": "high"}}))
+        .unwrap();
+        let started = Instant::now();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(10),
+            select_model_within(&conn.acp, &res, "s1", &cfg, Duration::from_secs(1)),
+        )
+        .await
+        .expect("setup is bounded");
+        let error = outcome.err().expect("a hung setup fails");
+        let failure = error.chain().find_map(|c| c.downcast_ref::<acp::Failure>()).expect("an ACP failure");
+        assert_eq!(failure.kind, acp::FailureKind::Timeout);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(conn.acp.request("session/set_config_option", json!({})).await.is_err(), "the hung agent is stopped");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
     async fn settings_the_model_switch_first_lists_are_applied() {
         // Reviewer: models listed the older way, no settings until `session/set_model` answers with them.
         let dir = std::env::temp_dir().join(format!("codync-select-{}", uuid::Uuid::new_v4()));
@@ -564,6 +616,37 @@ for line in sys.stdin:
         let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap_or_default();
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(calls, "model=m\neffort=high\n");
+    }
+
+    #[tokio::test]
+    async fn saved_settings_a_session_lists_nothing_for_say_why_they_are_left_out() {
+        // Greptile on #204: with no `configOptions`, saved settings were dropped without a notice.
+        let dir = std::env::temp_dir().join(format!("codync-select-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn =
+            start_agent(&wire_agent(&dir, "-"), dir.to_str().unwrap(), &[], Duration::from_secs(20)).await.unwrap();
+        for (model, res, says) in [
+            (None, json!({"sessionId": "s1"}), "isn't offered by this agent"),
+            (
+                Some("m"),
+                json!({"sessionId": "s1", "models": {"availableModels": [{"modelId": "m"}]}}),
+                "couldn't be confirmed",
+            ),
+        ] {
+            let cfg: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "other",
+                "model": model, "modelOptions": {"effort": "high"}}))
+            .unwrap();
+            let selected = select_model(&conn.acp, &res, "s1", &cfg).await.unwrap();
+            let [(id, value, notice)] = selected.left_out.as_slice() else {
+                panic!("one left out for {model:?}: {:?}", selected.left_out)
+            };
+            assert_eq!((id.as_str(), value.as_str()), ("effort", "high"));
+            assert!(notice.contains(says), "{model:?}: {notice}");
+        }
+        conn.acp.kill().await;
+        let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(calls, "", "nothing vouches for high, so it isn't sent");
     }
 
     #[test]

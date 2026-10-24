@@ -93,10 +93,11 @@ For an agent Codync knows by name, the chat also tells you when it needs signing
 In the bot's settings, under **Agent**:
 
 - **Model:** **Default** uses the agent's own default. The list shows the models the agent reports for the computer's sign-in; use the refresh button to load it again. If an agent doesn't report a model list, leave Default or type a model ID.
-- **Model options:** some models have their own settings, such as reasoning effort, each with a row and its own Default.
+- **Model options:** some models have their own settings, each with a row and its own Default. On Default, the rows are those of the agent's current model. The reasoning setting comes first as **Effort level**; the others keep the agent's own names. A saved setting the agent no longer offers keeps its row, so you can clear it.
+- **What's in use:** a line under **Effort level** says what the bot's running agent session reports, never a guess from what's saved. For example "In use: High", "In use: Low · High pending" (a change waiting for the current reply), "Not running · Saved: High" or "Saved: High · not offered for this model". For a chosen model the agent hasn't run yet, it says the Effort level appears once the agent runs this model.
 - **Fast mode:** a switch shown when the agent offers it for the model. Claude Code and Codex do. You can also type `/fast` in the chat.
 
-Changing the model starts a new agent session; the chat history stays. Switching the bot to a different agent starts it on that agent's default model.
+Changing the model or its options starts a new agent session after the current reply, or for the next message; the chat history stays. A saved setting the agent doesn't offer for the model isn't sent, and the chat says so. Switching the bot to a different agent clears its model and options, so it starts on that agent's default model. Each fallback agent has its own model and Effort level; see [Agent fallbacks](/docs/agent-fallbacks#set-up-fallbacks).
 
 ## The agent for a new bot
 

@@ -91,6 +91,23 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     let no_time = json!({"botId": "dev", "routines": [{"name": "r", "instruction": "i", "timeoutSeconds": 0,
         "triggers": [{"type": "interval", "seconds": 1800}]}]});
     assert!(refused("lead", "update_bot", no_time).await.contains("timeoutSeconds"));
+    // A manager test-runs another bot's routine, a paused one too, as that bot's own run_routine would.
+    let paused = json!({"name": "Scan", "instruction": "Scan the repo", "enabled": false,
+        "triggers": [{"type": "interval", "seconds": 1800}]});
+    let scan = hub.routines.save(&hub, "dev", &paused).unwrap()["routine"]["id"].clone();
+    let ran = call(&hub, "lead", "run_routine", &json!({"botId": "dev", "routineId": scan})).await.unwrap();
+    assert_eq!((ran["run"]["routineId"].clone(), ran["run"]["botId"].clone()), (scan.clone(), json!("dev")));
+    assert_eq!(notices(&hub, "lead").last().unwrap(), &json!("Ran dev's routine Scan"));
+    // Only the routine's own bot's: another bot's id doesn't reach it, and a bot that doesn't manage can't run it.
+    assert!(
+        refused("lead", "run_routine", json!({"botId": "lead", "routineId": scan})).await.contains("routine not found")
+    );
+    assert!(
+        refused("dev", "run_routine", json!({"botId": "dev", "routineId": scan}))
+            .await
+            .contains("may not manage the team")
+    );
+    hub.routines.remove(&hub, "dev", scan.as_str().unwrap()).unwrap();
     // A manager's own fallbacks are the user's once they turned that off, also through update_bot.
     hub.update_bot(&json!({"id": "lead", "selfFallbacks": false})).unwrap();
     let own = json!({"botId": "lead", "fallbacks": [{"agent": "codex"}]});

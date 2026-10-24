@@ -142,3 +142,27 @@ async fn a_card_ends_when_its_turn_stops_or_its_call_is_dropped() {
     drop(stdin);
     mcp.wait().unwrap();
 }
+
+/// A lead test-runs a teammate's paused routine once the user allows it: the run is the teammate's, as its own test
+/// run would be.
+#[tokio::test]
+async fn a_lead_runs_a_teammates_routine_the_user_allowed() {
+    let host = Host::start().await;
+    let lead = host.fixture_bot("Lead", "team_agent.py", "").await;
+    host.call("updateBot", json!({"id": lead, "permission": "ask", "manageTeam": true})).await;
+    let dev = host.fixture_bot("Dev", "team_agent.py", "").await;
+    let routine = json!({"botId": dev, "name": "Scan", "instruction": "Scan the repo", "enabled": false,
+        "triggers": [{"type": "interval", "seconds": 1800}]});
+    let saved = host.call("saveRoutine", routine).await;
+    let id = saved["routine"]["id"].as_str().unwrap_or_else(|| panic!("{saved}")).to_owned();
+
+    let args = json!({"botId": dev, "routineId": id});
+    let reply = manage(&host, &lead, "run_routine", &args, "allow", |detail| {
+        assert_eq!(detail, "Routine: Scan\nInstruction:\nScan the repo");
+    })
+    .await;
+    assert!(reply.starts_with("Done: "), "{reply}");
+    wait(&host, &lead, |e| e["data"]["text"] == "Ran Dev's routine Scan").await;
+    let runs = host.call("routines", json!({"botId": dev})).await["runs"].clone();
+    assert!(runs.as_array().unwrap().iter().any(|r| r["routineId"] == id), "{runs}");
+}

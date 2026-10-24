@@ -22,12 +22,11 @@ it has no pointer tooltip or link-opening action.
 - File cards are separate final entries. Sharing a file preserves an intended final text
   reply; a files-only turn uses its filename for the completion summary. See
   [file attachments](file-attachments.md#files-from-a-bot).
-- Group room turns, `ask_bot` requests and routines reject `send_message` and `send_file`: their reply is the
-  turn's last text, as before (`chat/group.rs`, `chat/team.rs`, `routines`).
-- An `ask_bot` reply stays in the recipient's trace and the request notice; it does
-  not also become a message to the user. The requesting bot uses it to answer the user.
-  Independent `message_bot` turns report to the user in the recipient's main chat, through
-  `send_message` or the final-text fallback, and do not add that report to the request notice.
+- Group room turns, bot requests (`message_bot`) and routines reject `send_message` and `send_file`: their reply
+  is the turn's last text, as before (`chat/group.rs`, `chat/team.rs`, `routines`).
+- A bot request's reply stays in the recipient's trace and the request notice; it does
+  not also become a message to the user. It goes back to the requesting bot as a turn of its own in
+  that bot's main chat, and that turn's reply is an ordinary message to the user.
 - The rules reach the agent twice: the MCP server's instructions, and the frozen instruction
   snapshot (`chat/context.rs`).
 - The same server has `set_name {name}` and `set_instructions {instructions}` (`host/src/chat/profile.rs`): the
@@ -35,7 +34,7 @@ it has no pointer tooltip or link-opening action.
   settings would, and a notice ("Renamed to …", "Instructions updated") shows it in the main chat. A name set this
   way ends automatic naming. Its `save_skill` writes a skill for the bot, which the user can turn on for others
   ([skills bots write](marketplace.md)).
-- A bot-to-bot exchange (`ask_bot`, `message_bot`) is one compact notice row, "Messaged Owen" /
+- A bot-to-bot exchange (`message_bot`) is one compact notice row, "Messaged Owen" /
   "Message from Egan". Its text lives only in the bot conversation sheet it opens; follow-ups
   are normal bubbles. Consecutive exchanges with the same peer in the main chat (either
   direction, trace entries ignored) collapse into one "3 messages with Owen" row ([bot collaboration](bot-collaboration.md#notice-data)).

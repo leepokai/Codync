@@ -4,7 +4,7 @@ Create two or more bots normally, giving each a clear name, description, project
 
 > Ask Reviewer to inspect the changes in /path/to/project. Have it report bugs without editing files, then summarize its findings for me.
 
-Every bot receives the built-in `team` MCP server. `list_bots` returns the other visible bots' IDs, descriptions, agents, folders and status. `ask_bot(botId, message)` sends a self-contained request and waits for the recipient's final text reply. The requesting bot incorporates that answer into its response to you. `message_bot(botId, message)` queues a request and returns immediately; the recipient reports to you in its own chat. The same tools work across ACP backends that support MCP servers.
+Every bot receives the built-in `team` MCP server. `list_bots` returns the other visible bots' IDs, descriptions, agents, folders and status. `message_bot(botId, message)` queues a self-contained request and returns at once, so the sender never waits: it ends its turn (or keeps working) and the recipient's final reply comes back to it later as a new turn in its own chat, where it answers you. The same tools work across ACP backends that support MCP servers.
 
 The host records each exchange as one notice in both chats. Every client shows it as a compact row (centered in the apps, one ` · ` line in the terminal UI), "Messaged [avatar] Owen" in the sender's chat and "Message from [avatar] Egan" in the recipient's, with no request text. In a chat a run of consecutive exchanges with the same peer, in either direction, is one row, "3 messages with [avatar] Owen"; anything else the chat shows (a message, another notice, a card, an exchange with another peer) ends the run, trace entries do not, and the run is marked failed if any exchange failed. Only a failure is marked (danger color and a warning mark). Tapping the row opens a read-only "Egan ⇄ Owen" conversation sheet with the pair's whole history: author-labelled grey bubbles for each request and reply, time separators, "Waiting for Owen…" or the failure detail under a pending or failed exchange. It is laid out like the Full conversation sheet, with the pair as its title and an X to close. Tool details also remain in the trace. There is no additional team setup screen; a lead bot can set up the team itself (see Team management).
 
@@ -26,7 +26,7 @@ They add one optional structured field:
 }
 ```
 
-`text` is the original request. Completed asks add `reply` (at most 4,000 bytes);
+`text` is the original request. Completed requests add `reply` (at most 4,000 bytes);
 failures and cancellations add `detail`. The existing notice `status` determines
 whether the exchange is pending, completed, failed or cancelled. The base notice
 heading and rendered text remain unchanged for clients that display plain notices.
@@ -43,47 +43,33 @@ the Control scope. Clients merge these with the live chat (the higher `rev` wins
 and keep the result in the sheet; it is never added to the chat mirror, so main
 history paging is unaffected.
 
-## Ask execution
+## How a message runs
 
-- Each bot still owns an ACP process (its main session, plus one per routine run) and runs one turn at a time. A busy recipient queues the request. Different bots can work concurrently.
-- Requests have their own reply channel and never merge with user messages or another request. Contiguous user messages keep the existing batching behavior.
-- An ask's final reply is addressed to the requesting bot. It appears in the request notice
-  and the recipient's trace, without a second bubble in the recipient's main chat. The recipient
-  returns the answer directly rather than sending another `message_bot` request back.
-- The recipient uses its own folder, tools, memory and permission policy. Permission cards appear in its chat. The requesting bot's entire transcript is not copied; only the request is passed. Requests are not treated as user facts by the memory keeper.
-- The host rejects self-delegation, duplicate outstanding requests to the same recipient, and direct or indirect wait cycles, including queued requests. Up to 64 requests can be outstanding host-wide.
+- Each bot still owns an ACP process (its main session, plus one per routine run) and runs one turn at a time. A busy recipient queues the request. Different bots work concurrently, so a bot that messages several teammates has them work in parallel.
+- `message_bot` returns `{requestId, status: "queued"}` as soon as the request is admitted. Nothing waits on another bot, so there are no wait cycles to guard against and no wait limit: the recipient takes as long as the work needs.
+- Requests never merge with user messages or another request. Contiguous user messages keep the existing batching behavior.
+- The recipient's final reply is addressed to the sender. It appears in both request notices (`botMessage.reply`) and the recipient's trace, without a bubble in the recipient's main chat; `send_message`, `send_file` and `message_bot` are refused in a request turn (a reply to a message sent from there would land in the recipient's own chat, and the sender would never get it). A recipient that needs another bot's help says so in its reply.
+- The reply then reaches the sender's queue as a turn of its own in its main chat (`[Codync: Owen replied to your message_bot request <id> ("<request>").]`, quoting the first 1,000 bytes of the request, since the session taking the reply, the main one, may not be the one that sent it: a routine run's, or one replaced by a new session). Replies that arrive while the sender is busy are taken together in one turn. That turn's final reply is an ordinary message to you, with the usual "done" push; the request turn itself sends no push. A failed request comes back the same way (`couldn't finish …`), so the sender can tell you.
+- A reply turn isn't the user speaking: memory doesn't take it as your words. If the sender wants another bot to have the answer, it messages that bot.
+- The recipient uses its own folder, tools, memory and permission policy. Permission cards appear in its chat. The sender's transcript is not copied; only the request is passed. Requests are not treated as user facts by the memory keeper.
+- In a group room turn `message_bot` is refused: the reply would land in the member's own chat, away from the room. Members @-mention each other there instead ([groups](groups-and-replies.md#how-a-group-answers-hostsrcchatgrouprs-grok-bots-design)).
 - Native Claude Code/Codex subagents remain managed by the harness. Codync does not turn them into permanent bots or override their delegation settings.
 
-## Ask stops, failures and restart
+The team tools add no task scheduler or isolated worktrees. Give bots explicit file ownership when they share a working directory.
 
-- The wait limit is ten minutes, including queue and approval time. Failure is a tool error, not a fabricated successful reply. `ask_bot` is not automatically retried.
-- Stopping the requesting bot cancels its outgoing requests. A queued request is removed; a running delegated turn's ACP process is stopped. Unrelated queued messages on the recipient remain. Stopping the recipient also releases its requesters once its turn stops.
-- Deleting either bot cancels affected requests. Recipient startup failures, crashes, refusals and empty replies surface to the requester.
-- Pending request notices are persisted with IDs and statuses. After host restart they become interrupted errors; delegated turns are not automatically replayed. Check partial work before retrying. Ordinary user turns retain their existing session-resume behavior.
-- Completion push notifications come from the requesting bot; delegated replies do not send a second “done” push. Recipient permission requests still use the usual “needs you” notifications.
+## Stops, failures and restart
 
-`ask_bot` uses synchronous request/reply over MCP; neither tool adds a task scheduler or isolated worktrees. Give bots explicit file ownership when they share a working directory. Rebuild and restart the host to load the new built-in MCP server.
+- Accepted requests survive the sender's completion, Stop, disconnection and deletion. Stop on the sender drops replies still queued for it; a deleted sender's replies are dropped (both notices still show the outcome).
+- Stopping or deleting the recipient cancels its queued requests and stops running work; started work may have left partial changes. A cancellation the user caused doesn't wake the sender; its notices show it.
+- Recipient startup failures, crashes, refusals and empty replies mark both notices failed and come back to the sender as a failed reply.
+- Pending request notices are persisted with IDs and statuses. After host restart they become interrupted errors; request turns are not automatically replayed. Check partial work before retrying. There is no automatic retry. Ordinary user turns and running reply turns retain their existing session-resume behavior.
+- A reply still queued for a busy sender lives only in memory: a host restart drops it, and the sender never relays it. Both notices are already completed and keep the reply (`botMessage.reply`), so it stays readable in the conversation sheet.
 
-## Independent messages
+## Limits
 
-`message_bot(botId, message)` queues a bot request and returns immediately, without waiting for a reply. The recipient reports to you in its own chat. Messages use the same queue as asks, run one turn at a time, and never merge with user messages or other requests. Both chats show bot-attributed notices rather than user messages. Up to 64 messages can be outstanding host-wide, with at most 16 from any one sender, separately from asks. Queued and running messages both count. A slot is freed when the recipient finishes, fails or cancels the request, or admission fails. Stopping, restarting or deleting the sender does not free slots for its already accepted messages.
+The host rejects messages to the bot itself, to hidden or deleted bots, and empty or oversized (over 32,000 bytes) ones. Up to 64 messages can be outstanding host-wide, with at most 16 from any one sender. Queued and running messages both count. A slot is freed when the recipient finishes, fails or cancels the request, or admission fails. Stopping, restarting or deleting the sender does not free slots for its already accepted messages.
 
-The recipient can use `send_message` for user-facing updates and its report. If it sends none,
-its final text becomes the main-chat report. The request notice shows completion
-status; it does not copy this user-facing report into a bot reply.
-
-Each independent request includes reporting guidance, even when it reuses a
-session that previously handled an ask. The ask's reply restrictions apply
-only to that ask; later user turns and independent requests can report in
-the recipient's chat normally.
-
-Accepted messages survive sender completion, Stop, disconnection and deletion. Recipient Stop or deletion cancels queued messages and stops running work; started work may have left partial changes. Outcomes update both notices; failures mark them as failed. The recipient uses its normal completion notifications. Messages have no ask timeout or automatic retry and are not replayed after host restart.
-
-Bot request chains can make at most eight handoffs. Both `message_bot` and
-`ask_bot` carry the count into the recipient's turn, including queued work;
-finishing an earlier request does not reset it. This bounds repeated A → B → A
-messages even when few requests are outstanding. At the limit, the tool reports
-an error without queuing more work. A new user turn starts a fresh allowance.
+Bot request chains can make at most eight handoffs. A request turn messages no one, so a chain goes on only from reply turns: each reply carries the count into the sender's reply turn (the highest of the replies it takes), and finishing an earlier request does not reset it. This bounds repeated A → B → A messages even when few requests are outstanding. At the limit, the tool reports an error without queuing more work. A new user turn starts a fresh allowance.
 
 ## Team management
 
@@ -101,13 +87,13 @@ A bot made this way records its creator (`createdBy`, next to `createdAt`); clie
 
 ## Code and verification
 
-- `host/src/chat/team.rs`: discovery, request lifetime and persisted notices and structured conversation data.
+- `host/src/chat/team.rs`: discovery, request lifetime, persisted notices, structured conversation data and the reply that goes back (`BotReply`, `reply_prompt`).
 - `host/src/store/entries.rs` (`bot_conversation`, `expire_pending`) and `host/src/api/bots.rs` (`botConversation`): the pair history and restart cleanup.
 - `host/src/tui/app/exchange.rs`, `manage/bot_chat.rs`, `view/bot_chat.rs`: the terminal client's row logic, keys and conversation sheet.
-- `host/src/chat/team/requests.rs`: admission, wait graph, capacity and chain hop limit.
-- `host/src/agent/bot/` (`queue.rs`, `turn.rs`): queue boundaries, recipient execution, completion and targeted cancellation.
+- `host/src/chat/team/requests.rs`: admission, capacity and chain hop limit.
+- `host/src/agent/bot/` (`queue.rs`, `turn.rs`): queue boundaries, recipient execution, completion and the sender's reply turn.
 - `host/src/mcp.rs`: the authenticated local MCP → HTTP bridge.
-- `host/tests/team_e2e.rs`: a real host and MCP subprocess, with scripted ACP agents, covering discovery → delegation → recipient approval → reply → client sync. No paid provider calls.
+- `host/tests/team_e2e.rs`: a real host and MCP subprocess, with scripted ACP agents, covering discovery → message → recipient approval → reply turn in the sender's chat → client sync, and the hop limit. No paid provider calls.
 - `host/src/chat/manage.rs` (+ `Cmd::Approve` in `agent/bot/updates.rs`): team management; `host/tests/manage_e2e.rs` walks an allowed `create_bot`, a denied `update_bot`, and cards that end when the turn stops or the agent cancels the call, through the real `manage` MCP process.
 
 Run `cargo test` and `cargo clippy --all-targets -- -D warnings` in `host/`.

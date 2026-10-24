@@ -286,7 +286,7 @@ impl Hub {
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
         self.routines.disable_bot(&self.store, id)?;
-        self.team.cancel_bot(id);
+        self.team.end_turn(id);
         self.groups.stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);

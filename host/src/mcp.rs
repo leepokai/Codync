@@ -49,7 +49,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     let token: Arc<str> = token.trim().into();
     let bot: Arc<str> = bot.into();
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    // Requests run side by side (an ask_bot can take minutes); their replies share stdout.
+    // Requests run side by side (a manage approval can take minutes); their replies share stdout.
     let (replies, mut outbox) = mpsc::unbounded_channel::<Value>();
     tokio::spawn(async move {
         let mut out = tokio::io::stdout();
@@ -156,7 +156,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Routines => ("routineCall", Duration::from_secs(30)),
         Server::Computer => ("computerCall", Duration::from_secs(60)),
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
-        Server::Team => ("teamCall", crate::chat::team::ASK_TIMEOUT + Duration::from_secs(30)),
+        Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_secs(120)),
         Server::Composio => ("composioCall", Duration::from_secs(120)),

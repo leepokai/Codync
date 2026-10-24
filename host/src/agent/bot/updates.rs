@@ -278,13 +278,12 @@ impl Actor {
     }
 
     /// A `send_message`: the user's next bubble, in the turn's lane, right away. Only in the
-    /// bot's own chat, including independent messages; a room, an ask or a routine reads
-    /// the turn's reply.
+    /// bot's own chat; a room, a bot request or a routine reads the turn's reply.
     pub(super) fn send_to_user(&mut self, text: String) -> anyhow::Result<()> {
         let Some(turn) = self.turn else { anyhow::bail!("no turn is running") };
-        if self.active_request.as_ref().is_some_and(crate::chat::team::BotRequest::expects_reply) {
+        if self.active_request.is_some() {
             anyhow::bail!(
-                "send_message isn't available in an ask: return your answer to the requesting bot as your final reply"
+                "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there"
             );
         }
         if self.active_group.is_some() || self.active_routine.is_some() {

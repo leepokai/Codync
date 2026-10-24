@@ -37,7 +37,7 @@ def mcp_call(server_name, tool, arguments):
         tools = rpc(2, "tools/list", {})
         assert any(t["name"] == tool for t in tools["result"]["tools"])
         if server_name == "team":
-            assert {t["name"] for t in tools["result"]["tools"]} == {"list_bots", "ask_bot", "message_bot"}
+            assert {t["name"] for t in tools["result"]["tools"]} == {"list_bots", "message_bot"}
             roster = rpc(3, "tools/call", {"name": "list_bots", "arguments": {}})
             assert any(b["id"] == arguments["botId"] for b in json.loads(roster["result"]["content"][0]["text"])["bots"])
         response = rpc(4, "tools/call", {"name": tool, "arguments": arguments})
@@ -45,37 +45,53 @@ def mcp_call(server_name, tool, arguments):
         return response["result"]
 
 
-def team_call(target, tool, message):
-    return mcp_call("team", tool, {"botId": target, "message": message})
+def team_call(target, message):
+    return mcp_call("team", "message_bot", {"botId": target, "message": message})
+
+
+def chain():
+    """Hands the chain on to the bot in handoff.json; what the turn replies."""
+    response = team_call(json.loads(pathlib.Path("handoff.json").read_text())["target"], "CHAIN")
+    return "Chain stopped: " + response["content"][0]["text"] if response.get("isError") else "Chain forwarded"
+
+
+REPLIES_END = "\n\n[Codync: these are bot replies"
 
 
 def prompt(request):
     text = request["params"]["prompt"][0]["text"]
     with open("prompts.jsonl", "a") as log:
         log.write(json.dumps(text) + "\n")
-    if text.startswith(("DELEGATE ", "MESSAGE ", "ASK_REPORT ", "MESSAGE_REPORT ")):
-        independent = text.startswith(("MESSAGE ", "MESSAGE_REPORT "))
+    if REPLIES_END in text:
+        # Replies to requests this bot sent: relay what they said (whatever words they carry),
+        # or pass on a chain the peer handed back.
+        parts = text.split(REPLIES_END, 1)[0].split("\n\n")
+        relayed = [p.split(".]\n", 1)[1] if ".]\n" in p else "failed" for p in parts]
+        reply = chain() if any("CHAIN" in r for r in relayed) else "Relayed: " + " | ".join(relayed)
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
+        # A text update can reach sync before the host handles turn completion.
+        # Keep that interval deterministic when the bounded chain stops.
+        if reply.startswith("Chain stopped"):
+            time.sleep(0.3)
+        send({"id": request["id"], "result": {"stopReason": "end_turn"}})
+        return
+    if text.startswith(("DELEGATE ", "DELEGATE_REPORT ")):
         target = text.split()[1]
-        update({"sessionUpdate": "tool_call", "toolCallId": "delegate", "title": "Ask reviewer", "status": "in_progress"})
-        message = "REPORT" if "_REPORT " in text else "PERMISSION review the changes"
-        response = team_call(target, "message_bot" if independent else "ask_bot", message)
+        update({"sessionUpdate": "tool_call", "toolCallId": "delegate", "title": "Message reviewer", "status": "in_progress"})
+        message = "REPORT" if text.startswith("DELEGATE_REPORT ") else "PERMISSION review the changes"
+        response = team_call(target, message)
         assert not response.get("isError"), response
         result = json.loads(response["content"][0]["text"])
-        if independent:
-            assert result["status"] == "queued" and "reply" not in result
-            text = "Message queued"
-        else:
-            text = "Team reply: " + result["reply"]
+        assert result["status"] == "queued" and "reply" not in result
         update({"sessionUpdate": "tool_call_update", "toolCallId": "delegate", "status": "completed"})
-        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": text}})
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Message queued"}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
     if text.split("\n\n")[-1] == "REPORT":
         response = mcp_call("chat", "send_message", {"text": "Report for the user"})
-        if "requests your help" in text:
+        if "Your final reply goes back to" in text:
             assert response.get("isError"), response
             assert "requesting bot" in response["content"][0]["text"]
-            assert "Do not use send_message or message_bot" in text
             reply = "Answer for the requesting bot"
         else:
             assert not response.get("isError"), response
@@ -86,18 +102,12 @@ def prompt(request):
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
     if text.split("\n\n")[-1] == "CHAIN":
-        route = json.loads(pathlib.Path("handoff.json").read_text())
-        response = team_call(route["target"], route["tool"], "CHAIN")
-        if response.get("isError"):
-            reply = "Chain stopped: " + response["content"][0]["text"]
-        else:
-            result = json.loads(response["content"][0]["text"])
-            reply = result.get("reply", "Chain forwarded")
+        reply = chain()
+        if "Your final reply goes back to" in text:
+            # A request turn messages no one: it hands the chain back in its reply.
+            assert "answering another bot's request" in reply, reply
+            reply = "CHAIN back"
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
-        # A text update can reach sync before the host handles turn completion.
-        # Keep that interval deterministic when the bounded chain stops.
-        if response.get("isError"):
-            time.sleep(0.3)
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
     if text.split("\n\n")[-1].startswith("MANAGE "):
@@ -136,6 +146,8 @@ def prompt(request):
         room = text.split("New messages in the room (oldest first):\n", 1)[-1].split("\n\n", 1)[0]
         last = room.strip().splitlines()[-1] if "New messages" in text else ""
         reply = "reply: group" if last.startswith("User:") else "(pass)"
+        if last.startswith("User:") and "PING" in last:
+            reply = "@b over to you"
         if "REACT" in last:
             response = mcp_call("chat", "react", {"emoji": "👍", "to": "user"})
             assert not response.get("isError"), response

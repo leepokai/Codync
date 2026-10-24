@@ -61,6 +61,8 @@ pub enum Cmd {
         text: String,
     },
     BotRequest(crate::chat::team::BotRequest),
+    /// How a request this bot sent came out: a turn of its own, with any others that arrive meanwhile.
+    BotReply(crate::chat::team::BotReply),
     /// `send_message` from the bot's `chat` MCP server: a message for the user, now.
     SendToUser {
         text: String,
@@ -78,9 +80,6 @@ pub enum Cmd {
         name: Option<String>,
         cancelled: Arc<std::sync::atomic::AtomicBool>,
         reply: tokio::sync::oneshot::Sender<Result<()>>,
-    },
-    CancelAsk {
-        id: String,
     },
     /// Its turn in a group's room turn.
     Group(GroupTurn),
@@ -114,6 +113,7 @@ enum Queued {
         text: String,
     },
     BotRequest(crate::chat::team::BotRequest),
+    BotReply(crate::chat::team::BotReply),
     /// A compaction the host decided on (see `compaction`); `idle` while the user is away.
     Compact {
         idle: bool,
@@ -172,6 +172,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         turn: None,
         queue: VecDeque::new(),
         active_request: None,
+        reply_hops: None,
         seg: Seg::None,
         tools: HashMap::new(),
         plan_entry: None,
@@ -329,6 +330,8 @@ struct Actor {
     turn: Option<i64>,
     queue: VecDeque<Queued>,
     active_request: Option<crate::chat::team::BotRequest>,
+    /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
+    reply_hops: Option<u8>,
     seg: Seg,
     tools: HashMap<String, String>,
     plan_entry: Option<String>,
@@ -433,7 +436,7 @@ impl Actor {
             }
         }
         self.files.cancel();
-        self.hub.team.cancel_from(&self.cfg.id);
+        self.hub.team.end_turn(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
         if let Some(c) = self.conn.take() {

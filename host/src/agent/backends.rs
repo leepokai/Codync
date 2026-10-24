@@ -3,8 +3,10 @@
 //! Detection works like Orca's preflight: hydrate PATH from the user's login
 //! shell (GUI apps and launchd get a bare PATH), add the usual install dirs
 //! (Homebrew, ~/.local/bin, nvm, bun, volta, asdf, mise, pnpm…), then look for
-//! each known CLI. Launching prefers the installed CLI's own ACP mode and falls
-//! back to the official ACP registry build (npx / uvx / downloaded binary).
+//! each known CLI. Launching uses the installed CLI's own ACP mode and does not
+//! download a second copy. The official ACP registry build (npx / uvx / downloaded
+//! binary) is only for a CLI that isn't installed, or for one with no ACP mode of
+//! its own (Claude Code and Codex run through an adapter).
 
 use crate::LockExt;
 use crate::agent::{acp, node, registry};
@@ -607,17 +609,19 @@ pub fn is_known(id: &str) -> bool {
     harness(id).is_some() || registry::agent(id).is_some()
 }
 
-/// Ways to start this backend, best first. Local CLIs can be too old to speak
-/// ACP, so the registry build is kept as a fallback.
+/// Ways to start this backend, best first. An installed CLI with its own ACP mode
+/// starts as-is: Cursor, `MiniMax`, `CodeBuddy` and the rest are not downloaded again.
+/// A missing CLI, or one with no ACP mode of its own, still uses the registry build.
 pub async fn launch_candidates(id: &str, progress: impl Fn(&str)) -> anyhow::Result<Vec<registry::Cmd>> {
     let mut out: Vec<registry::Cmd> = local_candidate(id).into_iter().collect();
     let h = harness(id);
-    let reg_id = h.map_or(Some(id), |h| h.registry);
-    if let Some(agent) = reg_id.and_then(registry::agent) {
-        match registry::command(&agent, &progress).await {
-            Ok(cmd) => out.push(cmd),
-            Err(e) if out.is_empty() => return Err(e),
-            Err(e) => tracing::info!(backend = id, error = format!("{e:#}"), "registry build unavailable"),
+    if out.is_empty() {
+        let reg_id = h.map_or(Some(id), |h| h.registry);
+        if let Some(agent) = reg_id.and_then(registry::agent) {
+            match registry::command(&agent, &progress).await {
+                Ok(cmd) => out.push(cmd),
+                Err(e) => return Err(e),
+            }
         }
     }
     if out.is_empty() {
@@ -675,30 +679,4 @@ pub fn local_candidate(id: &str) -> Option<registry::Cmd> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[cfg(unix)]
-    #[test]
-    fn detects_executables_on_search_path() {
-        let dir = std::env::temp_dir().join(format!("codync-bin-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let bin = dir.join("fake-harness");
-        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
-        *SEARCH_PATH.locked() = vec![dir.clone()];
-        assert!(which("fake-harness").is_none(), "not executable yet");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        assert_eq!(which("fake-harness"), Some(bin));
-        SEARCH_PATH.locked().clear();
-    }
-
-    #[test]
-    fn every_harness_is_unique() {
-        let ids: HashSet<_> = HARNESSES.iter().map(|h| h.id).collect();
-        assert_eq!(ids.len(), HARNESSES.len());
-    }
-}
+mod tests;

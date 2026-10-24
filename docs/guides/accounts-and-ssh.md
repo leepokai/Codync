@@ -154,13 +154,19 @@ hands the session JWT to the Codync cloud client. A Clerk session never authoriz
 computer approves each device after comparing a 6-digit code
 ([remote relay protocol](../reference/remote-relay.md) §4.2). Conversations are not uploaded.
 
+### WeChat
+
+iPhone, Android and the desktop app offer **Continue with WeChat** next to Apple and Google. The terminal UI has no account sign-in. The button starts Clerk's custom strategy `oauth_custom_wechat`. WeChat's own login is not OpenID Connect, so `cloud/src/wechat-oidc.ts` shows WeChat's QR page and signs an id_token whose subject is the WeChat unionid, or the openid when WeChat did not return a unionid. The bridge stores that subject for the openid and reuses it, including when a later profile request fails, so the same person keeps one Clerk account. The access token lasts one hour from issue; the sign-in code still expires after ten minutes. There is no email, so a WeChat user is a different Clerk user from an Apple or Google user. The account still only records the Clerk user id, and each computer still approves the phone.
+
+Clerk's custom connection uses discovery `https://api.codync.dev/v1/wechat/oidc/.well-known/openid-configuration` (dev: `https://dev-api.codync.dev/...`). The Worker needs `WECHAT_APP_ID`, `WECHAT_APP_SECRET`, `WECHAT_OIDC_CLIENT_ID`, `WECHAT_OIDC_CLIENT_SECRET` and `WECHAT_OIDC_PRIVATE_JWK` (EC P-256). Leave them unset and the route stays off. The WeChat Open Platform website app must allow the callback `https://api.codync.dev/v1/wechat/oidc/callback`, and its callback domain needs the registration WeChat requires. Do not put the app secret or the signing key in the repository. A phone opens the same QR page in the system browser; the WeChat app SDK is not embedded.
+
 ## Verification
 
 - Build the iOS scheme after `xcodegen generate --spec apps/project.yml`, and run the
   desktop app with `npm run dev` in `apps/desktop/`.
 - Open the account menu from either sidebar layout; test arrows, Return, Escape
   and clicking outside the panel.
-- Sign in with Apple and Google test users, verify the avatar/email, restart the app and
+- Sign in with Apple, Google and WeChat test users, verify the avatar (WeChat has no email), restart the app and
   verify session restoration, then log out and verify the anonymous state.
 - Cancel the browser flow and verify no error; retry with networking unavailable
   and verify that the application stays usable.

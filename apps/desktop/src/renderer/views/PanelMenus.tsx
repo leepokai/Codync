@@ -8,6 +8,7 @@ import type { Link } from '@shared/analytics'
 import { account, useAccount } from '../store/account'
 import { openLink, useScreenViewed } from '../store/analytics'
 import googleLogo from '../assets/google.svg'
+import wechatLogo from '../assets/wechat.svg'
 import { useTr } from '../lib/use-language'
 
 
@@ -62,6 +63,7 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
     : [
         { title: 'Continue with Apple', icon: 'apple.logo', disabled: isBusy, action: () => { onDismiss(); void account.signIn('apple') } },
         { title: 'Continue with Google', icon: 'person.crop.circle.badge.plus', image: googleLogo, disabled: isBusy, action: () => { onDismiss(); void account.signIn('google') } },
+        { title: 'Continue with WeChat', icon: 'message', image: wechatLogo, disabled: isBusy, action: () => { onDismiss(); void account.signIn('wechat') } },
       ]
   const open = (url: string, link: Link) => {
     onDismiss()

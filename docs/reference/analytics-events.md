@@ -40,7 +40,7 @@ host answers and sends it once the host is up.
 | `onboarding_step_viewed` | iOS, Android | A first-run screen appears | `step` (`welcome`/`install`/`scan`) |
 | `onboarding_completed` | host `track` (desktop), iOS, Android | Desktop: the welcome screen is finished. Phones: the first-run screens are finished and the tabs appear (a computer paired, signed in to an account, or skipped). | desktop `signed_in`; phones `via` (`paired`/`account`/`skipped`) |
 | `computer_access_finished` | host `track` (desktop) | The *Computer access* step is left | `ready` (screen recording and control granted), `onboarding` |
-| `sign_in_started` | host `track` (desktop), iOS, Android | A sign-in button is pressed | `provider` (`apple`/`google`/`hosted`) |
+| `sign_in_started` | host `track` (desktop), iOS, Android | A sign-in button is pressed | `provider` (`apple`/`google`/`wechat`/`hosted`) |
 | `sign_in_failed` | host `track` (desktop), iOS, Android | Sign-in ended without an account | `provider`, `reason` (`cancelled`/`timeout`/`verification`/`error`) |
 | `signed_in` | host `track` (desktop), iOS, Android | Signed in to a Codync account | `provider` |
 | `signed_out` | host `track` (desktop), iOS, Android | Signed out | — |

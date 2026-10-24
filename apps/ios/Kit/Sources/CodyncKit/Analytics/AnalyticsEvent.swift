@@ -26,7 +26,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, install, scan }
     public enum OnboardingVia: String, Sendable { case paired, account, skipped }
-    public enum SignInProvider: String, Sendable { case apple, google }
+    public enum SignInProvider: String, Sendable { case apple, google, wechat }
     public enum SignInFailure: String, Sendable { case cancelled, verification, error }
     public enum PairVia: String, Sendable { case qr, link, account }
     public enum AccessFailure: String, Sendable { case denied, expired, cancelled }

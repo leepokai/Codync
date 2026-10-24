@@ -12,6 +12,7 @@ Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/reference/remo
   read, reports presence, holds the offline mailbox, and queues routine webhook deliveries (`hookbox`,
   checked against the keys the host registers; `src/hooks.ts`). It is reachable only through requests the Worker
   builds itself (`X-Codync-Internal: 1`); `/internal/*` has no public route.
+- **WeChat sign-in** (`src/wechat-oidc.ts`): an OIDC bridge for Clerk's custom WeChat connection. It stays off until the WeChat and signing secrets are set. See [accounts](../docs/guides/accounts-and-ssh.md#wechat).
 - **Auth** (`src/auth.ts`): Clerk session JWTs via `@clerk/backend` (`CLERK_SECRET_KEY` → JWKS fetched and
   cached per isolate; `CLERK_JWT_KEY` → networkless, dev/e2e only) and Ed25519 request signatures
   (WebCrypto).

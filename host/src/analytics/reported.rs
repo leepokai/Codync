@@ -82,6 +82,7 @@ pub enum Reported {
 pub enum Provider {
     Apple,
     Google,
+    Wechat,
     Hosted,
     #[serde(other)]
     Other,
@@ -241,6 +242,7 @@ mod tests {
                 Event::ComputerAccessFinished,
             ),
             (json!({"event": "sign_in_started", "app": "desktop", "provider": "apple"}), Event::SignInStarted),
+            (json!({"event": "sign_in_started", "app": "desktop", "provider": "wechat"}), Event::SignInStarted),
             (
                 json!({"event": "sign_in_failed", "app": "desktop", "provider": "hosted", "reason": "verification"}),
                 Event::SignInFailed,

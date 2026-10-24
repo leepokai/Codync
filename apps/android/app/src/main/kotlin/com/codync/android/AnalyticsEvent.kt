@@ -95,7 +95,7 @@ internal enum class OnboardingStep(override val wire: String) : CatalogValue { W
 
 internal enum class OnboardingVia(override val wire: String) : CatalogValue { Paired("paired"), Account("account"), Skipped("skipped") }
 
-internal enum class SignInProvider(override val wire: String) : CatalogValue { Apple("apple"), Google("google"), Hosted("hosted") }
+internal enum class SignInProvider(override val wire: String) : CatalogValue { Apple("apple"), Google("google"), Wechat("wechat"), Hosted("hosted") }
 
 internal enum class SignInFailure(override val wire: String) : CatalogValue {
     Cancelled("cancelled"), Timeout("timeout"), Verification("verification"), Error("error")

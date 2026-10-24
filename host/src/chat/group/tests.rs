@@ -51,15 +51,23 @@ fn later_rounds_ask_only_the_members_another_member_mentioned() {
         cited(&members, messages, &asked).into_iter().map(|b| b.id.clone()).collect()
     };
     let ids = |messages: &[Entry]| asked_ids(messages, &[]);
-    assert!(ids(&[said("hi all"), by("a", "done", 2)]).is_empty(), "nobody named: the room turn ends");
+    assert_eq!(ids(&[said("hi all"), by("a", "done", 2)]), Vec::<String>::new(), "nobody named: the room turn ends");
     let named = [said("hi"), by("a", "@bob check", 2)];
-    assert!(asked_ids(&named, &[("b", 2)]).is_empty(), "Bob saw it and passed");
+    assert_eq!(asked_ids(&named, &[("b", 2)]), Vec::<String>::new(), "Bob saw it and passed");
     assert_eq!(asked_ids(&named, &[("b", 1)]), ["b"], "Bob was asked before he was named");
     assert_eq!(ids(&[said("hi"), by("a", "@bob can you check?", 2)]), ["b"]);
-    assert!(ids(&[said("hi"), by("a", "@bob check", 2), by("b", "checked", 3)]).is_empty(), "Bob already answered");
+    assert_eq!(
+        ids(&[said("hi"), by("a", "@bob check", 2), by("b", "checked", 3)]),
+        Vec::<String>::new(),
+        "Bob already answered"
+    );
     assert_eq!(ids(&[said("hi"), by("a", "@bob check", 2), by("b", "ok", 3), by("c", "@bob again", 4)]), ["b"]);
     assert_eq!(ids(&[said("hi"), by("a", "@alice @all over to you", 2)]), ["b", "c"], "not yourself");
-    assert!(ids(&[said("@cara look"), by("a", "ok", 2)]).is_empty(), "the user's mentions pick the first round");
+    assert_eq!(
+        ids(&[said("@cara look"), by("a", "ok", 2)]),
+        Vec::<String>::new(),
+        "the user's mentions pick the first round"
+    );
 }
 
 use crate::api::devices::Caller;

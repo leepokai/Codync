@@ -15,14 +15,20 @@ Use JDK 21, Android SDK 37 and Build Tools 37.0.0. Set `JAVA_HOME` and
 cd apps/android
 ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ./gradlew :app:assembleRelease
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r -d app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Stop the old app before rebuilding. Upgrade with `adb install -r`, using the
-original package and signing key; retain device data and identity. Release APKs
-are unsigned until distribution signing is configured. The checksum-pinned
-Gradle wrapper is checked in. `versionName` follows `apps/project.yml`;
-Android's `versionCode` is independent. Feature PRs do not bump product versions.
+Stop the old app before rebuilding. Upgrade with `adb install -r -d`, using the
+original package and signing key; retain device data and identity (`-d` lets a debug
+build from an older version replace a newer one). The checksum-pinned
+Gradle wrapper is checked in. `versionName` follows `apps/project.yml` and
+`versionCode` is derived from it (2.24.0 → 2024000). Feature PRs do not bump product versions.
+
+Release builds are signed with the Google Play upload key when `codyncUploadKeystore`
+and `codyncUploadKeystorePassword` are set (`codync.local.properties` or `-P`), and stay
+unsigned otherwise. `./gradlew :app:bundleRelease` makes the bundle Play takes; releases
+reach Play through the `Submit Android` workflow ([Android releases](../../docs/guides/development.md#android-releases-google-play)),
+with the release notes in `WhatsNew.md` here.
 
 ## Account and push configuration
 
@@ -31,9 +37,10 @@ A clean checkout builds `com.pokai.Codync.android.dev` (Codync Dev) or
 `apps/shared/Config/dev.plist` and `main.plist`. The default push relay comes from
 `CodyncKit/Client/SharedStore.swift`.
 
-Firebase client configuration is deployment-specific and excluded from Git.
-Without it the app builds, pairs and chats; Account and State explain that push
-is unavailable. It does not request notification permission or schedule FCM
+Firebase client configuration is deployment-specific and excluded from Git (the
+official one comes from the `codync-auth` Firebase project: a CI secret, and
+`codyncGoogleServicesFile` locally). Without it the app builds, pairs and chats;
+Account and State explain that push is unavailable. It does not request notification permission or schedule FCM
 registration in that configuration. Foreground task status remains available.
 
 For a private deployment, create ignored `apps/android/codync.local.properties`.
@@ -125,7 +132,7 @@ byte. `LiveRosterTest` offers separately opted-in read-only inspection of an
 existing connection; it is not the ordinary reset suite.
 
 The emulator-only `-PcodyncReleaseTests=true` variant signs an R8 acceptance build
-with the debug key. Ordinary release APKs remain unsigned. Physical camera,
+with the debug key; ordinary release builds take only the upload key. Physical camera,
 keyboard/TalkBack, provider login, background push, voice and release acceptance
 are separate [checklist](../../docs/plans/android-app.md) gates.
 

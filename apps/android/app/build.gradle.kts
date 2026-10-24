@@ -34,7 +34,14 @@ if (firebaseConfig != null) apply(plugin = "com.google.gms.google-services")
 val productVersion = rootProject.file("../project.yml").readLines()
     .first { it.trimStart().startsWith("MARKETING_VERSION:") }
     .substringAfter(':').trim()
-// Explicit, emulator-only R8 acceptance; ordinary release artifacts stay unsigned.
+// Play needs a rising integer per upload; deriving it from the version needs no counter, and
+// tools/play-submit.py reads a track's version back from it.
+val productVersionCode = productVersion.split('.').map(String::toInt)
+    .let { (major, minor, patch) -> major * 1_000_000 + minor * 1_000 + patch }
+// Play upload key (Google re-signs with the app signing key); without it release artifacts stay unsigned.
+val uploadKeystore = deploymentValue("codyncUploadKeystore")?.takeIf(String::isNotBlank)?.let(::file)
+check(uploadKeystore == null || uploadKeystore.isFile) { "The configured upload keystore does not exist." }
+// Explicit, emulator-only R8 acceptance, signed with the debug key.
 val releaseTests = providers.gradleProperty("codyncReleaseTests").map(String::toBoolean).getOrElse(false)
 
 val voiceModel = configurations.create("voiceModel") {
@@ -89,11 +96,17 @@ android {
         applicationId = deploymentValue("codyncApplicationId") ?: "com.pokai.Codync.android"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
+        versionCode = productVersionCode
         versionName = productVersion
         testInstrumentationRunner = if (releaseTests) "com.codync.android.VoiceReleaseRunner" else "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PUSH_RELAY_URL", javaString(deploymentValue("codyncPushRelayUrl") ?: upstreamRelay))
         buildConfigField("boolean", "PUSH_CONFIGURED", (firebaseConfig != null).toString())
+    }
+    if (uploadKeystore != null) signingConfigs.create("upload") {
+        storeFile = uploadKeystore
+        storePassword = requireNotNull(deploymentValue("codyncUploadKeystorePassword")) { "Set codyncUploadKeystorePassword." }
+        keyAlias = "upload"
+        keyPassword = storePassword
     }
     buildTypes {
         debug {
@@ -113,6 +126,7 @@ android {
             buildConfigField("String", "CLERK_PUBLISHABLE_KEY", javaString(deploymentValue("codyncClerkPublishableKey") ?: accountValue("main", "clerkPublishableKey")))
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("upload")
         }
         create("releaseAcceptance") {
             initWith(getByName("release"))

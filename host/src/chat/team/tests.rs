@@ -207,8 +207,8 @@ async fn permission_cards_still_require_the_recipients_approval_and_a_request_me
     f.until(|| f.took("a", 1) && f.took("b", 1)).await;
     assert!(f.notices(&receipt).iter().all(|e| e.data["status"] == "completed"));
     assert_eq!(f.finals("a"), ["Relayed: reply: PERMISSION inspect the project"]);
-    assert!(f.finals("b").is_empty());
-    assert!(f.prompts_of("c").is_empty());
+    assert_eq!(f.finals("b"), Vec::<String>::new());
+    assert_eq!(f.prompts_of("c"), Vec::<String>::new());
     f.shutdown().await;
 }
 
@@ -254,7 +254,7 @@ async fn message_returns_before_approval_and_survives_sender_stop() {
     for bot in ["a", "b"] {
         assert!(f.hub.store.history(bot, i64::MAX, 100).unwrap().iter().all(|e| e.kind != "user"));
     }
-    assert!(f.finals("b").is_empty());
+    assert_eq!(f.finals("b"), Vec::<String>::new());
     assert_eq!(f.finals("a"), ["Relayed: reply: PERMISSION BLOCK independent work"]);
     f.shutdown().await;
 }

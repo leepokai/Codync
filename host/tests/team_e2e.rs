@@ -151,7 +151,7 @@ async fn a_bot_messages_another_and_relays_its_reply_to_the_user() {
     let conversation = host.call("botConversation", json!({"botId": lead, "peerId": reviewer})).await;
     assert_eq!(conversation["entries"].as_array().unwrap().len(), 1);
     let recipient_history = host.call("history", json!({"botId": reviewer})).await;
-    assert!(finals(&recipient_history).is_empty(), "the answer is the lead's, not the reviewer's chat's");
+    assert_eq!(finals(&recipient_history), Vec::<&str>::new(), "the answer is the lead's, not the reviewer's chat's");
     assert!(recipient_history["entries"].as_array().unwrap().iter().all(|e| e["kind"] != "user"));
     assert!(
         recipient_history["entries"]
@@ -185,7 +185,7 @@ async fn a_bot_request_answers_the_sender_and_never_the_user() {
         assert!(notices[0]["data"]["text"].as_str().unwrap().contains("Answer for the requesting bot"));
         assert!(!history["entries"].as_array().unwrap().iter().any(|e| e["data"]["text"] == "Report for the user"));
         if bot == &reviewer {
-            assert!(finals(&history).is_empty());
+            assert_eq!(finals(&history), Vec::<&str>::new());
         }
     }
 }

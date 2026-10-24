@@ -1,6 +1,6 @@
 # Android parity and acceptance
 
-Status: **in development, merged into `dev`** (#151, #152, #154, #155), not released yet. The
+Status: **in development, merged into `dev`** (#151, #152, #154, #155), on Google Play internal testing, not public yet. The
 Android app is a 1:1 port of the iPhone app: each screen
 is built from its iOS source (`apps/ios/Views`, `apps/ios/Kit/Sources/CodyncUI`) with the
 Android `design` module (see the [Android README](../../apps/android/README.md)). Product
@@ -30,7 +30,7 @@ emulator against a real host; device acceptance is listed separately.
 | Version check | `VersionMismatch.MIN_HOST`, the host's `minApp`, the update card in the roster and in place of the composer | Set `MIN_HOST` to the first release that ships Android support when it's cut |
 | Remote screen | Ported: viewer from Computers, the chat header (watch a bot, then take over) and `codync-dev://screen`; WebRTC H.264, trackpad and direct touch, long-press drag, two-finger scroll, pinch zoom streaming the visible region, keyboard with IME and modifier keys, clipboard, displays, take over/hand back, Rotate | Pinch, IME composition and a hardware keyboard on a device; TURN relay path and renewal |
 | Analytics | Ported: PostHog feature events with the Settings switch (and its sheet), crash reports sent on the next launch | — |
-| Packaging | Debug, unsigned R8 release, CI, optional Firebase/private configuration | Play signing, distribution, `versionCode` policy |
+| Packaging | Debug, R8 release signed with the Play upload key, `versionCode` from the version, Firebase (`codync-auth`) and private configuration, `Submit Android` to Google Play (internal testing since 2.24.0) | Production access (closed test), see [Before a Play release](#before-a-play-release) |
 
 ## Gates before merge into dev
 
@@ -60,7 +60,7 @@ was walked through on an emulator against a real host.
 | What | Code | What it needs |
 | --- | --- | --- |
 | Revoke this phone's access (also on Remove of a computer approved through the account); removing older copies of the computer from the account | `core/.../CloudClient.kt` (`revokeAccess`, `removeComputer`), `AppStoreAccount.kt`, `SettingsView.kt` | A signed-in account on the emulator or a phone; only request tests cover it |
-| Push delivery (alerts, background Live update refresh) | `PushService.kt`, `AppStoreNotifications.kt` | A Firebase project and the push Worker's FCM secret (owner's go-ahead). The notification look is covered by `AlertNotificationTest` |
+| Push delivery (alerts, background Live update refresh) | `PushService.kt`, `AppStoreNotifications.kt` | A device with Google Play services running the official build (Firebase and the relay's FCM secret are set up since 2026-10-24). The notification look is covered by `AlertNotificationTest` |
 | OpenAI Realtime, Gemini Live and Speech mode with a real key | `WebRtcPeer.kt`, `core/.../OpenAIRealtimeEngine.kt`, `GeminiLiveEngine.kt`, `CloudSpeechEngine.kt` | A provider key on the paired computer; the fallback to on-device voice is verified |
 | Remote screen: Chinese IME composition, a hardware keyboard, the TURN relay path and its credential renewal | `ScreenKeys.kt`, `ScreenSession.kt`, `ScreenView.kt` | A computer it's safe to type into, and a signed-in host for the relay; viewing, trackpad and pinch zoom are verified |
 | On-device voice with a live microphone | `PlatformSpeech.kt`, `LocalVoiceAudio.kt` | A phone; on the emulator the recognizer was fed the speech fixture |
@@ -86,13 +86,41 @@ was walked through on an emulator against a real host.
 
 ## Before a Play release
 
+Set up on 2026-10-24 ([Android releases](../guides/development.md#android-releases-google-play)): the
+Play Console app with every App content declaration (Data safety included), the store listing in
+en-US and zh-TW, the upload key and Play App Signing, the `codync-play` publisher, Firebase and the
+relay's `FCM_SERVICE_ACCOUNT`, Clerk's Android redirects, and 2.24.0 on internal testing
+(tester list `codync-testers`). The listing reuses the App Store's copy (its subtitle as the short
+description) and the App Store screenshot deck's Android twin (`marketing/app-store-screenshots`,
+Android tab: the same captions over Android captures, *Follow along in the status bar* in place of
+the Dynamic Island) with its feature graphic, per language.
+
+- [ ] Closed test: the account is personal, so production access needs a closed test (track
+  `alpha`) with at least 12 testers opted in for 14 days in a row, then the application in
+  Play Console. Set the repository variable `PLAY_TRACK=alpha` once it runs, then run
+  `Submit Android` by hand with the current version and `alpha` (it moves the version Play
+  already has there) or promote it in Play Console.
+- [ ] Account deletion inside the app: Play requires it for apps that create accounts. Today an
+  account is deleted on request (`codync.dev/privacy#delete-account`, by email); add a *Delete
+  account* action (cloud method that deletes the Clerk user, whose webhook already removes the
+  rest) to every client.
+- [ ] Reviewer access: pairing needs a computer, so review needs a way in (a demo video of
+  pairing and a chat, or a reusable demo host), linked from App content → Login details.
+- [ ] The foreground service video Play asks for the microphone and media playback services
+  (voice calls), if it asks when the release goes to review.
 - [ ] Physical upgrade keeps the saved account, pinned keys, bots and history.
 - [ ] Physical portrait/landscape/foldable, keyboard, large text and TalkBack.
 - [ ] Provider sign-in/switching, failed sign-out and revocation.
-- [ ] Firebase project and the push Worker's `FCM_SERVICE_ACCOUNT` secret (owner's go-ahead).
+- [ ] Push on a device with the official Firebase configuration (credentials verified with a
+  dry-run send; no device delivery yet).
+- [ ] Set `MIN_HOST` to the first release that ships Android support.
 - [ ] Host release gating for Android: like iPhones and the App Store, a release that raises
   `minApp` must wait while paired Android phones can't get that version from Play
   ([compatibility](../reference/compatibility.md)).
+- [ ] Move the default push relay URL into `apps/shared/Config/{dev,main}.plist` (iOS reads
+  them as `AccountConfig.plist`), so the Android build stops parsing the iOS kit's
+  `SharedStore.swift` and iPhone-only edits there stop counting as Android changes.
+- [ ] *Release to production* permission for `codync-play`, then `PLAY_TRACK=production`.
 
 ## Shared deployment
 

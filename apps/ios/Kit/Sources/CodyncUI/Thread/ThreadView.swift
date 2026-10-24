@@ -66,6 +66,18 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
+            .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
+                if model.takeVoiceCallRequest(for: botId) {
+                    showTrace = false
+                    botChat = nil
+                    editingGroup = false
+                    details = nil
+                    confirmNewSession = false
+                    confirmDelete = nil
+                    if model.fileDownloads.export?.botId == botId { model.fileDownloads.dismissExport() }
+                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { calling = true }
+                }
+            }
             .codyncSheet(item: Binding<FileDownloads.Export?>(get: {
                 guard let item = model.fileDownloads.export, item.botId == botId else { return nil }
                 return item

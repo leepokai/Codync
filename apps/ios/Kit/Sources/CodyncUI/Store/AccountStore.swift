@@ -35,7 +35,13 @@ public final class AccountStore {
     public private(set) var approvedAccess: [ComputerID: String] = [:]
     public var lastError: String?
     public var selection: BotReference? {
-        didSet { if let id = selection?.computerId, !retired { storage.lastComputerId = id } }
+        didSet {
+            guard !retired else { return }
+            if selection != oldValue {
+                for store in stores.values { store.cancelVoiceCallRequest() }
+            }
+            if let id = selection?.computerId { storage.lastComputerId = id }
+        }
     }
 
     public var onBotUpdated: (@MainActor (BotReference, Bot) -> Void)?

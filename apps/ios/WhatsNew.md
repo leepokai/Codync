@@ -6,6 +6,16 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.25.0
+
+### zh-Hant
+- 新增「Open Live Mode」捷徑，選擇 Bot 後直接開啟語音聊天。
+- 新增「Send Text to Bot」捷徑，可選擇 Bot 並傳送文字；預設在背景傳送，也可開啟「Open Chat」顯示對話。
+
+### en-US
+- Use Open Live Mode in Shortcuts to choose a bot and start voice chat.
+- Use Send Text to Bot to choose a bot and send text in the background by default, or enable Open Chat to show the conversation.
+
 ## 2.24.0
 
 ### zh-Hant

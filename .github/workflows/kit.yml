@@ -24,4 +24,16 @@ jobs:
       - name: Test on an iPhone simulator
         run: |
           DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+\(([0-9A-F-]{36})\)' | grep -oE '[0-9A-F-]{36}')
-          xcodebuild test -scheme CodyncKit-Package -destination "platform=iOS Simulator,id=$DEVICE" -quiet
+          xcodebuild test -scheme CodyncKit-Package -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath "$RUNNER_TEMP/CodyncKit.xcresult" -quiet
+      - name: Report test failures
+        if: failure()
+        run: |
+          if [ -d "$RUNNER_TEMP/CodyncKit.xcresult" ]; then
+            xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/CodyncKit.xcresult"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ios-kit-test-results
+          path: ${{ runner.temp }}/CodyncKit.xcresult
+          retention-days: 7

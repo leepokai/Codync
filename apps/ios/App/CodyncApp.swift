@@ -20,6 +20,7 @@ struct CodyncApp: App {
     init() {
         // A tapped widget bot arrives as an intent, not a URL.
         OpenBotIntent.open = { AppStore.shared.open($0) }
+        BotShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
@@ -128,8 +129,9 @@ final class AppStore {
 
     private init() {
         let session = AccountSession()
-        let storage = SharedStore.Context(accountID: session.userID)
-        SharedStore.activeAccountID = session.userID
+        // Keep the selected context while Clerk restores: background intents have no scene observer yet.
+        let storage = SharedStore.Context(accountID: session.isReady ? session.userID : SharedStore.activeAccountID)
+        SharedStore.activeAccountID = storage.accountID
         account = session
         Analytics.shared.userID = { [session] in session.userID }
         Analytics.shared.foregroundState = {

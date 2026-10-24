@@ -79,6 +79,10 @@ public final class BotStore {
     /// The remote screen viewer (iPhone); `codync://screen` opens it.
     public var screenRequest: ScreenRequest?
 
+    /// A Shortcuts request, consumed by the matching conversation.
+    public internal(set) var voiceCallRequest: String?
+    @ObservationIgnored var preparingVoiceCall: UUID?
+
     // Platform hooks (push registration, Live Activities, widgets).
     /// Each time the channel becomes ready.
     public var onConnected: (@MainActor (BotStore) -> Void)?
@@ -113,6 +117,7 @@ public final class BotStore {
         let end: @MainActor () -> Void
     }
     @ObservationIgnored var voiceCalls: [UUID: VoiceCall] = [:]
+    @ObservationIgnored var shortcutSends = 0
     var saveTask: Task<Void, Never>?
     var rewound = false
     /// Events stayed undecodable after the rewind.

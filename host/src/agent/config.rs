@@ -20,6 +20,15 @@ fn is_switch(option: &Value) -> bool {
     option["type"] == "boolean" || (option["type"] == "select" && lists("on") && lists("off"))
 }
 
+/// What each select config option is set to now (`id` → `currentValue`), as the agent lists it.
+pub fn current_values(session: &Value) -> std::collections::BTreeMap<String, String> {
+    let options = session["configOptions"].as_array().into_iter().flatten();
+    options
+        .filter(|o| o["type"] == "select")
+        .filter_map(|o| Some((o["id"].as_str()?.to_owned(), o["currentValue"].as_str()?.to_owned())))
+        .collect()
+}
+
 /// Whether the Fast mode option is on.
 pub fn fast_mode_on(config: &Value) -> bool {
     config["currentValue"] == true || config["currentValue"] == "on"

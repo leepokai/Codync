@@ -1,14 +1,47 @@
 //! How the terminal shows a bot's fallback chain (`agent::fallback`): the agent it's on, and each step's state.
 
-use super::super::app::{App, Bot};
+use super::super::app::{App, Bot, Effort, effort, effort_setting};
 use super::time::now_ms;
 use super::usage::when_future;
 use crate::agent::fallback::Reason;
 use crate::store::Fallback;
 
-/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Gemini CLI · default (usage resets 15:00)".
+/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 · effort ‹High› (in use)", "2 Gemini CLI · default (usage resets
+/// 15:00)". The effort level shows where its agent lists one for the model, as its own session reports it while the bot
+/// runs on it as saved ("effort: In use: Low · Saved: High not offered"); else what is saved for it, as saved.
 pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
-    let item = format!("{} {} · {}", i + 1, app.agent_name(&f.backend), f.model.as_deref().unwrap_or("default"));
+    let model = f.model.as_deref().unwrap_or("default");
+    // While the bot runs this agent on the saved model, its session's own list; else the agent's catalog.
+    let host = bot.and_then(|b| b.fallbacks.iter().find(|x| x.backend == f.backend && x.model == f.model));
+    let settings = app.settings_for(bot, &f.backend, f.model.as_deref().unwrap_or_default(), host.is_some());
+    let setting = effort_setting(&settings);
+    // Running as saved, its own session says what it runs; anything else is what is picked for it.
+    let session = bot.filter(|_| host.is_some_and(|h| h.model_options == f.model_options)).and_then(|b| {
+        (b.agent_step.as_deref() == Some(f.backend.as_str())).then(|| b.session_of(&f.backend)).flatten()
+    });
+    let reported = session.and_then(|s| {
+        // The setting `effort` describes: the session's own effort level before the catalog's.
+        let Effort::Row { setting: Some(o), .. } = effort(&settings, None, Some(s), false, false) else { return None };
+        let saved = f.model_options.get(&o.id).map(String::as_str);
+        match effort(&settings, saved, Some(s), false, false) {
+            Effort::Row { caption: Some(c), .. } => Some(format!(" · effort: {c}")),
+            _ => None,
+        }
+    });
+    let shown = reported.or_else(|| {
+        setting.map(|o| {
+            let value = f.model_options.get(&o.id).map_or("default", |v| {
+                o.values.iter().find(|(id, _)| id == v).map_or(v.as_str(), |(_, name)| name.as_str())
+            });
+            format!(" · effort ‹{value}›")
+        })
+    });
+    // Without its agent's list, what is saved for it, as saved.
+    let shown = shown.or_else(|| {
+        let saved: Vec<&str> = f.model_options.values().map(String::as_str).collect();
+        (!saved.is_empty()).then(|| format!(" · saved ‹{}›", saved.join(", ")))
+    });
+    let item = format!("{} {} · {model}{}", i + 1, app.agent_name(&f.backend), shown.unwrap_or_default());
     if bot.and_then(|b| b.agent_step.as_deref()) == Some(f.backend.as_str()) {
         format!("{item} (in use)")
     } else if let Some(note) = bot.and_then(|b| rest_note(b, &f.backend)) {

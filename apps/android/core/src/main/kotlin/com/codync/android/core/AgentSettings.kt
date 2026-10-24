@@ -2,8 +2,9 @@ package com.codync.android.core
 
 import kotlinx.serialization.Serializable
 
-/** A model setting (effort, fast…) and the values the agent accepts. */
-@Serializable data class ModelOption(val id: String, val name: String, val values: List<ModelOptionValue> = emptyList(), val default: String? = null)
+/** A model setting (effort, fast…) and the values the agent accepts; [category] is the agent's ACP category (`thought_level`: the effort level). */
+@Serializable data class ModelOption(val id: String, val name: String, val values: List<ModelOptionValue> = emptyList(), val default: String? = null,
+    val category: String? = null)
 @Serializable data class ModelOptionValue(val id: String, val name: String)
 @Serializable data class AgentModel(val id: String, val name: String, val description: String? = null, val options: List<ModelOption>? = null)
 /** `fastMode`: the agent offers Fast mode (absent on older hosts). */
@@ -19,6 +20,8 @@ import kotlinx.serialization.Serializable
         return choices
     }
     fun normalize(selected: String?): String? = selected?.takeIf { it.isNotBlank() && it != agentDefault?.id }
+    /** The settings to show for a bot's model. Default (`""`) shows those of the model the agent runs by default, which is the one a bot on Default gets. */
+    fun settings(model: String): List<ModelOption> = models.firstOrNull { it.id == model.ifEmpty { currentModelId } }?.options.orEmpty()
 }
 data class ModelChoice(val id: String?, val name: String, val description: String? = null)
 

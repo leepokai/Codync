@@ -61,6 +61,16 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    /** Its main agent session is running (on the agent [agentStep] names), whatever it listed. */
+    val sessionLive: Boolean = false,
+    /** What that session last listed its settings as (setting id → value); null with no session running. */
+    val sessionOptions: Map<String, String>? = null,
+    /** The settings that session offers for the model it runs; null until it lists them. */
+    val sessionSettings: List<ModelOption>? = null,
+    /** Saved settings that didn't take, by id. */
+    val settingIssues: Map<String, SettingIssue> = emptyMap(),
+    /** A change that starts a new agent session waits for the running reply. */
+    val restartPending: Boolean = false,
 ) {
     /** [agent]'s rest, unless it's over. */
     fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }

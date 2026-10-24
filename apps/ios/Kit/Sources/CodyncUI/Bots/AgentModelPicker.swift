@@ -1,9 +1,10 @@
 import CodyncKit
 import SwiftUI
 
-/// Models come from the selected computer's agent, never a bundled provider list.
-/// Fast mode is a second card row, shown while the agent offers it or while it's on
-/// (so it can be turned off).
+/// Models come from the selected computer's agent, never a bundled provider list. The model's
+/// settings follow it: the Effort level row first (the agent's `thought_level` setting), then the
+/// agent's others under their own names. Fast mode is a second card row, shown while the agent
+/// offers it or while it's on (so it can be turned off).
 struct AgentModelPicker: View {
     let backend: String
     @Binding var selection: String?
@@ -13,6 +14,11 @@ struct AgentModelPicker: View {
     var fastMode: Binding<Bool>?
     /// The saved bot: whether its own sessions offer Fast mode, and why the agent refused it.
     var bot: Bot?
+    /// For the Effort level's line: what this step's own agent reports while it runs, and what the host saved.
+    /// Nil: no line (a fallback being added, an unsaved agent or model).
+    var status: (report: SessionReport?, saved: [String: String])?
+    /// The bot is replying: a change waits for the reply.
+    var working = false
     @Environment(BotStore.self) private var store
     @State private var catalog: AgentModels?
     @State private var catalogScope: String?
@@ -55,9 +61,24 @@ struct AgentModelPicker: View {
         )
     }
 
-    /// Settings the selected model offers.
+    /// Settings the selected model offers (on Default, the agent's default model's).
     private var modelOptions: [AgentModels.Option] {
-        catalog?.models.first { $0.id == value.wrappedValue }?.options ?? []
+        catalog?.settings(for: value.wrappedValue) ?? []
+    }
+
+    private func effortLevel(saved: String?) -> EffortLevel {
+        EffortLevel.row(catalog: modelOptions, saved: saved, report: status?.report, loading: loading,
+                        failed: failure != nil, chosenModel: !value.wrappedValue.isEmpty)
+    }
+
+    /// The Effort level row, captioned from the host's saved value; nothing to report for a value not saved yet.
+    private var effort: (level: EffortLevel, caption: String?) {
+        guard case .row(let setting, _) = effortLevel(saved: nil), let id = setting?.id else {
+            return (effortLevel(saved: nil), nil)
+        }
+        let level = effortLevel(saved: status?.saved[id])
+        guard case .row(_, let caption) = level, let status, status.saved[id] == options[id] else { return (level, nil) }
+        return (level, caption)
     }
 
     private func optionValue(_ id: String) -> Binding<String> {
@@ -66,7 +87,10 @@ struct AgentModelPicker: View {
 
     private func choices(_ option: AgentModels.Option) -> [(String, String)] {
         let fallback = option.values.first { $0.id == option.default }?.name
-        return [("", fallback.map { "Default · \($0)" } ?? "Default")] + option.values.map { ($0.id, $0.name) }
+        var result = [("", fallback.map { "Default · \($0)" } ?? "Default")] + option.values.map { ($0.id, $0.name) }
+        // A saved value the agent no longer lists stays visible until it's changed.
+        if let value = options[option.id], !option.values.contains(where: { $0.id == value }) { result.append((value, value)) }
+        return result
     }
 
     private var showsFastMode: Bool {
@@ -76,7 +100,7 @@ struct AgentModelPicker: View {
     }
 
     var body: some View {
-        modelRow
+        content
             .onChange(of: backend) { _, _ in
                 selection = nil
                 options = [:]
@@ -89,55 +113,94 @@ struct AgentModelPicker: View {
         }
     }
 
-    private var modelRow: some View {
+    private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(L10n.tr("Model"))
-                    .foregroundStyle(Palette.text)
-                    .fixedSize()
-                Spacer(minLength: 0)
-                HStack(spacing: 4) {
-                    if backend != "custom" { refreshControl }
-                    if backend == "custom" || (!loading && catalog?.models.isEmpty != false) {
-                        TextField("Default", text: value)
-                            .plainTextInput()
-                            .multilineTextAlignment(.trailing)
-                            .textFieldStyle(.plain)
-                            .frame(minWidth: 0, maxWidth: 180)
-                            .outlinedPill()
-                    } else {
-                        ChoicePicker(selection: value, options: modelChoices, fitsAvailableWidth: true)
-                    }
-                }
-            }
-            ForEach(modelOptions) { option in
-                HStack(spacing: 8) {
-                    Text(option.name)
-                        .foregroundStyle(Palette.text)
-                        .fixedSize()
-                    Spacer(minLength: 0)
-                    ChoicePicker(selection: optionValue(option.id), options: choices(option), fitsAvailableWidth: true)
-                }
-                .transition(.opacity)
-            }
-            if backend != "custom", !loading {
-                if let failure {
-                    Text(L10n.tr(failure))
-                        .font(.caption)
-                        .foregroundStyle(Palette.warning)
-                } else if catalog?.models.isEmpty == true {
-                    Text(L10n.tr("This agent doesn't advertise a model list. Leave Default or enter a model ID."))
+            modelRow
+            effortRow
+            otherRows
+        }
+        .animation(Motion.reduced(Motion.fade, reduceMotion), value: modelOptions.map(\.id))
+    }
+
+    @ViewBuilder private var effortRow: some View {
+        let (level, caption) = effort
+        switch level {
+        case .later:
+            Text("Effort level appears once the agent runs this model.")
+                .font(.caption)
+                .foregroundStyle(Palette.secondary)
+        case .row(let setting, _):
+            VStack(alignment: .leading, spacing: 2) {
+                if let setting { settingRow("Effort level", setting) }
+                if let caption {
+                    Text(caption)
                         .font(.caption)
                         .foregroundStyle(Palette.secondary)
                 }
             }
-            if fastMode != nil {
-                Text(L10n.tr("Changing the model starts a new agent session. Chat history is kept."))
+            .transition(.opacity)
+        case .none:
+            EmptyView()
+        }
+    }
+
+    private func settingRow(_ label: String, _ option: AgentModels.Option) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .foregroundStyle(Palette.text)
+                .fixedSize()
+            Spacer(minLength: 0)
+            ChoicePicker(selection: optionValue(option.id), options: choices(option), fitsAvailableWidth: true)
+        }
+        .transition(.opacity)
+    }
+
+    @ViewBuilder private var otherRows: some View {
+        // The rest of what the running session lists, and any saved setting nobody lists (so it can be cleared).
+        let effortID: String? = if case .row(let setting?, _) = effortLevel(saved: nil) { setting.id } else { nil }
+        ForEach(EffortLevel.shown(catalog: modelOptions, report: status?.report, saved: options).filter { $0.id != effortID }) { option in
+            settingRow(option.name, option)
+        }
+        if backend != "custom", !loading {
+            if let failure {
+                Text(L10n.tr(failure))
+                    .font(.caption)
+                    .foregroundStyle(Palette.warning)
+            } else if catalog?.models.isEmpty == true {
+                Text(L10n.tr("This agent doesn't advertise a model list. Leave Default or enter a model ID."))
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
             }
         }
-        .animation(Motion.reduced(Motion.fade, reduceMotion), value: modelOptions.map(\.id))
+        if fastMode != nil {
+            Text(L10n.tr(working
+                ? "Changes to the model or effort level apply after this reply, in a new agent session. Chat history is kept; the agent’s session context starts fresh."
+                : "Changes to the model or effort level apply to the next message, in a new agent session. Chat history is kept; the agent’s session context starts fresh."))
+                .font(.caption)
+                .foregroundStyle(Palette.secondary)
+        }
+    }
+
+    private var modelRow: some View {
+        HStack(spacing: 8) {
+            Text(L10n.tr("Model"))
+                .foregroundStyle(Palette.text)
+                .fixedSize()
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+                if backend != "custom" { refreshControl }
+                if backend == "custom" || (!loading && catalog?.models.isEmpty != false) {
+                    TextField("Default", text: value)
+                        .plainTextInput()
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.plain)
+                        .frame(minWidth: 0, maxWidth: 180)
+                        .outlinedPill()
+                } else {
+                    ChoicePicker(selection: value, options: modelChoices, fitsAvailableWidth: true)
+                }
+            }
+        }
     }
 
     /// Loading and refresh share one fixed slot, so the row never grows for loading.

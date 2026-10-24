@@ -149,7 +149,12 @@ struct BotSettingsForm: View {
         AgentModelPicker(backend: draft.backend, selection: $draft.model, options: $draft.modelOptions,
                          fastMode: Binding(get: { draft.fastMode ?? false }, set: { on in
                              withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { draft.fastMode = on }
-                         }), bot: bot)
+                         }), bot: bot,
+                         // The running agent's word is about the saved agent and model, not an unsaved choice.
+                         status: bot.flatMap { b in
+                             b.backend == draft.backend && b.model == draft.model ? (b.report(for: b.backend), b.modelOptions) : nil
+                         },
+                         working: bot?.status == "working")
     }
 
     /// While the bot runs on a fallback: which, and Switch back.

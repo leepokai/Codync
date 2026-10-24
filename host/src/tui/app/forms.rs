@@ -246,8 +246,9 @@ impl App {
                         if !ids.is_empty() {
                             let i = ids.iter().position(|x| *x == f.backend).unwrap_or(0);
                             f.backend.clone_from(&ids[cycle(i, d, ids.len())]);
-                            // Another agent's model ids mean nothing here, and it can't be its own fallback.
+                            // Another agent's model ids and settings mean nothing here, and it can't be its own fallback.
                             f.model.clear();
+                            f.model_options = (String::new(), BTreeMap::new());
                             let own = f.backend.clone();
                             f.fallbacks.retain(|x| x.backend != own);
                             self.want_models(&f.backend);
@@ -263,7 +264,7 @@ impl App {
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::ModelOptions => {
                         let model = f.model.text.trim().to_owned();
-                        let offered = self.model_settings(&f.backend, &model);
+                        let offered = self.form_settings(&f, None);
                         if !space {
                             f.sub = cycle(f.sub, d, offered.len().max(1));
                         } else if let Some(o) = offered.get(f.sub) {
@@ -380,7 +381,8 @@ impl Form {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AgentModel, test_app};
+    use super::super::effort::in_order as settings_in_order;
+    use super::super::{AgentModel, setting_label, test_app};
     use super::*;
 
     #[tokio::test]
@@ -402,6 +404,100 @@ mod tests {
         assert!(f.model_options().is_some_and(BTreeMap::is_empty), "back to the agent's default");
         f.model = Editor::with("other");
         assert!(f.model_options().is_none(), "another model starts without settings");
+    }
+
+    #[tokio::test]
+    async fn a_bot_on_the_default_model_sets_the_default_models_settings() {
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "gpt-6.1-sol", "models": [
+            {"id": "gpt-6.1-sol", "name": "6.1 Sol", "options": [{"id": "reasoning_effort", "name": "Reasoning Effort",
+             "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]}]},
+            {"id": "gpt-6.1-mini", "name": "6.1 Mini", "options": []}]});
+        app.models.insert("codex".into(), Some(AgentModel::list(&catalog)));
+        app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "backend": "codex"})).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::ModelOptions).expect("an options field");
+        let space = KeyEvent::from(KeyCode::Char(' '));
+        let Some(Overlay::Form(f)) = app.form_key(f, space) else { panic!("the editor stays") };
+        assert_eq!(f.model_options().and_then(|o| o.get("reasoning_effort")).map(String::as_str), Some("low"));
+    }
+
+    #[tokio::test]
+    async fn another_agent_starts_without_the_old_agents_settings_and_the_effort_level_comes_first() {
+        let mut app = test_app();
+        app.backends = ["claude", "codex"]
+            .iter()
+            .map(|id| json!({"id": id, "name": id, "available": true, "installed": true}))
+            .collect();
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": [
+            {"id": "verbosity", "name": "Verbosity", "values": [{"id": "terse", "name": "Terse"}]},
+            {"id": "effort", "name": "Thinking", "category": "thought_level", "values": [{"id": "high", "name": "High"}]}]}]});
+        app.models.insert("claude".into(), Some(AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "backend": "claude", "modelOptions": {"effort": "high"}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        let order: Vec<&str> =
+            settings_in_order(app.model_settings("claude", "")).iter().map(|o| setting_label(o)).collect();
+        assert_eq!(order, ["Effort level", "Verbosity"]);
+        f.field = FIELDS.iter().position(|x| *x == Field::Agent).expect("an agent field");
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Right)) else {
+            panic!("the editor stays")
+        };
+        assert_eq!(f.backend, "codex");
+        assert!(f.model_options().is_some_and(BTreeMap::is_empty), "claude's effort isn't codex's");
+    }
+
+    #[tokio::test]
+    async fn an_effort_level_only_the_running_session_lists_can_be_picked() {
+        // Reviewer 5997efbb: discovery lists settings for the default model only; the session running the bot's
+        // chosen model lists its effort level.
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "m", "models": [
+            {"id": "m", "name": "M", "options": []}, {"id": "big", "name": "Big", "options": []}]});
+        app.models.insert("claude".into(), Some(AgentModel::list(&catalog)));
+        let level = json!({"id": "effort", "name": "Effort", "category": "thought_level",
+            "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]});
+        let bot = json!({"id": "b", "backend": "claude", "model": "big", "sessionLive": true,
+            "sessionOptions": {"effort": "low"}, "sessionSettings": [level]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::ModelOptions).expect("an options field");
+        let space = KeyEvent::from(KeyCode::Char(' '));
+        let Some(Overlay::Form(mut f)) = app.form_key(f, space) else { panic!("the editor stays") };
+        assert_eq!(f.model_options().and_then(|o| o.get("effort")).map(String::as_str), Some("low"));
+        // Another model in the form: the running session's list is for "big", not for it.
+        f.model = Editor::with("m");
+        let Some(Overlay::Form(f)) = app.form_key(f, space) else { panic!("the editor stays") };
+        assert!(
+            f.model_options().is_none_or(BTreeMap::is_empty),
+            "nothing to pick for a model nobody listed settings for"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_saved_setting_the_agent_no_longer_lists_stays_visible_and_can_be_cleared() {
+        // Greptile on #204: a saved effort level vanished from the editor once its agent stopped listing it.
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": []}]});
+        app.models.insert("claude".into(), Some(AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "backend": "claude", "modelOptions": {"effort": "high"}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        let shown: Vec<String> = app.form_settings(&f, None).into_iter().map(|o| o.id).collect();
+        assert_eq!(shown, ["effort"], "saved, listed by nobody");
+        f.field = FIELDS.iter().position(|x| *x == Field::ModelOptions).expect("an options field");
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Char(' '))) else {
+            panic!("the editor stays")
+        };
+        assert!(f.model_options().is_some_and(BTreeMap::is_empty), "space clears it");
     }
 
     #[tokio::test]

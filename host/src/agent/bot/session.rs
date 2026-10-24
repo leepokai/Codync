@@ -1,8 +1,8 @@
 //! The bot's ACP sessions: starting its agent, new/load, routine runs' sessions.
 
 use super::fast_mode::Listing;
-use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
-use super::{Actor, Conn, Instructions};
+use super::launch::{Selected, claude_meta, launch_commands, select_model, start_agent, system_prompt};
+use super::{Actor, Conn, Instructions, NoticeStyle};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::chat::{context, memory};
@@ -27,6 +27,30 @@ impl Actor {
         let sid = sid.filter(|s| !s.is_empty())?;
         self.run_sessions.insert(slot.to_owned(), sid.clone());
         Some(sid)
+    }
+
+    /// A session is up: the main one's own word on its settings becomes the bot's report, and what was left out is
+    /// said in the chat.
+    fn opened_session(&mut self, slot: Option<&str>, sid: &str, selected: &Selected) {
+        if slot.is_none() {
+            let process = self.conn.as_ref().map_or(0, |c| c.process);
+            self.reported.opened(sid, process, &selected.options);
+            self.reported.unconfirmed(sid, &selected.unconfirmed, selected.model_unlisted);
+            let left_out: Vec<_> = selected.left_out.iter().map(|(id, value, _)| (id.clone(), value.clone())).collect();
+            self.reported.left_out(&left_out);
+        }
+        for (_, _, line) in &selected.left_out {
+            self.notice(line, NoticeStyle::Info);
+        }
+    }
+
+    /// The agent refused one of the bot's settings: the session start fails, and the bot's own says which.
+    fn refused(&mut self, slot: Option<&str>, selected: &mut Selected) -> Result<()> {
+        let Some((id, value, error)) = selected.rejected.take() else { return Ok(()) };
+        if slot.is_none() {
+            self.reported.rejected(&id, &value);
+        }
+        Err(error)
     }
 
     pub(super) fn set_session(&mut self, slot: Option<&str>, sid: Option<&str>) {
@@ -203,13 +227,22 @@ impl Actor {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
-                    let res = if res.get("configOptions").is_some() || res.get("models").is_some() {
+                    let mut selected = if res.get("configOptions").is_some() || res.get("models").is_some() {
                         select_model(&conn.acp, &res, &sid, &self.cfg).await?
                     } else {
-                        res
+                        Selected { options: res, ..Selected::default() }
                     };
+                    // The agent refused one of the bot's settings (see `refused`).
+                    if let Some((id, value, error)) = selected.rejected.take() {
+                        if slot.is_none() {
+                            self.reported.rejected(&id, &value);
+                        }
+                        return Err(error);
+                    }
+                    let res = selected.options.clone();
                     conn.loaded.insert(sid.clone(), Instant::now());
                     self.note_options(&sid, &res, Listing::Session);
+                    self.opened_session(slot, &sid, &selected);
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.
                         context::mark_announced(&self.hub.store, &self.cfg.id, &s, s.system_identity.clone())?;
@@ -241,8 +274,10 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
-        let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
-        self.note_options(&sid, &options, Listing::Session);
+        let mut selected = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        self.refused(slot, &mut selected)?;
+        self.note_options(&sid, &selected.options, Listing::Session);
+        self.opened_session(slot, &sid, &selected);
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;
         self.turn_session = Some(sid.clone());

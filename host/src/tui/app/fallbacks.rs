@@ -1,6 +1,7 @@
 //! The bot form's Fallbacks field: the agents that carry on, in order, when the bot's own can't answer
 //! (`agent::fallback`). ←/→ picks a fallback or the "+ add" slot after them; space adds the next free agent on the
-//! slot and cycles a fallback's model; `a` gives a fallback the next free agent; `[`/`]` move it; `x` removes it. `A`
+//! slot and cycles a fallback's model; `e` cycles its Effort level through Default and the values its agent lists for
+//! its model; `a` gives a fallback the next free agent; `[`/`]` move it; `x` removes it. `A`
 //! on a failure notice that offers a fallback opens the field.
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -45,6 +46,24 @@ impl App {
                 if let Some(model) = self.cycle_model(&step.backend, step.model.as_deref().unwrap_or_default(), 1) {
                     step.model = (!model.is_empty()).then_some(model);
                     step.model_options.clear();
+                }
+            }
+            KeyCode::Char('e') if at < f.fallbacks.len() => {
+                // Its agent's list loads on the first press; nothing starts that agent before.
+                self.want_models(&f.fallbacks[at].backend);
+                let setting = super::effort_setting(&self.step_settings(f, Some(at))).cloned();
+                let step = &mut f.fallbacks[at];
+                if let Some(o) = setting {
+                    // Default (the agent's own), then each value.
+                    let ids: Vec<&str> =
+                        std::iter::once("").chain(o.values.iter().map(|(id, _)| id.as_str())).collect();
+                    let now = step.model_options.get(&o.id).map_or("", String::as_str);
+                    let next = ids[cycle(ids.iter().position(|i| *i == now).unwrap_or(0), 1, ids.len())];
+                    if next.is_empty() {
+                        step.model_options.remove(&o.id);
+                    } else {
+                        step.model_options.insert(o.id.clone(), next.to_owned());
+                    }
                 }
             }
             KeyCode::Char('a') if at < f.fallbacks.len() => {
@@ -114,6 +133,175 @@ mod tests {
         assert_eq!(agents(&f), ["codex"]);
         assert!(!app.fallback_key(&mut f, key(KeyCode::Char('q'))), "other keys aren't the field's");
         assert!(!f.dirty(), "back to the list it opened with");
+    }
+
+    #[tokio::test]
+    async fn each_fallback_has_its_own_effort_level() {
+        let mut app = test_app();
+        let level = |id: &str| {
+            json!({"id": id, "name": "Effort", "category": "thought_level",
+                "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]})
+        };
+        let catalog = |options: serde_json::Value| json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": options}]});
+        app.models.insert("claude".into(), Some(super::super::AgentModel::list(&catalog(json!([level("effort")])))));
+        app.models
+            .insert("codex".into(), Some(super::super::AgentModel::list(&catalog(json!([level("reasoning_effort")])))));
+        app.models.insert("gemini".into(), Some(super::super::AgentModel::list(&catalog(json!([])))));
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "modelOptions": {"effort": "high"},
+            "fallbacks": [{"backend": "codex", "model": null}, {"backend": "gemini", "model": null}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"reasoning_effort": "low"}, "sessionSettings": [level("reasoning_effort")]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        let key = |c: KeyCode| KeyEvent::from(c);
+        let item =
+            |app: &App, f: &Form, i: usize| crate::tui::view::fallbacks::step_item(app, None, i, &f.fallbacks[i]);
+        assert_eq!(
+            item(&app, &f, 0),
+            "1 codex · default · effort ‹default›",
+            "its own agent's list, not the bot's value"
+        );
+        assert_eq!(item(&app, &f, 1), "2 gemini · default", "an agent without an effort level shows none");
+        let caption = |app: &App, f: &Form, step| match app.form_effort(f, step) {
+            super::super::Effort::Row { caption, .. } => caption,
+            other => panic!("no row: {other:?}"),
+        };
+        assert_eq!(caption(&app, &f, Some(0)).as_deref(), Some("In use: Low (agent default)"), "the bot runs on it");
+        assert_eq!(
+            caption(&app, &f, None).as_deref(),
+            Some("Not running · Saved: High"),
+            "the bot's own isn't running"
+        );
+
+        assert!(app.fallback_key(&mut f, key(KeyCode::Char('e'))));
+        assert_eq!(f.fallbacks[0].model_options, [("reasoning_effort".to_owned(), "low".to_owned())].into());
+        assert_eq!(caption(&app, &f, Some(0)), None, "nothing to report for a value not saved yet");
+        app.fallback_key(&mut f, key(KeyCode::Char('e')));
+        app.fallback_key(&mut f, key(KeyCode::Char('e')));
+        assert!(f.fallbacks[0].model_options.is_empty(), "Default drops the entry's own value");
+        app.fallback_key(&mut f, key(KeyCode::Char('e')));
+        f.sub = 1;
+        assert!(app.fallback_key(&mut f, key(KeyCode::Char('e'))), "the key is the field's");
+        assert!(f.fallbacks[1].model_options.is_empty(), "nothing to pick where the agent lists no effort level");
+        app.fallback_key(&mut f, key(KeyCode::Char('[')));
+        assert_eq!(
+            f.fallbacks[1].model_options,
+            [("reasoning_effort".to_owned(), "low".to_owned())].into(),
+            "moves with it"
+        );
+        assert_eq!(
+            f.model_options().and_then(|o| o.get("effort")).map(String::as_str),
+            Some("high"),
+            "the bot's own stays"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_running_fallbacks_own_list_lets_its_effort_level_be_picked() {
+        // Reviewer 5997efbb: the fallback's agent lists its effort level only on the running session.
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": []}]});
+        app.models.insert("codex".into(), Some(super::super::AgentModel::list(&catalog)));
+        let level = json!({"id": "reasoning_effort", "name": "Effort", "category": "thought_level",
+            "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]});
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "fallbacks": [{"backend": "codex", "model": null}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"reasoning_effort": "high"}, "sessionSettings": [level]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        assert!(app.fallback_key(&mut f, KeyEvent::from(KeyCode::Char('e'))));
+        assert_eq!(f.fallbacks[0].model_options, [("reasoning_effort".to_owned(), "low".to_owned())].into());
+        let item = crate::tui::view::fallbacks::step_item(&app, app.bots.get("b"), 0, &f.fallbacks[0]);
+        assert_eq!(item, "1 codex · default · effort ‹Low› (in use)");
+    }
+
+    #[tokio::test]
+    async fn a_fallbacks_saved_effort_shows_without_its_agents_list_and_stays() {
+        // Greptile on #204: the chain showed a saved fallback effort only where its agent listed one.
+        let mut app = test_app();
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": []}]});
+        app.models.insert("gemini".into(), Some(super::super::AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude",
+            "fallbacks": [{"backend": "gemini", "model": null,
+                "modelOptions": {"reasoning_effort": "high", "verbosity": "terse"}}]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        let item = |app: &App, f: &Fallback| crate::tui::view::fallbacks::step_item(app, app.bots.get("b"), 0, f);
+        let saved = app.bots["b"].fallbacks[0].clone();
+        assert_eq!(item(&app, &saved), "1 gemini · default · saved ‹high, terse›");
+        app.models.clear();
+        assert_eq!(item(&app, &saved), "1 gemini · default · saved ‹high, terse›", "no list loaded");
+        app.models.insert("gemini".into(), Some(super::super::AgentModel::list(&catalog)));
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        assert!(app.fallback_key(&mut f, KeyEvent::from(KeyCode::Char('e'))));
+        // Reviewer on e3d88788: discovery lists no settings for a model it doesn't run, so absence proves nothing.
+        assert_eq!(f.fallbacks[0].model_options, saved.model_options, "e never drops what its agent's list leaves out");
+    }
+
+    #[tokio::test]
+    async fn a_session_that_lists_fewer_settings_than_the_catalog_keeps_the_catalogs_others() {
+        // Greptile on #204: Cursor lists its settings per model, while its session lists only the model.
+        let mut app = test_app();
+        let level = |values: serde_json::Value| json!({"id": "effort", "name": "Effort", "category": "thought_level", "values": values});
+        let verbosity = json!({"id": "verbosity", "name": "Verbosity", "values": [{"id": "terse", "name": "Terse"}]});
+        let catalog = json!({"currentModelId": "m", "models": [{"id": "m", "name": "M",
+            "options": [level(json!([{"id": "low", "name": "Low"}])), verbosity]}]});
+        app.models.insert("cursor".into(), Some(super::super::AgentModel::list(&catalog)));
+        let bot = |settings: serde_json::Value| {
+            Bot::parse(&json!({"id": "b", "backend": "cursor", "sessionLive": true, "sessionSettings": settings}))
+                .expect("a bot")
+        };
+        let ids = |app: &App, b: &Bot| -> Vec<(String, usize)> {
+            app.settings_for(Some(b), "cursor", "", true).iter().map(|o| (o.id.clone(), o.values.len())).collect()
+        };
+        let quiet = bot(json!([]));
+        assert_eq!(ids(&app, &quiet), [("effort".to_owned(), 1), ("verbosity".to_owned(), 1)]);
+        let own = bot(json!([level(json!([{"id": "low", "name": "Low"}, {"id": "max", "name": "Max"}]))]));
+        assert_eq!(ids(&app, &own), [("effort".to_owned(), 2), ("verbosity".to_owned(), 1)], "the session's own wins");
+    }
+
+    #[tokio::test]
+    async fn a_running_fallbacks_line_says_what_its_session_runs_not_only_what_is_saved() {
+        // Greptile on #204: the chain showed the saved High beside "in use" while the agent ran Low.
+        let mut app = test_app();
+        let level = json!({"id": "reasoning_effort", "name": "Effort", "category": "thought_level",
+            "values": [{"id": "low", "name": "Low"}]});
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude",
+            "fallbacks": [{"backend": "codex", "model": null, "modelOptions": {"reasoning_effort": "high"}}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"reasoning_effort": "low"}, "sessionSettings": [level],
+            "settingIssues": {"reasoning_effort": {"issue": "not_offered", "value": "high"}}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        let line = crate::tui::view::fallbacks::chain_line(&app, &app.bots["b"]);
+        assert_eq!(
+            line.as_deref(),
+            Some("Fallbacks: 1 codex · default · effort: In use: Low · Saved: high not offered (in use)")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_running_fallbacks_line_reads_the_setting_its_session_lists() {
+        // Reviewer on b513536b: the catalog's effort level had another id than the session's.
+        let mut app = test_app();
+        let level = |id: &str| {
+            json!({"id": id, "name": "Effort", "category": "thought_level",
+                "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]})
+        };
+        let catalog =
+            json!({"currentModelId": "m", "models": [{"id": "m", "name": "M", "options": [level("old_effort")]}]});
+        app.models.insert("codex".into(), Some(super::super::AgentModel::list(&catalog)));
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude",
+            "fallbacks": [{"backend": "codex", "model": null, "modelOptions": {"effort": "high"}}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"effort": "high"}, "sessionSettings": [level("effort")]});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        let line = crate::tui::view::fallbacks::chain_line(&app, &app.bots["b"]);
+        assert_eq!(line.as_deref(), Some("Fallbacks: 1 codex · default · effort: In use: High (in use)"));
     }
 
     #[tokio::test]

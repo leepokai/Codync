@@ -22,6 +22,7 @@ mod files;
 mod launch;
 mod lifecycle;
 mod queue;
+mod reported;
 mod session;
 mod turn;
 mod updates;
@@ -186,6 +187,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         tools_changed: false,
         restart_after_turn: false,
         fast_support,
+        reported: reported::Reported::default(),
         idle_checked: Instant::now(),
         relay: fallback::Relay::default(),
     };
@@ -234,6 +236,8 @@ pub(crate) struct Conn {
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     sessions: SessionCaps,
     pub(crate) adapter: Adapter,
+    /// This process among the host's agent processes: a report from one never describes another.
+    pub(crate) process: u64,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     started: Instant,
@@ -352,6 +356,8 @@ struct Actor {
     restart_after_turn: bool,
     /// What the agent says about Fast mode; clients see it in the bot's runtime.
     fast_support: FastModeSupport,
+    /// What the main session itself says its settings are (`sessionOptions`, `sessionSettings`).
+    reported: reported::Reported,
     /// When idle sessions and agents were last looked for.
     idle_checked: Instant,
     /// The running turn's place in the fallback chain (see `fallback`).
@@ -431,6 +437,7 @@ impl Actor {
                     }
                 },
             }
+            self.publish_report();
         }
         self.files.cancel();
         self.hub.team.cancel_from(&self.cfg.id);
@@ -443,6 +450,25 @@ impl Actor {
 
     fn id(&self) -> String {
         self.cfg.id.clone()
+    }
+
+    /// Publishes the main session's report while that session is live in the running agent, and clears it once
+    /// the session is closed or replaced or the agent is gone.
+    fn publish_report(&mut self) {
+        let (main, conn) = (&self.session_id, &self.conn);
+        self.reported.settle(|sid, process| {
+            main.as_deref() == Some(sid)
+                && conn.as_ref().is_some_and(|c| c.process == process && c.loaded.contains_key(sid))
+        });
+        let (options, settings) = self.reported.wire();
+        let (issues, pending, live) = (self.reported.issues(), self.restart_after_turn, self.reported.live());
+        self.hub.set_runtime(&self.cfg.id, |r| {
+            r.session_options = options;
+            r.session_settings = settings;
+            r.setting_issues = issues;
+            r.restart_pending = pending;
+            r.session_live = live;
+        });
     }
 
     fn set_activity(&self, a: &str) {

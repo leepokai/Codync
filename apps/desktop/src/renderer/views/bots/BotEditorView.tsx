@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
+import { reportFor } from '@shared/model-settings'
 import { draftOf, type Bot, type BotDraft, type DirListing } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
@@ -138,7 +139,18 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
     </Field>
   )
   const model = [
-    <AgentModelPicker key="model" backend={draft.backend} models={models} selection={draft.model} onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions} />,
+    <AgentModelPicker
+      key="model"
+      backend={draft.backend}
+      models={models}
+      selection={draft.model}
+      onChange={setModel}
+      options={draft.modelOptions ?? {}}
+      onOptionsChange={setModelOptions}
+      // The running agent's word is about the saved agent and model, not an unsaved choice.
+      status={saved && saved.backend === draft.backend && (saved.model ?? null) === (draft.model ?? null) ? { report: reportFor(saved, 0), saved: saved.modelOptions } : undefined}
+      working={saved?.status === 'working'}
+    />,
     (draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved)) ? (
       // Shown while the agent offers it (its model list, or the bot's own sessions), or while it's on.
       <div key="fast" className="fade-in">

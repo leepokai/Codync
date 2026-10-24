@@ -28,6 +28,9 @@ impl Actor {
             return;
         }
         let Some(conn) = self.conn.as_mut() else { return };
+        if listing != Listing::Session {
+            self.reported.listed(sid, options);
+        }
         let option = fast_mode_config(options).cloned();
         let was_on = conn.fast_options.get(sid).is_some_and(fast_mode_on);
         let support = match &option {
@@ -55,8 +58,14 @@ impl Actor {
         let Some(option) = self.conn.as_ref().and_then(|c| c.fast_options.get(sid)) else { return };
         let (Some(config_id), Some(value)) = (option["id"].as_str(), fast_mode_change(option, on)) else { return };
         let params = json!({"sessionId": sid, "configId": config_id, "value": value});
+        let config_id = config_id.to_owned();
         match self.session_request("session/set_config_option", params).await {
-            Ok(answer) => self.note_options(sid, &answer, Listing::Switch),
+            Ok(answer) => {
+                if !answer["configOptions"].is_array() {
+                    self.reported.unconfirmed(sid, &[config_id], false);
+                }
+                self.note_options(sid, &answer, Listing::Switch);
+            }
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't set Fast mode");
                 self.notice(&format!("Couldn't change Fast mode: {error:#}"), NoticeStyle::Info);

@@ -96,6 +96,12 @@ impl Actor {
                 // restarts into it, one that can't starts afresh.
                 let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.load);
+                if cfg.model_options != self.cfg.model_options
+                    || cfg.model != self.cfg.model
+                    || cfg.backend != self.cfg.backend
+                {
+                    self.reported.settings_changed();
+                }
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
                     || cfg.cwd != self.cfg.cwd

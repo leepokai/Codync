@@ -40,6 +40,8 @@ struct FallbackList: View {
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var adding = false
+    /// The fallback being edited, by its agent (each agent is in the chain once).
+    @State private var editing: String?
     @State private var explaining = false
 
     private var fallbacks: [BotFallback] { draft.fallbacks ?? [] }
@@ -65,6 +67,13 @@ struct FallbackList: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .codyncSheet(isPresented: $adding) { AddFallbackSheet(choices: choices) { new in change { $0.append(new) } } }
+        .codyncSheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+            if let entry = fallbacks.first(where: { $0.backend == editing }) {
+                AddFallbackSheet(editing: entry, bot: bot) { edited in
+                    change { list in list = list.map { $0.backend == edited.backend ? edited : $0 } }
+                }
+            }
+        }
         .codyncSheet(isPresented: $explaining) { FallbackInfoSheet() }
         SwitchRow("Let the bot change its fallbacks", detail: "It can set this list itself, for example when you ask it to.",
                   isOn: Binding(get: { draft.selfFallbacks ?? true }, set: { draft.selfFallbacks = $0 }))
@@ -82,12 +91,28 @@ struct FallbackList: View {
     }
 
     private func row(_ fallback: BotFallback, at i: Int) -> some View {
+        summary(fallback, at: i)
+    }
+
+    /// What the fallback's own agent reports while the bot runs on it, or what is saved for it, without starting the
+    /// agent; nothing for an entry not saved yet.
+    private func line(_ fallback: BotFallback) -> String? {
+        let saved = bot?.fallbacks?.first { $0.backend == fallback.backend }
+        let current = saved?.model == fallback.model && saved?.modelOptions == fallback.modelOptions
+        let report = current && bot?.agentStep?.agent == fallback.backend ? bot?.report(for: fallback.backend) : nil
+        return EffortLevel.fallbackLine(saved: fallback.modelOptions, report: report)
+    }
+
+    private func summary(_ fallback: BotFallback, at i: Int) -> some View {
         let name = model.hello?.backends.first { $0.id == fallback.backend }.map(model.agentLabel) ?? model.backendName(fallback.backend)
         return HStack(spacing: 10) {
             Text(L10n.tr("\(i + 1)")).font(.subheadline.monospacedDigit()).foregroundStyle(Palette.secondary)
             AgentIcon(registry: model.agentRegistry(fallback.backend), size: 18)
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(L10n.tr(name)) · \(L10n.tr(fallback.model ?? "Default"))").foregroundStyle(Palette.text).lineLimit(1)
+                if let line = line(fallback) {
+                    Text(line).font(.caption).foregroundStyle(Palette.secondary)
+                }
                 if let rest = bot?.rest(of: fallback.backend) {
                     Text(rest.line).font(.caption).foregroundStyle(Palette.secondary)
                 }
@@ -113,10 +138,10 @@ struct FallbackList: View {
     }
 
     private func menu(at i: Int) -> [MenuItem] {
-        var items: [MenuItem] = []
+        var items: [MenuItem] = [MenuItem("Edit…", icon: "pencil") { editing = fallbacks[i].backend }]
         if i > 0 { items.append(MenuItem("Move up", icon: "arrow.up") { change { $0.swapAt(i, i - 1) } }) }
         if i < fallbacks.count - 1 { items.append(MenuItem("Move down", icon: "arrow.down") { change { $0.swapAt(i, i + 1) } }) }
-        items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: !items.isEmpty) { change { $0.remove(at: i) } })
+        items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: true) { change { $0.remove(at: i) } })
         return items
     }
 
@@ -127,10 +152,15 @@ struct FallbackList: View {
     }
 }
 
-/// +: a new fallback's agent and model, from the same pickers as the bot's own.
+/// +: a new fallback's agent and model, from the same pickers as the bot's own. Edit: one in the chain, its agent kept,
+/// its model and settings changed. Only here does a fallback's agent start, to list what it offers.
 struct AddFallbackSheet: View {
     let choices: [Backend]
     let add: (BotFallback) -> Void
+    /// Editing a fallback already in the chain; the saved bot gives its Effort level's line.
+    private let editing: Bool
+    private let bot: Bot?
+    private let saved: BotFallback?
     @State private var fallback: BotFallback
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
@@ -138,13 +168,31 @@ struct AddFallbackSheet: View {
     init(choices: [Backend], add: @escaping (BotFallback) -> Void) {
         self.choices = choices
         self.add = add
+        editing = false
+        bot = nil
+        saved = nil
         _fallback = State(initialValue: BotFallback(backend: (choices.first(where: \.available) ?? choices.first)?.id ?? ""))
+    }
+
+    init(editing entry: BotFallback, bot: Bot?, done: @escaping (BotFallback) -> Void) {
+        choices = []
+        add = done
+        editing = true
+        self.bot = bot
+        saved = bot?.fallbacks?.first { $0.backend == entry.backend && $0.model == entry.model }
+        _fallback = State(initialValue: entry)
+    }
+
+    /// The Effort level's line: what this fallback's agent reports while the bot runs on it, for what the host saved.
+    private var status: (report: SessionReport?, saved: [String: String])? {
+        guard let saved, saved.model == fallback.model else { return nil }
+        return (bot?.agentStep?.agent == fallback.backend ? bot?.report(for: fallback.backend) : nil, saved.modelOptions)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            ModalHeader("Add fallback") {
-                IconButton("Add", systemImage: "checkmark") {
+            ModalHeader(editing ? "Edit fallback" : "Add fallback") {
+                IconButton(editing ? "Done" : "Add", systemImage: "checkmark") {
                     add(fallback)
                     dismiss()
                 }
@@ -153,10 +201,15 @@ struct AddFallbackSheet: View {
             CardForm {
                 CardSection {
                     ValueRow("Agent") {
-                        ChoicePicker(selection: $fallback.backend, options: choices.map { ($0.id, model.agentLabel($0)) },
-                                     image: { AgentIcon.image(registry: model.agentRegistry($0)) })
+                        if editing {
+                            Text(model.backendName(fallback.backend)).foregroundStyle(Palette.text)
+                        } else {
+                            ChoicePicker(selection: $fallback.backend, options: choices.map { ($0.id, model.agentLabel($0)) },
+                                         image: { AgentIcon.image(registry: model.agentRegistry($0)) })
+                        }
                     }
-                    AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions)
+                    AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions,
+                                     status: status)
                 }
             }
         }

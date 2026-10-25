@@ -402,6 +402,7 @@ impl Actor {
     /// Publishes the main session's report while that session is live in the running agent, and clears it once
     /// the session is closed or replaced or the agent is gone.
     fn publish_report(&mut self) {
+        self.reported.on_agent(&self.cfg.backend);
         let (main, conn) = (&self.session_id, &self.conn);
         self.reported.settle(|sid, process| {
             main.as_deref() == Some(sid)

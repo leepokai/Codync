@@ -18,6 +18,8 @@ pub(super) struct Reported {
     /// Saved settings that didn't take, by id: `not_offered` (left out, never sent) or `rejected` (the agent refused
     /// it). They outlive the session they happened in, until the next one opens or the bot's settings change.
     issues: BTreeMap<String, (&'static str, String)>,
+    /// The agent `issues` happened on: another agent's editor never shows them.
+    issues_agent: Option<String>,
 }
 
 impl Reported {
@@ -59,13 +61,32 @@ impl Reported {
     }
 
     /// Settings left out of the session just opened (never sent).
-    pub(super) fn left_out(&mut self, settings: &[(String, String)]) {
+    pub(super) fn left_out(&mut self, agent: &str, settings: &[(String, String)]) {
+        self.bind(agent);
         self.issues.extend(settings.iter().map(|(id, value)| (id.clone(), ("not_offered", value.clone()))));
     }
 
     /// The agent refused setting `id`: the session didn't start.
-    pub(super) fn rejected(&mut self, id: &str, value: &str) {
+    pub(super) fn rejected(&mut self, agent: &str, id: &str, value: &str) {
+        self.bind(agent);
         self.issues.insert(id.to_owned(), ("rejected", value.to_owned()));
+    }
+
+    /// Issues are about `agent` from now on: any about another agent no longer apply.
+    fn bind(&mut self, agent: &str) {
+        if self.issues_agent.as_deref() != Some(agent) {
+            self.issues.clear();
+            self.issues_agent = Some(agent.to_owned());
+        }
+    }
+
+    /// The bot runs on `agent` now (its own, or a fallback): issues another agent had are dropped, as after Switch
+    /// back, where its own never skipped them.
+    pub(super) fn on_agent(&mut self, agent: &str) {
+        if self.issues_agent.as_deref().is_some_and(|a| a != agent) {
+            self.issues.clear();
+            self.issues_agent = None;
+        }
     }
 
     /// The bot's saved settings changed: what went wrong with the old ones no longer applies.
@@ -88,7 +109,8 @@ impl Reported {
     /// Keeps the report only while its session is live in the process that opened it (`live(sid, process)`).
     pub(super) fn settle(&mut self, live: impl Fn(&str, u64) -> bool) {
         if self.session.as_deref().is_some_and(|sid| !live(sid, self.process)) {
-            *self = Self { issues: std::mem::take(&mut self.issues), ..Self::default() };
+            let (issues, issues_agent) = (std::mem::take(&mut self.issues), self.issues_agent.take());
+            *self = Self { issues, issues_agent, ..Self::default() };
         }
     }
 
@@ -106,7 +128,7 @@ mod tests {
     #[test]
     fn what_went_wrong_outlives_the_session_until_the_settings_or_session_change() {
         let mut r = Reported::default();
-        r.rejected("effort", "max");
+        r.rejected("claude", "effort", "max");
         r.settle(|_, _| false);
         assert_eq!(
             r.issues(),
@@ -116,10 +138,26 @@ mod tests {
         r.settings_changed();
         assert_eq!(r.issues(), serde_json::json!({}), "a new choice isn't the refused one");
         r.opened("main", 1, &serde_json::json!({}));
-        r.left_out(&[("effort".to_owned(), "high".to_owned())]);
+        r.left_out("claude", &[("effort".to_owned(), "high".to_owned())]);
         assert_eq!(r.issues(), serde_json::json!({"effort": {"issue": "not_offered", "value": "high"}}));
         r.opened("next", 1, &serde_json::json!({}));
         assert_eq!(r.issues(), serde_json::json!({}), "a new session starts over");
+    }
+
+    #[test]
+    fn what_went_wrong_stays_with_the_agent_it_happened_on() {
+        // Greptile on #204 (1644a28f): a fallback's skipped effort showed in the main agent's editor after Switch back.
+        let mut r = Reported::default();
+        r.opened("fallback", 1, &serde_json::json!({}));
+        r.left_out("codex", &[("effort".to_owned(), "high".to_owned())]);
+        r.on_agent("codex");
+        assert_eq!(r.issues(), serde_json::json!({"effort": {"issue": "not_offered", "value": "high"}}));
+        r.on_agent("claude");
+        assert_eq!(r.issues(), serde_json::json!({}), "the main agent never skipped it");
+        r.rejected("claude", "effort", "max");
+        r.settle(|_, _| false);
+        r.on_agent("claude");
+        assert_eq!(r.issues(), serde_json::json!({"effort": {"issue": "rejected", "value": "max"}}), "its own stays");
     }
 
     #[test]

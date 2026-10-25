@@ -38,7 +38,7 @@ impl Actor {
             self.reported.opened(sid, process, &selected.options);
             self.reported.unconfirmed(sid, &selected.unconfirmed, selected.model_unlisted);
             let left_out: Vec<_> = selected.left_out.iter().map(|(id, value, _)| (id.clone(), value.clone())).collect();
-            self.reported.left_out(&left_out);
+            self.reported.left_out(&self.cfg.backend, &left_out);
         }
         for (_, _, line) in &selected.left_out {
             self.notice(line, NoticeStyle::Info);
@@ -49,7 +49,7 @@ impl Actor {
     fn refused(&mut self, slot: Option<&str>, selected: &mut Selected) -> Result<()> {
         let Some((id, value, error)) = selected.rejected.take() else { return Ok(()) };
         if slot.is_none() {
-            self.reported.rejected(&id, &value);
+            self.reported.rejected(&self.cfg.backend, &id, &value);
         }
         Err(error)
     }
@@ -250,7 +250,7 @@ impl Actor {
                     // The agent refused one of the bot's settings (see `refused`).
                     if let Some((id, value, error)) = selected.rejected.take() {
                         if slot.is_none() {
-                            self.reported.rejected(&id, &value);
+                            self.reported.rejected(&self.cfg.backend, &id, &value);
                         }
                         return Err(error);
                     }

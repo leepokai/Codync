@@ -148,6 +148,11 @@
   flex: none;
   text-align: right;
 }
+.settings-usage-note {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+}
 .settings-usage-reset {
   width: 130px;
   flex: none;

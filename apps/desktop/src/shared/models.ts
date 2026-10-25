@@ -253,6 +253,8 @@ export interface BotMessage {
   text: string
   reply?: string
   detail?: string
+  /** The peer's name when it is on another of the user's computers (its id is `name@computer`). */
+  peerName?: string
 }
 
 /** "Earlier context was summarized": the harness's summary, when it gave one. */
@@ -394,6 +396,8 @@ export interface UsageWindow {
   percent: number
   resetsAt?: number | null
   resetsText?: string | null
+  /** A reading that isn't a share of a cap. Shown instead of the percent, and never the tightest limit. */
+  text?: string | null
 }
 
 export interface UsageProvider {

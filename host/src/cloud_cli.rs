@@ -18,6 +18,11 @@ pub struct CloudArgs {
     /// the cloud, can then add a device).
     #[arg(long, value_parser = ["code", "auto"])]
     approval: Option<String>,
+    /// Whether the cloud assistant (ChatGPT, Claude…) you connect to Codync through
+    /// mcp.codync.dev may message this computer's bots: `on` or `off` (the default). Its calls
+    /// reach this computer through the cloud unencrypted.
+    #[arg(long, value_parser = ["on", "off"])]
+    assistants: Option<String>,
     /// Cloud base URL for this computer. `https://…`, or `http://127.0.0.1` / `localhost` for a relay on this machine.
     #[arg(long, conflicts_with = "clear_url")]
     url: Option<String>,
@@ -32,7 +37,7 @@ pub struct CloudArgs {
 
 /// `codync-host cloud`: shows or changes the cloud this computer uses.
 pub async fn run(args: CloudArgs) -> Result<()> {
-    let CloudArgs { port, enable, disable, approval, url, clear_url, token } = args;
+    let CloudArgs { port, enable, disable, approval, assistants, url, clear_url, token } = args;
     let mut status = None;
     if clear_url {
         status = Some(local_call(port, "setCloudUrl", json!({ "url": "" })).await?);
@@ -51,6 +56,9 @@ pub async fn run(args: CloudArgs) -> Result<()> {
     if let Some(approval) = approval {
         status = Some(local_call(port, "setApproval", json!({ "approval": approval })).await?);
     }
+    if let Some(assistants) = assistants {
+        status = Some(local_call(port, "setAssistants", json!({ "enabled": assistants == "on" })).await?);
+    }
     if enable || disable {
         status = Some(local_call(port, "setCloud", json!({"enabled": !disable})).await?);
     }
@@ -61,7 +69,7 @@ pub async fn run(args: CloudArgs) -> Result<()> {
     let text = |k: &str| status[k].as_str().unwrap_or("-").to_owned();
     let owner = status["owner"]["email"].as_str().or(status["owner"]["userId"].as_str()).unwrap_or("none");
     println!(
-        "enabled:    {}\nurl:        {}\nrelay:      {}\ntoken:      {}\nregistered: {}\nconnected:  {}\naccount:    {owner}\napproval:   {}\nlast error: {}",
+        "enabled:    {}\nurl:        {}\nrelay:      {}\ntoken:      {}\nregistered: {}\nconnected:  {}\naccount:    {owner}\napproval:   {}\nassistants: {}\nlast error: {}",
         status["enabled"],
         text("url"),
         text("relay"),
@@ -69,6 +77,7 @@ pub async fn run(args: CloudArgs) -> Result<()> {
         status["registered"],
         status["connected"],
         text("approval"),
+        if status["assistants"] == true { "on" } else { "off" },
         text("lastError"),
     );
     Ok(())

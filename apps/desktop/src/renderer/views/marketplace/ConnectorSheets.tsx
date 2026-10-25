@@ -9,7 +9,11 @@ import { ErrorText, Field, WebLink } from './pieces'
 import { usePlugins } from './plugins'
 import { useTr } from '../../lib/use-language'
 
-export function InstallConnectorSheet({ item, requestId, done }: { item: MarketConnector; requestId?: string; done: () => void }) {
+/**
+ * `addsAtOnce`: opened by an Add, so a connector with nothing to fill in installs at once. Opened to
+ * look at it, nothing installs until Add in the header.
+ */
+export function InstallConnectorSheet({ item, requestId, addsAtOnce = true, done }: { item: MarketConnector; requestId?: string; addsAtOnce?: boolean; done: () => void }) {
   const store = useStore()
   const plugins = usePlugins(store)
   const dismiss = useDismiss()
@@ -49,7 +53,7 @@ export function InstallConnectorSheet({ item, requestId, done }: { item: MarketC
   useEffect(() => {
     if (started.current) return
     started.current = true
-    if (item.options.length === 1 && item.options[0].inputs.length === 0) void install()
+    if (addsAtOnce && item.options.length === 1 && item.options[0].inputs.length === 0) void install()
   }, [])
 
   const tr = useTr()

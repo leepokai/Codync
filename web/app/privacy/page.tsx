@@ -9,7 +9,7 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: October 24, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: October 26, 2026</p>
 
         <Section title="Overview">
           Codync lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
@@ -30,6 +30,10 @@ export default function Privacy() {
 
         <Section title="Routine webhooks">
           A routine can start when another service sends it a webhook at its public address on our relay. These deliveries are not end-to-end encrypted: the relay receives them over HTTPS, can read their content, and keeps each one until your computer collects it, for up to 72 hours. It also stores the routine&apos;s key to check signatures. With &ldquo;Reach from anywhere&rdquo; off, deliveries no longer reach your computer, but the relay still accepts them at the old public address and keeps them, readable, for up to 72 hours; they run if you turn it back on within that time. To stop them, remove the address from the sender, or delete the routine or replace its key while &ldquo;Reach from anywhere&rdquo; is on.
+        </Section>
+
+        <Section title="Cloud assistants">
+          If you turn cloud assistants on at a computer and add the Codync connector to ChatGPT, Claude or another assistant, that assistant&apos;s requests to your bots and the bots&apos; replies are not end-to-end encrypted: they pass through our relay over HTTPS, which can read them but doesn&apos;t store them, and the assistant&apos;s provider sees them as part of your conversation there, under its own privacy policy. Cloud assistants are off on every computer until you turn them on at that computer, and the relay passes on only requests from your own Codync account.
         </Section>
 
         <Section title="Codync account (optional)">
@@ -56,7 +60,8 @@ export default function Privacy() {
             <li><strong>Apple Push Notification service</strong>: delivers notifications and Live Activity updates on iPhone.</li>
             <li><strong>Google Firebase Cloud Messaging</strong>: delivers notifications and live updates on Android.</li>
             <li><strong>Cloudflare Workers</strong>: runs the push relay (nothing stored), the relay between your phone and your computer (computer registrations, messages waiting for an offline computer, webhook deliveries) and the Codync account service; its TURN service forwards a remote screen session&apos;s encrypted video when there&apos;s no direct path.</li>
-            <li><strong>Clerk</strong>: runs sign-in for the optional Codync account.</li>
+            <li><strong>Clerk</strong>: runs sign-in for the optional Codync account, including the sign-in an assistant you connect to Codync uses.</li>
+            <li><strong>n0 (iroh public relays)</strong>: only if you connect your computers with codync-network using the default connector. When two of your computers can&apos;t connect directly, their encrypted traffic goes through iroh&apos;s public relays, and they find each other through n0&apos;s address lookup; these see the computers&apos; IP addresses and connection metadata, not what they say. With your own relay or the private connector, none of it reaches n0.</li>
             <li><strong>PostHog (US)</strong>: stores the usage analytics described above, unless you turned them off.</li>
             <li><strong>The AI agents you choose</strong>: they run on your computer under their own terms and privacy policies.</li>
             <li><strong>OpenAI or Google (optional, voice)</strong>: only if you add your own OpenAI or Gemini API key for calls or dictation. In a realtime call, your voice goes from your phone or computer directly to that provider, together with the bot&apos;s name and description and the chat messages it asks for during the call. In a call&apos;s speech mode, and when you dictate a message with the provider, your recording goes to your computer, which sends it to the provider to be transcribed, together with the names of the bots on that computer as spelling hints, and sends the bot&apos;s replies to the provider to be read aloud. All of it is under your account and the provider&apos;s privacy policy. The key is stored encrypted on your computer and sent only to that provider, never to our relay or services; a realtime call gets a short-lived credential made from it. Without a key, voice uses your device&apos;s own speech recognition.</li>

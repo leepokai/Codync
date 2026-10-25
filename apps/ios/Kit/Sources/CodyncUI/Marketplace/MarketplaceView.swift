@@ -2,18 +2,18 @@ import CodyncKit
 import SwiftUI
 
 /// Extensions for the bots on one computer (the store in the environment): Agents,
-/// Connectors and Skills, one at a time. Each list turns a page; a connector page that
-/// isn't full fetches more from the registry (`ConnectorCatalog`). Installing happens on that
+/// Connectors and Skills, one at a time. Each list scrolls; the connectors load more from the
+/// registry as their end comes into view (`ConnectorCatalog`). Installing happens on that
 /// computer; each bot turns connectors and skills on in its settings.
 public struct MarketplaceView: View {
     @Environment(BotStore.self) var model
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State var search = ""
     @State var connectors = ConnectorCatalog<MarketConnector>()
     @State var skills: [MarketSkill] = []
     @State var loadingSkills = true
     @State var error: String?
     @State var installing: MarketConnector?
+    @State var viewingConnector: MarketConnector?
     @State var busySkill: String?
     @State var addingConnector = false
     @State var writingSkill = false
@@ -21,10 +21,6 @@ public struct MarketplaceView: View {
     @State var agent: Backend?
     @State var addingNode = false
     @State var section = ExtensionSection.agents
-    @State var agentPage = 0
-    @State var skillPage = 0
-    /// Nil until the menu is used, so a phone stays at 6 and a wide layout stays at 10.
-    @State var chosenPageSize: Int?
     @State var showInstalled = false
     @State var showCredentials = false
     @Environment(\.dismissModal) private var dismiss
@@ -68,10 +64,11 @@ public struct MarketplaceView: View {
             do { skills = try await model.marketSkills() } catch { report(error) }
             if !Task.isCancelled { loadingSkills = false }
         }
-        // A size picked from the menu, or one that follows the layout, starts every list over.
-        .onChange(of: pageSize) { _, _ in resetPages() }
         .codyncSheet(item: $installing) { item in
             InstallConnectorSheet(item: item) { Task { await loadConnectors() } }
+        }
+        .codyncSheet(item: $viewingConnector) { item in
+            InstallConnectorSheet(item: item, addsAtOnce: false) { Task { await loadConnectors() } }
         }
         .codyncSheet(isPresented: $showCredentials) { CredentialsView() }
         .codyncSheet(isPresented: $addingConnector) { CustomConnectorSheet() }
@@ -182,7 +179,6 @@ public struct MarketplaceView: View {
                 .textFieldStyle(.plain)
                 .plainTextInput()
                 .onSubmit { Task { await loadConnectors() } }
-                .onChange(of: search) { _, _ in resetPages() }
             if !search.isEmpty {
                 Button { search = ""; Task { await loadConnectors() } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.tertiary)
@@ -204,6 +200,10 @@ public struct MarketplaceView: View {
         await connectors.load(search: query, fetch: fetchConnectors)
     }
 
+    func loadMoreConnectors() async {
+        await connectors.loadMore(fetch: fetchConnectors)
+    }
+
     private func fetchConnectors(search: String, cursor: String?) async throws -> (items: [MarketConnector], next: String?) {
         try await model.marketConnectors(search: search, cursor: cursor)
     }
@@ -212,61 +212,6 @@ public struct MarketplaceView: View {
     func report(_ error: Error) {
         if error is CancellationError || Task.isCancelled { return }
         self.error = error.localizedDescription
-    }
-
-    var pageSize: Int {
-        chosenPageSize ?? (sizeClass == .compact ? CatalogPaging.phonePageSize : CatalogPaging.pageSize)
-    }
-
-    private func canTurn(_ forward: Bool) -> Bool {
-        let (page, count, hasMore) = switch section {
-        case .agents: (agentPage, agents.count, false)
-        case .skills: (skillPage, shownSkills.count, false)
-        case .connectors: (connectors.page, connectors.items.items.count, connectors.hasMore)
-        }
-        if section == .connectors, connectors.loading || connectors.loadingMore { return false }
-        let next = page + (forward ? 1 : -1)
-        return CatalogPaging.clamp(page: next, count: count, size: pageSize, hasMore: hasMore) == next
-    }
-
-    /// How a page turn from an arrow scrolls the pager.
-    var pageMotion: Animation? { reduceMotion ? nil : Motion.layout }
-
-    /// The arrow buttons turn the page; on a phone the pager scrolls over to it.
-    func slide(forward: Bool) {
-        guard canTurn(forward) else { return }
-        let step = forward ? 1 : -1
-        switch section {
-        case .agents: withAnimation(pageMotion) { agentPage += step }
-        case .skills: withAnimation(pageMotion) { skillPage += step }
-        case .connectors: showConnectorPage(connectors.page + step, animated: true)
-        }
-    }
-
-    /// A swipe landed on `page`. The page shows at once; a connector page that isn't full then fills.
-    func swiped(to page: Int) {
-        switch section {
-        case .agents: agentPage = page
-        case .skills: skillPage = page
-        case .connectors: showConnectorPage(page, animated: false)
-        }
-    }
-
-    /// The new size starts every list over (`onChange(of: pageSize)`).
-    func changePageSize(_ size: Int) {
-        chosenPageSize = size
-    }
-
-    private func resetPages() {
-        agentPage = 0
-        skillPage = 0
-        connectors.show(0, size: pageSize)
-    }
-
-    /// Turns the connector list to `page`; a page that isn't full then fills from the registry.
-    func showConnectorPage(_ page: Int, animated: Bool) {
-        withAnimation(animated ? pageMotion : nil) { connectors.show(page, size: pageSize) }
-        Task { await connectors.fill(size: pageSize, animation: pageMotion, fetch: fetchConnectors) }
     }
 }
 

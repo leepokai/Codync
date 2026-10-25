@@ -6,7 +6,9 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /** One bot-to-bot exchange as seen from the chat of one of the two bots (CodyncKit `BotExchange`). */
 data class BotExchange(val id: String, val chatId: String, val seq: Long, val rev: Long, val createdAt: Long,
-    val source: String, val target: String, val text: String, val reply: String?, val outcome: Outcome) {
+    val source: String, val target: String, val text: String, val reply: String?, val outcome: Outcome,
+    /** The peer's name when it is a bot on another computer (its id is `name@computer`, not in this computer's list). */
+    val peerName: String? = null) {
     sealed interface Outcome {
         data object Pending : Outcome
         data object Done : Outcome
@@ -30,7 +32,8 @@ data class BotExchange(val id: String, val chatId: String, val seq: Long, val re
                 "failed", "cancelled" -> Outcome.Failed(field("detail").orEmpty())
                 else -> Outcome.Pending
             }
-            return BotExchange(entry.id, entry.botId, entry.seq, entry.rev, entry.createdAt, source, target, field("text").orEmpty(), field("reply"), outcome)
+            return BotExchange(entry.id, entry.botId, entry.seq, entry.rev, entry.createdAt, source, target, field("text").orEmpty(), field("reply"), outcome,
+                field("peerName"))
         }
 
         /** The exchanges with `peer` in a chat, oldest first: what the host returned plus the live chat (the higher `rev` wins). */
@@ -44,6 +47,8 @@ data class BotExchange(val id: String, val chatId: String, val seq: Long, val re
 data class BotExchangeGroup(val exchanges: List<BotExchange>) {
     val id: String get() = exchanges.first().id
     val peerId: String get() = exchanges.first().peerId
+    /** The peer's name when it is on another computer. */
+    val peerName: String? get() = exchanges.firstNotNullOfOrNull { it.peerName }
     val createdAt: Long get() = exchanges.first().createdAt
     val failed: Boolean get() = exchanges.any { it.outcome is BotExchange.Outcome.Failed }
     /** What the row says before the peer's name: "Messaged" for one, "3 messages with" for more. */

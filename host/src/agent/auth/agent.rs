@@ -93,7 +93,7 @@ fn stderr_reason(stderr_tail: &str) -> Option<String> {
 /// Lets the agent sign itself in (it usually opens a browser on this computer).
 pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<Value> {
     let (acp, mut inbox, _, _) = start(store, backend).await?;
-    let res = tokio::time::timeout(Duration::from_secs(10 * 60), sign_in(&acp, &mut inbox, method)).await;
+    let res = tokio::time::timeout(Duration::from_mins(10), sign_in(&acp, &mut inbox, method)).await;
     acp.kill().await;
     match res {
         Ok(r) => {

@@ -17,6 +17,9 @@ The Electron composer restores the draft and layout behavior previously fixed in
   both opening and closing. Rapid toggles cancel pending reveal callbacks.
   Reduced Motion removes these transitions.
 - iOS keeps its native multiline field, keyboard and existing Motion animations.
+  Programmatic draft replacements clear the previous `TextSelection` before changing
+  the string; iOS 18 can otherwise trap while converting stale indices to UTF-16.
+  Keyboard edits bind directly to the local text and selection to preserve IME input.
   With a hardware keyboard (iPhone/iPad), Return inserts a newline at the cursor
   and ⌘↩ sends (send state only); on Android, Enter inserts a newline and
   Ctrl/Meta+Enter sends (send state only).

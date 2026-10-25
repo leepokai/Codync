@@ -62,7 +62,7 @@ public struct ProviderWidgetCard: View {
                     }
                     .padding(.vertical, 4)
                 }
-                ForEach(provider.windows.prefix(layout == .large ? 4 : 2)) { window in
+                ForEach(provider.limits.prefix(layout == .large ? 4 : 2)) { window in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline) {
                             Text(L10n.tr(window.title))
@@ -95,7 +95,7 @@ public struct ProviderWidgetCard: View {
     }
 
     private var accessibleUsage: String {
-        let windows = layout == .small ? provider.tightest.map { [$0] } ?? [] : Array(provider.windows.prefix(layout == .large ? 4 : 2))
+        let windows = layout == .small ? provider.tightest.map { [$0] } ?? [] : Array(provider.limits.prefix(layout == .large ? 4 : 2))
         return windows.map { window in
             "\(window.title), \(Int(window.percent.rounded())) percent" +
                 (window.resetsShort(now: date).map { ", \($0)" } ?? "")

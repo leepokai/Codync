@@ -68,7 +68,7 @@ pub struct Defaults {
     speech: String,
 }
 
-const REFRESH_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+const REFRESH_EVERY: Duration = Duration::from_hours(24);
 
 fn defaults_key(p: Provider) -> String {
     format!("voice-defaults.{}", p.id())

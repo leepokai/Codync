@@ -184,7 +184,7 @@ internal fun until(at: Long, now: Long): String {
                     color = if ((top.percent ?: 0.0) >= 90) Palette.danger else Palette.text)
                 Text("${tr(top.title)} · ${tr("highest usage")}", Modifier.padding(bottom = 6.dp), style = Type.system(11f), color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            for (window in provider.windows.take(if (layout == ProviderLayout.Large) 4 else 2)) {
+            for (window in provider.limits.take(if (layout == ProviderLayout.Large) 4 else 2)) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(tr(window.title), Modifier.weight(1f), style = Type.system(11f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)

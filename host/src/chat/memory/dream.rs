@@ -13,14 +13,14 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 /// Quiet time after the last turn before a run.
-const IDLE: Duration = Duration::from_secs(5 * 60);
+const IDLE: Duration = Duration::from_mins(5);
 /// User messages that start a run without waiting, and the most one run reads.
 const BATCH: usize = 8;
 /// Entries (the user's messages and final replies) one run looks at.
 const READ_LIMIT: i64 = 40;
 const MESSAGE_CHARS: usize = 4_000;
 /// How often an idle bot checks whether its daily time review is due.
-const REVIEW_CHECK: Duration = Duration::from_secs(60 * 60);
+const REVIEW_CHECK: Duration = Duration::from_hours(1);
 
 pub enum DreamEvent {
     /// A turn the user started has finished.

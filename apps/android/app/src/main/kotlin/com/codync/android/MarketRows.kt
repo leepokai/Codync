@@ -24,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -72,13 +71,8 @@ import com.kyant.shapes.RoundedRectangle
     }
 }
 
-/** A catalog row's room, with nothing in it (an added row has nothing to tap). A short last page keeps a full page of rows. */
-@Composable internal fun MarketRowSpacer() {
-    Box(Modifier.alpha(0f).clearAndSetSemantics {}) { MarketRow(" ", " ", added = true, icon = {}) {} }
-}
-
-/** An agent in the Agents row: its logo on a tile, its name and where it stands. */
-@Composable internal fun AgentCard(backend: AgentBackend, modifier: Modifier = Modifier.width(128.dp), action: () -> Unit) {
+/** An agent in the Agents grid: its logo on a tile, its name and where it stands. */
+@Composable internal fun AgentCard(backend: AgentBackend, modifier: Modifier, action: () -> Unit) {
     val status = when {
         !backend.installed && backend.curated -> "Not installed"
         backend.needsNode -> "Needs Node.js"
@@ -86,25 +80,15 @@ import com.kyant.shapes.RoundedRectangle
         backend.signedIn == false -> "Not signed in"
         else -> "Installed"
     }
-    AgentCardBody(modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent.copy(alpha = 0.45f)).plainButton(action = action)
-        .semantics(mergeDescendants = true) {}, backend.registry ?: backend.id, backend.name, tr(status))
-}
-
-/** An agent tile's room, with nothing in it. A short last page keeps a full page of rows, so the bar under it stays put. */
-@Composable internal fun AgentCardSpacer(modifier: Modifier = Modifier) {
-    AgentCardBody(modifier.alpha(0f).clearAndSetSemantics {}, null, " ", " ")
-}
-
-/** An agent tile's logo, name and status line. */
-@Composable private fun AgentCardBody(modifier: Modifier, registry: String?, name: String, status: String) {
-    Column(modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+    Column(modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent.copy(alpha = 0.45f)).plainButton(action = action)
+        .semantics(mergeDescendants = true) {}.padding(horizontal = 10.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(56.dp).clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent), contentAlignment = Alignment.Center) {
-            AgentIcon(registry, 30.dp)
+        Box(Modifier.size(64.dp).clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent), contentAlignment = Alignment.Center) {
+            AgentIcon(backend.registry ?: backend.id, 34.dp)
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(status, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(backend.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(status), style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

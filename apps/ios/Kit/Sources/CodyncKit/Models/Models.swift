@@ -112,6 +112,8 @@ public struct UsageWindow: Codable, Hashable, Sendable, Identifiable {
     public var resetsAt: Int64?
     /// Human text when only that is known ("Sep 26 at 12pm (Asia/Taipei)").
     public var resetsText: String?
+    /// A reading that isn't a share of a cap ("$4.20", "1.2M tokens", "Unlimited"). Shown instead of the percent.
+    public var text: String? = nil
     public var resetDate: Date? { resetsAt.map(Date.init(milliseconds:)) ?? resetsText.flatMap { Self.parseReset($0) } }
 
     /// Claude Code's text: "Sep 26 at 12pm (Asia/Taipei)", "Sep 25 at 7:30pm (Asia/Taipei)", or just "7:30pm (…)".

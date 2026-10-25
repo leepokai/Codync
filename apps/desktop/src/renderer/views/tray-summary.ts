@@ -7,7 +7,7 @@ import { resetLine, resolvedLanguage, translate } from '../lib/l10n'
 import { prefs, usePref } from '../lib/prefs'
 import { avatarColor, isDark, palette } from '../lib/theme'
 import type { AppModel } from '../store/app-model'
-import { providerTint, resetDate, untilText, windowTitle } from './usage/usage-model'
+import { providerTint, resetDate, untilText, windowReading, windowTitle } from './usage/usage-model'
 import { drawMascot, nearlyUsedUp } from './usage/ProviderMascot'
 
 const isMac = window.codync.platform === 'darwin'
@@ -89,7 +89,8 @@ function usageLine(w: UsageWindow) {
   const title = translate(windowTitle(w), preference, system)
   const reset = resetDate(w)
   const spoken = reset ? resetLine(`resets in ${untilText(reset)}`, preference, system) : ''
-  return `${title} · ${Math.round(w.percent)}%${spoken ? ` · ${spoken}` : ''}`
+  const reading = windowReading(w)
+  return `${title} · ${reading}${spoken ? ` · ${spoken}` : ''}`
 }
 
 /** Sends what the menu bar shows whenever the stores change. */
@@ -125,7 +126,7 @@ export function useTraySummary(app: AppModel) {
         usage: (local?.usage.providers ?? []).map((p) => ({
           name: p.name,
           icon: canvasImage(`mascot|${p.id}|${iconStyle}|${nearlyUsedUp(p)}`, 16, 16, (ctx) => drawMascot(ctx, p, 16, iconStyle, isDark())),
-          lines: p.windows.map((w) => ({ title: usageLine(w), bar: barIcon(p.id, w) })),
+          lines: p.windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) })),
         })),
         screen: screen
           ? {

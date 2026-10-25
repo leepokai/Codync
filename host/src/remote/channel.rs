@@ -32,9 +32,9 @@ pub const MAX_WS_MESSAGE: usize = 1 << 20;
 const MAX_INBOUND: usize = 1 << 20;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Channel keys are replaced (close `4011`) after this long.
-const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const MAX_AGE: Duration = Duration::from_hours(24);
 /// A pairing channel only lives long enough to redeem its code.
-const PAIRING_MAX_AGE: Duration = Duration::from_secs(120);
+const PAIRING_MAX_AGE: Duration = Duration::from_mins(2);
 const DIRECT_PING: Duration = Duration::from_secs(15);
 const MAX_REQUESTS: usize = 32;
 const MAX_SUBS: usize = 4;

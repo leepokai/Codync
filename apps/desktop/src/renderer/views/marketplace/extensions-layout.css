@@ -1,5 +1,5 @@
-/* The Extensions sheet's layout: the section rail, one paged section, and the pager under its list. */
-/* Header and search stay put, one section fills the rest. */
+/* The Extensions sheet's layout: the section chips and one section, whose list scrolls. */
+/* Header, search and chips stay put, one section fills the rest. */
 .market-frame {
   height: 100%;
   min-height: 0;
@@ -10,40 +10,27 @@
   max-width: 980px;
   margin: 0 auto;
 }
-.market-split {
-  flex: 1;
-  min-height: 0;
+.market-tabs {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.market-rail {
-  width: 176px;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.market-rail-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 8px 12px;
-  border-radius: var(--radius-m);
-  color: var(--secondary);
-  transition: background-color var(--hover), color var(--hover), transform var(--press);
-}
-.market-rail-item:hover {
-  color: var(--text);
-}
-.market-rail-item:active {
-  transform: scale(0.98);
-}
-.market-rail-item.on {
+.market-tab {
+  height: calc(32px * var(--scale));
+  padding: 0 calc(16px * var(--scale));
+  border-radius: var(--radius-pill);
   background: var(--bubble-agent);
   color: var(--text);
-  font-weight: 600;
+  font-size: var(--text-body);
+  white-space: nowrap;
+  transition: background-color var(--hover), color var(--hover), transform var(--press);
+}
+.market-tab:active {
+  transform: scale(0.96);
+}
+.market-tab.on {
+  background: var(--text);
+  color: var(--background);
 }
 .market-panel {
   flex: 1;
@@ -58,45 +45,10 @@
   min-height: 0;
   overflow-y: auto;
 }
-.market-pager {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
+/* The end of a list the registry continues: placeholder rows, or Try again after a failure. */
+.load-more {
   margin-top: 8px;
-  color: var(--secondary);
-  font-size: var(--text-footnote);
-}
-.market-pager-size {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.market-pager-size-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--bubble-agent);
-  color: var(--text);
-  font: inherit;
-}
-.market-pager-fraction {
-  min-width: 3.2em;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-/* Fills a short last page to a full page's height, so the pager stays put. */
-.page-spacer {
-  visibility: hidden;
 }
 @media (max-width: 640px) {
   .market-frame { padding: 28px 18px 16px; }
-  .market-split { flex-direction: column; gap: 12px; }
-  .market-rail { width: auto; flex-direction: row; flex-wrap: wrap; }
-  .market-rail-item { width: auto; }
 }

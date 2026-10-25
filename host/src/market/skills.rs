@@ -125,7 +125,7 @@ async fn catalog() -> Result<Value> {
     let cached = SKILL_CATALOG
         .locked()
         .as_ref()
-        .filter(|(at, _)| at.elapsed() < Duration::from_secs(3600))
+        .filter(|(at, _)| at.elapsed() < Duration::from_hours(1))
         .map(|(_, v)| v.clone());
     let catalog = if let Some(v) = cached {
         v

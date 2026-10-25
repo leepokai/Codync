@@ -6,6 +6,32 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.28.0
+
+### zh-Hant
+- 你的電腦連成一個網路後（在電腦上執行 codync-host network），Bot 可以請其他電腦上的 Bot 幫忙；聊天裡會寫出對方 Bot 和它在哪台電腦。
+- 可以把 Codync 加進 ChatGPT 或 Claude 當聯結器，從那裡請你的 Bot 做事；Bot 的聊天會顯示「Message from Cloud assistant」。
+
+### en-US
+- Once your computers share a network (codync-host network on each), a bot can ask a bot on another computer; the chat names that bot and its computer.
+- Add Codync to ChatGPT or Claude as a connector to give your bots tasks from there; the bot's chat shows Message from Cloud assistant.
+
+## 2.27.0
+
+### zh-Hant
+- 此版本起需要 iOS 26 或更新版本。
+- 修正送出文字、清空或替換聊天草稿時可能閃退的問題。
+- 擴充套件的列表改回往下捲動，不再分頁；聯結器捲到底會自動從 MCP Registry 載入更多。
+- 點聯結器或智慧體只會打開詳情，要按「Add」或「Set up」才會加入或下載。
+- 用量也會顯示這台電腦上其他 agent 的額度，包括 oh-my-pi、Amp、Kiro、Kimi、Antigravity、OpenCode、Mistral Vibe 和 Junie。Cursor 會用本機已登入的帳號向 cursor.com 查詢用量。
+
+### en-US
+- This version requires iOS 26 or later.
+- Fixed a possible crash when sending text or clearing or replacing a chat draft.
+- Extensions lists scroll again instead of paging; connectors load more from the MCP Registry as you reach the end.
+- Tapping a connector or agent only opens its details; nothing is added or downloaded until you press Add or Set up.
+- Usage limits now include the other agents installed on your computer: oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie. Cursor asks cursor.com with the sign-in saved on that computer.
+
 ## 2.26.2
 
 ### zh-Hant

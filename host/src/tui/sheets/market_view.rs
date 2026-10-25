@@ -1,4 +1,4 @@
-//! The Extensions sheet: three tabs, a search field, and a pinned pager.
+//! The Extensions sheet: three tabs, a search field, and the open tab's list.
 
 use super::{App, Buffer, Rect, centered, footer, frame_box, put, row, rput, s, theme, truncate, u, window};
 use crate::tui::l10n::tr;
@@ -29,10 +29,9 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
     };
     let source = source.replace("{name}", &app.host);
     put(buf, inner.x, inner.y + 1, inner.width, &truncate(&source, usize::from(inner.width)), t.dim.patch(t.panel));
-    let page = app.market_page(m);
-    let rows = &page.rows;
-    // Tabs, source line, then the list; under it the pager, the error and the keys.
-    let list_h = usize::from(inner.height.saturating_sub(6));
+    let rows = app.market_rows(m);
+    // Tabs, source line, then the list; under it the error and the keys.
+    let list_h = usize::from(inner.height.saturating_sub(5));
     let mut y = inner.y + 2;
     if App::market_stale(m) {
         put(buf, inner.x, y, inner.width, &tr("↵ searches the registry"), t.secondary.patch(t.panel));
@@ -92,21 +91,11 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
         put(buf, inner.x, y, inner.width, &msg, t.dim.patch(t.panel));
     }
     let keys = match m.tab {
-        Tab::Agents => tr("pgup/pgdn · alt-s · tab · ↵ install / sign in · ^r · esc"),
-        Tab::Connectors => tr("pgup/pgdn · alt-s · tab · ↵ add / sign in · ^x remove · esc"),
-        Tab::Skills => tr("pgup/pgdn · alt-s · tab · ↵ details · ^x remove · esc"),
+        Tab::Agents => tr("tab switch · ↵ install / sign in · ^r refresh · esc close"),
+        Tab::Connectors => tr("tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc"),
+        Tab::Skills => tr("tab switch · ↵ details · ^x remove · esc close"),
     };
     let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();
     let registry = tr("Loading the registry…");
-    // Like the apps, a list still loading for the first time has no pager yet.
-    let settled = match m.tab {
-        Tab::Agents => true,
-        Tab::Connectors => !(m.loading && m.registry.is_empty()),
-        Tab::Skills => m.skills.is_some(),
-    };
-    if settled {
-        let line = page.pager_line(m.page_size);
-        put(buf, inner.x, inner.bottom().saturating_sub(3), inner.width, &line, t.secondary.patch(t.panel));
-    }
     footer(buf, inner, m.error.as_deref().or(loading.then_some(registry.as_ref())), &keys);
 }

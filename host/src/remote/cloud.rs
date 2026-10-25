@@ -59,6 +59,8 @@ pub struct CloudStatus {
     pub owner: Option<Owner>,
     pub last_error: Option<String>,
     pub approval: Approval,
+    /// The user's cloud assistant may message this computer's bots (`setAssistants`, local only).
+    pub assistants: bool,
     /// Whose relay: on a private one there is no account, access request or relayed screen.
     pub relay: RelayKind,
 }

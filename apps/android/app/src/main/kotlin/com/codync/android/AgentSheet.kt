@@ -76,8 +76,9 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
             finally { checking = false }
         }
     }
-    // A known "signed in" needs no agent start; everything else asks the agent (which can't start without its Node.js).
-    LaunchedEffect(Unit) { if ((recheck || backend.signedIn != true) && !backend.needsNode) check() }
+    // A known "signed in" needs no agent start; one set up asks the agent (which can't start without its Node.js).
+    // Opening never downloads one: that waits for Set up.
+    LaunchedEffect(Unit) { if ((recheck || (setUp(backend, auth) && backend.signedIn != true)) && !backend.needsNode) check() }
     val back = { route = null; check() }
     AnimatedContent(route, transitionSpec = {
         val forward = targetState != null
@@ -108,6 +109,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
     val host = state.hostName
     val signedIn = auth?.signedIn ?: backend.signedIn
     val curated = backend.curated
+    val setUp = setUp(backend, auth)
     CardForm {
         CardSection {
             row {
@@ -142,13 +144,18 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) {
                         SetupStepRow(1 + (if (curated) 1 else 0) + (if (backend.node != null) 1 else 0), "Sign in",
-                            statusText(backend, auth, signedIn, checking, host), signedIn == true, null)
+                            statusText(backend, setUp, auth, signedIn, checking, host), signedIn == true, null)
                     }
                     if (checking) ThinkingOrb(ThinkingOrbState.Connecting, 16.dp, Palette.secondary) else IconButton("Check again", "arrow.clockwise", action = check)
                 }
             }
             val detail = auth?.detail
             if (signedIn != true && !detail.isNullOrEmpty()) row { SelectionContainer { Text(detail, style = Type.footnote, color = Palette.secondary) } }
+            // A registry agent downloads on its first start; an app's own CLI comes from Install above.
+            if (!setUp && !curated && !checking && !backend.needsNode) row {
+                OptionRow("Set up", "Downloads ${backend.name} on $host if it needs to, then checks its sign-in.", "arrow.down.circle",
+                    enabled = authenticating == null, action = check)
+            }
             // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
             if (signedIn != true && !checking) {
                 if (auth?.login == true) row {
@@ -173,10 +180,14 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
     }
 }
 
-private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolean?, checking: Boolean, host: String) = when {
+/** It has run on this computer: its CLI is there, or an earlier check started it. Until then, a check can download it. */
+private fun setUp(backend: AgentBackend, auth: AgentAuth?) = backend.installed || backend.signedIn != null || auth != null
+
+private fun statusText(backend: AgentBackend, setUp: Boolean, auth: AgentAuth?, signedIn: Boolean?, checking: Boolean, host: String) = when {
     checking -> if (auth == null) "Checking with ${backend.name}… The first check can download it." else "Checking…"
     signedIn == true -> "Signed in."
     backend.needsNode -> "Add Node.js first."
+    !setUp -> if (backend.curated) "Install it first." else "Not set up on $host yet."
     signedIn == false -> "Not signed in yet."
     else -> "Couldn't tell. Skip this if you've already signed in on $host."
 }

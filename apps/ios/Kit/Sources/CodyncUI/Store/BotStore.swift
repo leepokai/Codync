@@ -233,8 +233,10 @@ public final class BotStore {
     /// A group's bots that still exist.
     public func members(of group: Bot) -> [Bot] { group.members.compactMap { bots[$0] } }
 
-    /// Display name of an entry's author in a group chat.
-    public func authorName(_ id: String?) -> String { id.flatMap { bots[$0]?.name } ?? "A deleted bot" }
+    /// Display name of an entry's author; `fallback` for one that isn't this computer's (a bot on another computer).
+    public func authorName(_ id: String?, fallback: String? = nil) -> String {
+        id.flatMap { bots[$0]?.name } ?? fallback ?? "A deleted bot"
+    }
 
     func updateComputer(_ change: (inout Computer) -> Void) {
         var c = computer

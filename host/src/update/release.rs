@@ -66,7 +66,7 @@ pub async fn download(url: &str, limit: usize) -> Result<Vec<u8>> {
     let mut response = crate::http()
         .get(url)
         .header(reqwest::header::USER_AGENT, concat!("codync-host/", env!("CARGO_PKG_VERSION")))
-        .timeout(Duration::from_secs(180))
+        .timeout(Duration::from_mins(3))
         .send()
         .await?
         .error_for_status()?;

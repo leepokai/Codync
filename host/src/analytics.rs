@@ -96,6 +96,8 @@ pub enum Event {
     AgentSignedIn,
     SettingChanged,
     HostUpdateInstalled,
+    /// `networkCreate` or `networkJoin`: this computer is in a network of the user's computers.
+    NetworkJoined,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -155,6 +157,7 @@ impl Event {
             Self::AgentSignedIn => "agent_signed_in",
             Self::SettingChanged => "setting_changed",
             Self::HostUpdateInstalled => "host_update_installed",
+            Self::NetworkJoined => "network_joined",
             Self::Exception => "$exception",
         }
     }

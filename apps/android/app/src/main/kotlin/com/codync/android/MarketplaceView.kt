@@ -11,20 +11,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,7 +40,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.AgentBackend
-import com.codync.android.core.CatalogPaging
 import com.codync.android.core.MarketConnector
 import com.codync.android.core.MarketSkill
 import com.codync.android.design.*
@@ -48,8 +49,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
- * Extensions (iOS `MarketplaceView`): Agents, Connectors and Skills, one at a time, each paged.
- * Installing happens on the computer; each bot turns connectors and skills on in its settings.
+ * Extensions (iOS `MarketplaceView`): Agents, Connectors and Skills, one at a time, each a lazy list; the connectors
+ * load more from the registry as their end comes into view. Installing happens on the computer; each bot turns
+ * connectors and skills on in its settings.
  */
 @Composable internal fun MarketplaceView(state: AppState, store: AppStore) {
     var showInstalled by remember { mutableStateOf(false) }
@@ -72,6 +74,7 @@ import kotlinx.coroutines.launch
     var loadingSkills by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var installing by remember { mutableStateOf<MarketConnector?>(null) }
+    var viewingConnector by remember { mutableStateOf<MarketConnector?>(null) }
     var busySkill by remember { mutableStateOf<String?>(null) }
     var addingConnector by remember { mutableStateOf(false) }
     var writingSkill by remember { mutableStateOf(false) }
@@ -80,22 +83,7 @@ import kotlinx.coroutines.launch
     var addingNode by remember { mutableStateOf(false) }
     var showCredentials by remember { mutableStateOf(false) }
     var section by remember { mutableStateOf(ExtensionSection.Agents) }
-    var agentPage by remember { mutableIntStateOf(0) }
-    var skillPage by remember { mutableIntStateOf(0) }
-    var pageSize by remember { mutableIntStateOf(CatalogPaging.phonePageSize) }
-    var pickedPageSize by remember { mutableStateOf(false) }
     val query = search.trim()
-    /**
-     * A size picked from the menu, or one that follows the layout, starts every list over in the same change as
-     * the size, so no pager is ever built for the new size at the old page.
-     */
-    fun resize(size: Int) { pageSize = size; agentPage = 0; skillPage = 0; connectors.show(0, size) }
-    fun changePageSize(size: Int) { pickedPageSize = true; resize(size) }
-    /** Turns the connector list to `page` at once; a page that isn't full then fills from the registry. */
-    fun showConnectorPage(page: Int) {
-        connectors.show(page, pageSize)
-        scope.launch { connectors.fill(pageSize) }
-    }
     fun submit() { scope.launch { connectors.load(query) } }
     LaunchedEffect(Unit) { store.refreshPlugins(); store.refreshBackends() }
     LaunchedEffect(Unit) { connectors.load(query) }
@@ -110,82 +98,58 @@ import kotlinx.coroutines.launch
     val installedSkills = state.plugins?.skills.orEmpty()
     val shownSkills = if (query.isEmpty()) skills else skills.filter { it.name.contains(query, true) || it.description.contains(query, true) }
     val inset = Modifier.padding(horizontal = 44.dp)
-    fun changeSearch(next: String) { search = next; agentPage = 0; skillPage = 0 }
-    fun pagePad(count: Int, shown: Int) = if (count > pageSize) maxOf(0, pageSize - shown) else 0
+    val needsNode = backends.any { it.needsNode }
+    val pinned = section != ExtensionSection.Agents || needsNode
+    // Each section opens at its top.
+    val listState = remember(section) { LazyListState() }
     @Composable fun Pins() {
-        if (section == ExtensionSection.Agents && backends.any { it.needsNode }) NodeNotice(state) { addingNode = true }
+        if (section == ExtensionSection.Agents && needsNode) NodeNotice(state) { addingNode = true }
         if (section == ExtensionSection.Connectors) MarketRow("Custom connector", "Any MCP server: a command or a URL", added = false, addLabel = "New",
             icon = { TileIcon("point.3.connected.trianglepath.dotted") }) { addingConnector = true }
         if (section == ExtensionSection.Skills) MarketRow("Your own skill", "Write instructions a bot can follow", added = false, addLabel = "New",
             icon = { TileIcon("square.and.pencil") }) { writingSkill = true }
     }
-    @Composable fun Lists() {
+    /** The open section's list as lazy items, two agent tiles to a row, so a long list composes only the rows near view. */
+    fun LazyListScope.lists() {
         when (section) {
-            ExtensionSection.Agents -> if (agents.isEmpty()) Text(if (query.isEmpty()) tr("No agents yet.") else tr("No agents match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
-            else {
-                FlankedPager(agentPage, agents.size, pageSize, settle = { agentPage = it }) { index ->
-                    val shown = CatalogPaging.slice(agents, index, pageSize)
-                    val slots = buildList<AgentBackend?> {
-                        addAll(shown)
-                        repeat(pagePad(agents.size, shown.size)) { add(null) }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        for (row in slots.chunked(2)) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            for (backend in row) if (backend != null) AgentCard(backend, Modifier.weight(1f)) { agent = backend }
-                            else AgentCardSpacer(Modifier.weight(1f))
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
+            ExtensionSection.Agents -> if (agents.isEmpty()) item {
+                Text(if (query.isEmpty()) tr("No agents yet.") else tr("No agents match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+            } else items(agents.chunked(2)) { row ->
+                Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (backend in row) AgentCard(backend, Modifier.weight(1f)) { agent = backend }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
             ExtensionSection.Connectors -> when {
-                connectors.loading -> SkeletonRows()
-                connectors.items.items.isEmpty() -> Text(if (query.isEmpty()) tr("Couldn't load connectors.") else tr("No connectors match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+                connectors.loading -> item { SkeletonRows() }
+                connectors.items.items.isEmpty() && !connectors.hasMore -> item {
+                    Text(if (query.isEmpty()) tr("Couldn't load connectors.") else tr("No connectors match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+                }
                 else -> {
                     val rows = connectors.items.items
-                    FlankedPager(connectors.page, rows.size, pageSize, connectors.hasMore, connectors.loadingMore, ::showConnectorPage) { index ->
-                        val shown = CatalogPaging.slice(rows, index, pageSize)
-                        // The page past the loaded rows, while the registry fills it.
-                        if (shown.isEmpty()) SkeletonRows()
-                        else Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            for (c in shown) MarketRow(c.title, c.description ?: c.name, c.installed,
-                                icon = { ServiceLogo(c.website, c.title, c.name) }) { installing = c }
-                            repeat(pagePad(rows.size, shown.size)) { MarketRowSpacer() }
-                        }
+                    items(rows, key = { it.name }) { c ->
+                        MarketRow(c.title, c.description ?: c.name, c.installed, open = if (c.installed) null else ({ viewingConnector = c }),
+                            icon = { ServiceLogo(c.website, c.title, c.name) }) { installing = c }
+                    }
+                    connectors.cursor?.let { cursor -> item { LoadMoreRow(cursor, connectors.error != null) { connectors.loadMore() } } }
+                }
+            }
+            ExtensionSection.Skills -> if (loadingSkills) item { SkeletonRows() }
+            else if (query.isNotEmpty() && shownSkills.isEmpty()) item {
+                Text(tr("No skills match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
+            } else items(shownSkills, key = { it.source }) { s ->
+                val added = s.installed || installedSkills.any { it.id == s.source.lowercase() }
+                MarketRow(s.name, s.description, added, busy = busySkill == s.source,
+                    open = { viewingSkill = SkillRef("catalog/${s.source}", s.name, s.description, s.source, added) }, icon = { SkillGlyph() }) {
+                    busySkill = s.source
+                    scope.launch {
+                        try { store.installSkill(s.source) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (failure: Exception) { error = failure.message ?: "Couldn't add ${s.name}." }
+                        finally { busySkill = null }
                     }
                 }
             }
-            ExtensionSection.Skills -> if (loadingSkills) SkeletonRows()
-            else if (query.isNotEmpty() && shownSkills.isEmpty()) Text(tr("No skills match “{query}”.").replace("{query}", query), style = Type.body, color = Palette.secondary)
-            else {
-                FlankedPager(skillPage, shownSkills.size, pageSize, settle = { skillPage = it }) { index ->
-                    val shown = CatalogPaging.slice(shownSkills, index, pageSize)
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        for (s in shown) {
-                            val added = s.installed || installedSkills.any { it.id == s.source.lowercase() }
-                            MarketRow(s.name, s.description, added, busy = busySkill == s.source,
-                                open = { viewingSkill = SkillRef("catalog/${s.source}", s.name, s.description, s.source, added) }, icon = { SkillGlyph() }) {
-                                busySkill = s.source
-                                scope.launch {
-                                    try { store.installSkill(s.source) }
-                                    catch (cancelled: CancellationException) { throw cancelled }
-                                    catch (failure: Exception) { error = failure.message ?: "Couldn't add ${s.name}." }
-                                    finally { busySkill = null }
-                                }
-                            }
-                        }
-                        repeat(pagePad(shownSkills.size, shown.size)) { MarketRowSpacer() }
-                    }
-                }
-            }
-        }
-    }
-    @Composable fun Pagers() {
-        when (section) {
-            ExtensionSection.Agents -> CatalogPager(agentPage, agents.size, pageSize, go = { agentPage = CatalogPaging.clamp(it, agents.size, pageSize) }, onSize = ::changePageSize)
-            ExtensionSection.Connectors -> if (!connectors.loading) CatalogPager(connectors.page, connectors.items.items.size, pageSize, connectors.hasMore,
-                connectors.loadingMore, ::showConnectorPage, ::changePageSize)
-            ExtensionSection.Skills -> if (!loadingSkills) CatalogPager(skillPage, shownSkills.size, pageSize, go = { skillPage = CatalogPaging.clamp(it, shownSkills.size, pageSize) }, onSize = ::changePageSize)
         }
     }
     @Composable fun SourceLine() {
@@ -197,33 +161,27 @@ import kotlinx.coroutines.launch
     Box(Modifier.fillMaxSize().background(Palette.background)) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 760.dp
-            LaunchedEffect(wide, pickedPageSize) {
-                val size = if (wide) CatalogPaging.pageSize else CatalogPaging.phonePageSize
-                if (!pickedPageSize && size != pageSize) resize(size)
-            }
             Column(Modifier.fillMaxSize().padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Header(state, inset, showInstalled) { showCredentials = true }
-                SearchBox(search, ::changeSearch, inset, ::submit) { changeSearch(""); submit() }
+                SearchBox(search, { search = it }, inset, ::submit) { search = ""; submit() }
                 if (wide) Row(Modifier.weight(1f).padding(horizontal = 44.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     ExtensionRail(section) { section = it }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SourceLine()
                         Pins()
-                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Lists()
-                            Pagers()
-                        }
+                        LazyColumn(Modifier.weight(1f), listState, verticalArrangement = Arrangement.spacedBy(4.dp)) { lists() }
                         Foot()
                     }
-                } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).then(inset), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TabChoice(section, ExtensionSection.entries.map { it to it.title }, { section = it })
-                        SourceLine()
+                } else LazyColumn(Modifier.weight(1f), listState, contentPadding = PaddingValues(horizontal = 44.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    item {
+                        Column(Modifier.padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TabChoice(section, ExtensionSection.entries.map { it to it.title }, { section = it })
+                            SourceLine()
+                        }
                     }
-                    Pins()
-                    Lists()
-                    Pagers()
-                    Foot()
+                    if (pinned) item { Box(Modifier.padding(bottom = 12.dp)) { Pins() } }
+                    lists()
+                    item { Foot() }
                 }
             }
         }
@@ -231,6 +189,7 @@ import kotlinx.coroutines.launch
         Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) { IconButton("Close", "xmark", action = dismiss) }
     }
     CodyncSheet(installing, { installing = null }) { InstallConnectorSheet(it, state, store) { submit() } }
+    CodyncSheet(viewingConnector, { viewingConnector = null }) { InstallConnectorSheet(it, state, store, addsAtOnce = false) { submit() } }
     CodyncSheet(showCredentials, { showCredentials = false }) { CredentialsView(state, store) }
     CodyncSheet(addingConnector, { addingConnector = false }) { CustomConnectorSheet(state, store) }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }

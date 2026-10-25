@@ -375,7 +375,7 @@ struct UsageWidgetView: View {
     @Environment(\.widgetFamily) private var family
 
     private var windows: [(provider: String, window: UsageWindow)] {
-        entry.usage.providers.flatMap { p in p.windows.map { (p.name, $0) } }
+        entry.usage.providers.flatMap { p in p.limits.map { (p.name, $0) } }
     }
 
     private var tightest: (provider: String, window: UsageWindow)? { windows.max { $0.window.percent < $1.window.percent } }
@@ -579,7 +579,7 @@ struct ProviderUsageView: View {
 
     var body: some View {
         Group {
-            if let provider, !provider.windows.isEmpty {
+            if let provider, !provider.limits.isEmpty {
                 ProviderWidgetCard(provider: provider, layout: family == .systemSmall ? .small : family == .systemLarge ? .large : .medium, date: entry.date)
             } else {
                 EmptyWidget(text: L10n.tr("Open Codync to connect a computer and check {provider} usage.").replacingOccurrences(of: "{provider}", with: entry.provider.capitalized))

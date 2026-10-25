@@ -117,6 +117,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let approval = serde_json::from_value(b["approval"].clone()).context("`approval` is code or auto")?;
             serde_json::to_value(crate::remote::cloud::set_approval(hub, approval)?)?
         }
+        "setAssistants" => {
+            let on = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
+            serde_json::to_value(crate::chat::team::assistant::set_enabled(hub, on)?)?
+        }
         "claimSign" => claim_sign(hub, &b).await?,
         _ => return Ok(ControlFlow::Continue(b)),
     }))

@@ -79,7 +79,7 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
             Item::Group(g) => {
                 let from = out.lines.len();
                 let lead = format!("{} messages with ", g.count);
-                bot_message_line(&mut out, app, g.first, &g.peer, &lead, g.failed, from);
+                bot_message_line(&mut out, app, g.first, (&g.peer, g.peer_name.as_deref()), &lead, g.failed, from);
             }
         }
     }
@@ -250,7 +250,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
             if let Some(x) = Exchange::of(&b.id, e) {
                 let lead = format!("{} ", x.verb());
                 let failed = matches!(x.outcome, Outcome::Failed(_));
-                bot_message_line(out, app, e, x.peer(), &lead, failed, from);
+                bot_message_line(out, app, e, (x.peer(), x.peer_name.as_deref()), &lead, failed, from);
                 return;
             }
             let text = if let Some(status) = e.data["connectionRequest"]["status"].as_str() {
@@ -355,11 +355,21 @@ pub(in crate::tui) fn unfoldable(e: &Entry) -> Option<&str> {
 
 /// A bot-to-bot exchange, or a run of them, as one compact line ("· Messaged ▌O▐ Owen",
 /// "· 3 messages with ▌O▐ Owen"); click opens the conversation with `peer`.
-/// Only a failure is marked: its text lives in the conversation sheet.
-fn bot_message_line(out: &mut Built, app: &App, e: &Entry, peer: &str, lead: &str, failed: bool, from: usize) {
+/// Only a failure is marked: its text lives in the conversation sheet. A peer on another
+/// computer goes by the name its exchanges carry.
+fn bot_message_line(
+    out: &mut Built,
+    app: &App,
+    e: &Entry,
+    (peer, remote): (&str, Option<&str>),
+    lead: &str,
+    failed: bool,
+    from: usize,
+) {
     let t = theme();
     gap(out);
-    let (name, color) = app.bots.get(peer).map_or(("A deleted bot", "gray"), |p| (p.name.as_str(), p.color.as_str()));
+    let (name, color) =
+        app.bots.get(peer).map_or((remote.unwrap_or("A deleted bot"), "gray"), |p| (p.name.as_str(), p.color.as_str()));
     let mark = if failed { Span::styled(" × ", t.red) } else { Span::styled(" · ", t.dim) };
     let mut line = vec![
         Span::styled(lead.to_owned(), t.secondary),

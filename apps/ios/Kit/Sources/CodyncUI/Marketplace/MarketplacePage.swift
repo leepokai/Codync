@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Keep fetched catalog metadata in memory. The Extensions tabs page through it.
+/// Keep fetched catalog metadata in memory. The Extensions tabs scroll through it.
 struct MarketplacePage<Item: Identifiable> {
     private(set) var items: [Item] = []
 
@@ -17,42 +17,8 @@ struct MarketplacePage<Item: Identifiable> {
     }
 }
 
-/// How many catalog rows one Extensions page shows, and which page a click lands on.
-enum CatalogPaging {
-    static let pageSize = 10
-    /// Two agent tiles across, three rows: a page has no leftover card.
-    static let phonePageSize = 6
-    static let pageSizes = [6, 10, 20, 50]
-
-    /// Loaded rows split into pages. While the registry still has a cursor, one more page is offered so the bar is never 1 / 1 for a list that continues.
-    static func pageCount(_ count: Int, size: Int = pageSize, hasMore: Bool = false) -> Int {
-        let loaded = count <= 0 ? 1 : (count + size - 1) / size
-        return hasMore ? loaded + 1 : loaded
-    }
-
-    static func clamp(page: Int, count: Int, size: Int = pageSize, hasMore: Bool = false) -> Int {
-        min(max(0, page), pageCount(count, size: size, hasMore: hasMore) - 1)
-    }
-
-    static func slice<T>(_ items: [T], page: Int, size: Int = pageSize) -> ArraySlice<T> {
-        let start = max(0, page) * size
-        return items.dropFirst(start).prefix(size)
-    }
-
-    /// Next stays available through the last shown page, including the page that still has to be fetched.
-    static func canForward(count: Int, page: Int, hasMore: Bool, size: Int = pageSize) -> Bool {
-        page < pageCount(count, size: size, hasMore: hasMore) - 1
-    }
-
-    /// A later page that isn't full yet, so the registry has to be asked. The first page is whatever the first answer held.
-    static func needsFetch(count: Int, page: Int, size: Int = pageSize) -> Bool {
-        let start = max(0, page) * size
-        return start > 0 && start + size > count
-    }
-}
-
-/// The connector list Extensions pages through: the rows loaded so far, the registry cursor and the
-/// page on screen. A page that isn't full asks the registry until it is, or until the cursor ends.
+/// The connector list Extensions scrolls through: the rows loaded so far and the registry cursor.
+/// The end of the list coming into view asks for more (`loadMore`).
 @MainActor @Observable
 final class ConnectorCatalog<Item: Identifiable> {
     typealias Fetch = @MainActor (_ search: String, _ cursor: String?) async throws -> (items: [Item], next: String?)
@@ -60,8 +26,6 @@ final class ConnectorCatalog<Item: Identifiable> {
     private(set) var items = MarketplacePage<Item>()
     /// The registry page after the ones loaded; nil at the end.
     private(set) var cursor: String?
-    /// The page on screen. While the registry fills it, it can be the page past the loaded rows.
-    private(set) var page = 0
     private(set) var loading = true
     private(set) var loadingMore = false
     private(set) var error: String?
@@ -83,7 +47,6 @@ final class ConnectorCatalog<Item: Identifiable> {
             guard !Task.isCancelled, self.request == request else { return }
             items.replace(with: first.items)
             cursor = first.next
-            page = 0
             error = nil
         } catch {
             guard self.request == request, !(error is CancellationError), !Task.isCancelled else { return }
@@ -93,32 +56,22 @@ final class ConnectorCatalog<Item: Identifiable> {
         }
     }
 
-    /// Turns to `next` at once, so a swipe stays where it landed; `fill` then loads its rows.
-    func show(_ next: Int, size: Int) {
-        guard !loading else { return }
-        page = CatalogPaging.clamp(page: next, count: items.items.count, size: size, hasMore: hasMore)
-    }
-
-    /// Asks the registry until the page on screen is full or the cursor ends. A page turned meanwhile is
-    /// filled by the same loop. If a page fails, the list goes back to the last page with rows.
-    func fill(size: Int, animation: Animation? = nil, fetch: Fetch) async {
-        guard !loading, !loadingMore, hasMore, CatalogPaging.needsFetch(count: items.items.count, page: page, size: size) else { return }
+    /// The registry page at the cursor. It can bring nothing Codync can install; the cursor still moves
+    /// on, so `LoadMoreRow` asks again. A failure keeps the cursor and shows under the list.
+    func loadMore(fetch: Fetch) async {
+        guard !loading, !loadingMore, let cursor else { return }
         let request = self.request
         loadingMore = true
+        error = nil
         defer { if self.request == request { loadingMore = false } }
         do {
-            while let cursor, CatalogPaging.needsFetch(count: items.items.count, page: page, size: size) {
-                let more = try await fetch(query, cursor)
-                guard !Task.isCancelled, self.request == request else { return }
-                items.append(more.items)
-                self.cursor = more.next
-            }
-            page = CatalogPaging.clamp(page: page, count: items.items.count, size: size, hasMore: hasMore)
-            error = nil
+            let more = try await fetch(query, cursor)
+            guard self.request == request else { return }
+            items.append(more.items)
+            self.cursor = more.next
         } catch {
             guard self.request == request, !(error is CancellationError), !Task.isCancelled else { return }
             self.error = error.localizedDescription
-            withAnimation(animation) { page = CatalogPaging.clamp(page: page, count: items.items.count, size: size) }
         }
     }
 }

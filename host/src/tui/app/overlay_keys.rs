@@ -53,7 +53,7 @@ impl App {
             Action::Library => self.open_library(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
-            Action::Usage => self.overlays.push(Overlay::Usage),
+            Action::Usage => self.overlays.push(Overlay::Usage(0)),
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
@@ -133,7 +133,19 @@ impl App {
                 self.call("pairing", json!({}), After::Pairing);
                 Some(Overlay::Pair(PairCode::Loading))
             }
-            o @ (Overlay::Usage | Overlay::Pair(_)) => {
+            Overlay::Usage(scroll) => {
+                let (_, height) = crossterm::terminal::size().unwrap_or((80, 24));
+                let max = super::super::view::usage_scroll_max(self, height);
+                match k.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P') => None,
+                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::Usage((scroll + 1).min(max))),
+                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::Usage(scroll.saturating_sub(1))),
+                    KeyCode::PageDown | KeyCode::Char(' ') => Some(Overlay::Usage((scroll + 10).min(max))),
+                    KeyCode::PageUp => Some(Overlay::Usage(scroll.saturating_sub(10))),
+                    _ => Some(Overlay::Usage(scroll)),
+                }
+            }
+            o @ Overlay::Pair(_) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None
                 } else {

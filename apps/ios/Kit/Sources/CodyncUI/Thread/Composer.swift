@@ -20,9 +20,13 @@ struct Composer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The field owns its text; the store only keeps a copy. A field bound straight to the
     /// store loses a hardware keyboard's IME composition (Zhuyin, Pinyin, Kana) on iPad.
-    @State private var draft = ""
-    /// The cursor, so a hardware keyboard's Return starts a new line where it is.
-    @State private var selection: TextSelection?
+    @State private var input = ComposerText()
+    /// Programmatic edits must discard indices into the previous string. Keyboard edits
+    /// bind directly to `input.text` so SwiftUI can maintain selection and IME composition.
+    private var draft: String {
+        get { input.text }
+        nonmutating set { input.replace(with: newValue) }
+    }
     /// Files going out with the next message.
     @State private var files: [OutgoingFile] = []
     @State private var pickingFiles = false
@@ -250,7 +254,7 @@ struct Composer: View {
 
     private var box: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(placeholder, text: $draft, selection: $selection, axis: .vertical)
+            TextField(placeholder, text: $input.text, selection: $input.selection, axis: .vertical)
                 .lineLimit(1...8)
                 .font(.body)
                 .textFieldStyle(.plain)
@@ -398,13 +402,7 @@ struct Composer: View {
     /// An empty box gets none, also right after ⌘↩ sent it (the field submits after the shortcut).
     private func newline() {
         focused = true
-        guard !draft.isEmpty else { return }
-        // A selection left from text that has since changed (dictation, a mention) means the end.
-        let range = if case .selection(let r) = selection?.indices, r.upperBound <= draft.endIndex { r } else { draft.endIndex..<draft.endIndex }
-        // Counted in scalars: a "\n" after a lone "\r" joins it into one Character.
-        let offset = draft.unicodeScalars.distance(from: draft.startIndex, to: range.lowerBound)
-        draft.replaceSubrange(range, with: "\n")
-        selection = TextSelection(insertionPoint: draft.unicodeScalars.index(draft.startIndex, offsetBy: offset + 1))
+        input.insertNewline()
     }
 
     private func submit() {

@@ -324,4 +324,4 @@ impl Actor {
 }
 
 /// How long `session/new` and `session/load` may take, and then setting the bot's model on the session.
-const SESSION_TIMEOUT: Duration = Duration::from_secs(180);
+const SESSION_TIMEOUT: Duration = Duration::from_mins(3);

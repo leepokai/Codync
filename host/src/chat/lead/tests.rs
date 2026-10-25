@@ -111,6 +111,7 @@ async fn check_ins_wait_while_the_plan_is_nearly_used_up() {
                 percent,
                 resets_at: None,
                 resets_text: None,
+                text: None,
             }],
             source: "agent",
             updated_at: 0,

@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// mistake loses what is said after.
 const ABANDONED_MS: i64 = 2 * 60 * 60 * 1000;
 /// How often the host looks for abandoned calls.
-const SWEEP_EVERY: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+const SWEEP_EVERY: std::time::Duration = std::time::Duration::from_mins(5);
 /// The calls in progress (`kv`): what the sweep looks through.
 const OPEN_KEY: &str = "calls.open";
 

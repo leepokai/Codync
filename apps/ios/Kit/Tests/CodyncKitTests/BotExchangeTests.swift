@@ -212,6 +212,18 @@ private func plain(_ id: String, kind: String = "user", seq: Int64) -> Entry {
     #expect(out.count == 1 && g.count == 2 && g.peerId == "owen")
 }
 
+@Test func aPeerOnAnotherComputerIsNamedByItsExchanges() throws {
+    let json = #"""
+    {"id":"n1","seq":3,"botId":"egan","rev":9,"kind":"notice","turn":1,"createdAt":5,"updatedAt":6,
+     "data":{"text":"Messaged Reviewer on desk: Review","status":"completed","delegationId":"d1",
+      "botMessage":{"sourceBotId":"egan","targetBotId":"reviewer@desk","text":"Review","reply":"LGTM","peerName":"Reviewer on desk"}}}
+    """#
+    let entry = try JSONDecoder().decode(Entry.self, from: Data(json.utf8))
+    let out = items([entry, notice("b", seq: 4, target: "reviewer@desk")])
+    guard case .exchanges(let g) = out[0] else { Issue.record("not a group"); return }
+    #expect(g.peerId == "reviewer@desk" && g.count == 2 && g.peerName == "Reviewer on desk")
+}
+
 @Test func anyFailureMarksTheGroup() {
     let ok = items([notice("a", seq: 1, status: "completed"), notice("b", seq: 2, status: "completed")])
     let bad = items([notice("a", seq: 1, status: "completed"), notice("b", seq: 2, status: "failed")])

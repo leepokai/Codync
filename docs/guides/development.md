@@ -125,7 +125,16 @@ compile, links and anchors resolve). It checks the staged files only, in a copy 
 so other agents' uncommitted edits in the same checkout neither break nor rescue a commit; the
 host builds into `host/target/precommit`, and its tests are stopped after 5 minutes so a hung
 test fails the commit instead of holding it. The npm checks reuse each package's `node_modules`
-(run `npm ci` there first).
+(run `npm ci` there first). Each worker package is checked only when its own folder (or the
+shared relay vectors) changes. On a merge commit it checks only the files that differ from both
+sides (resolved conflicts, or both sides' changes put together); what the merge brings in was checked
+when it landed.
+
+CI on a pull request: the host runs `cargo nextest run` with retries (a test that passes only on a
+retry shows as FLAKY), iOS Kit retries a failing test up to twice, Android builds the minified release
+APK only after a change lands on `dev` or `main`, and the desktop installers are built only when a PR
+touches what they're made from (`src/main`, `src/preload`, `src/shared`, build config, tools,
+resources, dependencies, `apps/shared/Config`, `apps/screen-macos`, `packaging/`) or targets `main`; every desktop PR still typechecks, tests and builds.
 
 Left to CI: the iOS Kit tests (an iPhone simulator) and the platform builds (Linux screen
 helper: GStreamer development packages; macOS: the `Screen` Xcode target against WebRTC).
@@ -151,9 +160,15 @@ Auto Tag (`.github/workflows/auto-tag.yml`) creates each `v*` release right afte
 The memory crate (`host/crates/memory`) has its own 0.x version and ships with the Codync release that carries its changes, through `.github/workflows/memory-crate.yml`:
 
 - A pull request into `main` that changes the crate (its `.github`, the mirror's CI, aside) fails unless the crate's `version` differs from `main`'s.
-- The push to `main` mirrors the crate to [leepokai/codync-mem](https://github.com/leepokai/codync-mem) (write deploy key in the `CODYNC_MEM_DEPLOY_KEY` secret), then publishes its version to crates.io unless crates.io already has it. Publishing uses trusted publishing: the crate's Settings → Trusted Publishing on crates.io trusts `leepokai/Codync` with the workflow `memory-crate.yml`, so no token is stored.
+- The push to `main` mirrors the crate to [leepokai/codync-mem](https://github.com/leepokai/codync-mem) (write deploy key in the `CODYNC_MEM_DEPLOY_KEY` secret), then publishes its version to crates.io unless crates.io already has it. Publishing uses trusted publishing: the crate's Settings → Trusted Publishing on crates.io trusts `leepokai/Codync` with the workflow `memory-crate.yml`, so no token is stored. Both crates also have **Require trusted publishing** on (since 2026-10-26): crates.io refuses a version published with an API token, so a release goes through the workflow or not at all.
 
 To bump, set `version` in `host/crates/memory/Cargo.toml` (patch for fixes, minor for API changes while 0.x) and run `cargo check -p codync-mem` in `host/` to update its `Cargo.lock` entry. A published version can't be deleted, only yanked.
+
+## Crate releases
+
+`codync-network` (`host/crates/network`) ships the same way as codync-mem, through `.github/workflows/network-crate.yml`: a pull request into `main` that changes it must raise its 0.x `version`, and the push to `main` mirrors it to [leepokai/codync-network](https://github.com/leepokai/codync-network) (deploy key in `CODYNC_NETWORK_DEPLOY_KEY`) and publishes the version on crates.io by trusted publishing (`leepokai/Codync`, `network-crate.yml`). Bump with `cargo check -p codync-network` in `host/`. Its `.github` folder is the mirror's own CI and pull-request redirect, inert in Codync.
+
+The mirror only fast-forwards: the crate's commits must reach `main` as they are. Merge a branch that touches a crate (no rebase or squash after its commits were mirrored or published), or the next push to the mirror is refused. 0.1.0 was published and mirrored by hand from `feat/codync-network` on 2026-10-26, ahead of its Codync release.
 
 ## iOS releases (Xcode Cloud)
 

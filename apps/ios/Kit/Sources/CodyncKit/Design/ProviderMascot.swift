@@ -34,7 +34,10 @@ public extension UsageProvider {
     /// The character that stands for this provider.
     var mascotShape: String { id == "codex" ? "hex" : "blob" }
 
-    var tightest: UsageWindow? { windows.max { $0.percent < $1.percent } }
+    /// Plan windows. A note (today's tokens, a dollar balance) is not a limit.
+    var limits: [UsageWindow] { windows.filter { $0.text == nil } }
+
+    var tightest: UsageWindow? { limits.max { $0.percent < $1.percent } }
 }
 
 public extension UsageWindow {

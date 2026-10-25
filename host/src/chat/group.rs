@@ -24,7 +24,7 @@ use tokio::sync::oneshot;
 
 const MAX_ROUNDS: usize = 3;
 /// A member's turn that runs longer counts as a pass.
-const MEMBER_TIMEOUT: Duration = Duration::from_secs(600);
+const MEMBER_TIMEOUT: Duration = Duration::from_mins(10);
 /// Replies per room turn, across all rounds.
 const MAX_REPLIES: usize = 10;
 /// Room lines a member is shown per turn.

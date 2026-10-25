@@ -30,6 +30,8 @@ Each chat keeps its own draft on each device, and the draft comes back when you 
 
 If a message fails to send, it shows **Failed to send** with buttons to resend or delete it.
 
+On iPhone, sending clears the message box so you can type your next message. You can add text with dictation or switch to another chat's saved draft.
+
 **From Shortcuts (iPhone):** Codync's **Send Text to Bot** action sends a message without typing it in the chat. Pick a **Bot** and fill in **Text**. **Open Chat** is off by default, so the message goes out in the background; turn it on to open the chat. The action finishes when the computer accepts the message, or reports it queued when the computer is offline. The iPhone has to be unlocked, also from Siri ("Send text with Codync"). Only the current account's visible bots are listed.
 
 ## Files
@@ -146,7 +148,7 @@ When you send a message from the iPhone, a Live Activity for that bot appears on
 
 ## Usage limits
 
-Codync reads usage limits for Claude Code and Codex from their installs on your computer, without signing in anywhere else. To see them:
+Codync reads plan limits from the agents installed on your computer. Claude Code and Codex come from their own usage report and session files. oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie are read the same way, from a command, a local database or an IDE file. Cursor has no usage command: Codync uses the sign-in Cursor saved on this computer and asks cursor.com for the summary. Nothing else is sent with an agent's login. To see them:
 
 - **iPhone:** the **State** tab, then **Usage limits**. There's also a Usage widget.
 - **Desktop:** the menu bar or tray menu, or **Usage** in the account menu at the bottom of the sidebar.

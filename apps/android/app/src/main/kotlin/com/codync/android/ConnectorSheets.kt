@@ -26,8 +26,12 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-/** Adds a registry connector (iOS `InstallConnectorSheet`): where it runs, its keys, then its sign-in. */
-@Composable internal fun InstallConnectorSheet(item: MarketConnector, state: AppState, store: AppStore, requestId: String? = null, done: () -> Unit = {}) {
+/**
+ * Adds a registry connector (iOS `InstallConnectorSheet`): where it runs, its keys, then its sign-in. `addsAtOnce`: opened
+ * by an Add, so a connector with nothing to fill in installs at once; opened to look at it, nothing installs until Add.
+ */
+@Composable internal fun InstallConnectorSheet(item: MarketConnector, state: AppState, store: AppStore, requestId: String? = null,
+    addsAtOnce: Boolean = true, done: () -> Unit = {}) {
     val dismiss = LocalDismissModal.current
     val scope = rememberCoroutineScope()
     var optionId by remember(item.name) { mutableStateOf(item.options.firstOrNull()?.id.orEmpty()) }
@@ -57,8 +61,8 @@ import kotlinx.coroutines.launch
             finally { saving = false; signingIn = false }
         }
     }
-    // Nothing to fill in: it adds itself.
-    LaunchedEffect(item.name) { if (item.options.size == 1 && item.options[0].inputs.isEmpty()) install() }
+    // Opened by an Add with nothing to fill in: it adds itself.
+    LaunchedEffect(item.name) { if (addsAtOnce && item.options.size == 1 && item.options[0].inputs.isEmpty()) install() }
     // After a try that failed, Add with nothing typed tries the connector it saved again.
     val ready = option?.complete(values) == true || (installed != null && values.values.all { it.isEmpty() })
     Column(Modifier.fillMaxSize().background(Palette.background)) {

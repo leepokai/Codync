@@ -7,6 +7,26 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.28.0
+
+### zh-Hant
+- 電腦連成網路後，Bot 可以請其他電腦上的 Bot 幫忙。
+- 可以從 ChatGPT 或 Claude 透過聯結器請你的 Bot 做事。
+
+### en-US
+- Bots can ask bots on your other computers once they share a network.
+- ChatGPT or Claude can give your bots tasks through the Codync connector.
+
+## 2.27.0
+
+### zh-Hant
+- 擴充套件的列表改回往下捲動，聯結器捲到底會自動載入更多。點項目只看詳情，按「Add」才加入。
+- 用量也會顯示這台電腦上其他 agent 的額度。Cursor 會用本機登入向 cursor.com 查詢。
+
+### en-US
+- Extensions lists scroll again; connectors load more at the end. Tapping one only opens it; Add adds it.
+- Adds other agents' limits. Cursor asks cursor.com.
+
 ## 2.26.2
 
 ### zh-Hant

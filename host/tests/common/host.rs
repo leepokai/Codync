@@ -47,7 +47,7 @@ impl Host {
             .post(format!("{}/api/{method}", self.base))
             .bearer_auth(&self.token)
             .json(body)
-            .timeout(Duration::from_secs(120))
+            .timeout(Duration::from_mins(2))
             .send()
             .await
             .unwrap();

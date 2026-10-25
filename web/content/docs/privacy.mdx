@@ -5,7 +5,7 @@ Codync keeps your work on your computer. The phone and desktop apps are windows 
 - **Bots, conversations, routines and memory** are kept by the host in `~/.codync` on your computer. Your phone keeps a cache so the app opens quickly.
 - **Agents run with their own logins.** Claude Code, Codex and the other agents use the sign-ins you set up on the computer. Your prompts go from the agent to its provider, as they would without Codync.
 - **Secrets are encrypted.** Connector credentials, voice API keys and other keys you enter in Codync are stored encrypted on the computer. The encryption key is held by the system's credential store (Keychain on macOS, Secret Service on Linux, Credential Manager on Windows). They're never sent to Codync's cloud.
-- **Usage limits are read locally.** The host reads them from the agents installed on the computer: Claude Code's own usage command and status line, and Codex's local session files. Codync doesn't call any provider's API with your agents' logins. To read Claude Code's limits, `codync-host install` routes its status line through `codync-host statusline`; a status line you already had keeps working and is restored when you uninstall.
+- **Usage limits are read on your computer.** The host reads them from the agents installed there: Claude Code's usage command and status line, Codex's session files, and the same kind of local report from oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie. Cursor is the exception. It has no local report, so the host reads the sign-in Cursor saved and asks cursor.com for the summary. That token is not logged, and Codync does not call any other provider's API with an agent's login. To read Claude Code's limits, `codync-host install` routes its status line through `codync-host statusline`; a status line you already had keeps working and is restored when you uninstall.
 
 ## The relay
 
@@ -26,7 +26,11 @@ The relay can't add a device to your computer. A new device needs either a pairi
 
 **Public routine webhooks are the exception to end-to-end encryption.** A service that calls a routine's public URL sends its data to the relay over HTTPS. The relay can read it and keeps the routine's key to check signatures. If you don't want that, use the routine's local URL instead.
 
+**Cloud assistants are the other exception.** If you turn them on at a computer and add the Codync connector to ChatGPT, Claude or another assistant, the assistant's requests to your bots and the bots' replies pass through the relay over HTTPS, and the relay can read them (it doesn't store them). They're off until you turn them on at the computer, and the relay passes on only requests from your own account. See [Cloud assistants](/docs/cloud-assistants).
+
 **Remote screen** sessions are encrypted between your phone and your computer. When there's no direct path, the video goes through a Cloudflare relay that can't see what's on your screen.
+
+**codync-network**, your computers' network ([bots on your other computers](/docs/teamwork#bots-on-your-other-computers)) doesn't use the Codync relay. Your computers connect to each other directly, encrypted end to end. When two can't, the default connector sends their encrypted traffic through iroh's public relays, run by n0, and they find each other through n0's address lookup; these see your computers' IP addresses and when they connect, not what they say. With your own `iroh-relay` or the private connector, nothing reaches n0.
 
 ## Push notifications
 

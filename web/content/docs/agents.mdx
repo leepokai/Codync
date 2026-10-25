@@ -68,7 +68,7 @@ Agents are set up from **Extensions**, which belongs to one computer:
 - **iPhone:** tap the account button at the top left of the Bots tab, open **Computers & settings**, and tap the **Extensions** button on the computer.
 - **Terminal UI:** press `A`.
 
-The **Agents** section shows each agent's status: **Installed**, **Not installed**, **Not signed in**, **Needs Node.js**, or **Sets up on first use** (registry agents). The list is paged: **Previous page** and **Next page** move through it (on a phone, you can also swipe the list left or right), and the bar shows the current page over the page count, such as **1 / 5**. Select an agent to open its setup sheet. It walks through up to three steps.
+The **Agents** section shows each agent's status: **Installed**, **Not installed**, **Not signed in**, **Needs Node.js**, or **Sets up on first use** (registry agents). Select an agent to open its setup sheet. It walks through up to three steps.
 
 ### Install
 
@@ -80,7 +80,7 @@ Some agents run through an adapter that needs Node.js, such as Claude Code, Code
 
 ### Signing in
 
-The **Sign in** step shows whether the agent is signed in on that computer, with **Check again** to ask again. If it isn't, the sheet lists the ways to sign in:
+The **Sign in** step shows whether the agent is signed in on that computer, with **Check again** to ask again. Opening the sheet never downloads an agent: a registry agent that hasn't run on the computer yet shows **Set up**, which downloads it if needed and then checks its sign-in. If it isn't signed in, the sheet lists the ways to sign in:
 
 - **Sign in** (agents Codync knows by name): runs the agent's own sign-in command in a terminal on the computer. You type into it from your device, and links open on your device.
 - **The agent's own options:** each agent advertises its methods. Some run in a terminal, some open a browser on the computer, and some ask for API keys.

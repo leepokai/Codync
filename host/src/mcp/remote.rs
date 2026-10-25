@@ -110,7 +110,7 @@ impl Remote {
                 .headers(headers)
                 .header("accept", "application/json, text/event-stream")
                 .json(msg)
-                .timeout(Duration::from_secs(600));
+                .timeout(Duration::from_mins(10));
             if let Some(s) = session.as_deref() {
                 req = req.header("mcp-session-id", s);
             }
@@ -209,7 +209,7 @@ impl Remote {
                 .post(endpoint)
                 .headers(headers)
                 .json(msg)
-                .timeout(Duration::from_secs(60))
+                .timeout(Duration::from_mins(1))
                 .send()
                 .await
                 .map_err(|e| anyhow::anyhow!("can't reach {endpoint}: {e}"))?;

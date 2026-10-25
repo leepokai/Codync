@@ -12,14 +12,14 @@ The header names the computer everything installs on. **Credentials** sits on th
 
 ## Add a connector from the registry
 
-Extensions opens on one section at a time: **Agents**, **Connectors**, or **Skills**. On the desktop, and on a wide phone, those are a side list; on a narrow phone they are tabs along the top. Each list is paged. A phone starts at 6 at a time, three rows of the two agent tiles; elsewhere it starts at 10. The bar under the list shows how many there are, how many fit on a page (6, 10, 20 or 50), **Previous page**, the current page over the page count (such as **1 / 8**), and **Next page**. On a phone, previous and next are the dark round buttons on either side of the list, and you can also swipe the list left or right to turn the page. The bar underneath is the page size and the page number (`1 / 8` is the page, not how many fit). A short last page keeps the height of a full page, so the bar stays put. The **Connectors** list starts with the first page from the official MCP Registry; opening a page that isn't full yet fetches more. Search by service name. In the terminal, Tab still switches sections, Page Up and Page Down turn the page, and Alt+S changes the page size.
+Extensions opens on one section at a time: **Agents**, **Connectors**, or **Skills**. On the desktop they are a row of chips under the search field; on a wide phone they are a side list, and on a narrow phone tabs along the top. Each section is one list you scroll. The **Connectors** list starts with the first connectors from the official MCP Registry, and more load as you scroll down to the end; if that fails, **Try again** at the end of the list asks again. Search by service name. In the terminal, Tab switches sections, and moving down the Connectors list loads more as you near its end.
 
 1. Pick a connector. The **Add connector** sheet opens.
 2. If it can run more than one way, choose under **Runs**: hosted by the service, or on your computer as a package.
 3. Fill in any **Setup** fields it asks for, such as an API key. Keys are saved on that computer only.
 4. Press **Add**. Codync installs it, opens the service's sign-in page if it has one, and checks that the connector starts and lists its tools.
 
-A connector with nothing to fill in starts installing as soon as you pick it.
+Tapping a connector only opens its sheet; nothing installs until you press **Add**. Pressing **Add** on the row itself installs a connector with nothing to fill in right away.
 
 Packages run with their own runtime, which must be installed on the computer: npm packages need Node.js (`npx`), PyPI packages need uv (`uvx`), container images need Docker, and NuGet packages need `dnx`. Codync installs the exact version the registry lists.
 

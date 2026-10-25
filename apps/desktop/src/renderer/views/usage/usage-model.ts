@@ -15,7 +15,16 @@ export const providerRegistry = (id: string) => (['claude', 'codex'].includes(id
 /** The character that stands for this provider. */
 export const mascotShape = (id: string) => (id === 'codex' ? 'hex' : 'blob')
 
-export const tightest = (p: UsageProvider) => p.windows.reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)
+/** A plan window. Notes (today's tokens, a dollar balance) are not limits. */
+export const isLimit = (w: UsageWindow) => !w.text
+
+export const tightest = (p: UsageProvider) =>
+  p.windows.filter(isLimit).reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)
+
+/** The percent, or the note when this window isn't a share of a cap. */
+export function windowReading(w: UsageWindow) {
+  return w.text || `${Math.round(w.percent)}%`
+}
 
 /** "Session" for the 5-hour window, "Opus" for "Weekly · Opus", else the label. */
 export function windowTitle(w: UsageWindow) {

@@ -11,7 +11,7 @@ use std::time::Duration;
 /// This uses the same credentials as actual bot sessions and never reads project files.
 pub async fn models(store: &Store, backend: &str) -> Result<Value> {
     let (acp, mut inbox, _, _) = start(store, backend).await?;
-    let result = tokio::time::timeout(Duration::from_secs(60), async {
+    let result = tokio::time::timeout(Duration::from_mins(1), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
         tokio::pin!(request);
         let session = loop {

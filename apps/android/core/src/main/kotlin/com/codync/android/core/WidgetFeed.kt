@@ -17,7 +17,7 @@ data class ProviderLimit(val provider: String, val window: UsageWindow)
 
 /** Every provider's limits for the Usage limits widget: the tightest first (its headline), then the rest in report order. */
 fun usageLimits(report: UsageReport): List<ProviderLimit> {
-    val all = report.providers.flatMap { provider -> provider.windows.map { ProviderLimit(provider.name, it) } }
+    val all = report.providers.flatMap { provider -> provider.limits.map { ProviderLimit(provider.name, it) } }
     val top = all.withIndex().maxByOrNull { it.value.window.reportedPercent ?: -1.0 } ?: return emptyList()
     return listOf(top.value) + all.filterIndexed { index, _ -> index != top.index }
 }

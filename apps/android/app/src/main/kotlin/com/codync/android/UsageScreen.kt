@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.LinkState
 import com.codync.android.core.UsageProvider
 import com.codync.android.core.UsageReport
+import com.codync.android.core.UsageWindow
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import java.time.Instant
@@ -63,7 +64,7 @@ import kotlin.math.roundToInt
         PullToRefresh({ if (online) reload() }, Modifier.weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 for (provider in report.providers) key(provider.id) { ProviderCard(provider) }
-                if (report.providers.isEmpty()) EmptyUsage("No usage yet", "Your computer reads the limits from Claude Code and Codex.")
+                if (report.providers.isEmpty()) EmptyUsage("No usage yet", "Your computer reads plan limits from the agents installed on it.")
             }
         }
     }
@@ -106,7 +107,7 @@ import kotlin.math.roundToInt
             exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (window in provider.windows) {
-                    DetailRow(tr(window.title), percent(window.percent))
+                    DetailRow(tr(window.title), reading(window))
                     val reset = window.resetsShort()
                     if (reset != null) DetailRow(tr("Resets"), resetLine(reset))
                 }
@@ -116,6 +117,8 @@ import kotlin.math.roundToInt
         }
     }
 }
+
+private fun reading(window: UsageWindow) = window.text?.takeIf { it.isNotBlank() } ?: percent(window.percent)
 
 private fun percent(value: Double?) = value?.takeIf { it.isFinite() }?.let { "${it.roundToInt()}%" } ?: "—"
 

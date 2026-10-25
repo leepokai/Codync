@@ -266,6 +266,8 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     }
     let signed_in =
         a.auth.as_ref().map_or_else(|| b.and_then(|b| b["signedIn"].as_bool()), |v| v["signedIn"].as_bool());
+    let set_up = app.agent_set_up(a);
+    let curated = b.is_some_and(|b| b["curated"] == true);
     let status = if a.busy {
         if a.auth.is_none() {
             format!("Checking with {name}… The first check can download it.")
@@ -274,6 +276,8 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         }
     } else if signed_in != Some(true) && b.is_some_and(|b| b["node"] == "missing") {
         "Add Node.js first.".into()
+    } else if !set_up {
+        if curated { "Install it first.".into() } else { format!("Not set up on {} yet.", app.host) }
     } else {
         match signed_in {
             Some(true) => "Signed in.".into(),
@@ -313,6 +317,12 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
                 let d = m["description"].as_str().map_or(fallback, str::to_owned);
                 (icon, s(m, "name").to_owned(), d)
             }
+            // A registry agent downloads on its first start; an app's own CLI comes from Install.
+            SetupRow::Check if !set_up && !curated => (
+                "↓",
+                "Set up".to_owned(),
+                format!("Downloads {name} on {} if it needs to, then checks its sign-in.", app.host),
+            ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
         };
         let title = tr(&title);
@@ -403,6 +413,8 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
             " … Saving "
         } else if matches!(f.submit, Submit::Connection(_)) {
             " ↵ Continue "
+        } else if matches!(f.submit, Submit::Connector(_)) {
+            " ↵ Add "
         } else {
             " ↵ Save "
         },

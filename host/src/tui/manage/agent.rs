@@ -19,11 +19,23 @@ impl App {
         // An agent without its Node.js can't start, so there's nothing to ask it yet.
         let known = b.is_some_and(|b| (b["signedIn"] == true && !recheck) || b["node"] == "missing");
         let mut a = AgentSetup { backend: backend.to_owned(), auth: None, busy: false, cursor: 0, error: None };
-        if !known {
+        // Opening never downloads an agent: one not set up waits for Set up.
+        if !known && (recheck || self.agent_set_up(&a)) {
             a.busy = true;
             self.sheet("agentAuth", json!({"backend": backend}), Reply::Auth(backend.to_owned()));
         }
         self.overlays.push(Overlay::Agent(a));
+    }
+
+    /// It has run on this computer: its CLI is there, or an earlier check started it. Until then, a
+    /// check can download it, so only Set up starts one.
+    pub fn agent_set_up(&self, a: &AgentSetup) -> bool {
+        a.auth.is_some()
+            || self
+                .backends
+                .iter()
+                .find(|b| b["id"] == a.backend.as_str())
+                .is_some_and(|b| b["installed"] == true || !b["signedIn"].is_null())
     }
 
     pub fn agent_rows(&self, a: &AgentSetup) -> Vec<SetupRow> {

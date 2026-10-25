@@ -139,7 +139,7 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
     }
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
-    let res = tokio::time::timeout(Duration::from_secs(60), async {
+    let res = tokio::time::timeout(Duration::from_mins(1), async {
         acp.request("session/new", json!({"cwd": dir, "mcpServers": []})).await?;
         // WorkBuddy opens a session before it has a token: its account says whether it's signed in.
         Ok::<_, anyhow::Error>(if backends::session_proves_sign_in(backend) {

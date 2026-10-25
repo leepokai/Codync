@@ -44,7 +44,7 @@ impl Host {
             .bearer_auth(&self.token)
             .json(&body)
             // As long as `common::host`'s: on a busy machine (parallel tests) `createBot` alone can take over 10 s.
-            .timeout(Duration::from_secs(120))
+            .timeout(Duration::from_mins(2))
             .send()
             .await;
         let response = response_result.unwrap();

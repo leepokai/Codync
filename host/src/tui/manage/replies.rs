@@ -107,9 +107,12 @@ impl App {
                     "Copied a curl command (the cloud is off: this computer only)"
                 });
             }
-            Reply::Registry { more } => self.with_market(|app, m| {
+            Reply::Registry { search, cursor } => self.with_market(|app, m| {
+                if !m.awaits(&search, cursor.as_deref()) {
+                    return;
+                }
                 let items = v["items"].as_array().cloned().unwrap_or_default();
-                if more {
+                if cursor.is_some() {
                     m.registry.extend(items);
                 } else {
                     m.registry = items;
@@ -118,7 +121,7 @@ impl App {
                 m.searched.get_or_insert_with(String::new);
                 m.loading = false;
                 m.error = None;
-                app.continue_market_page(m);
+                app.load_near_end(m);
             }),
             Reply::Skills => {
                 if let Some(Overlay::Market(m)) =
@@ -220,16 +223,12 @@ impl App {
                     }
                 }
             }
-            Reply::Registry { more } => {
-                let more = *more;
-                self.with_market(|app, m| {
+            Reply::Registry { search, cursor } => self.with_market(|_, m| {
+                if m.awaits(search, cursor.as_deref()) {
                     m.loading = false;
                     m.error = Some(e);
-                    if more {
-                        app.settle_connector_page(m);
-                    }
-                });
-            }
+                }
+            }),
             Reply::Skills => self.with_market(|_, m| {
                 m.skills.get_or_insert_with(Vec::new);
                 m.error = Some(e);

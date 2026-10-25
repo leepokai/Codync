@@ -196,8 +196,10 @@ struct AttachmentImage: View {
                     .overlay { Image(systemName: "photo").foregroundStyle(Palette.tertiary) }
             }
         }
-        .task(id: id) {
-            guard let data = await load(model) else { return }
+        // Asked again when the computer comes online: a chat shown from the cache before it connects
+        // gets its pictures once it does. A loaded picture is never fetched again.
+        .task(id: [id, model.connection == .online ? "online" : "waiting"]) {
+            guard image == nil, let data = await load(model) else { return }
             let size = maxPixels
             image = await Task.detached { ImageData.thumbnail(data, maxPixels: size) }.value
         }

@@ -13,6 +13,11 @@ class UsageTest {
         assertNull(provider.windows.first().barFraction)
         assertEquals("zero", provider.tightest?.id)
         assertEquals(0.0, provider.windows.last().reportedPercent!!, 0.0)
+        val noted = UsageProvider("vibe", "Mistral Vibe", listOf(
+            UsageWindow("cost", "Cost today", 90.0, text = "$1.50"),
+            UsageWindow("five_hour", "5-hour", 10.0)))
+        assertEquals(listOf("five_hour"), noted.limits.map { it.id })
+        assertEquals("five_hour", noted.tightest?.id)
         assertTrue(UsageReport.decode(WireJson.parseToJsonElement("{}" )).providers.isEmpty())
     }
 

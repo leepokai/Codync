@@ -156,6 +156,13 @@ function registerIPC(tray: Tray) {
   ipcMain.on('app:version', (e) => (e.returnValue = app.getVersion()))
   ipcMain.on('app:computerName', (e) => (e.returnValue = computerName()))
   ipcMain.on('app:openedAtLogin', (e) => (e.returnValue = openedAtLogin()))
+  // `reset` is answered once per start, so a reload or another window doesn't bring the welcome flow back mid-session.
+  let onboardingReset = false
+  ipcMain.on('app:devOnboarding', (e) => {
+    const mode = process.env.CODYNC_DEV_ONBOARDING
+    const dev = !app.isPackaged && identity.environment === 'dev'
+    e.returnValue = dev && mode === 'skip' ? 'skip' : dev && mode === 'reset' && !onboardingReset ? ((onboardingReset = true), 'reset') : null
+  })
   ipcMain.on('app:debugOpen', (e) => (e.returnValue = app.isPackaged ? null : (process.env.CODYNC_DEBUG_OPEN ?? null)))
   ipcMain.handle('host:snapshot', () => snapshot())
   ipcMain.on('host:install', () => void host.install())

@@ -18,6 +18,24 @@ function listen<T>(channel: string, cb: (value: T) => void) {
   return () => void ipcRenderer.removeListener(channel, handler)
 }
 
+// A dev sandbox starts past onboarding (`skip`: only a window that never chose is seeded) or back at
+// its welcome flow (`reset`); see tools/dev.mjs.
+const devOnboarding = ipcRenderer.sendSync('app:devOnboarding') as 'skip' | 'reset' | null
+if (devOnboarding) {
+  try {
+    if (devOnboarding === 'reset') {
+      localStorage.removeItem('macAccountOnboardingCompleted')
+      localStorage.removeItem('computerAccessSetup')
+    } else {
+      if (localStorage.getItem('macAccountOnboardingCompleted') === null) localStorage.setItem('macAccountOnboardingCompleted', 'true')
+      if (localStorage.getItem('computerAccessSetup') === null) localStorage.setItem('computerAccessSetup', '"later"')
+    }
+  } catch (error) {
+    // Storage unavailable: the window just shows onboarding, which only costs a dev run a click.
+    console.warn('Dev onboarding preset skipped:', error)
+  }
+}
+
 const bridge: CodyncBridge = {
   platform: process.platform as CodyncBridge['platform'],
   appName: ipcRenderer.sendSync('app:name') as string,

@@ -94,7 +94,7 @@ async fn send_file(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     let guard = CancelCopy(Arc::new(std::sync::atomic::AtomicBool::new(false)));
     let (reply, delivered) = oneshot::channel();
     hub.send_cmd(bot, Cmd::SendFile { path: path.to_owned(), name, cancelled: guard.0.clone(), reply })?;
-    let result = tokio::time::timeout(Duration::from_secs(60), delivered).await;
+    let result = tokio::time::timeout(Duration::from_mins(1), delivered).await;
     let delivered = result.map_err(|_| anyhow!("file sharing timed out; check the conversation before retrying"))?;
     delivered.map_err(|_| anyhow!("file sharing interrupted"))??;
     Ok(json!({"sent": true}))

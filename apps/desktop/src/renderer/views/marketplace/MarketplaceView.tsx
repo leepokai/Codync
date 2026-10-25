@@ -15,16 +15,16 @@ import { SetupTerminalView } from './SetupTerminal'
 import { SkillSheet, type SkillRef } from './SkillSheet'
 import { useModel } from '../../lib/observable'
 import { ConnectorCatalog } from './connector-catalog'
-import { errorText, market, MARKET_PAGE_SIZE, needsSignIn, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
+import { errorText, market, needsSignIn, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
 import { AgentsPanel, ConnectorsPanel, MarketPanel, SkillsPanel } from './MarketplacePanel'
-import { AppLogo, ExtensionRail, FormSheet, ItemGrid, ItemRow, MarketSection, ScreenHeader, ServiceLogo, SkillGlyph, SlideStack } from './pieces'
+import { AppLogo, ExtensionTabs, FormSheet, ItemGrid, ItemRow, MarketSection, ScreenHeader, ServiceLogo, SkillGlyph, SlideStack } from './pieces'
 import { usePlugins } from './plugins'
 import { useTr } from '../../lib/use-language'
 
 /**
  * Extensions for the bots on one computer (the store in context): Agents, Connectors
- * and Skills, one at a time. Each list turns a page; a connector page that isn't full fetches
- * more from the registry (`ConnectorCatalog`). Installing happens on that computer; each bot
+ * and Skills, one at a time. Each list scrolls; the connectors load more from the registry as
+ * their end comes into view (`ConnectorCatalog`). Installing happens on that computer; each bot
  * turns connectors and skills on in its settings. Each computer has its own, opened
  * from its heading in the sidebar.
  */
@@ -44,6 +44,7 @@ export function MarketplaceView() {
   const [loadingSkills, setLoadingSkills] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [installing, setInstalling] = useState<MarketConnector | null>(null)
+  const [viewingConnector, setViewingConnector] = useState<MarketConnector | null>(null)
   const [busySkill, setBusySkill] = useState<string | null>(null)
   const [addingConnector, setAddingConnector] = useState(false)
   const [writingSkill, setWritingSkill] = useState(false)
@@ -51,9 +52,6 @@ export function MarketplaceView() {
   const [agent, setAgent] = useState<Backend | null>(null)
   const [addingNode, setAddingNode] = useState(false)
   const [section, setSection] = useState<ExtensionSection>('agents')
-  const [agentPage, setAgentPage] = useState(0)
-  const [skillPage, setSkillPage] = useState(0)
-  const [pageSize, setPageSize] = useState(MARKET_PAGE_SIZE)
   const [showInstalled, setShowInstalled] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
 
@@ -63,19 +61,6 @@ export function MarketplaceView() {
   const agents = query ? allAgents.filter((b) => matches(b.name)) : allAgents
   const shownSkills = query ? skills.filter((s) => matches(s.name) || matches(s.description)) : skills
   const installedCount = plugins.installedConnectors.length + plugins.installedSkills.length
-
-  const changePageSize = (size: number) => {
-    setPageSize(size)
-    setAgentPage(0)
-    setSkillPage(0)
-    connectors.show(0, size)
-  }
-
-  /** Turns the connector list to `page` at once; a page that isn't full then fills from the registry. */
-  const showConnectorPage = (page: number) => {
-    connectors.show(page, pageSize)
-    void connectors.fill(pageSize)
-  }
 
   useEffect(() => {
     void plugins.refresh()
@@ -147,11 +132,7 @@ export function MarketplaceView() {
         placeholder={tr('Search agents, connectors and skills')}
         aria-label={tr('Search agents, connectors and skills')}
         spellCheck={false}
-        onChange={(e) => {
-          setSearch(e.target.value)
-          setAgentPage(0)
-          setSkillPage(0)
-        }}
+        onChange={(e) => setSearch(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit(search.trim())
         }}
@@ -163,8 +144,6 @@ export function MarketplaceView() {
           className="market-search-clear"
           onClick={() => {
             setSearch('')
-            setAgentPage(0)
-            setSkillPage(0)
             submit('')
           }}
         >
@@ -179,49 +158,37 @@ export function MarketplaceView() {
       <div className="market-frame">
         {header}
         {searchField}
-        <div className="market-split">
-          <ExtensionRail selection={section} onChange={setSection} />
-          <MarketPanel section={section} hostName={store.hostName} error={error ?? connectors.error}>
-            {section === 'agents' ? (
-              <AgentsPanel
-                agents={agents}
-                query={query}
-                needsNode={allAgents.some((b) => b.node === 'missing')}
-                page={agentPage}
-                pageSize={pageSize}
-                onPage={setAgentPage}
-                onPageSize={changePageSize}
-                onAddNode={() => setAddingNode(true)}
-                onAgent={setAgent}
-              />
-            ) : section === 'connectors' ? (
-              <ConnectorsPanel
-                catalog={connectors}
-                query={query}
-                pageSize={pageSize}
-                onPage={showConnectorPage}
-                onPageSize={changePageSize}
-                onAddConnector={() => setAddingConnector(true)}
-                onInstall={setInstalling}
-              />
-            ) : (
-              <SkillsPanel
-                skills={shownSkills}
-                loading={loadingSkills}
-                query={query}
-                installedSkillIds={plugins.installedSkills.map((s) => s.id)}
-                busySkill={busySkill}
-                page={skillPage}
-                pageSize={pageSize}
-                onPage={setSkillPage}
-                onPageSize={changePageSize}
-                onWriteSkill={() => setWritingSkill(true)}
-                onInstallSkill={(s) => void installSkill(s)}
-                onViewSkill={setViewingSkill}
-              />
-            )}
-          </MarketPanel>
-        </div>
+        <ExtensionTabs selection={section} onChange={setSection} />
+        <MarketPanel section={section} hostName={store.hostName} error={error ?? connectors.error}>
+          {section === 'agents' ? (
+            <AgentsPanel
+              agents={agents}
+              query={query}
+              needsNode={allAgents.some((b) => b.node === 'missing')}
+              onAddNode={() => setAddingNode(true)}
+              onAgent={setAgent}
+            />
+          ) : section === 'connectors' ? (
+            <ConnectorsPanel
+              catalog={connectors}
+              query={query}
+              onAddConnector={() => setAddingConnector(true)}
+              onInstall={setInstalling}
+              onView={setViewingConnector}
+            />
+          ) : (
+            <SkillsPanel
+              skills={shownSkills}
+              loading={loadingSkills}
+              query={query}
+              installedSkillIds={plugins.installedSkills.map((s) => s.id)}
+              busySkill={busySkill}
+              onWriteSkill={() => setWritingSkill(true)}
+              onInstallSkill={(s) => void installSkill(s)}
+              onViewSkill={setViewingSkill}
+            />
+          )}
+        </MarketPanel>
       </div>
       {/* Dismissing slides the sheet away; clearing the caller's state would cut it off. */}
       <div className="market-close">
@@ -235,6 +202,9 @@ export function MarketplaceView() {
       <SlideStack base={page} top={showCredentials ? <CredentialsView onBack={() => setShowCredentials(false)} /> : showInstalled ? <InstalledView back={() => setShowInstalled(false)} /> : null} />
       <FormSheet open={installing !== null} onClose={() => setInstalling(null)}>
         {installing ? <InstallConnectorSheet key={installing.name} item={installing} done={() => void connectors.reload()} /> : null}
+      </FormSheet>
+      <FormSheet open={viewingConnector !== null} onClose={() => setViewingConnector(null)}>
+        {viewingConnector ? <InstallConnectorSheet key={viewingConnector.name} item={viewingConnector} addsAtOnce={false} done={() => void connectors.reload()} /> : null}
       </FormSheet>
       <FormSheet open={addingConnector} onClose={() => setAddingConnector(false)}>
         <CustomConnectorSheet />

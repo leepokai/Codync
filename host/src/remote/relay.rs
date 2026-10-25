@@ -40,10 +40,10 @@ const PING_EVERY: Duration = Duration::from_secs(30);
 /// Nothing heard for this long (not even a pong): the socket is dead.
 const SILENT: Duration = Duration::from_secs(90);
 const STATE_WAIT: Duration = Duration::from_secs(10);
-const STATE_EVERY: Duration = Duration::from_secs(5 * 60);
+const STATE_EVERY: Duration = Duration::from_mins(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
-const STABLE: Duration = Duration::from_secs(60);
-const REPLACED_WAIT: Duration = Duration::from_secs(5 * 60);
+const STABLE: Duration = Duration::from_mins(1);
+const REPLACED_WAIT: Duration = Duration::from_mins(5);
 /// A device's messages waiting for its channel; the relay already rate-limits devices.
 const LINK_BUFFER: usize = 256;
 /// A mailbox send older than this is refused (TTL 24 h + clock slack).
@@ -64,6 +64,7 @@ pub async fn run(hub: Arc<Hub>) {
         cloud::update_status(&hub, |s| {
             cloud::show(s, address.as_ref());
             s.approval = cloud::approval(&hub.store);
+            s.assistants = crate::chat::team::assistant::enabled(&hub.store);
             s.registered = false;
             s.connected = false;
             if address.is_none() {
@@ -121,8 +122,8 @@ impl Backoff {
 }
 
 async fn supervise(hub: &Arc<Hub>, address: &cloud::Address) {
-    let mut register_wait = Backoff::new(Duration::from_secs(30 * 60));
-    let mut wait = Backoff::new(Duration::from_secs(60));
+    let mut register_wait = Backoff::new(Duration::from_mins(30));
+    let mut wait = Backoff::new(Duration::from_mins(1));
     let mut registered = false;
     loop {
         if !registered {
@@ -406,6 +407,11 @@ impl Session {
             "hook.item" => {
                 let ack = hook_item(&self.hub, &v);
                 self.send(&ack).await?;
+            }
+            // A private relay has no accounts, so no cloud assistant (§7.9).
+            "assistant.call" if self.address.kind == cloud::RelayKind::Codync => {
+                let result = crate::chat::team::assistant::answer(&self.hub, &v);
+                self.send(&result).await?;
             }
             "cloud.changed" => self.pull(),
             "acl.ok" => {

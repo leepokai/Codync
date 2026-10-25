@@ -63,6 +63,17 @@ const LOCAL_ONLY: &[&str] = &[
     "setCloud",
     "setCloudUrl",
     "setApproval",
+    // Letting the cloud assistant in is decided at the computer, never through the cloud.
+    "setAssistants",
+    // Who is in the user's network of computers is decided at a computer.
+    "networkStatus",
+    "networkCreate",
+    "networkJoin",
+    "networkInvite",
+    "networkPeers",
+    "networkRemove",
+    "networkPromote",
+    "networkRecover",
 ];
 const SCREEN: &[&str] = &["screenPrepare", "screenOffer", "screenClose", "screenTakeover"];
 
@@ -198,7 +209,7 @@ impl Pairing {
     /// Counts a `pair` attempt from `source` (peer IP or relay link); false when over the limit.
     pub fn attempt(&mut self, source: &str) -> bool {
         let now = Instant::now();
-        self.attempts.retain(|(_, t)| now.duration_since(*t) < Duration::from_secs(60));
+        self.attempts.retain(|(_, t)| now.duration_since(*t) < Duration::from_mins(1));
         let from_source = self.attempts.iter().filter(|(s, _)| s == source).count();
         if from_source >= PER_SOURCE_PER_MINUTE || self.attempts.len() >= TOTAL_PER_MINUTE {
             return false;

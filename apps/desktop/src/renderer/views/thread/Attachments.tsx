@@ -81,14 +81,25 @@ export function AttachmentImage({ source, fit }: { source: ImageSource; fit: 'ic
   useEffect(() => {
     let revoked = false
     let made: string | null = null
-    const data = 'entryId' in source ? store.sharedFileData(source.file, source.entryId) : store.attachmentData(source.file.id, source.botId)
-    void data.then((data) => {
-      if (!data || revoked) return
-      made = URL.createObjectURL(new Blob([data as BlobPart]))
-      setUrl(made)
+    const read = () => {
+      const data = 'entryId' in source ? store.sharedFileData(source.file, source.entryId) : store.attachmentData(source.file.id, source.botId)
+      void data.then((data) => {
+        if (!data || revoked || made) return
+        made = URL.createObjectURL(new Blob([data as BlobPart]))
+        setUrl(made)
+      })
+    }
+    // A chat shown before the computer connects reads its pictures again once it comes online.
+    let online = store.connection.kind === 'online'
+    const stop = store.subscribe(() => {
+      const now = store.connection.kind === 'online'
+      if (now && !online && !made) read()
+      online = now
     })
+    read()
     return () => {
       revoked = true
+      stop()
       if (made) URL.revokeObjectURL(made)
     }
     // A file's id names its bytes for good; `source` is a new object every render.

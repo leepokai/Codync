@@ -4,8 +4,9 @@
 // this run builds, starts and stops. Flags (`npm run dev -- --list`): --shared takes the default
 // Codync Dev from a worktree, --sandbox runs a sandbox from the main checkout, --name <name> runs
 // the sandbox of that name, --cloud lets the sandbox host use the dev cloud, --cdp opens the
-// DevTools protocol on the sandbox port + 10000, --list shows every sandbox, --prune deletes the
-// ones whose worktree is gone.
+// DevTools protocol on the sandbox port + 10000, --onboarding shows the welcome flow (a sandbox
+// starts past it), --list shows every sandbox, --prune deletes the ones whose worktree is gone
+// (and their Clerk test accounts).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -14,6 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { deleteTestAccount, mintTicket, secretKey } from './dev-account.mjs'
 import { SANDBOX_PREFIX, sandboxName, sandboxPorts } from '../src/shared/dev-sandbox.ts'
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -22,9 +24,15 @@ const windows = process.platform === 'win32'
 const { values: flags } = parseArgs({
   options: {
     shared: { type: 'boolean' }, sandbox: { type: 'boolean' }, name: { type: 'string' },
-    cloud: { type: 'boolean' }, cdp: { type: 'boolean' }, list: { type: 'boolean' }, prune: { type: 'boolean' },
+    cloud: { type: 'boolean' }, onboarding: { type: 'boolean' }, cdp: { type: 'boolean' }, list: { type: 'boolean' }, prune: { type: 'boolean' },
   },
 })
+
+/** The environment for the host and the app: the Clerk secret key stays in this script, since the host hands its environment to every agent it runs. */
+function childEnv() {
+  const { CODYNC_CLERK_SECRET_KEY: _key, ...env } = process.env
+  return env
+}
 
 function fail(message) {
   console.error(message)
@@ -90,8 +98,17 @@ async function listAndPrune() {
     const running = await answers(s.port)
     const gone = !existsSync(s.worktree)
     if (flags.prune && gone && !running) {
+      let account = false
+      try {
+        account = await deleteTestAccount(s.name)
+      } catch (e) {
+        // The sandbox folder is how a later --prune finds the account again.
+        console.error(`Kept the sandbox ${s.name}: its Clerk test account wasn't deleted (${e.message}). Fix that, then run --prune again.`)
+        continue
+      }
       rmSync(s.home, { recursive: true, force: true })
-      console.log(`Deleted the sandbox ${s.name} (${s.home})`)
+      console.log(`Deleted the sandbox ${s.name} (${s.home})${account ? ' and its Clerk test account' : ''}`)
+      if (!account && !secretKey()) console.log(`  Without CODYNC_CLERK_SECRET_KEY its Clerk test account stays; delete ${s.name}'s sandbox-*+clerk_test user in the Clerk dashboard.`)
     } else if (flags.list) {
       console.log(`${s.name.padEnd(28)} ${String(s.port).padEnd(6)} ${(running ? 'running' : 'stopped').padEnd(8)} ${s.worktree}${gone ? ' (gone)' : ''}`)
     }
@@ -113,7 +130,7 @@ async function sandbox() {
 
   const host = buildHost()
   const log = join(home, 'host.log')
-  const hostEnv = { ...process.env, CODYNC_HOME: home, ...(flags.cloud ? {} : { CODYNC_CLOUD: 'off' }) }
+  const hostEnv = { ...childEnv(), CODYNC_HOME: home, ...(flags.cloud ? {} : { CODYNC_CLOUD: 'off' }) }
   const out = openSync(log, 'a')
   const hostProcess = spawn(host, ['serve', '--port', String(port)], { env: hostEnv, stdio: ['ignore', out, out] })
   hostProcess.on('error', (e) => fail(`Couldn't start ${host}: ${e.message}`))
@@ -147,7 +164,18 @@ async function sandbox() {
   console.log(`  terminal UI                ${command} tui --port ${port}`)
   if (cdp) console.log(`  DevTools protocol          127.0.0.1:${cdp}`)
   console.log('')
-  const appEnv = { ...process.env, CODYNC_HOME: home, CODYNC_PORT: String(port), ...(cdp ? { CODYNC_REMOTE_DEBUG: String(cdp) } : {}) }
+  const appEnv = {
+    ...childEnv(), CODYNC_HOME: home, CODYNC_PORT: String(port),
+    ...(cdp ? { CODYNC_REMOTE_DEBUG: String(cdp) } : {}),
+    CODYNC_DEV_ONBOARDING: flags.onboarding ? 'reset' : 'skip',
+  }
+  // The app trades the token only while it has no active session, so a signed-out or expired sandbox signs in again.
+  const account = await mintTicket(name).catch((e) => console.error(`Test account skipped: ${e.message}`))
+  if (stopping) return
+  if (account) {
+    appEnv.CODYNC_DEV_SIGN_IN_TICKET = account.token
+    console.log(`  test account               ${account.email}\n`)
+  }
   app = startApp(appEnv)
   app.child.on('exit', (code) => stop(code ?? 0))
   app.child.on('error', (e) => {

@@ -59,6 +59,9 @@ struct AgentSheet: View {
     private var installed: Bool { backend.installed == true }
     private var curated: Bool { backend.curated == true }
     private var signedIn: Bool? { auth?.signedIn ?? backend.signedIn }
+    /// It has run on this computer: its CLI is there, or an earlier check started it. Until then, a check
+    /// can download it, so only Set up starts one.
+    private var setUp: Bool { installed || backend.signedIn != nil || auth != nil }
 
     var body: some View {
         ZStack {
@@ -73,9 +76,9 @@ struct AgentSheet: View {
             }
         }
         .frame(minWidth: 0, minHeight: 0)
-        // A known "signed in" needs no agent start; everything else asks the agent (which
-        // can't start without its Node.js).
-        .task { if recheck || backend.signedIn != true, !backend.needsNode { await check() } }
+        // A known "signed in" needs no agent start; one set up asks the agent (which can't start
+        // without its Node.js). Opening never downloads one: that waits for Set up.
+        .task { if recheck || (setUp && backend.signedIn != true), !backend.needsNode { await check() } }
         .onChange(of: route) { old, new in
             // Back from a terminal or key form: see what changed.
             if new == nil, old != nil { Task { await check() } }
@@ -170,6 +173,13 @@ struct AgentSheet: View {
             if signedIn != true, let detail = auth?.detail, !detail.isEmpty {
                 Text(detail).font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
             }
+            // A registry agent downloads on its first start; an app's own CLI comes from Install above.
+            if !setUp, !curated, !checking, !backend.needsNode {
+                optionRow("Set up", detail: "Downloads \(backend.name) on \(model.hostName) if it needs to, then checks its sign-in.",
+                          icon: "arrow.down.circle") {
+                    Task { await check() }
+                }
+            }
             // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
             if signedIn != true, !checking {
                 if auth?.login == true {
@@ -206,6 +216,7 @@ struct AgentSheet: View {
 
     private var statusText: String {
         if checking { return auth == nil ? "Checking with \(backend.name)… The first check can download it." : "Checking…" }
+        if !setUp, !backend.needsNode { return curated ? "Install it first." : "Not set up on \(model.hostName) yet." }
         switch signedIn {
         case true?: return "Signed in."
         case _ where backend.needsNode: return "Add Node.js first."

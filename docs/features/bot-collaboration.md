@@ -8,6 +8,14 @@ Every bot receives the built-in `team` MCP server. `list_bots` returns the other
 
 The host records each exchange as one notice in both chats. Every client shows it as a compact row (centered in the apps, one ` · ` line in the terminal UI), "Messaged [avatar] Owen" in the sender's chat and "Message from [avatar] Egan" in the recipient's, with no request text. In a chat a run of consecutive exchanges with the same peer, in either direction, is one row, "3 messages with [avatar] Owen"; anything else the chat shows (a message, another notice, a card, an exchange with another peer) ends the run, trace entries do not, and the run is marked failed if any exchange failed. Only a failure is marked (danger color and a warning mark). Tapping the row opens a read-only "Egan ⇄ Owen" conversation sheet with the pair's whole history: author-labelled grey bubbles for each request and reply, time separators, "Waiting for Owen…" or the failure detail under a pending or failed exchange. It is laid out like the Full conversation sheet, with the pair as its title and an X to close. Tool details also remain in the trace. There is no additional team setup screen; a lead bot can set up the team itself (see Team management).
 
+## Bots on other computers
+
+When this computer is in a network with the user's other computers, `list_bots` also lists their bots (ids
+`name@computer`) and `message_bot` reaches them: the request travels as a letter, runs in that bot's chat on its
+computer, and the reply comes back as the same reply turn. `list_bots` takes `query`, `computer`, `online`, `limit`
+and `cursor`. Notices for such an exchange carry `botMessage.peerName`. Setup, roles and limits:
+[codync-network](codync-network.md).
+
 ## Notice data
 
 New bot-to-bot notices retain all fields written by the team tools in the base:
@@ -86,6 +94,9 @@ Under Ask each call first posts an approval card in the manager's chat (Allow / 
 A bot made this way records its creator (`createdBy`, next to `createdAt`); clients show "Created by Lead · Oct 20, 2026" in the bot's settings (Profile), and the terminal UI on the settings form's Name row. Only the host sets it: `createBot` and `updateBot` ignore it.
 
 ## Code and verification
+
+- `host/src/chat/team/remote.rs` and `directory.rs`: requests to and from other computers, and `list_bots`;
+  `host/tests/network_e2e.rs` runs two hosts in one network.
 
 - `host/src/chat/team.rs`: discovery, request lifetime, persisted notices, structured conversation data and the reply that goes back (`BotReply`, `reply_prompt`).
 - `host/src/store/entries.rs` (`bot_conversation`, `expire_pending`) and `host/src/api/bots.rs` (`botConversation`): the pair history and restart cleanup.

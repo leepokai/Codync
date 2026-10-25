@@ -120,8 +120,8 @@ fn listings(servers: &[Value], installed: &[Connector]) -> Vec<Value> {
         .collect()
 }
 
-/// Registry pages read past one with nothing Codync can install. An empty answer reads as the end
-/// of the list in every app, so a few more pages are tried while the cursor goes on.
+/// Registry pages read past one with nothing Codync can install, within `BROWSE_BUDGET`, so an app
+/// gets rows in fewer round trips. An app that still gets an empty page with a cursor reads on by itself.
 const EMPTY_PAGE_SKIPS: usize = 3;
 /// The apps wait 60 s for `marketConnectors`, and one registry page can take 45 s: skipping stops
 /// in time to answer, handing back the cursor it didn't get to.
@@ -157,7 +157,7 @@ type Page = (Vec<Value>, Option<String>);
 /// The unfiltered first page (featured servers, then the registry's first page), kept in memory
 /// because the registry often takes 15-45 s to answer.
 static FIRST_PAGE: Mutex<Option<(Instant, Page)>> = Mutex::new(None);
-const FIRST_PAGE_FRESH: Duration = Duration::from_secs(600);
+const FIRST_PAGE_FRESH: Duration = Duration::from_mins(10);
 
 /// Serves the cached first page at once (refreshing it in the background when stale).
 async fn first_page() -> Result<Page> {
@@ -235,7 +235,7 @@ mod tests {
                 _ => (vec![], Some(cursor)),
             })
         };
-        let later = Instant::now() + Duration::from_secs(60);
+        let later = Instant::now() + Duration::from_mins(1);
         let (items, next) = past_empty_pages((vec![], Some("b".into())), "", later, pages).await.unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(next.as_deref(), Some("d"));

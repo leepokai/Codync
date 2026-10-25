@@ -127,7 +127,7 @@ fn a_run_of_exchanges_is_one_counted_line() {
                 Item::Entry(e) => entry_lines(&mut out, &app, bot, e, &HashMap::new(), 80),
                 Item::Group(g) => {
                     let lead = format!("{} messages with ", g.count);
-                    bot_message_line(&mut out, &app, g.first, &g.peer, &lead, g.failed, 0);
+                    bot_message_line(&mut out, &app, g.first, (&g.peer, g.peer_name.as_deref()), &lead, g.failed, 0);
                 }
             }
         }
@@ -141,6 +141,17 @@ fn a_run_of_exchanges_is_one_counted_line() {
     assert!(matches!(out.buttons.as_slice(), [(_, 3, _, Click::BotChat(id))] if id == "n0"));
     assert_eq!(out.messages.len(), 1);
     assert!(build(&refs[..1]).lines[0].to_string().contains("Messaged"));
+}
+
+#[test]
+fn a_bot_on_another_computer_is_named_by_its_exchange() {
+    let app = app_with_bots();
+    let mut e = exchange_entry("completed");
+    e.data["botMessage"]["targetBotId"] = "reviewer@desk".into();
+    e.data["botMessage"]["peerName"] = "Reviewer on desk".into();
+    let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
+    entry_lines(&mut out, &app, &app.bots["a"], &e, &HashMap::new(), 80);
+    assert!(out.lines[out.lines.len() - 1].to_string().ends_with("Messaged ? Reviewer on desk"), "{:?}", out.lines);
 }
 
 #[test]

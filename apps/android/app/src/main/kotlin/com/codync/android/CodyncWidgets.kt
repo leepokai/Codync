@@ -190,7 +190,7 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
                     Text("${phrase(top.title)} · ${phrase("highest usage")}", GlanceModifier.padding(bottom = 6.dp), style = style(11f, secondary), maxLines = 2)
                 }
             }
-            for (window in provider.windows.take(if (layout == ProviderLayout.Large) 4 else 2)) WindowRow(context, window, tint)
+            for (window in provider.limits.take(if (layout == ProviderLayout.Large) 4 else 2)) WindowRow(context, window, tint)
         }
     }
 }

@@ -1,11 +1,21 @@
 //! The marketplace: agents, connectors and skills.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
 use super::super::app::{After, App, Confirm, ConfirmAct, Editor, Overlay, fuzzy};
 use super::super::l10n::tr;
-use super::{Fields, Input, Market, MarketPage, Reply, Row, Submit, TABS, Tab, ctrl, s};
+use super::{Fields, Input, Market, Reply, Row, Submit, TABS, Tab, ctrl, s};
+
+/// Registry rows kept loaded under the cursor on Connectors, about the list's height.
+const AHEAD: usize = 20;
+
+impl Market {
+    /// The registry page this list waits for: an answer for another search or cursor is a late one.
+    pub(super) fn awaits(&self, search: &str, cursor: Option<&str>) -> bool {
+        self.searched.as_deref().unwrap_or_default() == search && self.next.as_deref() == cursor
+    }
+}
 
 impl App {
     pub fn open_market(&mut self) {
@@ -13,7 +23,7 @@ impl App {
         self.call("connectors", json!({}), After::Connectors);
         self.call("skills", json!({}), After::Skills);
         self.sheet("marketSkills", json!({}), Reply::Skills);
-        self.sheet("marketConnectors", json!({"search": ""}), Reply::Registry { more: false });
+        self.sheet("marketConnectors", json!({"search": ""}), Reply::Registry { search: String::new(), cursor: None });
         self.overlays.push(Overlay::Market(Box::new(Market {
             tab: Tab::Agents,
             query: Editor::default(),
@@ -24,23 +34,7 @@ impl App {
             loading: true,
             cursor: 0,
             error: None,
-            pages: [0; 3],
-            page_size: PAGE_SIZE,
         })));
-    }
-
-    /// The open tab's page: the rows every page starts with, then this page's catalog rows.
-    pub fn market_page<'a>(&'a self, m: &'a Market) -> MarketPage<'a> {
-        let (mut rows, catalog) = self.market_catalog(m, m.tab);
-        let more = m.tab == Tab::Connectors && m.next.is_some();
-        let count = catalog.len();
-        let page = clamp_page(m.pages[m.tab.index()], count, m.page_size, more);
-        rows.extend(catalog.into_iter().skip(page * m.page_size).take(m.page_size));
-        MarketPage { rows, count, page, pages: page_count(count, m.page_size, more) }
-    }
-
-    fn connector_count(&self, m: &Market) -> usize {
-        self.market_catalog(m, Tab::Connectors).1.len()
     }
 
     fn load_more_connectors(&self, m: &mut Market) {
@@ -49,82 +43,61 @@ impl App {
         }
         m.loading = true;
         let search = m.searched.clone().unwrap_or_default();
-        self.sheet("marketConnectors", json!({"search": search, "cursor": m.next}), Reply::Registry { more: true });
+        let reply = Reply::Registry { search: search.clone(), cursor: m.next.clone() };
+        self.sheet("marketConnectors", json!({"search": search, "cursor": m.next}), reply);
     }
 
-    /// After a connector page turns or a registry page arrives, keep fetching until that page is full or the cursor ends.
-    /// The Connectors page fills even while another tab is open.
-    pub(super) fn continue_market_page(&self, m: &mut Market) {
-        let count = self.connector_count(m);
-        let i = Tab::Connectors.index();
-        if m.next.is_some() && needs_fetch(count, m.pages[i], m.page_size) {
+    /// The cursor near the end of the Connectors list asks for the next registry page, and again as pages
+    /// arrive while it stays near it (a page can have nothing to install). A page that failed is asked for
+    /// again on the next move.
+    pub(super) fn load_near_end(&self, m: &mut Market) {
+        if m.tab == Tab::Connectors && m.cursor + AHEAD >= self.market_rows(m).len() {
             self.load_more_connectors(m);
-        } else {
-            m.pages[i] = clamp_page(m.pages[i], count, m.page_size, m.next.is_some());
         }
     }
 
-    /// A registry page that didn't come: back to the last Connectors page with rows.
-    pub(super) fn settle_connector_page(&self, m: &mut Market) {
-        let i = Tab::Connectors.index();
-        m.pages[i] = clamp_page(m.pages[i], self.connector_count(m), m.page_size, false);
-    }
-
-    fn turn_market_page(&self, m: &mut Market, forward: bool) {
-        let MarketPage { page, pages, .. } = self.market_page(m);
-        let next = if forward { page + 1 } else { page.saturating_sub(1) };
-        if next == page || next >= pages {
-            return;
-        }
-        m.pages[m.tab.index()] = next;
-        m.cursor = 0;
-        if m.tab == Tab::Connectors {
-            self.continue_market_page(m);
-        }
-    }
-
-    /// A tab's rows, split into the ones every page starts with and the catalog rows that are paged.
-    fn market_catalog<'a>(&'a self, m: &'a Market, tab: Tab) -> (Vec<Row<'a>>, Vec<Row<'a>>) {
+    /// The marketplace's rows on its current tab, filtered by the query.
+    pub fn market_rows<'a>(&'a self, m: &'a Market) -> Vec<Row<'a>> {
         let q = m.query.text.trim();
         let hit = |v: &Value, keys: &[&str]| {
             let fields: Vec<&str> = keys.iter().map(|k| v[*k].as_str().unwrap_or_default()).collect();
             fuzzy(q, &fields)
         };
-        match tab {
+        match m.tab {
             Tab::Agents => {
                 let agents = self
                     .backends
                     .iter()
                     .filter(|b| b["available"] == true || b["installed"] == true || b["curated"] == true);
                 let node = agents.clone().any(|b| b["node"] == "missing").then_some(Row::Node);
-                (node.into_iter().collect(), agents.filter(|b| hit(b, &["name", "id"])).map(Row::Agent).collect())
+                node.into_iter().chain(agents.filter(|b| hit(b, &["name", "id"])).map(Row::Agent)).collect()
             }
             Tab::Connectors => {
                 let installed: Vec<&str> = self.plugins.0.iter().filter_map(|c| c["registryName"].as_str()).collect();
-                let mut pinned: Vec<Row> =
+                let mut rows: Vec<Row> =
                     self.plugins.0.iter().filter(|c| hit(c, &["name", "description"])).map(Row::Installed).collect();
-                pinned.push(Row::Custom);
-                let registry = m
-                    .registry
-                    .iter()
-                    .filter(|c| !installed.contains(&c["name"].as_str().unwrap_or_default()))
-                    .map(Row::Registry)
-                    .collect();
-                (pinned, registry)
+                rows.push(Row::Custom);
+                rows.extend(
+                    m.registry
+                        .iter()
+                        .filter(|c| !installed.contains(&c["name"].as_str().unwrap_or_default()))
+                        .map(Row::Registry),
+                );
+                rows
             }
             Tab::Skills => {
                 let installed: Vec<String> = self.plugins.1.iter().map(|v| s(v, "id").to_lowercase()).collect();
-                let own =
+                let mut rows: Vec<Row> =
                     self.plugins.1.iter().filter(|v| hit(v, &["name", "description"])).map(Row::OwnSkill).collect();
-                let catalog = m
-                    .skills
-                    .iter()
-                    .flatten()
-                    .filter(|v| !installed.contains(&s(v, "source").to_lowercase()))
-                    .filter(|v| hit(v, &["name", "description"]))
-                    .map(Row::Skill)
-                    .collect();
-                (own, catalog)
+                rows.extend(
+                    m.skills
+                        .iter()
+                        .flatten()
+                        .filter(|v| !installed.contains(&s(v, "source").to_lowercase()))
+                        .filter(|v| hit(v, &["name", "description"]))
+                        .map(Row::Skill),
+                );
+                rows
             }
         }
     }
@@ -135,8 +108,7 @@ impl App {
     }
 
     pub(in crate::tui) fn market_key(&mut self, mut m: Box<Market>, k: KeyEvent) -> Option<Overlay> {
-        let n = self.market_page(&m).rows.len();
-        let alt = k.modifiers.contains(KeyModifiers::ALT);
+        let n = self.market_rows(&m).len();
         match k.code {
             KeyCode::Esc => return None,
             KeyCode::Tab | KeyCode::BackTab => {
@@ -147,14 +119,6 @@ impl App {
             }
             KeyCode::Down => m.cursor = (m.cursor + 1).min(n.saturating_sub(1)),
             KeyCode::Up => m.cursor = m.cursor.saturating_sub(1),
-            KeyCode::PageDown => self.turn_market_page(&mut m, true),
-            KeyCode::PageUp => self.turn_market_page(&mut m, false),
-            KeyCode::Char('s') if alt => {
-                let i = PAGE_SIZES.iter().position(|s| *s == m.page_size).unwrap_or(0);
-                m.page_size = PAGE_SIZES[(i + 1) % PAGE_SIZES.len()];
-                m.pages = [0; 3];
-                m.cursor = 0;
-            }
             KeyCode::Char('n' | 'j') if ctrl(k) => m.cursor = (m.cursor + 1).min(n.saturating_sub(1)),
             KeyCode::Char('p') if ctrl(k) => m.cursor = m.cursor.saturating_sub(1),
             KeyCode::Char('r') if ctrl(k) => {
@@ -168,13 +132,16 @@ impl App {
                 m.cursor = 0;
                 m.registry.clear();
                 m.next = None;
-                m.pages[Tab::Connectors.index()] = 0;
-                self.sheet("marketConnectors", json!({"search": search}), Reply::Registry { more: false });
+                self.sheet(
+                    "marketConnectors",
+                    json!({"search": search}),
+                    Reply::Registry { search: search.clone(), cursor: None },
+                );
                 m.searched = Some(search);
             }
             KeyCode::Enter => return self.market_enter(m),
             KeyCode::Char('x') if ctrl(k) => {
-                let (id, name, skill) = match self.market_page(&m).rows.get(m.cursor) {
+                let (id, name, skill) = match self.market_rows(&m).get(m.cursor) {
                     Some(Row::Installed(c)) => (s(c, "id"), s(c, "name"), false),
                     Some(Row::OwnSkill(v)) => (s(v, "id"), s(v, "name"), true),
                     _ => return Some(Overlay::Market(m)),
@@ -198,10 +165,10 @@ impl App {
             _ => {
                 if m.query.key(k) {
                     m.cursor = 0;
-                    m.pages[m.tab.index()] = 0;
                 }
             }
         }
+        self.load_near_end(&mut m);
         Some(Overlay::Market(m))
     }
 
@@ -215,7 +182,7 @@ impl App {
             Skill(Value, bool),
             None,
         }
-        let act = match self.market_page(&m).rows.get(m.cursor) {
+        let act = match self.market_rows(&m).get(m.cursor) {
             Some(Row::Node) => Act::Node,
             Some(Row::Agent(b)) => Act::Agent(s(b, "id")),
             Some(Row::Installed(c)) if c["auth"] == "signedOut" => Act::SignIn(s(c, "id")),
@@ -262,44 +229,46 @@ impl App {
                 })));
                 return None;
             }
+            // The connector's sheet, as on the apps: nothing installs until ↵ on it, even with nothing to fill in.
             Act::Install(item) => {
                 let options = item["options"].as_array().cloned().unwrap_or_default();
-                if options.len() == 1 && options[0]["inputs"].as_array().is_none_or(Vec::is_empty) {
-                    self.flash(&tr("Adding {name}…").replace("{name}", &s(&item, "title")));
-                    self.sheet(
-                        "installConnector",
-                        json!({"registryName": item["name"], "option": options[0]["id"], "inputs": {}}),
-                        Reply::FieldsSaved,
-                    );
-                } else {
-                    let host = self.host.clone();
-                    let choices = options
-                        .iter()
-                        .map(|o| {
-                            if o["kind"] == "remote" {
-                                tr("Hosted by {name}").replace("{name}", &s(&item, "title"))
-                            } else {
-                                tr("On {name} ({kind})").replace("{name}", &host).replace("{kind}", &s(o, "kind"))
-                            }
-                        })
-                        .collect();
-                    let mut f = Fields {
-                        title: tr("Add connector").into_owned(),
-                        note: tr("Keys are saved on {name} only.").replace("{name}", &host),
-                        choices,
-                        choice: 0,
-                        inputs: vec![],
-                        cursor: 0,
-                        error: None,
-                        saving: false,
-                        submit: Submit::Connector(item),
-                    };
-                    connector_inputs(&mut f);
-                    super::super::connections::option_fields(&mut f);
-                    self.overlays.push(Overlay::Market(m));
-                    self.overlays.push(Overlay::Fields(Box::new(f)));
-                    return None;
-                }
+                let host = self.host.clone();
+                let title = s(&item, "title");
+                let choices = options
+                    .iter()
+                    .map(|o| {
+                        if o["kind"] == "remote" {
+                            tr("Hosted by {name}").replace("{name}", &title)
+                        } else {
+                            tr("On {name} ({kind})").replace("{name}", &host).replace("{kind}", &s(o, "kind"))
+                        }
+                    })
+                    .collect();
+                let bare = options.len() == 1 && options[0]["inputs"].as_array().is_none_or(Vec::is_empty);
+                let note = match (bare, options.first().is_some_and(|o| o["kind"] == "remote")) {
+                    (true, true) => {
+                        tr("No keys needed here. If {name} wants you to sign in, its sign-in page opens next.")
+                            .replace("{name}", &title)
+                    }
+                    (true, false) => tr("No setup needed.").into_owned(),
+                    (false, _) => tr("Keys are saved on {name} only.").replace("{name}", &host),
+                };
+                let mut f = Fields {
+                    title: tr("Add connector").into_owned(),
+                    note,
+                    choices,
+                    choice: 0,
+                    inputs: vec![],
+                    cursor: 0,
+                    error: None,
+                    saving: false,
+                    submit: Submit::Connector(item),
+                };
+                connector_inputs(&mut f);
+                super::super::connections::option_fields(&mut f);
+                self.overlays.push(Overlay::Market(m));
+                self.overlays.push(Overlay::Fields(Box::new(f)));
+                return None;
             }
             Act::Skill(v, catalog) => {
                 self.overlays.push(Overlay::Market(m));
@@ -310,41 +279,6 @@ impl App {
         }
         Some(Overlay::Market(m))
     }
-}
-
-const PAGE_SIZE: usize = 10;
-const PAGE_SIZES: [usize; 4] = [6, 10, 20, 50];
-
-impl MarketPage<'_> {
-    /// The pager, in the same order as the other clients: count, size, previous, current / total, next.
-    pub fn pager_line(&self, page_size: usize) -> String {
-        format!(
-            "{}   {} {}   {}   {} / {}   {}",
-            tr("{count} total").replace("{count}", &self.count.to_string()),
-            tr("Per page"),
-            tr(&format!("{page_size} / page")),
-            tr("Previous page"),
-            self.page + 1,
-            self.pages,
-            tr("Next page"),
-        )
-    }
-}
-
-/// Catalog rows split into pages. While the registry still has a cursor, one more page is offered.
-fn page_count(count: usize, size: usize, has_more: bool) -> usize {
-    let loaded = if count == 0 { 1 } else { count.div_ceil(size) };
-    if has_more { loaded + 1 } else { loaded }
-}
-
-fn clamp_page(page: usize, count: usize, size: usize, has_more: bool) -> usize {
-    page.min(page_count(count, size, has_more).saturating_sub(1))
-}
-
-/// A later page that isn't full yet: the registry has to be asked. The first page is whatever the first answer held.
-fn needs_fetch(count: usize, page: usize, size: usize) -> bool {
-    let start = page * size;
-    start > 0 && start + size > count
 }
 
 /// The inputs of a connector's chosen way to run, defaults filled in.
@@ -373,32 +307,22 @@ pub(super) fn connector_inputs(f: &mut Fields) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::app::{App, Overlay};
+    use super::super::super::app::{App, Editor, Overlay};
     use super::super::super::net::Client;
     use super::super::{Market, Reply, Tab};
-    use super::{clamp_page, needs_fetch, page_count};
+    use crossterm::event::{KeyCode, KeyEvent};
     use serde_json::{Value, json};
-
-    #[test]
-    fn forty_seven_agents_are_five_pages() {
-        assert_eq!(page_count(47, 10, false), 5);
-        assert_eq!(page_count(19, 10, false), 2);
-        assert_eq!(page_count(0, 10, false), 1);
-        assert_eq!(page_count(72, 10, true), 9);
-        assert_eq!(clamp_page(9, 47, 10, false), 4);
-        assert_eq!(clamp_page(9, 72, 10, true), 8);
-        assert!(!needs_fetch(60, 5, 10));
-        assert!(needs_fetch(60, 6, 10));
-        assert!(needs_fetch(72, 7, 10));
-        assert!(!needs_fetch(80, 7, 10));
-        assert!(!needs_fetch(0, 0, 10));
-        assert!(!needs_fetch(3, 0, 10));
-        assert!(needs_fetch(0, 1, 10));
-    }
 
     fn registry(range: std::ops::Range<usize>, next: Option<&str>) -> Value {
         let items: Vec<Value> = range.map(|i| json!({"name": format!("c{i}"), "title": format!("C{i}")})).collect();
         json!({"items": items, "nextCursor": next})
+    }
+
+    fn open() -> App {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
+        app.open_market();
+        app
     }
 
     fn market(app: &App) -> &Market {
@@ -408,44 +332,82 @@ mod tests {
         }
     }
 
-    fn turn_to(app: &mut App, page: usize) {
+    /// The registry's answer for `search` at `cursor`.
+    fn answer(app: &mut App, search: &str, cursor: Option<&str>, res: Result<Value, String>) {
+        app.on_sheet_reply(Reply::Registry { search: search.into(), cursor: cursor.map(str::to_owned) }, res);
+    }
+
+    /// The cursor on Connectors row `row`, as arrow keys leave it.
+    fn move_to(app: &mut App, row: usize) {
         let Some(Overlay::Market(mut m)) = app.overlays.pop() else { panic!("the marketplace is open") };
         m.tab = Tab::Connectors;
-        m.pages[Tab::Connectors.index()] = page;
-        app.continue_market_page(&mut m);
+        m.cursor = row;
+        app.load_near_end(&mut m);
         app.overlays.push(Overlay::Market(m));
     }
 
     #[tokio::test]
-    async fn a_connector_page_fills_from_the_registry_and_falls_back_when_it_cannot() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
-        app.open_market();
-        app.on_sheet_reply(Reply::Registry { more: false }, Ok(registry(0..15, Some("a"))));
-        turn_to(&mut app, 0);
-        let page = app.market_page(market(&app));
-        assert_eq!((page.count, page.pages), (15, 3));
-
-        // Page 2 starts at row 10 but only 15 are loaded: the next registry page is asked for.
-        turn_to(&mut app, 1);
-        assert!(market(&app).loading);
-        app.on_sheet_reply(Reply::Registry { more: true }, Ok(registry(15..18, Some("b"))));
-        assert!(market(&app).loading, "18 rows still leave page 2 short");
-        app.on_sheet_reply(Reply::Registry { more: true }, Ok(registry(18..25, Some("c"))));
+    async fn connectors_load_more_as_the_cursor_nears_the_end() {
+        let mut app = open();
+        answer(&mut app, "", None, Ok(registry(0..30, Some("a"))));
+        // Custom connector, then 30 registry rows: a screenful still lies under row 0.
+        move_to(&mut app, 0);
         assert!(!market(&app).loading);
-        assert_eq!(market(&app).pages[Tab::Connectors.index()], 1);
 
-        // The page past the loaded rows fails: back to the last page with rows.
-        turn_to(&mut app, 3);
+        move_to(&mut app, 12);
+        assert!(market(&app).loading, "near the end, the next page is asked for");
+        answer(&mut app, "", Some("a"), Ok(registry(30..30, Some("b"))));
+        assert!(market(&app).loading, "a page with nothing to install reads on");
+        answer(&mut app, "", Some("b"), Ok(registry(30..40, Some("c"))));
+        assert!(!market(&app).loading);
+        assert_eq!(app.market_rows(market(&app)).len(), 41);
+
+        // A failed page keeps the rows; the next move asks again, until the cursor ends.
+        move_to(&mut app, 25);
+        answer(&mut app, "", Some("c"), Err("offline".into()));
+        assert_eq!((market(&app).loading, market(&app).error.as_deref()), (false, Some("offline")));
+        move_to(&mut app, 26);
         assert!(market(&app).loading);
-        app.on_sheet_reply(Reply::Registry { more: true }, Err("offline".into()));
-        let m = market(&app);
-        assert!(!m.loading);
-        assert_eq!(m.error.as_deref(), Some("offline"));
-        assert_eq!(m.pages[Tab::Connectors.index()], 2);
+        answer(&mut app, "", Some("c"), Ok(registry(40..41, None)));
+        move_to(&mut app, 41);
+        assert!(!market(&app).loading && market(&app).next.is_none());
+    }
 
-        // The cursor ends: no page past the rows.
-        app.on_sheet_reply(Reply::Registry { more: true }, Ok(registry(25..26, None)));
-        assert_eq!(app.market_page(market(&app)).pages, 3);
+    #[tokio::test]
+    async fn answers_for_an_older_search_are_dropped() {
+        let mut app = open();
+        move_to(&mut app, 0);
+        answer(&mut app, "", None, Ok(registry(0..5, Some("a"))));
+        assert!(market(&app).loading, "page a is on its way");
+
+        let Some(Overlay::Market(mut m)) = app.overlays.pop() else { panic!("the marketplace is open") };
+        m.query = Editor::with("linear");
+        let m = app.market_key(m, KeyEvent::from(KeyCode::Enter)).expect("the marketplace stays open");
+        app.overlays.push(m);
+        answer(&mut app, "", Some("a"), Ok(registry(5..10, Some("b"))));
+        answer(&mut app, "", Some("a"), Err("offline".into()));
+        let m = market(&app);
+        assert!(m.registry.is_empty() && m.next.is_none() && m.loading && m.error.is_none());
+
+        answer(&mut app, "linear", None, Ok(registry(0..2, None)));
+        assert_eq!(market(&app).registry.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn opening_a_connector_or_a_new_agent_adds_nothing() {
+        let mut app = open();
+        let bare = json!({"name": "c0", "title": "C0", "options": [{"id": "npm", "kind": "npm", "inputs": []}]});
+        answer(&mut app, "", None, Ok(json!({"items": [bare], "nextCursor": null})));
+        // Custom connector, then the registry row.
+        move_to(&mut app, 1);
+        let Some(Overlay::Market(m)) = app.overlays.pop() else { panic!("the marketplace is open") };
+        assert!(app.market_key(m, KeyEvent::from(KeyCode::Enter)).is_none());
+        assert!(matches!(app.overlays.last(), Some(Overlay::Fields(_))), "its sheet opens; ↵ there adds it");
+
+        app.backends =
+            vec![json!({"id": "kimi", "name": "Kimi", "installed": false, "curated": false, "signedIn": null})];
+        app.open_agent("kimi", false);
+        let Some(Overlay::Agent(a)) = app.overlays.last() else { panic!("the agent sheet is open") };
+        assert!(!a.busy && !app.agent_set_up(a), "a registry agent that never ran waits for Set up");
     }
 }

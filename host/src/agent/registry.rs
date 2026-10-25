@@ -16,7 +16,7 @@ use std::time::Duration;
 
 const URL: &str = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 /// Upstream updates hourly; once a day is plenty for picking agents.
-const REFRESH_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+const REFRESH_EVERY: Duration = Duration::from_hours(24);
 
 static CACHE: Mutex<Option<Value>> = Mutex::new(None);
 
@@ -240,7 +240,7 @@ async fn prepare_npx(package: &str, name: &str, progress: &impl Fn(&str)) -> Res
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
         .output();
-    let failure = match tokio::time::timeout(Duration::from_secs(20 * 60), install).await {
+    let failure = match tokio::time::timeout(Duration::from_mins(20), install).await {
         Ok(Ok(out)) if out.status.success() => return Ok(()),
         Ok(Ok(out)) => npm_error(&String::from_utf8_lossy(&out.stderr)).to_owned(),
         Ok(Err(e)) => format!("{e}"),
@@ -309,7 +309,7 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
     progress(&format!("Downloading {}…", agent["name"].as_str().unwrap_or(id)));
     let bytes = crate::http()
         .get(url)
-        .timeout(Duration::from_secs(600))
+        .timeout(Duration::from_mins(10))
         .send()
         .await?
         .error_for_status()?

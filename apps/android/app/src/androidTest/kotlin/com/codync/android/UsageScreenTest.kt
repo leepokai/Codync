@@ -50,6 +50,6 @@ class UsageScreenTest {
         compose.onNodeWithText("Usage shows up once a computer is connected.").assertIsDisplayed()
         compose.runOnUiThread { state.value = state.value.copy(computers = listOf(Computer("fixture", "Acceptance computer", "fixture"))) }
         compose.onNodeWithText("No usage yet").assertIsDisplayed()
-        compose.onNodeWithText("Your computer reads the limits from Claude Code and Codex.").assertIsDisplayed()
+        compose.onNodeWithText("Your computer reads plan limits from the agents installed on it.").assertIsDisplayed()
     }
 }

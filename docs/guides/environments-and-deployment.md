@@ -20,6 +20,7 @@ The environment is chosen when building, never stored: the host compiles in its 
 
 - **Development:** app configuration and Worker configuration target `https://dev-api.codync.dev`; dev Clerk issuer and D1 binding are configured in source. Exercise the live path before claiming readiness.
 - **Production:** `main.plist` targets `https://api.codync.dev` with the Clerk production instance (`clerk.codync.dev`, Google sign-in through the `codync-auth` Google Cloud project, published). The root Worker is deployed with D1 `codync`, `CLERK_SECRET_KEY` and `CLERK_WEBHOOK_SECRET` (Clerk webhook endpoint `https://api.codync.dev/v1/webhooks/clerk`, `user.deleted`), and `RELEASE_GATE_TOKEN` (dispatches the release gate; renewal in the [cloud README](../../cloud/README.md)).
+- **Cloud assistants (MCP connector):** the Worker also serves `mcp.codync.dev` (main) and `dev-mcp.codync.dev` (dev), deployed 2026-10-26. Each Clerk instance lists its URL under Agents → MCP server (public checks pass) with CIMD on and DCR off, and the zone's "no Browser Integrity Check" rule covers both hosts ([cloud assistants](../features/cloud-assistants.md)).
 - **Local:** Wrangler's `local` environment supports the isolated integration test and its test issuer. It is not a real Google sign-in test.
 
 ## Troubleshooting: a running host appears offline on another computer

@@ -26,7 +26,7 @@ const TICK: Duration = Duration::from_secs(5);
 /// next request for it brings the watcher back.
 // ponytail: an on-device call silent for this long misses cues until the user speaks again; track the owner's
 // connection if that matters.
-const IDLE: Duration = Duration::from_secs(2 * 60 * 60);
+const IDLE: Duration = Duration::from_hours(2);
 /// The chat's latest entries read as a watcher starts (replies still unfinished) and after missed events.
 const RECENT: i64 = 50;
 /// Replies and notices kept for an app that reconnects mid-call.

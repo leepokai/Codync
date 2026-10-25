@@ -26,6 +26,8 @@ class WidgetFeedTest {
         assertEquals(listOf("Codex Weekly"), usageLimits(UsageReport(listOf(UsageProvider("codex", "Codex",
             listOf(UsageWindow("secondary", "Weekly")))))).map { "${it.provider} ${it.window.label}" })
         assertTrue(usageLimits(UsageReport()).isEmpty())
+        val noted = UsageReport(listOf(UsageProvider("vibe", "Mistral Vibe", listOf(UsageWindow("cost", "Cost today", 0.0, text = "$1.50")))))
+        assertTrue(usageLimits(noted).isEmpty())
     }
 
     @Test fun `the most urgent bot is the first at work and nobody when all are quiet`() {

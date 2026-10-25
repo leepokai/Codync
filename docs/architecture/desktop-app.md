@@ -86,7 +86,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
   Agents start through `cmd /c` (`host/src/shell.rs`), setup terminals use ConPTY
   (`portable-pty`), and the vault key lives in Credential Manager. Not on Windows yet: Remote
   screen and the `computer` MCP (no screen helper), on-device speech, the Claude Code status
-  line hook (usage still comes from `claude -p /usage` and ACP), SSH tunnels to other
+  line hook (usage still comes from `claude -p /usage`, ACP and each agent's own report), SSH tunnels to other
   computers, and `curl | bash` installers (npm installs and Claude Code's PowerShell installer
   work). The tray icon is the app icon; left-click opens the chat, right-click the menu.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)

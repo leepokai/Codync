@@ -22,7 +22,8 @@ the change.
 | `agents` | Known agents, registry, custom command, Extensions, sign-in, models | [extensions](../features/marketplace.md), `host/src/agent/backends.rs` |
 | `conversations` | Messages, files, approval cards, stop, replies, reactions, commands, fresh conversations, notifications | [chat messages](../features/chat-messages.md), [file attachments](../features/file-attachments.md), [context and memory](../features/context-and-memory.md), [notifications](../design/push-and-live-activity.md) |
 | `groups` | Group chats | [groups and replies](../features/groups-and-replies.md) |
-| `teamwork` | Bots messaging bots, Manage the team | [bot collaboration](../features/bot-collaboration.md) |
+| `teamwork` | Bots messaging bots, bots on your other computers, Manage the team | [bot collaboration](../features/bot-collaboration.md), [codync-network](../features/codync-network.md) |
+| `cloud-assistants` | The MCP connector for ChatGPT, Claude and other assistants: turning it on, adding it, what it can do, privacy | [cloud assistants](../features/cloud-assistants.md) |
 | `routines` | Schedules, webhooks, runs | [routines](../features/routines.md) |
 | `artifacts` | Artifacts, the Library | [artifacts](../features/artifacts.md) |
 | `memory` | Layers, dreaming, the agent's own memory | [context and memory](../features/context-and-memory.md), [bot memory](../design/bot-memory.md) |

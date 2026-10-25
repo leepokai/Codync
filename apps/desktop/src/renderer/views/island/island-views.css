@@ -319,6 +319,13 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.island-usage-note {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
 .island-usage-reset {
   width: 66px;
   flex: none;

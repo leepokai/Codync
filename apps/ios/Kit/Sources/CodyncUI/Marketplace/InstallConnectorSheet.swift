@@ -5,6 +5,9 @@ import SwiftUI
 struct InstallConnectorSheet: View {
     let item: MarketConnector
     var requestId: String? = nil
+    /// Opened by an Add: a connector with nothing to fill in installs at once. Opened to look at it,
+    /// nothing installs until Add in the header.
+    var addsAtOnce = true
     let done: () -> Void
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
@@ -44,7 +47,7 @@ struct InstallConnectorSheet: View {
         .task {
             guard !started else { return }
             started = true
-            if item.options.count == 1 && item.options[0].inputs.isEmpty { install() }
+            if addsAtOnce && item.options.count == 1 && item.options[0].inputs.isEmpty { install() }
         }
         .onDisappear { values.removeAll() }
     }

@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { DropdownMenu, IconButton } from '../../components/Controls'
+import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { IconButton } from '../../components/Controls'
 import { Sheet, usePresence } from '../../components/Overlay'
 import { Icon } from '../../components/Icon'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
-import { EXTENSION_SECTIONS, PAGE_SIZES, canPageForward, clampPage, pageCount, type ExtensionSection } from './market-models'
+import { EXTENSION_SECTIONS, type ExtensionSection } from './market-models'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import './marketplace.css'
 import './extensions-layout.css'
@@ -118,6 +118,34 @@ export function SkeletonGrid() {
         ))}
       </div>
     </VStack>
+  )
+}
+
+/**
+ * The end of a list the registry continues (kit `LoadMoreRow`). In view, it asks for the page at
+ * `cursor`, and again each time the cursor moves on while it stays in view. After a failure it shows
+ * Try again, and asks again once it scrolls back into view.
+ */
+export function LoadMoreRow({ cursor, failed, onLoad }: { cursor: string; failed: boolean; onLoad: () => void }) {
+  const end = useRef<HTMLDivElement>(null)
+  const [inView, setInView] = useState(false)
+  const load = useEffectEvent(onLoad)
+  useEffect(() => {
+    const seen = new IntersectionObserver(([e]) => setInView(e!.isIntersecting))
+    seen.observe(end.current!)
+    return () => seen.disconnect()
+  }, [])
+  useEffect(() => {
+    if (inView) load()
+  }, [inView, cursor])
+  return (
+    <div ref={end} className="load-more">
+      {failed ? (
+        <HStack justify="center">
+          <IconButton title="Try again" icon="arrow.clockwise" onClick={onLoad} />
+        </HStack>
+      ) : <SkeletonGrid />}
+    </div>
   )
 }
 
@@ -296,57 +324,20 @@ export function useWindowHeight() {
   return height
 }
 
-/** Agents, Connectors, Skills: the chosen row is filled, like a side tab. */
-export function ExtensionRail({ selection, onChange }: { selection: ExtensionSection; onChange: (id: ExtensionSection) => void }) {
+/** Agents, Connectors, Skills: a row of filled chips over the list, the chosen one in the text color. */
+export function ExtensionTabs({ selection, onChange }: { selection: ExtensionSection; onChange: (id: ExtensionSection) => void }) {
   const tr = useTr()
   return (
-    <nav className="market-rail" role="tablist" aria-label={tr('Extensions sections')}>
+    <nav className="market-tabs" role="tablist" aria-label={tr('Extensions sections')}>
       {EXTENSION_SECTIONS.map((section) => {
         const on = section.id === selection
         return (
-          <button key={section.id} type="button" role="tab" aria-selected={on} className={`market-rail-item${on ? ' on' : ''}`} onClick={() => onChange(section.id)}>
-            <Icon name={section.icon} size={15} />
-            <span>{tr(section.label)}</span>
+          <button key={section.id} type="button" role="tab" aria-selected={on} className={`market-tab${on ? ' on' : ''}`} onClick={() => onChange(section.id)}>
+            {tr(section.label)}
           </button>
         )
       })}
     </nav>
-  )
-}
-
-/** Count, page size, previous, current / total, and next. */
-export function PageBar({ page, count, pageSize, hasMore = false, loading = false, onPage, onPageSize }: {
-  page: number
-  count: number
-  pageSize: number
-  hasMore?: boolean
-  loading?: boolean
-  onPage: (page: number) => void
-  onPageSize: (size: number) => void
-}) {
-  const tr = useTr()
-  const pages = pageCount(count, pageSize, hasMore)
-  const current = clampPage(page, count, pageSize, hasMore)
-  const canPrev = current > 0 && !loading
-  const canNext = canPageForward(count, current, hasMore, pageSize) && !loading
-  return (
-    <div className="market-pager">
-      <span>{tr('{count} total').replaceAll('{count}', String(count))}</span>
-      <span className="market-pager-size">
-        <span>{tr('Per page')}</span>
-        <DropdownMenu
-          className="market-pager-size-button"
-          title={tr(`${pageSize} / page`)}
-          items={() => PAGE_SIZES.map((size) => ({ title: `${size} / page`, selected: size === pageSize, action: () => onPageSize(size) }))}
-        >
-          <span>{tr(`${pageSize} / page`)}</span>
-          <Icon name="chevron.down" size={10} weight="semibold" />
-        </DropdownMenu>
-      </span>
-      <IconButton title="Previous page" icon="chevron.left" disabled={!canPrev} onClick={() => onPage(current - 1)} />
-      <span className="market-pager-fraction" aria-current="page">{current + 1} / {pages}</span>
-      <IconButton title={loading ? 'Loading…' : 'Next page'} icon="chevron.right" disabled={!canNext} onClick={() => onPage(current + 1)} />
-    </div>
   )
 }
 

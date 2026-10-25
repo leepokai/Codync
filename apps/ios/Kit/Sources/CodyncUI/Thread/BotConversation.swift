@@ -14,7 +14,7 @@ struct BotMessageRow: View {
 
     var body: some View {
         let peer = model.bots[group.peerId]
-        let name = model.authorName(group.peerId)
+        let name = model.authorName(group.peerId, fallback: group.peerName)
         let failed = group.failed
         Button(action: open) {
             HStack(spacing: 6) {
@@ -43,6 +43,8 @@ struct BotMessageRow: View {
 struct BotPairTitle: View {
     let botId: String
     let peerId: String
+    /// The peer's name when it is on another computer.
+    let peerName: String?
     @Environment(BotStore.self) private var model
 
     var body: some View {
@@ -52,13 +54,17 @@ struct BotPairTitle: View {
             side(peerId)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(model.authorName(botId)) and \(model.authorName(peerId))")
+        .accessibilityLabel("\(name(botId)) and \(name(peerId))")
+    }
+
+    private func name(_ id: String) -> String {
+        model.authorName(id, fallback: id == peerId ? peerName : nil)
     }
 
     private func side(_ id: String) -> some View {
         HStack(spacing: 6) {
             if let bot = model.bots[id] { CharacterAvatar(bot: bot, size: 22, animated: false) }
-            Text(model.authorName(id))
+            Text(name(id))
         }
     }
 }
@@ -71,14 +77,16 @@ struct BotConversationView: View {
     @State private var fetched: [Entry]?
     @State private var error: String?
 
-    private var rows: [BotConversationRow] {
-        BotConversationRow.build(BotExchange.conversation(fetched: fetched ?? [], live: model.chat(botId), peer: peerId))
+    private var exchanges: [BotExchange] {
+        BotExchange.conversation(fetched: fetched ?? [], live: model.chat(botId), peer: peerId)
     }
 
     var body: some View {
-        let rows = rows
+        let exchanges = exchanges
+        let rows = BotConversationRow.build(exchanges)
+        let peerName = exchanges.peerName
         VStack(spacing: 0) {
-            ModalHeader { BotPairTitle(botId: botId, peerId: peerId) }
+            ModalHeader { BotPairTitle(botId: botId, peerId: peerId, peerName: peerName) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if let error {
@@ -88,7 +96,7 @@ struct BotConversationView: View {
                         Text(L10n.tr("No messages yet.")).font(.footnote).foregroundStyle(Palette.tertiary)
                             .frame(maxWidth: .infinity).padding(.top, 24)
                     }
-                    ForEach(rows) { rowView($0) }
+                    ForEach(rows) { rowView($0, peerName: peerName) }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
@@ -106,24 +114,29 @@ struct BotConversationView: View {
         }
     }
 
-    @ViewBuilder private func rowView(_ row: BotConversationRow) -> some View {
+    /// A bot of this computer by its own name; the peer on another computer by the name its exchanges carry.
+    private func name(_ id: String, peerName: String?) -> String {
+        model.authorName(id, fallback: id == peerId ? peerName : nil)
+    }
+
+    @ViewBuilder private func rowView(_ row: BotConversationRow, peerName: String?) -> some View {
         switch row {
         case .separator(_, let date):
             TimeSeparator(date: date)
         case .message(_, let author, let text, let showsAuthor):
             VStack(alignment: .leading, spacing: 4) {
-                if showsAuthor { AuthorLabel(botId: author).padding(.top, 8) }
+                if showsAuthor { AuthorLabel(botId: author, name: name(author, peerName: peerName)).padding(.top, 8) }
                 ConversationBubble(text: text)
             }
         case .status(_, let outcome, let awaiting):
-            caption(outcome, awaiting: awaiting)
+            caption(outcome, awaiting: name(awaiting, peerName: peerName))
         }
     }
 
     @ViewBuilder private func caption(_ outcome: BotExchange.Outcome, awaiting: String) -> some View {
         switch outcome {
         case .pending:
-            Text(L10n.tr("Waiting for \(model.authorName(awaiting))…")).font(.footnote).foregroundStyle(Palette.secondary)
+            Text(L10n.tr("Waiting for \(awaiting)…")).font(.footnote).foregroundStyle(Palette.secondary)
                 .padding(.leading, 12)
         case .failed(let detail):
             Text(detail.isEmpty ? "Didn't complete." : detail).font(.footnote).foregroundStyle(Palette.danger)

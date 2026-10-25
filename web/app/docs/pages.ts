@@ -44,6 +44,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         description:
           "Bots can ask each other for help, hand work off, and, with Manage the team on, create and set up other bots.",
       },
+      {
+        slug: "cloud-assistants",
+        title: "Cloud assistants",
+        description:
+          "Add Codync to ChatGPT, Claude or another assistant as a connector, so it can give your bots tasks and read their answers.",
+      },
     ],
   },
   {

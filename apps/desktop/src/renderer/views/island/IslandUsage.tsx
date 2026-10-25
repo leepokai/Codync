@@ -4,7 +4,7 @@ import { usePixelRatio } from '../../lib/theme'
 import { useResetLine, useTr } from '../../lib/use-language'
 import { UsageBar } from '../usage/UsageBar'
 import { mascotDataURL } from '../usage/ProviderMascot'
-import { providerTintCSS, resetDescription, tightest, windowTitle } from '../usage/usage-model'
+import { providerTintCSS, resetDescription, tightest, windowReading, windowTitle } from '../usage/usage-model'
 import type { IslandModel } from './island-model'
 
 // Codync's own part of the island: the plan limits the menu bar already tracks (local usage
@@ -54,9 +54,12 @@ export function UsageMeter({ model }: { model: IslandModel }) {
   )
 }
 
-/** Every provider's limits side by side, each window a bar with when it resets. */
+/**
+ * The two providers closest to a limit side by side, each window a bar with when it resets. The
+ * header meter's provider is always one of them; ones with notes only come last.
+ */
 export function UsageView({ model }: { model: IslandModel }) {
-  const usage = model.summary.usage
+  const usage = [...model.summary.usage].sort((a, b) => (tightest(b)?.percent ?? -1) - (tightest(a)?.percent ?? -1))
   const tr = useTr()
   const line = useResetLine()
   if (!usage.length) {
@@ -64,7 +67,7 @@ export function UsageView({ model }: { model: IslandModel }) {
       <div className="island-card island-empty">
         <span className="island-empty-text">
           <span className="island-title">No usage yet.</span>
-          <span className="island-subtitle">Claude Code and Codex limits show up here once a bot has used them.</span>
+          <span className="island-subtitle">{tr('Plan limits show up here once an agent reports them.')}</span>
         </span>
       </div>
     )
@@ -80,9 +83,15 @@ export function UsageView({ model }: { model: IslandModel }) {
           {provider.windows.slice(0, 3).map((w) => (
             <div key={w.id} className="island-usage-row">
               <span className="island-usage-title">{tr(windowTitle(w))}</span>
-              <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
-              <span className="island-usage-value">{`${Math.round(w.percent)}%`}</span>
-              <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
+              {w.text ? (
+                <span className="island-usage-note">{w.text}</span>
+              ) : (
+                <>
+                  <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
+                  <span className="island-usage-value">{windowReading(w)}</span>
+                  <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
+                </>
+              )}
             </div>
           ))}
         </div>

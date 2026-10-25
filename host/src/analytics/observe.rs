@@ -20,11 +20,12 @@ const FIXED: [(&str, Event, &str, &str); 8] = [
 ];
 
 /// Switches the host owns (`setting_changed`): the method and the setting it names.
-const SETTINGS: [(&str, &str); 4] = [
+const SETTINGS: [(&str, &str); 5] = [
     ("setCloud", "remote_access"),
     ("setApproval", "approval"),
     ("setHostAutomaticUpdates", "automatic_updates"),
     ("setScreenEnabled", "remote_screen"),
+    ("setAssistants", "cloud_assistants"),
 ];
 
 /// The event an API call stands for, with its properties, read before the call runs.
@@ -140,6 +141,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
         "installHostUpdate" => Event::HostUpdateInstalled,
+        // Never the computer's name, the connector's address or the invite.
+        "networkCreate" | "networkJoin" => {
+            p.insert("via".into(), (if method == "networkCreate" { "create" } else { "invite" }).into());
+            Event::NetworkJoined
+        }
         "pairing" => Event::PairingCodeCreated,
         // Approving is `device_paired`, from `cloud::decide`.
         "decideAccessRequest" if b["approve"] == false => Event::AccessRequestDenied,
@@ -320,6 +326,14 @@ mod tests {
             Some(json!("automatic_updates"))
         );
         assert_eq!(setting("setScreenEnabled", json!({"enabled": true})).map(|s| s.1), Some(json!("remote_screen")));
+        assert_eq!(
+            setting("setAssistants", json!({"enabled": true})),
+            Some((Event::SettingChanged, json!("cloud_assistants"), json!(true)))
+        );
+        assert_eq!(
+            props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
+            Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
+        );
         let saved = props("setCloudUrl", &json!({"url": "https://relay.example.com"}));
         assert_eq!(
             saved.as_ref().map(|(e, p)| (*e, p["setting"].clone(), p["on"].clone())),

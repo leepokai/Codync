@@ -142,8 +142,9 @@ export class BotMirror extends Observable {
     return group.members.map((id) => this.bots.get(id)).filter((b): b is Bot => !!b)
   }
 
-  authorName(id: string | null | undefined) {
-    return (id && this.bots.get(id)?.name) || 'A deleted bot'
+  /** A bot's name; `fallback` for one that isn't this computer's (a bot on another computer). */
+  authorName(id: string | null | undefined, fallback?: string) {
+    return (id && this.bots.get(id)?.name) || fallback || 'A deleted bot'
   }
 
   get connectionLabel() {

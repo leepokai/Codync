@@ -155,12 +155,12 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
     let (method, timeout) = match server {
         Server::Connectors => ("connectorCall", Duration::from_secs(90)),
         Server::Routines => ("routineCall", Duration::from_secs(30)),
-        Server::Computer => ("computerCall", Duration::from_secs(60)),
+        Server::Computer => ("computerCall", Duration::from_mins(1)),
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
         Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
-        Server::Memory => ("memoryCall", Duration::from_secs(120)),
-        Server::Composio => ("composioCall", Duration::from_secs(120)),
+        Server::Memory => ("memoryCall", Duration::from_mins(2)),
+        Server::Composio => ("composioCall", Duration::from_mins(2)),
     };
     let res = crate::http()
         .post(format!("http://127.0.0.1:{port}/api/{method}"))

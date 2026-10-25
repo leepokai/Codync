@@ -9,7 +9,7 @@ use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 
-const TIMEOUT: Duration = Duration::from_secs(180);
+const TIMEOUT: Duration = Duration::from_mins(3);
 
 /// Runs one prompt on a throwaway agent of the bot's harness and returns its reply.
 /// Claude gets a real system prompt, no tools, no settings and no saved session; an agent with ACP
@@ -29,7 +29,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
             let mut command = [candidate.resolve(|_| {}).await?.acp()];
             let mut env = env.clone();
             crate::agent::own_memory::turn_off(&cfg.backend, &cwd, &mut env, &mut command).await;
-            crate::agent::bot::start_agent(&command[0], &cwd, &env, Duration::from_secs(60)).await
+            crate::agent::bot::start_agent(&command[0], &cwd, &env, Duration::from_mins(1)).await
         };
         match started.await {
             Ok(c) => {

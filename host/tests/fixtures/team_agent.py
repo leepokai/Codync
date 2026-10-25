@@ -76,9 +76,10 @@ def prompt(request):
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
     if text.startswith(("DELEGATE ", "DELEGATE_REPORT ")):
-        target = text.split()[1]
+        # DELEGATE <target> [message], on the first line.
+        target, *given = text.split("\n", 1)[0].split(" ", 2)[1:]
         update({"sessionUpdate": "tool_call", "toolCallId": "delegate", "title": "Message reviewer", "status": "in_progress"})
-        message = "REPORT" if text.startswith("DELEGATE_REPORT ") else "PERMISSION review the changes"
+        message = "REPORT" if text.startswith("DELEGATE_REPORT ") else (given or ["PERMISSION review the changes"])[0]
         response = team_call(target, message)
         assert not response.get("isError"), response
         result = json.loads(response["content"][0]["text"])

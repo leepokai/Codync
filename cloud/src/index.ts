@@ -20,6 +20,8 @@ export interface Env {
   TURN_LIMITER?: RateLimit;
   /** Public routine webhook deliveries per sender IP and hook. */
   HOOK_LIMITER?: RateLimit;
+  /** Cloud assistant (MCP connector) requests per account. */
+  ASSISTANT_LIMITER?: RateLimit;
   CLERK_ISSUER: string;
   CLERK_SECRET_KEY?: string;
   /** dev / e2e only: networkless verification with this public key. */
@@ -71,6 +73,12 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/v1\/relay\/device\/([^/]+)$/, api.relayDevice],
   ["POST", /^\/v1\/webhooks\/clerk$/, api.clerkWebhook],
   ["POST", new RegExp(`^/v1/hooks/${ID}/${ID}$`), api.routineHook],
+  // The cloud assistant's MCP connector (mcp.codync.dev, §7.9).
+  ["POST", /^\/mcp$/, api.mcp],
+  ["GET", /^\/mcp$/, api.mcpStream],
+  ["GET", /^\/\.well-known\/oauth-protected-resource(?:\/mcp)?$/, api.resourceMetadata],
+  ["GET", /^\/\.well-known\/oauth-authorization-server$/, api.authServerMetadata],
+  ["OPTIONS", /^\/(?:mcp|\.well-known\/oauth-[a-z-]+(?:\/mcp)?)$/, api.assistantPreflight],
 ];
 
 export default {

@@ -236,7 +236,7 @@ export const market = {
   termClose: (c: HostClient, term: string) => c.call('termClose', { term }),
 }
 
-/** Keep fetched catalog metadata in memory. The Extensions tabs page through it. */
+/** Keep fetched catalog metadata in memory. The Extensions tabs scroll through it. */
 export interface MarketplacePage<T> {
   items: T[]
 }
@@ -250,45 +250,14 @@ export function appendPage<T>(page: MarketplacePage<T>, more: T[], id: (t: T) =>
 
 export const replacePage = <T>(items: T[], id: (t: T) => string) => appendPage(emptyPage<T>(), items, id)
 
-/** How many catalog rows one Extensions page shows, and the sizes the pager offers. */
-export const MARKET_PAGE_SIZE = 10
-export const PAGE_SIZES = [6, 10, 20, 50] as const
-
 export type ExtensionSection = 'agents' | 'connectors' | 'skills'
 
-/** Each section with its icon and the line saying where its items come from. */
-export const EXTENSION_SECTIONS: { id: ExtensionSection; label: string; icon: string; source: string }[] = [
-  { id: 'agents', label: 'Agents', icon: 'terminal', source: 'Agents come from the ACP registry and install on {name}.' },
-  { id: 'connectors', label: 'Connectors', icon: 'point.3.connected.trianglepath.dotted', source: 'Connectors come from the official MCP Registry and install on {name}.' },
-  { id: 'skills', label: 'Skills', icon: 'book.pages', source: 'Skills come from Anthropic and install on {name}.' },
+/** Each section with the line saying where its items come from. */
+export const EXTENSION_SECTIONS: { id: ExtensionSection; label: string; source: string }[] = [
+  { id: 'agents', label: 'Agents', source: 'Agents come from the ACP registry and install on {name}.' },
+  { id: 'connectors', label: 'Connectors', source: 'Connectors come from the official MCP Registry and install on {name}.' },
+  { id: 'skills', label: 'Skills', source: 'Skills come from Anthropic and install on {name}.' },
 ]
-
-/** Loaded rows split into pages. While the registry still has a cursor, one more page is offered so the bar is never 1 / 1 for a list that continues. */
-export function pageCount(count: number, size = MARKET_PAGE_SIZE, hasMore = false): number {
-  const loaded = count <= 0 ? 1 : Math.ceil(count / size)
-  return hasMore ? loaded + 1 : loaded
-}
-
-/** The page index that still lands on a page, or 0 when the list is empty. */
-export function clampPage(page: number, count: number, size = MARKET_PAGE_SIZE, hasMore = false): number {
-  return Math.min(Math.max(0, page), pageCount(count, size, hasMore) - 1)
-}
-
-export function pageItems<T>(items: readonly T[], page: number, size = MARKET_PAGE_SIZE): T[] {
-  const start = Math.max(0, page) * size
-  return items.slice(start, start + size)
-}
-
-/** Next stays available through the last shown page, including the page that still has to be fetched. */
-export function canPageForward(count: number, page: number, hasMore: boolean, size = MARKET_PAGE_SIZE): boolean {
-  return page < pageCount(count, size, hasMore) - 1
-}
-
-/** A later page that isn't full yet, so the registry has to be asked. The first page is whatever the first answer held. */
-export function needsFetch(count: number, page: number, size = MARKET_PAGE_SIZE): boolean {
-  const start = Math.max(0, page) * size
-  return start > 0 && start + size > count
-}
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

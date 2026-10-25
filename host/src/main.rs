@@ -11,6 +11,8 @@ mod environment;
 mod hub;
 mod market;
 mod mcp;
+mod network;
+mod network_cli;
 mod remote;
 mod routines;
 mod screen;
@@ -109,6 +111,8 @@ enum Sub {
     },
     /// Show or change the Codync cloud (reach this computer from anywhere).
     Cloud(cloud_cli::CloudArgs),
+    /// Your other computers: create a network, invite them, see who is around.
+    Network(network_cli::NetworkArgs),
     /// Install and start the host as a background service (launchd / systemd --user).
     Install {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -323,6 +327,8 @@ fn write_token_file(token: &str) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Every TLS connection (the relay, HTTPS) uses aws-lc-rs, also in builds that have ring too.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let cli = Cli::parse();
     match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: "0.0.0.0".into() }) {
         Sub::Serve { port, bind } => serve(&bind, port).await,
@@ -351,6 +357,7 @@ async fn main() -> Result<()> {
         },
         Sub::Access { port, action } => access(port, action.unwrap_or(AccessAction::List)).await,
         Sub::Cloud(args) => cloud_cli::run(args).await,
+        Sub::Network(args) => network_cli::run(args).await,
         Sub::Install { port } => {
             open_store()?;
             // Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so
@@ -500,6 +507,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     tokio::task::spawn_blocking(backends::hydrate_path).await?;
     let hub = hub::Hub::new(store, host_id, identity, token, port);
     hub.start()?;
+    network::start(&hub).await;
     analytics::host_started(&hub, service::started_by_service());
     background::start(&hub);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), bind, port, "codync-host listening");

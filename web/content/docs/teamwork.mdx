@@ -52,6 +52,35 @@ In a [group chat](/docs/groups), members don't message each other this way; they
 - **Limits:** a bot can have up to 16 messages queued or running at once, and the computer up to 64 in all. To keep bots from passing work around forever, a chain of requests stops after eight handoffs. Your next message starts a fresh allowance.
 - **Restarts:** if the host restarts while requests are pending, they're marked as failed and not run again. Check what the bots already did before you ask again. An answer still waiting for a busy sender is lost on a restart, but stays readable in the conversation sheet.
 
+## Bots on your other computers
+
+Your computers can join one private network, codync-network, so a bot on your desktop can ask a bot on your laptop or server. Computers connect to each other directly; when they can't, traffic goes through a relay that sees only encrypted data. The network stays off until you set it up, from a terminal on each computer.
+
+On the first computer, create the network. That computer becomes its owner:
+
+```sh
+codync-host network create desk
+```
+
+On a Mac where you installed the app from the disk image rather than with Homebrew, `codync-host` is inside the app: run `/Applications/Codync.app/Contents/Resources/codync-host network …` instead, here and below.
+
+It prints a **recovery code** once. Keep it in a password manager: it makes another computer the owner if this one is lost (`codync-host network recover <code>`).
+
+Then add each other computer with a one-time invite, good for an hour while the inviting computer stays on:
+
+```sh
+codync-host network invite                    # on the owner
+codync-host network join '<invite>' laptop    # on the new computer
+```
+
+`codync-host network` shows the computers, their roles and their bots. The owner can make a computer an admin (`codync-host network promote laptop`), which can then invite and remove computers too. `codync-host network remove laptop` takes a computer out for good; add `--cascade` for a stolen one, to also remove every computer it added. A computer that was off hears about a removal when it's back.
+
+Once your computers are in the network, nothing else changes for your bots. A bot lists the bots on your other computers along with its own, as `name@computer` (for example `reviewer@desk`), and asks them the same way. The request runs in that bot's chat on its computer, with that computer's approvals, and the answer comes back to the sender. The rows in the chats name the bot and its computer, for example "Messaged Reviewer on desk".
+
+- **Away computers:** a request to a computer that's asleep waits up to a day and goes out when it's back.
+- **Limits:** besides the limits below, each computer accepts a burst of 5 messages between the same two bots, then one every 2 minutes, and refuses the same words twice within 10 minutes.
+- **Connector:** by default computers that can't connect directly use iroh's public relays, meant for trying things out. Add `--connector https://your-relay` to `create` or `join` to use your own `iroh-relay`, or `--connector private` for no relay at all (computers on the same network, Tailscale or a VPN).
+
 ## Manage the team
 
 A bot with **Manage the team** on can set up the team for you: list your bots, create new ones and change their setup. Use it for a lead bot that hires the specialists a project needs.

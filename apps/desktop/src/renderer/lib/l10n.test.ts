@@ -65,7 +65,7 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Check for updates', 'zh', false), '检查更新')
   assert.equal(translate('Computer access is ready.', 'zh', false), '电脑访问已就绪。')
   assert.equal(translate('Storage', 'zh', false), '存储')
-  assert.equal(translate('Next page', 'zh', false), '下一页')
+  assert.equal(translate('Extensions sections', 'zh', false), '扩展分类')
   assert.equal(
     translate('listing skills on GitHub: https://api.github.com/repos/anthropics/skills answered 403 Forbidden', 'zh', false),
     '无法列出 GitHub 上的技能：https://api.github.com/repos/anthropics/skills 返回了 403 Forbidden',

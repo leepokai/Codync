@@ -68,6 +68,12 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class VoiceCallStarted(val engine: VoiceEngineKind) : AnalyticsEvent("voice_call_started") {
         override val properties get() = mapOf("engine" to engine.json)
     }
+    /** How one engine of a call fared ([com.codync.android.core.CallQuality]). */
+    data class VoiceCallQuality(val engine: VoiceEngineKind, val report: com.codync.android.core.CallQuality.Report) : AnalyticsEvent("voice_call_quality") {
+        override val properties get() = mapOf("engine" to engine.json, "reconnects" to JsonPrimitive(report.reconnects),
+            "stuck" to JsonPrimitive(report.stuck.wire), "failure" to JsonPrimitive(report.failure?.wire ?: "none")) +
+            listOfNotNull(report.readyMs?.let { "ready_ms" to JsonPrimitive(it) })
+    }
     data class ScreenViewed(val screen: AnalyticsScreen) : AnalyticsEvent("screen_viewed") {
         override val properties get() = mapOf("screen" to screen.json)
     }

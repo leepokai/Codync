@@ -23,6 +23,9 @@ const shipIt = `${identity.appId}.ShipIt`
 
 const bundlePath = () => join(app.getPath('exe'), '../../..')
 
+/** How long another device's update request lasts: as long as that device shows it updating. */
+const REQUEST_WAIT = 10 * 60_000
+
 /**
  * macOS's installer (ShipIt) cancels when the old app runs again while it swaps the bundle
  * ("App Still Running"), and someone who sees no window for those seconds opens it. An old copy
@@ -44,7 +47,7 @@ function reopenAfterInstall() {
   spawn('/bin/sh', ['-c', script, shipIt, bundlePath()], { detached: true, stdio: 'ignore' }).unref()
 }
 
-export class Updates extends EventEmitter {
+export class Updates extends EventEmitter<{ change: []; upToDate: []; setAutoCheck: [on: boolean]; setAutoDownload: [on: boolean] }> {
   state: UpdateState = {
     supported: enabled,
     checking: false,
@@ -61,6 +64,11 @@ export class Updates extends EventEmitter {
   private userInitiated = false
   /** The person chose Update: restart into the release as soon as it's downloaded. */
   private installWhenDownloaded = false
+  /**
+   * Until when another device's request to update this computer (`installHostUpdate`) lasts: the
+   * release downloads, and installs once no bot is working without waiting for the person.
+   */
+  private requestedUntil = 0
   private preparing: Promise<boolean> | null = null
   private prepared = false
   private updateGeneration = 0
@@ -89,6 +97,7 @@ export class Updates extends EventEmitter {
       if (process.platform === 'darwin') void shell.openPath(bundlePath())
     }
 
+    this.host.on('updateRequested', () => this.installRequested())
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.on('checking-for-update', () => this.set({ checking: true, error: null }))
@@ -145,15 +154,20 @@ export class Updates extends EventEmitter {
     this.set({ checking: false, lastCheck: now, ...change })
   }
 
+  /** A check the person asked for answers even when there's nothing new (`upToDate`). */
   private upToDate() {
     this.installWhenDownloaded = false
+    this.requestedUntil = 0
+    const asked = this.userInitiated
     this.userInitiated = false
     this.checked({ availableVersion: null })
+    if (asked) this.emit('upToDate')
   }
 
   private failed(error: unknown) {
     this.updateGeneration++
     this.installWhenDownloaded = false
+    this.requestedUntil = 0
     prefs.set('updateRelaunchInFront', false)
     prefs.set('updateInstalling', undefined)
     // A preparation still stopping the host restores it after stop completes.
@@ -192,23 +206,38 @@ export class Updates extends EventEmitter {
     this.check()
   }
 
+  /** Another device asked this computer to update: download the release and restart into it in the background. */
+  private installRequested() {
+    this.requestedUntil = Date.now() + REQUEST_WAIT
+    if (this.state.staged) return this.installWhenIdle()
+    if (this.state.checking || this.state.downloadPercent !== null) return
+    void autoUpdater.checkForUpdates().catch(() => {})
+  }
+
+  private get requested() {
+    return Date.now() < this.requestedUntil
+  }
+
   /**
    * The release GitHub marks latest, which the release gate gives only to one the App Store's
    * iPhone app works with (docs/reference/compatibility.md).
    */
   private available(info: UpdateInfo) {
     this.checked({ availableVersion: info.version })
-    if (this.userInitiated || this.state.autoDownload) {
+    if (this.userInitiated || this.state.autoDownload || this.requested) {
       this.set({ downloadPercent: 0 })
       void autoUpdater.downloadUpdate().catch(() => {})
     }
   }
 
-  /** Waits until the app is in the background, nobody has typed for ten minutes and no bot is working. */
+  /**
+   * Waits until no bot is working and, unless another device asked for the update, the app is in
+   * the background and nobody has typed for ten minutes.
+   */
   private installWhenIdle() {
     const timer = setInterval(async () => {
       if (!this.state.staged) return clearInterval(timer)
-      if (!this.state.autoDownload || BrowserWindow.getFocusedWindow() || powerMonitor.getSystemIdleTime() < 600) return
+      if (!this.requested && (!this.state.autoDownload || BrowserWindow.getFocusedWindow() || powerMonitor.getSystemIdleTime() < 600)) return
       if (!(await this.host.isIdleForUpdate())) return
       clearInterval(timer)
       void this.install(false)

@@ -52,7 +52,7 @@ async fn deliver(
             let id = id.to_owned();
             let (path, opened) = tokio::task::spawn_blocking(move || -> Result<(PathBuf, bool)> {
                 let path = write_temp(&temp, &name, &id, &html)?;
-                let opened = crate::tui::manage::open_here(path.as_os_str());
+                let opened = crate::shell::open(path.as_os_str());
                 Ok((path, opened))
             })
             .await??;

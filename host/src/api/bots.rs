@@ -1,5 +1,6 @@
 //! Bot and chat methods: roster, messages, uploads, memory, artifacts, routines and the bots' own MCP calls.
 
+use super::devices::Caller;
 use super::str_arg;
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
@@ -9,7 +10,7 @@ use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
-pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
+pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?),
@@ -168,12 +169,14 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             // Said on a voice call (on-device or speech to text): the apps show it in the call's conversation.
             if let Some(call) = b["call"].as_str() {
                 data["call"] = crate::chat::calls::checked(call)?.into();
+                crate::chat::calls::heard(hub, bot, call, caller.device_key())?;
             }
             json!({"entry": crate::chat::messages::post(hub, &row.config, data)?})
         }
         // A voice call is on (its audio flows): the lead speaks first.
         "callStarted" => {
-            crate::chat::lead::call_started(hub, str_arg(&b, "botId")?)?;
+            let call = b["callId"].as_str().map(crate::chat::calls::checked).transpose()?;
+            crate::chat::lead::call_started(hub, str_arg(&b, "botId")?, call)?;
             json!({})
         }
         // A finished voice call from an app older than `endCall`, as a line in the chat ("Voice chat · 0:16").
@@ -185,8 +188,9 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             let e = hub.add_entry(&Lane::main(bot), EntryKind::Notice, hub.store.max_turn(bot), &data);
             json!({"entry": e})
         }
-        // A voice call, owned by the host (`chat::calls`).
-        "startCall" => crate::chat::calls::start(hub, &b).await?,
+        // A voice call, owned by the host (`chat::calls`); only the device that starts it hears what its voice should
+        // say.
+        "startCall" => crate::chat::calls::start(hub, &b, caller.device_key()).await?,
         // `lines`: what was said on the call that the app hadn't sent yet, which the tool may hand on.
         "callTool" => {
             let call = crate::chat::calls::checked(str_arg(&b, "callId")?)?;
@@ -194,12 +198,14 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             json!({"result": result.await})
         }
         "callLines" => {
-            crate::chat::calls::add_lines(
-                &hub.store,
-                crate::chat::calls::checked(str_arg(&b, "callId")?)?,
-                &b["lines"],
-            )?;
+            crate::chat::calls::add_lines(hub, crate::chat::calls::checked(str_arg(&b, "callId")?)?, &b["lines"])?;
             json!({})
+        }
+        // What a call carried, for its conversation: the chat an app holds may not reach back that far.
+        "callEntries" => {
+            let bot = str_arg(&b, "botId")?;
+            let call = crate::chat::calls::checked(str_arg(&b, "callId")?)?;
+            json!({"entries": hub.store.call_entries(bot, call, crate::chat::calls::CALL_ENTRIES)?})
         }
         "endCall" => {
             let call = crate::chat::calls::checked(str_arg(&b, "callId")?)?;

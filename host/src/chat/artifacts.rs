@@ -38,6 +38,9 @@ pub struct Artifact {
     /// Its newest card in the bot's chat: what a message about the artifact replies to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_id: Option<String>,
+    /// The sync rev of its last change, so a client's catch-up brings changes it missed.
+    #[serde(default)]
+    pub rev: i64,
 }
 
 impl Artifact {
@@ -82,8 +85,15 @@ pub fn tools() -> [Value; 2] {
     ]
 }
 
+const KEY_PREFIX: &str = "artifact.";
+
 fn key(bot: &str, id: &str) -> String {
-    format!("artifact.{bot}.{id}")
+    format!("{KEY_PREFIX}{bot}.{id}")
+}
+
+/// The artifacts whose details are saved under keys starting with `prefix`.
+fn saved<'a>(store: &'a Store, prefix: &str) -> impl Iterator<Item = Artifact> + 'a {
+    store.kv_prefix(prefix).into_iter().filter_map(|k| serde_json::from_str(&store.kv_get(&k)?).ok())
 }
 
 /// Where a bot's artifacts live: `<id>.html` each.
@@ -103,18 +113,30 @@ pub fn get(store: &Store, bot: &str, id: &str) -> Option<Artifact> {
 
 /// A bot's artifacts, the most recently published first.
 pub fn list(store: &Store, bot: &str) -> Vec<Artifact> {
-    let prefix = format!("artifact.{bot}.");
-    let mut artifacts: Vec<Artifact> =
-        store.kv_prefix(&prefix).iter().filter_map(|k| serde_json::from_str(&store.kv_get(k)?).ok()).collect();
+    let mut artifacts: Vec<Artifact> = saved(store, &format!("{KEY_PREFIX}{bot}.")).collect();
     artifacts.sort_by_key(|artifact| std::cmp::Reverse(artifact.updated_at));
     artifacts
 }
 
-/// Saves an artifact's details and tells the apps (`artifact` event; they upsert it by id).
-fn put(hub: &Hub, artifact: &Artifact) -> Result<()> {
-    hub.store.kv_set(&key(&artifact.bot_id, &artifact.id), &serde_json::to_string(artifact)?)?;
-    let _ = hub.events.send(json!({"type": "artifact", "artifact": artifact}));
-    Ok(())
+/// Saves an artifact's details under a new rev and tells the apps (`artifact` event; they upsert it by id).
+fn put(hub: &Hub, artifact: &mut Artifact) -> Result<()> {
+    hub.emit_change(|| {
+        hub.store.kv_set_stamped(&key(&artifact.bot_id, &artifact.id), |rev| {
+            artifact.rev = rev;
+            Ok(serde_json::to_string(artifact)?)
+        })?;
+        Ok(event(artifact))
+    })
+}
+
+fn event(artifact: &Artifact) -> Value {
+    json!({"type": "artifact", "rev": artifact.rev, "artifact": artifact})
+}
+
+/// The `artifact` events a client's catch-up holds: every artifact changed after `since`.
+// ponytail: scans every artifact's details; an index by rev if a computer ever keeps thousands.
+pub fn since(store: &Store, since: i64) -> Vec<Value> {
+    saved(store, KEY_PREFIX).filter(|artifact| artifact.rev > since).map(|artifact| event(&artifact)).collect()
 }
 
 pub fn title(value: &str) -> Result<String> {
@@ -184,9 +206,10 @@ async fn publish(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
         created_at: existing.as_ref().map_or(now, |artifact| artifact.created_at),
         updated_at: now,
         entry_id: existing.and_then(|artifact| artifact.entry_id),
+        rev: 0,
     };
     // Saved before its card goes out, so an app opening the card finds it.
-    put(hub, &artifact)?;
+    put(hub, &mut artifact)?;
     let mut answer = json!({"published": true, "artifact": {"id": artifact.id, "title": artifact.title}});
     let (reply, posted) = oneshot::channel();
     hub.send_cmd(bot, Cmd::PostArtifact { data: artifact.card_entry(), reply })?;
@@ -197,7 +220,7 @@ async fn publish(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     match posted {
         Ok(entry) => {
             artifact.entry_id = Some(entry);
-            put(hub, &artifact)?;
+            put(hub, &mut artifact)?;
         }
         // A routine, a room or a bot request: the artifact is in the chat's Library, and its reply says so.
         Err(error) => answer["card"] = format!("not posted ({error:#}); mention the artifact in your reply").into(),
@@ -224,10 +247,27 @@ pub async fn api(hub: &Arc<Hub>, method: &str, b: &Value) -> Result<Value> {
         }
         "renameArtifact" => {
             artifact.title = title(b["title"].as_str().unwrap_or_default())?;
-            put(hub, &artifact)?;
+            put(hub, &mut artifact)?;
+            retitle_card(hub, &artifact);
             Ok(json!({"artifact": artifact}))
         }
         _ => bail!("unknown artifact method: {method}"),
+    }
+}
+
+/// The artifact's newest card takes the new title too: older apps and a cache that never saw the rename show the card's.
+fn retitle_card(hub: &Hub, artifact: &Artifact) {
+    let Some(id) = artifact.entry_id.as_deref() else { return };
+    let retitled = hub.edit_entry(id, |card| {
+        if card.data["artifact"]["id"] != artifact.id.as_str() {
+            return Ok(false);
+        }
+        card.data["text"] = card_text(&artifact.title).into();
+        card.data["artifact"]["title"] = artifact.title.clone().into();
+        Ok(true)
+    });
+    if let Err(e) = retitled {
+        tracing::info!(artifact = artifact.id, error = format!("{e:#}"), "couldn't retitle the artifact's card");
     }
 }
 

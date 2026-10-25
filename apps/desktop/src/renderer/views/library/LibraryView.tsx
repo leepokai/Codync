@@ -62,7 +62,7 @@ export function LibraryView({ botId, openArtifact }: { botId: string; openArtifa
           </section>
         ))
       )}
-      <AttachmentViewer file={viewing} botId={botId} close={() => setViewing(null)} />
+      <AttachmentViewer source={viewing && { file: viewing, botId }} close={() => setViewing(null)} />
     </VStack>
   )
 }
@@ -146,7 +146,7 @@ function AttachmentRow({ botId, file, view }: { botId: string; file: Attachment;
     )
   }
   return (
-    <Row leading={<AttachmentImage file={file} botId={botId} fit="icon" />}>
+    <Row leading={<AttachmentImage source={{ file, botId }} fit="icon" />}>
       <button className="library-row-open" onClick={view}>
         <Name name={file.name} detail={byteCount(file.size)} />
       </button>

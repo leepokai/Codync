@@ -57,10 +57,12 @@
 		A1B7C7774E7FAF6D45D1BEF8 /* Permissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FA78A055791BBBA79DF8C8B /* Permissions.swift */; };
 		AA601649E43A5AF73DCF5B5E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 2D9748E611692583AFC5A152 /* WebRTC */; };
 		ABE57DA1C72A08A22262AAB1 /* CodyncOrb-Ghost.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8E783FFF5EC2697C16FA2E1B /* CodyncOrb-Ghost.ttf */; };
+		AF04355DFF3452C3ED0CA641 /* CallControlIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1162D95B42A1BF2EB5EC0E9 /* CallControlIntents.swift */; };
 		B09F6D6EDC6C6B0B9919D6BF /* CodyncBot-blob-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C484135603CEF437C27BE67B /* CodyncBot-blob-Ink.ttf */; };
 		B1815C13D0D78E99415C2DC2 /* CodyncBot-cloud-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5A21538E748C62E82DF7B139 /* CodyncBot-cloud-Ink.ttf */; };
 		B3450CFD87D4096B3BCA7885 /* CodyncBot-wedge-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C6B96EE690FC5355C9E3D1B5 /* CodyncBot-wedge-Ink.ttf */; };
 		B3554D38F39916698E961A37 /* WidgetGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B22589689593E0089118FDB /* WidgetGalleryView.swift */; };
+		B6ECB0743C67903DA1956B29 /* CallControlIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1162D95B42A1BF2EB5EC0E9 /* CallControlIntents.swift */; };
 		BA978F06CB1E58511FFB541B /* WidgetSetupDemo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D8961FADA8810B6CC479705 /* WidgetSetupDemo.swift */; };
 		BCB60463C96AF5725EC4A2C7 /* CodyncBot-hex-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D827E43025A592B41CB68EFD /* CodyncBot-hex-Tint.ttf */; };
 		BF77DD7946621D8818EDAB9B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A87B0091DAF0E4807D62017 /* SettingsView.swift */; };
@@ -69,6 +71,7 @@
 		E695251CFD06AC6F4E3396B7 /* OpenBotIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4EB0DBA2F08CD7C0E25E30 /* OpenBotIntent.swift */; };
 		E78E3B5FAFEB79F31AAC104D /* CodyncBot-teardrop-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C8F46BD8301E7E2C83C35111 /* CodyncBot-teardrop-Tint.ttf */; };
 		EBB0417A5FB2CE6D514D21BE /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = D9AB2F442A5F243653EAE936 /* ClerkKit */; };
+		ECE1339FED40D7D5D8806608 /* CallLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5B2717A8DFD43DC6DAA9D8C /* CallLiveActivity.swift */; };
 		F171F16563D1FF6308697173 /* CodyncUI in Frameworks */ = {isa = PBXBuildFile; productRef = 06C9F37C6502131CAF0F145E /* CodyncUI */; };
 		F6A380E8A026CA849620F2F7 /* Driver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D16AD9979C77D976BC832D1 /* Driver.swift */; };
 		F842AE1C5ED96AF9A7F5D16C /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6D734BEE7CD3F84677B0218B /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -173,8 +176,10 @@
 		DD3DE9A4EEB369C4F75C9448 /* ActivityGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityGalleryView.swift; sourceTree = "<group>"; };
 		E3BF4D3B82FE8274F610C703 /* Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Push.swift; sourceTree = "<group>"; };
 		ECD0B4EA4BBA2BB2826C4362 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		F1162D95B42A1BF2EB5EC0E9 /* CallControlIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallControlIntents.swift; sourceTree = "<group>"; };
 		F21AEC12DC761C28A997BEF3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		F4375A206703EC65F0D15BD6 /* CodyncBot-pebble-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-pebble-Ink.ttf"; sourceTree = "<group>"; };
+		F5B2717A8DFD43DC6DAA9D8C /* CallLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallLiveActivity.swift; sourceTree = "<group>"; };
 		F6932F782C1B87C9608359A6 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		F7CAD5C4F330637102B40288 /* CodyncBot-tablet-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-tablet-Tint.ttf"; sourceTree = "<group>"; };
 		F99C11684BFBEB49006600A9 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
@@ -280,6 +285,8 @@
 		5756AB2A238F70069A04CA65 /* Widgets */ = {
 			isa = PBXGroup;
 			children = (
+				F1162D95B42A1BF2EB5EC0E9 /* CallControlIntents.swift */,
+				F5B2717A8DFD43DC6DAA9D8C /* CallLiveActivity.swift */,
 				FAB9BDB52C3A9F7B2568A750 /* CodyncWidgets.swift */,
 				5C4EB0DBA2F08CD7C0E25E30 /* OpenBotIntent.swift */,
 				305DDCC18BB8AA6CD9D19CEF /* WidgetPreviews.swift */,
@@ -645,6 +652,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B6ECB0743C67903DA1956B29 /* CallControlIntents.swift in Sources */,
+				ECE1339FED40D7D5D8806608 /* CallLiveActivity.swift in Sources */,
 				2CDF3DF16A13DAF83CA42168 /* CodyncWidgets.swift in Sources */,
 				5C9AE497DA83EB32AEC9057C /* OpenBotIntent.swift in Sources */,
 				3BCC04815E5CA8953E0DDCAD /* WidgetPreviews.swift in Sources */,
@@ -679,6 +688,7 @@
 				16C24A622E33414C24B0C148 /* AppearanceSettings.swift in Sources */,
 				01A1F820EFEE49A8FCCFC3F3 /* BotListView.swift in Sources */,
 				E0D116BF893B81AEC0D2135A /* BotShortcuts.swift in Sources */,
+				AF04355DFF3452C3ED0CA641 /* CallControlIntents.swift in Sources */,
 				7C20764DC05D499075BC5E8C /* CodyncApp.swift in Sources */,
 				2002C16E427B4E4E7279E1C4 /* ComputerStatus.swift in Sources */,
 				5A56EF5D36D12ACCEA100642 /* LanguageSettings.swift in Sources */,
@@ -788,7 +798,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.25.0;
+				MARKETING_VERSION = 2.26.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -886,7 +896,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.25.0;
+				MARKETING_VERSION = 2.26.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1145,7 +1155,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.25.0;
+				MARKETING_VERSION = 2.26.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1295,7 +1305,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.25.0;
+				MARKETING_VERSION = 2.26.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

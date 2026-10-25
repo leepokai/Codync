@@ -33,15 +33,24 @@ struct CallLineRow: View {
 struct CallConversationView: View {
     let line: Entry
     @Environment(BotStore.self) private var model
+    /// The call's own messages, which the chat this device holds may not reach back to; nil while they load.
+    @State private var fetched: [Entry]?
+    @State private var error: String?
 
     var body: some View {
         let entry = model.chat(line.botId).first { $0.id == line.id } ?? line
-        let messages = model.chat(line.botId).callConversation(entry)
+        let messages = model.chat(line.botId).withCallEntries(fetched ?? []).callConversation(entry)
         VStack(spacing: 0) {
             ModalHeader(entry.data.text ?? "Voice chat")
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    if messages.isEmpty {
+                    if let error {
+                        Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
+                            .frame(maxWidth: .infinity).padding(.top, 24)
+                    } else if fetched == nil, line.data.call != nil {
+                        Spinner(size: 14).frame(maxWidth: .infinity).padding(.top, 24)
+                            .accessibilityLabel(L10n.tr("Loading the call"))
+                    } else if messages.isEmpty {
                         Text(L10n.tr("Nothing was said on this call.")).font(.footnote).foregroundStyle(Palette.tertiary)
                             .frame(maxWidth: .infinity).padding(.top, 24)
                     }
@@ -53,6 +62,15 @@ struct CallConversationView: View {
             .defaultScrollAnchor(.bottom)
         }
         .background(Palette.background)
+        .task(id: line.id) {
+            guard let call = line.data.call else { return }
+            do {
+                fetched = try await model.callEntries(line.botId, call: call)
+            } catch {
+                fetched = []
+                self.error = error.localizedDescription
+            }
+        }
     }
 
     @ViewBuilder private func row(_ message: CallMessage) -> some View {

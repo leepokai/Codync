@@ -25,7 +25,7 @@ pub fn args(backend: &str) -> &'static str {
 /// are the user's.
 pub fn switchable(cfg: &BotConfig) -> bool {
     match cfg.backend.as_str() {
-        "claude" | "copilot" | "codebuddy" => true,
+        "claude" | "copilot" | "codebuddy" | "workbuddy" => true,
         "qwen" => crate::agent::workspace::is_managed(cfg),
         _ => false,
     }
@@ -172,6 +172,10 @@ mod tests {
         };
         let own = crate::agent::workspace::path(id).to_string_lossy().into_owned();
         assert!(kept(&bot("claude", "/work/app")), "Claude Code's is switched through its settings, in any folder");
+        assert!(
+            switchable(&bot("workbuddy", "/work/app")),
+            "WorkBuddy is the CodeBuddy CLI and honors the same switch"
+        );
         assert!(kept(&bot("qwen", &own)));
         assert!(!switchable(&bot("qwen", "/work/app")), "Qwen Code's lives in the project's own files");
         assert!(!switchable(&bot("codex", &own)) && !switchable(&bot("gemini", &own)));

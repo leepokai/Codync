@@ -8,11 +8,11 @@ You add both in **Extensions**. They install on the computer, so every bot on th
 - **iPhone:** tap the account button at the top left of the Bots tab, open **Computers & settings**, and tap the Extensions button on the computer's row. With several computers, the Extensions button on a computer's heading in the Bots tab opens it too.
 - **Terminal UI:** press `A`, or pick "Extensions: agents, connectors, skills…" from the action list. Tab switches between Agents, Connectors and Skills.
 
-The header names the computer everything installs on. Once you've added something, a count under it ("3 installed", **Connectors & skills**) opens your library, where you can sign in to a connector or remove one.
+The header names the computer everything installs on. **Credentials** sits on that same row, beside the name. Under the open section, one line says where those items come from and that they install on this computer. Once you've added something, a count under it ("3 installed", **Connectors & skills**) opens your library, where you can sign in to a connector or remove one.
 
 ## Add a connector from the registry
 
-The **Connectors** section starts with a short featured list, then pages through the official MCP Registry. Search by service name, or press **Load more connectors** to see more.
+Extensions opens on one section at a time: **Agents**, **Connectors**, or **Skills**. On the desktop, and on a wide phone, those are a side list; on a narrow phone they are tabs along the top. Each list is paged. A phone starts at 6 at a time, three rows of the two agent tiles; elsewhere it starts at 10. The bar under the list shows how many there are, how many fit on a page (6, 10, 20 or 50), **Previous page**, the current page over the page count (such as **1 / 8**), and **Next page**. On a phone, previous and next are the dark round buttons on either side of the list, and you can also swipe the list left or right to turn the page. The bar underneath is the page size and the page number (`1 / 8` is the page, not how many fit). A short last page keeps the height of a full page, so the bar stays put. The **Connectors** list starts with the first page from the official MCP Registry; opening a page that isn't full yet fetches more. Search by service name. In the terminal, Tab still switches sections, Page Up and Page Down turn the page, and Alt+S changes the page size.
 
 1. Pick a connector. The **Add connector** sheet opens.
 2. If it can run more than one way, choose under **Runs**: hosted by the service, or on your computer as a package.
@@ -40,7 +40,7 @@ Some services don't offer this kind of sign-in (GitHub is one). For those, add t
 
 ## Add a custom connector
 
-Under **Make your own**, choose **Custom connector**, then one of:
+In the **Connectors** section, choose **Custom connector**, above the registry list, then one of:
 
 - **Command:** a command line that starts an MCP server. It runs on the computer in the bot's project folder, and quotes work like in a shell. Put keys under **Environment**, one `KEY=value` per line.
 - **URL:** a hosted MCP server. Add headers under **Headers**, one `Name: value` per line, or leave them empty if the service has you sign in.
@@ -89,7 +89,7 @@ The bot picks up the change on its next turn, in the same conversation.
 A skill is a folder with a `SKILL.md` file: a name, a line saying when to use it, and the instructions. A bot with a skill on is told its name, its description and where its instructions are, so it can read them when a task calls for it.
 
 - **Install one:** the **Skills** section of Extensions lists Anthropic's published skills. Press **Add**. Click any skill to read its instructions first.
-- **Write your own:** under **Make your own**, choose **Your own skill** and fill in **Name**, **When to use it** and **Instructions**.
+- **Write your own:** in the **Skills** section, choose **Your own skill**, above the list, and fill in **Name**, **When to use it** and **Instructions**.
 - **Let a bot write one:** ask a bot to save how it did something as a skill. A bot may also save one on its own after working out a task you're likely to want again. The chat shows "Saved the skill …" or "Updated the skill …". A skill a bot writes is on for that bot only; turn it on for other bots in their settings. A bot can change only the skills it wrote, and you can remove any skill from your library.
 
 ### Use a skill with a slash command

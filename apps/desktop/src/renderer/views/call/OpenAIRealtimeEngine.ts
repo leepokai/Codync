@@ -1,5 +1,5 @@
 import type { CallLink, CallSession } from './call-link'
-import { errorMessage, microphone, VoiceEngine, VoiceSettings } from './voice'
+import { errorMessage, microphone, onDevicesChanged, PROGRESS_TAG, reconnect, VoiceEngine, VoiceSettings } from './voice'
 
 /**
  * OpenAI Realtime over WebRTC, this computer ↔ OpenAI directly: the microphone is a WebRTC audio
@@ -20,26 +20,78 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
   private session: CallSession | null = null
   /** Tool calls still running on the computer: replies wait, so the model gets each result first. */
   private toolsRunning = 0
+  /** The session was set up once: a drop after that is tried again instead of ending the call. */
+  private connected = false
+  private reconnects = 0
+  private stopDevices: (() => void) | null = null
 
-  constructor(
-    private model: string,
-    private voice: string,
-    private link: CallLink,
-  ) {
+  private model: string
+  private voice: string
+  private link: CallLink
+
+  constructor(model: string, voice: string, link: CallLink) {
     super()
+    this.model = model
+    this.voice = voice
+    this.link = link
   }
 
   async start() {
     try {
       this.stream = await microphone()
-      if (this.ended) return this.release()
+    } catch (e) {
+      return void (!this.ended && this.fail(errorMessage(e), 'microphone'))
+    }
+    if (this.ended) return this.release()
+    // A headset plugged in or out: the call's microphone track moves to what the system picks now.
+    this.stopDevices = onDevicesChanged(() => void this.replaceMic())
+    await this.open()
+  }
+
+  /**
+   * A session with OpenAI: the computer mints its client secret and writes the voice's instructions (with the call so
+   * far, for a session that replaces a dropped one).
+   */
+  private async open() {
+    try {
       const session = await this.link.start('realtime', 'openai', this.model, this.voice)
       if (this.ended) return
       if (!session.credential) throw new Error('OpenAI sent no session credential.')
       this.session = session
       await this.connect(session.credential)
     } catch (e) {
-      if (!this.ended) this.fail(errorMessage(e))
+      if (this.ended) return
+      if (this.connected) this.dropped(errorMessage(e))
+      else this.fail(errorMessage(e), 'provider')
+    }
+  }
+
+  /** The connection to OpenAI dropped mid-call: a new session, a few times, before the call falls back. */
+  private dropped(reason: string) {
+    if (this.ended) return
+    if (this.reconnects >= reconnect.delays.length) return this.fail(reason, 'connection')
+    const delay = reconnect.delays[this.reconnects]!
+    this.reconnects++
+    this.close()
+    this.setPhase('reconnecting')
+    setTimeout(() => {
+      if (!this.ended) void this.open()
+    }, delay)
+  }
+
+  private async replaceMic() {
+    if (this.ended || !this.stream) return
+    try {
+      const next = await microphone()
+      if (this.ended) return void next.getTracks().forEach((t) => t.stop())
+      const track = next.getAudioTracks()[0]
+      if (!track) return
+      track.enabled = !this.muted
+      await this.pc?.getSenders().find((s) => s.track?.kind === 'audio')?.replaceTrack(track)
+      this.release()
+      this.stream = next
+    } catch (e) {
+      console.error('realtime: microphone change', errorMessage(e))
     }
   }
 
@@ -56,10 +108,11 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     pc.ontrack = (e) => {
       audio.srcObject = e.streams[0] ?? new MediaStream([e.track])
     }
-    pc.oniceconnectionstatechange = () => this.iceChanged(pc.iceConnectionState)
+    pc.oniceconnectionstatechange = () => this.pc === pc && this.iceChanged(pc.iceConnectionState)
     const events = pc.createDataChannel('oai-events')
     events.onopen = () => this.opened()
     events.onmessage = (e) => typeof e.data === 'string' && this.received(e.data)
+    events.onclose = () => this.events === events && this.connected && this.dropped('Lost the connection to OpenAI.')
     this.events = events
 
     const offer = await pc.createOffer()
@@ -81,7 +134,9 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     }
     await pc.setRemoteDescription({ type: 'answer', sdp: body })
     this.dropTimer = setTimeout(() => {
-      if (!this.ended && this.phase === 'starting') this.fail("Couldn't reach OpenAI.")
+      if (this.ended || !this.isConnecting) return
+      if (this.connected) this.dropped("Couldn't reach OpenAI.")
+      else this.fail("Couldn't reach OpenAI.", 'connection')
     }, 15_000)
   }
 
@@ -93,12 +148,21 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
   end() {
     this.ended = true
     this.onActivityChanged?.(false)
-    if (this.dropTimer) clearTimeout(this.dropTimer)
-    this.events?.close()
-    this.pc?.close()
-    this.events = null
-    this.pc = null
+    this.stopDevices?.()
+    this.stopDevices = null
+    this.close()
     this.release()
+  }
+
+  /** Closes the session, keeping the microphone for the next one. */
+  private close() {
+    if (this.dropTimer) clearTimeout(this.dropTimer)
+    const events = this.events
+    this.events = null
+    events?.close()
+    this.pc?.close()
+    this.pc = null
+    this.responding = false
     if (this.audio) {
       this.audio.srcObject = null
       this.audio = null
@@ -129,6 +193,14 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     this.flush()
   }
 
+  /** Only the newest progress waits to be said. */
+  progress(text: string) {
+    if (this.ended || this.phase === 'failed') return
+    this.pending = this.pending.filter((p) => !p.startsWith(PROGRESS_TAG))
+    this.pending.push(this.link.progress(text))
+    this.flush()
+  }
+
   // MARK: events
 
   private opened() {
@@ -156,8 +228,10 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     switch (msg.type) {
       case 'session.updated':
         // Connected once the session has the instructions and tools, not when the channel opens.
-        if (this.phase !== 'starting') break
+        if (!this.isConnecting) break
         if (this.dropTimer) clearTimeout(this.dropTimer)
+        this.connected = true
+        this.reconnects = 0
         this.setPhase('listening')
         this.flush()
         break
@@ -174,7 +248,7 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
         this.link.transcribing(false)
         break
       case 'output_audio_buffer.started':
-        this.setPhase('speaking')
+        if (this.isActive) this.setPhase('speaking')
         break
       case 'output_audio_buffer.stopped':
       case 'output_audio_buffer.cleared':
@@ -221,8 +295,8 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
   }
 
   private iceChanged(state: RTCIceConnectionState) {
-    // While starting, only a failure counts: the start timer runs until the session is set up.
-    if (this.ended || (this.phase === 'starting' && state !== 'failed')) return
+    // While connecting, only a failure counts: the start timer runs until the session is set up.
+    if (this.ended || (this.isConnecting && state !== 'failed')) return
     switch (state) {
       case 'connected':
       case 'completed':
@@ -230,10 +304,11 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
         break
       case 'disconnected':
         if (this.dropTimer) clearTimeout(this.dropTimer)
-        this.dropTimer = setTimeout(() => !this.ended && this.fail('Lost the connection to OpenAI.'), 5000)
+        this.dropTimer = setTimeout(() => this.dropped('Lost the connection to OpenAI.'), 5000)
         break
       case 'failed':
-        this.fail('Lost the connection to OpenAI.')
+        if (this.connected) this.dropped('Lost the connection to OpenAI.')
+        else this.fail("Couldn't reach OpenAI.", 'connection')
         break
     }
   }

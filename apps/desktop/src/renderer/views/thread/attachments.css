@@ -55,6 +55,12 @@
   border-radius: var(--radius-l);
   max-width: 380px;
 }
+.file-card-image {
+  display: flex;
+  align-self: flex-start;
+  border-radius: var(--radius-m);
+  overflow: hidden;
+}
 .file-card-detail {
   overflow-wrap: anywhere;
 }

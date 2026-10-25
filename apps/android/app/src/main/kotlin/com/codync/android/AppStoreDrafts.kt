@@ -94,12 +94,22 @@ fun AppStore.importFiles(uris: List<Uri>, onImported: (List<OutgoingFile>) -> Un
 }
 fun AppStore.removeFile(file: OutgoingFile) = action("remove:" + file.path) { withContext(Dispatchers.IO) { attachments.discard(file) } }
 
-suspend fun AppStore.attachment(botId: String, file: Attachment): File {
-    val request = contextScope.async { downloadLocks.getOrPut(file.id) { Mutex() }.withLock {
-    val destination = withContext(Dispatchers.IO) { attachments.cached(file.id) }
-    if (!destination.exists() || destination.length() != file.size) {
-        val active = ready()
-        HostFiles(active).download(botId, file, destination)
+suspend fun AppStore.attachment(botId: String, file: Attachment): File =
+    cachedFile(file.id, file.size) { files, destination -> files.download(botId, file, destination) }
+
+/** A picture a bot shared (iOS `sharedFileData`): checked against its SHA-256 on its way into the same cache. */
+suspend fun AppStore.sharedImage(entryId: String, file: SharedFile): File = cachedFile(file.id, file.size) { files, destination ->
+    val folder = withContext(Dispatchers.IO) { attachments.shareFolder() }
+    val saved = files.downloadShared(entryId, file, folder)
+    withContext(Dispatchers.IO) { try { saved.copyTo(destination, overwrite = true) } finally { folder.deleteRecursively() } }
+}
+
+/** A file from the computer, fetched once into the attachment cache by `fetch`. */
+private suspend fun AppStore.cachedFile(id: String, size: Long, fetch: suspend (HostFiles, File) -> Unit): File {
+    val request = contextScope.async { downloadLocks.getOrPut(id) { Mutex() }.withLock {
+    val destination = withContext(Dispatchers.IO) { attachments.cached(id) }
+    if (!destination.exists() || destination.length() != size) {
+        fetch(HostFiles(ready()), destination)
         withContext(Dispatchers.IO) { attachments.trim() }
     }
     destination

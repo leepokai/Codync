@@ -27,8 +27,10 @@ window's Settings has the same controls on its Updates page. One action carries 
 whole flow (`apps/desktop/src/shared/update-action.ts`, the same label in the tray, the
 Updates page and the update-needed card): **Check for updates** → **Update to <version>**
 → **Downloading… N%** (the Updates page adds a progress bar) → **Restart to update** →
-**Restarting…**. A finished download never quits the app on its own; the person restarts,
-or it installs once idle. While a release is available, a filled arrow badge sits right
+**Restarting…**. A check the person starts that finds nothing opens a **You're up to date**
+dialog in the chat window (scheduled checks stay silent). A finished download never quits the app on its own; the person restarts,
+or it installs once idle (once no bot is working, when another device chose **Update now** for
+this computer). While a release is available, a filled arrow badge sits right
 of **Extensions** in the sidebar footer (under the
 Extensions icon in the collapsed rail), its tooltip the same action label; one click
 restarts into the release, downloading it first if needed (a ring fills with the download
@@ -37,7 +39,7 @@ runs the latest version. The TUI action list has **Check for updates**. Download
 install go through electron-updater (`apps/desktop/src/main/updates.ts`); there is no
 separate update window.
 
-The tray menu is Electron's native `Menu` (`apps/desktop/src/main/tray.ts`), the only system menu in the desktop app. Its commands, submenus, checkboxes, usage-icon radio items, separators and keyboard navigation use system styling. Do not add custom cards, hover backgrounds, icon buttons or a window-style menu panel here.
+The tray menu is Electron's native `Menu` (`apps/desktop/src/main/tray.ts`), the only system menu in the desktop app. Its commands, submenus, checkboxes, usage-icon radio items, separators and keyboard navigation use system styling. Do not add custom cards, hover backgrounds, icon buttons or a window-style menu panel here. On macOS only, action rows (Open, Pair iPhone, host actions, approval review, Remote screen, Settings, Quit) carry an SF Symbol through `nativeImage.createMenuSymbol`; status, bot and usage rows get none, and Linux and Windows keep plain rows. The app version is a row in Settings → Updates, so Settings and Quit end the menu together.
 
 The menu retains host installation/restart, bot conversation/stop actions, approval review, usage limits, remote-screen permissions, open-at-login and quit. Pairing opens a separate titled window because its QR needs a persistent scanning surface. The chat window retains its own UI conventions.
 

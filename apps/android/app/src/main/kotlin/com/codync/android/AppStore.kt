@@ -182,7 +182,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         mutableState.update { current -> current.copy(bots = snapshot.bots, entries = snapshot.entries,
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }
-        speakToCall(snapshot.entries, snapshot.bots)
+        if (voiceBinding != null && snapshot.bots.none { it.id == voiceBinding?.botId && !it.deleted }) endVoice("Voice chat ended because its bot was removed.")
         if (PushPreferences.tasks(getApplication())) {
             val feed = TaskFeed(local.directory)
             val watched = withContext(Dispatchers.IO) { feed.all().filter { !it.finished }.map { it.botId }.toSet() }

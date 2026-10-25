@@ -106,7 +106,8 @@ impl Actor {
         self.turn_entries = if from_user { entry_ids.to_vec() } else { Vec::new() };
         // A room turn answers the user's message in the room; another turn, the messages it was given.
         let answered = self.active_group.as_ref().map_or(self.turn_entries.as_slice(), |g| g.answers.as_slice());
-        self.turn_call = crate::chat::calls::of_turn(&self.hub.store, answered);
+        let opens = self.prompt_call.take().filter(|call| crate::chat::calls::is_live(&self.hub.store, call));
+        self.turn_call = crate::chat::calls::of_turn(&self.hub.store, answered).or(opens);
         self.turn_memory_revision.clear();
         self.announce = None;
         self.stop_requested = false;
@@ -235,7 +236,7 @@ impl Actor {
         }
         let done_tx = done_tx.clone();
         tokio::spawn(async move {
-            let _ = done_tx.send(answer.response().await);
+            let _ = done_tx.send(answer.response().await.and_then(acp::codebuddy::prompt_result));
         });
         Ok(())
     }

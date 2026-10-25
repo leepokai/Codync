@@ -25,7 +25,7 @@ configs:
   DevRelease: release
 settings:
   base:
-    MARKETING_VERSION: 2.25.0
+    MARKETING_VERSION: 2.26.2
     CURRENT_PROJECT_VERSION: 24
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
@@ -147,8 +147,9 @@ targets:
           - WhatsNew.md
           # The app's shared Swift package (models, client, screens), added as a package below.
           - Kit
-      # The widget's bot buttons run this intent in the app.
+      # The widget's bot buttons and the call's Live Activity buttons run these intents in the app.
       - ios/Widgets/OpenBotIntent.swift
+      - ios/Widgets/CallControlIntents.swift
     dependencies:
       - package: Clerk
         product: ClerkKit

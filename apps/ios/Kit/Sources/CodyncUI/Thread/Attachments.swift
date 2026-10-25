@@ -137,15 +137,25 @@ struct AttachmentList: View {
     }
 }
 
-/// A sent image full size.
+/// A picture full size: a sent image or one a bot shared.
 struct AttachmentViewer: View {
-    let file: Attachment
-    let botId: String
+    let name: String
+    let image: AttachmentImage
+
+    init(file: Attachment, botId: String) {
+        name = file.name
+        image = AttachmentImage(file: file, botId: botId, maxPixels: 4096)
+    }
+
+    init(shared file: SharedFile, entryId: String) {
+        name = file.name
+        image = AttachmentImage(shared: file, entryId: entryId, maxPixels: 4096)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            ModalHeader(file.name)
-            AttachmentImage(file: file, botId: botId, maxPixels: 4096)
+            ModalHeader(name)
+            image
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(12)
         }
@@ -153,14 +163,27 @@ struct AttachmentViewer: View {
     }
 }
 
-/// A sent image, fetched from the computer once and then read from the cache.
+/// A picture from the computer (a sent image or one a bot shared), fetched once and then read from the cache.
 struct AttachmentImage: View {
-    let file: Attachment
-    let botId: String
+    let id: String
     let maxPixels: Int
     var contentMode: ContentMode = .fit
+    let load: @MainActor (BotStore) async -> Data?
     @Environment(BotStore.self) private var model
     @State private var image: CGImage?
+
+    init(file: Attachment, botId: String, maxPixels: Int, contentMode: ContentMode = .fit) {
+        id = file.id
+        self.maxPixels = maxPixels
+        self.contentMode = contentMode
+        load = { await $0.attachmentData(file, bot: botId) }
+    }
+
+    init(shared file: SharedFile, entryId: String, maxPixels: Int) {
+        id = file.id
+        self.maxPixels = maxPixels
+        load = { await $0.sharedFileData(file, entryId: entryId) }
+    }
 
     var body: some View {
         Group {
@@ -173,8 +196,8 @@ struct AttachmentImage: View {
                     .overlay { Image(systemName: "photo").foregroundStyle(Palette.tertiary) }
             }
         }
-        .task(id: file.id) {
-            guard let data = await model.attachmentData(file, bot: botId) else { return }
+        .task(id: id) {
+            guard let data = await load(model) else { return }
             let size = maxPixels
             image = await Task.detached { ImageData.thumbnail(data, maxPixels: size) }.value
         }

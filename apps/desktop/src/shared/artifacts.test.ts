@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
-import { artifactQuote, hasLibrary, readArtifactHTML, type Artifact } from './artifacts.ts'
+import { artifactFrameURL, artifactQuote, followsUser, hasLibrary, isArtifactURL, isArtifactViewer, readArtifactHTML, type Artifact } from './artifacts.ts'
 import { FILE_CHUNK_SIZE } from './files.ts'
 
 function version(text: string, updatedAt: number) {
@@ -45,4 +45,19 @@ test('the Library needs a host that has it, and only a card takes messages about
   const { artifact } = version('x', 1)
   assert.equal(artifactQuote(artifact), null, 'a routine published it')
   assert.deepEqual(artifactQuote({ ...artifact, entryId: 'e' }), { id: 'e', author: 'b', text: 'Artifact: Report', artifact: 'a' })
+})
+
+test('an artifact opens only what the user just followed in its viewer', () => {
+  const viewer = artifactFrameURL('a1', 5, false)
+  const card = artifactFrameURL('a1', 5, true)
+  assert.equal(isArtifactURL(card), true)
+  assert.equal(isArtifactURL('https://example.com/'), false)
+  assert.equal(isArtifactViewer(viewer), true)
+  assert.equal(isArtifactViewer(card), false, 'a card opens nothing')
+  assert.equal(isArtifactViewer('https://example.com/'), false)
+  assert.equal(isArtifactViewer(undefined), false)
+  assert.equal(followsUser(1_500, 1_000, 1_600), true, 'a click after the viewer loaded')
+  assert.equal(followsUser(900, 1_000, 1_100), false, 'a redirect on load right after the click that opened the viewer')
+  assert.equal(followsUser(1_500, 1_000, 3_000), false, 'a script acting long after the last click')
+  assert.equal(followsUser(0, 0, 10), false, 'no input yet')
 })

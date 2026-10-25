@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import type { Entry } from '@shared/models'
 import { botConversation, buildBotConversation, groupSummary, verbOf, type BotConversationRow, type BotExchange } from './bot-exchange'
 import { AuthorLabel, Bubble, TimeSeparator } from './ChatRows'
 import { MarkdownText } from './Markdown'
 import './bot-conversation.css'
+import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
 
 
@@ -59,28 +59,9 @@ export function BotConversationView({ botId, peerId }: { botId: string; peerId: 
   const tr = useTr()
   const store = useStore()
   // null while the host's history loads.
-  const [fetched, setFetched] = useState<Entry[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { fetched, error } = useFetched(() => store.botConversation(botId, peerId), [store, botId, peerId])
   const scroller = useRef<HTMLDivElement>(null)
   const rows = buildBotConversation(botConversation(fetched ?? [], store.allEntries(botId), peerId))
-
-  useEffect(() => {
-    let current = true
-    store.botConversation(botId, peerId).then(
-      (entries) => {
-        if (current) setFetched(entries)
-      },
-      (reason: unknown) => {
-        console.warn('botConversation failed', reason)
-        if (!current) return
-        setFetched([])
-        setError(reason instanceof Error ? reason.message : String(reason))
-      },
-    )
-    return () => {
-      current = false
-    }
-  }, [store, botId, peerId])
 
   useEffect(() => {
     const el = scroller.current

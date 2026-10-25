@@ -20,13 +20,42 @@ data class PluginListing(val connectors: List<InstalledConnector>, val skills: L
 @Serializable data class MarketConnectors(val items: List<MarketConnector>, val nextCursor: String? = null)
 @Serializable data class MarketSkill(val source: String, val name: String, val description: String = "", val installed: Boolean = false)
 
-/** Registry metadata stays in memory; rows are revealed by explicit user actions. */
-data class CatalogPage<T>(val items: List<T> = emptyList(), val visibleCount: Int = 12) {
-    val visible: List<T> get() = items.take(visibleCount)
-    val hasHidden: Boolean get() = items.size > visibleCount
+/** Registry metadata stays in memory. The Extensions tabs page through it. */
+data class CatalogPage<T>(val items: List<T> = emptyList()) {
     fun append(page: List<T>, id: (T) -> String): CatalogPage<T> {
         val known = items.mapTo(mutableSetOf(), id)
         return copy(items = items + page.filter { known.add(id(it)) })
     }
-    fun reveal(): CatalogPage<T> = copy(visibleCount = minOf(items.size, visibleCount + 12))
+}
+
+/** How many catalog rows one Extensions page shows, and which page a click lands on. */
+object CatalogPaging {
+    const val pageSize = 10
+    /** Two agent tiles across, three rows: a page has no leftover card. */
+    const val phonePageSize = 6
+    val pageSizes = listOf(6, 10, 20, 50)
+
+    /** Loaded rows split into pages. While the registry still has a cursor, one more page is offered so the bar is never 1 / 1 for a list that continues. */
+    fun pageCount(count: Int, size: Int = pageSize, hasMore: Boolean = false): Int {
+        val loaded = if (count <= 0) 1 else (count + size - 1) / size
+        return if (hasMore) loaded + 1 else loaded
+    }
+
+    fun clamp(page: Int, count: Int, size: Int = pageSize, hasMore: Boolean = false): Int =
+        page.coerceIn(0, pageCount(count, size, hasMore) - 1)
+
+    fun <T> slice(items: List<T>, page: Int, size: Int = pageSize): List<T> {
+        val start = page.coerceAtLeast(0) * size
+        return items.drop(start).take(size)
+    }
+
+    /** Next stays available through the last shown page, including the page that still has to be fetched. */
+    fun canForward(count: Int, page: Int, hasMore: Boolean, size: Int = pageSize): Boolean =
+        page < pageCount(count, size, hasMore) - 1
+
+    /** A later page that isn't full yet, so the registry has to be asked. The first page is whatever the first answer held. */
+    fun needsFetch(count: Int, page: Int, size: Int = pageSize): Boolean {
+        val start = page.coerceAtLeast(0) * size
+        return start > 0 && start + size > count
+    }
 }

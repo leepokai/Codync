@@ -1,4 +1,5 @@
 import type { VoiceCallEngine } from '@shared/analytics'
+import type { CallCue } from '@shared/calls'
 import { isWorking } from '@shared/models'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { BotAvatar } from '../../components/Avatar'
@@ -14,13 +15,30 @@ import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
 import { voiceStatus } from '../settings/voice-settings'
 import { stopDictation } from '../thread/dictation'
 import { CallLink } from './call-link'
+import { CallQuality } from './call-quality'
 import { CloudSpeechEngine } from './CloudSpeechEngine'
 import { GeminiLiveEngine } from './GeminiLiveEngine'
 import { OnDeviceEngine } from './OnDeviceEngine'
 import { OpenAIRealtimeEngine } from './OpenAIRealtimeEngine'
-import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, voiceSettingsClosed, type VoiceProvider } from './voice'
-import { watchVoiceCall } from './voice-call'
+import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, voiceSettingsClosed, type VoicePhase, type VoiceProvider } from './voice'
 import './call.css'
+
+/** What the call bar says for `phase`. */
+function statusText(phase: VoicePhase | null, muted: boolean, working: boolean) {
+  switch (phase) {
+    case null:
+    case 'starting':
+      return 'Connecting'
+    case 'reconnecting':
+      return 'Reconnecting'
+    case 'speaking':
+      return 'Speaking'
+    case 'failed':
+      return "Can't listen"
+    case 'listening':
+      return muted ? 'Muted' : working ? 'Working, listening' : 'Listening'
+  }
+}
 
 /**
  * Opens the window's own Settings at Voice chat; without it (no Settings screen around) the
@@ -63,6 +81,9 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   /** The call on the computer, which runs it. */
   const link = useRef<CallLink | null>(null)
   link.current ??= new CallLink(store, botId, crypto.randomUUID())
+  /** Each engine's `voice_call_quality`. */
+  const quality = useRef<CallQuality | null>(null)
+  quality.current ??= new CallQuality((event) => analytics.track(event))
 
   const countCloudMinutes = () => {
     const provider = engine.current?.provider
@@ -112,16 +133,15 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       void call.start('device').catch(() => {})
       engineName.current = 'on_device'
     }
+    quality.current!.begin(engineName.current)
+    if (next instanceof GeminiLiveEngine) next.onStall = () => quality.current!.stalled()
     // Picks up the computer's newest models for the next call; this one starts right away.
     if (provider) void rememberStatus()
-    let stopWatching: (() => void) | null = null
+    // The computer decides what the voice hears (host chat/calls/announce); the engine only says it.
+    const hear = (cue: CallCue) => next.hear(cue)
     next.onActivityChanged = (active) => {
-      if (active && !stopWatching) {
-        stopWatching = watchVoiceCall(store, botId, { speak: (t) => next.speak(t), announce: (t) => next.announce(t) })
-      } else if (!active && stopWatching) {
-        stopWatching()
-        stopWatching = null
-      }
+      if (active) store.callCues.set(call.call, hear)
+      else if (store.callCues.get(call.call) === hear) store.callCues.delete(call.call)
     }
     // A muted call stays muted on the engine that takes over.
     next.muted = engine.current?.muted === true
@@ -172,7 +192,6 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   useEffect(() => {
     const startedAt = Date.now()
     window.codync.speech.setCalling(true)
-    store.beginCall(link.current!.call)
     begin(VoiceSettings.provider())
     return () => {
       window.codync.speech.setCalling(false)
@@ -182,6 +201,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       onSpeaking(false)
       interrupt.current = null
       link.current?.end(Math.floor((Date.now() - startedAt) / 1000))
+      quality.current?.report()
     }
   }, [])
   useEffect(() => voiceSettingsClosed.subscribe(switchEngine), [])
@@ -189,13 +209,14 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   const phase = session?.phase ?? null
   useEffect(() => {
     if (!session) return
+    if (phase) quality.current!.phase(phase, session.failureKind)
     onSpeaking(phase === 'speaking')
     interrupt.current = phase === 'speaking' ? () => session.interrupt() : null
     // Once per call, so an engine taking over doesn't count or open it again.
     if (session.isActive && !counted.current) {
       counted.current = true
       analytics.track({ event: 'voice_call_started', engine: engineName.current })
-      store.callStarted(botId)
+      store.callStarted(botId, link.current!.call)
     }
     // A cloud engine that can't start or drops mid-call hands over to on-device voice.
     if (phase === 'failed' && session.provider && onDeviceAvailable()) {
@@ -208,18 +229,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
   const speaking = phase === 'speaking'
   const muted = session?.muted === true
   const working = bot ? isWorking(bot) : false
-  const connecting = phase === null || phase === 'starting'
-  const statusText = connecting
-    ? 'Connecting'
-    : phase === 'speaking'
-      ? 'Speaking'
-      : phase === 'failed'
-        ? "Can't listen"
-        : muted
-          ? 'Muted'
-          : working
-            ? 'Working, listening'
-            : 'Listening'
+  const connecting = session?.isConnecting ?? true
   const failure = blocked ?? (phase === 'failed' ? session?.failure : null)
 
   return (
@@ -238,7 +248,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
           sample={() => ({ level: session?.level ?? 0, speaking: session?.phase === 'speaking', working, connecting: connecting && !blocked })}
           color={color}
           width={120}
-          label={statusText}
+          label={statusText(phase, muted, working)}
           className="call-dots"
         />
         {/* Audio leaves the computer: say where. */}

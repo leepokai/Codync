@@ -114,7 +114,7 @@ fn executable_names(bin: &str) -> impl Iterator<Item = String> + '_ {
     extensions.iter().map(move |e| format!("{bin}{e}"))
 }
 
-fn is_executable(p: &Path) -> bool {
+pub(super) fn is_executable(p: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

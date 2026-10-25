@@ -60,6 +60,47 @@ fn every_harness_is_unique() {
 }
 
 #[test]
+fn workbuddy_session_does_not_prove_sign_in() {
+    assert!(!session_proves_sign_in("workbuddy"));
+    assert!(session_proves_sign_in("codebuddy"));
+}
+
+#[test]
+fn workbuddy_starts_its_lite_bundle() {
+    let workbuddy = harness("workbuddy").unwrap();
+    assert_eq!(workbuddy.local, Some("{bin} --serve --acp"));
+    assert!(workbuddy.login.is_none());
+    let mut env = vec![("CODEBUDDY_FORCE_LITE_WB_BUNDLE".into(), "0".into())];
+    apply_process_env("workbuddy", &mut env);
+    assert_eq!(env, vec![("CODEBUDDY_FORCE_LITE_WB_BUNDLE".into(), "0".into())]);
+    env.clear();
+    apply_process_env("workbuddy", &mut env);
+    assert_eq!(env, vec![("CODEBUDDY_FORCE_LITE_WB_BUNDLE".into(), "1".into())]);
+    apply_process_env("codebuddy", &mut env);
+    assert_eq!(env.len(), 1);
+}
+
+#[test]
+fn workbuddy_cli_is_not_codebuddy_code() {
+    let bundled = "/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy";
+    assert!(!belongs_to_other("workbuddy", bundled));
+    assert!(belongs_to_other("codebuddy", bundled), "the app's CLI is WorkBuddy's, not CodeBuddy Code's");
+    assert!(belongs_to_other("workbuddy", "/opt/homebrew/bin/codebuddy"));
+}
+
+#[test]
+fn a_codebuddy_on_path_is_not_workbuddy() {
+    let dir = TempDir::new();
+    write_cli(&dir.0, "codebuddy");
+    let _path = TestSearchPath::set(dir.0.clone());
+    let on_path = dir.0.to_string_lossy().into_owned();
+    let from_path =
+        |c: &registry::Candidate| matches!(c, registry::Candidate::Ready(cmd) if cmd.program.contains(&on_path));
+    assert!(launch_candidates("codebuddy").unwrap().iter().any(from_path), "CodeBuddy Code's own CLI");
+    assert!(!launch_candidates("workbuddy").is_ok_and(|c| c.iter().any(from_path)), "never WorkBuddy's");
+}
+
+#[test]
 fn hermes_uses_native_acp() {
     let h = harness("hermes").unwrap();
     assert_eq!((h.local, h.registry, h.login), (Some("{bin} acp"), None, Some("{bin} acp --setup")));

@@ -21,6 +21,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case settingChanged(Setting, on: Bool)
     case linkOpened(Link)
     case voiceCallStarted(VoiceEngine)
+    /// How one engine of a call fared, when it's replaced or the call ends: milliseconds until it was ready (nil:
+    /// never), reconnects, the first phase stuck too long, why it failed.
+    case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure)
     case screenViewed(Screen)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
@@ -36,6 +39,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case github, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command"
     }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
+    public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
+    public enum VoiceFailure: String, Sendable { case none, microphone, connection, provider }
     public enum Screen: String, Sendable {
         case bots, state, chat, trace, botDetails = "bot_details", memory, routines, marketplace
         case settings, computers, usage, account, pairing, voiceSettings = "voice_settings", remoteScreen = "remote_screen"
@@ -103,6 +108,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .settingChanged: "setting_changed"
         case .linkOpened: "link_opened"
         case .voiceCallStarted: "voice_call_started"
+        case .voiceCallQuality: "voice_call_quality"
         case .screenViewed: "screen_viewed"
         }
     }
@@ -128,6 +134,11 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .settingChanged(setting, on): return ["setting": .string(setting.rawValue), "on": .bool(on)]
         case let .linkOpened(link): return ["link": .string(link.rawValue)]
         case let .voiceCallStarted(engine): return ["engine": .string(engine.rawValue)]
+        case let .voiceCallQuality(engine, readyMs, reconnects, stuck, failure):
+            var p: [String: Analytics.Value] = ["engine": .string(engine.rawValue), "reconnects": .int(reconnects),
+                                                "stuck": .string(stuck.rawValue), "failure": .string(failure.rawValue)]
+            p["ready_ms"] = readyMs.map(Analytics.Value.int)
+            return p
         case let .screenViewed(screen): return ["screen": .string(screen.rawValue)]
         }
     }

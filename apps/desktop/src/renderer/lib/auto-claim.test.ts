@@ -19,3 +19,8 @@ test('no auto-claim when kept out, owned, offline, or the cloud is off or unknow
   assert.equal(mayAutoClaim({ ...host, cloud: { enabled: false } }, [], []), false)
   assert.equal(mayAutoClaim({ ...host, cloud: null }, [], []), false)
 })
+
+test('a computer on a private relay never joins: it has no accounts', () => {
+  assert.equal(mayAutoClaim({ ...host, cloud: { enabled: true, owner: null, relay: 'private' } }, [], []), false)
+  assert.equal(mayAutoClaim({ ...host, cloud: { enabled: true, owner: null, relay: 'codync' } }, [], []), true)
+})

@@ -106,6 +106,8 @@ pub struct App {
     pub pick: Option<String>,
     /// Chat lines showing their full text: a handoff (`o` on the picked line).
     pub unfolded: HashSet<String>,
+    /// Voice calls' own messages, by call id (`callEntries`): the chat loaded here may not reach back to them.
+    pub call_entries: HashMap<String, Vec<Entry>>,
     pub market: (Vec<Toggle>, Vec<Toggle>),
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
@@ -178,6 +180,7 @@ impl App {
             reply: None,
             pick: None,
             unfolded: HashSet::new(),
+            call_entries: HashMap::new(),
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),
             models: HashMap::new(),
@@ -235,9 +238,10 @@ impl App {
     /// A chat's entries, in display order.
     pub fn lane(&self, bot: &str) -> Vec<&Entry> {
         let mut v: Vec<&Entry> = self.entries.get(bot).map(|m| m.values().collect()).unwrap_or_default();
-        // What a finished voice call carried shows behind its line (`o`).
-        let ended: HashSet<&str> = v.iter().filter(|e| e.kind == Kind::Notice).filter_map(|e| e.call()).collect();
-        v.retain(|e| e.kind == Kind::Notice || e.call().is_none_or(|c| !ended.contains(c)));
+        // What a voice call carries shows behind its line (`o`), on whichever device the call is: the host writes the
+        // line when the call ends, or when its app went away. A file or an artifact the bot sent stays, to be opened.
+        let opens = |e: &Entry| e.artifact().is_some() || e.data["files"].as_array().is_some_and(|f| !f.is_empty());
+        v.retain(|e| e.kind == Kind::Notice || e.call().is_none() || opens(e));
         // A message sent mid-turn belongs after that turn's reply.
         v.sort_by_key(|e| (e.turn, e.seq));
         v

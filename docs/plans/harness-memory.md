@@ -14,7 +14,7 @@ not pushed), so treat the design below as the spec. Current behavior:
 - The memory screen's "This bot" section has a switch, "Claude Code's own memory", with an info button: it keeps
   notes apart from Codync's; with both on the bot may remember things twice and the two can disagree; forgetting
   something in Codync doesn't reach it; where to read it. The terminal asks the same on `m` before turning it on.
-- Offered where Codync controls it (`own_memory::switchable`): Claude Code, Copilot and CodeBuddy in any folder,
+- Offered where Codync controls it (`own_memory::switchable`): Claude Code, Copilot, CodeBuddy and WorkBuddy in any folder,
   Qwen Code only in the bot's own workspace (its switch is a file in the folder, and a project folder's files are
   the user's). Gemini CLI, Kilo Code, Kiro and Hermes Agent have no switch Codync can use.
 - Kept on, the harness sets its memory itself (Claude Code's auto-dream too); Claude Code's `MEMORY.md` shows

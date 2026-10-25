@@ -64,7 +64,7 @@ final class CallLink {
             lines[last].text += piece
         } else {
             endTurn()
-            lines.append(CallLine(from: from, text: piece, at: Int64(Date.now.timeIntervalSince1970 * 1000)))
+            lines.append(CallLine(from: from, text: piece, at: Int64(Date.now.timeIntervalSince1970 * 1000), id: UUID().uuidString))
             open = true
         }
     }
@@ -95,9 +95,18 @@ final class CallLink {
 
     func notice(_ text: String) -> String { "[Notice] \(text)" }
 
+    static let progressTag = "[Progress]"
+
+    /// What the bot is doing, as the voice's instructions name it.
+    func progress(_ text: String) -> String { "\(Self.progressTag) \(text)" }
+
     /// The call is over: its line in the chat, with what's left of the transcript.
     func end(seconds: Int) {
-        serial { [self] in await model.endCall(botId, seconds: seconds, call: call, lines: drain(withOpen: true)) }
+        model.beginCallEnd()
+        serial { [self] in
+            await model.endCall(botId, seconds: seconds, call: call, lines: drain(withOpen: true))
+            model.finishCallEnd()
+        }
     }
 
     /// The lines finished so far (`withOpen`: and the one still being said), out of the buffer: trimmed, Chinese in
@@ -109,7 +118,7 @@ final class CallLink {
         lines.removeFirst(taken.count)
         return taken.compactMap { line in
             let text = VoiceSettings.inReadersScript(line.text.trimmingCharacters(in: .whitespacesAndNewlines))
-            return text.isEmpty ? nil : CallLine(from: line.from, text: text, at: line.at)
+            return text.isEmpty ? nil : CallLine(from: line.from, text: text, at: line.at, id: line.id)
         }
     }
 

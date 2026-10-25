@@ -221,3 +221,62 @@ async fn a_signed_out_agent_hands_the_turn_over_and_asks_to_sign_in() {
     wait_for(&host, &bot, "back line", |e| e["data"]["text"] == "Back on Kimi Code.").await;
     assert!(last_prompt(&host, &bot, "primary").contains("Thanks"));
 }
+
+/// How `CodeBuddy`'s CLI (`WorkBuddy`'s) says it's signed out: a refusal with the error in its meta.
+const SIGNED_OUT_REFUSAL: &str = r#"{"code":-32000,"message":"Authentication required","data":{"details":"Please use /login command to sign in to your account","category":"auth"}}"#;
+
+#[tokio::test]
+async fn a_sign_in_error_inside_a_refusal_hands_the_turn_over() {
+    let host = Host::start().await;
+    let bot = json!({"name": "Hidden", "backend": "kimi", "command": agent("primary"), "connectors": [],
+        "notify": false, "fallbacks": [{"backend": "codex", "command": agent("standin")}]});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    std::fs::write(host.home.join("bots").join(&bot).join("workspace").join("primary.refusal"), SIGNED_OUT_REFUSAL)
+        .unwrap();
+
+    host.reply(&bot, "Fix the build").await;
+    let reply = wait_for(&host, &bot, "reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(reply["data"]["text"], "standin answered");
+    let line = wait_for(&host, &bot, "switch line", |e| e["data"]["agentSwitch"].is_object()).await;
+    assert_eq!(line["data"]["text"], "Kimi Code is signed out. Codex carried on.");
+    wait_for(&host, &bot, "sign-in card", |e| e["data"]["connectionRequest"]["kind"] == "agent").await;
+    assert_eq!(bot_value(&host, &bot).await["resting"][0]["reason"], "signedOut");
+}
+
+#[tokio::test]
+async fn an_error_inside_a_refusal_holds_the_message_or_says_what_it_is() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Solo", "backend": "kimi", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let refusal = host.home.join("bots").join(&bot).join("workspace").join("primary.refusal");
+    std::fs::write(&refusal, SIGNED_OUT_REFUSAL).unwrap();
+
+    // Signed out: the sign-in card holds the message and sends it again once the agent is signed in.
+    host.call("send", json!({"botId": bot, "text": "Fix the build", "clientNonce": "n1"})).await;
+    let card = wait_for(&host, &bot, "sign-in card", |e| e["data"]["connectionRequest"]["kind"] == "agent").await;
+    assert_eq!(card["data"]["connectionRequest"]["entryIds"].as_array().map(Vec::len), Some(1), "{card}");
+    std::fs::remove_file(&refusal).unwrap();
+    let helper =
+        json!({"name": "Helper", "backend": "kimi", "command": agent("helper"), "connectors": [], "notify": false});
+    let helper = host.call("createBot", helper).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.reply(&helper, "Hello").await;
+    let reply = wait_for(&host, &bot, "the held message's reply", |e| e["data"]["final"] == true).await;
+    assert_eq!(reply["data"]["text"], "primary answered");
+    assert!(last_prompt(&host, &bot, "primary").contains("Fix the build"));
+
+    // Any other error is shown as the agent words it, with no sign-in card: signing in doesn't fix a bad key.
+    let custom_model = r#"{"code":-32603,"message":"Internal error","data":{"details":"Authentication failed for custom model my-model. Check if the apiKey in your models.json is correct","category":"custom_model_auth"}}"#;
+    std::fs::write(&refusal, custom_model).unwrap();
+    host.call("send", json!({"botId": bot, "text": "Again", "clientNonce": "n2"})).await;
+    let failed = wait_for(&host, &bot, "failure", |e| e["data"]["style"] == "error").await;
+    assert!(failed["data"]["text"].as_str().unwrap().contains("Check if the apiKey in your models.json"), "{failed}");
+    let history = host.call("history", json!({"botId": bot})).await;
+    let cards = history["entries"].as_array().unwrap().iter().filter(|e| e["data"]["connectionRequest"].is_object());
+    assert_eq!(cards.count(), 1, "no new sign-in card: {history}");
+
+    // A refusal with nothing in it is still the agent declining.
+    std::fs::write(&refusal, "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "Once more", "clientNonce": "n3"})).await;
+    wait_for(&host, &bot, "declined notice", |e| e["data"]["text"] == "The agent declined to continue.").await;
+}

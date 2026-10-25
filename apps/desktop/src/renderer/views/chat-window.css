@@ -65,6 +65,8 @@
   padding: 14px;
   background: var(--surface);
   border-radius: var(--radius-l);
+  /* Long host names (a.b.local) wrap instead of running past the card. */
+  overflow-wrap: anywhere;
 }
 .update-needed-action {
   margin-top: 4px;

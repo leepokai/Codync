@@ -111,6 +111,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         active_request: None,
         reply_hops: None,
         active_prompt: false,
+        prompt_call: None,
         seg: Seg::None,
         tools: HashMap::new(),
         plan_entry: None,
@@ -277,6 +278,8 @@ struct Actor {
     reply_hops: Option<u8>,
     /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`).
     active_prompt: bool,
+    /// The call the next host-started turn opens (`Cmd::Prompt`), whose replies are that call's.
+    prompt_call: Option<String>,
     seg: Seg,
     tools: HashMap<String, String>,
     plan_entry: Option<String>,

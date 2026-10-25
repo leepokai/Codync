@@ -62,9 +62,20 @@ impl IntoResponse for ApiError {
     }
 }
 
+#[derive(Default, Deserialize)]
+struct HealthQuery {
+    /// Sent by the desktop app's own poll: it's open to carry out an update request.
+    #[serde(default)]
+    app: bool,
+}
+
 /// `GET /health`, open to the network. Where the binary lives (a path with the user's name) and whether
 /// a turn is running are for this computer's updater and desktop app only.
-async fn health(State(hub): State<Arc<Hub>>, ConnectInfo(peer): ConnectInfo<SocketAddr>) -> Json<Value> {
+async fn health(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Query(q): Query<HealthQuery>,
+) -> Json<Value> {
     let mut health = json!({
         "ok": true,
         "hostId": hub.host_id,
@@ -73,10 +84,14 @@ async fn health(State(hub): State<Arc<Hub>>, ConnectInfo(peer): ConnectInfo<Sock
         "environment": crate::environment::Environment::current().name(),
     });
     if is_loopback(peer.ip()) {
+        if q.app {
+            crate::update::note_app_poll();
+        }
         let binary = crate::service::binary_identity();
         health["binaryPath"] = json!(binary.map(|(path, _)| path));
         health["binaryHash"] = json!(binary.map(|(_, hash)| hash));
         health["busy"] = hub.busy().into();
+        health["updateRequested"] = crate::update::app_requested().into();
     }
     Json(health)
 }
@@ -274,13 +289,14 @@ mod tests {
     async fn health_keeps_the_binary_and_busy_state_on_this_computer() {
         let (hub, dir) = temp_hub();
         let at = |addr: &str| ConnectInfo(addr.parse::<SocketAddr>().expect("address"));
-        let lan = health(State(hub.clone()), at("192.168.1.20:50000")).await.0;
+        let lan = health(State(hub.clone()), at("192.168.1.20:50000"), Query(HealthQuery::default())).await.0;
         assert!(lan["computerId"].is_string());
-        for key in ["binaryPath", "binaryHash", "busy"] {
+        for key in ["binaryPath", "binaryHash", "busy", "updateRequested"] {
             assert!(lan.get(key).is_none(), "{key} reached the network");
         }
-        let local = health(State(hub), at("[::ffff:127.0.0.1]:50000")).await.0;
+        let local = health(State(hub), at("[::ffff:127.0.0.1]:50000"), Query(HealthQuery::default())).await.0;
         assert_eq!(local["busy"], false);
+        assert!(local["updateRequested"].is_null(), "nobody asked this computer to update");
         assert!(local.get("binaryPath").is_some());
         let _ = std::fs::remove_dir_all(dir);
     }

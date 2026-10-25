@@ -1,4 +1,4 @@
-use super::{install, release};
+use super::{APP_POLL_TTL_MS, APP_REQUEST_TTL_MS, install, recent, release};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signer as _, SigningKey};
 use std::{
@@ -175,4 +175,14 @@ fn app_and_homebrew_binaries_keep_their_installation_owner() {
         install::method(std::path::Path::new("/opt/homebrew/Cellar/codync-host/2.2.1/bin/codync-host")),
         install::Method::Homebrew
     );
+}
+
+#[test]
+fn app_requests_and_polls_count_only_while_recent() {
+    let at = 1_000_000;
+    for ttl in [APP_REQUEST_TTL_MS, APP_POLL_TTL_MS] {
+        assert_eq!(recent(at, at + ttl - 1, ttl), Some(at));
+        assert_eq!(recent(at, at + ttl, ttl), None, "an app opened later doesn't act on an old request");
+        assert_eq!(recent(0, at, ttl), None, "never asked, never polled");
+    }
 }

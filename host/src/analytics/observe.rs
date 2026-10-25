@@ -55,6 +55,13 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
 /// The rest of `observe`: one arm per method.
 fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Event> {
     Some(match method {
+        "setCloudUrl" => {
+            // The address itself stays off the event. `on` is only whether a custom URL was saved.
+            let on = b["url"].as_str().is_some_and(|url| !url.trim().is_empty());
+            p.insert("setting".into(), "remote_access_url".into());
+            p.insert("on".into(), on.into());
+            Event::SettingChanged
+        }
         "createBot" => {
             let group = b["kind"] == "group";
             p.insert("kind".into(), (if group { "group" } else { "bot" }).into());
@@ -313,6 +320,13 @@ mod tests {
             Some(json!("automatic_updates"))
         );
         assert_eq!(setting("setScreenEnabled", json!({"enabled": true})).map(|s| s.1), Some(json!("remote_screen")));
+        let saved = props("setCloudUrl", &json!({"url": "https://relay.example.com"}));
+        assert_eq!(
+            saved.as_ref().map(|(e, p)| (*e, p["setting"].clone(), p["on"].clone())),
+            Some((Event::SettingChanged, json!("remote_access_url"), json!(true)))
+        );
+        assert!(!saved.unwrap().1.to_string().contains("relay.example.com"), "the URL is not a property");
+        assert_eq!(setting("setCloudUrl", json!({"url": "  "})).map(|s| s.2), Some(json!(false)));
 
         assert_eq!(
             props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),

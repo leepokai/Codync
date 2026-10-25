@@ -395,7 +395,7 @@ private struct ComputerSection: View {
                 .lineLimit(1)
                 .contentTransition(.opacity)
             if store.connection == .online {
-                RouteIcon(route: store.hostRoute).font(.caption2).foregroundStyle(Palette.tertiary)
+                RouteIcon(route: store.hostRoute, cloud: store.computer.cloud).font(.caption2).foregroundStyle(Palette.tertiary)
             }
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.semibold))

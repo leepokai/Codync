@@ -134,7 +134,6 @@ export function useTraySummary(app: AppModel) {
               error: app.screenError,
             }
           : null,
-        version: local?.hello?.version ?? null,
         needsAttention: app.needsAttention,
         textSize,
         usageIconStyle: iconStyle,

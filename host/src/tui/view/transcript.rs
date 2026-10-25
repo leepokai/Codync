@@ -2,7 +2,7 @@
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::super::app::{App, Bot, Click, Entry, Exchange, Item, Kind, Outcome, Status, group};
 use super::super::md::{self, truncate, width as w};
@@ -328,8 +328,15 @@ fn call_lines(app: &App, b: &Bot, line: &Entry) -> Vec<String> {
             (l["at"].as_i64().unwrap_or(line.created_at), format!("{who}: {}", l["text"].as_str().unwrap_or_default()))
         })
         .collect();
-    let carried = app.entries.get(&b.id).into_iter().flat_map(|m| m.values());
-    for e in carried.filter(|e| e.call() == Some(call) && (e.kind == Kind::User || e.is_final())) {
+    let fetched = app.call_entries.get(call);
+    if fetched.is_none() {
+        said.push((i64::MAX, "loading the call…".to_owned()));
+    }
+    // What the host sent of the call (`callEntries`) and the chat loaded here, each entry once (the chat's copy).
+    let held = app.entries.get(&b.id).into_iter().flat_map(|m| m.values());
+    let carried: BTreeMap<i64, &Entry> =
+        fetched.into_iter().flatten().chain(held).filter(|e| e.call() == Some(call)).map(|e| (e.seq, e)).collect();
+    for e in carried.into_values().filter(|e| e.kind == Kind::User || e.is_final()) {
         let who = match (e.kind, e.data["from"].as_str()) {
             (Kind::User, Some("voice")) => "voice → bot",
             (Kind::User, _) => "you",

@@ -67,6 +67,12 @@ the action; cancel stops further reads, discards late responses and removes part
 files. Retry starts from zero. Account/computer retirement cancels its transfers.
 Downloads use bounded memory and check size and SHA-256 before save/export.
 
-This feature adds no previews, inline viewers, folder packaging, background transfers,
-persistent resume, Android or Watch UI. Existing bots do not publish workspace files
+An image file (by extension) up to 20 MB also shows inline above its card on iPhone,
+Android and desktop, tap/click for full size. For it the client reads the whole file
+into memory through the same `readFile` chunks, checks size and SHA-256, and keeps it
+in the sent-attachment cache under its file id; a failed read leaves the placeholder.
+The terminal UI shows only the card.
+
+This feature adds no previews of other file types, folder packaging, background
+transfers, persistent resume or Watch UI. Existing bots do not publish workspace files
 automatically: they must call `send_file`.

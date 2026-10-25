@@ -70,6 +70,10 @@ actor FakeRemote: RemoteTransport {
             replyTos.append(b["replyTo"])
             let entry = #"{"id":"e\#(sent.count)","seq":\#(sent.count),"botId":"\#(b["botId"] ?? "")","rev":\#(sent.count),"kind":"user","turn":1,"data":{"text":"\#(b["text"] ?? "")","clientNonce":"\#(b["clientNonce"] ?? "")"},"createdAt":1,"updatedAt":1}"#
             return Data(#"{"entry":\#(entry)}"#.utf8)
+        case "startCall":
+            // A fresh credential per provider session, so a test can tell a replaced session from the first.
+            let n = calls.filter { $0 == "startCall" }.count
+            return Data(#"{"instructions":"Be the relay.","tools":[],"credential":"token-\#(n)"}"#.utf8)
         default:
             return Data("{}".utf8)
         }
@@ -122,7 +126,7 @@ actor FakeRemote: RemoteTransport {
     }
 }
 
-private func randomComputer(_ name: String) -> Computer {
+func randomComputer(_ name: String) -> Computer {
     let sk = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
     return Computer(id: RelayCrypto.computerId(signKey: sk), name: name, signKey: sk.base64URLForTests,
                     boxKey: Curve25519.KeyAgreement.PrivateKey().publicKey.rawRepresentation.base64URLForTests,
@@ -135,7 +139,7 @@ private extension Data {
     }
 }
 
-private func context() -> (SharedStore.Context, String) {
+func context() -> (SharedStore.Context, String) {
     let suite = "CodyncUITests.\(UUID().uuidString)"
     return (SharedStore.Context(accountID: "user_\(UUID().uuidString)", suite: suite), suite)
 }
@@ -167,7 +171,7 @@ private func botEvent(_ id: String, name: String, rev: Int) -> String {
 
     let call = UUID()
     var spoken: [String] = []
-    store.beginVoiceCall(call, botId: "b1", speak: { spoken.append($0) }, end: {})
+    store.beginVoiceCall(call, hear: { spoken.append($0.text) }, end: {})
     store.setActive(false)
     // Allow shutdown to run if backgrounding incorrectly scheduled one.
     try await Task.sleep(for: .milliseconds(30))
@@ -176,13 +180,10 @@ private func botEvent(_ id: String, name: String, rev: Int) -> String {
     #expect(await fake.sent == ["spoken while backgrounded"])
     #expect(await fake.shutdownCount == 0)
 
-    let reply = #"{"type":"entry","entry":{"id":"reply","seq":2,"botId":"b1","rev":2,"kind":"agent","turn":1,"data":{"text":"The answer","final":true},"createdAt":1,"updatedAt":1}}"#
-    await fake.emit(reply)
+    // The computer tells the call what to say; another call's cue isn't this one's.
+    await fake.emit(#"{"type":"call","call":"\#(UUID().uuidString)","kind":"reply","text":"Another call","seq":1}"#)
+    await fake.emit(#"{"type":"call","call":"\#(call.uuidString)","kind":"reply","text":"The answer","seq":1}"#)
     #expect(await until { spoken == ["The answer"] })
-    await fake.emit(reply) // Event replays must not read the same reply twice.
-    await fake.emit(#"{"type":"entry","entry":{"id":"other","seq":4,"botId":"b2","rev":4,"kind":"agent","turn":1,"data":{"text":"Other bot","final":true},"createdAt":1,"updatedAt":1}}"#)
-    #expect(await until { store.chat("b2").last?.id == "other" })
-    #expect(spoken == ["The answer"])
 
     store.setActive(true)
     #expect(await fake.shutdownCount == 0)
@@ -203,13 +204,33 @@ private func botEvent(_ id: String, name: String, rev: Int) -> String {
     await fake.emit(botEvent("b1", name: "Bot", rev: 1))
     #expect(await until { store.connection == .online })
     let first = UUID(), second = UUID()
-    store.beginVoiceCall(first, botId: "b1", speak: { _ in }, end: {})
-    store.beginVoiceCall(second, botId: "b1", speak: { _ in }, end: {})
+    store.beginVoiceCall(first, hear: { _ in }, end: {})
+    store.beginVoiceCall(second, hear: { _ in }, end: {})
     store.setActive(false)
     store.endVoiceCall(first)
     try await Task.sleep(for: .milliseconds(30))
     #expect(await fake.shutdownCount == 0)
     store.endVoiceCall(second)
+    #expect(await until { await fake.shutdownCount == 1 })
+}
+
+@MainActor @Test func aCallsEndKeepsTheConnectionUntilItReachesTheComputer() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.relay))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    defer { store.retire() }
+    store.setActive(true)
+    #expect(await until { await fake.subscribed })
+    let call = UUID()
+    store.beginVoiceCall(call, hear: { _ in }, end: {})
+    store.setActive(false)
+    // Hung up from the Live Activity, with the app in the background.
+    store.beginCallEnd()
+    store.endVoiceCall(call)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(await fake.shutdownCount == 0, "the call's end still has to reach the computer")
+    store.finishCallEnd()
     #expect(await until { await fake.shutdownCount == 1 })
 }
 
@@ -224,13 +245,13 @@ private func botEvent(_ id: String, name: String, rev: Int) -> String {
     #expect(await until { store.connection == .online })
     let call = UUID()
     var ended = false
-    store.beginVoiceCall(call, botId: "b1", speak: { _ in Issue.record("Retired call received speech") }, end: { ended = true })
+    store.beginVoiceCall(call, hear: { _ in Issue.record("Retired call received speech") }, end: { ended = true })
     store.setActive(false)
     store.retire()
     #expect(ended)
     #expect(await until { await fake.shutdownCount == 1 })
     store.send("must not send", to: "b1")
-    store.beginVoiceCall(UUID(), botId: "b1", speak: { _ in }, end: {})
+    store.beginVoiceCall(UUID(), hear: { _ in }, end: {})
     #expect(store.chat("b1").isEmpty)
     #expect(await fake.sent.isEmpty)
 }
@@ -563,8 +584,9 @@ extension FakeRemote {
     #expect(await fake.calls.filter { $0 == "respondPermission" }.count == 1)
 }
 
-/// Approvals reach a call as notices, replies as replies (a realtime operator words them differently).
-@MainActor @Test func voiceCallGetsApprovalsAsNotices() async throws {
+/// The computer's cues reach a call once each: one replayed after a reconnect isn't said again, even after an engine
+/// switch.
+@MainActor @Test func voiceCallHearsEachOfTheComputersCuesOnce() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let fake = FakeRemote(.ready(.direct))
@@ -574,19 +596,34 @@ extension FakeRemote {
     #expect(await until { await fake.subscribed })
     await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Ada","rev":1,"lastAt":1}}"#)
     #expect(await until { store.connection == .online })
-    var replies: [String] = []
-    var notices: [String] = []
-    store.beginVoiceCall(UUID(), botId: "b1", speak: { replies.append($0) }, announce: { notices.append($0) }, end: {})
-    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Ada","rev":2,"lastAt":2,"status":"needsInput"}}"#)
-    #expect(await until { notices == ["Ada needs your approval in the chat."] })
-    #expect(replies.isEmpty)
+    var heard: [CallCue] = []
+    let call = UUID()
+    store.beginVoiceCall(call, hear: { heard.append($0) }, end: {})
+    let cues = [("notice", "Ada needs the user's approval: Edit a.txt", 1), ("progress", "Ada: Running tests", 2), ("reply", "Done.", 3)]
+    func emit(_ kind: String, _ text: String, _ seq: Int) async {
+        await fake.emit(#"{"type":"call","call":"\#(call.uuidString)","kind":"\#(kind)","text":"\#(text)","seq":\#(seq)}"#)
+    }
+    for (kind, text, seq) in cues { await emit(kind, text, seq) }
+    #expect(await until { heard.count == 3 })
+    #expect(heard.map(\.kind) == [.notice, .progress, .reply])
+    // The engine switches; the reconnect's catch-up replays what the computer kept.
+    store.endVoiceCall(call)
+    store.beginVoiceCall(call, hear: { heard.append($0) }, end: {})
+    await emit("reply", "Done.", 3)
+    await emit("reply", "Missed while away.", 4)
+    #expect(await until { heard.last?.text == "Missed while away." })
+    #expect(heard.map(\.text) == cues.map(\.1) + ["Missed while away."])
+    // A newer host's new cue kind is passed over, not a reason to rewind.
+    await fake.emit(#"{"type":"call","call":"\#(call.uuidString)","kind":"whisper","text":"?","seq":5}"#)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(store.unreadable == false)
 }
 
 // MARK: - Version compatibility (docs/reference/compatibility.md)
 
-private func helloJSON(version: String, minApp: String? = nil, backends: String = "[]") -> String {
+func helloJSON(version: String, minApp: String? = nil, backends: String = "[]", canUpdate: Bool = false) -> String {
     let min = minApp.map { #","minApp":"\#($0)""# } ?? ""
-    return #"{"hostId":"h1","name":"Mac","version":"\#(version)"\#(min),"os":"macos","backends":\#(backends),"rev":0}"#
+    return #"{"hostId":"h1","name":"Mac","version":"\#(version)"\#(min),"os":"macos","backends":\#(backends),"rev":0,"canUpdate":\#(canUpdate)}"#
 }
 
 @MainActor @Test func hostNeedingANewerAppStopsSyncAndAsksForTheUpdate() async throws {

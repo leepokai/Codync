@@ -36,6 +36,14 @@ internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readi
     for (chat in chats) action("read:" + chat) { channel?.call("markRead", body("botId" to chat)) }
 }
 
+/** The entries of a host reply (`callEntries`, `botConversation`). */
+internal fun entriesOf(response: JsonElement): List<Entry> =
+    response.jsonObject["entries"]?.jsonArray?.map { Entry.decode(it.jsonObject) }.orEmpty()
+
+/** What a voice call carried (iOS `BotStore.callEntries`): the chat this phone holds may not reach back to it. */
+internal suspend fun AppStore.callEntries(botId: String, call: String): List<Entry> =
+    entriesOf(hostCall("callEntries", buildJsonObject { put("botId", botId); put("callId", call) }, 20_000))
+
 fun AppStore.loadHistory() {
     val id = state.value.selectedBot ?: return
     action("history") {

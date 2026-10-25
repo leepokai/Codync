@@ -1,5 +1,6 @@
 package com.codync.android.core
 
+import java.io.IOException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.update
@@ -27,8 +28,12 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
 
     init {
         hop {
-            mic.start({ pcm, level -> hop { heard(pcm, level) } }) {
-                hop { fail("Couldn't use the microphone. Check its permission and other audio apps.") }
+            try {
+                mic.start({ pcm, level -> hop { heard(pcm, level) } }) {
+                    hop { fail("Couldn't use the microphone. Check its permission and other audio apps.", VoiceFailureKind.Microphone) }
+                }
+            } catch (error: IOException) {
+                return@hop fail(error.message ?: "Couldn't use the microphone.", VoiceFailureKind.Microphone)
             }
             scope.launch {
                 try {
@@ -37,7 +42,7 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
                         if (!ended && text.isNotEmpty()) speech.send(text)
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
-                catch (error: Exception) { hop { fail(error.message ?: "Couldn't transcribe what you said.") } }
+                catch (error: Exception) { hop { fail(error.message ?: "Couldn't transcribe what you said.", VoiceFailureKind.Provider) } }
             }
         }
     }

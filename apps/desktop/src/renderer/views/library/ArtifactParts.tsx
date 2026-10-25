@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Artifact } from '@shared/artifacts'
+import { artifactFrameURL, type Artifact } from '@shared/artifacts'
 import type { MenuItem } from '../../components/Overlay'
 import type { BotStore } from '../../store/bot-store'
 import type { ArtifactHTML } from '../../store/artifacts'
@@ -23,10 +23,10 @@ export function ArtifactFrame({ id, html, title, preview = false }: { id: string
   return (
     <iframe
       className={preview ? 'artifact-frame preview' : 'artifact-frame'}
-      src={`codync-artifact://${id}/?v=${shown}`}
+      src={artifactFrameURL(id, shown, preview)}
       title={title}
-      // Its own origin already keeps it from the app; same-origin lets the artifact keep its own storage.
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+      // Its own origin already keeps it from the app; same-origin lets the artifact keep its own storage. A card opens nothing.
+      sandbox={preview ? 'allow-scripts allow-same-origin' : 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads'}
       tabIndex={preview ? -1 : undefined}
       aria-hidden={preview || undefined}
       loading="lazy"

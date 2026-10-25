@@ -41,20 +41,43 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
     private var session: CallSession? = null
     /** Tool calls still running on the computer: replies wait, so the model gets each result first. */
     private var toolsRunning = 0
+    /** The session was set up once: a drop after that is tried again instead of ending the call. */
+    private var connected = false
+    private var reconnects = 0
 
-    init {
-        hop {
+    init { hop { open() } }
+
+    /** A session with OpenAI: the computer mints its client secret and writes the voice's instructions (with the call
+     * so far, for a session that replaces a dropped one). */
+    private suspend fun open() {
+        try {
             val session = link.start(VoiceProvider.OpenAI, model, voice)
-            if (ended) return@hop
+            if (ended) return
             val secret = session.credential ?: throw IOException("OpenAI sent no session credential.")
             this.session = session
             val offer = peer.offer(this)
-            peer.mic(!muted)
+            peer.mic(!muted && phase != VoicePhase.Interrupted)
             val answer = exchange(secret, offer)
-            if (ended) return@hop
+            if (ended) return
             peer.answer(answer)
-            drop(15_000, "Couldn't reach OpenAI.") { phase == VoicePhase.Starting }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) {
+            // Starting fails over; mid-call, the computer or OpenAI may be back in a moment.
+            if (connected) return dropped(error.message.orEmpty()) else throw error
         }
+        drop(15_000, "Couldn't reach OpenAI.") { phase.connecting }
+    }
+
+    /** The connection to OpenAI dropped mid-call: a new session, a few times, before the call falls back. */
+    private suspend fun dropped(reason: String) {
+        val delays = Reconnect.delays
+        if (reconnects >= delays.size) return fail(reason.ifEmpty { "Lost the connection to OpenAI." })
+        val wait = delays[reconnects]
+        reconnects++
+        dropTimer?.cancel(); responding = false
+        peer.close()
+        if (phase != VoicePhase.Interrupted) phase(VoicePhase.Reconnecting)
+        scope.launch { delay(wait); hop { open() } }
     }
 
     override fun speak(markdown: String): Boolean {
@@ -63,6 +86,8 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
         return true
     }
     override fun announce(notice: String) = hop { pending += link.notice(notice); flush() }
+    /** Only the newest progress waits to be said. */
+    override fun progress(text: String) = hop { pending.removeAll { it.startsWith(PROGRESS_TAG) }; pending += link.progress(text); flush() }
     override fun mute(value: Boolean) = hop {
         mutable.update { it.copy(muted = value, level = if (value) 0f else it.level) }
         if (phase != VoicePhase.Interrupted) peer.mic(!value)
@@ -98,7 +123,10 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
         val message = runCatching { WireJson.parseToJsonElement(text).jsonObject }.getOrNull() ?: return@hop
         when (message.text("type")) {
             // Connected once the session has the instructions and tools, not when the channel opens.
-            "session.updated" -> if (phase == VoicePhase.Starting) { dropTimer?.cancel(); phase(VoicePhase.Listening); flush() }
+            "session.updated" -> if (phase.connecting) {
+                dropTimer?.cancel(); connected = true; reconnects = 0
+                phase(VoicePhase.Listening); flush()
+            }
             "input_audio_buffer.speech_started" -> level(if (muted) 0f else .7f)
             "input_audio_buffer.speech_stopped" -> level(0f)
             "input_audio_buffer.committed" -> link.transcribing(true)
@@ -133,19 +161,24 @@ class OpenAIRealtimeEngine(parent: CoroutineScope, settings: VoiceSettings, priv
     }
 
     override fun ice(state: RealtimePeer.Ice) = hop {
-        // While starting, only a failure counts: the start timer runs until the session is set up.
-        if (phase == VoicePhase.Starting && state != RealtimePeer.Ice.Failed) return@hop
+        // While connecting, only a failure counts: the start timer runs until the session is set up.
+        if (phase.connecting && state != RealtimePeer.Ice.Failed) return@hop
         when (state) {
             RealtimePeer.Ice.Connected -> dropTimer?.cancel()
             RealtimePeer.Ice.Disconnected -> drop(5_000, "Lost the connection to OpenAI.") { true }
-            RealtimePeer.Ice.Failed -> fail("Lost the connection to OpenAI.")
+            RealtimePeer.Ice.Failed -> lost("Lost the connection to OpenAI.")
         }
     }
 
-    /** Fails the call after `millis` unless something cancels the timer first. */
+    /** Gives the session up after `millis` unless something cancels the timer first. */
     private fun drop(millis: Long, message: String, still: () -> Boolean) {
         dropTimer?.cancel()
-        dropTimer = scope.launch { delay(millis); hop { if (still()) fail(message) } }
+        dropTimer = scope.launch { delay(millis); hop { if (still()) lost(message) } }
+    }
+
+    /** The session is gone: mid-call it's tried again; starting, the call fails over. */
+    private suspend fun lost(message: String) {
+        if (connected) dropped(message) else fail(message)
     }
 
     private fun cancelResponse() {

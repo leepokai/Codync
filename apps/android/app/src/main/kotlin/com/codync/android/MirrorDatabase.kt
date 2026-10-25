@@ -85,7 +85,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
             // Artifacts live in memory (`AppStore.receiveArtifacts`).
-            MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged -> Unit
+            MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged, is MirrorEvent.Call -> Unit
         }
     }
 

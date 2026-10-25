@@ -111,7 +111,7 @@ import com.kyant.shapes.Capsule
             .imePadding().navigationBarsPadding()) {
             // Nothing sent now could be read on the other side.
             val mismatch = state.mismatch
-            if (mismatch != null) UpdateNeededCard(state, mismatch, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
+            if (mismatch != null) UpdateNeededCard(state, mismatch, store::requestHostUpdate, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
             // An artifact's viewer has its own box for the same draft; two would overwrite each other.
             else if (viewing == null) MessageComposer(bot, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
                 onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null,
@@ -138,7 +138,7 @@ import com.kyant.shapes.Capsule
         state.bots.firstOrNull { it.id == open.botId }?.let { owner -> ArtifactViewer(open, owner, state, store) { viewing = null } }
     }
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
-    CodyncSheet(callLine, { callLine = null }) { CallConversationView(bot.id, it, state) }
+    CodyncSheet(callLine, { callLine = null }) { CallConversationView(bot.id, it, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
 }
@@ -200,7 +200,7 @@ import com.kyant.shapes.Capsule
     indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
     openCall: (String) -> Unit, openPeer: (String) -> Unit) {
     // What voice calls carried shows in each call's conversation, not in the chat.
-    val entries = state.entries.filter { it.botId == bot.id && it.isChat }.hidingCalls(setOfNotNull(state.voice?.id))
+    val entries = state.entries.filter { it.botId == bot.id && it.isChat }.hidingCalls()
     // A call's message that failed to send stays here, to be sent again.
     val pending = state.pending.filter { it.botId == bot.id && (it.call == null || it.status == SendStatus.Failed) }
     val items = chatItems(entries, pending)

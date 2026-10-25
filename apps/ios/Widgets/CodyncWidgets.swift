@@ -597,16 +597,23 @@ struct BotLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BotActivityAttributes.self) { context in
             let state = presentation(context)
-            BotActivityCard(name: context.attributes.name, state: state,
-                            startedAt: context.state.startedAt, link: context.attributes.link) {
-                avatar(context, state: state, size: 32)
-            } mark: {
-                indicator(context, state: state, size: 28)
+            Group {
+                if context.state.call != nil {
+                    CallActivityViews(context: context, state: state).card
+                } else {
+                    BotActivityCard(name: context.attributes.name, state: state,
+                                    startedAt: since(context), link: context.attributes.link) {
+                        avatar(context, state: state, size: 32)
+                    } mark: {
+                        indicator(context, state: state, size: 28)
+                    }
+                }
             }
             .modifier(SurfaceTint())
                 .widgetURL(context.attributes.link ?? AppEnvironment.current.link("computers"))
         } dynamicIsland: { context in
             let state = presentation(context)
+            if context.state.call != nil { return CallActivityViews(context: context, state: state).island }
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     avatar(context, state: state, size: 26).frame(maxHeight: .infinity)
@@ -628,7 +635,7 @@ struct BotLiveActivity: Widget {
                     .animation(Motion.activityPhase, value: state)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    ActivityIslandFooter(state: state, startedAt: context.state.startedAt, link: context.attributes.link)
+                    ActivityIslandFooter(state: state, startedAt: since(context), link: context.attributes.link)
                         .padding(.horizontal, 4)
                 }
             } compactLeading: {
@@ -645,7 +652,12 @@ struct BotLiveActivity: Widget {
     }
 
     private func presentation(_ context: ActivityViewContext<BotActivityAttributes>) -> BotActivityPresentation {
-        .init(status: context.state.status, activity: context.state.activity, isStale: context.isStale)
+        .init(status: context.state.status, activity: context.state.activity, isStale: context.isStale, call: context.state.call)
+    }
+
+    /// The time shown: the call's length while this phone is on a call with the bot, else how long it has worked.
+    private func since(_ context: ActivityViewContext<BotActivityAttributes>) -> Date? {
+        context.state.call == nil ? context.state.startedAt : context.state.callStartedAt
     }
 
     /// While the bot works, the orb keeps orbiting (in step with the face); otherwise it holds

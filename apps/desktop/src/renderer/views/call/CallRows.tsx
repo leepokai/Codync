@@ -1,10 +1,12 @@
-import { callConversation, type CallMessage } from '@shared/calls'
+import { callConversation, withCallEntries, type CallMessage } from '@shared/calls'
 import type { Entry } from '@shared/models'
 import { useEffect, useRef } from 'react'
+import { Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { Bubble } from '../thread/ChatRows'
@@ -35,9 +37,12 @@ export function CallLineRow({ entry, open }: { entry: Entry; open: () => void })
 export function CallConversationView({ botId, lineId }: { botId: string; lineId: string }) {
   const tr = useTr()
   const store = useStore()
-  const entries = store.allEntries(botId)
-  const line = entries.find((e) => e.id === lineId)
-  const messages = line ? callConversation(entries, line) : []
+  const live = store.allEntries(botId)
+  const line = live.find((e) => e.id === lineId)
+  const call = line?.data.call
+  // The call's own messages, which the loaded chat may not reach back to; null while they load.
+  const { fetched, error } = useFetched(() => (call ? store.callEntries(botId, call) : null), [store, botId, call])
+  const messages = line ? callConversation(withCallEntries(live, fetched ?? []), line) : []
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = scroller.current
@@ -48,7 +53,9 @@ export function CallConversationView({ botId, lineId }: { botId: string; lineId:
       <ModalHeader title={tr(line?.data.text || 'Voice chat')} />
       <div className="bot-conversation-scroll" ref={scroller}>
         <VStack gap={10} className="bot-conversation-rows">
-          {messages.length === 0 ? <Text as="div" size="footnote" tone="tertiary" className="bot-conversation-note">{tr('Nothing was said on this call.')}</Text> : null}
+          {error ? <Text as="div" size="footnote" tone="danger" className="bot-conversation-note">{error}</Text> : null}
+          {fetched === null && !error && call ? <div className="bot-conversation-note" aria-label={tr('Loading the call')}><Spinner /></div> : null}
+          {!error && fetched !== null && messages.length === 0 ? <Text as="div" size="footnote" tone="tertiary" className="bot-conversation-note">{tr('Nothing was said on this call.')}</Text> : null}
           {messages.map((m, i) => <CallMessageRow key={i} message={m} />)}
         </VStack>
       </div>

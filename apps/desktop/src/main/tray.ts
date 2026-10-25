@@ -22,6 +22,8 @@ interface Deps {
 
 const resources = () => (app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources'))
 const TEXT_SIZES = [11, 12, 13, 14, 15, 16, 18]
+/** macOS menus show an SF Symbol beside each action; Linux and Windows keep plain rows. */
+const symbol = (name: string) => (process.platform === 'darwin' ? nativeImage.createMenuSymbol(name) : undefined)
 
 /** The menu bar icon and its system menu: macOS owns layout, selection and submenus. */
 export class Tray {
@@ -83,9 +85,9 @@ export class Tray {
       : state.kind === 'failed' ? 'Host problem'
       : (s?.status ?? 'Connected')
     items.push({ label: this.tr(status), enabled: false })
-    items.push({ label: this.tr('Open {name}').replaceAll('{name}', app.getName()), accelerator: 'CmdOrCtrl+O', click: () => this.deps.openChat() })
+    items.push({ label: this.tr('Open {name}').replaceAll('{name}', app.getName()), icon: symbol('macwindow'), accelerator: 'CmdOrCtrl+O', click: () => this.deps.openChat() })
     if (state.kind === 'running') {
-      items.push({ label: this.tr('Pair iPhone…'), enabled: s?.canPair ?? false, click: () => this.deps.openPairing() })
+      items.push({ label: this.tr('Pair iPhone…'), icon: symbol('qrcode'), enabled: s?.canPair ?? false, click: () => this.deps.openPairing() })
     }
     items.push({ type: 'separator' })
 
@@ -96,22 +98,22 @@ export class Tray {
           break
         }
         items.push({ label: this.tr('Reinstall Codync or install the host with Homebrew.'), enabled: false })
-        items.push({ label: this.tr('Copy host install command'), click: () => clipboard.writeText('brew install leepokai/codync/codync-host') })
+        items.push({ label: this.tr('Copy host install command'), icon: symbol('square.on.square'), click: () => clipboard.writeText('brew install leepokai/codync/codync-host') })
         break
       case 'notInstalled':
-        items.push({ label: this.tr('Install host'), click: () => void host.install() })
+        items.push({ label: this.tr('Install host'), icon: symbol('arrow.down.circle'), click: () => void host.install() })
         break
       case 'starting':
         items.push({ label: this.tr('Starting the host…'), enabled: false })
         break
       case 'failed':
         items.push({ label: this.tr(state.message), enabled: false })
-        items.push({ label: this.tr('Restart host'), click: () => host.restart() })
-        items.push({ label: this.tr('Open log'), click: () => void shell.openPath(host.logPath) })
+        items.push({ label: this.tr('Restart host'), icon: symbol('arrow.clockwise.circle'), click: () => host.restart() })
+        items.push({ label: this.tr('Open log'), icon: symbol('list.bullet.rectangle'), click: () => void shell.openPath(host.logPath) })
         break
       case 'running':
         if (s?.approval) {
-          items.push({ label: this.tr('Review access request from {name}…').replaceAll('{name}', s.approval), click: () => send({ kind: 'reviewApprovals' }) })
+          items.push({ label: this.tr('Review access request from {name}…').replaceAll('{name}', s.approval), icon: symbol('person.crop.circle.badge.checkmark'), click: () => send({ kind: 'reviewApprovals' }) })
           items.push({ type: 'separator' })
         }
         if (!s || s.bots.length === 0) {
@@ -128,7 +130,7 @@ export class Tray {
         }
         if (s?.screen) {
           items.push({ type: 'separator' })
-          items.push({ label: this.tr('Remote screen'), submenu: this.screenMenu(s.screen) })
+          items.push({ label: this.tr('Remote screen'), icon: symbol('display'), submenu: this.screenMenu(s.screen) })
         }
         if (s && s.usage.length) {
           items.push({ type: 'separator' })
@@ -144,9 +146,9 @@ export class Tray {
     }
 
     items.push({ type: 'separator' })
-    items.push({ label: this.tr('Settings'), submenu: this.settingsMenu() })
-    if (s?.version) items.push({ label: this.tr('Version {version}').replaceAll('{version}', s.version), enabled: false })
-    items.push({ label: this.tr('Quit {name}').replaceAll('{name}', app.getName()), accelerator: 'CmdOrCtrl+Q', click: () => app.quit() })
+    // Settings and Quit close the menu as a pair; the version lives in Settings → Updates.
+    items.push({ label: this.tr('Settings'), icon: symbol('gearshape'), submenu: this.settingsMenu() })
+    items.push({ label: this.tr('Quit {name}').replaceAll('{name}', app.getName()), icon: symbol('power'), accelerator: 'CmdOrCtrl+Q', click: () => app.quit() })
     this.tray.setContextMenu(Menu.buildFromTemplate(items))
   }
 
@@ -175,6 +177,7 @@ export class Tray {
       { label: this.tr('Automatically download and install'), type: 'checkbox', checked: u.autoDownload, enabled: u.supported, click: () => updates.emit('setAutoDownload', !u.autoDownload) },
     ]
     if (!u.supported) items.push({ label: this.tr('Updates are available in release builds.'), enabled: false })
+    items.push({ label: this.tr('Version {version}').replaceAll('{version}', app.getVersion()), enabled: false })
     if (u.lastCheck) items.push({ label: this.tr('Last checked {when}').replaceAll('{when}', new Date(u.lastCheck).toLocaleString()), enabled: false })
     if (u.error) {
       items.push({ label: this.tr(u.error), enabled: false })

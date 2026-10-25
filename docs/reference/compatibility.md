@@ -32,8 +32,8 @@ reason to lock someone out.
 |---|---|---|
 | Notice | `UpdateNeededCard` above the computer's bots and in place of the composer; status reads *Needs update* | *needs update* in the status line, with the reason |
 | Update this app | iPhone: App Store page. Desktop: electron-updater check (`apps/desktop/src/main/updates.ts`). Android: text only | Text only |
-| Update the host | Desktop: its own host is reinstalled (**Restart host**). iPhone and Android: instructions for that computer | `^k` → Check for updates |
-| Sync while mismatched | Stopped; `hello` is asked again every 30 s and on every reconnect | Continues; sending is blocked |
+| Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer | `^k` → Check for updates |
+| Sync while mismatched | Stopped; `hello` is asked again every 30 s (5 s while an update asked from here runs) and on every reconnect | Continues; sending is blocked |
 
 Drafts are kept while sending is blocked. A host update restarts the host, so the reconnect
 reads the new `hello` and the notice goes away on its own.
@@ -141,6 +141,7 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.26.0 | 2.21.0 | 2.26.0 (iPhone, Android, desktop) | What a call's voice hears comes from the host as `call` events (replies, approvals, failures, progress); the apps no longer derive it from the chat, so on an older host a call would never hear the bot. |
 | 2.25.0 | 2.21.0 | 2.25.0 (iPhone, Android, desktop) | Voice calls run on the host: the apps start a call, run the voice's tools and end it through `startCall`, `callTool`, `callLines` and `endCall`, which older hosts lack (a Linux desktop or an SSH computer can run one). `logCall` stays for older apps. |
 | 2.21.0 | 2.21.0 | 2.20.1 | Memory is files the bot keeps, and the apps only read it: the edit methods (`saveMemory`, `pinMemory`, `archiveMemory`, `forgetMemory`, `clearMemory`, `undoDream`, `answerMemory`, `undoMemory`, `saveMemoryFile`, `deleteMemoryFile`, `restoreMemoryFile`) are gone, so older apps' memory buttons would fail. `memory` keeps its shape, so new apps still read an older host's memory. |
 | 2.20.1 | 2.20.1 | 2.20.1 | Reply threads gave way to quote replies: the `thread` method, `send.threadId`, `markRead.threadId`, entry `threadId`, `data.thread` and bot `workingThread` are gone, and old thread replies sit in the main chat. Older apps would open empty threads. The clients no longer leave thread replies out of the chat or read threads, so an older host would show them inline, routine results twice and thread unread counts that never clear. |
@@ -162,6 +163,11 @@ on `~/.codync` or 19222:
    `SIMCTL_CHILD_CODYNC_PAIR_URL=<pairingUrl>`.
 4. Swap hosts on the same `CODYNC_HOME` (patched ↔ normal) to see the notice appear in the
    list and in place of an open chat's composer, and go away after the reconnect.
+
+A Debug host is a development build, so its `hello.canUpdate` is false and the notice gives
+instructions. To see **Update now** too, also patch `installable()` in `host/src/update/mod.rs`
+to return `true` and `request_install` to return `Ok(())` (or an `Err` with a message, for the
+failure note); restarting the scratch host unpatched then plays the update finishing.
 
 The simulator has no App Store app, so *Update Codync* ends in a Safari error there; on a
 device it opens the App Store.

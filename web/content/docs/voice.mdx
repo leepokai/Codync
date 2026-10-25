@@ -20,11 +20,13 @@ The call bar floats at the top of the chat, and the chat stays readable and usab
 
 Most bots wait for you to speak. Your [lead bot](/docs/bots#your-lead-bot) speaks first: once the call connects, it tells you in a sentence or two what deserves your attention, or greets you. If it's busy working, its reply comes when the work is done instead.
 
-What you say on a call, and the bot's replies during it, don't fill up the chat. When the call ends, the chat gets one line instead: a waveform, a short title for what the call was about (such as "Release plan · 03:12"; "Voice chat" until the title is written), and its length. Tap it to read the whole call: what you said, what the voice said, and what went to the bot and back.
+What you say on a call, and the bot's replies during it, don't fill up the chat. When the call ends, the chat gets one line instead: a waveform, a short title for what the call was about (such as "Release plan · 03:12"; "Voice chat" until the title is written), and its length. Tap it to read the whole call: what you said, what the voice said, and what went to the bot and back. Your other devices keep the call out of the chat too. If the app closes before the call ends (or loses its connection), the line appears once the call has been quiet for 2 hours.
 
 The bot remembers what matters from the call like from any conversation: its memory picks up what you said, not the voice's wording.
 
-On the iPhone, the first call asks for Microphone and Speech Recognition access. The call keeps going if you leave Codync for the Home Screen.
+On the iPhone, the first call asks for Microphone and Speech Recognition access. The call keeps going if you leave Codync for the Home Screen, and the bot's Live Activity on the Lock Screen and in the Dynamic Island shows the call, how long it has run and what the bot is doing while you talk, with buttons to mute or end the call without opening Codync.
+
+On Android, the call's notification shows the same: the call's state and what the bot is working on, with Mute and End call.
 
 ### From Shortcuts (iPhone)
 
@@ -50,7 +52,8 @@ Under **Engine**, pick one. The choice is kept on this device. Changed during a 
 - You speak in the language set under **Language** (by default, your device's first language).
 - A pause ends what you said and sends it to the bot as part of the call. If the bot is busy, it's queued like any other message. Set the pause under **Send after a pause of** (1 s, 1.5 s or 2.5 s).
 - Each reply is read aloud in the language it's written in, skipping code blocks and formatting. Set **Reading speed** to Slower, Normal or Faster. The microphone pauses while a reply is read.
-- When the bot asks for approval, the call tells you; answer it in the chat.
+- When the bot asks for approval, the call tells you what it asks; answer it in the chat. If it runs into a problem, the call tells you that too.
+- A reply that arrives while the call briefly loses its connection is read once it's back.
 
 In the desktop app, on-device speech is available on macOS only. On Windows and Linux, calls use OpenAI or Gemini; without a key, the call asks you to add one in call settings.
 
@@ -61,13 +64,15 @@ Each provider has two modes, under **Mode**:
 - **Realtime:** a live conversation with the provider's realtime model. You can talk over replies.
 - **Speech:** the same loop as On device, using the provider's speech-to-text and text-to-speech models instead. What you say is sent when you pause, and replies are read aloud.
 
-In Realtime mode, the voice model is the bot's voice line, not the bot: it talks with you, and the bot does the work. It passes your requests on to the bot (along with your own words, so nothing gets lost in its wording), reads the bot's replies out in shortened form, tells you what the bot is doing ("what are you working on?"), answers an approval for you once you've said which option, can stop the bot, and can look up what the bot remembers.
+In Realtime mode, the voice model is the bot's voice line, not the bot: it talks with you, and the bot does the work. It passes your requests on to the bot (along with your own words, so nothing gets lost in its wording), reads the bot's replies out in shortened form, keeps you posted while the bot works (and tells you what it's doing when you ask), lets you know when an approval is waiting, answers an approval for you once you've said which option, can stop the bot, and can look up what the bot remembers.
 
-Before a Realtime call, your computer gives the voice model the background it needs: the date and time, what your bots remember about you, this bot's settings and memory, the project's git branch and recent changes, what the bot is working on, the recent messages and calls in this chat, your other bots, and the files shared in the chat. Like your audio, it goes to OpenAI or Google on your own key.
+Before a Realtime call, your computer gives the voice model the background it needs: the date and time, what your bots remember about you, this bot's settings and memory, the project's git branch and recent changes, what the bot is working on, the recent messages and calls in this chat, your other bots, and the files shared in the chat. When the call reconnects or you switch engine mid-call, the voice model also gets what was said on the call so far. Like your audio, it goes to OpenAI or Google on your own key.
 
 Below the key you can pick the **Model** (or, in Speech mode, **Speech to text** and **Text to speech**) and the **Voice**. The default models follow each provider's newest ones. **This month** shows an estimate of the minutes used, counted on each device. The provider bills you; it isn't a bill.
 
-If a provider can't start, or the connection drops mid-call, the call switches to on-device voice without hanging up and says so under the bar. (In the desktop app this happens on macOS, where on-device speech exists.)
+If the connection drops mid-call, the bar shows the connecting line with "Reconnecting" and the call picks up where it left off, usually within a few seconds, without hanging up. A phone call, Siri or another app taking the audio pauses the call; it picks up again when that ends, or tap **Audio paused by another app. Tap to resume.** under the bar. On the iPhone and the computer, plugging in or removing a headset moves the call to the new microphone; on Android, removing the headset pauses the call until you tap to resume.
+
+If a provider can't start, or the connection doesn't come back after a few tries, the call switches to on-device voice without hanging up and says so under the bar. (In the desktop app this happens on macOS, where on-device speech exists.)
 
 ## Add your API key
 

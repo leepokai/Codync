@@ -109,7 +109,7 @@ The run's prompt tells the bot that the delivery's contents are untrusted data t
 
 ### What the Codync cloud sees
 
-A routine's public URL goes through the Codync cloud, so services can reach your computer without an open port or fixed address.
+A routine's public URL goes through the Codync cloud, so services can reach your computer without an open port or fixed address. A computer that uses [your own relay](/docs/remote-access#your-own-relay) has no public URL: only the local one works.
 
 - Deliveries to the public URL are **not end-to-end encrypted**. The cloud handles the HTTPS connection, can read each delivery, and stores the key to check it. Your computer checks the key again before anything runs.
 - If your computer is off or offline, the cloud keeps deliveries for up to 72 hours and hands them over once the host is back.

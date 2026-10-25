@@ -3,6 +3,7 @@
 //! newer adapter adding a variant never breaks parsing.
 
 use crate::LockExt;
+use crate::agent::fallback::reason::{self, Reason};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -14,6 +15,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
+
+pub mod codebuddy;
 
 /// stderr lines kept to explain a crash.
 const STDERR_TAIL_LINES: usize = 12;
@@ -37,9 +40,9 @@ type Pending = Arc<std::sync::Mutex<HashMap<i64, oneshot::Sender<Result<Value, V
 pub struct RpcError {
     pub code: i64,
     pub message: String,
-    /// The adapter's own category (`data.errorKind`: Claude's `rate_limit`, `overloaded`, …; codex-acp's
-    /// `data.codexErrorInfo` as `usage_limit_exceeded`), kept only when it's an identifier, as it can go to usage
-    /// analytics.
+    /// The adapter's own category (`data.errorKind`: Claude's `rate_limit`, `overloaded`, …; `CodeBuddy`'s
+    /// `data.category`: `auth`, `custom_model_auth`, …; codex-acp's `data.codexErrorInfo` as `usage_limit_exceeded`),
+    /// kept only when it's an identifier, as it can go to usage analytics.
     pub kind: Option<String>,
 }
 
@@ -56,13 +59,16 @@ impl std::fmt::Display for RpcError {
 
 impl std::error::Error for RpcError {}
 
-/// Whether an agent's error asks for signing in: ACP's code, or adapters that only say so.
+/// Whether an agent's error asks for signing in: ACP's code, the category of an adapter that names one, or the
+/// words of one that names none. A named category is believed: `CodeBuddy`'s `custom_model_auth` (a bad key in
+/// `models.json`) says "Authentication failed" but signing in doesn't fix it.
 pub fn needs_sign_in(e: &anyhow::Error) -> bool {
-    let rpc = |c: &(dyn std::error::Error + 'static)| {
-        c.downcast_ref::<RpcError>()
-            .is_some_and(|r| r.code == AUTH_REQUIRED || r.message.to_lowercase().contains("auth"))
-    };
-    e.chain().any(rpc) || e.to_string().to_lowercase().contains("auth")
+    let says_auth = |text: &str| text.to_lowercase().contains("auth");
+    match e.chain().find_map(|c| c.downcast_ref::<RpcError>()) {
+        Some(r) if r.kind.is_some() => reason::of_rpc(r) == Some(Reason::SignedOut),
+        Some(r) => r.code == AUTH_REQUIRED || says_auth(&r.message) || says_auth(&e.to_string()),
+        None => says_auth(&e.to_string()),
+    }
 }
 
 /// Whether a failed prompt may have left its session dead in the agent: an internal error the
@@ -115,25 +121,27 @@ impl Answer {
     pub async fn response(self) -> Result<Value> {
         match self.rx.await {
             Ok(Ok(v)) => Ok(v),
-            Ok(Err(e)) => {
-                let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
-                let message = match e["data"]["details"].as_str().or(e["data"].as_str()) {
-                    Some(d) => format!("{msg} ({d})"),
-                    None => msg,
-                };
-                let kind = e["data"]["errorKind"]
-                    .as_str()
-                    .map(str::to_owned)
-                    .or_else(|| codex_kind(&e["data"]["codexErrorInfo"]))
-                    .filter(|k| {
-                        !k.is_empty() && k.len() <= 40 && k.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
-                    });
-                Err(RpcError { code: e["code"].as_i64().unwrap_or_default(), message, kind }.into())
-            }
+            Ok(Err(e)) => Err(rpc_error(&e).into()),
             // The reader drops every waiter when the process goes away.
             Err(_) => Err(Failure::error(FailureKind::Exited, "agent process exited")),
         }
     }
+}
+
+/// A JSON-RPC error object as an [`RpcError`].
+fn rpc_error(e: &Value) -> RpcError {
+    let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
+    let message = match e["data"]["details"].as_str().or(e["data"].as_str()) {
+        Some(d) => format!("{msg} ({d})"),
+        None => msg,
+    };
+    let kind = e["data"]["errorKind"]
+        .as_str()
+        .or(e["data"]["category"].as_str())
+        .map(str::to_owned)
+        .or_else(|| codex_kind(&e["data"]["codexErrorInfo"]))
+        .filter(|k| !k.is_empty() && k.len() <= 40 && k.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'));
+    RpcError { code: e["code"].as_i64().unwrap_or_default(), message, kind }
 }
 
 /// codex-acp's category (`data.codexErrorInfo`: `"usageLimitExceeded"`, or `{"httpConnectionFailed": {…}}`) in the

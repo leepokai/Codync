@@ -64,10 +64,11 @@ pub fn may_delete(store: &Store, bot: &str) -> Result<()> {
 }
 
 /// A call with `bot` is on: the lead speaks first, unless a turn is under way (the reply on its way comes first).
-pub fn call_started(hub: &Hub, bot: &str) -> Result<()> {
+pub fn call_started(hub: &Hub, bot: &str, call: Option<&str>) -> Result<()> {
     let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
     if row.config.lead && !matches!(hub.runtime(bot).status, BotStatus::Working | BotStatus::NeedsInput) {
-        hub.send_cmd(bot, Cmd::Prompt(OPENING.to_owned()))?;
+        // The opening is the call's: said on it, kept in its conversation, not in the chat.
+        hub.send_cmd(bot, Cmd::Prompt { text: OPENING.to_owned(), call: call.map(str::to_owned) })?;
     }
     Ok(())
 }

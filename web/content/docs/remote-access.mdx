@@ -1,4 +1,4 @@
-Your bots run on your computer. The iPhone app reaches that computer in one of two ways: **directly** (same Wi-Fi or local network, Tailscale, or an address you publish yourself) or through the **Codync relay**, a service on Cloudflare that passes encrypted traffic between your phone and your computer when they can't see each other. Both routes use the same end-to-end encrypted connection, and the phone picks one on its own.
+Your bots run on your computer. The iPhone app reaches that computer in one of two ways: **directly** (same Wi-Fi or local network, Tailscale, or an address you publish yourself) or through a **relay** that passes encrypted traffic between your phone and your computer when they can't see each other. By default that is the Codync relay on Cloudflare. You can point the computer at a relay you run yourself. Both routes use the same end-to-end encrypted connection, and the phone picks one on its own.
 
 The desktop app and the terminal UI work differently: they talk to the host on the same computer, or to another computer over SSH. They don't use the relay.
 
@@ -12,6 +12,7 @@ Each time it connects, the phone first tries the computer's direct addresses. If
 | Tailscale | Phone and computer are both on your Tailscale network | Tailscale on both |
 | Your own URL | You run an HTTPS reverse proxy in front of the host | See "Your own HTTPS reverse proxy" below |
 | Codync relay | Anywhere with internet | Nothing (on by default) |
+| Your own relay | Anywhere with internet | **Relay address** on the computer |
 
 The host lists its Tailscale and private network addresses, plus any URL you set yourself. It never advertises a public IP address on its own.
 
@@ -62,6 +63,31 @@ With the relay off:
 - The phone reaches the computer only directly: Wi-Fi, Tailscale or your own URL.
 - Devices approved through your account can't connect. Devices paired with a QR code still can.
 - Deliveries to public routine webhooks no longer reach the computer. Local ones keep working. The relay still accepts deliveries at the old public URLs and keeps them, readable, for up to 72 hours; they run if you turn the relay back on within that time. To stop them, remove the URL from the sender, or delete the routine or replace its key while the relay is on.
+
+## Your own relay
+
+You can run a relay yourself and point a computer at it, instead of the Codync relay on Cloudflare. Chat stays end-to-end encrypted either way. The relay still cannot read it. How to set one up on a server is in the [private relay README](https://github.com/leepokai/Codync/blob/main/private-relay/README.md).
+
+On the computer, open **Settings → Computers**, turn on **Reach from anywhere**, and set **Relay address** to your relay, such as `https://relay.example.com`. A **Relay token** field then appears: paste the token the relay was started with. The field never shows the token again; it says it's saved, and typing a new one replaces it. On a computer without the desktop app:
+
+```sh
+codync-host cloud --url https://relay.example.com --token
+```
+
+`--token` asks for the token without showing it, so it stays out of your shell history. You can also pipe it in: `codync-host cloud --url https://relay.example.com --token < token.txt`.
+
+The relay must be started with the same token (`CODYNC_PRIVATE_RELAY_TOKEN`). It accepts a new computer only when the token matches, and it keeps at most 32 computers. A computer it already knows can reconnect with its own key.
+
+To use the Codync relay again, clear **Relay address**, or run `codync-host cloud --clear-url`. That forgets the saved address and the token. Changing the address to another relay forgets the token too, since a token belongs to one relay.
+
+A private relay does not do everything the Codync relay does:
+
+- Signing in, **Add to account** and the 6-digit access check are not available. Devices approved through your account stay on the computer but can't connect until it goes back to the Codync relay. Devices paired with a QR code aren't affected.
+- Public routine webhooks are not delivered. A local webhook on the computer still works.
+- Remote screen through the relay is not available. Screen over Wi-Fi or Tailscale still works.
+- Notifications still go through Codync's push service.
+
+The iPhone learns the address from the pairing code and the next connection. It has no address field of its own, and it never receives the token.
 
 ## Your own HTTPS reverse proxy
 

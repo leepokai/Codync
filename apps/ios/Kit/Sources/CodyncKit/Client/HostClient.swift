@@ -7,8 +7,10 @@ public enum HostEvent: Sendable {
     case entry(Entry)
     case usage(Usage)
     case screen(ScreenState)
-    /// An artifact published or renamed (live only: the catch-up doesn't repeat them).
+    /// An artifact published or renamed (the catch-up replays it too).
     case artifact(Artifact)
+    /// For the voice of a call on this device (only the device holding the call receives it).
+    case call(CallCue)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -118,8 +120,10 @@ public struct HostClient: Sendable {
         case "screen":
             return (try? d.decode(ScreenWrap.self, from: data)).map { .screen($0.screen) }
         case "artifact":
-            // Not worth a rewind: the catch-up has no artifacts, and the list fetches them anyway.
+            // Not worth a rewind: a card or the Library reads the artifact again.
             return (try? d.decode(ArtifactWrap.self, from: data)).map { .artifact($0.artifact) }
+        case "call":
+            return (try? d.decode(CallCue.self, from: data)).map { .call($0) }
         case "resync":
             return .resync
         default:
@@ -133,10 +137,22 @@ public struct HostClient: Sendable {
 public extension HostClient {
     func hello() async throws -> Hello { try await call("hello") }
 
+    /// Updates a computer that's behind this app to the latest release (`Hello.canUpdate`).
+    func installHostUpdate() async throws {
+        let _: Empty = try await call("installHostUpdate")
+    }
+
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
         struct Body: Encodable { var botId: String; var beforeSeq: Int64; var limit: Int }
         struct Res: Decodable { var entries: [Entry] }
         let res: Res = try await call("history", Body(botId: botId, beforeSeq: beforeSeq, limit: limit))
+        return res.entries
+    }
+
+    /// What a voice call carried, from the computer: the chat this device holds may not reach back to it.
+    func callEntries(botId: String, call: String) async throws -> [Entry] {
+        struct Res: Decodable { var entries: [Entry] }
+        let res: Res = try await self.call("callEntries", ["botId": botId, "callId": call])
         return res.entries
     }
 
@@ -238,8 +254,9 @@ public extension HostClient {
         return out
     }
 
-    func callStarted(_ botId: String) async throws {
-        let _: Empty = try await call("callStarted", ["botId": botId])
+    /// A call's audio is live: a lead opens it, and its opening is the call's.
+    func callStarted(_ botId: String, call: String) async throws {
+        let _: Empty = try await self.call("callStarted", ["botId": botId, "callId": call])
     }
 
     // MARK: voice calls (host/src/chat/calls)

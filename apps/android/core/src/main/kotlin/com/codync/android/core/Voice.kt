@@ -3,8 +3,6 @@ package com.codync.android.core
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
 
 class VoiceUnavailable(message: String) : IOException(message)
@@ -44,33 +42,17 @@ object SpokenText {
     }
 }
 
-/** Something a call says: a bot's reply, or a notice from the computer. */
-data class VoiceCue(val text: String, val notice: Boolean = false)
-
-/** Only newly finalized replies are spoken. The mirror remains the history owner. */
-class VoiceReplyGate(private val botId: String, private val startRev: Long, initial: List<Entry>) {
-    private var previous = initial.associateBy(Entry::id)
-    fun observe(entries: List<Entry>, bots: List<Bot>): List<VoiceCue> {
-        val result = mutableListOf<VoiceCue>()
-        val group = bots.firstOrNull { it.id == botId }?.kind == "group"
-        for (entry in entries) {
-            if (entry.botId != botId || entry.rev <= startRev) continue
-            val before = previous[entry.id]
-            val author = entry.data.text("author")?.let { id -> bots.firstOrNull { it.id == id }?.name }
-            if (entry.kind == "agent" && entry.data["final"]?.jsonPrimitive?.booleanOrNull == true &&
-                before?.data?.get("final")?.jsonPrimitive?.booleanOrNull != true && entry.text.isNotBlank())
-                result.add(VoiceCue(if (group && author != null) "$author: ${entry.text}" else entry.text))
-            if (entry.kind == "permission" && entry.status == "pending" && before?.status != "pending") {
-                val name = author ?: bots.firstOrNull { it.id == botId && !group }?.name ?: "A bot"
-                result.add(VoiceCue("$name needs your approval in the chat.", notice = true))
-            }
-        }
-        previous = entries.associateBy(Entry::id)
-        return result
-    }
+/**
+ * A call's audio, the same on every engine (and on the iPhone and the desktop): connecting until the provider confirmed
+ * the session and the microphone delivers, then listening or speaking; reconnecting after a drop; interrupted while
+ * another app has the audio; failed when it can't go on; ended.
+ */
+enum class VoicePhase { Starting, Listening, Speaking, Reconnecting, Interrupted, Failed, Ended;
+    /** The connecting line shows: not ready yet, or ready again soon. */
+    val connecting: Boolean get() = this == Starting || this == Reconnecting
 }
-
-enum class VoicePhase { Starting, Listening, Speaking, Interrupted, Failed, Ended }
+/** Why a call's engine gave up, for analytics (`voice_call_quality`). */
+enum class VoiceFailureKind(val wire: String) { Microphone("microphone"), Connection("connection"), Provider("provider") }
 data class VoiceSettings(val pauseMillis: Long = 1_500, val rate: Float = 1f) {
     init { require(pauseMillis in listOf(1_000L, 1_500L, 2_500L)); require(rate in .5f..2f) }
 }
@@ -78,7 +60,9 @@ data class VoiceState(val phase: VoicePhase = VoicePhase.Starting, val muted: Bo
     val heard: String = "", val said: String = "", val level: Float = 0f, val engine: String = "",
     val settings: VoiceSettings = VoiceSettings(), val error: String? = null,
     /** Where the audio goes when it leaves the phone; null on device. */
-    val provider: VoiceProvider? = null)
+    val provider: VoiceProvider? = null,
+    /** Why it failed, with `error`. */
+    val failureKind: VoiceFailureKind? = null)
 sealed interface VoiceInput {
     data class Text(val generation: Long, val value: String, val final: Boolean) : VoiceInput
     data class Level(val generation: Long, val value: Float) : VoiceInput

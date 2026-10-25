@@ -26,6 +26,10 @@ struct CallView: View {
     @State private var settings = false
     /// `voice_call_started` went out for this call.
     @State private var reported = false
+    /// Each engine's `voice_call_quality`.
+    @State private var quality = CallQuality()
+    /// The bot's Live Activity showing the call.
+    @State private var activity: CallActivity?
 
     private var bot: Bot? { model.bots[botId] }
     private var call: String { callID.uuidString }
@@ -34,8 +38,13 @@ struct CallView: View {
     var body: some View {
         VStack(spacing: 6) {
             bar
-            if case .failed(let message) = session?.phase {
+            if case .failed(let message, _) = session?.phase {
                 line(message, color: Palette.danger)
+            } else if session?.phase == .interrupted {
+                Button { session?.resume() } label: {
+                    line("Audio paused by another app. Tap to resume.", color: Palette.secondary)
+                }
+                .buttonStyle(.plain)
             } else if let notice {
                 line(notice, color: Palette.secondary)
             }
@@ -45,34 +54,46 @@ struct CallView: View {
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: notice)
         .onAppear {
             startedAt = .now
-            model.beginCall(call)
             link = CallLink(model: model, botId: botId, call: call)
+            if let bot {
+                let ref = BotReference(accountId: model.storage.accountID, computerId: model.computer.id, botId: botId)
+                activity = CallActivity(bot: bot, computerId: model.computer.id, link: model.storage.botURL(ref),
+                                        toggleMute: { session?.muted.toggle() }, hangUp: { close() })
+            }
             begin(cloud: VoiceSettings.provider)
         }
         .onDisappear {
+            // First, so the connection outlives the engine: the end is sent after the engine's last lines.
+            link?.end(seconds: Int(Date.now.timeIntervalSince(startedAt)))
             session?.end()
             countCloudMinutes()
             isSpeaking = false
             interrupt = nil
             model.endVoiceCall(callID)
-            link?.end(seconds: Int(Date.now.timeIntervalSince(startedAt)))
+            quality.report()
+            activity?.end()
         }
         .onChange(of: session?.phase) { _, phase in
+            if let phase {
+                quality.phase(phase)
+                activity?.phase(phase)
+            }
             isSpeaking = phase == .speaking
             interrupt = phase == .speaking ? { session?.interrupt() } : nil
             // Counted once audio flows, so it names the engine the call ended up on.
             if phase?.isActive == true, !reported, let session {
                 reported = true
                 Analytics.shared.capture(.voiceCallStarted(session.analyticsName))
-                model.callStarted(botId)
+                model.callStarted(botId, call: call)
             }
             // A cloud engine that can't start or drops mid-call hands over to on-device voice.
-            if case .failed(let message) = phase, let provider = session?.provider {
+            if case .failed(let message, _) = phase, let provider = session?.provider {
                 countCloudMinutes()
                 notice = "\(provider.name) isn't available (\(message)). Using on-device voice."
                 begin(cloud: nil)
             }
         }
+        .onChange(of: session?.muted) { _, muted in activity?.muted(muted == true) }
         .onChange(of: settings) { _, open in if !open { switchEngine() } }
         .codyncSheet(isPresented: $settings) { VoiceChatSettingsView() }
     }
@@ -114,12 +135,14 @@ struct CallView: View {
             engine = OnDeviceEngine { [model, botId, call] in model.send($0, to: botId, call: call) }
             Task { _ = try? await link.start("device") }
         }
-        engine.onActivityChanged = { [weak engine, model, botId, callID] active in
+        quality.begin(engine.analyticsName)
+        (engine as? GeminiLiveEngine)?.onStall = { [quality] in quality.stalled() }
+        engine.onActivityChanged = { [weak engine, model, callID] active in
             if active {
-                model.beginVoiceCall(callID, botId: botId,
-                                     speak: { [weak engine] in engine?.speak(reply: $0) },
-                                     announce: { [weak engine] in engine?.announce($0) },
-                                     end: { [weak engine] in engine?.end() })
+                model.beginVoiceCall(callID, hear: { [weak engine, activity] cue in
+                    engine?.hear(cue)
+                    activity?.heard(cue)
+                }, end: { [weak engine] in engine?.end() })
             } else {
                 model.endVoiceCall(callID)
             }
@@ -161,7 +184,7 @@ struct CallView: View {
         HStack(spacing: 10) {
             avatar
             LevelDots(level: session?.level ?? 0, speaking: session?.phase == .speaking,
-                      working: bot?.isWorking == true, connecting: (session?.phase ?? .starting) == .starting,
+                      working: bot?.isWorking == true, connecting: session?.phase.isConnecting ?? true,
                       color: color, reduceMotion: reduceMotion)
                 .frame(minWidth: Self.dotsWidth, maxWidth: Self.dotsMaxWidth, minHeight: Self.dotsHeight, maxHeight: Self.dotsHeight)
                 .accessibilityLabel(statusText)
@@ -174,7 +197,9 @@ struct CallView: View {
             }
             round("Call settings", "gearshape") { settings = true }
             let muted = session?.muted == true
-            round(muted ? "Unmute" : "Mute", muted ? "mic.slash" : "mic", on: muted) { session?.muted.toggle() }
+            round(muted ? "Unmute" : "Mute", muted ? "mic.slash" : "mic", on: muted) {
+                session?.muted.toggle()
+            }
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: Self.iconSize, weight: .semibold))
@@ -233,6 +258,8 @@ struct CallView: View {
     private var statusText: String {
         switch session?.phase {
         case .starting, nil: "Connecting"
+        case .reconnecting: "Reconnecting"
+        case .interrupted: "Paused"
         case .speaking: "Speaking"
         case .failed: "Can't listen"
         case .listening where session?.muted == true: "Muted"

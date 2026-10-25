@@ -21,11 +21,10 @@ interface Props {
   move: (id: string, target: string) => void
   /** This computer's own Extensions; absent while it can't be reached. */
   openExtensions?: () => void
-  notice: ReactNode
   children: ReactNode
 }
 
-export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, notice, children }: Props) {
+export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, children }: Props) {
   const section = useRef<HTMLElement>(null)
   const id = store.computer.id
   useSlide(section)
@@ -47,7 +46,6 @@ export function ComputerRosterSection({ store, compact, collapsed, previous, nex
         </button>
         {openExtensions && !compact ? <IconButton className="computer-roster-extensions" title="Extensions" icon="square.grid.2x2" size={24} onClick={openExtensions} /> : null}
       </div>
-      {notice}
       <div className={`computer-roster-content ${collapsed ? 'collapsed' : ''}`} inert={collapsed} aria-hidden={collapsed}>
         <div>{children}</div>
       </div>

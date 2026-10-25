@@ -211,7 +211,9 @@ first). See [desktop app](../architecture/desktop-app.md).
 
 **Computers & devices** (Settings) shows, for this computer and each SSH computer:
 *Reach from anywhere* (`setCloud`, on/off; the host's build decides which cloud),
-*Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and
+*Relay address* and, for a private relay, a write-only *Relay token* (`setCloudUrl`; the
+host's `cloudStatus` says `relay: "private"` and `tokenSet`, and there the account rows are hidden
+and auto-claim never runs), *Add to account* (claim: `POST /v1/claims` → loopback `claimSign` → complete) and
 *Remove from account* (`unclaim`), a pairing QR, and the authorized devices with revoke.
 Signed in, this computer joins the account on its own once per host identity; an identity
 that was already in the account and was removed (here or from a phone) is never re-added

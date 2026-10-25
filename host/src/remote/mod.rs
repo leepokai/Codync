@@ -3,6 +3,7 @@
 
 pub mod channel;
 pub mod cloud;
+mod cloud_url;
 pub mod crypto;
 pub mod identity;
 pub mod push;

@@ -14,9 +14,11 @@ import okhttp3.OkHttpClient
 // messages, its replies are read aloud, and the call ends as one titled line. The engine is the one picked in the
 // call settings; a cloud engine that can't start or drops mid-call hands over to on-device voice.
 
-/** The call in progress: its engine (replaced on a fallback), start times and which replies it has read. */
-internal class VoiceBinding(val id: String, val botId: String, val generation: Int, val startedAt: Long, val replies: VoiceReplyGate) {
+/** The call in progress: its engine (replaced on a fallback) and start times. */
+internal class VoiceBinding(val id: String, val botId: String, val generation: Int, val startedAt: Long) {
     var engine: VoiceEngine? = null
+    /** The newest cue the call heard (`CallCue.seq`), kept across engines: a replayed one isn't said again. */
+    var heard = 0L
     /** When the current cloud engine started, for this month's minutes. */
     var cloudSince: Long? = null
     /** The call settings the current engine was built from. */
@@ -25,10 +27,14 @@ internal class VoiceBinding(val id: String, val botId: String, val generation: I
     var recording: () -> Int? = { null }
     /** What the voice service sees: the current engine, never the failure it fell back from. */
     val state = MutableStateFlow(VoiceState())
+    /** What the bot is doing, from the computer's progress cues, for the call's notification; cleared by its reply. */
+    val progress = MutableStateFlow<String?>(null)
     /** `voice_call_started` (and `callStarted`) went out: once per call, with the engine that got it going. */
     var reported = false
     /** The call on the computer. */
     var link: HostCallLink? = null
+    /** Each engine's `voice_call_quality`. */
+    val quality = CallQuality<VoiceEngineKind> { kind, report -> Analytics.capture(AnalyticsEvent.VoiceCallQuality(kind, report)) }
 }
 
 private val voiceHttp by lazy { OkHttpClient() }
@@ -52,9 +58,7 @@ fun AppStore.startVoice(botId: String, expectedGeneration: Int = state.value.gen
 internal fun AppStore.attachVoice(id: String, botId: String): VoiceBinding? {
     val call = state.value.voice ?: return null
     if (call.id != id || call.botId != botId || voiceGeneration != state.value.generation || state.value.loading || voiceBinding != null) return null
-    val entries = state.value.entries
-    val head = maxOf(state.value.hello?.get("rev")?.jsonPrimitive?.longOrNull ?: 0, entries.maxOfOrNull(Entry::rev) ?: 0)
-    val binding = VoiceBinding(id, botId, state.value.generation, SystemClock.elapsedRealtime(), VoiceReplyGate(botId, head, entries))
+    val binding = VoiceBinding(id, botId, state.value.generation, SystemClock.elapsedRealtime())
     voiceBinding = binding
     begin(binding, voiceChoices().provider)
     connect()
@@ -106,11 +110,14 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
         }
     }
     call.engine = engine
+    call.quality.begin(kind)
+    (engine as? GeminiLiveEngine)?.onStall = { contextScope.launch { if (call.engine === engine) call.quality.stalled() } }
     if (muted) engine.mute(true)
     call.cloudSince = if (provider != null) SystemClock.elapsedRealtime() else null
     contextScope.launch {
         val last = engine.state.first { status ->
             val current = voiceBinding === call && call.engine === engine
+            if (current) call.quality.phase(status.phase, status.failureKind)
             val fallingBack = provider != null && status.phase == VoicePhase.Failed
             if (current && !fallingBack) {
                 publish(call, status)
@@ -128,9 +135,9 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
     }
 }
 
-/** The call's audio is live: the lead speaks first (only a host with leads marks one, so an older host never gets this). */
+/** The call's audio is live: the lead speaks first, on the call (only a host with leads marks one, so an older host never gets this). */
 private fun AppStore.callStarted(call: VoiceBinding) {
-    if (state.value.bots.any { it.id == call.botId && it.lead }) command("callStarted", body("botId" to call.botId), "callStarted:" + call.botId)
+    if (state.value.bots.any { it.id == call.botId && it.lead }) command("callStarted", body("botId" to call.botId, "callId" to call.id), "callStarted:" + call.botId)
 }
 
 /** After the call settings close: a different engine picked there takes over the call, which goes on. */
@@ -177,12 +184,20 @@ private fun AppStore.sendFromCall(call: VoiceBinding, text: String) {
     action("save:" + send.nonce) { savePending(send); deliver(send) }
 }
 
-/** New final replies and approval notices for the call to say. */
-internal fun AppStore.speakToCall(entries: List<Entry>, bots: List<Bot>) {
+/** What the computer tells the call's voice (host chat/calls/announce), each cue once: the engine only says it. */
+internal fun AppStore.hearCalls(events: List<MirrorEvent>) {
     val call = voiceBinding ?: return
-    if (bots.none { it.id == call.botId && !it.deleted }) { endVoice("Voice chat ended because its bot was removed."); return }
-    val engine = call.engine
-    for (cue in call.replies.observe(entries, bots)) if (cue.notice) engine?.announce(cue.text) else engine?.speak(cue.text)
+    for (cue in events.filterIsInstance<MirrorEvent.Call>().map { it.cue }) {
+        val engine = call.engine
+        if (cue.call != call.id || cue.seq <= call.heard || engine == null) continue
+        call.heard = cue.seq
+        engine.hear(cue)
+        when (cue.kind) {
+            CallCue.Kind.Progress -> call.progress.value = cue.text
+            CallCue.Kind.Reply -> call.progress.value = null
+            CallCue.Kind.Notice -> {}
+        }
+    }
 }
 
 fun AppStore.endVoice(error: String? = null) {
@@ -195,6 +210,7 @@ internal fun AppStore.finishVoice(id: String, error: String? = null) {
     val call = voiceBinding?.takeIf { it.id == id }; voiceBinding = null; voiceGeneration = null
     val engine = call?.engine
     engine?.end()
+    call?.quality?.report()
     if (call != null) countCloudMinutes(call)
     mutableState.update { it.copy(voice = null, error = error ?: it.error) }
     PushDelivery.foreground = foreground
@@ -216,6 +232,7 @@ internal suspend fun AppStore.retireVoice() {
     val callId = state.value.voice?.id
     mutableState.update { it.copy(voice = null) }
     if (callId != null) VoiceService.stop(getApplication(), callId)
+    call?.quality?.report()
     call?.engine?.end(); call?.engine?.awaitEnd()
 }
 

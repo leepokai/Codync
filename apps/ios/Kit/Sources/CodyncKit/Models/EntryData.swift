@@ -80,11 +80,14 @@ public struct CallLine: Codable, Hashable, Sendable {
     public var from: String
     public var text: String
     public var at: Int64?
+    /// The app's id for the line: one sent again (its first answer lost) is kept once.
+    public var id: String?
 
-    public init(from: String, text: String, at: Int64?) {
+    public init(from: String, text: String, at: Int64?, id: String? = nil) {
         self.from = from
         self.text = text
         self.at = at
+        self.id = id
     }
 }
 
@@ -147,7 +150,9 @@ public struct Attachment: Codable, Hashable, Sendable, Identifiable {
         self.size = size
     }
 
-    public var isImage: Bool {
+    public var isImage: Bool { Self.isImage(name) }
+
+    public static func isImage(_ name: String) -> Bool {
         ["png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp"].contains((name as NSString).pathExtension.lowercased())
     }
 }

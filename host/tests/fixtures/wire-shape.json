@@ -188,6 +188,7 @@
     "hello": "object",
     "hello.analytics": "bool",
     "hello.boxKey": "string",
+    "hello.canUpdate": "bool",
     "hello.cloud": "null",
     "hello.computerId": "string",
     "hello.device": "string",

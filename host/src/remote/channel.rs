@@ -401,6 +401,9 @@ impl Channel {
         writer: &mut tokio::task::JoinHandle<()>,
     ) -> CloseWith {
         let mut auth = self.hub.auth.subscribe();
+        // A new relay address (or the relay on or off) reaches phones only in `hello`: reconnecting
+        // reads it again, over this route or the old relay while it is still up (`relay::MOVE_GRACE`).
+        let mut cloud = self.hub.cloud.config.subscribe();
         let rekey_at = Instant::now() + MAX_AGE;
         loop {
             let lease = self.lease;
@@ -434,6 +437,7 @@ impl Channel {
                     }
                 }
                 () = sleep_until(rekey_at) => return (close::REKEY, "rekey"),
+                _ = cloud.changed() => return (close::REKEY, "relay"),
                 _ = &mut *writer => return (close::NORMAL, ""),
             }
         }
@@ -865,6 +869,23 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!hub.phone_connected(), "the events subscription ended with the channel");
         assert!(hub.connected.locked().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_new_relay_address_makes_phones_reconnect_and_read_it() {
+        let hub = temp_hub();
+        let key = paired_phone(&hub).await;
+        let mut p = Phone::direct(&hub, key);
+        p.hello(&hub, false).await;
+        assert!(p.call(1, "hello", json!({})).await["ok"].is_object());
+        hub.store.kv_set("test_cloud_url", "https://relay.example.com").unwrap();
+        hub.cloud.config.send_modify(|g| *g += 1);
+        let (code, _) = p.recv().await.unwrap_err();
+        assert_eq!(code, close::REKEY, "a rekey close reconnects at once on every client");
+        let key = paired_phone(&hub).await;
+        let mut again = Phone::direct(&hub, key);
+        again.hello(&hub, false).await;
+        assert_eq!(again.call(1, "hello", json!({})).await["ok"]["cloud"], "https://relay.example.com");
     }
 
     #[tokio::test]

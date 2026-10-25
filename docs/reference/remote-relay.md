@@ -312,7 +312,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 
 | 類別 | 方法 | 允許的 caller |
 |---|---|---|
-| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud` | `Caller::Local`（loopback + token） |
+| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token） |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
 | screen scope | `screenPrepare`, `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
 | control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
@@ -489,7 +489,7 @@ The route table below summarizes the contract. Executable schema and validation 
 - `DELETE /v1/computers/{id}/grants/{grantId}` → `{}`（`owner`）+ DO block + changed
 
 **Sig(host)（不需要帳號）**
-- `POST /v1/host/register` `{"boxKey","name","platform":"macos"|"linux"|"windows","device","version"}` → `{"computerId","owned":bool}`。以 kid 推導 id；upsert（`name`/`device`/`version`/`box_pub`/`updated_at`）。同 IP 每分鐘最多 10 次新建（Workers Rate Limiting binding；平台不支援時先略過並在 README 註記）。
+- `POST /v1/host/register` `{"boxKey","name","platform":"macos"|"linux"|"windows","device","version"}` → `{"computerId","owned":bool}`。以 kid 推導 id；upsert（`name`/`device`/`version`/`box_pub`/`updated_at`）。同 IP 每分鐘最多 10 次新建（Workers Rate Limiting binding；平台不支援時先略過並在 README 註記）。Host 指向 [private relay](../../private-relay/README.md) 時只在這個請求帶 `Codync-Relay-Token`（官方 cloud 忽略它）：私人中繼收新電腦必須 token 相符，不符回 `403 forbidden`（"This relay needs its relay token to add a new computer."），最多 32 台；已註冊的 key 不需要 token 就能 refresh。私人中繼的 `GET /v1/host/state` 永遠是空的，host 不拉它（不套用 grants、不處理 requests）。
 - `GET /v1/host/state` →
   ```json
   {"owner":{"userId":"user_…","email":"a@b.c"} | null,

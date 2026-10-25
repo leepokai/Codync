@@ -46,10 +46,9 @@ extension BotStore {
     }
 
     /// Audio owns this subscription, so background calls don't depend on SwiftUI updates.
-    func beginVoiceCall(_ id: UUID, botId: String, speak: @escaping @MainActor (String) -> Void,
-                        announce: (@MainActor (String) -> Void)? = nil, end: @escaping @MainActor () -> Void) {
+    func beginVoiceCall(_ id: UUID, hear: @escaping @MainActor (CallCue) -> Void, end: @escaping @MainActor () -> Void) {
         guard !retired, voiceCalls[id] == nil else { return }
-        voiceCalls[id] = VoiceCall(botId: botId, startRev: rev, speak: speak, announce: announce ?? speak, end: end)
+        voiceCalls[id] = VoiceCall(hear: hear, end: end)
         if streamTask == nil { restartStream() }
     }
 
@@ -70,7 +69,19 @@ extension BotStore {
         if !retired { stopIfIdle() }
     }
 
-    private var hasBackgroundWork: Bool { !voiceCalls.isEmpty || shortcutSends > 0 }
+    /// A call's end on its way to the computer keeps the connection the call kept: a call ended in the background
+    /// (from its Live Activity) would otherwise drop it before the computer writes the call's line.
+    func beginCallEnd() {
+        callEnds += 1
+        if streamTask == nil { restartStream() }
+    }
+
+    func finishCallEnd() {
+        callEnds -= 1
+        if !retired { stopIfIdle() }
+    }
+
+    private var hasBackgroundWork: Bool { !voiceCalls.isEmpty || shortcutSends > 0 || callEnds > 0 }
 
     private func stopIfIdle() {
         if !isActive && !hasBackgroundWork {

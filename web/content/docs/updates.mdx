@@ -13,7 +13,7 @@ Both offer the same controls:
 
 | Control | What it does |
 | --- | --- |
-| **Check for updates** | Checks now. When a release is found, the button reads **Update to** and the version; choose it to download. |
+| **Check for updates** | Checks now. When a release is found, the button reads **Update to** and the version; choose it to download. When you already have the newest version, a dialog says so. |
 | **Restart to update** | Appears once the release is downloaded. Restarts Codync into the new version. |
 | **Automatically check for updates** | The daily check. |
 | **Automatically download and install** | Downloads releases on its own and installs them when Codync is idle. |
@@ -21,6 +21,8 @@ Both offer the same controls:
 While a release is available, an **Update** button also appears in the chat window's sidebar. One click downloads it (a ring shows the progress, and Codync stays usable) and restarts into it.
 
 A finished download never quits the app by itself. Automatic installation waits until no Codync window is in front, you haven't used the keyboard or mouse for ten minutes, and no bot is working. A downloaded update also installs when you quit Codync.
+
+The exception is **Update now** chosen for this computer on another device (see [below](#when-the-phone-and-computer-versions-dont-match)): the app then downloads the release, even with automatic download off, and restarts into it in the background as soon as no bot is working, without waiting for you to step away.
 
 On macOS and Windows, updating the app also updates this computer's host: the app stops the host, installs, and starts the new one. If you installed the Mac app with Homebrew, it still updates itself this way.
 
@@ -56,7 +58,7 @@ Each side knows the oldest version of the other side it still works with. When o
 | Notice | What to do |
 | --- | --- |
 | **Update this app** | The app you're using is too old for that computer. On the iPhone, **Update Codync** opens the App Store; if the version you need is still in App Store review, the button stays greyed out until it's available. In the desktop app, use the update button on the notice. |
-| **Update Codync on** and the computer's name | The computer's host is too old for this app. The notice says how: on a Mac, open Codync there and check for updates; on Linux, run `codync-host update` there. For the computer the desktop app runs on (macOS and Windows), the notice has a button that updates it. |
+| **Update Codync on** and the computer's name | The computer's host is too old for this app. Choose **Update now** on the notice: the computer downloads the new version and restarts into it, usually within a few minutes, and the notice goes away once it's back. A computer doesn't update while a bot is working on it; the notice then says so, and you can try again when the bot is done. A Mac or Windows computer updates this way while the Codync app is open on it. When the computer can't be updated from another device (the app isn't open there, or its Codync is older), the notice says how to do it there: on a Mac, open Codync and check for updates; on Linux, run `codync-host update`. |
 
 In the terminal UI, the status line shows **needs update** with the reason, and sending is blocked until you update.
 

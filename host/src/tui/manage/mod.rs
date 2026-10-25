@@ -54,6 +54,8 @@ pub enum Reply {
         bot: String,
         peer: String,
     },
+    /// A voice call's own messages, by call id.
+    CallEntries(String),
     Registry {
         more: bool,
     },
@@ -128,6 +130,16 @@ pub enum Tab {
 
 pub const TABS: [(Tab, &str); 3] = [(Tab::Agents, "Agents"), (Tab::Connectors, "Connectors"), (Tab::Skills, "Skills")];
 
+impl Tab {
+    pub(in crate::tui) fn index(self) -> usize {
+        match self {
+            Self::Agents => 0,
+            Self::Connectors => 1,
+            Self::Skills => 2,
+        }
+    }
+}
+
 pub struct Market {
     pub tab: Tab,
     pub query: Editor,
@@ -139,6 +151,9 @@ pub struct Market {
     pub loading: bool,
     pub cursor: usize,
     pub error: Option<String>,
+    /// Page index on Agents, Connectors, then Skills.
+    pub pages: [usize; 3],
+    pub page_size: usize,
 }
 
 pub enum Row<'a> {
@@ -148,9 +163,18 @@ pub enum Row<'a> {
     Installed(&'a Value),
     Custom,
     Registry(&'a Value),
-    More,
     OwnSkill(&'a Value),
     Skill(&'a Value),
+}
+
+/// One page of the open marketplace tab.
+pub struct MarketPage<'a> {
+    /// The rows every page starts with (Add Node.js, what's installed, Custom connector), then this page's catalog rows.
+    pub rows: Vec<Row<'a>>,
+    /// Catalog rows on the tab, without the ones every page starts with.
+    pub count: usize,
+    pub page: usize,
+    pub pages: usize,
 }
 
 pub struct AgentSetup {
@@ -247,6 +271,11 @@ impl App {
         self.call(method, body, After::Sheet(r));
     }
 
+    /// Loads what voice call `call` in `bot`'s chat carried, for its unfolded conversation.
+    pub(in crate::tui) fn fetch_call(&self, bot: &str, call: &str) {
+        self.sheet("callEntries", json!({"botId": bot, "callId": call}), Reply::CallEntries(call.to_owned()));
+    }
+
     // ---------- a message's actions ----------
 
     pub(super) fn react(&mut self, entry: &str, i: usize) {
@@ -336,17 +365,5 @@ impl App {
 /// Opens `url` in this computer's browser, when the host is this computer.
 pub(super) fn open_browser(url: &str, host: &str) -> bool {
     let local = ["//127.0.0.1", "//localhost", "//[::1]"].iter().any(|h| host.contains(h));
-    local && !url.is_empty() && open_here(std::ffi::OsStr::new(url))
-}
-
-/// Opens a link or file with this computer's default app for it (a web page: the browser).
-pub(in crate::tui) fn open_here(target: &std::ffi::OsStr) -> bool {
-    let mut command = if cfg!(windows) {
-        let mut c = std::process::Command::new("rundll32");
-        c.arg("url.dll,FileProtocolHandler");
-        c
-    } else {
-        std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
-    };
-    command.arg(target).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().is_ok()
+    local && !url.is_empty() && crate::shell::open(std::ffi::OsStr::new(url))
 }

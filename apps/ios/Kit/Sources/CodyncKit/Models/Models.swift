@@ -235,6 +235,8 @@ public struct Hello: Codable, Sendable {
     public var minApp: String?
     /// The cloud relay the host uses; nil = cloud off.
     public var cloud: String?
+    /// `installHostUpdate` can update this computer from here (missing from older hosts: it can't).
+    public var canUpdate: Bool?
 }
 
 public struct DirListing: Codable, Sendable {

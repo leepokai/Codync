@@ -5,6 +5,7 @@ mod analytics;
 mod api;
 mod background;
 mod chat;
+mod cloud_cli;
 mod compat;
 mod environment;
 mod hub;
@@ -13,6 +14,7 @@ mod mcp;
 mod remote;
 mod routines;
 mod screen;
+mod secret_prompt;
 mod service;
 mod shell;
 mod store;
@@ -106,19 +108,7 @@ enum Sub {
         action: Option<AccessAction>,
     },
     /// Show or change the Codync cloud (reach this computer from anywhere).
-    Cloud {
-        #[arg(long, default_value_t = service::DEFAULT_PORT)]
-        port: u16,
-        #[arg(long, conflicts_with = "disable")]
-        enable: bool,
-        #[arg(long)]
-        disable: bool,
-        /// How devices on this computer's account get in: `code` (compare the 6-digit code,
-        /// the default) or `auto` (no check: anyone who gets into the account, or controls
-        /// the cloud, can then add a device).
-        #[arg(long, value_parser = ["code", "auto"])]
-        approval: Option<String>,
-    },
+    Cloud(cloud_cli::CloudArgs),
     /// Install and start the host as a background service (launchd / systemd --user).
     Install {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -360,28 +350,7 @@ async fn main() -> Result<()> {
             }
         },
         Sub::Access { port, action } => access(port, action.unwrap_or(AccessAction::List)).await,
-        Sub::Cloud { port, enable, disable, approval } => {
-            if let Some(approval) = approval {
-                local_call(port, "setApproval", json!({ "approval": approval })).await?;
-            }
-            let status = if enable || disable {
-                local_call(port, "setCloud", json!({"enabled": !disable})).await?
-            } else {
-                local_call(port, "cloudStatus", json!({})).await?
-            };
-            let text = |k: &str| status[k].as_str().unwrap_or("-").to_owned();
-            let owner = status["owner"]["email"].as_str().or(status["owner"]["userId"].as_str()).unwrap_or("none");
-            println!(
-                "enabled:    {}\nurl:        {}\nregistered: {}\nconnected:  {}\naccount:    {owner}\napproval:   {}\nlast error: {}",
-                status["enabled"],
-                text("url"),
-                status["registered"],
-                status["connected"],
-                text("approval"),
-                text("lastError"),
-            );
-            Ok(())
-        }
+        Sub::Cloud(args) => cloud_cli::run(args).await,
         Sub::Install { port } => {
             open_store()?;
             // Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so

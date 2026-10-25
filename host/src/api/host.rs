@@ -23,9 +23,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let port = hub.port;
             let force = b["force"].as_bool().unwrap_or(false);
             if !force && hub.busy() {
-                bail!("host is busy; retry when idle or explicitly allow interruption");
+                bail!("A bot is working on this computer. Update it once the bot is done.");
             }
-            tokio::task::spawn_blocking(move || crate::update::spawn_worker(port, force)).await??;
+            tokio::task::spawn_blocking(move || crate::update::request_install(port, force)).await??;
             json!({"scheduled": true})
         }
         "voiceStatus" => crate::voice::status(&hub.store)?,
@@ -66,6 +66,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "name": crate::service::host_name(),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
+                // Whether `installHostUpdate` can update this computer, from here or a phone.
+                "canUpdate": tokio::task::spawn_blocking(crate::update::installable).await?,
                 "os": std::env::consts::OS,
                 "device": tokio::task::spawn_blocking(crate::service::device).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),

@@ -7,7 +7,7 @@ import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nati
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
-import { keepArtifactsInFrame, openWebLink, registerArtifacts, registerArtifactScheme } from './artifacts'
+import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
 import { registerHostProxy } from './host-proxy'
 import { readClipboardFiles, readFiles } from './files'
 import { Tray } from './tray'
@@ -88,11 +88,6 @@ function openChat() {
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))
   keepArtifactsInFrame(chat.webContents)
-  // A new window (an artifact's target=_blank link or window.open, too) opens in the browser instead.
-  chat.webContents.setWindowOpenHandler(({ url }) => {
-    openWebLink(url)
-    return { action: 'deny' }
-  })
   void chat.loadURL(rendererURL('chat'))
   return chat
 }
@@ -234,6 +229,7 @@ if (yieldsToInstall()) {
     const island = new Island({ url: rendererURL('island'), preload: join(__dirname, '../preload/index.js'), send, openApp: openChat, changed: () => tray.hostChanged() })
     const tray = new Tray({ openChat, openPairing, send, host, updates, island })
     updates.on('change', () => tray.hostChanged())
+    updates.on('upToDate', () => send({ kind: 'upToDate' }))
     registerIPC(tray)
     island.register()
     // Voice input goes to the island while it's on, else to the chat window's composer.

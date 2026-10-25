@@ -7,7 +7,7 @@
 - `apps/desktop/`: desktop app for macOS, Linux and Windows (Electron, React, TypeScript): [docs/architecture/desktop-app.md](docs/architecture/desktop-app.md); how its views are styled: [docs/guides/desktop-styles.md](docs/guides/desktop-styles.md).
 - `apps/android/`: Android phone app (Kotlin, Jetpack Compose), ported from the iPhone app: `core` (models, crypto, transport), `design` (Codync's components), `app` (screens, store, widgets): [apps/android/README.md](apps/android/README.md).
 - `apps/screen-macos` and `apps/screen-linux`: Remote screen helpers.
-- `cloud/`: Cloudflare accounts, encrypted relay, Durable Objects and D1; tests live in `cloud/test/`.
+- `cloud/`: Cloudflare accounts, encrypted relay, Durable Objects and D1; tests live in `cloud/test/`. `private-relay/`: a single-process subset of that relay a person runs for their own computers (Node, `node:sqlite`), tests in `private-relay/test/`.
 - `relay/`: Cloudflare push worker and `test/`; `web/`: website (Next.js); `packaging/`: distribution templates; `docs/`: architecture and naming guidance.
 
 ## Host owns the logic

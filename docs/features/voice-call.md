@@ -7,8 +7,8 @@ The bot is the same agent on the computer; the call only changes how you talk to
 ([the call on the host](#the-call-on-the-host)); the clients only carry audio.
 On iOS, [Open Live Mode in Shortcuts](ios-shortcuts.md) can select a bot and start this call directly (no bot: the lead).
 Every other bot waits for you to speak; the [lead bot](lead-bot.md) speaks first: once a call's audio is live the
-apps send `callStarted {botId}` (once per call, only to a lead), and the host has a lead with no turn under way open
-with a sentence or two, read aloud like any reply.
+apps send `callStarted {botId, callId}` (once per call, only to a lead), and the host has a lead with no turn under
+way open with a sentence or two, read aloud like any reply and part of the call (its reply carries the call's id).
 
 ## On-device voice
 
@@ -46,9 +46,8 @@ with a sentence or two, read aloud like any reply.
   foreground/background transitions. Ending or failing the last call releases that
   connection when backgrounded, restoring normal push delivery. Removing the computer
   or switching accounts ends its calls and closes the transport.
-- Final replies and approval notices are delivered from the store's incoming events
-  directly to the audio session, rather than waiting for a SwiftUI view update.
-  Replayed final replies and other bots' replies are not read into this call.
+- What to say arrives from the computer as the call's `call` events (see "How the voice talks"), delivered from
+  the store's incoming events directly to the audio session, rather than waiting for a SwiftUI view update.
 
 ## Dictation
 
@@ -253,16 +252,21 @@ carries audio and talks to these methods:
   its members), the switchboard operator, not the bot; it passes the user's requests on with `send_to_bot`, tells
   the user what the bot says and asks for what's missing; it speaks of the bot in the third person and never claims
   it did or saw something; anything about code, files, the computer or the project goes to the bot even when it
-  thinks it knows. Then the background, as named sections that say where they came from, each capped (about 16k
-  characters in all on Gemini, six tenths of that on OpenAI), empty ones left out: now (the computer's date, time,
-  weekday and offset; the phone's language), about the user (the shared `MEMORY.md` and its notes' names and
+  thinks it knows. It answers in the language the user is speaking right now and switches when they switch (for
+  Chinese, their variety and script), whatever the phone's language, the background or the bot's replies are in;
+  the phone's language only covers speaking before the user has. Then the background, as named sections that say where they came from, each capped (about 16k
+  characters in all on Gemini, plus up to 3k of the call so far for a session that replaces another; six tenths of
+  that on OpenAI), empty ones left out: now (the computer's date, time,
+  weekday and offset; the phone's language setting, as a fallback), about the user (the shared `MEMORY.md` and its notes' names and
   descriptions, when the bot uses it), this bot (name, description, harness and model, folder and project,
   permission mode, connectors, skills, computer use, routines; a group's members), what the bot remembers (its
   `MEMORY.md` and notes index), the project now (git branch, changed files, the last three commits; outside a
   repository, or without the command line tools on macOS, nothing), current work (status, activity, a pending
   approval and its options, queued messages, the last failure), the conversation (the last 20 chat messages in
-  spoken form and the titles and gist of the last three calls), the other bots on this computer, and files and
-  artifacts shared in the chat. **All of it goes to the voice provider, on the user's own key.**
+  spoken form and the titles and gist of the last three calls), the other bots on this computer, files and
+  artifacts shared in the chat, and, when `startCall` comes again for the same call (a reconnect, or an engine
+  switched mid-call), this call so far (its newest lines). **All of it goes to the voice provider, on the user's own
+  key.**
 - **`callTool`** `{callId, name, arguments, lines}` → `{result}` runs the voice's tool calls on the host
   (`calls::tools`): `send_to_bot(text)`, `bot_status()` (a group's: its busy member's), `recent_messages(count)`,
   `answer_approval(option)` (only after the user said which; matched by option name or id), `stop_bot()`,
@@ -271,36 +275,61 @@ carries audio and talks to these methods:
 - **The user's own words:** `send_to_bot` attaches what the user said since the bot last heard from the call, word
   for word from the transcript ("[The user's own words on the call: «…»]"), so the bot sees both, and the message
   is marked `from: voice`: the voice may rephrase or translate, so memory never quotes it.
-- **`callLines`** `{callId, lines: [{from: user | voice, text, at}]}` appends the transcript as it is spoken, turn
+- **`callLines`** `{callId, lines: [{from: user | voice, text, at, id}]}` appends the transcript as it is spoken, turn
   by turn: Gemini's `inputAudioTranscription` / `outputAudioTranscription`, OpenAI's input transcription and
   `response.output_audio_transcript.done`. The iPhone and Android turn Chinese into the reader's script first
   (Gemini answers in Simplified for a Traditional speaker); the desktop can't (no ICU transform in Chromium).
 - **In order** (`CallLink` in each client): `callLines`, `callTool` and `endCall` leave one at a time, and
   `callTool` and `endCall` carry the lines not sent yet (`lines`, a line still being said included), so a hand-off
-  always has the words it hands on. Lines a request didn't deliver go with the next one. OpenAI writes the user's
+  always has the words it hands on. Lines a request didn't deliver go with the next one; each line carries the app's
+  id, and the host keeps a line once, so a request whose answer was lost can go again. OpenAI writes the user's
   words down after their turn: a tool call waits up to 2 s for them (`input_audio_buffer.committed` until the
   transcription arrives or fails).
 - **Hidden in the chat:** everything a call sends the bot carries the call's id (`data.call`), and so do the bot's
   replies in those turns while the call lasts, a group's members' included (a turn that also answers a typed
-  message stays visible, and a reply after the call ends shows). Every client leaves them out of the chat once the
-  call's line is there, or while this device is on the call (`hidingCalls`); a message that failed to send stays,
-  with Resend. The roster's preview and unread count skip them too. The bot gets them as usual.
+  message stays visible, and a reply after the call ends shows). Every client leaves them out of the chat whichever
+  device the call is on (`hidingCalls`): they show behind the call's line; a message that failed to send stays,
+  with Resend, and so does a file or an artifact the bot sent, to be opened. A call whose app went away (killed,
+  offline) still gets its line: the host keeps the open calls (`calls.open` in `kv`) and ends one nothing happened
+  on for 2 hours: no lines from its app, no message or reply of it, its bot not at work (`chat::calls::sweep`). The
+  roster's preview and unread count skip them too. The bot gets them as usual.
 - **`endCall`** `{botId, callId, seconds, lines}` adds the last lines and writes the call's line: a notice with
   `call`, `callSeconds` and the `transcript`. A call ends once (`call.ended.<id>` in `kv`), so the apps retry it
   across a reconnect; an ended call can't start again. The call's actors (a group's members) hear `CallEnded`. A one-shot of the bot's harness (`chat::oneshot`) titles it from the conversation, in the user's
   language, into the notice's `text` ("Voice chat" until then, or when there's nothing to sum up); older apps
   show the title too. The line shows a waveform, the title and the length; tapping it opens the conversation
   (iPhone and Android sheets, the desktop `Sheet`, `o` in the terminal): the user's lines, the voice's lines, what
-  it relayed and the bot's messages, in order. `logCall` stays for older apps.
+  it relayed and the bot's messages, in order. The chat an app holds may not reach back to an older call (the
+  desktop mirror keeps the newest 200 entries), so opening the conversation fetches the call's own messages,
+  `callEntries {botId, callId}` → the newest 500, and merges them with the loaded chat, each entry once; it shows
+  a spinner until they arrive and the error if they can't. `logCall` stays for older apps.
 - **Memory:** dreaming reads the call's line: the user's spoken lines are their own words, the voice's lines and
   its relayed messages context only, and a call's spoken lines count toward the dream trigger; the call's end
   asks for a run soon.
 
 ### How the voice talks
 
-- Each new final reply is added to the realtime conversation as `[<bot> replied] …` and an approval
-  as `[Notice] …` (`BotStore` hands them over as `speak` / `announce`); the model says them,
-  shortened for speech. They wait while the model is talking, so they don't cut it off.
+- The host decides what the voice hears while the call lasts (`chat::calls::announce`, one watcher per call): each
+  new final reply in the bot's chat (one already final when the call began isn't; one that began before it and
+  finishes during it is), an approval card waiting, a failure notice, and the bot's activity line while it works:
+  at most one progress line every 15 s, only when it changed, and "<bot> is still working" after 45 s with nothing
+  said. It sends each as a `call` event `{call, owner, kind: reply | notice | progress, text, seq}`, worded for the
+  call's mode as `startCall` last gave it: a realtime voice gets replies shortened for speech, approvals with their
+  options ("Mika needs the user's approval: … (options: …)") and progress; an on-device or speech-to-text call gets
+  replies as written (its engine shortens them), approvals for the listener ("Mika needs your approval in the chat:
+  …") and no progress. In a group, replies and notices name the member. `api::events` delivers each cue only to the
+  device that holds the call (`owner`, its device key, set from the caller on `startCall`); older apps ignore the
+  event type.
+- Each cue's `seq` rises through the call (from the clock, so across host restarts too). The host keeps the call's
+  last 10 replies and notices and adds them to that device's catch-up when its event stream reconnects; the app
+  skips any `seq` it already heard (kept per call, across engine switches). A watcher that missed hub events
+  rereads the chat's latest entries.
+- The watcher starts with `startCall` and runs until `endCall`. As the host starts it watches again every call
+  started in the last day (`rewatch`). A call none of its app's requests (`startCall`, `callLines`, `callTool`, a
+  message said on it) touched for 2 hours stops being watched; the next one starts it again.
+- The app hands each cue to its engine (`hear`): realtime voices get `[<bot> replied] …`, `[Notice] …` and
+  `[Progress] …` (only the newest progress waits); on-device and speech-to-text calls read replies and notices
+  aloud. They wait while the model is talking, so they don't cut it off.
 - Barge-in is the provider's voice activity detection (OpenAI semantic VAD; Gemini's automatic
   VAD, with the voice-processing input cancelling the device's own playback). Tapping the avatar
   cancels the response locally.
@@ -313,10 +342,62 @@ carries audio and talks to these methods:
   player never finishes its buffers so the phase stays "speaking" and the bot's replies are never said.
   A reply counts as played once its buffers are rendered (`.dataRendered`).
 
+### Phases and recovery
+
+- Every engine on every client reports the same phases: connecting (`starting`) until the provider confirmed the
+  session and the microphone delivers audio, then listening or speaking; reconnecting after a dropped connection or a
+  changed microphone; interrupted while another app has the audio (iPhone: a phone call, Siri, an alarm; Android:
+  audio focus, a removed headset); failed. The connecting line shows while connecting and reconnecting; a reconnect or
+  an interruption keeps the call and its cues (`holdsCall`).
+- A drop mid-call is tried again three times (after 1, 2 and 4 s) before the call falls back. Gemini resumes with its
+  session handle and a fresh `startCall` credential; OpenAI gets a new session. Either way the repeated `startCall`
+  adds "This call so far" to the voice's instructions (the call's newest lines, newest last, capped), so a session
+  without a handle picks up the conversation. A `goAway` hands over at once, without showing a reconnect. A close
+  Gemini gives with code 1007 or 1008 (an invalid key, model or request) fails at once: trying again won't help.
+- Interruptions: the iPhone's realtime, speech and on-device engines pause on `AVAudioSession.interruptionNotification`
+  and pick up again when it ends with `shouldResume`; otherwise the bar says "Audio paused by another app. Tap to
+  resume." (as Android does). Route changes (AirPods) restart the iPhone's audio engine (`AVAudioEngineConfigurationChange`);
+  the desktop restarts the microphone (and moves OpenAI's track) on `devicechange`. The desktop's on-device engine
+  uses the speech helper's own microphone and isn't restarted.
+- After the voice's turn, playback that reports no progress for 4 s returns the call to listening, so a stuck player
+  (#214) can't hold the bot's replies back (`onStall`, counted as stuck `speaking`).
+- Each engine of a call sends one `voice_call_quality` when it's replaced or the call ends: milliseconds until ready,
+  reconnects, the first phase stuck too long (connecting or reconnecting over 20 s, or the stalled player), and why
+  it failed (`microphone`, `connection`, `provider`).
+- Tests replay recorded provider streams through the engines with a scripted socket, microphone and speaker: kit
+  `CallRecoveryTests`, desktop `call-recovery.test.ts`, Android `VoiceEnginesTest` (Gemini over MockWebServer, OpenAI
+  over a fake peer).
+
+### The call outside the app
+
+- iPhone: the app owns the call's audio session (`CallAudioSession`): each engine activates it as its audio starts
+  and releases it as it stops (OpenAI's WebRTC manages its own with the same options); interruptions and route
+  changes come from `AVAudioSession` notifications (above). CallKit carried the call in a build that never shipped and
+  was taken out: [CallKit (archived)](../plans/callkit.md).
+- iPhone Live Activity: while a call is on, the bot's activity shows it (`ContentState.call`: connecting, listening,
+  speaking, paused; `callStartedAt` for its length) and the bot's latest progress line from the computer until its
+  reply (`CallActivity`). It uses the bot's activity if one is up and starts one for the call otherwise; a task sent
+  during the call replaces the call's own activity with one the computer can update. The computer never sets the call
+  fields: the app keeps them in memory and merges them into every update, puts them back after a push from the
+  computer replaces the state, and gives the call its own activity again when the computer's last push ends the
+  task's. When the call ends, an activity whose bot is idle or failed ends (at once if the call started it, else a
+  minute later) and one with a task under way stays without the call.
+  While the call lasts the activity takes the call's own layout (`CallLiveActivity.swift`): the bot's avatar, the
+  call's length over its name, and two round buttons, mute (`mic` / `mic.slash`, from `callMuted`) and end, in the
+  expanded island and on the Lock Screen card, which also shows the progress line; the compact island shows the
+  avatar and the length, the minimal one the avatar. The buttons are `LiveActivityIntent`s (`MuteCallIntent`,
+  `EndCallIntent`, built into the app and the widget extension) that run in the app without opening it and press
+  the call bar's own mute and end (`CallActivity.toggleMute` / `hangUp`), so an ended call logs its line as usual;
+  muting from the call bar updates the activity.
+- Android: the call's foreground notification shows its state and the bot's latest progress line (cleared by its
+  reply), updated in place, with the bot's name, the call's length (a chronometer from its start) and Mute and End call.
+- The desktop and the terminal have no Live Activity or call notification.
+
 ### Failure and cost
 
-- No key on the computer, invalid key, quota or network failure at start, or a dropped connection mid-call: the
-  call switches to On device without hanging up, with a one-line notice under the bar.
+- No key on the computer, invalid key, quota or network failure at start, a dropped connection that three tries
+  don't bring back, or a refused session: the call switches to On device without hanging up, with a one-line notice
+  under the bar.
 - Usage is billed by the provider to the user. The key form shows minutes used this month
   (`VoiceUsage`, counted on each device while a cloud engine is live and for each recording
   dictated with the provider) as an estimate, not a bill.
@@ -339,10 +420,18 @@ A route change mid-call (AirPods) is not checked yet.
 
 Host tests (`chat::calls`) cover a call's flow (start, lines, `send_to_bot` with the user's words, the line at the
 end), the voice's instructions (the relay role and the bot's name first, each section present and within its cap,
-OpenAI's smaller share), transcript checks and dreaming over a call. `StoreTests` cover approvals reaching a call
-as notices; each client tests hiding a call's messages and merging its conversation. On Android, `VoiceEnginesTest` (core, JVM) drives
+OpenAI's smaller share), transcript checks and dreaming over a call. `chat::calls::announce` tests cover what the
+voice hears: new replies, approvals and failures said once, a reply unfinished when the call began, a group's
+member named, the wording per call mode, progress rate-limited with a "still working" after a silence, and the
+replies and notices kept for the device holding the call; `api::events` tests check that only that device gets
+them, and `calls_e2e` that an on-device call hears its approval and reply. `StoreTests` (iPhone) hand each cue to
+the call once, also when a reconnect replays it after an engine switch; the desktop tests parse cues
+(`parseCallCue`) and Android's decode them (`CallCue`). Each client tests hiding a call's messages and merging its
+conversation. On Android, `VoiceEnginesTest` (core, JVM) drives
 each engine through fake audio: utterance cutting and clip playback, OpenAI's event sequence and SDP
 exchange (MockWebServer), and a Gemini Live session over a real WebSocket (setup, audio both ways,
 a tool call, a close with the provider's reason). Provider audio isn't
 simulated: on a physical iPhone, check both engines with a real key (talk over a reply, ask "what
-are you doing?", approve by voice, and turn off Wi-Fi mid-call to see the fallback).
+are you doing?", approve by voice, and turn Wi-Fi off for a moment mid-call: the bar shows Reconnecting, comes back
+to Listening and still says the replies; with no network at all, after three tries, the call falls back to on-device
+voice).

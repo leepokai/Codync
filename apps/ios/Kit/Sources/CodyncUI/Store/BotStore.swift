@@ -58,6 +58,8 @@ public final class BotStore {
     public internal(set) var hello: Hello?
     /// The host's version and `minApp`, kept even when the rest of its `hello` can't be read.
     public internal(set) var hostVersion: HostVersion?
+    /// An update this phone asked of the computer; cleared when its version changes.
+    public internal(set) var hostUpdate: HostUpdate?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
@@ -109,18 +111,17 @@ public final class BotStore {
     var streamTask: Task<Void, Never>?
     var eventsTask: Task<Void, Never>?
     var isActive = true
+    /// A call's audio: what the computer tells its voice (`CallCue`), and its end.
     struct VoiceCall {
-        let botId: String
-        let startRev: Int64
-        let speak: @MainActor (String) -> Void
-        /// A notice from the computer (approval needed), as opposed to the bot's reply.
-        let announce: @MainActor (String) -> Void
+        let hear: @MainActor (CallCue) -> Void
         let end: @MainActor () -> Void
     }
     @ObservationIgnored var voiceCalls: [UUID: VoiceCall] = [:]
-    /// The calls this device is on: what they carry stays out of the chat (`hidingCalls`).
-    public internal(set) var liveCalls: Set<String> = []
+    /// The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again.
+    @ObservationIgnored var heardCues: [UUID: Int64] = [:]
     @ObservationIgnored var shortcutSends = 0
+    /// Calls whose end is still on its way to the computer.
+    @ObservationIgnored var callEnds = 0
     var saveTask: Task<Void, Never>?
     var rewound = false
     /// Events stayed undecodable after the rewind.

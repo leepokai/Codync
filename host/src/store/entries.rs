@@ -116,14 +116,18 @@ impl Store {
     }
 
     /// What a voice call carried in `bot_id`'s chat (`chat::calls`), oldest first: its messages and final replies.
-    pub fn call_entries(&self, bot_id: &str, call: &str) -> Result<Vec<Entry>> {
+    /// The newest `limit` of them.
+    pub fn call_entries(&self, bot_id: &str, call: &str, limit: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!(
             "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND json_extract(data, '$.call') = ?2 AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))
-             ORDER BY seq"
+             ORDER BY seq DESC LIMIT ?3"
         ))?;
-        Ok(st.query_map(params![bot_id, call], row_entry)?.collect::<rusqlite::Result<_>>()?)
+        let mut rows: Vec<Entry> =
+            st.query_map(params![bot_id, call, limit], row_entry)?.collect::<rusqlite::Result<_>>()?;
+        rows.reverse();
+        Ok(rows)
     }
 
     pub fn max_turn(&self, bot_id: &str) -> i64 {

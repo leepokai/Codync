@@ -31,7 +31,7 @@ pub fn declarations() -> Value {
 pub async fn call(hub: &Arc<Hub>, call: &str, name: &str, args: &Value, lines: &Value) -> Value {
     let run = async {
         let bot = super::bot_of(&hub.store, call).ok_or_else(|| anyhow!("The call has ended."))?;
-        super::add_lines(&hub.store, call, lines)?;
+        super::add_lines(hub, call, lines)?;
         let cfg =
             hub.store.bot(&bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("The bot isn't available."))?.config;
         match name {
@@ -98,11 +98,14 @@ pub(super) struct Waiting<'a> {
 pub(super) fn waiting(recent: &[Entry]) -> Option<Waiting<'_>> {
     let card =
         recent.iter().rev().find(|e| e.kind == EntryKind::Permission.as_str() && e.data["status"] == "pending")?;
-    Some(Waiting {
-        card,
-        request: card.data["title"].as_str().or_else(|| card.data["command"].as_str()).unwrap_or_default(),
-        options: card.data["options"].as_array().into_iter().flatten().filter_map(|o| o["name"].as_str()).collect(),
-    })
+    let (request, options) = approval(&card.data);
+    Some(Waiting { card, request, options })
+}
+
+/// What an approval card asks and its options' names.
+pub(super) fn approval(data: &Value) -> (&str, Vec<&str>) {
+    let request = data["title"].as_str().or_else(|| data["command"].as_str()).unwrap_or_default();
+    (request, data["options"].as_array().into_iter().flatten().filter_map(|o| o["name"].as_str()).collect())
 }
 
 fn answer(hub: &Hub, cfg: &BotConfig, option: &str) -> Result<Value> {

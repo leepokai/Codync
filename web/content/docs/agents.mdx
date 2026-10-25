@@ -31,6 +31,7 @@ For these agents, Codync knows the command it looks for, how to install it and h
 | Devin | `devin` | `devin auth login` |
 | Qoder CLI | `qodercli` | `qodercli login` |
 | CodeBuddy Code | `codebuddy` or `cbc` | run `codebuddy` |
+| WorkBuddy | the CLI inside the WorkBuddy app | sign in from Codync |
 | MiniMax Code | `mcode` | `mcode login` |
 | Junie | `junie` | run `junie` |
 | Google Antigravity | `agy` | sign in from Codync with **Log in with Google** |
@@ -38,6 +39,8 @@ For these agents, Codync knows the command it looks for, how to install it and h
 | Poolside | `pool` | `pool login` |
 
 Signing in to Google Antigravity with `agy` in a terminal doesn't sign in the part Codync runs, so use the sign-in option in Codync's setup sheet for it.
+
+WorkBuddy is separate from CodeBuddy Code. Codync runs the CLI bundled in the WorkBuddy app: `WorkBuddy AI.app` (from workbuddy.ai) or `WorkBuddy.app` (from codebuddy.cn) on macOS, or its install folder on Windows (`%LOCALAPPDATA%\Programs\WorkBuddy AI` or `WorkBuddy`). That CLI only ships WorkBuddy's lite build, so Codync starts it the way the app does. It runs on Node.js: if the computer has none, Codync offers to add its own. Codync does not install WorkBuddy, and there is no Linux build, so Codync on Linux doesn't list it. Sign in from Codync: the WorkBuddy app's login stays in the app, so this CLI asks again and opens a browser. A `codebuddy` command on your `PATH` stays CodeBuddy Code.
 
 Hermes Agent runs its own `hermes acp` mode, with the provider and model you pick in `hermes acp --setup`. On Windows, Codync also finds it in its install folders (`%LOCALAPPDATA%\hermes\bin`) without a `PATH` change. Hermes and Gemini CLI keep a memory of their own that every bot on them shares; see [Memory](/docs/memory#agents-with-a-memory-of-their-own).
 
@@ -65,7 +68,7 @@ Agents are set up from **Extensions**, which belongs to one computer:
 - **iPhone:** tap the account button at the top left of the Bots tab, open **Computers & settings**, and tap the **Extensions** button on the computer.
 - **Terminal UI:** press `A`.
 
-The **Agents** section shows each agent's status: **Installed**, **Not installed**, **Not signed in**, **Needs Node.js**, or **Sets up on first use** (registry agents). Select an agent to open its setup sheet. It walks through up to three steps.
+The **Agents** section shows each agent's status: **Installed**, **Not installed**, **Not signed in**, **Needs Node.js**, or **Sets up on first use** (registry agents). The list is paged: **Previous page** and **Next page** move through it (on a phone, you can also swipe the list left or right), and the bar shows the current page over the page count, such as **1 / 5**. Select an agent to open its setup sheet. It walks through up to three steps.
 
 ### Install
 

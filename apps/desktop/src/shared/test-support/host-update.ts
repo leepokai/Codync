@@ -12,6 +12,7 @@ export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platf
   const persisted: Record<string, unknown> = { hostRestartAfterAppUpdate: options.restartMarker ?? false }
   const calls: string[][] = []
   const order: string[] = []
+  const fetched: string[] = []
   const timers = new Map<number, { callback: () => void; ms: number }>()
   let timerId = 0
   const behavior = {
@@ -19,6 +20,7 @@ export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platf
     installStatus: 0,
     installed: options.installed ?? true,
     busy: false,
+    updateRequested: null as number | null,
     reachable: true,
     wrongBinary: false,
     binaryEnvironment: identity.environment as string,
@@ -62,9 +64,10 @@ export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platf
     process: { env: options.devPort ? { CODYNC_PORT: options.devPort } : {}, resourcesPath: '/bundle' },
     setTimeout: (callback: () => void, ms: number) => { const id = ++timerId; timers.set(id, { callback, ms }); return id },
     clearTimeout: (id: number) => timers.delete(id),
-    fetch: async () => {
+    fetch: async (url: string) => {
+      fetched.push(url)
       if (!behavior.reachable) throw new Error('Host offline')
-      return { ok: true, json: async () => ({ environment: behavior.runningEnvironment, computerId: 'fixture-computer', busy: behavior.busy, binaryPath: binary, binaryHash: behavior.wrongBinary ? 'stale' : crypto.createHash('sha256').update(binaryBytes).digest('hex') }) }
+      return { ok: true, json: async () => ({ environment: behavior.runningEnvironment, computerId: 'fixture-computer', busy: behavior.busy, updateRequested: behavior.updateRequested, binaryPath: binary, binaryHash: behavior.wrongBinary ? 'stale' : crypto.createHash('sha256').update(binaryBytes).digest('hex') }) }
     },
   })
   const host = new module.HostController()
@@ -76,5 +79,5 @@ export function hostUpdateFixture(options: { environment?: 'main' | 'dev'; platf
     }
     await settle()
   }
-  return { host, prefs: module.prefs, persisted, calls, order, behavior, tick }
+  return { host, prefs: module.prefs, persisted, calls, order, fetched, behavior, tick }
 }

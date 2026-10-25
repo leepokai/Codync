@@ -160,3 +160,33 @@ fn a_reply_shows_the_message_it_answers() {
     assert_eq!(text[1], " ↳ “Plan”", "{text:?}");
     assert!(text[2].contains("why?"));
 }
+
+#[tokio::test]
+async fn a_calls_conversation_takes_what_the_host_sent_beyond_the_loaded_chat() {
+    use crate::tui::app::Msg;
+    use serde_json::json;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut app = App::new(crate::tui::net::Client::new("http://127.0.0.1:1", Some("fixture")), tx, String::new());
+    app.on_msg(Msg::Event(
+        json!({"type":"bot", "bot":{"id":"b", "name":"Mika", "cwd":"/w", "backend":"custom", "status":"idle"}}),
+    ));
+    app.on_msg(Msg::Event(
+        json!({"type":"entry", "entry":{"id":"line", "botId":"b", "seq":9, "kind":"notice", "turn":1,
+        "createdAt": 9, "data":{"text":"Old call", "callSeconds":30, "call":"c"}}}),
+    ));
+    let line = app.lane("b").into_iter().find(|e| e.id == "line").cloned().unwrap();
+    let bot = app.bots["b"].clone();
+    assert_eq!(call_lines(&app, &bot, &line), ["loading the call…"]);
+    // Older than anything loaded here.
+    let parse = |v: serde_json::Value| Entry::parse(&v).unwrap().1;
+    app.call_entries.insert(
+        "c".into(),
+        vec![
+            parse(json!({"id":"u", "botId":"b", "seq":2, "kind":"user", "turn":1, "createdAt":2,
+            "data":{"text":"check git", "call":"c", "from":"voice"}})),
+            parse(json!({"id":"a", "botId":"b", "seq":3, "kind":"agent", "turn":1, "createdAt":3,
+            "data":{"text":"Clean.", "final":true, "call":"c"}})),
+        ],
+    );
+    assert_eq!(call_lines(&app, &bot, &line), ["voice → bot: check git", "Mika: Clean."]);
+}

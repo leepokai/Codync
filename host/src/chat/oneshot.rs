@@ -21,7 +21,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     if hub.store.kv_read(&format!("agent-env:{}", cfg.backend))?.is_some() {
         crate::market::vault::unlock(hub.clone()).await?;
     }
-    let env = crate::agent::auth::env(&hub.store, &cfg.backend)?;
+    let env = crate::agent::auth::launch_env(&hub.store, &cfg.backend)?;
     let mut conn = None;
     let mut last_err = None;
     for candidate in crate::agent::bot::launch_commands(cfg)? {
@@ -73,7 +73,7 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
         let mut out = String::new();
         loop {
             tokio::select! {
-                r = &mut prompt => { r?; break }
+                r = &mut prompt => { r.and_then(acp::codebuddy::prompt_result)?; break }
                 inc = conn.rx.recv() => {
                     if !collect(&acp, inc, &mut out).await {
                         bail!("the background job's agent exited");

@@ -345,7 +345,7 @@ private struct ComputerRow: View {
             }
             DropdownMenu {
                 ConnectionRoute.allCases.map { route in
-                    MenuItem(route.title, icon: route.icon, selected: route == preference) {
+                    MenuItem(RelayCopy.routeTitle(route, cloud: store.computer.cloud), icon: route.icon, selected: route == preference) {
                         accounts.setRoute(store.computer.id, route)
                     }
                 }
@@ -368,11 +368,7 @@ private struct ComputerRow: View {
     private var detail: String {
         guard store.connection == .online else { return accounts.statusText(store) }
         let count = store.roster.count
-        let route = switch store.hostRoute {
-        case .direct: " · Wi-Fi/Tailscale"
-        case .relay: " · Cloudflare"
-        default: ""
-        }
+        let route = RelayCopy.detailSuffix(route: store.hostRoute, cloud: store.computer.cloud)
         return "\(count) bot\(count == 1 ? "" : "s")\(route)"
     }
 }
@@ -479,14 +475,6 @@ private struct SwatchPanel: View {
 }
 
 private extension ConnectionRoute {
-    var title: String {
-        switch self {
-        case .automatic: "Auto: Wi-Fi or Tailscale, then Cloudflare"
-        case .cloudflareFirst: "Cloudflare, then Wi-Fi or Tailscale"
-        case .directOnly: "Wi-Fi or Tailscale only, never Cloudflare"
-        }
-    }
-
     var icon: String {
         switch self {
         case .automatic: "arrow.triangle.branch"

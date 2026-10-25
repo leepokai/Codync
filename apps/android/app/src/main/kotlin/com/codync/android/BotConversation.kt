@@ -42,8 +42,6 @@ import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id == id }?.name ?: "A deleted bot"
@@ -71,8 +69,7 @@ private fun AppState.authorName(id: String): String = bots.firstOrNull { it.id =
     var error by remember(peerId) { mutableStateOf<String?>(null) }
     LaunchedEffect(bot.id, peerId) {
         try {
-            val result = store.hostCall("botConversation", buildJsonObject { put("botId", bot.id); put("peerId", peerId) }, 20_000)
-            fetched = result.jsonObject["entries"]?.jsonArray?.map { Entry.decode(it.jsonObject) }.orEmpty()
+            fetched = entriesOf(store.hostCall("botConversation", buildJsonObject { put("botId", bot.id); put("peerId", peerId) }, 20_000))
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { fetched = emptyList(); error = failure.message ?: "Couldn't load the conversation." }
     }

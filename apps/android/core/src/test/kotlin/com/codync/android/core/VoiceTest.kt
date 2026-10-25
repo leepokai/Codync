@@ -114,25 +114,10 @@ class VoiceTest {
         audio.text("Late recognition", true); runCurrent()
         assertFalse(session.speak("A late reply")); assertEquals(1, audio.closed)
     }
-    @Test fun replyGateIgnoresHistoryOtherBotsAndAlreadyFinalizedReplies() {
-        fun entry(id: String, rev: Long, bot: String = "active", final: Boolean = true) = Entry(
-            id, rev, bot, rev, "agent", data = buildJsonObject { put("text", id); put("final", final) })
-        val old = entry("old", 5); val streaming = entry("streaming", 9, final = false)
-        val gate = VoiceReplyGate("active", 10, listOf(old, streaming))
-        val values = listOf(entry("old", 20), entry("streaming", 21), entry("reply", 22),
-            entry("other", 24, bot = "other"), entry("history", 6))
-        val bots = listOf(Bot("active", "Ada"))
-        assertEquals(listOf("streaming", "reply"), gate.observe(values, bots).map(VoiceCue::text))
-        assertTrue(gate.observe(values, bots).isEmpty())
-        val permission = Entry("approval", 25, "active", rev = 25, kind = "permission", data = buildJsonObject { put("status", "pending") })
-        assertEquals(listOf(VoiceCue("Ada needs your approval in the chat.", notice = true)), gate.observe(values + permission, bots))
-        assertTrue(gate.observe(values + permission, bots).isEmpty())
-    }
-    @Test fun groupRepliesAndApprovalsNameTheMemberWhoSentThem() {
-        val bots = listOf(Bot("team", "Team", kind = "group", members = listOf("ada")), Bot("ada", "Ada"))
-        val gate = VoiceReplyGate("team", 0, emptyList())
-        val reply = Entry("r", 1, "team", rev = 1, kind = "agent", data = buildJsonObject { put("text", "Done"); put("final", true); put("author", "ada") })
-        val card = Entry("p", 2, "team", rev = 2, kind = "permission", data = buildJsonObject { put("status", "pending"); put("author", "ghost") })
-        assertEquals(listOf(VoiceCue("Ada: Done"), VoiceCue("A bot needs your approval in the chat.", true)), gate.observe(listOf(reply, card), bots))
+    @Test fun theComputersCuesForACallDecodeByKind() {
+        fun event(kind: String) = buildJsonObject { put("type", "call"); put("call", "c1"); put("kind", kind); put("text", "Ada: Running tests"); put("owner", "phone"); put("seq", 7) }
+        assertEquals(MirrorEvent.Call(CallCue("c1", CallCue.Kind.Progress, "Ada: Running tests", 7)), MirrorEvent.decode(event("progress")))
+        // A newer host's new kind is passed over, never a reason to fetch everything again.
+        assertEquals(MirrorEvent.Ignored, MirrorEvent.decode(event("whisper")))
     }
 }

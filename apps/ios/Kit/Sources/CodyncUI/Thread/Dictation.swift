@@ -49,7 +49,7 @@ final class Dictation {
     private(set) var level: Float = 0
     /// Why the last dictation ended early (no key, no network), until the next.
     var failure: String?
-    @ObservationIgnored private let engine = AVAudioEngine()
+    @ObservationIgnored private lazy var engine = AVAudioEngine()
     @ObservationIgnored private var request: SFSpeechAudioBufferRecognitionRequest?
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
     /// Recording for a provider: what the microphone heard (16 kHz mono PCM16), and whose computer transcribes it.
@@ -130,10 +130,14 @@ final class Dictation {
         request = nil
         recording = nil
         transcribing = false
-        engine.inputNode.removeTap(onBus: 0)
-        if engine.isRunning { engine.stop() }
         edit = nil
-        if listening { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
+        // Only a microphone that was opened: touching `inputNode` starts the audio system (on every send and chat
+        // change), and on a busy simulator its start can time out and abort the process.
+        if listening {
+            engine.inputNode.removeTap(onBus: 0)
+            if engine.isRunning { engine.stop() }
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
         listening = false
         level = 0
     }

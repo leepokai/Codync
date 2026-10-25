@@ -56,6 +56,8 @@ data class AppState(
     val screenRequest: ScreenRequest? = null,
     /** The host sent data this app can't read even after fetching everything again. */
     val unreadable: Boolean = false,
+    /** The update this phone asked of a computer that's behind (`requestHostUpdate`). */
+    val hostUpdate: HostUpdate? = null,
     val error: String? = null,
 ) {
     /** Connection alone cannot make a cached roster current before event catch-up. */

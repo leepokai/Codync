@@ -62,6 +62,11 @@ import Testing
     #expect(try json(.signInFailed(.google, reason: .cancelled)) == #"{"provider":"google","reason":"cancelled"}"#)
     #expect(try json(.screenViewed(.botDetails)) == #"{"screen":"bot_details"}"#)
     #expect(try json(.voiceCallStarted(.onDevice)) == #"{"engine":"on_device"}"#)
+    #expect(try json(.voiceCallQuality(.gemini, readyMs: 1200, reconnects: 1, stuck: .none, failure: .connection))
+        == #"{"engine":"gemini","failure":"connection","ready_ms":1200,"reconnects":1,"stuck":"none"}"#)
+    // An engine that was never ready leaves `ready_ms` out.
+    #expect(try json(.voiceCallQuality(.onDevice, readyMs: nil, reconnects: 0, stuck: .connecting, failure: .none))
+        == #"{"engine":"on_device","failure":"none","reconnects":0,"stuck":"connecting"}"#)
     #expect(try json(.linkOpened(.installCommand)) == #"{"link":"install_command"}"#)
     #expect(AnalyticsEvent.notificationOpened(.needsInput).name == "notification_opened")
     #expect(AnalyticsEvent.NotificationKind(category: "needsInput") == .needsInput)

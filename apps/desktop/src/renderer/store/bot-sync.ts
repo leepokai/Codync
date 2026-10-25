@@ -3,11 +3,14 @@ import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
+import type { CallCue } from '@shared/calls'
 
 const DROP_GRACE = 5000
 const INITIAL_GRACE = 1000
 const ACTION_PATIENCE = 20_000
 const MISMATCH_RECHECK = 30_000
+/** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
+const UPDATE_RECHECK = 5_000
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const same = (a: Connection, b: Connection) => a.kind === b.kind && JSON.stringify(a) === JSON.stringify(b)
@@ -28,6 +31,10 @@ function keptEntries(entries: Map<string, Entry[]>, keep: (e: Entry) => boolean)
  */
 export class BotSync extends BotMirror {
   readonly artifacts = new Artifacts(() => this.changed())
+  /** The calls in this app, by id: each hands what the computer tells its voice to its engine. */
+  readonly callCues = new Map<string, (cue: CallCue) => void>()
+  /** The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again. */
+  private readonly heardCues = new Map<string, number>()
   private heldDrop: Connection | null = null
   private dropTimer: ReturnType<typeof setTimeout> | null = null
   private closeEvents: (() => void) | null = null
@@ -117,7 +124,7 @@ export class BotSync extends BotMirror {
         if (!alive()) return
         if (this.mismatch) {
           this.setConnection({ kind: 'online' })
-          await sleep(MISMATCH_RECHECK)
+          await sleep(this.hostUpdateOffer.kind === 'updating' ? UPDATE_RECHECK : MISMATCH_RECHECK)
           return void attempt()
         }
         if (this.isLoopback) {
@@ -182,6 +189,7 @@ export class BotSync extends BotMirror {
       this.refetchAll()
       this.rewound = false
       this.unreadable = false
+      this.hostUpdate = null
     }
     this.cacheStamp = null
     this.hostVersion = next
@@ -233,6 +241,14 @@ export class BotSync extends BotMirror {
       case 'cloud':
         this.cloud = event.cloud
         break
+      case 'call': {
+        const { cue } = event
+        const hear = this.callCues.get(cue.call)
+        if (!hear || cue.seq <= (this.heardCues.get(cue.call) ?? 0)) break
+        this.heardCues.set(cue.call, cue.seq)
+        hear(cue)
+        break
+      }
       case 'resync':
         this.restartEvents()
         break

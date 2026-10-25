@@ -35,8 +35,8 @@ title (`replies::quote`), and the bot reads `[Codync: this is about your artifac
 
 - Storage: `~/.codync/bots/<bot>/artifacts/<id>.html` holds the newest HTML (replaced whole: written to `.partial`,
   then renamed). The details live in kv as `artifact.<bot>.<id>`:
-  `{id, botId, title, size, sha256, createdAt, updatedAt, entryId?}`, where `entryId` is the newest card. Deleting the
-  bot deletes both.
+  `{id, botId, title, size, sha256, createdAt, updatedAt, entryId?, rev}`, where `entryId` is the newest card and
+  `rev` the sync rev of the last change. Deleting the bot deletes both.
 - API (Control access, like the chat):
   - `library {botId}` → `{items}`, newest first (`host/src/chat/library.rs`): the chat's artifacts
     `{kind: "artifact", at: updatedAt, artifact: Artifact}`, files its bot shared
@@ -46,9 +46,12 @@ title (`replies::quote`), and the bot reads `[Codync: this is about your artifac
   - `readArtifact {botId, artifactId, offset}` → `{data: <base64>, size, artifact: Artifact}`, chunks of at most
     384 KiB like `readFile`.
   - `renameArtifact {botId, artifactId, title}` → `{artifact}`. Titles are trimmed, 1–200 bytes, no control
-    characters.
-- Event: `{"type": "artifact", "artifact": Artifact}` on every publish and rename. It is live only (not in the
-  catch-up): apps fetch the `library` when they show it and upsert what the events bring. Older apps ignore it.
+    characters. The newest card (`entryId`) takes the new title too, so older apps and a cache that missed the rename
+    show it.
+- Event: `{"type": "artifact", "rev", "artifact": Artifact}` on every publish and rename, stamped with a global rev
+  like every other change, so the catch-up (`/events?since=`) replays the artifacts changed after the client's cursor.
+  Apps upsert what the events bring and fetch the `library` when they show it; one they can't read is skipped
+  (no rewind), and older apps ignore it.
 - Additive: no `minApp` change. The apps show the Library only when the host's `hello` version is 2.25.0 or later
   (an older host has no `library`); cards need no check, since only those hosts post them.
 - Analytics: `artifact_published {change, card}` and the `library` and `artifact` screens
@@ -63,7 +66,10 @@ All four clients show the same things; layout follows each platform.
   the title and "Artifact". It shows the newest version of that artifact (from `readArtifact`), whichever card it is.
   Tapping or clicking opens the viewer; the message menu still has Copy, Reply and reactions.
 - **Viewer**: the artifact full size in a web view of its own (scripts on, no access to the app, storage of its own; a
-  tapped web or mail link opens in the system browser, and other schemes go nowhere).
+  tapped web or mail link opens in the system browser, and other schemes go nowhere; the artifact sending itself or a
+  new window elsewhere without a tap goes nowhere, and a card opens nothing. The desktop app checks the tap in its main
+  process: a click or Return/Space in the window within a second, after the viewer loaded, opens one link; a
+  touchscreen tap in the artifact never reaches the main process, so it opens nothing).
   - Header: close (`xmark`, "Close artifact"), the title in the middle (tapping it renames the artifact: "Rename
     artifact", "Artifact title"), and a share action: desktop "Save as HTML" and "Open in browser"; iPhone and Android
     the system share sheet with `<title>.html`.
@@ -85,6 +91,7 @@ All four clients show the same things; layout follows each platform.
 
 Desktop: an artifact loads from `codync-artifact://<id>` (`apps/desktop/src/main/artifacts.ts`), its own origin, into
 a sandboxed frame: the chat window's content security policy would block an artifact's scripts in a `srcdoc` frame.
-Links an artifact follows or opens in a new window go to the browser (`https`, `http` and `mailto` only).
+What it opens goes to the browser by the Viewer's rule (`https`, `http` and `mailto` only): from the viewer only, after
+a click or Return/Space; cards open nothing.
 
 Not yet: public links (Grok Bot's "Anyone with the link"), deleting or pinning an artifact, artifacts in group chats.

@@ -58,8 +58,8 @@ if touches '^web/'; then
     (cd "$snapshot/web" && npm run check:docs)
 fi
 
-for dir in cloud relay discord; do
-    if touches "^(cloud/|relay/|discord/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
+for dir in cloud relay discord private-relay; do
+    if touches "^(cloud/|relay/|discord/|private-relay/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
         staged_copy
         echo "Checking $dir (typecheck, test)..."
         ln -s "$repo/$dir/node_modules" "$snapshot/$dir/node_modules"

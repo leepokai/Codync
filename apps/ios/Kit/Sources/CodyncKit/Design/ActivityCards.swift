@@ -5,7 +5,7 @@ public extension BotActivityPresentation {
         switch phase {
         case .working: .working
         case .needsInput: .listening
-        case .sending, .waiting, .stale: .connecting
+        case .sending, .waiting, .stale, .onCall: .connecting
         case .queued, .completed, .failed: nil
         }
     }
@@ -15,7 +15,7 @@ public extension BotActivityPresentation {
         case .needsInput: Palette.attention
         case .failed: Palette.danger
         case .completed: Palette.added
-        case .sending, .queued, .stale, .waiting: Palette.secondary
+        case .sending, .queued, .stale, .waiting, .onCall: Palette.secondary
         case .working: Palette.text
         }
     }
@@ -27,7 +27,7 @@ public extension BotActivityPresentation {
     var progressStep: Int {
         switch phase {
         case .sending, .queued: 1
-        case .working, .stale, .waiting: 2
+        case .working, .stale, .waiting, .onCall: 2
         case .needsInput: 3
         case .completed, .failed: 4
         }
@@ -37,13 +37,13 @@ public extension BotActivityPresentation {
         switch phase {
         case .working: .working
         case .needsInput: .needsInput
-        case .sending, .queued, .completed, .failed, .stale, .waiting: .idle
+        case .sending, .queued, .completed, .failed, .stale, .waiting, .onCall: .idle
         }
     }
 
     /// The elapsed time counts up on its own (no push) while the task is live.
     func elapsedStart(_ startedAt: Date?) -> Date? {
-        phase == .working || phase == .needsInput ? startedAt : nil
+        phase == .working || phase == .needsInput || call != nil ? startedAt : nil
     }
 }
 

@@ -71,13 +71,14 @@ pub fn of(error: &anyhow::Error) -> Option<Reason> {
     None
 }
 
-fn of_rpc(r: &RpcError) -> Option<Reason> {
+/// Why an agent's error answer moves the bot on (see [`of`]).
+pub fn of_rpc(r: &RpcError) -> Option<Reason> {
     if r.code == AUTH_REQUIRED {
         return Some(Reason::SignedOut);
     }
     let usage_text = USAGE_LIMIT_TEXT.iter().any(|t| r.message.contains(t));
     // Claude's adapter sends the Agent SDK's assistant error (`rate_limit`…); codex-acp its `codexErrorInfo`
-    // (`usage_limit_exceeded`…).
+    // (`usage_limit_exceeded`…); CodeBuddy its `category` (`auth`…).
     Some(match r.kind.as_deref() {
         Some("usage_limit_exceeded") => Reason::UsageLimit,
         Some("rate_limit" | "billing_error" | "account_on_hold") if usage_text => Reason::UsageLimit,
@@ -90,7 +91,7 @@ fn of_rpc(r: &RpcError) -> Option<Reason> {
             | "internal_server_error"
             | "response_too_many_failed_attempts",
         ) => Reason::Overloaded,
-        Some("authentication_failed" | "oauth_org_not_allowed" | "unauthorized") => Reason::SignedOut,
+        Some("authentication_failed" | "oauth_org_not_allowed" | "unauthorized" | "auth") => Reason::SignedOut,
         Some("model_not_found") => Reason::ModelMissing,
         _ if usage_text => Reason::UsageLimit,
         _ => return None,

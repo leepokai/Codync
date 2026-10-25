@@ -1,7 +1,7 @@
 import type { CallLine } from '@shared/calls'
 import { sleep } from '../../store/bot-sync'
 import type { BotStore } from '../../store/bot-store'
-import { spokenText, type VoiceProvider } from './voice'
+import { PROGRESS_TAG, spokenText, type VoiceProvider } from './voice'
 
 /** How long a tool call waits for the user's words that are still being written down. */
 const HEARING_PATIENCE_MS = 2_000
@@ -69,7 +69,7 @@ export class CallLink {
       last.text += piece
     } else {
       this.endTurn()
-      this.lines.push({ from, text: piece, at: Date.now() })
+      this.lines.push({ from, text: piece, at: Date.now(), id: crypto.randomUUID() })
       this.open = true
     }
   }
@@ -101,6 +101,11 @@ export class CallLink {
 
   notice(text: string) {
     return `[Notice] ${text}`
+  }
+
+  /** What the bot is doing, as the voice's instructions name it. */
+  progress(text: string) {
+    return `${PROGRESS_TAG} ${text}`
   }
 
   /** The call is over: its line in the chat, with what's left of the transcript. */

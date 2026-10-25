@@ -2,8 +2,10 @@ package com.codync.android
 
 import com.codync.android.core.CloudComputer
 import com.codync.android.core.Computer
+import com.codync.android.core.ConnectionRoute
 import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
+import com.codync.android.core.Pairing
 
 // What the roster header, Computers & settings and the chat header say about the computer's link
 // (iOS `ComputerStatus`, `ConnectionSummary`, `BotStore.connectionLabel`).
@@ -39,10 +41,52 @@ internal fun connectionDescription(state: AppState): String {
         link == LinkState.Connecting -> "Connecting"
         link !is LinkState.Ready -> connectionLabel(state)
         state.mismatch != null -> "Needs update"
-        link.route == HostRoute.Relay -> "Connected through Cloudflare"
+        link.route == HostRoute.Relay -> connectedThrough(state.computers.firstOrNull()?.cloud)
         else -> "Connected over Wi-Fi or Tailscale"
     }
 }
+
+/** Host of a private relay, or null when this is an official Codync cloud (those stay "Cloudflare"). */
+internal fun relayHost(cloud: String?): String? {
+    if (cloud.isNullOrBlank()) return null
+    val uri = runCatching { java.net.URI(cloud.trim()) }.getOrNull() ?: return null
+    // `URI.host` keeps an IPv6 address's brackets.
+    val name = uri.host?.lowercase() ?: return null
+    if ((name == "api.codync.dev" || name == "dev-api.codync.dev") && uri.port == -1) return null
+    return if (uri.port > 0) "$name:${uri.port}" else name
+}
+
+/** The route after a bot count in Computers & settings (iOS `RelayCopy.detailSuffix`). */
+internal fun routeLabel(route: HostRoute, cloud: String?): String =
+    if (route == HostRoute.Direct) "Wi-Fi/Tailscale" else relayHost(cloud)?.let { "Private relay ($it)" } ?: "Cloudflare"
+
+internal fun connectedThrough(cloud: String?): String {
+    val host = relayHost(cloud)
+    return if (host == null) "Connected through Cloudflare" else "Connected through Private relay ($host)"
+}
+
+internal fun routeTitle(route: ConnectionRoute, cloud: String?): String {
+    val host = relayHost(cloud) ?: return when (route) {
+        ConnectionRoute.Automatic -> "Auto: Wi-Fi or Tailscale, then Cloudflare"
+        ConnectionRoute.CloudflareFirst -> "Cloudflare, then Wi-Fi or Tailscale"
+        ConnectionRoute.DirectOnly -> "Wi-Fi or Tailscale only, never Cloudflare"
+    }
+    return when (route) {
+        ConnectionRoute.Automatic -> "Auto: Wi-Fi or Tailscale, then Private relay ($host)"
+        ConnectionRoute.CloudflareFirst -> "Private relay ($host), then Wi-Fi or Tailscale"
+        ConnectionRoute.DirectOnly -> "Wi-Fi or Tailscale only, never Private relay ($host)"
+    }
+}
+
+internal fun pairingLine(cloud: String?): String {
+    val host = relayHost(cloud)
+    return if (host == null) "Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted."
+    else "Connects on Wi-Fi, over Tailscale, or from anywhere through Private relay ($host), on its own. End-to-end encrypted."
+}
+
+/** The pairing page's line. Parsing stays here so a view only renders the sentence. */
+internal fun pairingLine(pasted: String, scheme: String): String =
+    pairingLine(runCatching { Pairing.parse(pasted, scheme).computer.cloud }.getOrNull())
 
 /** "1 connected", "Connecting…", "No access": the roster header's summary of its computers. */
 internal fun connectionSummary(state: AppState): String = when {

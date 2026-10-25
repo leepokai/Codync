@@ -1,18 +1,6 @@
 import CodyncKit
 import SwiftUI
 
-struct MarketSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.tr(title)).font(.headline).foregroundStyle(Palette.text).padding(.leading, 4)
-            content
-        }
-    }
-}
-
 /// Two columns on wide screens, one on a phone.
 struct ItemGrid<Content: View>: View {
     @ViewBuilder let content: Content
@@ -36,27 +24,45 @@ struct AgentCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 12) {
-                AgentIcon(registry: backend.registry ?? backend.id, size: 34)
-                    .frame(width: 64, height: 64)
-                    .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                VStack(spacing: 2) {
-                    Text(backend.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
-                    Text(L10n.tr(status))
-                        .font(.caption)
-                        .foregroundStyle(Palette.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
-            .padding(.horizontal, 10)
-            .background(Palette.bubbleAgent.opacity(hovering ? 0.8 : 0.45), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            AgentCardLabel(registry: backend.registry ?? backend.id, name: backend.name, status: L10n.tr(status))
+                .background(Palette.bubbleAgent.opacity(hovering ? 0.8 : 0.45), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(PressScale())
         .onHover { h in withAnimation(Motion.hover) { hovering = h } }
         .help(backend.name)
+    }
+}
+
+/// An agent tile's logo, name and status line.
+private struct AgentCardLabel: View {
+    let registry: String?
+    let name: String
+    let status: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            AgentIcon(registry: registry, size: 30)
+                .frame(width: 56, height: 56)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            VStack(spacing: 2) {
+                Text(name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(Palette.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 10)
+    }
+}
+
+/// An agent tile's room, with nothing in it. A short last page keeps a full page of rows, so the bar under it stays put.
+struct AgentCardSpacer: View {
+    var body: some View {
+        AgentCardLabel(registry: nil, name: " ", status: " ").hidden().accessibilityHidden(true)
     }
 }
 
@@ -111,11 +117,52 @@ struct MarketRow<Icon: View>: View {
     }
 }
 
+/// A catalog row's room, with nothing in it. A short last page keeps a full page of rows.
+struct MarketRowSpacer: View {
+    var body: some View {
+        MarketRow(title: " ", subtitle: " ", added: true) { Color.clear } add: {}
+            .hidden()
+            .accessibilityHidden(true)
+    }
+}
+
+/// Previous or next, beside the list on a phone: a dark filled circle (the text color, so white in dark mode)
+/// with the chevron in the page's background, faint when there is no page that way.
+struct PageEdgeButton: View {
+    let title: String
+    let systemImage: String
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.subheadline.weight(.bold))
+                .frame(width: 36, height: 36)
+                .foregroundStyle(Palette.background)
+                .background(Palette.text, in: Circle())
+                .opacity(enabled ? 1 : 0.25)
+        }
+        .buttonStyle(PressScale())
+        .disabled(!enabled)
+        .accessibilityLabel(L10n.tr(title))
+    }
+}
+
 /// Placeholder rows while a list loads, shaped like the real ones.
 struct SkeletonGrid: View {
     @State private var dim = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L10n.tr("Loading…")).font(.footnote).foregroundStyle(Palette.secondary)
+            rows
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.tr("Loading…"))
+    }
+
+    private var rows: some View {
         ItemGrid {
             ForEach(0..<4, id: \.self) { _ in
                 HStack(spacing: 14) {
@@ -221,5 +268,109 @@ struct WebLink: View {
             .foregroundStyle(Palette.text)
             .underline()
             .help(url.absoluteString)
+    }
+}
+
+/// The bar under a list. A phone: the page size and the page number (previous and next sit beside the list).
+/// A wide layout: the count, the page size, previous, current / total, and next.
+struct CatalogPager: View {
+    let page: Int
+    let count: Int
+    let pageSize: Int
+    var hasMore = false
+    var loading = false
+    let go: (Int) -> Void
+    let onSize: (Int) -> Void
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var pages: Int { CatalogPaging.pageCount(count, size: pageSize, hasMore: hasMore) }
+    private var current: Int { CatalogPaging.clamp(page: page, count: count, size: pageSize, hasMore: hasMore) }
+
+    var body: some View {
+        Group {
+            if sizeClass == .compact {
+                HStack(spacing: 12) {
+                    sizeLabel
+                    Spacer(minLength: 12)
+                    fraction
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Palette.bubbleAgent, in: Capsule())
+            } else {
+                controls
+            }
+        }
+        .font(.footnote)
+    }
+
+    private var controls: some View {
+        HStack(spacing: 12) {
+            total
+            sizePicker
+            navigation
+        }
+    }
+
+    private var total: some View {
+        Text(L10n.tr("{count} total").replacingOccurrences(of: "{count}", with: String(count)))
+            .foregroundStyle(Palette.secondary)
+    }
+
+    private var fraction: some View {
+        Text("\(current + 1) / \(pages)")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Palette.text)
+            .monospacedDigit()
+            .accessibilityAddTraits(.isSelected)
+    }
+
+    /// The size menu, sitting on the capsule with no chip of its own.
+    private var sizeLabel: some View {
+        DropdownMenu {
+            CatalogPaging.pageSizes.map { size in
+                MenuItem("\(size) / page", selected: size == pageSize) { onSize(size) }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Text(L10n.tr("\(pageSize) / page"))
+                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(Palette.secondary)
+        }
+    }
+
+    private var sizePicker: some View {
+        HStack(spacing: 6) {
+            Text(L10n.tr("Per page")).foregroundStyle(Palette.secondary)
+            DropdownMenu {
+                CatalogPaging.pageSizes.map { size in
+                    MenuItem("\(size) / page", selected: size == pageSize) { onSize(size) }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(L10n.tr("\(pageSize) / page"))
+                    Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(Palette.text)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+    }
+
+    private var navigation: some View {
+        HStack(spacing: 4) {
+            IconButton("Previous page", systemImage: "chevron.left") { go(current - 1) }
+                .disabled(current == 0 || loading)
+            Text("\(current + 1) / \(pages)")
+                .foregroundStyle(Palette.text)
+                .monospacedDigit()
+                .frame(minWidth: 44)
+                .accessibilityAddTraits(.isSelected)
+            IconButton(loading ? "Loading…" : "Next page", systemImage: "chevron.right") { go(current + 1) }
+                .disabled(!CatalogPaging.canForward(count: count, page: current, hasMore: hasMore, size: pageSize) || loading)
+        }
     }
 }

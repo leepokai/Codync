@@ -1,7 +1,7 @@
 // Artifacts and the Library on the wire (`host/src/chat/artifacts.rs`, `host/src/chat/library.rs`).
 import type { Attachment, ReplyQuote, SharedFile } from './models'
 import { isBelow } from './compat.ts'
-import { decodeFileChunk } from './files.ts'
+import { decodeFileChunk, sha256Hex } from './files.ts'
 
 /** An HTML artifact a bot published; `readArtifact` returns its HTML. */
 export interface Artifact {
@@ -15,6 +15,25 @@ export interface Artifact {
   /** Its newest card in the bot's chat: what a message about the artifact replies to. */
   entryId?: string
 }
+
+/** The desktop app loads each artifact from `codync-artifact://<id>/` (`main/artifacts.ts`), an origin of its own. */
+export const ARTIFACT_SCHEME = 'codync-artifact'
+
+/** An artifact frame's address; a card's preview is marked, so it opens nothing. */
+export const artifactFrameURL = (id: string, version: number, preview: boolean) =>
+  `${ARTIFACT_SCHEME}://${id}/?v=${version}${preview ? '&preview' : ''}`
+
+/** An artifact frame's address, a card's or the viewer's. */
+export const isArtifactURL = (url: string | undefined): url is string => !!url?.startsWith(`${ARTIFACT_SCHEME}:`)
+
+/** An artifact's viewer frame: its scheme, without a card's `preview` marker. */
+export const isArtifactViewer = (url: string | undefined) => isArtifactURL(url) && !new URL(url).searchParams.has('preview')
+
+/** How long after a click or a key press a link it follows may open; later, it's a script acting alone. */
+const FOLLOWED_MS = 1000
+
+/** Whether what an artifact opens follows the user: a click or key in the window, after its viewer loaded, just now. */
+export const followsUser = (input: number, loaded: number, now: number) => input > loaded && now - input < FOLLOWED_MS
 
 /** One thing in a chat's Library (`library`): an artifact, a file the bot shared, or one the user attached. */
 export type LibraryItem =
@@ -75,9 +94,4 @@ export async function readArtifactHTML(read: (offset: number) => Promise<Artifac
     if ((await sha256Hex(html)) !== version) throw new Error('The artifact failed its integrity check; try again')
     return { artifact, bytes: html }
   }
-}
-
-async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
-  return Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')
 }

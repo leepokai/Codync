@@ -83,6 +83,16 @@ impl Store {
     pub fn current_rev(&self) -> i64 {
         self.kv_get("rev").and_then(|v| v.parse().ok()).unwrap_or(0)
     }
+
+    /// Saves a row stamped with the next rev, in one transaction: `value` gets the rev and returns what to save.
+    pub fn kv_set_stamped(&self, k: &str, value: impl FnOnce(i64) -> Result<String>) -> Result<()> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        let rev = next_rev(&tx)?;
+        tx.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, value(rev)?])?;
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

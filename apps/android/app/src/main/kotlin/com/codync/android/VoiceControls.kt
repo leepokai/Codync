@@ -83,7 +83,7 @@ internal fun openAppSettings(context: android.content.Context) =
                 .semantics { contentDescription = if (speaking) "Interrupt" else bot?.name.orEmpty() }) {
                 if (bot != null) BotAvatar(bot, state.bots, 34.dp)
             }
-            CallLevelDots(voice.level, speaking, bot?.status == "working", voice.phase == VoicePhase.Starting, color,
+            CallLevelDots(voice.level, speaking, bot?.status == "working", voice.phase.connecting, color,
                 Modifier.weight(1f).height(20.dp).semantics { contentDescription = statusText(voice, bot?.status == "working") })
             // Audio leaves the phone: say where.
             voice.provider?.let { provider ->
@@ -121,6 +121,7 @@ internal fun openAppSettings(context: android.content.Context) =
 
 private fun statusText(voice: VoiceState, working: Boolean) = when (voice.phase) {
     VoicePhase.Starting -> "Connecting"
+    VoicePhase.Reconnecting -> "Reconnecting"
     VoicePhase.Speaking -> "Speaking"
     VoicePhase.Failed -> "Can't listen"
     VoicePhase.Interrupted -> "Paused"

@@ -8,7 +8,7 @@ struct ActivityGalleryView: View {
     var forms = BotActivityPreview.Form.allCases
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
-    @AppStorage("liveActivitiesEnabled") private var enabled = true
+    @AppStorage(BotActivityAttributes.enabledKey) private var enabled = true
     @State private var allowed = ActivityAuthorizationInfo().areActivitiesEnabled
     @State private var form: BotActivityPreview.Form?
     @State private var phase = BotActivityPresentation.Phase.working
@@ -24,7 +24,7 @@ struct ActivityGalleryView: View {
         case .needsInput: "needsInput"
         case .completed: "idle"
         case .failed: "error"
-        case .waiting: "unknown"
+        case .waiting, .onCall: "unknown"
         }
         return .init(status: status, activity: phase == .needsInput ? "Review the proposed changes." : "Running the test suite.",
                      isStale: phase == .stale)
@@ -45,7 +45,7 @@ struct ActivityGalleryView: View {
                         .font(.subheadline.weight(.medium))
                     Text(L10n.tr(island
                          ? "The Dynamic Island shows the same Live Activity as the Lock Screen, so this switch turns off both."
-                         : "Starts when you send a task from this iPhone. Follow its progress, then open the conversation when your bot needs you."))
+                         : "Starts when you send a task or call a bot from this iPhone. Follow its progress, then open the conversation when your bot needs you."))
                         .font(.footnote).foregroundStyle(Palette.secondary)
                     if !allowed {
                         Text(L10n.tr("Live Activities are turned off in iOS Settings."))

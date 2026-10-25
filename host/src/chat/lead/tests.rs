@@ -130,18 +130,20 @@ async fn the_lead_speaks_first_on_a_call() {
     let f = Fixture::new();
     let lead = make(&f.hub, f.cfg(NAME)).unwrap();
     let other = f.hub.create_bot(f.cfg("Other")).unwrap()["id"].as_str().unwrap().to_owned();
-    call_started(&f.hub, &other).unwrap();
-    call_started(&f.hub, &lead).unwrap();
+    call_started(&f.hub, &other, None).unwrap();
+    crate::chat::calls::heard(&f.hub, &lead, "c1", "local").unwrap();
+    call_started(&f.hub, &lead, Some("c1")).unwrap();
     until(|| f.hub.runtime(&lead).status == BotStatus::Idle && !f.agent_texts(&lead).is_empty(), "the lead opens")
         .await;
     assert_eq!(f.agent_texts(&lead), ["opened"]);
     assert!(f.agent_texts(&other).is_empty(), "other bots wait for the user");
     let opening = f.hub.store.history(&lead, i64::MAX, 50).unwrap().into_iter().find(|e| e.kind == "agent").unwrap();
     assert_eq!(opening.turn, 1, "a turn of its own");
+    assert_eq!(opening.data["call"], "c1", "the opening is the call's, kept in its conversation");
 
     // A lead whose last turn failed still opens the next call.
     f.hub.set_runtime(&lead, |r| r.status = BotStatus::Error);
-    call_started(&f.hub, &lead).unwrap();
+    call_started(&f.hub, &lead, None).unwrap();
     until(|| f.agent_texts(&lead).len() == 2, "the lead opens again").await;
     f.shutdown().await;
 }

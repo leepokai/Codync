@@ -11,6 +11,7 @@ import {
 } from '@shared/models'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import { rosterOrder } from '../lib/computer-roster'
+import { offerHostUpdate, type HostUpdate, type HostUpdateOffer } from '../lib/host-update'
 import { Observable } from '../lib/observable'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
@@ -34,6 +35,8 @@ export class BotMirror extends Observable {
   client: HostClient | null = null
   hello: Hello | null = null
   hostVersion: { version: string; minApp?: string | null } | null = null
+  /** An update asked of this computer from here while it's behind; cleared once its version changes. */
+  hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
   usage: Usage = { providers: [] }
@@ -101,6 +104,11 @@ export class BotMirror extends Observable {
     if (found) return found
     if (this.unreadable && isBelow(this.appVersion, this.hostVersion.version)) return { kind: 'updateApp', minimum: this.hostVersion.version }
     return null
+  }
+
+  /** What the update notice offers while this computer is behind this app. */
+  get hostUpdateOffer(): HostUpdateOffer {
+    return offerHostUpdate(this.hostUpdate, this.hello?.canUpdate === true)
   }
 
   /** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */

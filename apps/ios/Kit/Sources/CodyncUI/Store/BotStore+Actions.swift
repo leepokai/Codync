@@ -68,10 +68,10 @@ extension BotStore {
     }
 
     public func stop(_ botId: String) { perform(replay: true) { try await $0.stop(botId) } }
-    /// A call's audio is on: the lead speaks first (an older host, which has no lead, never gets this).
-    public func callStarted(_ botId: String) {
+    /// A call's audio is on: the lead speaks first, on the call (an older host, which has no lead, never gets this).
+    public func callStarted(_ botId: String, call: String) {
         guard bots[botId]?.lead == true else { return }
-        perform { try await $0.callStarted(botId) }
+        perform { try await $0.callStarted(botId, call: call) }
     }
     public func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
     /// The bot's own agent again, off the fallback it runs on.
@@ -277,6 +277,11 @@ extension BotStore {
     public func updateGroup(_ draft: GroupDraft) async throws {
         let group = try await ready().updateGroup(draft)
         bots[group.id] = group
+    }
+
+    /// What a voice call carried, for its conversation. Never `upsert`ed, like `botConversation`.
+    public func callEntries(_ botId: String, call: String) async throws -> [Entry] {
+        try await ready().callEntries(botId: botId, call: call)
     }
 
     /// The bot-to-bot notices between a chat and a peer. Never `upsert`ed: old notices in the

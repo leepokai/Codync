@@ -1,4 +1,6 @@
 import type { HostClient } from '../../client/host-client'
+import type { VoiceFailure } from '@shared/analytics'
+import type { CallCue } from '@shared/calls'
 import { Observable } from '../../lib/observable'
 import {
   addVoiceUsage,
@@ -75,7 +77,24 @@ export const countVoiceUsage = (seconds: number, p: VoiceProvider) => addVoiceUs
 
 // MARK: engines
 
-export type VoicePhase = 'starting' | 'listening' | 'speaking' | 'failed'
+/**
+ * A call's audio, the same on every engine (and on the iPhone and Android): connecting until the provider confirmed
+ * the session and the microphone delivers, then listening or speaking; reconnecting after a drop or a device change;
+ * failed when it can't go on.
+ */
+export type VoicePhase = 'starting' | 'listening' | 'speaking' | 'reconnecting' | 'failed'
+
+/** Why a call's engine gave up, for analytics (`voice_call_quality`). */
+export type VoiceFailureKind = Exclude<VoiceFailure, 'none'>
+
+/** How the voice's instructions name what the bot is doing. */
+export const PROGRESS_TAG = '[Progress]'
+
+/**
+ * How often a dropped provider connection is tried again before the call falls back to on-device voice: after these
+ * waits (ms). Tests shorten them.
+ */
+export const reconnect = { delays: [1000, 2000, 4000] }
 
 /**
  * What carries a call's audio: on-device speech or a realtime model on the user's own key.
@@ -84,6 +103,7 @@ export type VoicePhase = 'starting' | 'listening' | 'speaking' | 'failed'
 export abstract class VoiceEngine extends Observable {
   phase: VoicePhase = 'starting'
   failure: string | null = null
+  failureKind: VoiceFailureKind | null = null
   /** Microphone loudness, 0…1, while listening. Read every frame; not observed. */
   level = 0
   abstract readonly provider: VoiceProvider | null
@@ -94,6 +114,16 @@ export abstract class VoiceEngine extends Observable {
 
   get isActive() {
     return this.phase === 'listening' || this.phase === 'speaking'
+  }
+
+  /** The connecting line shows: not ready yet, or ready again soon. */
+  get isConnecting() {
+    return this.phase === 'starting' || this.phase === 'reconnecting'
+  }
+
+  /** The call still holds its transport and hears the computer (a reconnect doesn't end it). */
+  get holdsCall() {
+    return this.isActive || this.phase === 'reconnecting'
   }
 
   get muted() {
@@ -110,12 +140,13 @@ export abstract class VoiceEngine extends Observable {
   protected setPhase(phase: VoicePhase) {
     this.phase = phase
     this.changed()
-    this.onActivityChanged?.(!this.ended && this.isActive)
+    this.onActivityChanged?.(!this.ended && this.holdsCall)
   }
 
-  protected fail(message: string) {
+  protected fail(message: string, kind: VoiceFailureKind = 'connection') {
     this.end()
     this.failure = message
+    this.failureKind = kind
     this.setPhase('failed')
   }
 
@@ -128,10 +159,39 @@ export abstract class VoiceEngine extends Observable {
   abstract speak(reply: string): void
   /** A notice from the computer (an approval is waiting) to say. */
   abstract announce(notice: string): void
+  /** What the bot is doing while it works, from the computer: for a realtime voice to mention (engines that read
+   * replies aloud have nothing to say about it). */
+  progress(_text: string) {}
+
+  /** What the computer tells the call's voice, handed to the method that says it. */
+  hear(cue: CallCue) {
+    if (cue.kind === 'reply') this.speak(cue.text)
+    else if (cue.kind === 'notice') this.announce(cue.text)
+    else this.progress(cue.text)
+  }
 }
 
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
 export const MIC_DENIED = 'Allow the microphone for Codync in Settings to talk to your bots.'
+
+/**
+ * Runs `changed` when the computer's audio devices change (a headset plugged in or out), a moment after the system
+ * settles; returns the function that stops listening.
+ */
+export function onDevicesChanged(changed: () => void): () => void {
+  const devices = globalThis.navigator?.mediaDevices
+  if (!devices) return () => {}
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const listener = () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(changed, 500)
+  }
+  devices.addEventListener('devicechange', listener)
+  return () => {
+    if (timer) clearTimeout(timer)
+    devices.removeEventListener('devicechange', listener)
+  }
+}
 
 // MARK: audio helpers
 

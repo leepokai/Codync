@@ -91,9 +91,9 @@ class VoiceEnginesTest {
     /** The computer's side of a call, for the engines' tests: one session, tools answered here. */
     private class Link(val credential: String = "ek_secret") : CallLink {
         val tools = mutableListOf<Pair<String, JsonObject>>(); val lines = mutableListOf<Pair<String, String>>(); var turns = 0
-        var started: Triple<VoiceProvider, String, String>? = null
+        var started: Triple<VoiceProvider, String, String>? = null; var starts = 0
         override suspend fun start(provider: VoiceProvider, model: String, voice: String): CallSession {
-            started = Triple(provider, model, voice)
+            started = Triple(provider, model, voice); starts++
             return CallSession.decode(Json.parseToJsonElement("""{"credential":"$credential","instructions":"You are the voice relay for Ada",
                 "tools":[{"name":"send_to_bot","description":"Send","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}},
                 {"name":"bot_status","description":"Status","parameters":{"type":"object","properties":{}}}]}""").jsonObject)
@@ -112,11 +112,11 @@ class VoiceEnginesTest {
 
     @Test fun aCallsTranscriptJoinsEachTurnAndItsMessagesHideBehindItsLine() {
         var now = 0L
-        val transcript = CallTranscript({ ++now }, { it.uppercase() }) { }
+        val transcript = CallTranscript({ ++now }, { it.uppercase() }, { "l$now" }) { }
         transcript.add("user", "看一下 "); transcript.add("user", "git"); transcript.add("voice", " Checking.")
-        assertEquals("the line being said stays", listOf(CallLine("user", "看一下 GIT", 1)), transcript.drain(withOpen = false))
+        assertEquals("the line being said stays", listOf(CallLine("user", "看一下 GIT", 1, "l1")), transcript.drain(withOpen = false))
         transcript.restore(listOf(CallLine("user", "AGAIN", 0)))
-        assertEquals(listOf(CallLine("user", "AGAIN", 0), CallLine("voice", "CHECKING.", 2)), transcript.drain(withOpen = true))
+        assertEquals(listOf(CallLine("user", "AGAIN", 0), CallLine("voice", "CHECKING.", 2, "l2")), transcript.drain(withOpen = true))
         assertTrue(transcript.drain(withOpen = true).isEmpty())
 
         val line = entry("n1", 9, "notice", { put("text", "Git"); put("callSeconds", 26); put("call", "c")
@@ -127,9 +127,18 @@ class VoiceEnginesTest {
             entry("u2", 4, "user", { put("text", "on this phone"); put("call", "live") }),
             entry("x1", 5, "user", { put("text", "typed") }), line,
         ).map { it.copy(createdAt = it.seq) }
-        assertEquals(listOf("x1", "n1"), entries.hidingCalls(setOf("live")).map(Entry::id))
+        assertEquals(listOf("x1", "n1"), entries.hidingCalls().map(Entry::id))
+        val file = entry("f1", 10, "agent", { put("text", "log.txt (3 bytes)"); put("final", true); put("call", "c")
+            putJsonArray("files") { addJsonObject { put("id", "f"); put("name", "log.txt"); put("size", 3); put("sha256", "") } } })
+        assertEquals("a file the call brought stays, to be opened", listOf("x1", "n1", "f1"), (entries + file).hidingCalls().map(Entry::id))
         assertEquals(listOf("User: 看一下 git", "VoiceToBot: check git", "Bot: Clean"),
             entries.callConversation(line).map { "${it.speaker}: ${it.text}" })
+        // A call older than the chat the phone holds: its own entries, fetched, fill in the conversation once each.
+        val old = listOf(line)
+        assertTrue(old.callConversation(line).size == 1)
+        val fetched = entries.filter { it.call == "c" && it.kind != "notice" }
+        assertEquals(old.callConversation(line).size + 2, old.withCallEntries(fetched).callConversation(line).size)
+        assertEquals(entries.size, entries.withCallEntries(fetched).size)
         val declarations = runBlocking { Link().start(VoiceProvider.Gemini, "m", "v") }.tools.map(CallTool::gemini)
         assertNull(declarations.first { it["name"]!!.jsonPrimitive.content == "bot_status" }["parameters"])
         assertEquals("STRING", declarations[0]["parameters"]!!.jsonObject["properties"]!!.jsonObject["text"]!!.jsonObject["type"]!!.jsonPrimitive.content)
@@ -219,8 +228,50 @@ class VoiceEnginesTest {
         engine.mute(true); runCurrent(); assertEquals(false, peer.micOn)
         peer.events!!.ice(RealtimePeer.Ice.Disconnected); advanceTimeBy(4_000); runCurrent(); assertEquals(VoicePhase.Listening, engine.state.value.phase)
         peer.events!!.ice(RealtimePeer.Ice.Connected); advanceTimeBy(2_000); runCurrent(); assertEquals(VoicePhase.Listening, engine.state.value.phase)
-        peer.events!!.ice(RealtimePeer.Ice.Failed); runCurrent(); engine.awaitEnd()
-        assertEquals("Lost the connection to OpenAI.", engine.state.value.error); assertEquals(1, peer.closed)
+        peer.events!!.ice(RealtimePeer.Ice.Failed); runCurrent()
+        assertEquals(VoicePhase.Reconnecting, engine.state.value.phase); assertEquals(1, peer.closed) // Tried again, not hung up.
+        engine.end(); engine.awaitEnd()
+    }
+
+    @Test fun openAIRealtimeReconnectsADroppedSessionPrimedByTheComputerAndGivesUpAfterThreeTries() = runTest {
+        val peer = Peer(); val link = Link()
+        var offers = 0
+        val engine = OpenAIRealtimeEngine(backgroundScope, VoiceSettings(), "gpt-realtime", "marin", "gpt-transcribe", link, peer) { _, _ ->
+            // OpenAI answers the first two sessions, then stops answering.
+            if (++offers > 2) throw IOException("OpenAI answered 503."); "answer-sdp" }
+        runCurrent(); peer.isOpen = true; peer.events!!.opened(); peer.events!!.received("""{"type":"session.updated"}"""); runCurrent()
+        assertEquals(VoicePhase.Listening, engine.state.value.phase)
+        peer.events!!.ice(RealtimePeer.Ice.Failed); runCurrent()
+        assertEquals(VoicePhase.Reconnecting, engine.state.value.phase)
+        engine.speak("Waits for the new session"); runCurrent()
+        advanceTimeBy(Reconnect.delays[0] + 1); runCurrent()
+        assertEquals(2, offers); assertEquals(2, link.starts) // A fresh secret and instructions from the computer.
+        peer.events!!.opened(); peer.events!!.received("""{"type":"session.updated"}"""); runCurrent()
+        assertEquals(VoicePhase.Listening, engine.state.value.phase)
+        assertEquals("[Ada replied] Waits for the new session",
+            peer.sent.last { it["type"]!!.jsonPrimitive.content == "conversation.item.create" }["item"]!!.jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
+        // A drop the new sessions never recover from: three tries, then the call fails over.
+        peer.events!!.ice(RealtimePeer.Ice.Failed); runCurrent()
+        repeat(Reconnect.delays.size) { advanceTimeBy(Reconnect.delays.max() + 15_001); runCurrent() }
+        engine.awaitEnd()
+        assertEquals(5, offers) // Each failed answer is a try of its own, not the end of the call.
+        assertEquals(VoicePhase.Failed, engine.state.value.phase)
+        assertEquals(VoiceFailureKind.Connection, engine.state.value.failureKind)
+    }
+
+    @Test fun callQualityReportsReadyTimeReconnectsStallsAndFailureOncePerEngine() {
+        var now = 0L
+        val reports = mutableListOf<Pair<String, CallQuality.Report>>()
+        val quality = CallQuality<String>({ now }) { engine, report -> reports += engine to report }
+        quality.begin("gemini")
+        now = 1_200; quality.phase(VoicePhase.Listening, null)
+        quality.phase(VoicePhase.Reconnecting, null); now = 2_000; quality.phase(VoicePhase.Listening, null)
+        quality.stalled()
+        quality.phase(VoicePhase.Failed, VoiceFailureKind.Connection)
+        quality.begin("on_device")
+        assertEquals("gemini" to CallQuality.Report(1_200, 1, VoiceStuck.Speaking, VoiceFailureKind.Connection), reports.single())
+        now += CallQuality.STUCK_MILLIS; quality.report()
+        assertEquals("on_device" to CallQuality.Report(null, 0, VoiceStuck.Connecting, null), reports.last())
     }
 
     @Test fun openAIRealtimeGivesUpWhenTheChannelNeverOpens() = runTest {
@@ -309,5 +360,60 @@ class VoiceEnginesTest {
             assertEquals(1, mic.stops); assertEquals(1, player.closed)
             scope.cancel(); dispatcher.close()
         }
+    }
+
+    @Test fun geminiLiveResumesADroppedSessionAndAStuckSpeakerGoesBackToListening() = runBlocking {
+        val delays = Reconnect.delays; val stall = GeminiLiveEngine.stallMillis
+        Reconnect.delays = listOf(20L, 20L, 20L); GeminiLiveEngine.stallMillis = 150L
+        val inbound = LinkedBlockingQueue<Pair<Int, JsonObject>>(); val servers = LinkedBlockingQueue<WebSocket>()
+        MockWebServer().use { mock ->
+            repeat(2) { n ->
+                mock.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) { servers += webSocket }
+                    override fun onMessage(webSocket: WebSocket, text: String) { inbound += n to Json.parseToJsonElement(text).jsonObject }
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, null) }
+                }))
+            }
+            val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+            val scope = CoroutineScope(SupervisorJob() + dispatcher)
+            val mic = Mic(); val player = Player(); val link = Link("token")
+            val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", link, mic, player, OkHttpClient(),
+                mock.url("/live").toString().replace("http://", "ws://"))
+            var stalls = 0
+            engine.onStall = { stalls++ }
+            fun next(key: String): Pair<Int, JsonObject> {
+                while (true) { val m = requireNotNull(inbound.poll(5, TimeUnit.SECONDS)) { "No $key arrived" }; if (key in m.second) return m }
+            }
+            suspend fun until(check: (VoiceState) -> Boolean) = withTimeout(5_000) { engine.state.first(check) }
+            next("setup")
+            val first = requireNotNull(servers.poll(5, TimeUnit.SECONDS))
+            first.send("""{"setupComplete":{}}""")
+            withTimeout(5_000) { while (mic.frames == null) delay(10) }
+            mic.frames!!(byteArrayOf(1, 2), .5f)
+            until { it.phase == VoicePhase.Listening }
+            first.send("""{"sessionResumptionUpdate":{"newHandle":"h1","resumable":true}}""")
+            first.close(1011, "Internal error")
+            until { it.phase == VoicePhase.Reconnecting }
+            engine.speak("Said after the drop")
+            val (session, setup) = next("setup")
+            assertEquals(1, session); assertEquals(2, link.starts) // A fresh credential from the computer.
+            assertEquals("h1", setup["setup"]!!.jsonObject["sessionResumption"]!!.jsonObject["handle"]!!.jsonPrimitive.content)
+            val second = requireNotNull(servers.poll(5, TimeUnit.SECONDS))
+            second.send("""{"setupComplete":{}}""")
+            assertEquals(1, next("clientContent").first) // The reply that waited goes to the new session.
+            assertEquals(VoicePhase.Reconnecting, engine.state.value.phase) // Ready again once the microphone delivers.
+            mic.frames!!(byteArrayOf(1, 2), .5f)
+            until { it.phase == VoicePhase.Listening }
+            // The speaker never reports the chunk heard: the watchdog takes the call back to listening.
+            val audio = Base64.getEncoder().encodeToString(ByteArray(480))
+            second.send("""{"serverContent":{"modelTurn":{"parts":[{"inlineData":{"data":"$audio"}}]}}}""")
+            until { it.phase == VoicePhase.Speaking }
+            second.send("""{"serverContent":{"turnComplete":true}}""")
+            until { it.phase == VoicePhase.Listening }
+            assertEquals(1, stalls)
+            engine.end(); withTimeout(5_000) { engine.awaitEnd() }
+            scope.cancel(); dispatcher.close()
+        }
+        Reconnect.delays = delays; GeminiLiveEngine.stallMillis = stall
     }
 }

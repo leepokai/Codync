@@ -117,8 +117,8 @@ git config core.hooksPath .githooks
 ```
 
 It runs CI's checks for each part a commit touches, so a failure shows up before the push:
-host and the memory crate (`cargo fmt --all --check`, clippy and `cargo test` for the workspace), desktop, cloud
-and relay (`npm run typecheck`, `npm test`), the Android app (core and app unit tests, and a Kotlin compile of
+host and the memory crate (`cargo fmt --all --check`, clippy and `cargo test` for the workspace), desktop, cloud,
+relay, discord and private-relay (`npm run typecheck`, `npm test`), the Android app (core and app unit tests, and a Kotlin compile of
 the app and its instrumentation tests, with JDK 21), Linux screen helper formatting, a parse of the macOS
 screen helper's Swift sources (on macOS), and the website's user manual (`npm run check:docs` in `web/`: pages
 compile, links and anchors resolve). It checks the staged files only, in a copy under `.git/precommit-snapshot`,

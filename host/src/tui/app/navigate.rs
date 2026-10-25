@@ -201,6 +201,12 @@ impl App {
                 if let Some(e) = picked
                     && !self.unfolded.remove(&e.id)
                 {
+                    // A call's own messages, which the loaded chat may not reach back to.
+                    if let Some(call) =
+                        e.call().filter(|c| e.kind == super::Kind::Notice && !self.call_entries.contains_key(*c))
+                    {
+                        self.fetch_call(&id, call);
+                    }
                     self.unfolded.insert(e.id);
                 }
             }

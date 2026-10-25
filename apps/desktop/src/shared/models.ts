@@ -240,6 +240,9 @@ export interface SharedFile extends Attachment { sha256: string }
 export const isImageName = (name: string) =>
   ['png', 'jpg', 'jpeg', 'heic', 'gif', 'webp', 'tiff', 'bmp'].includes(name.split('.').pop()?.toLowerCase() ?? '')
 
+/** A shared image small enough to show in the chat (the whole file is fetched for it). */
+export const showsAsImage = (file: SharedFile) => isImageName(file.name) && file.size <= 20 * 1024 * 1024
+
 export interface ConnectionRequest {
   [key: string]: unknown
 }
@@ -477,6 +480,8 @@ export interface Hello {
   signKey?: string
   boxKey?: string
   minApp?: string
+  /** `installHostUpdate` can update this computer (absent before hosts could be updated from a client). */
+  canUpdate?: boolean
   cloud?: string | null
   /** Product analytics on this computer: on unless its owner turned it off. */
   analytics?: boolean
@@ -539,11 +544,15 @@ export type AccountApproval = 'code' | 'auto'
 export interface CloudStatus {
   enabled: boolean
   url?: string | null
+  /** A private relay's registration token is saved (the token itself never leaves the host). */
+  tokenSet?: boolean | null
   registered?: boolean | null
   connected?: boolean | null
   owner?: CloudOwner | null
   lastError?: string | null
   approval?: AccountApproval | null
+  /** Whose relay: a `private` one has no account, access requests or relayed screen. Absent from older hosts (always Codync's). */
+  relay?: 'codync' | 'private' | null
 }
 
 export interface ClaimSignature {

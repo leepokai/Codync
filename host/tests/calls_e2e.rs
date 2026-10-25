@@ -31,6 +31,18 @@ fn reply(e: &Value) -> bool {
     e["kind"] == "agent" && e["data"]["final"] == true
 }
 
+/// The next thing the computer tells call `call`'s voice, of `kind`.
+async fn cue(events: &mut tokio::sync::mpsc::UnboundedReceiver<Value>, call: &str, kind: &str) -> String {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let event =
+            tokio::time::timeout_at(deadline, events.recv()).await.expect("no cue in time").expect("stream ended");
+        if event["type"] == "call" && event["call"] == call && event["kind"] == kind {
+            return event["text"].as_str().unwrap().to_owned();
+        }
+    }
+}
+
 async fn tool(host: &Host, call: &str, name: &str, arguments: Value) -> Value {
     host.call("callTool", json!({"callId": call, "name": name, "arguments": arguments})).await["result"].clone()
 }
@@ -43,6 +55,7 @@ async fn replies_are_the_calls_while_it_lasts() {
     let bot = json!({"name": "Mika", "backend": "custom", "command": common::python_agent(&agent), "permission": "ask",
         "connectors": [], "notify": false});
     let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let mut events = host.events().await;
     host.call("startCall", json!({"botId": bot, "callId": "c1", "mode": "device"})).await;
 
     // The user's words the app hadn't sent yet ride along with the hand-off.
@@ -54,6 +67,9 @@ async fn replies_are_the_calls_while_it_lasts() {
     assert!(relayed["data"]["text"].as_str().unwrap().contains("«改一下 a.txt»"), "{relayed}");
 
     wait_for(&host, &bot, 0, pending).await;
+    // The voice hears of the approval from the computer, worded for an on-device call's listener.
+    let approval = cue(&mut events, "c1", "notice").await;
+    assert_eq!(approval, "Mika needs your approval in the chat: Edit a.txt");
     // While it waits: a message said on the call and a typed one, answered together.
     host.call("send", json!({"botId": bot, "text": "and b.txt", "clientNonce": "n1", "call": "c1"})).await;
     host.call("send", json!({"botId": bot, "text": "typed", "clientNonce": "n2"})).await;
@@ -62,6 +78,8 @@ async fn replies_are_the_calls_while_it_lasts() {
     assert_eq!(tool(&host, "c1", "answer_approval", json!({"option": "allow"})).await["answered"], "Allow");
     let first = wait_for(&host, &bot, 0, reply).await;
     assert_eq!(first["data"]["call"], "c1", "a reply to the call is the call's: {first}");
+    let said = cue(&mut events, "c1", "reply").await;
+    assert_eq!(said, first["data"]["text"].as_str().unwrap().trim(), "the voice hears the reply");
 
     wait_for(&host, &bot, 0, pending).await;
     assert_eq!(tool(&host, "c1", "answer_approval", json!({"option": "ALLOW"})).await["answered"], "Allow");
@@ -82,6 +100,16 @@ async fn replies_are_the_calls_while_it_lasts() {
     let after = wait_for(&host, &bot, 2, reply).await;
     assert!(after["data"]["call"].is_null(), "after the call, replies show in the chat: {after}");
     assert!(tool(&host, "c1", "bot_status", json!({})).await["error"].is_string(), "an ended call runs no tools");
+
+    // Its conversation, whatever part of the chat an app holds: the call's messages and replies only.
+    let carried = host.call("callEntries", json!({"botId": bot, "callId": "c1"})).await["entries"].clone();
+    let kinds: Vec<(&str, &str)> = carried
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| (e["kind"].as_str().unwrap(), e["data"]["call"].as_str().unwrap()))
+        .collect();
+    assert_eq!(kinds, [("user", "c1"), ("user", "c1"), ("agent", "c1"), ("user", "c1")], "{carried}");
 }
 
 #[tokio::test]

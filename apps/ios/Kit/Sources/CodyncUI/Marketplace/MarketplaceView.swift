@@ -1,46 +1,46 @@
 import CodyncKit
 import SwiftUI
 
-/// The Marketplace (Grok Bot's layout): one page of agents, connectors and
-/// skills for the bots on one computer (the store in the environment). Installing happens on that
+/// Extensions for the bots on one computer (the store in the environment): Agents,
+/// Connectors and Skills, one at a time. Each list turns a page; a connector page that
+/// isn't full fetches more from the registry (`ConnectorCatalog`). Installing happens on that
 /// computer; each bot turns connectors and skills on in its settings.
 public struct MarketplaceView: View {
-    @Environment(BotStore.self) private var model
-    @State private var search = ""
-    @State private var connectors = MarketplacePage<MarketConnector>()
-    @State private var connectorRequest = UUID()
-    @State private var connectorQuery = ""
-    /// The registry page after the ones shown; nil at the end.
-    @State private var connectorCursor: String?
-    @State private var loadingMore = false
-    @State private var skills: [MarketSkill] = []
-    @State private var loadingConnectors = true
-    @State private var loadingSkills = true
-    @State private var error: String?
-    @State private var installing: MarketConnector?
-    @State private var busySkill: String?
-    @State private var addingConnector = false
-    @State private var writingSkill = false
-    @State private var viewingSkill: SkillRef?
-    @State private var agent: Backend?
-    @State private var addingNode = false
-    /// Agents shown before "Load more agents".
-    @State private var agentLimit = 10
-    @State private var showInstalled = false
-    @State private var showCredentials = false
+    @Environment(BotStore.self) var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State var search = ""
+    @State var connectors = ConnectorCatalog<MarketConnector>()
+    @State var skills: [MarketSkill] = []
+    @State var loadingSkills = true
+    @State var error: String?
+    @State var installing: MarketConnector?
+    @State var busySkill: String?
+    @State var addingConnector = false
+    @State var writingSkill = false
+    @State var viewingSkill: SkillRef?
+    @State var agent: Backend?
+    @State var addingNode = false
+    @State var section = ExtensionSection.agents
+    @State var agentPage = 0
+    @State var skillPage = 0
+    /// Nil until the menu is used, so a phone stays at 6 and a wide layout stays at 10.
+    @State var chosenPageSize: Int?
+    @State var showInstalled = false
+    @State var showCredentials = false
     @Environment(\.dismissModal) private var dismiss
+    @Environment(\.horizontalSizeClass) var sizeClass
 
     /// Each computer has its own marketplace (the `BotStore` in the environment).
     public init() {}
 
-    private var query: String { search.trimmingCharacters(in: .whitespaces) }
+    var query: String { search.trimmingCharacters(in: .whitespaces) }
 
-    private var agents: [Backend] {
+    var agents: [Backend] {
         let all = (model.hello?.backends ?? []).filter { $0.available || $0.installed == true || $0.curated == true }
         return query.isEmpty ? all : all.filter { $0.name.localizedCaseInsensitiveContains(query) }
     }
 
-    private var shownSkills: [MarketSkill] {
+    var shownSkills: [MarketSkill] {
         query.isEmpty ? skills : skills.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.description.localizedCaseInsensitiveContains(query) }
     }
 
@@ -64,9 +64,12 @@ public struct MarketplaceView: View {
         .task { await model.refreshBackends() }
         .task { await loadConnectors() }
         .task {
-            do { skills = try await model.marketSkills() } catch { self.error = error.localizedDescription }
-            loadingSkills = false
+            loadingSkills = true
+            do { skills = try await model.marketSkills() } catch { report(error) }
+            if !Task.isCancelled { loadingSkills = false }
         }
+        // A size picked from the menu, or one that follows the layout, starts every list over.
+        .onChange(of: pageSize) { _, _ in resetPages() }
         .codyncSheet(item: $installing) { item in
             InstallConnectorSheet(item: item) { Task { await loadConnectors() } }
         }
@@ -83,96 +86,24 @@ public struct MarketplaceView: View {
             VStack(alignment: .leading, spacing: 28) {
                 header
                 searchField
-                if !agents.isEmpty {
-                    MarketSection(title: query.isEmpty ? "Agents" : L10n.tr("Agents matching “{query}”").replacingOccurrences(of: "{query}", with: query)) {
-                        if model.hello?.backends.contains(where: \.needsNode) == true {
-                            NodeNotice { addingNode = true }
-                        }
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 10) {
-                                ForEach(agents.prefix(agentLimit)) { b in agentCard(b).frame(width: 128) }
-                            }
-                            .padding(.horizontal, 24)
-                        }
-                        .padding(.horizontal, -24)
-                        if agents.count > agentLimit {
-                            Button(L10n.tr("Load more agents")) {
-                                withAnimation(Motion.fade) { agentLimit += 10 }
-                            }
-                            .buttonStyle(SecondaryButtonStyle())
-                            .frame(maxWidth: .infinity)
+                if sizeClass == .compact {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TabChoice(selection: $section, options: ExtensionSection.allCases.map { (id: $0, label: $0.title) })
+                        sourceLine
+                    }
+                    tabBody
+                } else {
+                    HStack(alignment: .top, spacing: 20) {
+                        extensionRail
+                        VStack(alignment: .leading, spacing: 12) {
+                            sourceLine
+                            tabBody.frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
-                MarketSection(title: query.isEmpty ? "Connectors" : "Connectors") {
-                    if loadingConnectors {
-                        SkeletonGrid()
-                    } else if connectors.isEmpty {
-                        Text(query.isEmpty ? L10n.tr("Couldn't load connectors.") : L10n.tr("No connectors match “{query}”.").replacingOccurrences(of: "{query}", with: query))
-                            .foregroundStyle(Palette.secondary)
-                    } else {
-                        ItemGrid {
-                            ForEach(connectors.visible) { c in
-                                MarketRow(title: c.title, subtitle: c.description ?? c.name, added: c.installed) {
-                                    ServiceLogo(website: c.website, name: c.title, registryName: c.name)
-                                } add: {
-                                    installing = c
-                                }
-                            }
-                        }
-                        if connectors.hasHiddenItems || connectorCursor != nil {
-                            Button(L10n.tr(loadingMore ? "Loading…" : "Load more connectors")) { Task { await loadMoreConnectors() } }
-                                .buttonStyle(SecondaryButtonStyle())
-                                .disabled(loadingMore)
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                }
-                MarketSection(title: "Skills") {
-                    if loadingSkills {
-                        SkeletonGrid()
-                    } else {
-                        ItemGrid {
-                            ForEach(shownSkills) { s in
-                                let added = s.installed || model.installedSkills.contains { $0.id == s.source.lowercased() }
-                                MarketRow(title: s.name, subtitle: s.description, added: added, busy: busySkill == s.source,
-                                          open: { viewingSkill = SkillRef(s, installed: added) }) {
-                                    SkillGlyph()
-                                } add: {
-                                    busySkill = s.source
-                                    Task {
-                                        do { try await model.installSkill(source: s.source) } catch { self.error = error.localizedDescription }
-                                        busySkill = nil
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Button { withAnimation(Motion.layout) { showCredentials = true } } label: {
-                    Label(L10n.tr("Credentials"), systemImage: "lock.shield")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                MarketSection(title: "Make your own") {
-                    ItemGrid {
-                        MarketRow(title: "Custom connector", subtitle: "Any MCP server: a command or a URL", added: false, addLabel: "New") {
-                            TileIcon(systemName: "point.3.connected.trianglepath.dotted")
-                        } add: {
-                            addingConnector = true
-                        }
-                        MarketRow(title: "Your own skill", subtitle: "Write instructions a bot can follow", added: false, addLabel: "New") {
-                            TileIcon(systemName: "square.and.pencil")
-                        } add: {
-                            writingSkill = true
-                        }
-                    }
-                }
-                if let error {
+                if let error = error ?? connectors.error {
                     Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                 }
-                Text(L10n.tr("Connectors come from the official MCP Registry, skills from Anthropic, agents from the ACP registry. Everything installs on {name}.").replacingOccurrences(of: "{name}", with: model.hostName))
-                    .font(.footnote)
-                    .foregroundStyle(Palette.tertiary)
             }
             .padding(.horizontal, 44)
             .padding(.vertical, 20)
@@ -203,8 +134,16 @@ public struct MarketplaceView: View {
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                Spacer(minLength: 8)
+                // Beside the title, in the room left of Close, so the list can fill the screen.
+                Button { withAnimation(Motion.layout) { showCredentials = true } } label: {
+                    Label(L10n.tr("Credentials"), systemImage: "lock.shield")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .fixedSize()
+                .layoutPriority(1)
             }
-            .layoutPriority(1)
+            .frame(maxWidth: .infinity)
             if installedCount > 0 {
                 Button { withAnimation(Motion.layout) { showInstalled = true } } label: {
                     HStack(spacing: 8) {
@@ -228,6 +167,14 @@ public struct MarketplaceView: View {
         .padding(.top, 28)
     }
 
+    /// One sentence for the open section, tucked under its tab.
+    private var sourceLine: some View {
+        Text(L10n.tr(section.source).replacingOccurrences(of: "{name}", with: model.hostName))
+            .font(.footnote)
+            .foregroundStyle(Palette.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary)
@@ -235,7 +182,7 @@ public struct MarketplaceView: View {
                 .textFieldStyle(.plain)
                 .plainTextInput()
                 .onSubmit { Task { await loadConnectors() } }
-                .onChange(of: search) { agentLimit = 10 }
+                .onChange(of: search) { _, _ in resetPages() }
             if !search.isEmpty {
                 Button { search = ""; Task { await loadConnectors() } } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.tertiary)
@@ -249,54 +196,102 @@ public struct MarketplaceView: View {
         .background(Palette.bubbleAgent, in: Capsule())
     }
 
-    private func agentCard(_ b: Backend) -> some View {
+    func agentCard(_ b: Backend) -> some View {
         AgentCard(backend: b) { agent = b }
     }
 
     private func loadConnectors() async {
-        let request = UUID()
-        connectorRequest = request
-        connectorQuery = query
-        loadingConnectors = true
-        loadingMore = false
-        defer { if connectorRequest == request { loadingConnectors = false } }
-        do {
-            let page = try await model.marketConnectors(search: connectorQuery)
-            guard !Task.isCancelled, connectorRequest == request else { return }
-            connectors.replace(with: page.items)
-            connectorCursor = page.next
-            error = nil
-        } catch {
-            guard !Task.isCancelled, connectorRequest == request else { return }
-            connectors.replace(with: [])
-            connectorCursor = nil
-            self.error = error.localizedDescription
+        await connectors.load(search: query, fetch: fetchConnectors)
+    }
+
+    private func fetchConnectors(search: String, cursor: String?) async throws -> (items: [MarketConnector], next: String?) {
+        try await model.marketConnectors(search: search, cursor: cursor)
+    }
+
+    /// A load that SwiftUI cancelled is the next load starting, not a failure to show.
+    func report(_ error: Error) {
+        if error is CancellationError || Task.isCancelled { return }
+        self.error = error.localizedDescription
+    }
+
+    var pageSize: Int {
+        chosenPageSize ?? (sizeClass == .compact ? CatalogPaging.phonePageSize : CatalogPaging.pageSize)
+    }
+
+    private func canTurn(_ forward: Bool) -> Bool {
+        let (page, count, hasMore) = switch section {
+        case .agents: (agentPage, agents.count, false)
+        case .skills: (skillPage, shownSkills.count, false)
+        case .connectors: (connectors.page, connectors.items.items.count, connectors.hasMore)
+        }
+        if section == .connectors, connectors.loading || connectors.loadingMore { return false }
+        let next = page + (forward ? 1 : -1)
+        return CatalogPaging.clamp(page: next, count: count, size: pageSize, hasMore: hasMore) == next
+    }
+
+    /// How a page turn from an arrow scrolls the pager.
+    var pageMotion: Animation? { reduceMotion ? nil : Motion.layout }
+
+    /// The arrow buttons turn the page; on a phone the pager scrolls over to it.
+    func slide(forward: Bool) {
+        guard canTurn(forward) else { return }
+        let step = forward ? 1 : -1
+        switch section {
+        case .agents: withAnimation(pageMotion) { agentPage += step }
+        case .skills: withAnimation(pageMotion) { skillPage += step }
+        case .connectors: showConnectorPage(connectors.page + step, animated: true)
         }
     }
 
-    private func loadMoreConnectors() async {
-        guard !loadingMore, !loadingConnectors else { return }
-        if connectors.hasHiddenItems {
-            withAnimation(Motion.fade) { connectors.revealMore() }
-            return
-        }
-        guard let cursor = connectorCursor else { return }
-        let request = connectorRequest
-        loadingMore = true
-        defer { if connectorRequest == request { loadingMore = false } }
-        do {
-            let page = try await model.marketConnectors(search: connectorQuery, cursor: cursor)
-            guard !Task.isCancelled, connectorRequest == request else { return }
-            withAnimation(Motion.fade) {
-                connectors.append(page.items)
-                connectors.revealMore()
-            }
-            connectorCursor = page.next
-            error = nil
-        } catch {
-            guard !Task.isCancelled, connectorRequest == request else { return }
-            self.error = error.localizedDescription
+    /// A swipe landed on `page`. The page shows at once; a connector page that isn't full then fills.
+    func swiped(to page: Int) {
+        switch section {
+        case .agents: agentPage = page
+        case .skills: skillPage = page
+        case .connectors: showConnectorPage(page, animated: false)
         }
     }
 
+    /// The new size starts every list over (`onChange(of: pageSize)`).
+    func changePageSize(_ size: Int) {
+        chosenPageSize = size
+    }
+
+    private func resetPages() {
+        agentPage = 0
+        skillPage = 0
+        connectors.show(0, size: pageSize)
+    }
+
+    /// Turns the connector list to `page`; a page that isn't full then fills from the registry.
+    func showConnectorPage(_ page: Int, animated: Bool) {
+        withAnimation(animated ? pageMotion : nil) { connectors.show(page, size: pageSize) }
+        Task { await connectors.fill(size: pageSize, animation: pageMotion, fetch: fetchConnectors) }
+    }
+}
+
+enum ExtensionSection: String, CaseIterable, Identifiable {
+    case agents, connectors, skills
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .agents: "Agents"
+        case .connectors: "Connectors"
+        case .skills: "Skills"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .agents: "terminal"
+        case .connectors: "point.3.connected.trianglepath.dotted"
+        case .skills: "book.pages"
+        }
+    }
+    var source: String {
+        switch self {
+        case .agents: "Agents come from the ACP registry and install on {name}."
+        case .connectors: "Connectors come from the official MCP Registry and install on {name}."
+        case .skills: "Skills come from Anthropic and install on {name}."
+        }
+    }
 }

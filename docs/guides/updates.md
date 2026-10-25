@@ -13,11 +13,13 @@ action on its Updates page. Only packaged `main` builds update: `npm run dev` an
 with `tools/account-config.mjs dev` never replace themselves with a release.
 
 A check the person starts downloads right away and shows **Downloading… N%** with a
-progress bar. A finished download never quits the app by itself: the button becomes
+progress bar. A finished download never quits the app by itself (except at another device's
+request, below): the button becomes
 **Restart to update**, and choosing it shows **Restarting…** while the host stops and the
 installer takes over. The relaunched app comes to the front (macOS doesn't activate an app
 the installer relaunches from the background, so a one-shot `updateRelaunchInFront`
-preference asks for it).
+preference asks for it). A check the person starts that finds nothing new opens a
+**You're up to date** dialog in the chat window; scheduled checks stay silent.
 
 While a release is available, an **Update** badge sits right of **Extensions** in the
 chat window's sidebar (`UpdateBadge`). One click restarts into the release
@@ -36,7 +38,11 @@ normally after a failed attempt instead of staying shut.
 The app checks daily.
 Automatic installation waits until no Codync window is focused, there has been no
 keyboard/mouse input for ten minutes, and the local host reports that it is idle.
-A staged update also installs when quitting. Manual installation can interrupt work.
+When another device asks this computer to update (`installHostUpdate`, see
+[standalone hosts](#standalone-hosts-on-linux-and-macos)), the app downloads the release
+whatever the automatic-download setting and restarts into it in the background as soon as the
+local host is idle, without the focus and input conditions, for as long as the request lasts
+(ten minutes). A staged update also installs when quitting. Manual installation can interrupt work.
 The release it finds is the one the release gate marked latest, so it always works with the
 iPhone app in the App Store
 ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).
@@ -178,8 +184,20 @@ update status.
 
 The TUI's action
 list (`^k`) has **Check for updates**, which reports the result in the status line.
-The API operations (`hostUpdateStatus`, `checkHostUpdate`, `installHostUpdate`,
-`setHostAutomaticUpdates`) require a local connection, including an SSH tunnel.
+The API operations `hostUpdateStatus`, `checkHostUpdate` and `setHostAutomaticUpdates`
+require a local connection, including an SSH tunnel.
+
+`installHostUpdate` is also open to paired devices: it's what a client's **Update now**
+calls when a computer is too old for it. `hello.canUpdate` says whether it can work there:
+a release host the installed service runs, or one the desktop app bundles while that app is
+open (it polls `/health?app=true` every 5 seconds; `canUpdate` needs a poll in the last 15).
+Both cases are decided in one place, `update::route`. A standalone host schedules the
+updater above. An app-bundled host can't replace itself, so it records the request and
+reports it as `updateRequested` (when, in ms) in its loopback `/health` for ten minutes; the
+desktop app downloads its release and restarts into it in the background once no bot is
+working (`apps/desktop/src/main/updates.ts`). The host refuses while a bot is working unless
+the call passes `force`. The TUI keeps **Check for updates** only: it runs on the computer
+or reaches it through `ssh -L`, so `codync-host update` there is the direct fix.
 
 Installed services schedule the updater as an independent launchd job or systemd
 user unit, so stopping the daemon does not kill its updater. The CLI returns after

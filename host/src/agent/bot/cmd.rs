@@ -18,8 +18,12 @@ pub enum Cmd {
     BotRequest(crate::chat::team::BotRequest),
     /// How a request this bot sent came out: a turn of its own, with any others that arrive meanwhile.
     BotReply(crate::chat::team::BotReply),
-    /// A turn the host starts in the bot's own chat, with no message of the user's (the lead opening a call).
-    Prompt(String),
+    /// A turn the host starts in the bot's own chat, with no message of the user's (the lead opening a call): its
+    /// reply is that call's (`chat::calls`).
+    Prompt {
+        text: String,
+        call: Option<String>,
+    },
     /// `send_message` from the bot's `chat` MCP server: a message for the user, now.
     SendToUser {
         text: String,
@@ -81,7 +85,10 @@ pub(super) enum Queued {
     },
     BotRequest(crate::chat::team::BotRequest),
     BotReply(crate::chat::team::BotReply),
-    Prompt(String),
+    Prompt {
+        text: String,
+        call: Option<String>,
+    },
     /// A compaction the host decided on (see `compaction`); `idle` while the user is away.
     Compact {
         idle: bool,

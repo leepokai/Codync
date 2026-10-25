@@ -35,13 +35,13 @@ to be asked. Everything about it lives in the host (`host/src/chat/lead.rs`); th
   cancelled while the agent's plan is above 75% in any window (`usage::near_limit`, the same headroom dreaming
   keeps), so it never spends the user's last usage. Test runs still run.
 - **It speaks first on a call.** When a call's audio is first live (the moment `voice_call_started` is counted),
-  the iPhone, Android and desktop apps send `callStarted {botId}` once per call (an engine switch doesn't send it
+  the iPhone, Android and desktop apps send `callStarted {botId, callId}` once per call (an engine switch doesn't send it
   again), only for a bot marked lead. Unless a turn is under way (working, or waiting on an approval), the host starts
   a turn in its chat with no message of the user's (`Cmd::Prompt`): it greets the user, or says in a sentence or two
   what deserves their attention. The reply is an ordinary message, read aloud by every engine. It is the host's turn
   (`TurnSource::Host`), not the user's: a turn of its own in the trace, never resumed after a host restart (the call
-  is over by then), no push alert, and nothing for memory or dreaming. Other bots, or a lead already at work, wait
-  for the user.
+  is over by then), no push alert, and nothing for memory or dreaming. The reply carries the call's id, so it stays
+  behind the call's line with the rest of the call. Other bots, or a lead already at work, wait for the user.
 
 ## Shortcuts
 

@@ -73,9 +73,8 @@ Codync turns the coding agents on your computer — Claude Code, Codex, Cursor, 
 The host (`codync-host`, Rust) runs on macOS, Windows and Linux; every client talks to it, so all your bots and chats are the same everywhere.
 
 **Looking for the former native Mac app (SwiftUI + AppKit)?** Version 2.7.0 moved Mac and
-Linux to one Electron desktop app. The native implementation is preserved in Git history;
-see the [changelog and source lookup commands](#changelog) and the
-[archived AppKit chat implementation notes](docs/archive/macos-chat-swiftui-2026-10-05.md).
+Linux to one Electron desktop app. The native implementation is preserved in Git history at
+`1055636`; see the [archived AppKit chat implementation notes](docs/archive/macos-chat-swiftui-2026-10-05.md).
 
 ## How it works
 
@@ -202,6 +201,7 @@ Data lives in `~/.codync`. The local bearer token authorizes loopback helpers an
 | `apps/screen-macos/`, `apps/screen-linux/` | Platform screen capture/input helpers |
 | `docs/` | [Documentation index](docs/README.md) and [file structure](docs/architecture/file-structure.md) |
 | `relay/` | Cloudflare Worker APNs relay with encrypted per-device tickets |
+| `private-relay/` | Single-process Node relay a person runs for their own computers: the cloud relay's WebSocket subset, without accounts |
 | `web/` | Website (Next.js static export, deployed on Vercel) |
 | `packaging/` | Homebrew cask and formula templates (published to `leepokai/homebrew-codync` on release) and `install.sh` (the curl installer) |
 
@@ -218,26 +218,6 @@ cd relay && npm test             # relay tickets
 ```
 
 ## Changelog
-
-### 2.7.0 — one desktop app for Mac and Linux
-
-The SwiftUI Mac app and the GTK 4 Linux app are replaced by a single desktop app in
-`apps/desktop/` (Electron). It looks and works like the Mac app it replaces: the same roster,
-chat, inspector, marketplace, settings, menu bar, pairing, SSH computers, voice calls and
-remote screen helper. Why: the native chat had become too slow to scroll and stream long
-transcripts, and keeping two desktop apps in step took more than one person can maintain.
-The iPhone app stays native SwiftUI; its shared package moved into `apps/ios/Kit/`.
-Details: [desktop app](docs/architecture/desktop-app.md).
-
-**Native Mac source (SwiftUI + AppKit).** The last native revision is `1055636`, the parent
-of migration commit `41135ac`. It includes `apps/macos/` and the Mac code paths in `kit/`.
-The chat used `MacChatList`, an AppKit `NSScrollView` hosting SwiftUI message rows;
-see the [archived implementation notes](docs/archive/macos-chat-swiftui-2026-10-05.md).
-
-```bash
-git show 1055636:apps/macos/Views/ChatWindow.swift
-git worktree add ../codync-swiftui 1055636  # a checkout of the whole native-era repo
-```
 
 For release-by-release changes, see [GitHub Releases](https://github.com/leepokai/Codync/releases).
 

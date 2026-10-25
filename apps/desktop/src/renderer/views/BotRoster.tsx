@@ -220,7 +220,9 @@ export function BotRoster({ roster, compact, onContext, openExtensions }: {
         previous={roster.sections[index - 1]?.computer.id} next={roster.sections[index + 1]?.computer.id}
         lifted={sectionDrag?.id === computer.id && lift !== null}
         drag={pointerDrag({ start: (from) => liftHeading(store, from), over: headingOver, drop: dropHeading, cancel: endDrag })}
-        move={roster.move} notice={notice}>
+        move={roster.move}>
+        {/* The notice folds with its computer's bots; the heading still reads "Needs update". */}
+        {notice}
         {rows}
         {!items.length && !store.mismatch && !compact ? <div className="computer-roster-empty">{store.shownConnection.kind === 'online' ? 'No bots yet' : store.connectionLabel}</div> : null}
       </ComputerRosterSection>

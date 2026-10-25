@@ -18,7 +18,7 @@ export default function Privacy() {
         <Section title="What stays on your devices">
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>Bots and conversations</strong> are stored by the Codync host on your computer (in <code>~/.codync</code>). Your phone keeps a cache so the app opens instantly.</li>
-            <li><strong>Your phone talks to your computer</strong> directly over your local network or Tailscale, or, away from home, through our relay, which only forwards end-to-end encrypted data it can&apos;t read. A message you send while your computer is offline waits in the relay, still encrypted for your computer, for up to 24 hours, and is deleted once delivered.</li>
+            <li><strong>Your phone talks to your computer</strong> directly over your local network or Tailscale, or, away from home, through our relay, which only forwards end-to-end encrypted data it can&apos;t read. A message you send while your computer is offline waits in the relay, still encrypted for your computer, for up to 24 hours, and is deleted once delivered. If you point a computer at a relay you run yourself, its traffic goes through that relay instead of ours and we receive none of it; its notifications still go through our push relay.</li>
             <li><strong>Agents run with your own logins</strong> (Claude Code, Codex, Cursor and others). Codync never sees or stores their credentials.</li>
             <li><strong>Usage limits</strong> are read locally from the agents installed on your computer. Only percentages reach your phone.</li>
           </ul>

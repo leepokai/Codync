@@ -251,6 +251,15 @@ extension BotStore {
         return data
     }
 
+    /// A file a bot shared, read whole and checked: on disk after the first fetch (shared files never change).
+    public func sharedFileData(_ file: SharedFile, entryId: String) async -> Data? {
+        guard let url = Self.attachmentCache(file.id) else { return nil }
+        if let data = try? Data(contentsOf: url) { return data }
+        guard let client = live, let data = try? await FileDownload().data(client: client, entryId: entryId, file: file) else { return nil }
+        Self.cacheAttachment(file.id, data)
+        return data
+    }
+
     private static func attachmentCache(_ id: String) -> URL? {
         guard let uuid = UUID(uuidString: id) else { return nil }
         return URL.cachesDirectory.appending(path: "codync-attachments").appending(path: uuid.uuidString)

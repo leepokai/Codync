@@ -394,6 +394,7 @@ can, the user may keep it on for one bot ([Claude Code's own memory](#claude-cod
 | Copilot CLI | Copilot Memory, on for individual plans | `--excluded-tools=store_memory,vote_memory` |
 | Qwen Code | Auto memory and its own dreaming, on | `.qwen/settings.json` in a bot's own workspace: `memory.enableManagedAutoMemory` and `enableManagedAutoDream` false. Nothing in a project folder, whose files are the user's |
 | CodeBuddy | Auto memory | `CODEBUDDY_DISABLE_AUTO_MEMORY=1` |
+| WorkBuddy | The same auto memory, in the CLI bundled with the app | `CODEBUDDY_DISABLE_AUTO_MEMORY=1` |
 | Codex, Goose, Grok, oh-my-pi, Qoder, Cortex | Off unless the user turns it on | Nothing |
 | Gemini CLI | Its system prompt has the model edit `~/.gemini/GEMINI.md` | Nothing: no switch short of replacing its system prompt or its home folder |
 | Kilo Code | Memory tools, on per project | Nothing: the only per-process switch replaces the whole config |
@@ -499,7 +500,7 @@ The user can keep it on per bot, for example to share the auto-memory directory 
 sessions in the terminal. The switch sits on the memory screen with an info button on what it costs: the bot may
 remember things twice, the two memories can disagree, and forgetting something in Codync doesn't reach Claude
 Code's notes. Codync then shows the folder's `MEMORY.md` read-only, so it isn't unseen. The same switch covers
-Copilot, CodeBuddy and (in a bot's own workspace) Qwen Code. Using it instead of Codync's memory is planned:
+Copilot, CodeBuddy, WorkBuddy and (in a bot's own workspace) Qwen Code. Using it instead of Codync's memory is planned:
 [harness memory](../plans/harness-memory.md).
 
 The adapter passes `claudeCode.options.settings` and `.env` through untouched, so these settings reach the SDK.

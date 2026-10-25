@@ -6,10 +6,32 @@ struct FileDownloadCard: View {
     let entry: Entry
     let file: SharedFile
     @Environment(BotStore.self) private var model
+    @State private var viewing = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if file.showsAsImage { preview }
+            row
+        }
+        .padding(14)
+        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 16))
+        .codyncSheet(isPresented: $viewing) { AttachmentViewer(shared: file, entryId: entry.id) }
+    }
+
+    /// The picture itself; tap for full size.
+    private var preview: some View {
+        AttachmentImage(shared: file, entryId: entry.id, maxPixels: 720)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
+            .onTapGesture { viewing = true }
+            .accessibilityLabel(file.name)
+            .accessibilityAddTraits(.isButton)
+            .frame(maxWidth: .infinity, maxHeight: 280, alignment: .leading)
+    }
+
+    private var row: some View {
         let state = model.fileDownloads.states[file.id]
-        HStack(spacing: 12) {
+        return HStack(spacing: 12) {
             Image(systemName: AttachmentIcon.symbol(file.name)).font(.system(size: 24)).foregroundStyle(Palette.secondary)
             VStack(alignment: .leading, spacing: 3) {
                 Text(file.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(2)
@@ -28,8 +50,6 @@ struct FileDownloadCard: View {
             .buttonStyle(.plain)
             .accessibilityLabel("\(busy(state) ? "Cancel download" : "Download") \(file.name)")
         }
-        .padding(14)
-        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func busy(_ state: FileDownloads.State?) -> Bool {

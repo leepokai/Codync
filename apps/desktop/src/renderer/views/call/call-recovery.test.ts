@@ -66,7 +66,7 @@ const until = async (condition: () => boolean, ms = 2000) => {
   return condition()
 }
 
-function call() {
+function call(googleSearch?: boolean) {
   const sockets: FakeSocket[] = []
   const plays: (() => void)[] = []
   let mic: ((pcm: Int16Array, level: number) => void) | null = null
@@ -74,7 +74,7 @@ function call() {
   const link = {
     start: async () => {
       starts++
-      return { credential: `token-${starts}`, instructions: 'Be the relay.', tools: [] }
+      return { credential: `token-${starts}`, instructions: 'Be the relay.', tools: [], googleSearch }
     },
     add() {},
     endTurn() {},
@@ -128,6 +128,38 @@ async function ready(c: ReturnType<typeof call>) {
   c.deliver()
   assert.equal(c.engine.phase, 'listening')
 }
+
+test('Gemini only enables built-in search when the host confirms it, including replacement sessions', async () => {
+  for (const enabled of [undefined, false, true]) {
+    const c = call(enabled)
+    try {
+      await ready(c)
+      const tools = c.last().of('setup')[0]!.setup.tools
+      assert.equal(tools.some((tool: Record<string, unknown>) => 'googleSearch' in tool), enabled === true)
+      assert.deepEqual(tools[0], { functionDeclarations: [] })
+      c.last().play({ goAway: { timeLeft: '1s' } })
+      assert.ok(await until(() => c.sockets.length === 2))
+      c.last().open()
+      assert.deepEqual(c.last().of('setup')[0]!.setup.tools, tools)
+    } finally {
+      c.engine.end()
+    }
+  }
+})
+
+test('Gemini surfaces original search suggestions beside the matching answer and discards them after the call', async () => {
+  const c = call(true)
+  await ready(c)
+  assert.equal(c.engine.searchResult, null)
+  c.last().play({ serverContent: { outputTranscription: { text: 'The answer.' } } })
+  const html = '<a href="https://www.google.com/search?q=test">Search</a>'
+  c.last().play({ serverContent: { groundingMetadata: { searchEntryPoint: { renderedContent: html } }, turnComplete: true } })
+  assert.deepEqual(c.engine.searchResult, { html, text: 'The answer.' })
+  c.last().play({ serverContent: { outputTranscription: { text: 'A different answer.' }, turnComplete: true } })
+  assert.equal(c.engine.searchResult, null)
+  c.engine.end()
+  assert.equal(c.engine.searchResult, null)
+})
 
 test('Gemini is ready only once the microphone delivers after setup', async () => {
   const c = call()

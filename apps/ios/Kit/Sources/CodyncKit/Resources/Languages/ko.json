@@ -2092,5 +2092,8 @@
   "X stops": "X 중지",
   "T full": "T 전체 보기",
   "r retries": "r로 다시 시도",
-  "↵ opens": "↵ 열기"
+  "↵ opens": "↵ 열기",
+  "Google Search": "Google 검색",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "통화 중 Gemini가 웹을 검색하도록 허용합니다. Google 검색 할당량이 필요하며 요금이 발생할 수 있습니다.",
+  "Couldn't open the link.": "링크를 열 수 없습니다."
 }

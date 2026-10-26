@@ -162,7 +162,7 @@ pub fn status(store: &Store) -> Result<Value> {
             Ok(json!({"provider": p.id(), "configured": keys::configured(store, p)?, "defaults": defaults}))
         })
         .collect::<Result<Vec<Value>>>()?;
-    Ok(json!({"providers": providers}))
+    Ok(json!({"providers": providers, "googleSearch": true}))
 }
 
 /// Checks the key with the provider (one credential mint), then keeps it. An empty key removes it.

@@ -91,6 +91,8 @@ public struct VoiceStatus: Decodable, Sendable {
     }
 
     public var providers: [Provider]
+    /// Missing from hosts that cannot configure search for a call.
+    public var googleSearch: Bool?
 
     public func configured(_ provider: VoiceProvider) -> Bool {
         providers.first { $0.provider == provider }?.configured == true

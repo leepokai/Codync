@@ -2092,5 +2092,8 @@
   "X stops": "X 停止",
   "T full": "T 完整顯示",
   "r retries": "r 重試",
-  "↵ opens": "↵ 開啟"
+  "↵ opens": "↵ 開啟",
+  "Google Search": "Google 搜尋",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "允許 Gemini 在通話中搜尋網頁。需要 Google 搜尋配額，可能產生費用。",
+  "Couldn't open the link.": "無法開啟連結。"
 }

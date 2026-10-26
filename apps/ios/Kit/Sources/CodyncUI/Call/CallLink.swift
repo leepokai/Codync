@@ -15,6 +15,7 @@ final class CallLink {
     let botId: String
     /// The call's id: what it sends the bot carries it.
     let call: String
+    private let usesGoogleSearch: @MainActor () -> Bool
     private var lines: [CallLine] = []
     private var open = false
     /// The user's last words are still being written down (OpenAI transcribes them after the turn).
@@ -23,7 +24,8 @@ final class CallLink {
     /// overtakes the words it hands on.
     private var queue: Task<Void, Never>?
 
-    init(model: BotStore, botId: String, call: String) {
+    init(model: BotStore, botId: String, call: String, googleSearch: @escaping @MainActor () -> Bool = { VoiceSettings.googleSearch }) {
+        usesGoogleSearch = googleSearch
         self.model = model
         self.botId = botId
         self.call = call
@@ -37,7 +39,8 @@ final class CallLink {
     /// Starts the call on the computer (again, when a provider session is replaced): what the voice needs.
     func start(_ mode: String, provider: VoiceProvider? = nil, model chosen: String? = nil, voice: String? = nil) async throws -> CallSession {
         try await client().startCall(botId: botId, call: call, mode: mode, provider: provider, model: chosen, voice: voice,
-                                     language: Locale.preferredLanguages.first)
+                                     language: Locale.preferredLanguages.first,
+                                     googleSearch: mode == "realtime" && provider == .gemini && usesGoogleSearch())
     }
 
     /// One of the voice's tool calls, run on the computer with what was said that it hasn't got yet; its answer is

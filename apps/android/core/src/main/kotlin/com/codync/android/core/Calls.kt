@@ -8,10 +8,11 @@ import kotlinx.serialization.json.*
 // lasts, carry the call's id; the chat shows them only in the call's conversation, which its line opens.
 
 /** What a client needs to run a call's voice, from the computer (`startCall`). */
-data class CallSession(val credential: String?, val instructions: String, val tools: List<CallTool>) {
+data class CallSession(val credential: String?, val instructions: String, val tools: List<CallTool>, val googleSearch: Boolean = false) {
     companion object {
         fun decode(value: JsonObject) = CallSession(
             credential = value.text("credential"),
+            googleSearch = value["googleSearch"]?.jsonPrimitive?.booleanOrNull == true,
             instructions = value.text("instructions") ?: throw IllegalStateException("The computer sent no call instructions."),
             tools = (value["tools"] as? JsonArray).orEmpty().mapNotNull { tool ->
                 val fields = tool as? JsonObject ?: return@mapNotNull null

@@ -30,9 +30,11 @@ pub async fn start(hub: &Arc<Hub>, b: &Value, owner: &str) -> Result<Value> {
     };
     announce::watch(hub, call, bot);
     let provider = b["provider"].as_str().map(crate::voice::Provider::parse).transpose()?;
+    let google_search = google_search_enabled(mode, provider, b);
     let mut out = json!({
-        "instructions": context::instructions(hub, &cfg, provider, b["language"].as_str(), &so_far).await,
+        "instructions": context::instructions(hub, &cfg, provider, b["language"].as_str(), &so_far, google_search).await,
         "tools": tools::declarations(),
+        "googleSearch": google_search,
     });
     if let (Some(p), CallMode::Realtime) = (provider, mode) {
         // The provider's key is in the vault.
@@ -41,4 +43,33 @@ pub async fn start(hub: &Arc<Hub>, b: &Value, owner: &str) -> Result<Value> {
         out["credential"] = crate::voice::session(&hub.store, p, model, voice).await?["credential"].clone();
     }
     Ok(out)
+}
+
+/// Search is an opt-in Gemini realtime capability, never a side effect of another engine's preference.
+fn google_search_enabled(mode: CallMode, provider: Option<crate::voice::Provider>, body: &Value) -> bool {
+    mode == CallMode::Realtime && provider == Some(crate::voice::Provider::Gemini) && body["googleSearch"] == true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::voice::Provider;
+
+    #[test]
+    fn search_requires_an_explicit_opt_in_for_gemini_realtime() {
+        let hub = context::tests::hub();
+        assert_eq!(crate::voice::status(&hub.store).unwrap()["googleSearch"], true);
+        for mode in [CallMode::Realtime, CallMode::Speech, CallMode::Device] {
+            for provider in [None, Some(Provider::Gemini), Some(Provider::OpenAi)] {
+                for requested in [Value::Null, json!(false), json!(true), json!("true")] {
+                    let enabled = google_search_enabled(mode, provider, &json!({"googleSearch": requested}));
+                    assert_eq!(
+                        enabled,
+                        mode == CallMode::Realtime && provider == Some(Provider::Gemini) && requested == true
+                    );
+                }
+            }
+        }
+        assert!(!google_search_enabled(CallMode::Realtime, Some(Provider::Gemini), &json!({})));
+    }
 }

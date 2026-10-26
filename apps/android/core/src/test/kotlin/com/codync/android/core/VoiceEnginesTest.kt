@@ -64,6 +64,23 @@ class VoiceEnginesTest {
         }
     }
 
+    @Test fun googleSearchOnlyChangesGeminiRealtimeEngineChoice() {
+        val prefs = Prefs(); val choices = prefs.choices
+        assertFalse(choices.googleSearch)
+        assertFalse(WireJson.decodeFromString<VoiceStatus>("{\"providers\":[]}").googleSearch)
+        assertTrue(WireJson.decodeFromString<VoiceStatus>("{\"providers\":[],\"googleSearch\":true}").googleSearch)
+        val gemini = choices.engineChoice(VoiceProvider.Gemini, "")
+        val openai = choices.engineChoice(VoiceProvider.OpenAI, "")
+        choices.googleSearch = true
+        assertTrue(VoiceChoices({ prefs.values[it] }) { _, _ -> }.googleSearch)
+        assertNotEquals(gemini, choices.engineChoice(VoiceProvider.Gemini, ""))
+        assertEquals(openai, choices.engineChoice(VoiceProvider.OpenAI, ""))
+        choices.speechMode(VoiceProvider.Gemini, true)
+        val speech = choices.engineChoice(VoiceProvider.Gemini, "")
+        choices.googleSearch = false
+        assertEquals(speech, choices.engineChoice(VoiceProvider.Gemini, ""))
+    }
+
     @Test fun utterancesStartAtSpeechEndAtThePauseAndDropCoughs() {
         val detector = UtteranceDetector(); val frame = ByteArray(3_200)
         assertNull(detector.feed(frame, 0f, 0, 1_000))
@@ -89,14 +106,14 @@ class VoiceEnginesTest {
     }
 
     /** The computer's side of a call, for the engines' tests: one session, tools answered here. */
-    private class Link(val credential: String = "ek_secret") : CallLink {
+    private class Link(val credential: String = "ek_secret", val googleSearch: Boolean? = null) : CallLink {
         val tools = mutableListOf<Pair<String, JsonObject>>(); val lines = mutableListOf<Pair<String, String>>(); var turns = 0
         var started: Triple<VoiceProvider, String, String>? = null; var starts = 0
         override suspend fun start(provider: VoiceProvider, model: String, voice: String): CallSession {
             started = Triple(provider, model, voice); starts++
             return CallSession.decode(Json.parseToJsonElement("""{"credential":"$credential","instructions":"You are the voice relay for Ada",
                 "tools":[{"name":"send_to_bot","description":"Send","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}},
-                {"name":"bot_status","description":"Status","parameters":{"type":"object","properties":{}}}]}""").jsonObject)
+                {"name":"bot_status","description":"Status","parameters":{"type":"object","properties":{}}}]}""").jsonObject).copy(googleSearch = googleSearch == true)
         }
         override suspend fun tool(name: String, arguments: JsonObject): JsonElement {
             tools += name to arguments
@@ -311,7 +328,11 @@ class VoiceEnginesTest {
         override suspend fun close() { closed++ }
     }
 
-    @Test fun geminiLiveSetsUpTalksAndRunsToolsOverTheSocket() = runBlocking {
+    @Test fun geminiLiveSetsUpTalksAndRunsToolsOverTheSocket() = geminiLiveWithSearch(null)
+    @Test fun geminiLiveSearchKeepsTheBotTools() = geminiLiveWithSearch(true)
+    @Test fun geminiLiveSearchStaysOffWhenDisabled() = geminiLiveWithSearch(false)
+
+    private fun geminiLiveWithSearch(googleSearch: Boolean?) = runBlocking {
         val inbound = LinkedBlockingQueue<JsonObject>(); var server: WebSocket? = null
         val opened = CompletableDeferred<Unit>()
         MockWebServer().use { mock ->
@@ -321,7 +342,7 @@ class VoiceEnginesTest {
             }))
             val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
             val scope = CoroutineScope(SupervisorJob() + dispatcher)
-            val mic = Mic(); val player = Player(); val link = Link("token/1")
+            val mic = Mic(); val player = Player(); val link = Link("token/1", googleSearch)
             val endpoint = mock.url("/live").toString().replace("http://", "ws://")
             val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", link, mic, player,
                 OkHttpClient(), endpoint)
@@ -332,6 +353,7 @@ class VoiceEnginesTest {
             val setup = next()["setup"]!!.jsonObject
             assertEquals("models/gemini-live-test", setup["model"]!!.jsonPrimitive.content)
             assertEquals("Puck", setup["generationConfig"]!!.jsonObject["speechConfig"]!!.jsonObject["voiceConfig"]!!.jsonObject["prebuiltVoiceConfig"]!!.jsonObject["voiceName"]!!.jsonPrimitive.content)
+            assertEquals(googleSearch == true, setup["tools"]!!.jsonArray.any { "googleSearch" in it.jsonObject })
             assertEquals(2, setup["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray.size)
             assertEquals("You are the voice relay for Ada", setup["systemInstruction"]!!.jsonObject["parts"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
             assertTrue("inputAudioTranscription" in setup && "outputAudioTranscription" in setup)
@@ -342,6 +364,14 @@ class VoiceEnginesTest {
             withTimeout(5_000) { while (mic.frames == null) delay(10) }
             mic.frames!!(byteArrayOf(1, 2), .5f)
             until { it.phase == VoicePhase.Listening }
+            assertNull(engine.state.value.searchResult)
+            server!!.send("""{"serverContent":{"outputTranscription":{"text":"A grounded answer."}}}""")
+            server!!.send("""{"serverContent":{"groundingMetadata":{"searchEntryPoint":{"renderedContent":"<p>Search suggestions</p>"}},"turnComplete":true}}""")
+            until { it.searchResult != null }
+            assertEquals(CallSearchResult("<p>Search suggestions</p>", "A grounded answer."), engine.state.value.searchResult)
+            server!!.send("""{"serverContent":{"outputTranscription":{"text":"Another answer"},"turnComplete":true}}""")
+            until { it.searchResult == null }
+
             assertEquals("audio/pcm;rate=16000", next()["realtimeInput"]!!.jsonObject["audio"]!!.jsonObject["mimeType"]!!.jsonPrimitive.content)
             val audio = Base64.getEncoder().encodeToString(ByteArray(480))
             server!!.send("""{"serverContent":{"modelTurn":{"parts":[{"inlineData":{"mimeType":"audio/pcm;rate=24000","data":"$audio"}}]}}}""")

@@ -100,6 +100,8 @@ private struct PauseRow: View {
 /// One provider: mode, the key the computer keeps, models, voice and this month's minutes.
 /// `dictationOnly` keeps the key and speech-to-text model.
 private struct ProviderVoiceSettings: View {
+    @AppStorage(VoiceSettings.googleSearchKey) private var googleSearch = false
+    @State private var supportsSearch = false
     let provider: VoiceProvider
     let dictationOnly: Bool
     @Environment(BotStore.self) private var store
@@ -162,6 +164,11 @@ private struct ProviderVoiceSettings: View {
             }
             .disabled(!hasKey)
             .opacity(hasKey ? 1 : 0.55)
+            if !dictationOnly && provider == .gemini && !speechMode && supportsSearch {
+                ValueRow("Google Search", detail: "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.") {
+                    Toggle(L10n.tr("Google Search"), isOn: $googleSearch).labelsHidden().toggleStyle(.codync)
+                }
+            }
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: replacing)
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: result?.text)
@@ -278,6 +285,7 @@ private struct ProviderVoiceSettings: View {
             let status = try await client.voiceStatus()
             VoiceSettings.remember(status)
             saved = status.configured(provider)
+            supportsSearch = status.googleSearch == true
         } catch {
             saved = false
             result = (false, error.localizedDescription)

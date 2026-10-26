@@ -1,4 +1,5 @@
 import type { CallLine } from '@shared/calls'
+import { googleSearch, voiceStatus } from '../settings/voice-settings'
 import { sleep } from '../../store/bot-sync'
 import type { BotStore } from '../../store/bot-store'
 import { PROGRESS_TAG, spokenText, type VoiceProvider } from './voice'
@@ -10,6 +11,8 @@ const HEARING_PATIENCE_MS = 2_000
 export interface CallSession {
   /** A realtime provider's short-lived credential. */
   credential?: string
+  /** Confirmed by the host; absent on older hosts. */
+  googleSearch?: boolean
   /** The voice's instructions: its role, then the background. */
   instructions: string
   /** The voice's tools in JSON Schema form. */
@@ -39,9 +42,14 @@ export class CallLink {
   /** Starts the call on the computer (again, when a provider session is replaced): what the voice needs. */
   async start(mode: 'realtime' | 'speech' | 'device', provider: VoiceProvider | null = null, model?: string, voice?: string) {
     const client = await this.store.ready()
-    return client.call<CallSession>('startCall', {
+    const requestedSearch = mode === 'realtime' && provider === 'gemini' && googleSearch.get()
+      && (await voiceStatus(client)).googleSearch === true
+    const session = await client.call<CallSession>('startCall', {
       botId: this.botId, callId: this.call, mode, provider, model, voice, language: navigator.language,
+      googleSearch: requestedSearch,
     }, 30_000)
+    if (requestedSearch && session.googleSearch !== true) throw new Error('Update Codync on the computer to use Google Search in calls.')
+    return session
   }
 
   /** One of the voice's tool calls, run on the computer with what was said that it hasn't got yet. A failure is the

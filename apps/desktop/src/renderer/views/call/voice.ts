@@ -1,3 +1,4 @@
+import type { SearchResult } from './search-result'
 import type { HostClient } from '../../client/host-client'
 import type { VoiceFailure } from '@shared/analytics'
 import type { CallCue } from '@shared/calls'
@@ -9,6 +10,7 @@ import {
   chosenVoice,
   dictationEngine,
   callEngineChoice,
+  googleSearch,
   isVoiceProvider,
   language,
   mode,
@@ -62,7 +64,7 @@ export const VoiceSettings = {
       ? `device ${VoiceSettings.language()}`
       : VoiceSettings.isSpeechMode(p)
         ? `${p} speech ${VoiceSettings.transcribeModel(p)} ${VoiceSettings.speechModel(p)} ${VoiceSettings.voice(p)}`
-        : `${p} ${VoiceSettings.model(p)} ${VoiceSettings.voice(p)}`,
+        : `${p} ${VoiceSettings.model(p)} ${VoiceSettings.voice(p)} ${p === 'gemini' && googleSearch.get()}`,
 }
 
 /** Rings when voice chat settings close, so a running call takes up a different engine picked there. */
@@ -102,6 +104,7 @@ export const reconnect = { delays: [1000, 2000, 4000] }
  * `CallView` only talks to this; nothing on the host changes.
  */
 export abstract class VoiceEngine extends Observable {
+  searchResult: SearchResult | null = null
   phase: VoicePhase = 'starting'
   failure: string | null = null
   failureKind: VoiceFailureKind | null = null

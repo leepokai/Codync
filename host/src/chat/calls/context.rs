@@ -57,13 +57,14 @@ pub async fn instructions(
     provider: Option<Provider>,
     language: Option<&str>,
     so_far: &[super::CallLine],
+    google_search: bool,
 ) -> String {
     let tenths = if provider == Some(Provider::OpenAi) { OPENAI_TENTHS } else { 10 };
     let cap = |n: usize| n * tenths / 10;
     let project = super::project::now(&cfg.cwd).await;
     let (h, c, l) = (hub.clone(), cfg.clone(), language.map(str::to_owned));
     let sections = tokio::task::spawn_blocking(move || background(&h, &c, l.as_deref())).await.unwrap_or_default();
-    let mut out = vec![rules(hub, cfg)];
+    let mut out = vec![rules(hub, cfg, google_search)];
     let caps = &CAPS;
     let named = [
         ("Now", "this computer's clock and the user's phone", sections.now, caps.now),
@@ -413,7 +414,7 @@ pub(super) mod tests {
                 .unwrap();
         }
 
-        let gemini = instructions(&hub, &cfg, Some(Provider::Gemini), Some("zh-TW"), &[]).await;
+        let gemini = instructions(&hub, &cfg, Some(Provider::Gemini), Some("zh-TW"), &[], false).await;
         assert!(gemini.starts_with("You are the voice relay for Mika"), "the role comes first: {}", &gemini[..80]);
         assert!(gemini.contains("You are not Mika") && gemini.contains("send_to_bot"));
         assert!(
@@ -447,9 +448,9 @@ pub(super) mod tests {
         assert!(!gemini.contains("## Shared in this chat"), "empty sections stay out");
         let conversation = gemini.split("## The conversation").nth(1).unwrap().split("\n## ").next().unwrap();
         assert!(conversation.chars().count() <= CAPS.conversation + 80, "the conversation keeps to its cap");
-        let background = gemini.chars().count() - rules(&hub, &cfg).chars().count();
+        let background = gemini.chars().count() - rules(&hub, &cfg, false).chars().count();
         assert!(background <= 16_000 + 1_000, "the background keeps to about 16k: {background}");
-        let openai = instructions(&hub, &cfg, Some(Provider::OpenAi), None, &[]).await;
+        let openai = instructions(&hub, &cfg, Some(Provider::OpenAi), None, &[], false).await;
         assert!(openai.chars().count() < gemini.chars().count(), "OpenAI's smaller context gets less");
     }
 

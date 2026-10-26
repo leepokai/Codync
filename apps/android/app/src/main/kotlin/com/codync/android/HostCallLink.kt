@@ -35,11 +35,16 @@ internal class HostCallLink(private val store: AppStore, private val call: Voice
     /** The user's last words are still being written down (OpenAI transcribes them after the turn). */
     private var hearing = false
 
-    override suspend fun start(provider: VoiceProvider, model: String, voice: String): CallSession =
-        CallSession.decode(store.hostCall("startCall", buildJsonObject {
+    override suspend fun start(provider: VoiceProvider, model: String, voice: String): CallSession {
+        val requestedSearch = provider == VoiceProvider.Gemini && store.voiceChoices().googleSearch && store.voiceStatus().googleSearch
+        val session = CallSession.decode(store.hostCall("startCall", buildJsonObject {
             put("botId", call.botId); put("callId", call.id); put("mode", "realtime"); put("provider", provider.id)
             put("model", model); put("voice", voice); put("language", java.util.Locale.getDefault().toLanguageTag())
+            put("googleSearch", requestedSearch)
         }, 30_000).jsonObject)
+        check(!requestedSearch || session.googleSearch) { "Update Codync on the computer to use Google Search in calls." }
+        return session
+    }
 
     override suspend fun tool(name: String, arguments: JsonObject): JsonElement {
         withTimeoutOrNull(HEARING_PATIENCE_MS) { while (hearing) delay(100) }

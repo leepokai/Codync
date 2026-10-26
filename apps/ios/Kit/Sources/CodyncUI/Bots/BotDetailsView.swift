@@ -97,7 +97,7 @@ struct BotDetailsView: View {
     /// The bot's avatar and name, and what runs it.
     private func identity(_ bot: Bot) -> some View {
         VStack(spacing: 4) {
-            CharacterAvatar(bot: bot, size: 72)
+            LeadAgentAvatar(bot: bot)
                 .padding(.bottom, 10)
             Text(bot.name)
                 .font(.title3.weight(.semibold))

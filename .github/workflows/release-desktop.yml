@@ -78,9 +78,11 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - name: Install Rust (rust-toolchain.toml)
+      - name: Install Rust (host/rust-toolchain.toml)
+        working-directory: host
         run: rustup toolchain install
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+        working-directory: host
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host
@@ -194,7 +196,8 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - name: Install Rust (rust-toolchain.toml)
+      - name: Install Rust (host/rust-toolchain.toml)
+        working-directory: host
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:

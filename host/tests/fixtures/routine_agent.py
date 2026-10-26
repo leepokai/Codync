@@ -27,6 +27,11 @@ def log(event, sid, text):
             output.write(json.dumps({"event": event, "session": sid, "text": text}) + "\n")
 
 
+def answer_late(answer):
+    log("late", answer["result"]["sessionId"], "")
+    send(answer)
+
+
 def prompt(request, stop):
     sid = request["params"]["sessionId"]
     text = request["params"]["prompt"][0]["text"]
@@ -135,12 +140,21 @@ for line in sys.stdin:
     method = request.get("method")
     if method == "initialize":
         log("initialize", "", str(os.getpid()))
-        capabilities = {"loadSession": not pathlib.Path("no-load").exists(), "sessionCapabilities": {"close": {}}}
+        resumable = not pathlib.Path("no-load").exists() and "--no-load" not in sys.argv
+        capabilities = {"loadSession": resumable, "sessionCapabilities": {"close": {}}}
         send({"id": request["id"], "result": {"agentCapabilities": capabilities}})
     elif method == "session/new":
         servers = request["params"]["mcpServers"]
-        if "--hang-new" not in sys.argv:  # an agent stuck starting never answers
-            send({"id": request["id"], "result": {"sessionId": str(uuid.uuid4())}})
+        answer = {"id": request["id"], "result": {"sessionId": str(uuid.uuid4())}}
+        if "--slow-new" in sys.argv and not pathlib.Path("slowed").exists():
+            # The first session ever opens 4 s late (its tools starting), and is logged as it does, unless the agent
+            # is stopped first.
+            pathlib.Path("slowed").touch()
+            late = threading.Timer(4, answer_late, args=(answer,))
+            late.daemon = True
+            late.start()
+        elif "--hang-new" not in sys.argv:  # an agent stuck starting never answers
+            send(answer)
     elif method == "session/load":
         sid = request["params"]["sessionId"]
         if sid in sessions:

@@ -8,7 +8,7 @@ use crate::agent::own_memory;
 use crate::agent::registry::Candidate;
 use crate::chat::{context, memory};
 use crate::store::{BotConfig, run_session_key};
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
@@ -148,9 +148,20 @@ impl Actor {
         })
     }
 
+    /// `ensure_session` for the turn: a routine run's setup must end by its time limit, and setup cut short
+    /// mustn't leave the agent opening a session the host never learns of.
+    pub(super) async fn ensure_turn_session(&mut self, slot: Option<&str>) -> Result<()> {
+        let Some(deadline) = self.routine_deadline else { return self.ensure_session(slot).await };
+        let setup = tokio::time::timeout_at(deadline.into(), self.ensure_session(slot)).await;
+        if setup.is_err() {
+            self.drop_unanswered().await;
+        }
+        setup.context("routine session setup timed out")?
+    }
+
     /// Makes sure the agent runs and `slot`'s session (main, or a routine run's) is live;
     /// sets `turn_session`.
-    pub(super) async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
+    async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
         if !self.cfg.connectors.is_empty()
             || self.hub.store.kv_read(&format!("agent-env:{}", self.cfg.backend))?.is_some()
         {
@@ -306,8 +317,11 @@ impl Actor {
     /// A session request the agent doesn't answer in time stops the agent: a hung one
     /// would otherwise hold the bot, and its Stop, forever.
     pub(super) async fn session_request(&mut self, method: &str, params: Value) -> Result<Value> {
-        let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
-        if let Ok(result) = tokio::time::timeout(SESSION_TIMEOUT, acp.request(method, params)).await {
+        let conn = self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?;
+        conn.opening = matches!(method, "session/new" | "session/load");
+        let answered = tokio::time::timeout(SESSION_TIMEOUT, conn.acp.request(method, params)).await;
+        conn.opening = false;
+        if let Ok(result) = answered {
             return result;
         }
         if let Some(c) = self.conn.take() {
@@ -315,6 +329,24 @@ impl Actor {
         }
         let message = format!("the agent didn't answer {method} within {}s", SESSION_TIMEOUT.as_secs());
         Err(acp::Failure::error(acp::FailureKind::Timeout, message))
+    }
+
+    /// A routine's time limit cut a session request short. An agent that can resume stops, so a session it might
+    /// still open goes with its process; one that can't keeps running rather than lose the sessions it has.
+    async fn drop_unanswered(&mut self) {
+        let Some(conn) = self.conn.as_mut() else { return };
+        if !std::mem::take(&mut conn.opening) {
+            return;
+        }
+        if !conn.sessions.load {
+            // ponytail: that session lasts until the agent next stops; keep the cut-short request's Answer past the
+            // time limit and session/close the id it returns, if that ever matters.
+            tracing::warn!(bot = %self.cfg.id, "a session request was cut short; the agent can't resume, so it keeps running");
+            return;
+        }
+        if let Some(c) = self.conn.take() {
+            c.acp.kill().await;
+        }
     }
 
     /// Drops the main ACP session so the next turn starts a fresh one.

@@ -55,7 +55,7 @@ struct PairingView<Leading: View>: View {
                     Text(L10n.tr("Skip")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
                 }
                 .buttonStyle(.secondary)
-                .accessibilityHint("Pair a computer later from Computers & settings.")
+                .accessibilityHint("Pair a computer later from Manage computers.")
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
                 .transition(.opacity)

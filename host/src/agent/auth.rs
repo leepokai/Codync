@@ -119,6 +119,7 @@ pub async fn check(store: &Store, backend: &str) -> Result<Value> {
     if status.signed_in.is_none() && !backends::session_proves_sign_in(backend) {
         status.signed_in = backends::signed_in(backend);
     }
+    status.signed_in = backends::apply_prompt_refusal(backend, status.signed_in);
     backends::set_signed_in(backend, status.signed_in);
     CHECKED.locked().insert(backend.to_owned(), status.clone());
     let mut v = serde_json::to_value(&status)?;

@@ -15,8 +15,8 @@ emulator against a real host; device acceptance is listed separately.
 | Area | Android | Remaining |
 | --- | --- | --- |
 | Welcome/pairing | Ported: welcome crew and chat glimpse, Install (Mac/Linux) and Scan pages with the camera on the page, paste link, Tailscale note, sign-in | Physical optical scan, camera permission denial |
-| Accounts/access | Ported: account sheet and switcher, Computers & settings (connection status, badge color, Revoke this phone's access, older copies removed from the account), account computer access with its code, access banner, `codync-dev://computers` and `codync-dev://plugins` | Provider browser round trip on a device; Revoke and older copies against a signed-in account (covered by cloud request tests only); one computer per phone ([multiple computers are future work](../architecture/overview.md)) |
-| Roster | Ported: rows, menus, pin/hide/delete, New session (bots only), groups, drag to reorder (host-synced order) and TalkBack Move up/down, computer header, pull to refresh (also in Computers & settings) | Multiple computers |
+| Accounts/access | Ported: account sheet and switcher, Computer management (connection status, badge color, Revoke this phone's access, older copies removed from the account), account computer access with its code, access banner, `codync-dev://computers` and `codync-dev://plugins` | Provider browser round trip on a device; Revoke and older copies against a signed-in account (covered by cloud request tests only); one computer per phone ([multiple computers are future work](../architecture/overview.md)) |
+| Roster | Ported: rows, menus, pin/hide/delete, New session (bots only), groups, drag to reorder (host-synced order) and TalkBack Move up/down, computer header, pull to refresh (also in Computer management) | Multiple computers |
 | Conversation | Ported: bubbles, Markdown/code, permissions, reactions, quote replies, Full conversation, bot-to-bot exchange lines and their conversation, routine notices that open their routine, files a bot shares (verified download, then the share sheet), sent images full size, pull down to reconnect, jump to latest, read receipts for every conversation on screen | Physical keyboard and TalkBack |
 | Composer | Ported: files/photos/paste (groups too, image thumbnails, Paste only when the clipboard holds files), `/` commands (Fast mode, skills listed fresh on `/`), @mentions in groups, call/send/stop/interrupt button | Dictation ([voice call](../features/voice-call.md)): the mic, its recording pill, the engine menu beside it (On device, or OpenAI / Gemini transcribed on the user's key with *Transcribing…*) and the *Couldn't dictate* dialog |
 | Bot and group editors | Ported: avatar, profile, agent and model options, Fast mode, workspace folder picker, permissions, activity, connectors, skills (with their details); the bot details sheet (`BotDetailsView`, from the chat's title, a routine notice or Add a fallback): Details (instructions, agent, Use the computer, Routines), Library and Settings tabs saved as you edit, Create template; a group's title opens its editor | The details' Memory tab (see Memory) |
@@ -59,7 +59,7 @@ was walked through on an emulator against a real host.
 
 | What | Code | What it needs |
 | --- | --- | --- |
-| Revoke this phone's access (also on Remove of a computer approved through the account); removing older copies of the computer from the account | `core/.../CloudClient.kt` (`revokeAccess`, `removeComputer`), `AppStoreAccount.kt`, `SettingsView.kt` | A signed-in account on the emulator or a phone; only request tests cover it |
+| Revoke this phone's access (also on Remove of a computer approved through the account); removing older copies of the computer from the account | `core/.../CloudClient.kt` (`revokeAccess`, `removeComputer`), `AppStoreAccount.kt`, `ComputersView.kt` | A signed-in account on the emulator or a phone; only request tests cover it |
 | Push delivery (alerts, background Live update refresh) | `PushService.kt`, `AppStoreNotifications.kt` | A device with Google Play services running the official build (Firebase and the relay's FCM secret are set up since 2026-10-24). The notification look is covered by `AlertNotificationTest` |
 | OpenAI Realtime, Gemini Live and Speech mode with a real key | `WebRtcPeer.kt`, `core/.../OpenAIRealtimeEngine.kt`, `GeminiLiveEngine.kt`, `CloudSpeechEngine.kt` | A provider key on the paired computer; the fallback to on-device voice is verified |
 | Remote screen: Chinese IME composition, a hardware keyboard, the TURN relay path and its credential renewal | `ScreenKeys.kt`, `ScreenSession.kt`, `ScreenView.kt` | A computer it's safe to type into, and a signed-in host for the relay; viewing, trackpad and pinch zoom are verified |
@@ -75,7 +75,7 @@ was walked through on an emulator against a real host.
 - **Shared files**: leaving the chat during a download skips the share sheet when it finishes
   (the card shows *Downloaded*); shared copies are deleted after a day (`AppStoreFiles.kt`,
   `AttachmentFiles.kt`).
-- **Pull to refresh** on the roster and in Settings uses the chat's indicator; iOS uses the system one.
+- **Pull to refresh** on the roster and in Computer management uses the chat's indicator; iOS uses the system one.
 - **`computers` / `plugins` links** open over the current tab; iOS switches to Bots first.
 - **Shortcuts actions** (Open Live Mode, Send Text to Bot) are an Apple App Intents integration with no
   Android counterpart ([iOS Shortcuts](../features/ios-shortcuts.md)).

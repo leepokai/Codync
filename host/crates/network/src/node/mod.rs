@@ -15,6 +15,7 @@ use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointId, RelayMode, RelayUrl, SecretKey};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -26,6 +27,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Long enough for the other computer to knock on its agent's harness.
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 const INBOX_SIZE: usize = 256;
+/// Letters whose handoff count a reply may need, newest kept.
+const HEARD_MAX: usize = 1000;
 
 pub struct Node {
     inner: Arc<Inner>,
@@ -37,6 +40,10 @@ struct Inner {
     dir: PathBuf,
     roster: Mutex<Option<Roster>>,
     agents: Mutex<Vec<(Agent, Reach)>>,
+    /// The app offered its agents since the node started: until then, letters wait at the sender.
+    ready: AtomicBool,
+    /// The handoff count of letters taken here, by id, so a reply carries the chain on.
+    heard: Mutex<VecDeque<(String, u8)>>,
     /// What each other computer offered when it last answered or wrote.
     seen: Mutex<HashMap<EndpointId, directory::Seen>>,
     invites: Mutex<HashMap<String, Instant>>,
@@ -67,6 +74,8 @@ impl Node {
             dir: dir.to_path_buf(),
             roster: Mutex::new(Roster::load(dir)?),
             agents: Mutex::default(),
+            ready: AtomicBool::new(false),
+            heard: Mutex::default(),
             seen: Mutex::default(),
             invites: Mutex::default(),
             guard: Mutex::default(),
@@ -188,8 +197,13 @@ impl Node {
 
     /// The agents this computer offers, and how each is reached. Others see them the next time
     /// they ask.
+    /// What this computer offers. The first call opens it to letters, and the others hear at once,
+    /// so what waited for it while it started comes now.
     pub fn set_agents(&self, agents: impl IntoIterator<Item = (Agent, Reach)>) {
         *locked(&self.inner.agents) = agents.into_iter().collect();
+        if !self.inner.ready.swap(true, Ordering::AcqRel) {
+            self.inner.clone().hello_all();
+        }
     }
 
     /// The command agents the network knocks on run to reply (default `codync-network`).
@@ -226,6 +240,13 @@ impl Node {
         if letter.reply_to.is_none() && !self.inner.offered().iter().any(|a| a.id == letter.from) {
             bail!("{} isn't one of this computer's agents", letter.from);
         }
+        // A reply carries on the chain of the letter it answers (one more handoff).
+        let mut letter = letter;
+        if letter.hops == 0
+            && let Some(hops) = letter.reply_to.as_deref().and_then(|id| self.inner.hops_of(id))
+        {
+            letter.hops = hops.saturating_add(1);
+        }
         guard::check_hops(letter.hops).map_err(anyhow::Error::msg)?;
         let roster = locked(&self.inner.roster).clone();
         let id = match &roster {
@@ -246,6 +267,12 @@ impl Node {
         match answer {
             Ok(Response::Stored) => Ok(Sent::Delivered),
             Ok(Response::Refused { reason }) => bail!("{} refused it: {reason}", name(&id)),
+            Ok(Response::Later { reason }) if local => bail!("{reason}"),
+            Ok(Response::Later { reason }) => {
+                tracing::info!(to = %name(&id), reason, "queued for a computer that is starting");
+                self.inner.queue(id, envelope)?;
+                Ok(Sent::Queued)
+            }
             Ok(_) => bail!("{} gave an unexpected answer", name(&id)),
             Err(e) => {
                 tracing::info!(to = %name(&id), error = format!("{e:#}"), "queued for a computer that is away");
@@ -267,6 +294,18 @@ impl Inner {
 
     fn me(&self) -> EndpointId {
         self.endpoint.id()
+    }
+
+    fn hops_of(&self, letter: &str) -> Option<u8> {
+        locked(&self.heard).iter().rev().find(|(id, _)| id == letter).map(|(_, hops)| *hops)
+    }
+
+    fn heard(&self, letter: &str, hops: u8) {
+        let mut heard = locked(&self.heard);
+        if heard.len() >= HEARD_MAX {
+            heard.pop_front();
+        }
+        heard.push_back((letter.to_owned(), hops));
     }
 
     fn offered(&self) -> Vec<Agent> {

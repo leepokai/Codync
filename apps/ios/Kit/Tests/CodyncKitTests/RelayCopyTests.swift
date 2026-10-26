@@ -9,6 +9,7 @@ struct RelayCopyTests {
         #expect(RelayCopy.host(of: nil) == nil)
         #expect(RelayCopy.connected(cloud: URL(string: "https://api.codync.dev")) == "Connected through Cloudflare")
         #expect(RelayCopy.routeTitle(.automatic, cloud: nil) == "Auto: Wi-Fi or Tailscale, then Cloudflare")
+        #expect(RelayCopy.routeShortTitle(.cloudflareFirst, cloud: nil) == "Cloudflare first")
     }
 
     @Test func anotherHostIsNamedInTheSentence() {
@@ -20,6 +21,7 @@ struct RelayCopyTests {
         #expect(RelayCopy.connected(cloud: cloud) == "Connected through Private relay (relay.example.com)")
         #expect(RelayCopy.through(cloud: cloud) == "Through Private relay (relay.example.com)")
         #expect(RelayCopy.routeTitle(.cloudflareFirst, cloud: cloud) == "Private relay (relay.example.com), then Wi-Fi or Tailscale")
+        #expect(RelayCopy.routeShortTitle(.cloudflareFirst, cloud: cloud) == "Private relay first")
         #expect(RelayCopy.detailSuffix(route: .relay, cloud: cloud) == " · Private relay (relay.example.com)")
         #expect(RelayCopy.pairing(cloud: cloud).contains("Private relay (relay.example.com)"))
     }

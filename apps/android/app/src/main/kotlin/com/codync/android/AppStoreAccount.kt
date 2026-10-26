@@ -10,7 +10,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
-// Accounts, account computers and starting over: what the account sheet and Computers & settings ask for.
+// Accounts, account computers and starting over: what the account sheet, Computer management and Settings ask for.
 
 internal fun AppStore.signIn(provider: SignInProvider) = sessionAction {
     Analytics.capture(AnalyticsEvent.SignInStarted(provider))

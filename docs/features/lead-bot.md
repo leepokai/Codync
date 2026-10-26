@@ -15,7 +15,9 @@ to be asked. Everything about it lives in the host (`host/src/chat/lead.rs`); th
   set up as on any bot: name, avatar, agent and model, folder, connectors, skills, memory, routines.
 - **On top.** Every client sorts the roster in bands: the lead, then pinned bots, then the rest (by the user's order,
   then recent activity). The lead can't be dragged, and moving another bot never puts it above the lead. Its row
-  shows `star.fill` where a pinned bot shows its pin (TUI: `★`, with no section label above it). Its menus have no
+  shows a gold `star.fill` badge at the avatar’s bottom-right, with unread/approval badges at the top-right.
+  The larger badge in details opens the lead agent role explanation. TUI shows a gold `★` below the avatar;
+  click it or press `I` on the lead to read the same explanation, scroll with arrow keys, and close with `Esc`. Its menus have no
   Pin, Hide or Delete (TUI: `p` and `x` say why).
 
 ## Initiative

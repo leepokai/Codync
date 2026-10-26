@@ -26,11 +26,11 @@ internal fun ComposeTestRule.onRowButton(label: String, text: String): Semantics
     return buttons[index]
 }
 
-/** Extensions opens from the paired computer's row in Computers & settings. */
+/** Extensions opens from the paired computer's row in Computer management. */
 internal fun ComposeTestRule.openExtensions() {
     computerAction("Manage computers")
-    waitUntil(10_000) { onAllNodesWithContentDescription("Extensions").fetchSemanticsNodes().size == 1 }
-    onNodeWithContentDescription("Extensions").performClick()
+    waitUntil(10_000) { onAllNodesWithText("Extensions").fetchSemanticsNodes().size == 1 }
+    onNodeWithText("Extensions").performClick()
 }
 
 /** The open chat's title ("<bot>, view details"): it opens the bot's details, a group's editor. */

@@ -67,12 +67,12 @@ class LiveManagementTest {
             compose.rosterActions("Edited group")
             compose.onNodeWithText("Hide from list").performScrollTo().performClick()
             compose.waitUntil(30_000) { store.state.value.bots.single { it.id == group.id }.hidden }
-            // Hidden bots come back from Computers & settings.
+            // Hidden bots come back from Computer management.
             compose.computerAction("Manage computers")
             compose.onRowButton("Unhide", "Edited group").performClick()
             compose.waitUntil(30_000) { !store.state.value.bots.single { it.id == group.id }.hidden }
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            compose.waitUntil(10_000) { compose.onAllNodesWithText("Computers & settings").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Computer management").fetchSemanticsNodes().isEmpty() }
             compose.rosterActions("Edited group")
             compose.onNodeWithText("Edit group").performClick()
             compose.onNodeWithText("Delete group chat").performScrollTo().performClick()

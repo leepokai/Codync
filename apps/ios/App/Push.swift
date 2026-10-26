@@ -111,19 +111,17 @@ final class PushRegistrar {
         resync()
     }
 
-    /// The in-app switch; off asks every computer to stop alerting this phone.
-    static var enabled: Bool { UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true }
-
     func resync() {
         for entry in stores.values { if let store = entry.store { syncDevice(with: store) } }
     }
 
-    /// Sends our ticket to a computer whenever we have both a token and a connection to it.
+    /// Sends our ticket to a computer whenever we have both a token and a connection to it; a computer
+    /// whose switch is off in Computer management is asked to stop alerting this phone.
     func syncDevice(with store: BotStore) {
         let id = store.computer.id
         stores[id] = WeakStore(store: store)
         LiveActivities.shared.resume(with: store)
-        guard Self.enabled else {
+        guard store.computer.notifications ?? true else {
             registrations[id]?.cancel()
             registrations[id] = Task { [weak store] in
                 do { try await store?.client?.unregisterDevice() } catch {

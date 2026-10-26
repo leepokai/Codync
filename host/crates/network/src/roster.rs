@@ -306,15 +306,19 @@ impl Roster {
         let voided = |by: &EndpointId| removed.get(by).is_some_and(|&(_, cascade)| cascade);
         let may_admit = |s: &Signed| !voided(&s.by) && (top(&s.by, s.at) || admin_at(&s.by, s.at));
 
-        let mut admitted: BTreeMap<EndpointId, String> = BTreeMap::new();
-        for (_, id, name) in &owners {
-            admitted.entry(*id).or_insert_with(|| name.clone());
+        // Each computer with the time it got in and the name it got in with.
+        let mut admitted: BTreeMap<EndpointId, (u64, String)> = BTreeMap::new();
+        for (at, id, name) in &owners {
+            admitted.entry(*id).or_insert_with(|| (*at, name.clone()));
         }
         for s in &log {
             if let Change::Admit { id, name } = &s.change
                 && may_admit(s)
             {
-                admitted.entry(*id).or_insert_with(|| name.clone());
+                let first = admitted.entry(*id).or_insert_with(|| (s.at, name.clone()));
+                if s.at < first.0 {
+                    *first = (s.at, name.clone());
+                }
             }
         }
         let addrs = newest_locations(&self.log);
@@ -324,7 +328,8 @@ impl Roster {
             deciders: tops.chain(promoted.keys().copied()).collect(),
         };
         self.removed = removed.keys().copied().collect();
-        self.members = admitted
+        let removed_at: BTreeMap<EndpointId, u64> = removed.iter().map(|(id, &(at, _))| (*id, at)).collect();
+        self.members = distinct_names(admitted, &removed_at)
             .into_iter()
             .filter(|(id, _)| !self.removed.contains(id))
             .map(|(id, name)| {
@@ -389,6 +394,33 @@ fn newest_locations(log: &BTreeSet<Signed>) -> BTreeMap<EndpointId, (&Signed, &E
         }
     }
     newest
+}
+
+/// Names every computer uniquely. Two admins can admit a `laptop` each before their copies meet:
+/// the one admitted later (by time, then id) gets the first free number, the same on every copy. A
+/// removed computer keeps its name from the computers admitted while it was in, so no one's name
+/// moves when it goes (letters on their way still name them); one admitted after can take it.
+fn distinct_names(
+    admitted: BTreeMap<EndpointId, (u64, String)>,
+    removed_at: &BTreeMap<EndpointId, u64>,
+) -> BTreeMap<EndpointId, String> {
+    let mut order: Vec<(u64, EndpointId, String)> =
+        admitted.into_iter().map(|(id, (at, name))| (at, id, name)).collect();
+    order.sort();
+    // Each name given, and until when it is held: for good, or until its computer was removed.
+    let mut held: BTreeMap<String, Option<u64>> = BTreeMap::new();
+    let mut names = BTreeMap::new();
+    for (at, id, name) in order {
+        let free = |n: &str| held.get(&n.to_lowercase()).is_none_or(|until| until.is_some_and(|t| t <= at));
+        let unique = std::iter::once(name.clone())
+            // One more number than there are names: one of them is free.
+            .chain((2..=held.len() + 2).map(|n| format!("{name}-{n}")))
+            .find(|n| free(n))
+            .expect("a number is free");
+        held.insert(unique.to_lowercase(), removed_at.get(&id).copied());
+        names.insert(id, unique);
+    }
+    names
 }
 
 /// Notes that `id` was removed at `at`: the earliest removal counts, and a cascade from any.

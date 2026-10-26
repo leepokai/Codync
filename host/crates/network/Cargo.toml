@@ -1,6 +1,6 @@
 [package]
 name = "codync-network"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 # iroh 1.4 needs 1.91.
 rust-version = "1.91"

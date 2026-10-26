@@ -127,3 +127,38 @@ async fn a_run_whose_agent_did_not_start_within_its_time_limit_waits_for_the_use
     let listing = host.call("routines", json!({"botId": bot})).await;
     assert!(!listing["runs"].as_array().unwrap().iter().any(|r| r["status"] == "pending"), "no automatic retry");
 }
+
+/// How many events of `kind` `routine_agent.py` logged.
+fn agent_events(host: &Host, bot: &str, kind: &str) -> usize {
+    host.log(bot, "events.jsonl").iter().filter(|e| e["event"] == kind).count()
+}
+
+/// A time limit that cuts `session/new` short must not leave the agent to open that session (tools and all) under
+/// an id the host never learns: an agent that can resume stops, and the next run starts it again.
+#[tokio::test]
+async fn a_session_cut_short_by_the_time_limit_is_not_left_open() {
+    let host = Host::start().await;
+    let (bot, id) = routine(&host, "slow", "--slow-new", "slow start", 2).await;
+    deliver(&host, &bot, &id, "payload").await;
+    let failed = run(&host, &bot, &id, "failed").await;
+    assert!(failed["detail"].as_str().unwrap().contains("setup timed out"), "{failed}");
+    // Past the moment the agent would have opened it.
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    assert_eq!(agent_events(&host, &bot, "late"), 0, "the agent opened a session the host never learned of");
+    let retried = host.call("retryRoutineRun", json!({"botId": bot, "runId": failed["id"]})).await;
+    assert_eq!(run(&host, &bot, &id, "succeeded").await["id"], retried["run"]["id"]);
+}
+
+/// An agent that can't resume keeps running, and keeps the sessions it has, rather than stop over a session cut
+/// short; the next run still works.
+#[tokio::test]
+async fn an_agent_that_cannot_resume_keeps_running_after_a_session_cut_short() {
+    let host = Host::start().await;
+    let (bot, id) = routine(&host, "slow-kept", "--slow-new --no-load", "slow start", 2).await;
+    deliver(&host, &bot, &id, "payload").await;
+    let failed = run(&host, &bot, &id, "failed").await;
+    assert!(failed["detail"].as_str().unwrap().contains("setup timed out"), "{failed}");
+    let retried = host.call("retryRoutineRun", json!({"botId": bot, "runId": failed["id"]})).await;
+    assert_eq!(run(&host, &bot, &id, "succeeded").await["id"], retried["run"]["id"]);
+    assert_eq!(agent_events(&host, &bot, "initialize"), 1, "the agent was restarted");
+}

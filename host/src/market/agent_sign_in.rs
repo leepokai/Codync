@@ -119,7 +119,12 @@ fn invite_saying(
 /// A turn of agent `backend` just finished, so it's signed in whatever Codync last found (the
 /// user signed in outside Codync, or since the host started): its cards complete.
 pub fn answered(hub: &Hub, backend: &str) {
-    if backends::harness(backend).is_none() || backends::signed_in(backend) == Some(true) {
+    if backends::harness(backend).is_none() {
+        return;
+    }
+    // A prompt got through, so an earlier auth refusal is over.
+    backends::clear_prompt_refused(backend);
+    if backends::signed_in(backend) == Some(true) {
         return;
     }
     backends::set_signed_in(backend, Some(true));

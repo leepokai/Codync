@@ -90,7 +90,7 @@ fun AppStore.openLink(uri: Uri) {
     }
 }
 
-/** `codync://computers` and `codync://plugins`: Computers & settings, or the paired computer's extensions, over the roster. */
+/** `codync://computers` and `codync://plugins`: Computer management, or the paired computer's extensions, over the roster. */
 fun AppStore.openPage(page: LinkPage) {
     linkJob?.cancel()
     linkJob = viewModelScope.launch {

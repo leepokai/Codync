@@ -12,7 +12,7 @@ import com.codync.android.design.symbolRes
 
 /**
  * The Bots tile in Quick Settings (the iOS Control Center control): the bot that needs you most
- * and its state, from the widgets' report; a tap opens it, or Computers & settings when no bot is at work.
+ * and its state, from the widgets' report; a tap opens it, or Computer management when no bot is at work.
  * (Its class keeps its first name, the manifest's component: tiles already placed stay.)
  */
 class LeadBotTile : TileService() {
@@ -38,7 +38,7 @@ class LeadBotTile : TileService() {
     @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         val feed = WidgetStore.feed(this)
-        // No bot at work: Computers & settings, as the iPhone's control does.
+        // No bot at work: Computer management, as the iPhone's control does.
         val intent = mostUrgentBot(feed.bots)?.let { widgetIntent(this, feed, it.id) }
             ?: widgetIntent(this, feed).setData(Uri.parse("${BuildConfig.URL_SCHEME}://computers"))
         // A bot's chat is private: the phone unlocks first.

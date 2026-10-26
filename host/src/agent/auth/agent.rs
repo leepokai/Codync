@@ -92,6 +92,12 @@ fn stderr_reason(stderr_tail: &str) -> Option<String> {
 
 /// Lets the agent sign itself in (it usually opens a browser on this computer).
 pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<Value> {
+    // A saved session makes WorkBuddy log out first, and that logout cancels the login.
+    if backend == "workbuddy" {
+        tokio::task::spawn_blocking(|| backends::move_saved_session_aside("workbuddy"))
+            .await
+            .context("couldn't prepare WorkBuddy sign-in")?;
+    }
     let (acp, mut inbox, _, _) = start(store, backend).await?;
     let res = tokio::time::timeout(Duration::from_mins(10), sign_in(&acp, &mut inbox, method)).await;
     acp.kill().await;
@@ -101,13 +107,11 @@ pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<
         }
         Err(_) => bail!("Sign-in didn't finish within 10 minutes."),
     }
-    let mut status = check(store, backend).await?;
-    // Completing `authenticate` is the proof for an agent whose session doesn't check the login.
-    if !backends::session_proves_sign_in(backend) {
-        backends::set_signed_in(backend, Some(true));
-        status["signedIn"] = true.into();
-    }
-    Ok(status)
+    // The browser flow finished. Ask the account again; a prompt refusal no longer overrides it.
+    // Completing `authenticate` is not itself proof: WorkBuddy still answers the next prompt
+    // with "Authentication required" when the account isn't usable.
+    backends::clear_prompt_refused(backend);
+    check(store, backend).await
 }
 
 /// The agent's answer to `authenticate`. A headless CLI that only posts its sign-in page (`WorkBuddy`'s) gets it

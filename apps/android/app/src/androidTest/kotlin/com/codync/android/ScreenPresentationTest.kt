@@ -32,26 +32,27 @@ class ScreenPresentationTest {
 
     @Before fun isolatedEmulatorOnly() { assumeTrue(Build.PRODUCT.startsWith("sdk")) }
 
-    @Test fun backPopsAccountSettingsAndNestedPairingOneLayerAtATime() {
+    @Test fun settingsIsATabAndBackClosesComputerManagementOneLayerAtATime() {
         compose.setContent { Hosted { CodyncApp(fixture(), viewModel()) } }
         compose.onNodeWithContentDescription("Switch account").performClick()
         compose.onNodeWithText("Account").assertIsDisplayed()
         snapshot("account-sheet")
-        compose.onNodeWithText("Computers & settings").performClick()
-        compose.onNodeWithText("Pair a computer").performScrollTo().assertIsDisplayed()
         back()
+        compose.onNodeWithText("Account").assertDoesNotExist()
+        compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Pair a computer").assertDoesNotExist()
-        compose.onNodeWithText("Account").assertIsDisplayed()
-        compose.onNodeWithText("Computers & settings").performClick()
+        compose.onNodeWithText("App language").assertIsDisplayed()
+        compose.onNodeWithText("Bots").performClick()
+        compose.computerAction("Manage computers")
+        compose.onNodeWithText("Computer management").assertIsDisplayed()
+        compose.onNodeWithText("App language").assertDoesNotExist()
         compose.onNodeWithText("Pair a computer").performScrollTo().performClick()
         compose.onNodeWithText("Install Codync", substring = true).assertIsDisplayed()
         back()
         compose.onNodeWithText("Install Codync", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Computers & settings").assertIsDisplayed()
+        compose.onNodeWithText("Pair a computer").assertIsDisplayed()
         back()
-        compose.onNodeWithText("Account").assertIsDisplayed()
-        back()
-        compose.onNodeWithText("Account").assertDoesNotExist()
+        compose.onNodeWithText("Computer management").assertDoesNotExist()
         compose.onNodeWithText(bot.name).assertIsDisplayed()
     }
 
@@ -59,16 +60,15 @@ class ScreenPresentationTest {
         val state = mutableStateOf(fixture())
         compose.setContent { Hosted { CodyncApp(state.value, viewModel()) } }
         compose.rosterAction(bot.name, "Edit profile")
-        compose.onNodeWithText("Settings").assertIsDisplayed()
         compose.onNodeWithContentDescription("Save").assertIsNotEnabled()
         compose.onNode(hasSetTextAction() and hasText(bot.name)).performTextReplacement("Discard this draft")
         snapshot("bot-settings-sheet")
         compose.onNodeWithContentDescription("Close").performClick()
-        compose.onNodeWithText("Settings").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Save").assertDoesNotExist()
         compose.rosterAction(bot.name, "Edit profile")
         compose.onNode(hasSetTextAction() and hasText(bot.name)).assertIsDisplayed()
         compose.runOnUiThread { state.value = state.value.copy(generation = state.value.generation + 1) }
-        compose.onNodeWithText("Settings").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Save").assertDoesNotExist()
     }
 
     @Test fun onlyABotsTouchAndHoldMenuStartsANewSession() {

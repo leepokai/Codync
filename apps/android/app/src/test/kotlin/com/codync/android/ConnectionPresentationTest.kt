@@ -42,6 +42,8 @@ class ConnectionPresentationTest {
         assertEquals("Private relay (relay.example.com)", routeLabel(HostRoute.Relay, "https://relay.example.com"))
         assertEquals("Cloudflare", routeLabel(HostRoute.Relay, "https://api.codync.dev"))
         assertEquals("Wi-Fi/Tailscale", routeLabel(HostRoute.Direct, "https://relay.example.com"))
+        assertEquals("Private relay first", routeShortTitle(ConnectionRoute.CloudflareFirst, "https://relay.example.com"))
+        assertEquals("Cloudflare first", routeShortTitle(ConnectionRoute.CloudflareFirst, "https://api.codync.dev"))
     }
 
     @Test fun anOfflineComputerSaysWhenItWasLastSeen() {

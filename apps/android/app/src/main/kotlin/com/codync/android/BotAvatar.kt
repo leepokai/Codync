@@ -9,7 +9,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
@@ -23,12 +22,13 @@ import com.codync.android.design.*
 
 /** The roster's avatar, with its status dot (iOS `AvatarWithStatus`): amber needs you, the accent dot is unread. */
 @Composable internal fun AvatarWithStatus(bot: Bot, bots: List<Bot>, size: Dp = 44.dp) {
-    Box(Modifier.size(size).clearAndSetSemantics { }) {
+    Box(Modifier.size(size)) {
         BotAvatar(bot, bots, size)
-        if (bot.status == "needsInput") Box(Modifier.size(size * .36f).align(Alignment.BottomEnd).ring()
+        if (bot.status == "needsInput") Box(Modifier.size(size * .36f).align(if (bot.lead) Alignment.TopEnd else Alignment.BottomEnd).ring()
             .background(Palette.warning, CircleShape), contentAlignment = Alignment.Center) {
             Symbol("exclamationmark", size = size * .24f, tint = Color.White)
-        } else if (bot.unread > 0) Box(Modifier.size(size * .28f).align(Alignment.BottomEnd).ring().background(Palette.accentFill, CircleShape))
+        } else if (bot.unread > 0) Box(Modifier.size(size * .28f).align(if (bot.lead) Alignment.TopEnd else Alignment.BottomEnd).ring().background(Palette.accentFill, CircleShape))
+        if (bot.lead) Box(Modifier.align(Alignment.BottomEnd)) { LeadAgentBadge(size * .34f) }
     }
 }
 

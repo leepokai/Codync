@@ -48,7 +48,7 @@ Usage row shows no number; it opens Settings' Usage page with the same per-provi
 
 ## Account menu and Settings (desktop)
 
-The chat window's account menu copies Grok Bot's: Usage, Get Codync for mobile, Support, Settings, then the signed-in account and Sign out. Everything else is a page of **Settings**, laid out like ChatGPT's desktop settings (references in `reference/chatgpt-settings-*.png`): a sidebar of pages under small group labels (Personal: General, Voice chat, Usage; This Mac, or This computer on Linux: Computers, Updates) and a large page title over the page's sections. Manage computers and approval badges lead to the Computers page. The iPhone keeps its Computers & settings sheet. Source: `apps/desktop/src/renderer/views/settings/SettingsView.tsx`, account menu in `apps/desktop/src/renderer/views/PanelMenus.tsx`.
+The chat window's account menu copies Grok Bot's: Usage, Get Codync for mobile, Support, Settings, then the signed-in account and Sign out. Everything else is a page of **Settings**, laid out like ChatGPT's desktop settings (references in `reference/chatgpt-settings-*.png`): a sidebar of pages under small group labels (Personal: General, Voice chat, Usage; This Mac, or This computer on Linux: Computers, Updates) and a large page title over the page's sections. Manage computers and approval badges lead to the Computers page. The phone apps' Settings tab (iPhone and Android), to the right of State in the same bar, holds only what belongs to the phone itself: appearance, language, thinking details, notification permission, usage analytics and Start over. Anything that belongs to one computer lives in Computer management, the sheet Manage computers and links open: one card per computer with its name and status, then Extensions, Voice chat (its keys live on that computer), Screen, Push notifications (whether that computer alerts this phone) and Connection as rows (Connection shows the route's short name; its menu has the whole route), then Hidden bots, and Pair a computer in a card of its own. Source: `apps/desktop/src/renderer/views/settings/SettingsView.tsx`, account menu in `apps/desktop/src/renderer/views/PanelMenus.tsx`.
 
 ## iPhone and desktop code
 
@@ -68,7 +68,7 @@ Other custom iPhone screens use `Chrome.swift` and `Controls.swift`. The desktop
 | Modal or full-window overlay | `.codyncSheet` (system sheet), `.codyncOverlay` |
 | Header outside the native bot navigation flow | `ModalHeader`, `ScreenHeader` |
 | Icon action | `IconButton` |
-| iPhone app tabs | System `TabView` (Liquid Glass tab bar, hidden inside a chat) |
+| iPhone app tabs | System `TabView` (Liquid Glass tab bar, hidden inside a chat). Settings is the tab to the right of State. |
 | Menu / confirmation | `DropdownMenu` / `.contextActions` (system menus), `.codyncDialog` |
 | Toggle | `ToggleStyle.codync` |
 | Form-like content | `CardForm`, `CardSection` (a small bold heading over a filled, rounded group; rows split by inset hairlines; a row is `ValueRow` with an optional one-line `detail`, and its picker is an outlined `ChoicePicker`) |
@@ -186,7 +186,7 @@ moved to each computer (`ExtensionsMovedTip.tsx`); dismissing it, or opening Ext
 a heading, hides it for good on that device. Logos represent examples, not connected status.
 
 This is a desktop sidebar treatment across macOS, Linux and Windows. iOS keeps its
-native navigation and per-computer Extensions entries (each computer's row in Settings, and
+native navigation and per-computer Extensions entries (each computer's card in Computer management, and
 each computer heading in the Bots list with several computers); the TUI
 keeps its keyboard Extensions action and connector tabs. Neither has this persistent
 desktop footer or supports the same layered backdrop material; no capabilities or

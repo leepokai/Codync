@@ -143,6 +143,8 @@ struct Composer: View {
             append(picked.map(\.file))
             return true
         }
+        .reviewInterruption(active: focused || pickingFiles || pickingPhotos || !files.isEmpty
+                            || dictation.listening || dictation.transcribing)
         .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { add(urls) }
         }

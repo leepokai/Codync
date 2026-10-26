@@ -31,6 +31,15 @@ public enum RelayCopy {
         }
     }
 
+    /// The route's short name, shown on the Connection row; the menu keeps `routeTitle`.
+    public static func routeShortTitle(_ route: ConnectionRoute, cloud: URL?) -> String {
+        switch route {
+        case .automatic: "Auto"
+        case .cloudflareFirst: host(of: cloud) == nil ? "Cloudflare first" : "Private relay first"
+        case .directOnly: "Wi-Fi/Tailscale only"
+        }
+    }
+
     /// The short suffix after a bot count: ` · Cloudflare` or ` · Private relay (host)`.
     public static func detailSuffix(route: HostRoute?, cloud: URL?) -> String {
         switch route {

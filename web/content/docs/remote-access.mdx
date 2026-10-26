@@ -26,7 +26,7 @@ Show the code on the computer:
 - **Terminal:** run `codync-host pair`. It prints the QR code in the terminal. `codync-host pair --json` prints the link instead.
 - **Terminal UI:** press `^k` and choose **Pair a phone…**.
 
-Then, on the iPhone, scan it from the welcome screen, or later from **Computers & settings → Pair a computer** (tap the account button, then **Computers & settings**). You can also paste the `codync://pair` link instead of scanning.
+Then, on the iPhone, scan it from the welcome screen, or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). You can also paste the `codync://pair` link instead of scanning.
 
 A code works once and expires after 10 minutes. If it has expired, show a new one on the computer. Pairing needs no account and works over any route, including the relay.
 
@@ -35,7 +35,7 @@ A code works once and expires after 10 minutes. If it has expired, show a new on
 You can sign in with Apple or Google on the iPhone and in the desktop app. Signing in doesn't give any device access by itself. It lets your phone find the computers in your account without scanning a code:
 
 1. On the computer, sign in to the desktop app. The computer joins your account. For an SSH computer, choose **Add to account** on its card in **Settings → Computers**.
-2. On the iPhone, sign in with the same account and open **Computers & settings**. Your account's computers are listed there. Tap **Ask for access**. The phone shows a 6-digit code.
+2. On the iPhone, sign in with the same account and open **Manage computers**. Your account's computers are listed there. Tap **Ask for access**. The phone shows a 6-digit code.
 3. On the computer, an **Access request** opens with a code. Choose **Approve** only if it matches the code on your phone exactly. If it doesn't, choose **Deny**: someone may be trying to get in.
 
 On a computer without the desktop app, use `codync-host access` to list requests and `codync-host access approve <code>` to approve one.
@@ -134,5 +134,5 @@ Webhook deliveries are **not** end-to-end encrypted. The relay receives them ove
 ## Removing a device's access
 
 - **On the computer:** in **Settings → Computers**, the list **Devices that can use** the computer has **Revoke access** for each device. Without the desktop app, use `codync-host devices` to list devices and `codync-host devices revoke <key>` to remove one. The device disconnects right away and has to pair or ask again.
-- **On the iPhone:** in **Computers & settings**, remove a paired computer, or revoke this phone's account access to one. The computer keeps its bots and chats.
+- **On the iPhone:** in **Manage computers**, remove a paired computer, or revoke this phone's account access to one. The computer keeps its bots and chats.
 - **Remove from account** on a computer's card disconnects devices approved through the account. Devices paired with a QR code keep their access.

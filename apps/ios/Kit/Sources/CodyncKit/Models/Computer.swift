@@ -21,6 +21,8 @@ public struct Computer: Codable, Hashable, Sendable, Identifiable {
     public var color: String?
     /// How this device reaches the computer, picked per computer; nil = `.automatic`.
     public var route: ConnectionRoute?
+    /// Whether the computer sends push alerts to this device, picked per computer; nil = on.
+    public var notifications: Bool?
 
     public init(id: ComputerID, name: String, signKey: String, boxKey: String? = nil, urls: [String] = [],
                 cloud: URL? = nil, device: String? = nil, color: String? = nil) {
@@ -32,6 +34,13 @@ public struct Computer: Codable, Hashable, Sendable, Identifiable {
         self.cloud = cloud
         self.device = device
         self.color = color
+    }
+
+    /// Keeps what this device picked (color, route, push) over a newer copy from pairing, the account or `hello`.
+    public mutating func keepDevicePicks(from previous: Computer) {
+        color = previous.color
+        route = previous.route
+        notifications = previous.notifications
     }
 
     /// `true` when `id` really is the computer ID of `signKey`.

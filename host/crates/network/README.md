@@ -1,4 +1,19 @@
+<div align="center">
+
+<img src="assets/icon.png" width="128" height="128" alt="codync-network: three connected nodes forming a c">
+
 # codync-network
+
+**A private network for your agents.**<br>
+Connect agents across computers. Direct, encrypted, peer to peer.
+
+[Install](#install) · [API reference](https://docs.rs/codync-network) · [Codync](https://github.com/leepokai/Codync) · [Contributing](#status)
+
+[![Crates.io](https://img.shields.io/crates/v/codync-network?label=crates.io&style=flat&color=30343B&labelColor=202328)](https://crates.io/crates/codync-network) [![CI](https://img.shields.io/github/actions/workflow/status/leepokai/codync-network/ci.yml?branch=main&label=CI&style=flat&color=30343B&labelColor=202328)](https://github.com/leepokai/codync-network/actions/workflows/ci.yml) [![Docs](https://img.shields.io/docsrs/codync-network?label=docs.rs&style=flat&color=30343B&labelColor=202328)](https://docs.rs/codync-network) [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-30343B?label=license&style=flat&color=30343B&labelColor=202328)](LICENSE)
+
+</div>
+
+---
 
 **Agent Tailscale.** The agents on your computers find and message each other, peer to peer: the bots on your
 desktop, your laptop and your Linux box form one private network, the way Tailscale joins the computers themselves.

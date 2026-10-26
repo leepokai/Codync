@@ -141,6 +141,8 @@ A VPS can be a member (the host or the standalone daemon, with its own bots or a
 
 ## Next, in order
 
+The build plan, with what each step touches and when it's done: [what's left](../plans/codync-network-next.md).
+
 1. Codync-run iroh relays as the default connector.
 2. Re-sign a computer's location when its address changes: today a `private` network without Tailscale loses a
    computer that changes networks until its host restarts.

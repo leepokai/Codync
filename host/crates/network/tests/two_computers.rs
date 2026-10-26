@@ -182,3 +182,53 @@ async fn without_a_network_agents_on_one_computer_still_reach_each_other() {
     assert_eq!(next(&mut inbox).await.from.to_string(), "a@local");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn a_computer_still_starting_gets_its_letters_once_it_offers_its_agents() {
+    let (desk_dir, laptop_dir) = (temp_dir("desk4"), temp_dir("laptop4"));
+    let (desk, _) = Node::start(&desk_dir, &Connector::Private).await.unwrap();
+    desk.create("desk").unwrap();
+    offer(&desk, "lead");
+    let (laptop, _) = Node::start(&laptop_dir, &Connector::Private).await.unwrap();
+    offer(&laptop, "coder");
+    laptop.join(&desk.invite().unwrap(), "laptop").await.unwrap();
+    laptop.shutdown().await;
+    assert_eq!(desk.send(Letter::new("lead", to("coder@laptop"), "while you were off")).await.unwrap(), Sent::Queued);
+
+    // Back on, but its app hasn't offered the agents yet: the desk's letter waits instead of going.
+    let (laptop, mut inbox) = Node::start(&laptop_dir, &Connector::Private).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(inbox.try_recv().is_err());
+    offer(&laptop, "coder");
+    assert_eq!(next(&mut inbox).await.body, "while you were off");
+    for dir in [desk_dir, laptop_dir] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[tokio::test]
+async fn a_reply_reaches_an_agent_renamed_since_it_asked_and_carries_the_chain_on() {
+    let (desk_dir, laptop_dir) = (temp_dir("desk5"), temp_dir("laptop5"));
+    let (desk, mut desk_inbox) = Node::start(&desk_dir, &Connector::Private).await.unwrap();
+    desk.create("desk").unwrap();
+    offer(&desk, "lead");
+    let (laptop, mut laptop_inbox) = Node::start(&laptop_dir, &Connector::Private).await.unwrap();
+    offer(&laptop, "reviewer");
+    laptop.join(&desk.invite().unwrap(), "laptop").await.unwrap();
+
+    let ask = Letter::new("lead", to("reviewer@laptop"), "review this").hops(3);
+    let asked = ask.id.clone();
+    desk.send(ask).await.unwrap();
+    assert_eq!(next(&mut laptop_inbox).await.hops, 3);
+    // The lead is renamed while the review runs: the desk no longer offers "lead".
+    offer(&desk, "lead-2");
+    laptop.send(Letter::new("reviewer", to("lead@desk"), "looks good").reply_to(asked.clone())).await.unwrap();
+    let reply = next(&mut desk_inbox).await;
+    assert_eq!((reply.reply_to.as_deref(), reply.hops), (Some(asked.as_str()), 4));
+    // A new letter (no reply_to) for an agent that's gone is still refused.
+    let gone = laptop.send(Letter::new("reviewer", to("lead@desk"), "and another thing")).await.unwrap_err();
+    assert!(gone.to_string().contains("no agent called lead"), "{gone}");
+    for dir in [desk_dir, laptop_dir] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}

@@ -14,13 +14,12 @@ import type { BotStore } from '../store/bot-store'
 export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer, members }: { bot: Bot; store: BotStore; compact: boolean; usingComputer: boolean; members: Bot[] }) {
   // The cached roster paints before hello names the agents. Follow the store so that arrival replaces "Custom agent".
   useModel(store)
-  const tr = useTr()
   return (
     <HStack gap={compact ? 0 : 10} justify={compact ? 'center' : 'flex-start'} className="bot-row">
       <AvatarWithStatus bot={bot} members={members} size={30} />
       <VStack gap={2} className={`bot-row-text ${compact ? 'collapsed' : ''}`} aria-hidden={compact}>
         <HStack align="baseline" gap={4} shrink>
-          {bot.lead ? <Icon name="star.fill" size={10} color="var(--tertiary)" title={tr('Lead bot')} /> : bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}
+          {!bot.lead && bot.pinned ? <Icon name="pin.fill" size={10} color="var(--tertiary)" /> : null}
           <Text size="body" weight={bot.unread > 0 ? 'semibold' : 'medium'} tone="text" truncate>{bot.name}</Text>
           {usingComputer ? <Icon name="cursorarrow.motionlines" size={10} color="var(--accent)" title="Using the computer" /> : null}
         </HStack>

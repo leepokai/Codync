@@ -92,8 +92,12 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         let tx = rput(buf, r.right() - 1, yy, &time, if b.unread > 0 { t.bold } else { t.dim });
         let gx = tx.saturating_sub(2);
         put(buf, gx, yy, 1, g, gs);
-        // The lead's star, where the apps show it.
-        let name_x = if b.lead { put(buf, x0 + 5, yy, 2, "★", t.dim) + 1 } else { x0 + 5 };
+        // The badge sits below the avatar, leaving activity and unread indicators visible.
+        if b.lead {
+            put(buf, x0 + 3, yy + 1, 1, "★", t.amber);
+            app.hits.clicks.push((Rect::new(x0 + 3, yy + 1, 1, 1), Click::LeadAgent));
+        }
+        let name_x = x0 + 5;
         put(buf, name_x, yy, gx.saturating_sub(name_x + 1), &b.name, t.bold);
         let (pv, ps) = preview(b);
         let badge = if b.unread > 0 { format!(" {} ", b.unread) } else { String::new() };
@@ -169,5 +173,9 @@ pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
         put_line(buf, r.x + 1, y, 2, &avatar(app, b));
         let (g, gs) = glyph(app, b.mark());
         put(buf, r.x + 3, y, 1, g, gs);
+        if b.lead && y + 1 < r.bottom() {
+            put(buf, r.x + 2, y + 1, 1, "★", t.amber);
+            app.hits.clicks.push((Rect::new(r.x + 2, y + 1, 1, 1), Click::LeadAgent));
+        }
     }
 }

@@ -68,6 +68,8 @@ pass on both instances. A local check of a deployment:
 
 ## Current limits
 
+What lifts them, and in what order: [what's left](../plans/codync-network-next.md).
+
 | Limit | Why, and what lifts it |
 |---|---|
 | Hosts before 2.28.0 don't answer (`assistant.call` is ignored, the call times out after 10 s) | the host side ships in 2.28.0 |

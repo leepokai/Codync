@@ -34,6 +34,15 @@ A sandbox starts past onboarding (welcome and computer-access setup, only where 
 
 Still shared: macOS sees every unpackaged run as the same Electron app, so permissions and notifications are shared and a `codync-dev://` sign-in callback may reach another copy (test sign-in on the default Codync Dev); Codync Screen and computer use need the packaged `Codync Dev.app`; a global shortcut (the approval island's) goes to whichever app registered it first.
 
+## Local secrets
+
+Secrets for running the project locally live in git-ignored env files at the main checkout's root, one per environment: `.env.development` for the Clerk and Cloudflare **development** instances, `.env.production` for production. `.gitignore` covers `.env` and `.env.*` but not `.env.*.example`, so each file has a committed template (`.env.development.example`) listing its variables with placeholders; copy it and fill it in. Linked worktrees read the main checkout's file (through `git rev-parse --git-common-dir`), so a new worktree needs no setup. Real values never go in a template, a commit or a log.
+
+- Dev tooling reads `.env.development` only and never loads `.env.production`; a variable already in the environment wins over the file.
+- A development key is checked before use (`CODYNC_CLERK_SECRET_KEY` must be `sk_test_...`), so a production key put there by mistake is refused.
+- Deployed secrets (the Worker's `CLERK_SECRET_KEY` and the like) are set with `wrangler secret put`, not kept in these files.
+- Variables so far: `CODYNC_CLERK_SECRET_KEY` (see [Worktree sandboxes](#worktree-sandboxes)).
+
 ## Resource ownership
 
 | Resource | Production | Development |

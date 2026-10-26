@@ -3,6 +3,7 @@ import { isGroup, isWorking, type Bot } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
 import { IconButton, RowLabel, Switch, TabChoice } from '../../components/Controls'
+import { LeadAgentBadge } from '../../components/LeadAgentBadge'
 import { Icon } from '../../components/Icon'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -84,7 +85,7 @@ function Identity({ bot }: { bot: Bot }) {
   const group = isGroup(bot)
   return (
     <div className="details-identity">
-      {group ? <GroupAvatar members={store.members(bot)} size={60} /> : <BotAvatar bot={bot} size={60} />}
+      {group ? <GroupAvatar members={store.members(bot)} size={60} /> : <div className="avatar-frame"><BotAvatar bot={bot} size={60} />{bot.lead ? <LeadAgentBadge size={24} interactive /> : null}</div>}
       <span className="details-name">{bot.name}</span>
       <span className="details-subtitle">
         {group ? (

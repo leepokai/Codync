@@ -68,6 +68,7 @@ struct AccessRenewalTests {
         var computer = Computer(id: id, name: "Desk", signKey: renewalHostKey.base64URL, urls: ["http://192.168.1.20:19223"])
         computer.color = "blue"
         computer.route = .directOnly
+        computer.notifications = false
         storage.computers = [computer]
         let accounts = AccountStore(storage: storage, cloud: cloud) { computer in
             BotStore(computer: computer, storage: storage) { _ in FakeRemote(.connecting) }
@@ -99,6 +100,7 @@ struct AccessRenewalTests {
         #expect(accounts.pendingAccess[id] == nil)
         #expect(storage.computers.first?.color == "blue")
         #expect(storage.computers.first?.route == .directOnly)
+        #expect(storage.computers.first?.notifications == false)
         #expect(storage.computers.first?.urls == computer.urls)
     }
 

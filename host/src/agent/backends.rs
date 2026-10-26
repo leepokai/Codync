@@ -20,8 +20,11 @@ mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
 pub use search_path::{hydrate_path, on_path, which};
-pub use sign_in::{SignInCheck, cli_signed_in, refresh_sign_in, set_signed_in, signed_in};
-pub use workbuddy::{apply_process_env, session_proves_sign_in};
+pub use sign_in::{
+    SignInCheck, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, note_prompt_refused, refresh_sign_in,
+    set_signed_in, signed_in,
+};
+pub use workbuddy::{apply_process_env, move_saved_session_aside, session_proves_sign_in};
 
 pub struct Harness {
     pub id: &'static str,

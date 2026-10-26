@@ -28,7 +28,7 @@ its own context and compacts it itself.
     `_meta.systemPrompt.append` on `session/new` and `session/load`. It survives compaction.
   - **An agent advertising ACP `sessionCapabilities.systemPrompt`** receives it as `systemPrompt`
     (`append`) on `session/new`, `session/load` and `session/fork`, and keeps it across compaction.
-  - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`),
+  - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`; repeated with each message until one carrying it succeeds, the snapshot's `unprompted`, kept across a host restart),
     and once more, marked as replacing the earlier one, on the first message after a compaction.
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has

@@ -100,7 +100,12 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
 /** The bot's avatar and name, and what runs it. */
 @Composable private fun Identity(bot: Bot, state: AppState) {
     Column(Modifier.fillMaxWidth().padding(top = 64.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.padding(bottom = 10.dp)) { BotAvatar(bot, state.bots, 72.dp) }
+        Box(Modifier.padding(bottom = 10.dp)) {
+            BotAvatar(bot, state.bots, 72.dp)
+            if (bot.lead) Box(Modifier.align(Alignment.BottomEnd).size(28.dp), contentAlignment = Alignment.Center) {
+                LeadAgentBadge(28.dp, interactive = true)
+            }
+        }
         Text(bot.name, style = Type.title3.semibold, color = Palette.text, textAlign = TextAlign.Center)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             AgentIcon(agentRegistry(state, bot.backend), 13.dp)

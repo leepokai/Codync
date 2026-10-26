@@ -48,13 +48,14 @@ impl Inner {
                         // ponytail: dropped with a log line; a delivery-report channel when the host needs it.
                         tracing::warn!(id = %q.envelope.id, reason, "a waiting letter was refused");
                     }
-                    Ok(_) => {}
-                    Err(_) => {
+                    // Still starting there, or away again: it waits for the next answer.
+                    Ok(Response::Later { .. }) | Err(_) => {
                         let mut outbox = locked(&self.outbox);
                         outbox.push(q);
                         outbox.extend(left);
                         return;
                     }
+                    Ok(_) => {}
                 }
             }
         });

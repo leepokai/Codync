@@ -49,8 +49,7 @@ struct CodyncApp: App {
                     get: { (onboardingCompleted || app.account.isSignedIn) && app.account.showSwitcher },
                     set: { app.account.showSwitcher = $0 }
                 )) {
-                    // Holds the pushes inside the sheet (Computers & settings, Widgets); no bar shows.
-                    NavigationStack { AccountSwitcherView() }
+                    AccountSwitcherView()
                         .environment(app)
                         .environment(app.accounts)
                         .environment(app.account)
@@ -68,6 +67,7 @@ struct CodyncApp: App {
                 }
                 .onOpenURL { url in app.open(url) }
                 .onChange(of: scenePhase, initial: true) { _, phase in
+                    ReviewInvitation.shared.setActive(phase == .active)
                     switch phase {
                     case .active: Analytics.shared.becameActive()
                     case .background: BackgroundTime.run("Analytics") { await Analytics.shared.enteredBackground() }
@@ -106,7 +106,7 @@ struct CodyncApp: App {
     }
 }
 
-enum AppTab: Hashable { case bots, state }
+enum AppTab: Hashable { case bots, state, settings }
 
 /// One `AccountStore` per account context: switching accounts retires the old one so
 /// in-flight work can't land on another user's screen or storage.
@@ -143,6 +143,9 @@ final class AppStore {
         }
         CrashReports.shared.start()
         contextID = storage.id
+        // Accounts Clerk hasn't restored by launch keep their computers' push on.
+        SharedStore.Context.splitPushSwitch(from: .standard,
+                                            into: Set([nil, storage.accountID] + session.accounts.map(\.id)).map { SharedStore.Context(accountID: $0) })
         (accounts, cloud) = Self.makeAccounts(storage, session: session)
     }
 
@@ -323,6 +326,13 @@ final class AppStore {
         if accounts.cloudComputers.first(where: { $0.computerId == id })?.isGranted == true { await revokeAccess(id) }
         // A revoke that went through forgot it already.
         if accounts.computers.contains(where: { $0.id == id }) { accounts.forget(id) }
+    }
+
+    /// A computer's push switch: saved here, then the computer is told to alert this iPhone or to stop.
+    func setNotifications(_ id: ComputerID, _ on: Bool) {
+        accounts.setNotifications(id, on)
+        if let store = accounts.store(for: id) { PushRegistrar.shared.syncDevice(with: store) }
+        Analytics.shared.capture(.settingChanged(.push, on: on))
     }
 }
 

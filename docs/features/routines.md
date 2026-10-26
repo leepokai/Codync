@@ -134,7 +134,10 @@ host checks the run's turn for a tool call whose ACP kind isn't `read`, `search`
   (busy); a paused routine is refused until it's resumed.
 
 Each run has a timeout (default one hour, configurable from 1 to 86400 seconds).
-A hung agent is terminated so subsequent work can proceed. A run's outcome is
+A hung agent is terminated so subsequent work can proceed. When the time limit cuts
+session setup short, an agent that can load sessions is stopped too, so a session it was
+still opening can't stay open unknown to the host; one that can't keeps running with the
+sessions it has. A run's outcome is
 saved before it is reported, and a failure notice has a stable transcript ID, so a
 restart never reports it twice. Failed reporting retries without rerunning the agent.
 The latest 1000 terminal runs are retained globally, plus active, unpublished and retryable runs;

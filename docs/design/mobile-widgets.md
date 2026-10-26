@@ -37,7 +37,7 @@ Widget 與 Live Activity 的頭像用 `CharacterAvatar(… still: true)`：畫�
 - Claude 使用既有暖色；Codex 使用藍色；其他 provider 用 accent 墨色；90% 以上顯示警示色。
 - 採平面深淺色表面、小型圖示、11–13 pt 標籤；大字只用於主要數值。
 - App 的 Usage 卡片同步縮小字級、圖示、內距，並使用同一款刻度條。
-- 底部的 State 分頁以頂部切換呈現 Widget／Live Activity／Dynamic Island 三頁；用量上限從右上角圖示開成 sheet。Computers & settings 不再放這些入口。
+- 底部的 State 分頁以頂部切換呈現 Widget／Live Activity／Dynamic Island 三頁；用量上限從右上角圖示開成 sheet。設定分頁與電腦管理都不放這些入口。
 - Widget 頁提供類型／provider／大小切換、三種主畫面尺寸預覽與設定教學。加入 widget 的教學（`WidgetSetupDemo.swift`）用 SwiftUI 畫出一支 iPhone，手指實際演出長按、Edit、Add Widget、找到 Codync、Add Widget、Done；整段由單一時鐘驅動，會循環，可暫停／播放，也可以拖曳進度條。
 - 「Lock Screen widgets」頁可切換 Bots／Usage limits，預覽圓形、矩形與行內形式。正式 widget 與預覽共用 `AccessoryWidgetCard`。
 - 設定清單讀取實際電腦配對狀態與 `WidgetCenter` 的已安裝配置；不以點過教學當作完成。

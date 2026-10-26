@@ -65,6 +65,9 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
+            .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
+                           && openArtifact == nil && openCall == nil && details == nil && !editingGroup
+                           && model.composerDraft(for: botId).isEmpty && model.fileDownloads.export == nil)
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }

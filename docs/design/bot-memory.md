@@ -354,7 +354,7 @@ it offers (`Instructions` in `agent/bot`):
    unstable): when an agent advertises `sessionCapabilities.systemPrompt`, the opening goes as
    `{"mode": "append", "content": [text]}` on `session/new` and `session/load` (the session's current snapshot). The
    agent keeps it at system level, across compaction.
-3. **Every other agent: the first message.** A `<bot-profile>` block precedes the first prompt of a new session.
+3. **Every other agent: the first message.** A `<bot-profile>` block precedes the first prompt of a new session, and each retry until a prompt carrying it succeeds (the snapshot's `unprompted`, kept across a host restart).
    After a compaction the next prompt carries a fresh one that says it replaces any earlier profile, so the agent
    never holds two versions that disagree. The compaction is the agent's `compaction_update`, or, for an agent
    that never sent one, its `usage_update.used` falling below half of a previous value of at least 20k.

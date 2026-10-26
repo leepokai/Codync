@@ -57,7 +57,7 @@ internal fun AppStore.pair(text: String, via: PairedVia) {
         try {
             val pairing = Pairing.parse(text, BuildConfig.URL_SCHEME)
             val old = state.value.computers.firstOrNull()
-            require(old == null || old.id == pairing.computer.id) { "Remove this phone's computer in Computers & settings to pair a different one." }
+            require(old == null || old.id == pairing.computer.id) { "Remove this phone's computer in Computer management to pair a different one." }
             require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Start over before pairing again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
             // Picked on this phone: re-pairing keeps them (iOS `AccountStore.pair`).

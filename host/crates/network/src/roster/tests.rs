@@ -161,3 +161,26 @@ fn a_stolen_owner_cannot_undo_its_replacement() {
     retired.merge(&forge(&retired));
     assert_eq!(retired.role(&laptop.public()), Some(Role::Owner));
 }
+
+#[test]
+fn two_admins_naming_a_laptop_at_once_still_get_distinct_names() {
+    let (desk, server, laptop, other) = (key(), key(), key(), key());
+    let (mut a, _root) = Roster::create(&desk, "desk".into(), addr(&desk), 1);
+    a.sign(&desk, 2, Change::Admit { id: server.public(), name: "server".into() }).unwrap();
+    a.sign(&desk, 3, Change::Promote { id: server.public() }).unwrap();
+    let mut b = a.clone();
+    // Each admits a "laptop" before hearing of the other's.
+    a.sign(&desk, 4, Change::Admit { id: laptop.public(), name: "laptop".into() }).unwrap();
+    b.sign(&server, 5, Change::Admit { id: other.public(), name: "Laptop".into() }).unwrap();
+    assert!(a.merge(&b) && b.merge(&a));
+    assert_eq!(a.members(), b.members());
+    assert_eq!((a.name(&laptop.public()), a.name(&other.public())), ("laptop".into(), "Laptop-2".into()));
+    assert_eq!(a.find("laptop-2"), Some(other.public()));
+    // Removing the first laptop moves no one: the second stays laptop-2. A computer admitted later
+    // may take the freed name.
+    a.sign(&desk, 6, Change::Remove { id: laptop.public(), cascade: false }).unwrap();
+    assert_eq!(a.name(&other.public()), "Laptop-2");
+    let new = key();
+    a.sign(&desk, 7, Change::Admit { id: new.public(), name: "laptop".into() }).unwrap();
+    assert_eq!(a.name(&new.public()), "laptop");
+}

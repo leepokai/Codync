@@ -330,6 +330,7 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         loaded: HashMap::new(),
         started: Instant::now(),
         process: NEXT_PROCESS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        opening: false,
         fast_options: HashMap::new(),
         reports_compaction: false,
         usage: HashMap::new(),

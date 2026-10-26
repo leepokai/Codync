@@ -63,7 +63,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.kyant.shapes.RoundedRectangle
@@ -251,8 +250,7 @@ private val MenuShape = RoundedRectangle(26.dp)
         Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
             if (leading != null) Symbol(leading, size = 21.dp, tint = ink)
         }
-        Text(tr(item.title), Modifier.weight(1f), style = if (bold) Type.body.semibold else Type.body, color = ink,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(tr(item.title), Modifier.weight(1f), style = if (bold) Type.body.semibold else Type.body, color = ink)
         if (item.children != null) Symbol("chevron.right", size = 16.dp, tint = Palette.secondary)
     }
 }

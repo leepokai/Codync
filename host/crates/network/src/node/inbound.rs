@@ -12,6 +12,7 @@ use iroh::endpoint::{Connection, RecvStream, SendStream};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 /// Letters remembered as taken, for spotting a sender's retry.
@@ -84,12 +85,19 @@ impl Inner {
         if let Err(e) = wire::check(&envelope) {
             return refuse(e.to_string());
         }
+        if !self.ready.load(Ordering::Acquire) {
+            return Response::Later { reason: "this computer is still starting".into() };
+        }
         // Without a network, only this computer's own agents write here.
         let roster = locked(&self.roster).clone();
         let name = |id: &EndpointId| roster.as_ref().map_or_else(|| "local".into(), |r| r.name(id));
         let reach = locked(&self.agents).iter().find(|(a, _)| a.id == envelope.to).map(|(_, r)| r.clone());
-        let Some(reach) = reach else {
-            return refuse(format!("{} has no agent called {}", name(&self.me()), envelope.to));
+        let reach = match reach {
+            Some(reach) => reach,
+            // An answer to an agent that has since been renamed or gone: the app knows its request
+            // by id and still takes it.
+            None if envelope.reply_to.is_some() => Reach::App,
+            None => return refuse(format!("{} has no agent called {}", name(&self.me()), envelope.to)),
         };
         let key = format!("{peer}:{}", envelope.id);
         if locked(&self.taken).contains(&key) {
@@ -103,8 +111,10 @@ impl Inner {
         if let Err(reason) = locked(&self.guard).admit(pair.clone(), envelope.hops, said, Instant::now()) {
             return refuse(reason);
         }
+        let (id, hops) = (envelope.id.clone(), envelope.hops);
         match self.hand_over(&reach, envelope.open(name(&peer))).await {
             Ok(()) => {
+                self.heard(&id, hops);
                 let mut taken = locked(&self.taken);
                 if taken.len() >= TAKEN_MAX {
                     taken.pop_front();

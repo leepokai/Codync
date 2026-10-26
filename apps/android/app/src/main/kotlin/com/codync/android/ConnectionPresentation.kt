@@ -7,7 +7,7 @@ import com.codync.android.core.HostRoute
 import com.codync.android.core.LinkState
 import com.codync.android.core.Pairing
 
-// What the roster header, Computers & settings and the chat header say about the computer's link
+// What the roster header, Computer management and the chat header say about the computer's link
 // (iOS `ComputerStatus`, `ConnectionSummary`, `BotStore.connectionLabel`).
 
 /** Turned away by the computer: access revoked, or its identity changed. */
@@ -21,7 +21,7 @@ internal fun statusText(state: AppState): String = if (state.computers.isEmpty()
     is LinkState.Failed -> if (link.unauthorized) link.message else "Can't reach"
 }
 
-/** The status line in Computers & settings: one that's offline while its new identity is around says so. */
+/** The status line in Computer management: one that's offline while its new identity is around says so. */
 internal fun computerStatusText(state: AppState): String =
     if (state.isStale && !state.connection.unauthorized) "Older copy of this computer · ${statusText(state)}" else statusText(state)
 
@@ -56,7 +56,7 @@ internal fun relayHost(cloud: String?): String? {
     return if (uri.port > 0) "$name:${uri.port}" else name
 }
 
-/** The route after a bot count in Computers & settings (iOS `RelayCopy.detailSuffix`). */
+/** The route after a bot count in Computer management (iOS `RelayCopy.detailSuffix`). */
 internal fun routeLabel(route: HostRoute, cloud: String?): String =
     if (route == HostRoute.Direct) "Wi-Fi/Tailscale" else relayHost(cloud)?.let { "Private relay ($it)" } ?: "Cloudflare"
 
@@ -76,6 +76,13 @@ internal fun routeTitle(route: ConnectionRoute, cloud: String?): String {
         ConnectionRoute.CloudflareFirst -> "Private relay ($host), then Wi-Fi or Tailscale"
         ConnectionRoute.DirectOnly -> "Wi-Fi or Tailscale only, never Private relay ($host)"
     }
+}
+
+/** The route's short name on the Connection row; the menu keeps `routeTitle` (iOS `RelayCopy.routeShortTitle`). */
+internal fun routeShortTitle(route: ConnectionRoute, cloud: String?): String = when (route) {
+    ConnectionRoute.Automatic -> "Auto"
+    ConnectionRoute.CloudflareFirst -> if (relayHost(cloud) == null) "Cloudflare first" else "Private relay first"
+    ConnectionRoute.DirectOnly -> "Wi-Fi/Tailscale only"
 }
 
 internal fun pairingLine(cloud: String?): String {

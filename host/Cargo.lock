@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.27.0"
+version = "2.29.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -754,13 +754,14 @@ dependencies = [
  "tracing-subscriber",
  "unicode-width",
  "uuid",
+ "windows-sys 0.61.2",
  "x25519-dalek",
  "zeroize",
 ]
 
 [[package]]
 name = "codync-mem"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "rusqlite",
  "serde",
@@ -770,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "codync-network"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "base64 0.23.1",

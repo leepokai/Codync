@@ -73,10 +73,22 @@ pub enum Request {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Response {
-    Welcome { roster: Roster },
-    Hello { roster: Roster, agents: Vec<Agent> },
+    Welcome {
+        roster: Roster,
+    },
+    Hello {
+        roster: Roster,
+        agents: Vec<Agent>,
+    },
     Stored,
-    Refused { reason: String },
+    Refused {
+        reason: String,
+    },
+    /// Not yet: the receiving computer hasn't offered its agents since it started. The sender
+    /// keeps the letter and tries again (an older sender, which can't read this, does the same).
+    Later {
+        reason: String,
+    },
 }
 
 /// An invite: where to find the inviting computer and the one-time secret it waits for.

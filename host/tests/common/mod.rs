@@ -11,6 +11,9 @@ use std::time::{Duration, Instant};
 /// host exits and this starts it again on another one.
 pub async fn serve(home: &Path) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
+    let _ = std::fs::create_dir_all(home);
+    let log = home.join("host-stderr.log");
+    let mut last = String::new();
     loop {
         let port = std::net::TcpListener::bind("127.0.0.1:0").expect("free port").local_addr().expect("port").port();
         let base = format!("http://127.0.0.1:{port}");
@@ -19,18 +22,27 @@ pub async fn serve(home: &Path) -> (Child, String) {
             .env("CODYNC_HOME", home)
             .env("CODYNC_CLOUD", "off")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
             .spawn()
             .expect("start the host");
         while child.try_wait().expect("host state").is_none() {
-            if reqwest::get(format!("{base}/health")).await.is_ok() {
-                return (child, base);
+            match reqwest::get(format!("{base}/health")).await {
+                Ok(_) => return (child, base),
+                Err(e) => last = format!("{e:?}"),
             }
-            assert!(Instant::now() < deadline, "host didn't start");
+            assert!(Instant::now() < deadline, "{}", not_started(&log, &last));
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        assert!(Instant::now() < deadline, "host didn't start");
+        assert!(Instant::now() < deadline, "{}", not_started(&log, &last));
     }
+}
+
+/// Why a test host didn't answer: the last health check's error and the end of the host's log.
+fn not_started(log: &Path, last: &str) -> String {
+    let text = std::fs::read_to_string(log).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    let tail = lines[lines.len().saturating_sub(30)..].join("\n");
+    format!("host didn't start; last health check: {last}\n--- host log ---\n{tail}")
 }
 
 /// Stops a test host the way launchd does (SIGTERM), so it shuts down its own

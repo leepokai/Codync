@@ -66,6 +66,8 @@ public enum AppStoreRelease {
     public static let appID = "6760984418"
     public static let page = URL(string: "https://apps.apple.com/app/id\(appID)")!
 
+    public static let reviewPage = URL(string: "https://apps.apple.com/app/id\(appID)?action=write-review")!
+
     /// The version live in the App Store; nil when the lookup has no result.
     public static func latestVersion(session: URLSession = .shared) async throws -> String? {
         struct Lookup: Decodable {

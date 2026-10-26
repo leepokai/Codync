@@ -72,6 +72,7 @@ extension BotStore {
               pasted: [String] = [], call: String? = nil) -> Task<SendProgress, Never>? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !files.isEmpty, !retired else { return nil }
+        if call == nil { ReviewInvitation.shared.sent(nonce) }
         var data = EntryData(text: trimmed, status: "sending", clientNonce: nonce)
         data.call = call
         // Shown at once; the computer's own quote replaces it.

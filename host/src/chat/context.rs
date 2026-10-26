@@ -48,6 +48,9 @@ pub struct Snapshot {
     /// The memory revision `system` holds (`memory::current_revision` before it was rendered).
     #[serde(default)]
     pub memory: String,
+    /// True from the session's creation until a prompt that carried its instructions has reached the agent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unprompted: bool,
 }
 
 // A bot talks in several sessions (its chat and groups, routine runs), each with its own: snapshots
@@ -107,11 +110,13 @@ pub fn resolve(store: &Store, cfg: &BotConfig, session: &str) -> Result<Snapshot
     }
     let identity = Identity::of(store, cfg);
     let memory = crate::chat::memory::current_revision(store, &cfg.id);
+    let unprompted = stored.as_ref().is_some_and(|old| old.unprompted);
     let s = Snapshot {
         session: session.to_owned(),
         epoch,
         system: render(store, cfg),
         system_identity: identity.clone(),
+        unprompted,
         // A re-render reaches the agent only as Claude's system prompt or a re-sent profile (see `mark_announced`):
         // until then it knows the identity it last heard, so an update it missed is still announced.
         announced: stored.map_or(identity, |old| old.announced),
@@ -158,9 +163,16 @@ pub fn adopt(store: &Store, cfg: &BotConfig, session: &str, system: String, memo
         system_identity: identity.clone(),
         announced: identity,
         memory,
+        unprompted: true,
     };
     save(store, &cfg.id, &s)?;
     Ok(s)
+}
+
+/// After the first prompt of a session reached the agent: its instructions are no longer owed, unless the
+/// snapshot moved on meanwhile.
+pub fn mark_prompted(store: &Store, bot_id: &str, sent: &Snapshot) -> Result<()> {
+    update_if_current(store, bot_id, sent, |current| std::mem::take(&mut current.unprompted))
 }
 
 /// The bot's instructions, rendered live.
@@ -242,15 +254,25 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
 /// After the turn that carried an update reached the agent: remember it heard
 /// `identity`, unless the snapshot moved on meanwhile (a compaction re-rendered it).
 pub fn mark_announced(store: &Store, bot_id: &str, turn_snapshot: &Snapshot, identity: Identity) -> Result<()> {
-    let Some(mut current) = load(store, bot_id, &turn_snapshot.session) else { return Ok(()) };
-    if current.session != turn_snapshot.session
-        || current.epoch != turn_snapshot.epoch
-        || current.system != turn_snapshot.system
-        || current.announced == identity
-    {
+    update_if_current(store, bot_id, turn_snapshot, |current| {
+        let changed = current.announced != identity;
+        current.announced = identity;
+        changed
+    })
+}
+
+/// Applies `change` to the stored snapshot of `sent`'s session unless it moved on meanwhile (a re-render);
+/// saves only when `change` returns true.
+fn update_if_current(
+    store: &Store,
+    bot_id: &str,
+    sent: &Snapshot,
+    change: impl FnOnce(&mut Snapshot) -> bool,
+) -> Result<()> {
+    let Some(mut current) = load(store, bot_id, &sent.session) else { return Ok(()) };
+    if current.epoch != sent.epoch || current.system != sent.system || !change(&mut current) {
         return Ok(());
     }
-    current.announced = identity;
     save(store, bot_id, &current)
 }
 
@@ -341,5 +363,15 @@ mod tests {
         let snap = resolve(&store, &b, "s1").expect("resolve");
         assert!(snap.system.contains("Description: Fix bugs and write tests"), "re-rendered");
         assert!(profile_update(&store, &snap, &b).is_some(), "the agent never heard the new description");
+    }
+
+    #[test]
+    fn a_new_sessions_instructions_stay_owed_until_a_prompt_carried_them() {
+        let store = store();
+        let a = cfg("Fixer", "Fix bugs");
+        let first = adopt(&store, &a, "s1", "SYSTEM v1".into(), String::new()).expect("adopt");
+        assert!(resolve(&store, &a, "s1").expect("resolve").unprompted, "survives a restart");
+        mark_prompted(&store, &a.id, &first).expect("mark");
+        assert!(!resolve(&store, &a, "s1").expect("resolve").unprompted);
     }
 }

@@ -194,7 +194,8 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 // entry turns into "…" (the picked one's effort level is shown under the row).
                 let fits = |items: &[String]| u(items.iter().map(|i| w(i) + 2).sum::<usize>()) <= vw;
                 let full = entries(super::fallbacks::step_item);
-                let items = if fits(&full) { full } else { entries(super::fallbacks::step_item_short) };
+                let short = !fits(&full);
+                let items = if short { entries(super::fallbacks::step_item_short) } else { full };
                 let mut x = vx;
                 for (j, item) in items.iter().enumerate() {
                     let s = if active && j == f.sub { t.bold.add_modifier(Modifier::UNDERLINED) } else { t.text };
@@ -210,7 +211,18 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     Effort::Row { caption: Some(c), .. } => Some(c),
                     _ => None,
                 };
-                let shown = if active {
+                let shown = if active && short && f.sub < f.fallbacks.len() {
+                    // The shortened entry left its effort level out: what is picked for it, saved or not,
+                    // with what its agent says about the saved one.
+                    let picked = super::fallbacks::step_effort(app, bot, &f.fallbacks[f.sub]);
+                    match (picked, caption(f.sub)) {
+                        // Running as saved, its entry's effort level is the agent's own caption.
+                        (Some(p), Some(c)) if p.contains(&c) => Some(c),
+                        (Some(p), Some(c)) => Some(format!("{p} · {c}")),
+                        (Some(p), None) => Some(p),
+                        (None, c) => c,
+                    }
+                } else if active {
                     (f.sub < f.fallbacks.len()).then(|| caption(f.sub)).flatten()
                 } else {
                     (0..f.fallbacks.len()).find_map(caption)
@@ -473,7 +485,11 @@ mod tests {
         rendered_with(app, field, |_| {})
     }
 
-    fn rendered_with(app: &mut App, field: Field, edit: impl FnOnce(&mut super::super::super::app::Form)) -> Vec<String> {
+    fn rendered_with(
+        app: &mut App,
+        field: Field,
+        edit: impl FnOnce(&mut super::super::super::app::Form),
+    ) -> Vec<String> {
         app.edit_bot();
         let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
         edit(&mut f);

@@ -19,8 +19,9 @@ pub(in crate::tui) fn step_item_short(app: &App, bot: Option<&Bot>, i: usize, f:
     step_label(app, bot, i, f, false)
 }
 
-fn step_label(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback, effort_level: bool) -> String {
-    let model = f.model.as_deref().unwrap_or("default");
+/// A fallback's effort level as its entry shows it: "effort: In use: Low" while it runs as saved,
+/// else what is picked for it, "effort ‹High›", or what is saved without its agent's list.
+pub(in crate::tui) fn step_effort(app: &App, bot: Option<&Bot>, f: &Fallback) -> Option<String> {
     // While the bot runs this agent on the saved model, its session's own list; else the agent's catalog.
     let host = bot.and_then(|b| b.fallbacks.iter().find(|x| x.backend == f.backend && x.model == f.model));
     let settings = app.settings_for(bot, &f.backend, f.model.as_deref().unwrap_or_default(), host.is_some());
@@ -34,7 +35,7 @@ fn step_label(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback, effort_level
         let Effort::Row { setting: Some(o), .. } = effort(&settings, None, Some(s), false, false) else { return None };
         let saved = f.model_options.get(&o.id).map(String::as_str);
         match effort(&settings, saved, Some(s), false, false) {
-            Effort::Row { caption: Some(c), .. } => Some(format!(" · effort: {c}")),
+            Effort::Row { caption: Some(c), .. } => Some(format!("effort: {c}")),
             _ => None,
         }
     });
@@ -43,15 +44,19 @@ fn step_label(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback, effort_level
             let value = f.model_options.get(&o.id).map_or("default", |v| {
                 o.values.iter().find(|(id, _)| id == v).map_or(v.as_str(), |(_, name)| name.as_str())
             });
-            format!(" · effort ‹{value}›")
+            format!("effort ‹{value}›")
         })
     });
     // Without its agent's list, what is saved for it, as saved.
-    let shown = shown.or_else(|| {
+    shown.or_else(|| {
         let saved: Vec<&str> = f.model_options.values().map(String::as_str).collect();
-        (!saved.is_empty()).then(|| format!(" · saved ‹{}›", saved.join(", ")))
-    });
-    let shown = shown.filter(|_| effort_level);
+        (!saved.is_empty()).then(|| format!("saved ‹{}›", saved.join(", ")))
+    })
+}
+
+fn step_label(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback, effort_level: bool) -> String {
+    let model = f.model.as_deref().unwrap_or("default");
+    let shown = step_effort(app, bot, f).filter(|_| effort_level).map(|e| format!(" · {e}"));
     let item = format!("{} {} · {model}{}", i + 1, app.agent_name(&f.backend), shown.unwrap_or_default());
     if bot.and_then(|b| b.agent_step.as_deref()) == Some(f.backend.as_str()) {
         format!("{item} (in use)")

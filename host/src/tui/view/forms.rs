@@ -470,8 +470,13 @@ mod tests {
     }
 
     fn rendered(app: &mut App, field: Field) -> Vec<String> {
+        rendered_with(app, field, |_| {})
+    }
+
+    fn rendered_with(app: &mut App, field: Field, edit: impl FnOnce(&mut super::super::super::app::Form)) -> Vec<String> {
         app.edit_bot();
         let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        edit(&mut f);
         f.field = FIELDS.iter().position(|x| *x == field).expect("the field");
         f.sub = 0;
         // A wide terminal: the form is still capped at 88 columns.
@@ -517,5 +522,24 @@ mod tests {
             assert!(lines.iter().any(|l| l.contains("1 codex · default")), "{field:?}:\n{all}");
             assert!(all.contains("Saved: High · not applied (the agent refused it)"), "{field:?}:\n{all}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_fallbacks_picked_but_unsaved_effort_level_shows_under_a_shortened_row() {
+        // Greptile on 61469952: shortened entries drop the effort level, and the caption under them
+        // speaks only for the saved value, so a level picked with `e` was invisible before saving.
+        // Three fallbacks: their full entries are wider than the form's row.
+        let mut app = app_with(&json!({"id": "b", "name": "Lead", "backend": "claude",
+            "fallbacks": [{"backend": "codex", "model": null, "modelOptions": {"effort": "high"}},
+                {"backend": "gemini", "model": "gemini-3-pro", "modelOptions": {"effort": "high"}},
+                {"backend": "cursor", "model": null, "modelOptions": {"effort": "high"}}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"effort": "low"}, "sessionSettings": [level()]}));
+        let lines = rendered_with(&mut app, Field::Fallbacks, |f| {
+            f.fallbacks[0].model_options = [("effort".to_owned(), "low".to_owned())].into();
+        });
+        let all = lines.join("\n");
+        assert!(lines.iter().any(|l| l.contains("1 codex · default")), "{all}");
+        assert!(all.contains("effort ‹Low›"), "the picked level, before saving:\n{all}");
     }
 }

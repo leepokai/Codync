@@ -181,7 +181,8 @@ mod tests {
         let gathering = async {
             let mut count = 0;
             loop {
-                let event = events.recv().await.unwrap();
+                let received = events.recv().await;
+                let event = received.unwrap();
                 assert_eq!(
                     event["method"], "candidate",
                     "gathering must not close the media session"

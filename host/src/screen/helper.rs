@@ -266,7 +266,8 @@ mod tests {
                 observed_tx.send(m.clone()).unwrap();
                 if m["method"] == "answer" {
                     let connected = json!({"jsonrpc": "2.0", "method": "session", "params": {"session": m["params"]["session"], "state": "connected"}});
-                    wr.write_all(format!("{connected}\n").as_bytes()).await.unwrap();
+                    let written = wr.write_all(format!("{connected}\n").as_bytes()).await;
+                    written.unwrap();
                 }
                 let res = json!({"jsonrpc": "2.0", "id": m["id"], "result": {"sdp": format!("answer to {}", m["params"]["sdp"].as_str().unwrap_or_default())}});
                 wr.write_all(format!("{res}\n").as_bytes()).await.unwrap();

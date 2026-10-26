@@ -79,7 +79,8 @@ const LOCAL_ONLY: &[&str] = &[
     // Who may write to this computer's bots is decided at the computer, like who is in.
     "setNetworkRules",
 ];
-const SCREEN: &[&str] = &["screenPrepare", "screenOffer", "screenClose", "screenTakeover"];
+const SCREEN: &[&str] =
+    &["screenPrepare", "screenOffer", "screenClose", "screenTakeover", "screenCandidate", "screenCandidates"];
 
 /// A method the caller isn't allowed to call (403).
 #[derive(Debug)]
@@ -254,6 +255,10 @@ mod tests {
         assert!(permit(&both, "screenOffer").is_ok());
         assert!(permit(&both, "screenPrepare").is_ok());
         assert!(permit(&control, "screenPrepare").is_err());
+        assert!(permit(&control, "screenCandidate").is_err());
+        assert!(permit(&control, "screenCandidates").is_err());
+        assert!(permit(&both, "screenCandidate").is_ok());
+        assert!(permit(&both, "screenCandidates").is_ok());
         assert!(permit(&control, "screenOffer").is_err(), "screen needs the screen scope");
         assert!(permit(&control, "screenStatus").is_ok(), "status is control");
         assert!(permit(&control, "installHostUpdate").is_ok(), "a phone can update a computer that's behind");

@@ -304,6 +304,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 
 - `id`：device 端遞增 u32，連線內唯一。
 - 每條 channel 最多 32 個進行中的 request、4 個訂閱；超過回 `err 429`。
+- `screenCandidates` subscribes with `{"id":N,"sub":"screenCandidates","b":{"session":"<screen-session-id>"}}`. Its `ev` values are `ready`, ordered `candidate`, `complete`, or `error`; `end` closes the subscription. It requires screen scope and ownership of that screen session.
 - `events` 訂閱的語意與 SSE 完全相同（先 subscribe、再 catch-up、`hello` 在最前、落後時送 `{"type":"resync"}`）；`client == "ios"` 時計入 `hub.ios_clients`（推播抑制）。
 - Bot 刪除標記會保留在 host 資料庫；增量同步與 `since = 0` 的全量同步都傳送它們。手機及桌面在版本更新或解碼重試時會保留快取並重設同步游標，必須收到刪除標記才能移除舊 Bot、對話與草稿；終端使用相同的事件串流。
 - 串流沒有額外的 keep-alive；存活由 WebSocket ping（§7.6）負責。
@@ -314,8 +315,10 @@ blob = epk(32) ‖ sig(64) ‖ ct
 |---|---|---|
 | loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token） |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
-| screen scope | `screenPrepare`, `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
+| screen scope | `screenPrepare`, `screenOffer`, `screenCandidate`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
 | control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
+
+The `screenCandidates` subscription also requires `screen` scope and belongs to its device’s screen session. It carries ordered candidates and completion separately from chat events; see [remote screen](../features/remote-screen.md).
 
 v1 發出的 grant 一律 `["control","screen"]`。
 

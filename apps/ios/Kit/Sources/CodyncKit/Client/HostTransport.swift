@@ -8,6 +8,7 @@ public enum HostRoute: Sendable, Equatable {
 public enum HostStreamRequest: Sendable {
     case events(since: Int64, client: String)
     case term(String)
+    case screenCandidates(String)
 }
 
 public enum LinkState: Sendable, Equatable {

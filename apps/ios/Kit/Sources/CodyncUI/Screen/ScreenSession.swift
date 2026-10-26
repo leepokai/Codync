@@ -9,7 +9,7 @@ private let log = Logger(subsystem: "com.pokai.Codync", category: "Screen")
 /// One live view of the computer's screen: a WebRTC peer that receives the
 /// display as H.264 and sends input over two data channels (`input` reliable,
 /// `input-fast` unordered for pointer moves). Signaling goes through the host
-/// API, non-trickle (offer and answer carry every candidate).
+/// API, with full trickle ICE when the host and helper support it.
 @MainActor
 @Observable
 public final class ScreenSession {
@@ -36,12 +36,15 @@ public final class ScreenSession {
     private var reliable: RTCDataChannel?
     private var fast: RTCDataChannel?
     private var events: PeerEvents?
+    private var signaling: ScreenSignaling?
     private var gathered: CheckedContinuation<Void, Never>?
     private var recoverTask: Task<Void, Never>?
     private var gatherTask: Task<Void, Never>?
     private var renewTask: Task<Void, Never>?
     private var connectionTimer: Task<Void, Never>?
     private var generation = 0
+    private var recoveryAttempts = 0
+    private static let maxRecoveryAttempts = 3
 
     static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
@@ -56,11 +59,12 @@ public final class ScreenSession {
     // MARK: connection
 
     public func start() async {
+        recoveryAttempts = 0
         phase = .connecting
         do {
             try await connect()
         } catch {
-            guard phase != .closed else { return }
+            guard phase == .connecting else { return }
             close()
             phase = .failed(error.localizedDescription)
         }
@@ -89,17 +93,37 @@ public final class ScreenSession {
         config.tcpCandidatePolicy = .enabled
         config.continualGatheringPolicy = .gatherOnce
         config.bundlePolicy = .maxBundle
-        let events = PeerEvents(owner: self, generation: current)
+        let candidatePair = connection.trickle ? AsyncThrowingStream<ScreenCandidate, Error>.makeStream(bufferingPolicy: .bufferingOldest(ScreenCandidate.maxCount + 1)) : nil
+        let events = PeerEvents(owner: self, generation: current, candidates: candidatePair?.continuation)
         guard let pc = Self.factory.peerConnection(with: config, constraints: Self.noConstraints, delegate: events) else {
-            throw HostError.http(0, "Couldn't start the video connection.")
+            throw ScreenError.connectionFailed
         }
         self.events = events
         self.pc = pc
+        if let candidatePair {
+            let signaling = ScreenSignaling(client: client, session: connection.session, pc: pc, localPair: candidatePair) { [weak self] error in
+                guard let self, self.generation == current, self.phase != .closed else { return }
+                log.info("screen signaling failed: \(error.localizedDescription)")
+                self.lastError = error.localizedDescription
+                // Retire this peer now, before fetching a replacement. Its queued callbacks
+                // must not restore .live or keep sending input after signaling has failed.
+                self.teardown()
+                self.phase = .reconnecting
+                // An ongoing retry observes the failure when negotiation resumes.
+                // Keep its attempt counter instead of replacing it with a new retry loop.
+                if self.recoverTask == nil { self.scheduleRecovery(after: .zero) }
+            }
+            self.signaling = signaling
+            try await signaling.subscribe()
+            // Subscription failure can retire this peer before the ready waiter resumes.
+            guard self.pc === pc, generation == current, phase != .closed else { throw CancellationError() }
+            try signaling.check()
+        }
 
         let initVideo = RTCRtpTransceiverInit()
         initVideo.direction = .recvOnly
         guard let video = pc.addTransceiver(of: .video, init: initVideo) else {
-            throw HostError.http(0, "Couldn't start the video connection.")
+            throw ScreenError.connectionFailed
         }
         // Hardware H.264 first (High, then Constrained Baseline); the rest only as a fallback.
         let codecs = Self.factory.rtpReceiverCapabilities(forKind: kRTCMediaStreamTrackKindVideo).codecs
@@ -117,6 +141,7 @@ public final class ScreenSession {
 
         try await negotiate(pc)
         guard generation == current, phase != .closed else { throw CancellationError() }
+        try signaling?.check()
         // Refresh both endpoints before TURN credentials expire, including an idle screen.
         let seconds = max(1, Double(connection.expiresAt) / 1000 - Date().timeIntervalSince1970 - 300)
         renewTask = Task { [weak self] in
@@ -135,17 +160,22 @@ public final class ScreenSession {
 
     /// Offer → host → answer with the reserved session’s ICE configuration.
     private func negotiate(_ pc: RTCPeerConnection) async throws {
+        let signaling = signaling
         let offer = try await pc.offer(for: Self.noConstraints)
+        guard self.pc === pc, phase != .closed else { throw CancellationError() }
         try await pc.setLocalDescription(offer)
-        await waitForCandidates(pc)
+        guard self.pc === pc, phase != .closed else { throw CancellationError() }
+        if signaling == nil { await waitForCandidates(pc) }
         try Task.checkCancellation()
         guard self.pc === pc, phase != .closed else { throw CancellationError() }
-        let sdp = pc.localDescription?.sdp ?? offer.sdp
+        let sdp = signaling == nil ? (pc.localDescription?.sdp ?? offer.sdp) : offer.sdp
         let answer = try await client.screenOffer(sdp: sdp, session: session, display: display?.id)
         try Task.checkCancellation()
         guard self.pc === pc, phase != .closed else { throw CancellationError() }
         session = answer.session
         try await pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer.sdp))
+        guard self.pc === pc, phase != .closed else { throw CancellationError() }
+        try await signaling?.installedAnswer()
     }
 
     private func waitForCandidates(_ pc: RTCPeerConnection) async {
@@ -172,6 +202,8 @@ public final class ScreenSession {
         guard generation == self.generation, phase != .closed else { return }
         switch state {
         case .connected, .completed:
+            signaling?.mediaConnected()
+            recoveryAttempts = 0
             connectionTimer?.cancel()
             phase = .live
             lastError = nil
@@ -190,30 +222,69 @@ public final class ScreenSession {
     private func scheduleRecovery(after delay: Duration) {
         recoverTask?.cancel()
         recoverTask = Task { [weak self] in
-            var attempt = 0
             try? await Task.sleep(for: delay)
             while let self, !Task.isCancelled, self.phase == .reconnecting {
+                guard self.recoveryAttempts < Self.maxRecoveryAttempts else {
+                    let error = self.lastError ?? HostError.unreachable.localizedDescription
+                    self.close()
+                    self.phase = .failed(error)
+                    return
+                }
+                do { try await self.waitForSignalingRoute() }
+                catch {
+                    guard !Task.isCancelled, self.phase != .closed else { return }
+                    self.close()
+                    self.phase = .failed(error.localizedDescription)
+                    return
+                }
+                guard !Task.isCancelled, self.phase == .reconnecting else { break }
+                self.recoveryAttempts += 1
                 do {
                     // Re-evaluate the signaling route after Wi-Fi/cellular changes and fetch fresh ICE credentials.
                     try await self.connect()
+                    self.recoverTask = nil
                     return
                 } catch {
                     guard !Task.isCancelled, self.phase != .closed else { return }
                     log.info("screen reconnect failed: \(error.localizedDescription)")
-                    attempt += 1
-                    if attempt >= 3 {
+                    self.lastError = error.localizedDescription
+                    if self.recoveryAttempts >= Self.maxRecoveryAttempts {
                         self.close()
                         self.phase = .failed(error.localizedDescription)
                         return
                     }
-                    try? await Task.sleep(for: .seconds(min(Double(attempt) * 2, 10)))
+                    try? await Task.sleep(for: .seconds(min(Double(self.recoveryAttempts) * 2, 10)))
                 }
             }
+            if !Task.isCancelled { self?.recoverTask = nil }
         }
+    }
+
+    /// A route outage is not a failed WebRTC attempt; wait for the host channel to recover.
+    func waitForSignalingRoute() async throws {
+        let transport = client.transport
+        for await state in transport.states() {
+            try Task.checkCancellation()
+            switch state {
+            case .ready: return
+            case let .unauthorized(message): throw HostError.unauthorized(message)
+            case let .failed(message):
+                guard let channel = transport as? ChannelTransport else { continue }
+                let stopped = await channel.isStopped
+                guard stopped else { continue }
+                let needsUpgrade = await channel.needsUpgrade
+                if needsUpgrade { throw HostError.upgradeRequired }
+                throw ScreenError.signalingFailed(message)
+            case .connecting, .hostOffline: continue
+            }
+        }
+        try Task.checkCancellation()
+        throw HostError.unreachable
     }
 
     public func close() {
         recoverTask?.cancel()
+        recoverTask = nil
         phase = .closed
         if let session {
             let client = client
@@ -225,6 +296,8 @@ public final class ScreenSession {
 
     private func teardown() {
         generation += 1
+        signaling?.stop()
+        signaling = nil
         renewTask?.cancel()
         connectionTimer?.cancel()
         finishGathering()
@@ -270,7 +343,8 @@ public final class ScreenSession {
         return remoteClipboard
     }
 
-    fileprivate func received(_ data: Data) {
+    fileprivate func received(_ data: Data, generation: Int) {
+        guard generation == self.generation, phase != .closed else { return }
         guard let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
         switch msg["type"] as? String {
         case "clipboard": remoteClipboard = msg["text"] as? String
@@ -292,17 +366,28 @@ public final class ScreenSession {
 private final class PeerEvents: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, Sendable {
     private let owner: WeakBox
     private let generation: Int
+    let candidates: AsyncThrowingStream<ScreenCandidate, Error>.Continuation?
 
-    @MainActor init(owner: ScreenSession, generation: Int) {
+    @MainActor init(owner: ScreenSession, generation: Int, candidates: AsyncThrowingStream<ScreenCandidate, Error>.Continuation? = nil) {
         self.owner = WeakBox(owner)
         self.generation = generation
+        self.candidates = candidates
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+        emit(ScreenCandidate(candidate: candidate.sdp, sdpMLineIndex: candidate.sdpMLineIndex, sdpMid: candidate.sdpMid))
+    }
+
+    private func emit(_ event: ScreenCandidate) {
+        guard let candidates else { return }
+        if case .dropped = candidates.yield(event) {
+            candidates.finish(throwing: ScreenError.candidateOverflow)
+        }
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {}
@@ -315,6 +400,7 @@ private final class PeerEvents: NSObject, RTCPeerConnectionDelegate, RTCDataChan
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
         guard newState == .complete else { return }
+        emit(.complete)
         let owner = owner
         let generation = generation
         Task { @MainActor in owner.value?.finishGathering(generation: generation) }
@@ -323,7 +409,8 @@ private final class PeerEvents: NSObject, RTCPeerConnectionDelegate, RTCDataChan
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
         let data = buffer.data
         let owner = owner
-        Task { @MainActor in owner.value?.received(data) }
+        let generation = generation
+        Task { @MainActor in owner.value?.received(data, generation: generation) }
     }
 }
 

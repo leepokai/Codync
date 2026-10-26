@@ -75,7 +75,8 @@ extension ChannelTransport {
     }
 
     public nonisolated func stream(_ request: HostStreamRequest) -> AsyncThrowingStream<Data, Error> {
-        AsyncThrowingStream { continuation in
+        let policy: AsyncThrowingStream<Data, Error>.Continuation.BufferingPolicy = if case .screenCandidates = request { .bufferingOldest(ScreenCandidate.maxCount + 2) } else { .unbounded }
+        return AsyncThrowingStream(bufferingPolicy: policy) { continuation in
             let key = UUID()
             let task = Task { await self.openStream(request, key: key, continuation) }
             continuation.onTermination = { _ in
@@ -93,6 +94,7 @@ extension ChannelTransport {
             let id = nextId()
             let sub: [String: Any] = switch request {
             case let .events(since, client): ["id": id, "sub": "events", "b": ["since": since, "client": client]]
+            case let .screenCandidates(session): ["id": id, "sub": "screenCandidates", "b": ["session": session]]
             case let .term(term): ["id": id, "sub": "term", "b": ["term": term]]
             }
             streams[id] = continuation
@@ -101,6 +103,10 @@ extension ChannelTransport {
         } catch {
             continuation.finish(throwing: error)
         }
+    }
+
+    func sendCancellation(_ id: UInt32) throws {
+        try sendInner(JSONSerialization.data(withJSONObject: ["id": id, "cancel": true]))
     }
 
     /// The consumer went away: stop the host's stream.

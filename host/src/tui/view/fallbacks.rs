@@ -10,6 +10,16 @@ use crate::store::Fallback;
 /// 15:00)". The effort level shows where its agent lists one for the model, as its own session reports it while the bot
 /// runs on it as saved ("effort: In use: Low · Saved: High not offered"); else what is saved for it, as saved.
 pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
+    step_label(app, bot, i, f, true)
+}
+
+/// A fallback's entry without its effort level, for a row too narrow for the full one; the
+/// settings form shows the picked entry's effort level on its own line instead.
+pub(in crate::tui) fn step_item_short(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
+    step_label(app, bot, i, f, false)
+}
+
+fn step_label(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback, effort_level: bool) -> String {
     let model = f.model.as_deref().unwrap_or("default");
     // While the bot runs this agent on the saved model, its session's own list; else the agent's catalog.
     let host = bot.and_then(|b| b.fallbacks.iter().find(|x| x.backend == f.backend && x.model == f.model));
@@ -41,6 +51,7 @@ pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fall
         let saved: Vec<&str> = f.model_options.values().map(String::as_str).collect();
         (!saved.is_empty()).then(|| format!(" · saved ‹{}›", saved.join(", ")))
     });
+    let shown = shown.filter(|_| effort_level);
     let item = format!("{} {} · {model}{}", i + 1, app.agent_name(&f.backend), shown.unwrap_or_default());
     if bot.and_then(|b| b.agent_step.as_deref()) == Some(f.backend.as_str()) {
         format!("{item} (in use)")

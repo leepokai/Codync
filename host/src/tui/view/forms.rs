@@ -26,6 +26,17 @@ fn created_by(app: &App, id: &str) -> Option<String> {
     Some(format!("created by {creator} · {} {day}", MONTHS[month]))
 }
 
+/// A caption at the right of a form row after its items end at `x`, or on the blank line under the
+/// row when it doesn't fit there (form rows are a line apart).
+#[allow(clippy::too_many_arguments)]
+fn caption_line(buf: &mut Buffer, x: u16, y: u16, vx: u16, right: u16, c: &str, beside: Style, under: Style) {
+    if x + u(w(c)) + 2 < right {
+        rput(buf, right, y, c, beside);
+    } else {
+        put(buf, vx, y + 1, right.saturating_sub(vx), &truncate(c, usize::from(right.saturating_sub(vx))), under);
+    }
+}
+
 pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let t = theme();
     let r = centered(area, 88, 42);
@@ -156,11 +167,9 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     }
                     x = put(buf, x, y, u(w(&item)), &item, s.patch(base)) + 2;
                 }
-                // What the running agent says about the effort level, where the row has room.
-                if let Effort::Row { caption: Some(c), .. } = effort
-                    && x + u(w(&c)) + 2 < inner.right()
-                {
-                    rput(buf, inner.right(), y, &c, t.dim.patch(base));
+                // What the running agent says about the effort level: beside the pickers, or under them.
+                if let Effort::Row { caption: Some(c), .. } = effort {
+                    caption_line(buf, x, y, vx, inner.right(), &c, t.dim.patch(base), t.dim.patch(t.panel));
                 }
             }
             Field::Agent => {
@@ -171,11 +180,21 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
             Field::Fallbacks => {
                 let bot = app.bots.get(&f.bot_id);
-                let mut items: Vec<String> =
-                    f.fallbacks.iter().enumerate().map(|(j, x)| super::fallbacks::step_item(app, bot, j, x)).collect();
-                if f.fallbacks.len() < crate::agent::fallback::MAX_FALLBACKS {
-                    items.push("+ add".into());
-                }
+                let add = f.fallbacks.len() < crate::agent::fallback::MAX_FALLBACKS;
+                let entries =
+                    |item: fn(&App, Option<&super::super::app::Bot>, usize, &crate::store::Fallback) -> String| {
+                        let mut items: Vec<String> =
+                            f.fallbacks.iter().enumerate().map(|(j, x)| item(app, bot, j, x)).collect();
+                        if add {
+                            items.push("+ add".into());
+                        }
+                        items
+                    };
+                // Each entry with its effort level where they all fit; otherwise without it, so no
+                // entry turns into "…" (the picked one's effort level is shown under the row).
+                let fits = |items: &[String]| u(items.iter().map(|i| w(i) + 2).sum::<usize>()) <= vw;
+                let full = entries(super::fallbacks::step_item);
+                let items = if fits(&full) { full } else { entries(super::fallbacks::step_item_short) };
                 let mut x = vx;
                 for (j, item) in items.iter().enumerate() {
                     let s = if active && j == f.sub { t.bold.add_modifier(Modifier::UNDERLINED) } else { t.text };
@@ -185,13 +204,19 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     }
                     x = put(buf, x, y, u(w(item)), item, s.patch(base)) + 2;
                 }
-                // The picked fallback's Effort level, as its own agent reports it.
-                if active
-                    && f.sub < f.fallbacks.len()
-                    && let Effort::Row { caption: Some(c), .. } = app.form_effort(f, Some(f.sub))
-                    && x + u(w(&c)) + 2 < inner.right()
-                {
-                    rput(buf, inner.right(), y, &c, t.dim.patch(base));
+                // The picked fallback's Effort level, as its own agent reports it; while another field is
+                // picked, the first fallback's that has one, so a refused or pending level stays in view.
+                let caption = |j: usize| match app.form_effort(f, Some(j)) {
+                    Effort::Row { caption: Some(c), .. } => Some(c),
+                    _ => None,
+                };
+                let shown = if active {
+                    (f.sub < f.fallbacks.len()).then(|| caption(f.sub)).flatten()
+                } else {
+                    (0..f.fallbacks.len()).find_map(caption)
+                };
+                if let Some(c) = shown {
+                    caption_line(buf, x, y, vx, inner.right(), &c, t.dim.patch(base), t.dim.patch(t.panel));
                 }
             }
             Field::SelfFallbacks => {
@@ -426,4 +451,71 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         if on_bots { "↑↓ move · space pick · tab name" } else { "tab next field" },
         t.dim.patch(t.panel),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::app::{App, FIELDS, Field, Overlay};
+    use super::form_view;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use serde_json::json;
+
+    fn app_with(bot: &serde_json::Value) -> App {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(crate::tui::net::Client::new("http://127.0.0.1:1", None), tx, String::new());
+        app.on_msg(crate::tui::app::Msg::Event(json!({"type": "bot", "bot": bot})));
+        app.selected = Some("b".into());
+        app
+    }
+
+    fn rendered(app: &mut App, field: Field) -> Vec<String> {
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == field).expect("the field");
+        f.sub = 0;
+        // A wide terminal: the form is still capped at 88 columns.
+        let area = Rect::new(0, 0, 160, 50);
+        let mut buf = Buffer::empty(area);
+        form_view(&mut buf, area, app, &f);
+        (0..area.height).map(|y| (0..area.width).map(|x| buf[(x, y)].symbol()).collect()).collect()
+    }
+
+    fn level() -> serde_json::Value {
+        json!({"id": "effort", "name": "Effort", "category": "thought_level",
+            "values": [{"id": "low", "name": "Low"}, {"id": "high", "name": "High"}]})
+    }
+
+    #[tokio::test]
+    async fn a_refused_effort_level_stays_visible_when_it_does_not_fit_beside_the_options() {
+        // Greptile on 0df40354: the caption was drawn only where it fit beside the pickers.
+        let mut app = app_with(&json!({"id": "b", "name": "Lead", "backend": "claude",
+            "modelOptions": {"effort": "high"}, "sessionLive": true,
+            "sessionOptions": {"effort": "low"}, "sessionSettings": [level()],
+            "settingIssues": {"effort": {"issue": "rejected", "value": "high"}}}));
+        for field in [Field::ModelOptions, Field::Name] {
+            let lines = rendered(&mut app, field);
+            assert!(
+                lines.iter().any(|l| l.contains("Saved: High · not applied (the agent refused it)")),
+                "{field:?} active:\n{}",
+                lines.join("\n")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fallbacks_long_status_neither_hides_the_entry_nor_its_effort_warning() {
+        // Greptile on 0df40354: the status made the entry too long, so it became "…".
+        let mut app = app_with(&json!({"id": "b", "name": "Lead", "backend": "claude",
+            "fallbacks": [{"backend": "codex", "model": null, "modelOptions": {"effort": "high"}}],
+            "agentStep": {"step": 1, "agent": "codex"}, "sessionLive": true,
+            "sessionOptions": {"effort": "low"}, "sessionSettings": [level()],
+            "settingIssues": {"effort": {"issue": "rejected", "value": "high"}}}));
+        for field in [Field::Fallbacks, Field::Name] {
+            let lines = rendered(&mut app, field);
+            let all = lines.join("\n");
+            assert!(lines.iter().any(|l| l.contains("1 codex · default")), "{field:?}:\n{all}");
+            assert!(all.contains("Saved: High · not applied (the agent refused it)"), "{field:?}:\n{all}");
+        }
+    }
 }

@@ -2,6 +2,12 @@ Every bot runs one coding agent on your computer. Codync drives agents through t
 
 Codync uses the agents with the accounts they're already signed in to on your computer, such as Claude Code with your Claude plan or Codex with your ChatGPT plan. It never calls a provider's API with your login.
 
+## Usage limits
+
+On desktop, open **Settings > Usage** to see the limits reported by your connected computers. The host refreshes usage every five minutes.
+
+Codex needs its CLI installed and signed in on the computer. The host reads current account limits without starting a conversation or using a model. If the login stops working or the current limits are unavailable, old session-file readings are not shown. Sign in again from **Extensions** or run `codex login --device-auth` on that computer.
+
 ## Agents Codync knows by name
 
 For these agents, Codync knows the command it looks for, how to install it and how to sign in. The agent must be installed on the computer before a bot can use it.

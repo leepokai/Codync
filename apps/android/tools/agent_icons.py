@@ -6,7 +6,7 @@ Each `apps/desktop/src/renderer/assets/agents/<registry>.svg` made only of paths
 are); logos with other shapes fall back to the terminal glyph. Also writes `AgentIcons.kt`, the
 `agentIconRes("claude-acp")` lookup.
 
-Run from apps/android: python3 tools/agent_icons.py
+Run from apps/android: python3 tools/agent_icons.py (self-check: python3 tools/agent_icons_test.py)
 """
 import pathlib
 import re

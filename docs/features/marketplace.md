@@ -46,7 +46,7 @@ Registry-backed package connectors follow their upstream release. The host check
 
 ## Codex usage
 
-The host asks the installed Codex CLI's app-server `account/rateLimits/read` method for the current account's plan windows every five minutes. It initializes the CLI transport without creating a thread or model turn, then stops the probe through the host's existing process-tree cleanup. The canonical `rateLimitsByLimitId.codex` bucket takes precedence over the older single `rateLimits` view. Reset timestamps are Unix seconds and become milliseconds in the existing `usage` event.
+The host asks the installed Codex CLI's app-server `account/rateLimits/read` method for the current account's plan windows every five minutes. Executable lookup and process startup run on a blocking worker. It initializes the CLI transport without creating a thread or model turn, then stops the probe through the host's existing process-tree cleanup. Startup, handshake and account-read failures retain their phase and cause in structured debug logs. The canonical `rateLimitsByLimitId.codex` bucket takes precedence over the older single `rateLimits` view. Reset timestamps are Unix seconds and become milliseconds in the existing `usage` event.
 
 The CLI must be signed in as the user running the host. Missing, rejected or unavailable account readings remove the Codex provider rather than reusing session-log snapshots. Windows whose reported reset has already passed are omitted. A signed-out host therefore does not keep showing an old percentage with “resets in 0m.” Sign in with `codex login --device-auth`, or use Extensions > Codex > Sign in. Existing client usage views render the same window shape without a protocol change.
 

@@ -1,7 +1,9 @@
 //! Current Codex plan windows, read through the CLI's account API without a model turn.
 
 use crate::agent::acp::Acp;
+use anyhow::{Context, Result};
 use serde_json::{Value, json};
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::Window;
@@ -9,43 +11,51 @@ use super::Window;
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub(super) async fn collect() -> Option<Vec<Window>> {
-    let Some(bin) = super::command::program("codex") else { return Some(Vec::new()) };
-    let home = dirs::home_dir()?;
-    let command = format!("{} app-server", crate::shell::quote(&bin.to_string_lossy()));
-    let reading = read_live(&command, &home.to_string_lossy(), READ_TIMEOUT).await;
+    let reading = read_live(start_codex, READ_TIMEOUT).await;
     // A failed sign-in or an unavailable CLI must not leave an expired snapshot on screen.
-    Some(reading.unwrap_or_default())
-}
-
-async fn read_live(command: &str, cwd: &str, timeout: Duration) -> Option<Vec<Window>> {
-    // Reuse the host's JSON-RPC transport and whole-process-tree cleanup.
-    let (client, _events) = Acp::spawn(command, cwd, &[]).ok()?;
-    let result = tokio::time::timeout(timeout, read_limits(&client)).await;
-    client.kill().await;
-    match result {
-        Ok(Ok(response)) => Some(parse(&response, crate::store::now_ms())),
-        Ok(Err(_)) => {
-            tracing::debug!("codex account usage was unavailable");
-            None
-        }
-        Err(_) => {
-            tracing::debug!("codex account usage timed out");
-            None
+    match reading {
+        Ok(windows) => Some(windows.unwrap_or_default()),
+        Err(error) => {
+            tracing::debug!(error = format!("{error:#}"), "codex account usage was unavailable");
+            Some(Vec::new())
         }
     }
 }
 
-async fn read_limits(client: &Acp) -> anyhow::Result<Value> {
+fn start_codex() -> Result<Option<Arc<Acp>>> {
+    let Some(bin) = super::command::program("codex") else { return Ok(None) };
+    let home = dirs::home_dir().context("locating the host user's home directory")?;
+    let command = format!("{} app-server", crate::shell::quote(&bin.to_string_lossy()));
+    let (client, _events) = Acp::spawn(&command, &home.to_string_lossy(), &[])?;
+    Ok(Some(client))
+}
+
+async fn read_live(
+    start: impl FnOnce() -> Result<Option<Arc<Acp>>> + Send + 'static,
+    timeout: Duration,
+) -> Result<Option<Vec<Window>>> {
+    // Lookup and process creation can block; the transport's async reads stay on the runtime.
+    let started = tokio::task::spawn_blocking(start).await;
+    let client = started.context("joining Codex usage startup")?.context("starting Codex usage probe")?;
+    let Some(client) = client else { return Ok(None) };
+    let result = tokio::time::timeout(timeout, read_limits(&client)).await;
+    client.kill().await;
+    let response = result.with_context(|| format!("Codex usage read exceeded {}ms", timeout.as_millis()))??;
+    Ok(Some(parse(&response, crate::store::now_ms())))
+}
+
+async fn read_limits(client: &Acp) -> Result<Value> {
     let initialized = client
         .request(
             "initialize",
             json!({"clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")}}),
         )
         .await;
-    initialized?;
+    initialized.context("initializing Codex usage probe")?;
     let notified = client.notify("initialized", json!({})).await;
-    notified?;
-    client.request("account/rateLimits/read", json!({})).await
+    notified.context("announcing Codex usage initialization")?;
+    let limits = client.request("account/rateLimits/read", json!({})).await;
+    limits.context("reading Codex account rate limits")
 }
 
 fn parse(response: &Value, now_ms: i64) -> Vec<Window> {
@@ -117,11 +127,18 @@ mod tests {
         assert_eq!(parse(&json!({"rateLimits": {"primary": {"resetsAt": 300}}}), 200_000), Vec::new());
     }
 
-    async fn fixture(mode: &str, timeout: Duration) -> Option<Vec<Window>> {
+    fn fixture_start(mode: &str) -> impl FnOnce() -> Result<Option<Arc<Acp>>> + Send + 'static {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let script = root.join("tests/fixtures/codex_usage.py");
         let command = format!("{} {}", crate::shell::python(&script), crate::shell::quote(mode));
-        let result = read_live(&command, &root.to_string_lossy(), timeout).await;
+        move || {
+            let (client, _events) = Acp::spawn(&command, &root.to_string_lossy(), &[])?;
+            Ok(Some(client))
+        }
+    }
+
+    async fn fixture(mode: &str, timeout: Duration) -> Result<Option<Vec<Window>>> {
+        let result = read_live(fixture_start(mode), timeout).await;
         crate::agent::acp::stopped().await;
         result
     }
@@ -129,7 +146,7 @@ mod tests {
     #[tokio::test]
     async fn the_probe_initializes_and_reads_limits_without_starting_a_turn() {
         let result = fixture("ready", Duration::from_secs(10)).await;
-        let windows = result.unwrap();
+        let windows = result.unwrap().unwrap();
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].label, "Weekly");
         assert!((windows[0].percent - 23.0).abs() < f64::EPSILON);
@@ -138,12 +155,52 @@ mod tests {
     #[tokio::test]
     async fn authentication_failure_does_not_become_zero_usage() {
         let result = fixture("signed-out", Duration::from_secs(10)).await;
-        assert_eq!(result, None);
+        let error = result.unwrap_err();
+        assert!(format!("{error:#}").contains("reading Codex account rate limits: Sign in required"));
     }
 
     #[tokio::test]
     async fn an_unresponsive_probe_is_bounded_and_stopped() {
         let result = fixture("hang", Duration::from_millis(100)).await;
-        assert_eq!(result, None);
+        let error = result.unwrap_err();
+        assert!(error.downcast_ref::<tokio::time::error::Elapsed>().is_some());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn slow_startup_does_not_stall_other_host_work() {
+        let (release, waiting) = std::sync::mpsc::channel();
+        let start = fixture_start("ready");
+        let probe = read_live(
+            move || {
+                waiting.recv_timeout(Duration::from_secs(5)).context("async work could not release startup")?;
+                start()
+            },
+            Duration::from_secs(10),
+        );
+        let resume = async {
+            tokio::task::yield_now().await;
+            release.send(()).unwrap();
+        };
+        let (result, ()) = tokio::join!(probe, resume);
+        crate::agent::acp::stopped().await;
+        assert!(result.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn startup_errors_retain_their_cause_and_context() {
+        let result = read_live(
+            || Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "probe denied").into()),
+            Duration::from_secs(10),
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert!(format!("{error:#}").contains("starting Codex usage probe: probe denied"));
+    }
+
+    #[tokio::test]
+    async fn protocol_errors_identify_the_failed_handshake() {
+        let result = fixture("bad-handshake", Duration::from_secs(10)).await;
+        let error = result.unwrap_err();
+        assert!(format!("{error:#}").contains("initializing Codex usage probe: initialize rejected"));
     }
 }

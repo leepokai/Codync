@@ -13,6 +13,9 @@ for line in sys.stdin:
     if method == "initialize":
         assert not initialized
         assert message["params"]["clientInfo"]["name"] == "codync"
+        if mode == "bad-handshake":
+            print(json.dumps({"id": message["id"], "error": {"code": -32600, "message": "initialize rejected"}}), flush=True)
+            continue
         initialized = True
         result = {}
     elif method == "initialized":

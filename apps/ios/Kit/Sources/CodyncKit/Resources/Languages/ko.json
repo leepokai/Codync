@@ -826,6 +826,7 @@
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "Auggie (npm install -g @augmentcode/auggie)을 설치하고 `auggie login`을 실행하세요.",
   "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.": "Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash)을 설치하고 `vibe --setup`을 실행하세요.",
   "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.": "Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash)을 설치하고 `kiro-cli login`을 실행하세요.",
+  "Install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and save your DeepSeek API key in `dsh web` under Settings → Models, or as DEEPSEEK_API_KEY in ~/.dsh/.env.": "DeepSeek Harness (npm install -g @deepseek-ai/dsh)를 설치하고 `dsh web`의 Settings → Models에서 DeepSeek API 키를 저장하거나 ~/.dsh/.env에 DEEPSEEK_API_KEY로 설정하세요.",
   "Install the Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash) and run `devin auth login`.": "the Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash)을 설치하고 `devin auth login`을 실행하세요.",
   "Install Qoder CLI (curl -fsSL https://qoder.com/install | bash) and run `qodercli login`.": "Qoder CLI (curl -fsSL https://qoder.com/install | bash)을 설치하고 `qodercli login`을 실행하세요.",
   "Install CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) and sign in with `codebuddy`.": "CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code)을 설치하고 `codebuddy`으로 로그인하세요.",

@@ -826,6 +826,7 @@
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "Auggie をインストールし (npm install -g @augmentcode/auggie)、`auggie login` を実行します。",
   "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.": "Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) をインストールし、`vibe --setup` を実行します。",
   "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.": "Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) をインストールし、`kiro-cli login` を実行します。",
+  "Install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and save your DeepSeek API key in `dsh web` under Settings → Models, or as DEEPSEEK_API_KEY in ~/.dsh/.env.": "DeepSeek Harness (npm install -g @deepseek-ai/dsh) をインストールし、`dsh web` の Settings → Models で DeepSeek APIキーを保存するか、~/.dsh/.env に DEEPSEEK_API_KEY として設定します。",
   "Install the Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash) and run `devin auth login`.": "Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash) をインストールし、`devin auth login` を実行します。",
   "Install Qoder CLI (curl -fsSL https://qoder.com/install | bash) and run `qodercli login`.": "Qoder CLI (curl -fsSL https://qoder.com/install | bash) をインストールし、`qodercli login` を実行します。",
   "Install CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) and sign in with `codebuddy`.": "CodeBuddy コードをインストールし (npm install -g @tencent-ai/codebuddy-code)、`codebuddy` でサインインします。",

@@ -255,7 +255,7 @@ pub const HARNESSES: &[Harness] = &[
         bins: &["dsh"],
         local: Some("{bin} --profile acp"),
         registry: None,
-        setup: "Install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and put DEEPSEEK_API_KEY under `refs` in ~/.dsh/.credentials.yaml, or save it in `dsh web` settings.",
+        setup: "Install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and save your DeepSeek API key in `dsh web` under Settings → Models, or as DEEPSEEK_API_KEY in ~/.dsh/.env.",
         install: Some(Install::Npm("@deepseek-ai/dsh")),
         login: Some("{bin} web"),
         signed_in: None,

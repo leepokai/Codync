@@ -826,6 +826,7 @@
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "安裝 Auggie（npm install -g @augmentcode/auggie），然後執行 `auggie login`。",
   "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.": "安裝 Mistral Vibe（curl -LsSf https://mistral.ai/vibe/install.sh | bash），然後執行 `vibe --setup`。",
   "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.": "安裝 Kiro CLI（curl -fsSL https://cli.kiro.dev/install | bash），然後執行 `kiro-cli login`。",
+  "Install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and save your DeepSeek API key in `dsh web` under Settings → Models, or as DEEPSEEK_API_KEY in ~/.dsh/.env.": "安裝 DeepSeek Harness（npm install -g @deepseek-ai/dsh），然後在 `dsh web` 的 Settings → Models 儲存你的 DeepSeek API 金鑰，或在 ~/.dsh/.env 設定 DEEPSEEK_API_KEY。",
   "Install the Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash) and run `devin auth login`.": "安裝 Devin CLI（curl -fsSL https://cli.devin.ai/install.sh | bash），然後執行 `devin auth login`。",
   "Install Qoder CLI (curl -fsSL https://qoder.com/install | bash) and run `qodercli login`.": "安裝 Qoder CLI（curl -fsSL https://qoder.com/install | bash），然後執行 `qodercli login`。",
   "Install CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) and sign in with `codebuddy`.": "安裝 CodeBuddy Code（npm install -g @tencent-ai/codebuddy-code），然後用 `codebuddy` 登入。",

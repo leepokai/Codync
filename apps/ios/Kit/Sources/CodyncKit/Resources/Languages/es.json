@@ -826,6 +826,7 @@
   "Install Auggie (npm install -g @augmentcode/auggie) and run `auggie login`.": "Instala Auggie (npm install -g @augmentcode/auggie) y ejecuta `auggie login`.",
   "Install Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) and run `vibe --setup`.": "Instala Mistral Vibe (curl -LsSf https://mistral.ai/vibe/install.sh | bash) y ejecuta `vibe --setup`.",
   "Install Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) and run `kiro-cli login`.": "Instala Kiro CLI (curl -fsSL https://cli.kiro.dev/install | bash) y ejecuta `kiro-cli login`.",
+  "Install DeepSeek Harness (npm install -g @deepseek-ai/dsh) and save your DeepSeek API key in `dsh web` under Settings → Models, or as DEEPSEEK_API_KEY in ~/.dsh/.env.": "Instala DeepSeek Harness (npm install -g @deepseek-ai/dsh) y guarda tu clave API de DeepSeek en `dsh web`, en Settings → Models, o como DEEPSEEK_API_KEY en ~/.dsh/.env.",
   "Install the Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash) and run `devin auth login`.": "Instala the Devin CLI (curl -fsSL https://cli.devin.ai/install.sh | bash) y ejecuta `devin auth login`.",
   "Install Qoder CLI (curl -fsSL https://qoder.com/install | bash) and run `qodercli login`.": "Instala Qoder CLI (curl -fsSL https://qoder.com/install | bash) y ejecuta `qodercli login`.",
   "Install CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) and sign in with `codebuddy`.": "Instala CodeBuddy Code (npm install -g @tencent-ai/codebuddy-code) e inicia sesión con `codebuddy`.",

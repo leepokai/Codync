@@ -37,10 +37,13 @@ For these agents, Codync knows the command it looks for, how to install it and h
 | Google Antigravity | `agy` | sign in from Codync with **Log in with Google** |
 | Cortex Code | `cortex` | run `cortex` and set up a connection |
 | Poolside | `pool` | `pool login` |
+| DeepSeek Harness | `dsh` | run `dsh web` and save your DeepSeek API key under **Settings → Models** |
 
 Signing in to Google Antigravity with `agy` in a terminal doesn't sign in the part Codync runs, so use the sign-in option in Codync's setup sheet for it.
 
 WorkBuddy is separate from CodeBuddy Code. Codync runs the CLI bundled in the WorkBuddy app: `WorkBuddy AI.app` (from workbuddy.ai) or `WorkBuddy.app` (from codebuddy.cn) on macOS, or its install folder on Windows (`%LOCALAPPDATA%\Programs\WorkBuddy AI` or `WorkBuddy`). That CLI only ships WorkBuddy's lite build, so Codync starts it the way the app does. It runs on Node.js: if the computer has none, Codync offers to add its own. Codync does not install WorkBuddy, and there is no Linux build, so Codync on Linux doesn't list it. Sign in from Codync: the WorkBuddy app's login stays in the app, so this CLI asks again and opens a browser. A `codebuddy` command on your `PATH` stays CodeBuddy Code.
+
+DeepSeek Harness runs its own `dsh --profile acp` mode. It has no sign-in command: it uses the DeepSeek API key saved in `dsh web`, or `DEEPSEEK_API_KEY` set in `~/.dsh/.env`. It can't reopen an earlier session, so after the host or the agent restarts, a DeepSeek Harness bot starts a new session; the chat in Codync stays.
 
 Hermes Agent runs its own `hermes acp` mode, with the provider and model you pick in `hermes acp --setup`. On Windows, Codync also finds it in its install folders (`%LOCALAPPDATA%\hermes\bin`) without a `PATH` change. Hermes and Gemini CLI keep a memory of their own that every bot on them shares; see [Memory](/docs/memory#agents-with-a-memory-of-their-own).
 

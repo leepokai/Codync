@@ -27,7 +27,14 @@ def resource(registry: str) -> str:
 def compact(d: str, size: float) -> str:
     """Rounds path numbers to what a 24dp icon can show (lint flags long paths)."""
     places = max(1, 4 - len(str(int(size))))
-    return re.sub(r"-?\d*\.\d+", lambda m: f"{float(m.group()):.{places}f}".rstrip("0").rstrip("."), d)
+
+    def rounded(m: re.Match) -> str:
+        value = f"{float(m.group()):.{places}f}".rstrip("0").rstrip(".")
+        # `1.5.5` is two numbers: once `1.5` rounds to `2`, `.5` needs a separator or it reads `20.5`.
+        joined = m.start() > 0 and d[m.start() - 1] in "0123456789." and not value.startswith("-")
+        return " " + value if joined else value
+
+    return re.sub(r"-?\d*\.\d+", rounded, d)
 
 
 def convert(svg: pathlib.Path) -> str | None:

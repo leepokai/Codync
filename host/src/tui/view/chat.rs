@@ -172,6 +172,10 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         set_cursor(Position::new(r.x + 3 + u(cursor.0), cy.min(comp_top + ch)));
     }
 
+    if !b.group {
+        super::context_usage::meter(buf, Rect::new(r.x, box_top + qh + fh + ch + 1, r.width, 1), app, &b);
+    }
+
     // Transcript.
     let body = Rect::new(r.x, top + 1, r.width, box_top.saturating_sub(top + 1));
     app.chat_height = usize::from(body.height);

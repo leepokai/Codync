@@ -14,6 +14,14 @@ Everything else the agent did (its narration, thinking, tool calls, diffs and pl
 - **Desktop:** hover a bot message and choose **More message actions**, then **Show what it did**, or right-click the message.
 - **Terminal UI:** `t` opens the trace pane, `T` opens it full screen, and `o` shows the last turn's steps.
 
+## Context window
+
+The circle at the right of the message box shows how much of the current agent session's context window is used. Click or tap it for a small bubble with the last reported token count and capacity. Click outside to dismiss it. It turns amber at 80% and red at 95%. In the terminal UI, click the meter on the right edge of the composer or press `W` while navigating.
+
+The reading updates when the agent reports usage, and can fall after the agent summarizes earlier context. A dash means no reading is available; it does not mean 0%. Starting a new session clears the previous reading. Group chats have no single session meter.
+
+This measures the coding agent's session, including whatever context its agent counts. It is separate from subscription usage and the realtime voice model's context window.
+
 ## Sending messages
 
 Type in the box at the bottom and send.

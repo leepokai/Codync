@@ -305,6 +305,7 @@ impl App {
                 self.focus = Focus::Trace;
             }
             KeyCode::Char('b') => self.compact = !self.compact,
+            KeyCode::Char('W') if self.bot().is_some_and(|b| !b.group) => self.overlays.push(Overlay::ContextUsage),
             KeyCode::Char('U') => self.overlays.push(Overlay::Usage(0)),
             KeyCode::Char('M') => self.open_memory(),
             KeyCode::Char('R') => self.open_routines(),
@@ -415,6 +416,7 @@ impl App {
                             self.overlays.push(Overlay::Goto(Goto { query: Editor::default(), filter: i, cursor: 0 }));
                         }
                     }
+                    Some(Click::ContextUsage) => self.overlays.push(Overlay::ContextUsage),
                     Some(Click::Composer) => self.start_typing(),
                     Some(Click::Steps) => self.toggle_steps(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),

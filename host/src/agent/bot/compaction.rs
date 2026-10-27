@@ -85,8 +85,10 @@ impl Actor {
     pub(super) fn track_usage(&mut self, used: u64, size: u64) {
         let Some(sid) = self.turn_session.clone() else { return };
         let Some(conn) = self.conn.as_mut() else { return };
-        let before = conn.usage.insert(sid, (used, size)).map(|(used, _)| used);
-        if !conn.reports_compaction && compacted_by_usage(before, used) {
+        let before = conn.usage.insert(sid.clone(), (used, size)).map(|(used, _)| used);
+        let compacted = !conn.reports_compaction && compacted_by_usage(before, used);
+        crate::chat::context_usage::record(&self.hub, &self.cfg, &sid, used, size);
+        if compacted {
             self.compacted(&format!("usage-{}", now_ms()), None);
         }
     }

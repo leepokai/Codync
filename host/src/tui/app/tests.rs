@@ -91,3 +91,34 @@ async fn lead_role_opens_from_the_keyboard_and_badge_without_changing_selection(
     app.on_key(KeyEvent::from(KeyCode::Enter));
     assert!(app.overlays.is_empty());
 }
+
+#[tokio::test]
+async fn context_meter_opens_details_with_keyboard_and_mouse() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut app = test_app();
+    app.bots.insert(
+        "b".into(),
+        Bot::parse(&json!({"id": "b", "contextUsage": {
+            "usedTokens": 160_000, "maxTokens": 200_000, "percent": 80, "level": "warning"
+        }}))
+        .expect("bot"),
+    );
+    app.selected = Some("b".into());
+    app.on_key(KeyEvent::from(KeyCode::Char('W')));
+    assert!(matches!(app.overlays.last(), Some(Overlay::ContextUsage)));
+    app.on_key(KeyEvent::from(KeyCode::Esc));
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("terminal");
+    terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("draw");
+    let meter = app.hits.clicks.iter().find(|(_, hit)| matches!(hit, Click::ContextUsage)).expect("meter").0;
+    app.on_mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: meter.x,
+        row: meter.y,
+        modifiers: KeyModifiers::NONE,
+    });
+    assert!(matches!(app.overlays.last(), Some(Overlay::ContextUsage)));
+    terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("detail");
+    let screen = format!("{:?}", terminal.backend().buffer());
+    assert!(screen.contains("160000 / 200000 tokens"), "{screen}");
+}

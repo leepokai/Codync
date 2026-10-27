@@ -20,6 +20,7 @@ import { ComposerAttachment } from './ComposerAttachment'
 import { QuoteRow } from './ChatRows'
 import { useDictation } from './dictation-platform'
 import { DictationEngineMenu } from './DictationEngineMenu'
+import { ContextUsageIndicator } from './ContextUsageIndicator'
 import { builtInCommand, slashCommands, slashQuery, type SlashCommand } from './slash-commands'
 import { useVoiceShortcut } from './voice-shortcut-keys'
 
@@ -326,6 +327,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
                 </span>
               ))}
             </button>
+            {bot && !isGroup(bot) ? <ContextUsageIndicator usage={bot.contextUsage} /> : null}
           </div>
         </div>
       </div>

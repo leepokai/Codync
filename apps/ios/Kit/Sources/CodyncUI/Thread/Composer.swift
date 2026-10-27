@@ -269,6 +269,9 @@ struct Composer: View {
             trailingButton
                 .padding(.bottom, max(0, (textLineHeight + 2 * fieldPadding - buttonSize) / 2))
                 .animation(Motion.layout, value: isEmpty)
+            if let bot, !bot.isGroup {
+                ContextUsageIndicator(usage: bot.contextUsage, diameter: buttonSize)
+            }
         }
         .padding(.leading, 18)
         .padding(.trailing, 6)

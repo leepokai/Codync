@@ -1,5 +1,6 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
+import type { ContextUsage } from './context-usage'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -72,6 +73,7 @@ export interface Bot {
   status: BotStatus | string
   activity: string
   startedAt?: number | null
+  contextUsage?: ContextUsage | null
   workingChat?: string | null
   unread: number
   lastMessage?: string | null
@@ -126,6 +128,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     activity: raw.activity ?? '',
     startedAt: raw.startedAt ?? null,
     workingChat: raw.workingChat ?? null,
+    contextUsage: raw.contextUsage ?? null,
     unread: raw.unread ?? 0,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,

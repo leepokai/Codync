@@ -135,6 +135,10 @@ impl App {
                 self.call("pairing", json!({}), After::Pairing);
                 Some(Overlay::Pair(PairCode::Loading))
             }
+            Overlay::ContextUsage => match k.code {
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'W') => None,
+                _ => Some(Overlay::ContextUsage),
+            },
             Overlay::LeadAgent(scroll) => {
                 let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
                 let max = super::super::view::lead_agent_scroll_max(width, height);

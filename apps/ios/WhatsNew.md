@@ -9,6 +9,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 ## 2.29.0
 
 ### zh-Hant
+- 對話輸入框右側新增上下文用量圓環；點一下可查看目前 Agent 工作階段已用與可用的 token 數。
 - Agent、模型、推理強度與 Fast mode 整合成可收合的精簡設定；每個 Bot 可獨立保存推理強度，Default 也會顯示預設值。
 - 評分邀請只會在你使用一段時間、看完 Bot 的成果並回到列表後出現，不會在開啟 App 時打擾你。也可以隨時從設定前往 App Store 評分。
 - 「設定」現在是「狀態」右邊的獨立分頁，只放這支 iPhone 自己的設定。每台電腦的擴充套件、語音、螢幕、推送通知與連線，都移到「管理電腦」裡那台電腦的卡片上；推送通知可以逐台電腦開關。
@@ -17,6 +18,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Bot 設定多了「提供給網路」與「雲端助理可聯繫」兩個開關，決定其他電腦上的 Bot 與 ChatGPT、Claude 能不能找到它。
 
 ### en-US
+- A context ring beside the message box shows your agent session’s usage; tap for token counts.
 - Agent, model, reasoning effort and Fast mode now share compact, expandable settings. Each bot keeps its own effort preference, with the default level shown.
 - Rating invitations wait until you have used Codync for a while, viewed a bot's result, and returned to the list. You can also rate Codync anytime from Settings.
 - Settings is now its own tab, next to State, with only this iPhone's own settings. Each computer's Extensions, Voice chat, Screen, Push notifications and Connection are on its card in Manage computers, and push can be turned off for each computer.

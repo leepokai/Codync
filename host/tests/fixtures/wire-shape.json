@@ -12,6 +12,7 @@
     "event:bot.bot.command": "string",
     "event:bot.bot.computer": "bool",
     "event:bot.bot.connectors": "array",
+    "event:bot.bot.contextUsage": "null",
     "event:bot.bot.createdAt": "number",
     "event:bot.bot.createdBy": "string",
     "event:bot.bot.cwd": "string",

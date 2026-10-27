@@ -36,6 +36,7 @@ impl Actor {
             if let Err(error) = self.hub.store.set_session(&self.cfg.id, sid) {
                 tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't store the session");
             }
+            self.hub.emit_bot(&self.cfg.id);
             return;
         };
         let key = run_session_key(&self.cfg.id, slot);
@@ -265,6 +266,9 @@ impl Actor {
         conn.loaded.insert(sid.clone(), Instant::now());
         let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
         self.note_options(&sid, &options, Listing::Session);
+        if slot.is_none() {
+            crate::chat::context_usage::clear(&self.hub.store, &self.cfg, &sid)?;
+        }
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;
         self.turn_session = Some(sid.clone());
@@ -312,6 +316,9 @@ impl Actor {
 
     /// Drops the main ACP session so the next turn starts a fresh one.
     pub(super) fn forget_session(&mut self) {
+        if let Some(sid) = &self.session_id {
+            crate::chat::context_usage::record(&self.hub, &self.cfg, sid, 0, 0);
+        }
         self.set_session(None, None);
     }
 }

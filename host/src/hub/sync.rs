@@ -40,6 +40,7 @@ impl Hub {
             v["agentStep"] = json!(rt.agent_step);
             v["resting"] = json!(crate::agent::fallback::resting(&self.store, cfg, crate::store::now_ms()));
         }
+        v["contextUsage"] = json!(crate::chat::context_usage::for_bot(&self.store, row));
         v["fastModeIssue"] = rt.fast_mode.issue().into();
         v["unread"] = self.store.unread(&cfg.id, row.read_rev).into();
         let preview = last.as_ref().map(|l| match &l.author {

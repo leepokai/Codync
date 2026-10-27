@@ -1382,5 +1382,11 @@
   "this computer isn't in a network": "这台电脑不在任何网络里",
   "cloud assistants are off here": "这里的云端助手已关闭",
   "Offered to the network: bots on your other computers can see and message this bot.": "提供给网络：你其他电脑上的 Bot 能看到这个 Bot 并给它发消息。",
-  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "云端助手可联系：你 Codync 账户里的 ChatGPT 或 Claude 能看到这个 Bot 并给它发消息。"
+  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "云端助手可联系：你 Codync 账户里的 ChatGPT 或 Claude 能看到这个 Bot 并给它发消息。",
+  "Context window": "上下文窗口",
+  "Context window: {percent}% used": "上下文窗口：已用 {percent}%",
+  "Context usage unavailable": "暂无上下文用量数据",
+  "{used} / {max} tokens": "{used} / {max} token",
+  "The agent has not reported this session's context usage yet.": "Agent 尚未上报此会话的上下文用量。",
+  "Last reported by the agent.": "Agent 最近一次上报的用量。"
 }

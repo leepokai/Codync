@@ -306,6 +306,7 @@ pub enum Overlay {
     Goto(Goto),
     Help(Editor),
     LeadAgent(usize),
+    ContextUsage,
     Confirm(Confirm),
     NewBot(NewBot),
     Folder(FolderPicker),
@@ -337,6 +338,7 @@ pub struct Toast {
 #[derive(Clone)]
 pub enum Click {
     LeadAgent,
+    ContextUsage,
     Bot(String),
     Option {
         entry: String,

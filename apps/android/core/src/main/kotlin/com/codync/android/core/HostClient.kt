@@ -45,6 +45,8 @@ data class Bot(
     val createdAt: Long = 0,
     val startedAt: Long? = null,
     val workingChat: String? = null,
+    /** The agent's last reported use of this bot's main session; null until reported. */
+    val contextUsage: ContextUsage? = null,
     val lastMessage: String? = null,
     val lastAt: Long = 0,
     val status: String = "idle",

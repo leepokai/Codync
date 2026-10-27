@@ -171,8 +171,8 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
 }
 
 /** Puts the panel by its anchor: aligned to the anchor's side of the screen, below it (or above). */
-@Composable private fun MenuPlacement(anchor: Rect, width: Float, height: Float, cover: Boolean, shown: Float,
-    leading: Boolean = false, content: @Composable () -> Unit) {
+@Composable internal fun MenuPlacement(anchor: Rect, width: Float, height: Float, cover: Boolean, shown: Float,
+    leading: Boolean = false, preferAbove: Boolean = false, content: @Composable () -> Unit) {
     val density = LocalDensity.current
     val margin = with(density) { 12.dp.toPx() }
     val gap = with(density) { 8.dp.toPx() }
@@ -186,8 +186,12 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
             else -> anchor.center.x - placeable.width / 2f
         }.coerceIn(margin, (width - margin - placeable.width).coerceAtLeast(margin))
         val below = if (cover) anchor.top else anchor.bottom + gap
-        val y = if (below + placeable.height <= height - margin) below
-            else (if (cover) anchor.bottom else anchor.top - gap) - placeable.height
+        val above = (if (cover) anchor.bottom else anchor.top - gap) - placeable.height
+        val y = when {
+            preferAbove && above >= margin -> above
+            below + placeable.height <= height - margin -> below
+            else -> above
+        }
         val top = y.coerceIn(margin, (height - margin - placeable.height).coerceAtLeast(margin))
         origin = TransformOrigin(((anchor.center.x - x) / placeable.width).coerceIn(0f, 1f),
             if (top >= anchor.center.y) 0f else 1f)

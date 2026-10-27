@@ -218,6 +218,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
                         Trailing.Send -> send()
                     }
                 }
+                if (bot.kind != "group") ContextUsageIndicator(bot.contextUsage, COMPOSER_BUTTON_SIZE)
             }
         }
     }
@@ -225,6 +226,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
 }
 
 private val FIELD_HEIGHT = 54.dp
+private val COMPOSER_BUTTON_SIZE = 34.dp
 
 /** One button that morphs between call, send, stop and interrupt: its symbol swaps, its fill crossfades and the capsule narrows. */
 @Composable private fun TrailingButton(state: Trailing, canSend: Boolean, modifier: Modifier, action: () -> Unit) {
@@ -239,9 +241,9 @@ private val FIELD_HEIGHT = 54.dp
         state == Trailing.Send && !canSend -> Palette.tertiary
         else -> Palette.onAccent
     }, Motion.morph(), label = "Ink")
-    val width by animateDpAsState(if (state == Trailing.Call) 46.dp else 34.dp, Motion.morph(), label = "Width")
+    val width by animateDpAsState(if (state == Trailing.Call) 46.dp else COMPOSER_BUTTON_SIZE, Motion.morph(), label = "Width")
     val (source, pressed) = rememberPress()
-    Box(modifier.pressScale(pressed).size(width, 34.dp).clip(Capsule()).background(fill)
+    Box(modifier.pressScale(pressed).size(width, COMPOSER_BUTTON_SIZE).clip(Capsule()).background(fill)
         .clickable(source, null, enabled = enabled, role = Role.Button, onClick = action)
         .semantics { contentDescription = when (state) { Trailing.Interrupt -> "Interrupt"; Trailing.Stop -> "Stop"; Trailing.Call -> "Call"; Trailing.Send -> "Send" } },
         contentAlignment = Alignment.Center) {

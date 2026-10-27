@@ -77,6 +77,7 @@ pub struct Bot {
     pub members: Vec<String>,
     /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
+    pub context_usage: Option<crate::chat::context_usage::ContextUsage>,
 }
 
 /// An agent of a bot's chain that rests (`agent::fallback::resting`) until `until` (epoch ms).
@@ -216,6 +217,7 @@ impl Bot {
             group: v["kind"] == "group",
             members: strs(&v["members"]),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
+            context_usage: serde_json::from_value(v["contextUsage"].clone()).ok(),
         })
     }
 

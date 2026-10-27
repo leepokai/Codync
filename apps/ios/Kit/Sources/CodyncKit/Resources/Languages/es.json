@@ -1382,5 +1382,11 @@
   "this computer isn't in a network": "esta computadora no está en ninguna red",
   "cloud assistants are off here": "los asistentes en la nube están desactivados aquí",
   "Offered to the network: bots on your other computers can see and message this bot.": "Ofrecido a la red: los bots de tus otras computadoras pueden ver este bot y escribirle.",
-  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "Accesible para asistentes en la nube: ChatGPT o Claude en tu cuenta de Codync pueden ver este bot y escribirle."
+  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "Accesible para asistentes en la nube: ChatGPT o Claude en tu cuenta de Codync pueden ver este bot y escribirle.",
+  "Context window": "Ventana de contexto",
+  "Context window: {percent}% used": "Ventana de contexto: {percent}% usado",
+  "Context usage unavailable": "Uso de contexto no disponible",
+  "{used} / {max} tokens": "{used} / {max} tokens",
+  "The agent has not reported this session's context usage yet.": "El agente aún no ha informado del uso de contexto de esta sesión.",
+  "Last reported by the agent.": "Último informe del agente."
 }

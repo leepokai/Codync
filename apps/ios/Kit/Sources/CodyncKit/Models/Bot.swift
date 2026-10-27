@@ -74,6 +74,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var startedAt: Int64?
     /// Where the running turn talks: the bot's own chat, or a group.
     public var workingChat: String?
+    /// The agent's last reported use of this bot's main session; nil until reported.
+    public var contextUsage: ContextUsage?
     /// The fallback it runs on; nil on its own agent.
     public var agentStep: AgentStep?
     /// Agents of its chain resting now.
@@ -141,6 +143,7 @@ extension Bot {
         activity = try c.decodeIfPresent(String.self, forKey: .activity) ?? ""
         startedAt = try c.decodeIfPresent(Int64.self, forKey: .startedAt)
         workingChat = try c.decodeIfPresent(String.self, forKey: .workingChat)
+        contextUsage = try? c.decodeIfPresent(ContextUsage.self, forKey: .contextUsage)
         agentStep = try? c.decodeIfPresent(AgentStep.self, forKey: .agentStep)
         resting = (try? c.decodeIfPresent([AgentRest].self, forKey: .resting)) ?? []
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0

@@ -1382,5 +1382,11 @@
   "this computer isn't in a network": "このコンピューターはネットワークに入っていません",
   "cloud assistants are off here": "ここではクラウドアシスタントがオフです",
   "Offered to the network: bots on your other computers can see and message this bot.": "ネットワークに公開：ほかのコンピューターのボットがこのボットを見つけてメッセージを送れます。",
-  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "クラウドアシスタントから利用可能：Codync アカウントの ChatGPT や Claude がこのボットを見つけてメッセージを送れます。"
+  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "クラウドアシスタントから利用可能：Codync アカウントの ChatGPT や Claude がこのボットを見つけてメッセージを送れます。",
+  "Context window": "コンテキストウィンドウ",
+  "Context window: {percent}% used": "コンテキスト使用率：{percent}%",
+  "Context usage unavailable": "コンテキスト使用量は未取得",
+  "{used} / {max} tokens": "{used} / {max} トークン",
+  "The agent has not reported this session's context usage yet.": "このセッションのコンテキスト使用量はまだ報告されていません。",
+  "Last reported by the agent.": "エージェントが最後に報告した使用量です。"
 }

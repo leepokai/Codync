@@ -40,6 +40,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
             goto(buf, area, app, g, &items);
         }
         Overlay::Help(filter) => help(buf, area, filter),
+        Overlay::ContextUsage => super::context_usage::detail(buf, area, app),
         Overlay::LeadAgent(scroll) => super::lead_agent::lead_agent(buf, area, *scroll),
         Overlay::Confirm(c) => {
             let t = theme();

@@ -217,3 +217,9 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   memory; routines, rooms and other bots can't.
 
 A reply stays in its chat's session, and its quote stays out of what memory takes as the user's words; see [groups and replies](groups-and-replies.md). Group and delegated requests don't feed dreaming.
+
+## Session context meter
+
+Every bot snapshot carries optional `contextUsage`: the main ACP session's last `usage_update` counts (`usedTokens`, `maxTokens`) with host-calculated integer `percent` (floored, capped at 100) and `level` (`normal`, `warning` at 80%, `danger` at 95%). A missing or zero capacity is unknown (`null`), not zero usage. The measurement is persisted per bot/session and survives host restart. Routine sessions do not replace it; groups have no single context window. New session snapshots clear the old reading. This does not expose the separate realtime voice session's context.
+
+Desktop, iPhone and Android show a ring at the far right of the composer, opening a compact anchored bubble with the counts on click/tap. Click outside to dismiss it. The terminal puts `○ percentage · W` at the composer's right edge; click or `W` in navigation opens details. Clients use the host percentage and severity, without estimating token counts. Older hosts leave the meter unknown.

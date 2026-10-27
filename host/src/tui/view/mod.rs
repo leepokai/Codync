@@ -12,6 +12,7 @@ mod bot_chat;
 mod buffer;
 mod chat;
 mod computer_access;
+mod context_usage;
 mod fallbacks;
 mod forms;
 mod goto;

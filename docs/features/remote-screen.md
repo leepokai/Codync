@@ -38,13 +38,32 @@ back to the bots, then reconnects when the app returns.
 - `host/src/screen/` coordinates access to the local helper and owns viewer sessions. Another device cannot renegotiate or close a session it does not own.
 - `apps/screen-macos/` is the macOS capture/input helper (Xcode `Screen` target, `CodyncScreen.app`). The desktop app bundles it and registers it through `SMAppService` (`apps/desktop/src/main/screen.ts`); it is responsible for the OS permissions, including those of the computer-use driver it starts.
 - `apps/screen-linux/` implements the Linux helper using desktop portals and GStreamer, including ICE URL conversion and TURN transport configuration. The host starts it from beside its own executable (then `PATH`). Linux host releases ship `codync-screen` in the same archive (built on Ubuntu 24.04: glibc 2.39+ and GStreamer 1.22+ with the base, good and bad plugins, PipeWire and xdg-desktop-portal at run time); `install.sh`, Homebrew and `codync-host update` put it next to the host.
-- Helpers communicate locally through `~/.codync/screen.sock`. SDP is non-trickle; input uses the `input` and `input-fast` data channels.
+- Helpers communicate locally through `~/.codync/screen.sock`. Updated helpers advertise `trickle` in `status`, emit ordered `candidate {session, candidate}` notifications, and accept the host's `candidate` request. Input uses the `input` and `input-fast` data channels.
 - Phone viewers: iOS in `apps/ios/Kit/Sources/CodyncUI/Screen/`. Android keeps the same structure in `apps/android/app/.../Screen*.kt`, with the gesture-to-input and viewport logic in `core` (`ScreenControl`, `ScreenViewport`). Both offer hardware H.264 first, High then Constrained Baseline.
 - The Linux helper answers with the packetized H.264 payload the phone offers, feeds the encoder 8-bit 4:2:0 video and timestamps capture on the system clock. It answers before capture starts, so the profile is negotiated before the encoder fixes its output.
 - Screen access is on by default on macOS and on Linux while a graphical session (Wayland or X11) is running; headless servers stay off. Turning it on or off is remembered. Enabling through `setScreenEnabled` requires a loopback caller. Interactive OS permission prompts must be completed on the computer.
 - Bots with their computer capability enabled receive the built-in `computer` MCP tools, run by the computer-use driver that Codync Screen starts on macOS ([computer use](computer-use.md)). Their permission policy still applies. An interactive phone can take over; bots may still look.
 - Each device may hold four sessions; the host allows 32 total, including pending sessions. Credential issuance is limited to 12 requests per minute per account by `TURN_LIMITER` (Cloudflare's per-location rate limiter).
 - Closing a session stops its media; issued TURN credentials remain usable until their one-hour TTL. Issuance limits and encoder limits do not constitute a hard monthly spending cap. Track Realtime egress by the credential's custom identifier.
+
+## Android incremental ICE
+
+Android advertises `trickle: true` in `screenPrepare`, then uses incremental ICE
+only when the host returns `trickle: true`. An omitted or false capability keeps
+complete-SDP negotiation for older hosts and helpers. The host/helper protocol
+is introduced in [PR #40](https://github.com/leepokai/Codync/pull/40).
+
+The Android viewer subscribes to `screenCandidates` before offering, waits for
+`ready`, and installs the answer before applying or uploading candidates. Each
+direction permits 128 candidates of at most 4096 UTF-8 bytes, followed by one
+completion. A full screen-signaling queue fails that session without blocking
+unrelated RPCs. Protocol errors remain fatal; a transport disconnect after media
+connects or both directions acknowledge completion leaves WebRTC running.
+
+Android core owns `ScreenCandidate` and `ScreenSignaling`; the app's
+`ScreenSession` connects them to native WebRTC. The iOS implementation and
+host/helper contract are covered by PR #40. Desktop, terminal UI and Watch have
+no viewer and receive no client signaling changes here.
 
 ## Cloud setup
 

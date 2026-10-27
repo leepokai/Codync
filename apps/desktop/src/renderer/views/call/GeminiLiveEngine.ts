@@ -1,3 +1,4 @@
+import { SearchTurn } from './search-result'
 import type { CallLink, CallSession } from './call-link'
 import { browserPorts, type CallOutput, type GeminiPorts, type LiveSocket } from './gemini-ports'
 import { errorMessage, fromBase64, onDevicesChanged, PROGRESS_TAG, reconnect, toBase64, VoiceEngine } from './voice'
@@ -29,6 +30,7 @@ export class GeminiLiveEngine extends VoiceEngine {
   readonly provider = 'gemini' as const
   /** Playback stopped reporting progress after the voice's turn, and the call went back to listening. */
   onStall: (() => void) | null = null
+  private searchTurn = new SearchTurn()
   private socket: LiveSocket | null = null
   /** Setup is done on the current socket. */
   private ready = false
@@ -78,6 +80,8 @@ export class GeminiLiveEngine extends VoiceEngine {
       const session = await this.link.start('realtime', 'gemini', this.model, this.voice)
       if (this.ended) return
       if (!session.credential) throw new Error('Gemini sent no session credential.')
+      this.searchTurn = new SearchTurn()
+      this.searchResult = null
       this.session = session
       const socket = this.ports.socket(`${URL_BASE}?access_token=${encodeURIComponent(session.credential)}`)
       this.socket = socket
@@ -109,7 +113,7 @@ export class GeminiLiveEngine extends VoiceEngine {
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } } },
       },
       systemInstruction: { parts: [{ text: this.session?.instructions ?? '' }] },
-      tools: [{ functionDeclarations: tools }],
+      tools: [{ functionDeclarations: tools }, ...(this.session?.googleSearch === true ? [{ googleSearch: {} }] : [])],
       // Audio sessions are otherwise capped at 15 minutes.
       contextWindowCompression: { slidingWindow: {} },
       // What both sides said, for the call's line in the chat.
@@ -122,6 +126,8 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   end() {
     this.ended = true
+    this.searchResult = null
+    this.searchTurn = new SearchTurn()
     this.onActivityChanged?.(false)
     const socket = this.socket
     this.socket = null
@@ -220,6 +226,8 @@ export class GeminiLiveEngine extends VoiceEngine {
     }
     const content = msg.serverContent
     if (content) {
+      const result = this.searchTurn.receive(content)
+      if (this.searchResult !== result) { this.searchResult = result; this.changed() }
       if (typeof content.inputTranscription?.text === 'string') this.link.add('user', content.inputTranscription.text)
       if (typeof content.outputTranscription?.text === 'string') this.link.add('voice', content.outputTranscription.text)
       if (content.turnComplete === true || content.interrupted === true) this.link.endTurn()

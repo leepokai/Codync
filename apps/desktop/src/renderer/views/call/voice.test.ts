@@ -29,6 +29,18 @@ test('a call takes another engine only when what its engine is built from change
   assert.notEqual(VoiceSettings.engineChoice(null), device)
   assert.notEqual(VoiceSettings.engineChoice('gemini'), VoiceSettings.engineChoice('openai'))
 
+  assert.equal(settings.googleSearch.get(), false)
+  const gemini = VoiceSettings.engineChoice('gemini')
+  const openai = VoiceSettings.engineChoice('openai')
+  settings.googleSearch.set(true)
+  assert.notEqual(VoiceSettings.engineChoice('gemini'), gemini)
+  assert.equal(VoiceSettings.engineChoice('openai'), openai)
+  settings.mode('gemini').set('speech')
+  const speech = VoiceSettings.engineChoice('gemini')
+  settings.googleSearch.set(false)
+  assert.equal(VoiceSettings.engineChoice('gemini'), speech)
+  settings.mode('gemini').set('realtime')
+
   const seen = [VoiceSettings.engineChoice('gemini')]
   for (const change of [
     () => settings.saveModel('gemini', 'realtime', 'live-9'),

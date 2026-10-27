@@ -46,3 +46,10 @@ private func entry(_ id: String, _ kind: String, at: Int64, _ json: String) thro
     #expect(merged.callConversation(line).map { "\($0.speaker): \($0.text)" } == ["user: from before the loaded chat", "bot: its reply"])
     #expect(merged.withCallEntries(fetched).count == merged.count)
 }
+
+@Test func callSearchRequiresTheHostsExplicitConfirmation() throws {
+    for (field, expected) in [("", false), (",\"googleSearch\":false", false), (",\"googleSearch\":true", true)] {
+        let data = Data("{\"instructions\":\"Relay\",\"tools\":[]\(field)}".utf8)
+        #expect(try CallSession(json: data).googleSearch == expected)
+    }
+}

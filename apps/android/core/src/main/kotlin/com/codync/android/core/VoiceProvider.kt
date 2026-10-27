@@ -28,7 +28,7 @@ enum class VoiceProvider(val id: String, val title: String, val keyPage: String,
 /** The provider's newest model for each voice mode, as the computer last found them. */
 @Serializable data class VoiceDefaults(val realtime: String, val transcribe: String, val speech: String)
 
-@Serializable data class VoiceStatus(val providers: List<ProviderStatus> = emptyList()) {
+@Serializable data class VoiceStatus(val providers: List<ProviderStatus> = emptyList(), val googleSearch: Boolean = false) {
     /** `provider` stays a string so a provider added by a newer computer doesn't break the list. */
     @Serializable data class ProviderStatus(val provider: String, val configured: Boolean = false, val defaults: VoiceDefaults? = null)
     fun configured(provider: VoiceProvider): Boolean = providers.any { it.provider == provider.id && it.configured }
@@ -48,6 +48,10 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
     var provider: VoiceProvider?
         get() = VoiceProvider.of(read("callEngine"))
         set(value) = write("callEngine", value?.id)
+
+    var googleSearch: Boolean
+        get() = read("callGoogleSearch.gemini") == "true"
+        set(value) = write("callGoogleSearch.gemini", value.toString())
 
     fun defaults(provider: VoiceProvider): VoiceDefaults = read("callDefaults.${provider.id}")
         ?.let { runCatching { WireJson.decodeFromString(VoiceDefaults.serializer(), it) }.getOrNull() } ?: provider.defaults
@@ -74,7 +78,7 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
     fun engineChoice(provider: VoiceProvider?, language: String): String = when {
         provider == null -> "device $language"
         speechMode(provider) -> "${provider.id} speech ${model(provider, Model.Transcribe)} ${model(provider, Model.Speech)} ${voice(provider)}"
-        else -> "${provider.id} ${model(provider, Model.Realtime)} ${voice(provider)}"
+        else -> "${provider.id} ${model(provider, Model.Realtime)} ${voice(provider)} ${provider == VoiceProvider.Gemini && googleSearch}"
     }
 
     /** The provider's model list as last fetched with the user's key. */

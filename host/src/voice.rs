@@ -209,7 +209,7 @@ pub fn status(store: &Store) -> Result<Value> {
             json!({"provider": p.id(), "configured": !keys.get(p).is_empty(), "defaults": defaults})
         })
         .collect();
-    Ok(json!({"providers": providers}))
+    Ok(json!({"providers": providers, "googleSearch": true}))
 }
 
 /// Checks the key with the provider (one credential mint), then keeps it. An empty key removes it.

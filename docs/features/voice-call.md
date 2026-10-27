@@ -194,6 +194,26 @@ Each cloud engine has two **modes**:
   (`Hans-Hant`) for a reader whose first Chinese language, or region, is Traditional. Only a
   model the user picks is saved; the default isn't, so a newer default reaches everyone.
 
+**Google Search** is an opt-in switch shown only for Gemini in Realtime mode on desktop, iPhone and Android.
+It is off by default and saved on that device (`callGoogleSearch.gemini`). Turning it on lets the voice answer
+public-information questions using Google's built-in search; code, files, computer and project requests still go
+to the bot. The provider key needs Google Search quota in addition to Live API access; Google may charge separately
+for searches. A key can start a voice-only session yet be refused when search is enabled, including a quota error
+before setup completes. Closing settings during a call replaces the engine, so
+both enabling and disabling take effect without hanging up. Speech, dictation and OpenAI are unaffected.
+The terminal has no live audio engine or voice settings, so there is no corresponding terminal switch.
+
+The host advertises `googleSearch` in `voiceStatus`; clients hide the switch when it is absent or false and ignore
+a saved opt-in for that host. The client requests `googleSearch` on `startCall`; the host acknowledges it only for Gemini realtime, includes the
+public-search exception in its instructions, and returns `googleSearch`. The Gemini engines append `googleSearch: {}`
+alongside their existing function declarations only when the host confirms it. Older clients omit the option and
+keep search off; a new client keeps Gemini voice working without search on an older host.
+A provider reconnect obtains a fresh acknowledged configuration. When Google returns `groundingMetadata.searchEntryPoint.renderedContent`,
+clients display its original suggestions next to that answer's transcription under the call bar. The HTML is held
+only in the engine's memory and cleared on replacement or end; it never enters chat, memory, analytics or disk.
+The embedded document disables JavaScript, storage, forms and background network access; HTTP(S) links open directly
+in the system browser. Metadata may be absent; clients do not invent citations or search links. See [Google's Live API tools](https://ai.google.dev/gemini-api/docs/live-api/tools).
+
 **Default models follow the provider.** Nothing pins a model version: once a day (and whenever a
 key is saved or the model list is opened) the host reads each keyed provider's model list and
 keeps its newest model per mode (`voice::newest`, stored as `voice-defaults.<provider>`), and
@@ -244,8 +264,8 @@ Every call, whatever its engine, is run by the host (`host/src/chat/calls/`, sta
 [host-owned voice](../plans/voice-architecture.md)); the clients' `CallLink` (iPhone, desktop, Android) only
 carries audio and talks to these methods:
 
-- **`startCall`** `{botId, callId, mode: realtime | speech | device, provider?, model?, voice?, language?}` keeps the
-  call (in `kv`, so a host restart loses nothing) and returns `{credential?, instructions, tools}`: a realtime
+- **`startCall`** `{botId, callId, mode: realtime | speech | device, provider?, model?, voice?, language?, googleSearch?}` keeps the
+  call (in `kv`, so a host restart loses nothing) and returns `{credential?, instructions, tools, googleSearch}`: a realtime
   provider's short-lived credential, the voice's instructions and its tools. Called again with the same id when a
   provider session is resumed or replaced (Gemini's `goAway`, a new OpenAI session), so the background is fresh;
   the transcript so far stays. On-device and speech-to-text calls start one too (no credential, no voice model).

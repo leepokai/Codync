@@ -48,6 +48,7 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     private var session: CallSession? = null
     /** Tool calls still running on the computer: replies wait, so the model gets each answer first. */
     private var toolsRunning = 0
+    private var searchTurn = CallSearchTurn()
     private var lastPlayed = 0L
     private var watchdog: Job? = null
     /** Playback stopped reporting progress after the voice's turn, and the call went back to listening. */
@@ -86,6 +87,8 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
         }
         if (ended) return
         val token = session.credential ?: throw IllegalStateException("Gemini sent no session credential.")
+        searchTurn = CallSearchTurn()
+        mutable.update { it.copy(searchResult = null) }
         this.session = session
         ready = false
         val url = "$endpoint?access_token=" + URLEncoder.encode(token, "UTF-8")
@@ -134,7 +137,10 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
                 putJsonObject("speechConfig") { putJsonObject("voiceConfig") { putJsonObject("prebuiltVoiceConfig") { put("voiceName", voice) } } }
             }
             putJsonObject("systemInstruction") { putJsonArray("parts") { addJsonObject { put("text", session?.instructions.orEmpty()) } } }
-            putJsonArray("tools") { addJsonObject { put("functionDeclarations", JsonArray(session?.tools.orEmpty().map(CallTool::gemini))) } }
+            putJsonArray("tools") {
+                addJsonObject { put("functionDeclarations", JsonArray(session?.tools.orEmpty().map(CallTool::gemini))) }
+                if (session?.googleSearch == true) addJsonObject { putJsonObject("googleSearch") { } }
+            }
             // Audio sessions are otherwise capped at 15 minutes.
             putJsonObject("contextWindowCompression") { putJsonObject("slidingWindow") { } }
             // What both sides said, for the call's line in the chat.
@@ -161,6 +167,8 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
             flush()
         }
         message.objectAt("serverContent")?.let { content ->
+            val result = searchTurn.receive(content)
+            mutable.update { it.copy(searchResult = result) }
             content.objectAt("inputTranscription")?.text("text")?.let { link.add("user", it) }
             content.objectAt("outputTranscription")?.text("text")?.let { link.add("voice", it) }
             if (content.flag("turnComplete") || content.flag("interrupted")) link.endTurn()

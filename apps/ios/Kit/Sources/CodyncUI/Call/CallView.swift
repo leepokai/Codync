@@ -38,6 +38,7 @@ struct CallView: View {
     var body: some View {
         VStack(spacing: 6) {
             bar
+            if let result = session?.searchResult { CallSearchView(result: result) }
             if case .failed(let message, _) = session?.phase {
                 line(message, color: Palette.danger)
             } else if session?.phase == .interrupted {
@@ -52,6 +53,7 @@ struct CallView: View {
         .padding(.horizontal, 12)
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: session?.phase)
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: notice)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: session?.searchResult?.html)
         .onAppear {
             startedAt = .now
             link = CallLink(model: model, botId: botId, call: call)

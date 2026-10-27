@@ -99,6 +99,7 @@ abstract class ProviderEngine(parent: CoroutineScope, val provider: VoiceProvide
 
     private fun finish(final: VoicePhase, error: String?, kind: VoiceFailureKind? = null) {
         ended = true
+        mutable.update { it.copy(searchResult = null) }
         if (error != null) mutable.update { it.copy(phase = VoicePhase.Failed, error = error, failureKind = kind, level = 0f) }
         // Outside `job`, so cancelling the engine's own work can't cut the release short.
         teardown = scope.launch(NonCancellable) {

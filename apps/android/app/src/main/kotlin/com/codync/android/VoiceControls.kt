@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -72,7 +73,7 @@ internal fun openAppSettings(context: android.content.Context) =
     val color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.accent
     var settings by remember { mutableStateOf(false) }
     val speaking = voice.phase == VoicePhase.Speaking
-    Column(Modifier.padding(horizontal = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp).animateContentSize(Motion.layoutSize), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth().glass(Capsule()).padding(start = 14.dp, end = 7.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // The bot; tapping it while it talks cuts the reply short, otherwise it opens the call's chat.
@@ -97,6 +98,7 @@ internal fun openAppSettings(context: android.content.Context) =
                 Symbol("xmark", size = 18.dp, tint = Color.White)
             }
         }
+        voice.searchResult?.let { CallSearchView(it) }
         val failure = voice.error ?: if (voice.phase == VoicePhase.Failed) "Voice audio unavailable" else null
         when {
             failure != null -> CallLine(failure, Palette.danger)

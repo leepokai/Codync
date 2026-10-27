@@ -15,6 +15,8 @@ export interface VoiceDefaults {
 }
 
 export interface VoiceStatus {
+  /** Absent on hosts that cannot configure search for a call. */
+  googleSearch?: boolean
   providers: { provider: VoiceProvider; configured: boolean; defaults?: VoiceDefaults | null }[]
 }
 
@@ -64,6 +66,8 @@ export const rate = pref('callRate', DEFAULT_RATE)
 export const pause = pref('callPause', 1.5)
 /** On-device recognition language (a locale identifier); '' follows the system. */
 export const language = pref('callLanguage', '')
+/** Google's built-in search in Gemini realtime calls; off until this device opts in. */
+export const googleSearch = pref('callGoogleSearch.gemini', false)
 
 /** Picker options: the system's language, then every language the recognizer supports, by name. */
 export function languageOptions(supported: string[]) {

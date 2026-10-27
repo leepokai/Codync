@@ -1,0 +1,12 @@
+.call-search {
+  width: min(100%, 560px);
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.call-search-answer { max-height: 120px; overflow: auto; white-space: pre-wrap; }
+.call-search iframe { width: 100%; height: 120px; border: 0; background: white; border-radius: 8px; }

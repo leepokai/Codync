@@ -1383,5 +1383,8 @@
   "this computer isn't in a network": "這臺電腦不在任何網路裡",
   "cloud assistants are off here": "這裡的雲端助理已關閉",
   "Offered to the network: bots on your other computers can see and message this bot.": "提供給網路：你其他電腦上的 Bot 能看到這個 Bot 並傳訊息給它。",
-  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "雲端助理可聯繫：你 Codync 賬戶裡的 ChatGPT 或 Claude 能看到這個 Bot 並傳訊息給它。"
+  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "雲端助理可聯繫：你 Codync 賬戶裡的 ChatGPT 或 Claude 能看到這個 Bot 並傳訊息給它。",
+  "Google Search": "Google 搜尋",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "允許 Gemini 在通話中搜尋網頁。需要 Google 搜尋配額，可能產生費用。",
+  "Couldn't open the link.": "無法開啟連結。"
 }

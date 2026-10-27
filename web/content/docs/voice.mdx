@@ -122,3 +122,16 @@ In the desktop app on macOS, **Settings → General → System → Voice input s
 Double-tap the key and dictation starts in the chat window's message box (the top bot's chat when none is open). Tap the key once more to stop and send what you said, once the last words are in. Press the pill's stop instead to keep the words without sending. If the notch island is on (**Settings → General → System → Show in Notch**), dictation goes into the island's message field instead. During a call the shortcut does nothing.
 
 The shortcut needs no Accessibility or Input Monitoring permission, and the app never sees what you type.
+
+## Google Search during Gemini calls
+
+Choose **Gemini** and **Realtime** in **Voice chat**, then turn on **Google Search** to let the voice search
+public web information and answer you directly. Requests about your code, files, computer or project still go
+to your bot. The switch is off by default and saved on this device. Your key needs **Google Search quota**,
+separate from Live API access. If Google refuses a search-enabled call for quota, turn off the switch to try voice
+without search. Google may charge for searches in addition to the voice call; see [Google's pricing](https://ai.google.dev/gemini-api/docs/pricing).
+
+During a call, the change applies when you close settings. It does not affect **Speech** mode or OpenAI calls.
+The switch appears only when the computer supports it; other computers keep Gemini calls working without search.
+When Google supplies search suggestions, they appear with the answer below the call bar. Their links open in your
+browser. Suggestions are kept only during the call; they are not added to its saved transcript.

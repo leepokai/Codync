@@ -35,7 +35,7 @@ import Testing
 
 /// A call takes another engine only when what its engine is built from changes: the engine, the mode,
 /// a model or the voice it uses, or the on-device language.
-@Test func engineChoiceChangesWithWhatTheCallIsBuiltFrom() {
+@Test @MainActor func engineChoiceChangesWithWhatTheCallIsBuiltFrom() {
     let p = VoiceProvider.openAI
     let keys = [OnDeviceEngine.languageKey, VoiceSettings.modelKey(p), VoiceSettings.voiceKey(p), VoiceSettings.modeKey(p),
                 VoiceSettings.transcribeKey(p), VoiceSettings.speechKey(p)]
@@ -57,4 +57,20 @@ import Testing
         #expect(!seen.contains(choice), "\(key)")
         seen.append(choice)
     }
+}
+
+@Test @MainActor func googleSearchOnlyChangesGeminiRealtimeEngineChoice() {
+    let keys = [VoiceSettings.googleSearchKey, VoiceSettings.modeKey(.gemini)]
+    keys.forEach(UserDefaults.standard.removeObject(forKey:))
+    defer { keys.forEach(UserDefaults.standard.removeObject(forKey:)) }
+    #expect(!VoiceSettings.googleSearch)
+    let gemini = VoiceSettings.engineChoice(.gemini)
+    let openai = VoiceSettings.engineChoice(.openAI)
+    UserDefaults.standard.set(true, forKey: VoiceSettings.googleSearchKey)
+    #expect(VoiceSettings.engineChoice(.gemini) != gemini)
+    #expect(VoiceSettings.engineChoice(.openAI) == openai)
+    UserDefaults.standard.set("speech", forKey: VoiceSettings.modeKey(.gemini))
+    let speech = VoiceSettings.engineChoice(.gemini)
+    UserDefaults.standard.set(false, forKey: VoiceSettings.googleSearchKey)
+    #expect(VoiceSettings.engineChoice(.gemini) == speech)
 }

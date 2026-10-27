@@ -59,6 +59,7 @@ data class VoiceSettings(val pauseMillis: Long = 1_500, val rate: Float = 1f) {
 data class VoiceState(val phase: VoicePhase = VoicePhase.Starting, val muted: Boolean = false,
     val heard: String = "", val said: String = "", val level: Float = 0f, val engine: String = "",
     val settings: VoiceSettings = VoiceSettings(), val error: String? = null,
+    val searchResult: CallSearchResult? = null,
     /** Where the audio goes when it leaves the phone; null on device. */
     val provider: VoiceProvider? = null,
     /** Why it failed, with `error`. */

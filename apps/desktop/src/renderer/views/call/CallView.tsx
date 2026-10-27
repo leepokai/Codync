@@ -5,6 +5,8 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { LevelDots } from '../../components/LevelDots'
+import { Reveal } from '../../components/Controls'
+import { SearchResultView } from './SearchResultView'
 import { Sheet } from '../../components/Overlay'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
@@ -281,6 +283,9 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
           {notice}
         </Text>
       ) : null}
+      <Reveal show={session?.searchResult != null}>
+        {session?.searchResult ? <SearchResultView result={session.searchResult} /> : null}
+      </Reveal>
       <Sheet open={settings} onClose={() => setSettings(false)}>
         <VoiceChatSettingsView />
       </Sheet>

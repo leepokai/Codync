@@ -21,11 +21,10 @@ pub async fn verify(store: &Store, id: &str, port: u16) -> Result<Value> {
         bail!("Sign in before checking this connection.");
     }
     let mut command = if let Some(exe) = &c.command {
+        let values = super::passwords::resolve_all(store, &c.env).await?;
         let mut command = Command::new(exe);
-        command.args(&c.args);
-        for (name, value) in &c.env {
-            command.env(name, super::passwords::resolve(store, value).await?);
-        }
+        command.args(c.launch_args(&values));
+        command.envs(&values);
         command
     } else {
         let mut command = Command::new(std::env::current_exe()?);

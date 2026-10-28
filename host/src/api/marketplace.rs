@@ -11,6 +11,10 @@ use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+#[cfg(test)]
+#[path = "marketplace_tests.rs"]
+mod tests;
+
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
     Ok(ControlFlow::Break(match method {
         "credentialUpdateConnector" => {
@@ -66,11 +70,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .into_iter()
                 .find(|c| c.id == id)
                 .ok_or_else(|| anyhow!("Unknown connector"))?;
-            let mut env = serde_json::Map::new();
-            for (k, v) in &c.env {
-                env.insert(k.clone(), market::passwords::resolve(&hub.store, v).await?.into());
-            }
-            json!({"command":c.command,"args":c.args,"env":env})
+            let values = market::passwords::resolve_all(&hub.store, &c.env).await?;
+            json!({"command":c.command,"args":c.launch_args(&values),"env":values})
         }
         "connectorCall" => {
             market::requests::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?

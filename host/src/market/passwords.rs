@@ -3,6 +3,7 @@
 use crate::store::Store;
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::{process::Stdio, time::Duration};
 
 pub fn status(store: &Store) -> Result<Value> {
@@ -61,6 +62,16 @@ pub async fn resolve(store: &Store, value: &str) -> Result<String> {
         bail!("Could not read the 1Password reference. Check shared vault access.");
     }
     String::from_utf8(result.stdout).map_err(|_| anyhow!("Invalid credential encoding"))
+}
+
+/// Resolves every stored value of a connector's credentials at once, for the process it
+/// launches and the arguments whose templates name them.
+pub async fn resolve_all(store: &Store, values: &BTreeMap<String, String>) -> Result<BTreeMap<String, String>> {
+    let mut resolved = BTreeMap::new();
+    for (name, value) in values {
+        resolved.insert(name.clone(), resolve(store, value).await?);
+    }
+    Ok(resolved)
 }
 
 #[cfg(test)]

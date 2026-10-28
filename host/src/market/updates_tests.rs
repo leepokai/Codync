@@ -11,6 +11,7 @@ fn connector(command: &str, args: &[&str]) -> Connector {
         registry_name: Some("io.github.github/github-mcp-server".into()),
         command: Some(command.into()),
         args: args.iter().map(|arg| (*arg).into()).collect(),
+        argument_templates: BTreeMap::new(),
         env: BTreeMap::from([("TOKEN".into(), "secret".into())]),
         url: None,
         headers: BTreeMap::new(),

@@ -26,6 +26,7 @@ pub mod requests;
 pub mod vault;
 pub mod verify;
 
+mod arguments;
 mod install;
 mod registry;
 mod skills;
@@ -73,6 +74,10 @@ pub struct Connector {
     pub command: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Registry template words and their variables. A fixed value is stored here;
+    /// `None` reads the current credential from `env` when launching.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub argument_templates: BTreeMap<usize, BTreeMap<String, Option<String>>>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     /// Remote (streamable HTTP) servers.
@@ -122,6 +127,29 @@ impl Connector {
                 Some(_) => "signedOut",
             },
         })
+    }
+
+    /// The command words with argument templates filled from the resolved values: a
+    /// registry argument may name a credential (`GITHUB_PERSONAL_ACCESS_TOKEN={token}`),
+    /// whose value stays in `env` until the connector launches.
+    pub fn launch_args(&self, values: &BTreeMap<String, String>) -> Vec<String> {
+        if self.registry_name.is_none() {
+            return self.args.clone();
+        }
+        self.args
+            .iter()
+            .enumerate()
+            .map(|(index, word)| {
+                let Some(template) = self.argument_templates.get(&index) else { return word.clone() };
+                let replacements = template
+                    .iter()
+                    .filter_map(|(name, fixed)| {
+                        fixed.as_ref().or_else(|| values.get(name)).map(|value| (name.clone(), value.clone()))
+                    })
+                    .collect();
+                arguments::fill_template(word, &replacements)
+            })
+            .collect()
     }
 }
 
@@ -323,6 +351,7 @@ mod tests {
             registry_name: None,
             command: Some("npx".into()),
             args: vec!["-y".into(), "pkg@1".into()],
+            argument_templates: BTreeMap::new(),
             env: BTreeMap::from([("TOKEN".into(), "x".into())]),
             url: None,
             headers: BTreeMap::new(),
@@ -343,6 +372,27 @@ mod tests {
         c.oauth = Some(oauth::OAuth::default());
         assert!(c.acp(exe, 1).is_none(), "not signed in yet");
         assert_eq!(c.public()["auth"], "signedOut");
+    }
+
+    #[test]
+    fn launch_args_fill_credential_templates() {
+        let c: Connector = serde_json::from_value(json!({
+            "id": "github", "name": "GitHub", "command": "docker", "registryName": "io.github.github/github-mcp-server",
+            "args": ["run", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN={token}", "ghcr.io/github/github-mcp-server:2.0.3"],
+            "argumentTemplates": {"2": {"token": null}},
+            "env": {"token": "ghp_x"}
+        }))
+        .expect("connector");
+        let values = BTreeMap::from([("token".to_owned(), "ghp_x".to_owned())]);
+        assert_eq!(
+            c.launch_args(&values),
+            ["run", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=ghp_x", "ghcr.io/github/github-mcp-server:2.0.3"]
+        );
+        assert_eq!(c.launch_args(&BTreeMap::new()), c.args, "a name without a value stays as written");
+        assert!(c.public().get("args").is_none(), "the command, templates and credential values stay on the host");
+        let mut custom = c.clone();
+        custom.registry_name = None;
+        assert_eq!(custom.launch_args(&values), custom.args, "custom and imported commands keep literal braces");
     }
 
     #[tokio::test]

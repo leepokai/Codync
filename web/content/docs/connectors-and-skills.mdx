@@ -23,6 +23,8 @@ Tapping a connector only opens its sheet; nothing installs until you press **Add
 
 Packages run with their own runtime, which must be installed on the computer: npm packages need Node.js (`npx`), PyPI packages need uv (`uvx`), container images need Docker, and NuGet packages need `dnx`. Codync installs the exact version the registry lists.
 
+GitHub's package asks for an optional personal access token under **Setup**; leave it empty and the server signs in on its first use instead.
+
 MCPB bundles and packages that serve HTTP locally aren't listed. Add those as a custom connector.
 
 If the check fails because a key was wrong, type the correct key in the same sheet and press **Add** again: Codync replaces the connector it just saved with the new values. Pressing **Add** with nothing typed checks the saved connector again, for example after you finished signing in. You can also change a saved key later under **Extensions → Credentials → Saved connections**.

@@ -131,11 +131,14 @@ final class Dictation {
         recording = nil
         transcribing = false
         edit = nil
-        // Only a microphone that was opened: touching `inputNode` starts the audio system (on every send and chat
-        // change), and on a busy simulator its start can time out and abort the process.
+        // Only a running engine: touching `inputNode` starts the audio system (on every send and chat change), and on
+        // a busy simulator its start can time out and abort the process. A tap left on a stopped engine is replaced
+        // when the microphone opens again.
         if listening {
-            engine.inputNode.removeTap(onBus: 0)
-            if engine.isRunning { engine.stop() }
+            if engine.isRunning {
+                engine.inputNode.removeTap(onBus: 0)
+                engine.stop()
+            }
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
         listening = false

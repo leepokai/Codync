@@ -134,7 +134,7 @@ import kotlinx.coroutines.launch
         scope.launch {
             try {
                 if (speech) store.voiceSpeak(provider, speechModel, voice, "OK") else store.voiceSession(provider, model, voice)
-                result = true to "Key works"
+                result = true to if (!speech && provider == VoiceProvider.OpenAI && isOpenAILiveModel(model)) "Model access verified" else "Key works"
                 loadModels()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { result = false to (error.message ?: "The key didn't work.") }
@@ -176,6 +176,9 @@ import kotlinx.coroutines.launch
             row { picker("Speech to text", transcribe, models.transcribe) { transcribe = it; choices.choose(provider, VoiceChoices.Model.Transcribe, it) } }
             row { picker("Text to speech", speechModel, models.speech) { speechModel = it; choices.choose(provider, VoiceChoices.Model.Speech, it) } }
         } else row { picker("Model", model, models.models) { model = it; choices.choose(provider, VoiceChoices.Model.Realtime, it) } }
+        if (!speech && provider == VoiceProvider.OpenAI && isOpenAILiveModel(model)) row {
+            Text(tr("GPT-Live voice and the Responses tool router are billed separately by OpenAI."), style = Type.caption, color = Palette.secondary)
+        }
         row { picker("Voice", voice, provider.voices) { voice = it; choices.voice(provider, it) } }
         row { ValueRow("This month", "≈ ${choices.minutes(provider)} min", Modifier.graphicsLayer { alpha = if (hasKey) 1f else .55f }) }
     }

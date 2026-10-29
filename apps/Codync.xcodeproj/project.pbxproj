@@ -122,7 +122,7 @@
 		0C44BCF971511A5E94D073D5 /* CodyncOrb-Dot.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncOrb-Dot.ttf"; sourceTree = "<group>"; };
 		120FD9DBA315A6DD543463D8 /* CodyncBot-tablet-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-tablet-Ink.ttf"; sourceTree = "<group>"; };
 		1318104275E5BEC47B7088AD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		1BDF6A8F94A945065D4348F8 /* AppIcon.icon */ = {isa = PBXFileReference; path = AppIcon.icon; sourceTree = "<group>"; };
+		1BDF6A8F94A945065D4348F8 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		1E47C60032C326157E0386B8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		1FECC371F3CD98687C0B69FA /* CodyncBot-pebble-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-pebble-Tint.ttf"; sourceTree = "<group>"; };
 		203A43D8DF8D3832F95FA837 /* CodyncBot-teardrop-Ink.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-teardrop-Ink.ttf"; sourceTree = "<group>"; };
@@ -542,7 +542,6 @@
 				};
 			};
 			buildConfigurationList = F977CF173B7D60769B393751 /* Build configuration list for PBXProject "Codync" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -557,13 +556,14 @@
 				1971A679A8497DA8D0C8B77A /* XCLocalSwiftPackageReference "ios/Kit" */,
 			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 3EC1FDCCFFFB4BA1A23FDDB0 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				C42E5E078332C6C2B35AF5FA /* NotificationService */,
 				907F1F4A709111FC7178EAE9 /* Screen */,
-				A27E4E88D6A5B9850734B594 /* Widgets */,
 				913BDA9F79CE8C35A9E35830 /* iOS */,
+				A27E4E88D6A5B9850734B594 /* Widgets */,
+				C42E5E078332C6C2B35AF5FA /* NotificationService */,
 			);
 		};
 /* End PBXProject section */

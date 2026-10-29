@@ -268,6 +268,10 @@ test('OpenAI phases follow its events', () => {
 /** OpenAI's side of a call: a WebRTC peer whose events channel and ICE state the test drives. */
 class FakePeer {
   iceConnectionState = 'new'
+  iceGatheringState = 'complete'
+  localDescription = { sdp: 'gathered-offer' }
+  audioLevel = 0
+  sent: Record<string, unknown>[] = []
   oniceconnectionstatechange: (() => void) | null = null
   ontrack: unknown = null
   answered = false
@@ -276,7 +280,7 @@ class FakePeer {
     onopen: null as (() => void) | null,
     onmessage: null as ((e: { data: unknown }) => void) | null,
     onclose: null as (() => void) | null,
-    send() {},
+    send: (text: string) => { this.sent.push(JSON.parse(text) as Record<string, unknown>) },
     close() {
       this.readyState = 'closed'
     },
@@ -289,6 +293,7 @@ class FakePeer {
     return { type: 'offer', sdp: 'offer-sdp' }
   }
   async setLocalDescription() {}
+  async getStats() { return new Map([['audio', { type: 'inbound-rtp', kind: 'audio', audioLevel: this.audioLevel }]]) }
   async setRemoteDescription() {
     this.answered = true
   }
@@ -297,10 +302,10 @@ class FakePeer {
   }
   close() {}
   /** The session is set up. */
-  ready() {
+  ready(type = 'session.updated') {
     this.channel.readyState = 'open'
     this.channel.onopen?.()
-    this.channel.onmessage?.({ data: JSON.stringify({ type: 'session.updated' }) })
+    this.channel.onmessage?.({ data: JSON.stringify({ type }) })
   }
   ice(state: string) {
     this.iceConnectionState = state
@@ -308,9 +313,11 @@ class FakePeer {
   }
 }
 
-function openAICall() {
+function openAICall(model = 'gpt-realtime') {
   const peers: FakePeer[] = []
   const answers = { status: 200 }
+  const liveEvents: unknown[] = []
+  const liveUpdates: unknown[] = []
   let starts = 0
   const track = { kind: 'audio', enabled: true, stop() {} }
   Object.defineProperty(globalThis, 'navigator', {
@@ -335,10 +342,19 @@ function openAICall() {
       return { credential: `ek-${starts}`, instructions: 'Be the relay.', tools: [] }
     },
   }
-  const engine = new OpenAIRealtimeEngine('gpt-realtime', 'marin', link as never)
+  Object.assign(link, {
+    startLive: async (_model: string, _voice: string, sdp: string) => {
+      assert.equal(sdp, 'gathered-offer')
+      return { sessionId: `live-${peers.length}`, sdp: 'live-answer' }
+    },
+    liveEvent: async (_id: string, event: unknown) => { liveEvents.push(event); return { events: [] } },
+    liveUpdate: async (_id: string, kind: string, text: string) => { liveUpdates.push({ kind, text }); return { events: [] } },
+  })
+  const engine = new OpenAIRealtimeEngine(model, 'marin', link as never)
   return {
     engine,
     answers,
+    liveEvents, liveUpdates, link,
     get starts() {
       return starts
     },
@@ -401,4 +417,75 @@ test('call quality reports ready time, reconnects, stalls and failure once per e
   now += CallQuality.stuckMs
   slow.report()
   assert.deepEqual(stuck, [{ event: 'voice_call_quality', engine: 'openai', reconnects: 0, stuck: 'connecting', failure: 'none' }])
+})
+
+
+test('GPT-Live starts through the host, uses playback activity, and closes gracefully', async () => {
+  const o = openAICall('gpt-live-1')
+  await o.engine.start()
+  assert.equal(o.starts, 0, 'never asks for a Realtime credential')
+  const peer = o.last()
+  peer.ready('session.started')
+  assert.equal(o.engine.phase, 'listening')
+  assert.equal(peer.sent.length, 0, 'session setup is entirely on the host')
+  peer.channel.onmessage?.({ data: JSON.stringify({ type: 'session.output_transcript.delta', delta: 'hello' }) })
+  assert.equal(o.engine.phase, 'listening', 'transcript is not proof of audible playback')
+  peer.audioLevel = 0.3
+  assert.ok(await until(() => o.engine.phase === 'speaking'))
+  o.engine.interrupt()
+  assert.equal(o.engine.phase, 'listening')
+  assert.equal(peer.sent.length, 0, 'no unsupported Realtime cancellation command')
+  peer.audioLevel = 0
+  peer.channel.onmessage?.({ data: JSON.stringify({ type: 'session.input_transcript.delta', delta: 'continue' }) })
+  o.engine.speak('All done')
+  assert.ok(await until(() => o.liveUpdates.length === 1))
+  assert.deepEqual(o.liveUpdates, [{ kind: 'reply', text: 'All done' }])
+  o.engine.end()
+  assert.deepEqual(peer.sent.at(-1), { type: 'session.close' })
+  peer.channel.onmessage?.({ data: JSON.stringify({ type: 'session.closed' }) })
+  assert.ok(await until(() => peer.channel.readyState === 'closed'))
+})
+
+test('a replaced Live channel cannot make the new engine ready or deliver old transcripts', async () => {
+  const o = openAICall('gpt-live-1')
+  await o.engine.start()
+  const old = o.last()
+  old.ready('session.started')
+  old.ice('failed')
+  assert.ok(await until(() => o.peers.length === 2 && o.last().answered))
+  old.channel.onmessage?.({ data: JSON.stringify({ type: 'session.started' }) })
+  old.channel.onmessage?.({ data: JSON.stringify({ type: 'session.input_transcript.delta', delta: 'stale' }) })
+  assert.equal(o.engine.phase, 'reconnecting')
+  assert.equal(o.liveEvents.length, 0)
+  o.last().ready('session.started')
+  o.engine.end()
+  o.last().channel.onmessage?.({ data: JSON.stringify({ type: 'session.closed' }) })
+})
+
+
+test('late Live setup failures cannot tear down a replacement connection', async () => {
+  const o = openAICall('gpt-live-1')
+  await o.engine.start()
+  o.last().ready('session.started')
+  let rejectOld: ((error: Error) => void) | undefined
+  const originalStart = (o.link as unknown as { startLive: (...args: string[]) => Promise<{ sessionId: string; sdp: string }> }).startLive
+  let liveStarts = 0
+  Object.assign(o.link, { startLive: (...args: string[]) => {
+    liveStarts++
+    if (liveStarts === 1) return new Promise((_resolve, reject) => { rejectOld = reject })
+    return originalStart(...args)
+  } })
+  o.last().ice('failed')
+  assert.ok(await until(() => rejectOld !== undefined))
+  o.last().ice('failed')
+  assert.ok(await until(() => o.peers.length === 3 && o.last().answered))
+  const replacement = o.last()
+  replacement.ready('session.started')
+  rejectOld?.(new Error('old request failed'))
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(o.peers.length, 3)
+  assert.equal(o.engine.phase, 'listening')
+  assert.equal(replacement.channel.readyState, 'open')
+  o.engine.end()
+  replacement.channel.onmessage?.({ data: JSON.stringify({ type: 'session.closed' }) })
 })

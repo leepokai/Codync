@@ -102,6 +102,8 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
                     send = { sendFromCall(call, it) }))
             }
             // WebRTC records the microphone itself.
+            provider == VoiceProvider.OpenAI && isOpenAILiveModel(model) ->
+                OpenAILiveEngine(contextScope, settings, model, voice, link, WebRtcPeer(getApplication()))
             provider == VoiceProvider.OpenAI -> OpenAIRealtimeEngine(contextScope, settings, model, voice,
                 choices.model(provider, VoiceChoices.Model.Transcribe), link, WebRtcPeer(getApplication())) { secret, offer ->
                 OpenAIRealtimeEngine.answer(voiceHttp, secret, offer)
@@ -265,12 +267,17 @@ fun AppStore.voiceSettings(settings: VoiceSettings) { VoicePreferences.save(getA
 
 internal suspend fun AppStore.voiceStatus(): VoiceStatus = WireJson.decodeFromJsonElement(hostCall("voiceStatus", JsonObject(emptyMap()), 30_000))
 internal suspend fun AppStore.voiceModels(provider: VoiceProvider): VoiceModels =
-    WireJson.decodeFromJsonElement(hostCall("voiceModels", body("provider" to provider.id), 30_000))
+    WireJson.decodeFromJsonElement(hostCall("voiceModels", buildJsonObject { put("provider", provider.id); put("supportsLive", true) }, 30_000))
 
-/** A short-lived credential, which checks a key in the call settings. */
-internal suspend fun AppStore.voiceSession(provider: VoiceProvider, model: String, voice: String): String =
-    hostCall("voiceSession", body("provider" to provider.id, "model" to model, "voice" to voice), 30_000).jsonObject["credential"]
-        ?.jsonPrimitive?.contentOrNull ?: throw IOException("${provider.title} didn't start the call.")
+/** Checks model access without creating a billable Live session; Realtime still mints its credential. */
+internal suspend fun AppStore.voiceSession(provider: VoiceProvider, model: String, voice: String): String {
+    if (provider == VoiceProvider.OpenAI && isOpenAILiveModel(model)) {
+        requireOpenAILiveSupport(hostCall("voiceStatus", JsonObject(emptyMap()), 30_000).jsonObject)
+    }
+    val result = hostCall("voiceSession", body("provider" to provider.id, "model" to model, "voice" to voice), 30_000).jsonObject
+    if (provider == VoiceProvider.OpenAI && isOpenAILiveModel(model) && result["validated"]?.jsonPrimitive?.booleanOrNull == true) return "validated"
+    return result["credential"]?.jsonPrimitive?.contentOrNull ?: throw IOException("${provider.title} didn't validate the call model.")
+}
 
 /** Speech to text for one utterance (a WAV file), with the computer's key. */
 internal suspend fun AppStore.voiceTranscribe(provider: VoiceProvider, model: String, wav: ByteArray): String =

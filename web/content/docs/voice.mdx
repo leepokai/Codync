@@ -91,7 +91,7 @@ The key is stored encrypted in Codync's vault on the computer (with the system k
 | You use | Your audio | Your key |
 | --- | --- | --- |
 | On device | Stays on your device. Only the recognized text goes to the computer, as a message. Apple's speech recognition may use Apple's servers when on-device recognition isn't available for your language. | Not needed |
-| Realtime | Streams directly between your device and the provider (OpenAI over WebRTC, Gemini over a WebSocket). It doesn't pass through your computer or the relay. The written transcript of the call is kept on your computer. | Stays on the computer, which gives your device a short-lived credential for each call |
+| Realtime | Streams directly between your device and the provider (OpenAI over WebRTC, Gemini over a WebSocket). It doesn't pass through your computer or the relay. The written transcript of the call is kept on your computer. | Stays on the computer. Realtime and Gemini use short-lived credentials; GPT-Live setup exchanges connection details through the computer without giving your device a credential |
 | Speech mode, or dictation with a provider | Recordings go to your computer over the encrypted connection, and the computer sends them to the provider, with the names of the bots on the computer as spelling hints. The spoken replies come back the same way. | Stays on the computer |
 
 The relay only ever sees encrypted data. Whenever audio leaves your device, the call bar names the provider.
@@ -122,3 +122,16 @@ In the desktop app on macOS, **Settings → General → System → Voice input s
 Double-tap the key and dictation starts in the chat window's message box (the top bot's chat when none is open). Tap the key once more to stop and send what you said, once the last words are in. Press the pill's stop instead to keep the words without sending. If the notch island is on (**Settings → General → System → Show in Notch**), dictation goes into the island's message field instead. During a call the shortcut does nothing.
 
 The shortcut needs no Accessibility or Input Monitoring permission, and the app never sees what you type.
+
+
+### GPT-Live with OpenAI
+
+In **Voice chat**, choose **OpenAI**, **Realtime**, then a `gpt-live-*` model offered by your API key (for example `gpt-live-1`). This requires a host and client with GPT-Live support. Existing Realtime choices and defaults stay unchanged. Availability comes from OpenAI's API model list; a ChatGPT product rollout does not imply the same model name is available through the API.
+
+For a restricted OpenAI key, allow model-read access to discover and test GPT-Live models. A key without model-list permission can still be saved for Realtime if it can create a Realtime session with the computer's default model.
+
+GPT-Live handles speech while a Responses model (`gpt-6-luna`) routes requests to Codync's existing voice tools. Your bot still does the work on your computer, with its existing permissions. The voice can send tasks, check status, read recent messages, search memory, answer an approval after you choose an option, and stop the bot. OpenAI bills the Live session and Responses routing separately, in addition to any usage by your bot's agent.
+
+**Test** checks model access without creating a paid Live session; a successful test does not verify microphone audio or that the routing model can run. Start a short call to verify those. Audio flows directly between your device and OpenAI; your API key stays on the host. The conversation context and tool results are sent to OpenAI to support the call.
+
+Talking over the voice uses GPT-Live's own interruption handling. A manual interruption silences local playback until your next transcribed speech; it does not stop the bot's work. Ask to stop the bot, or use its stop control. Ending a call closes the voice connection; work already handed to a bot can continue.

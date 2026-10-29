@@ -13,9 +13,14 @@ import okhttp3.RequestBody.Companion.toRequestBody
 /** The WebRTC side of an OpenAI Realtime call: the microphone track, the model's voice and the `oai-events` channel. */
 interface RealtimePeer {
     enum class Ice { Connected, Disconnected, Failed }
-    interface Events { fun opened(); fun received(text: String); fun ice(state: Ice) }
+    interface Events { fun opened(); fun received(text: String); fun ice(state: Ice); fun closed() {} }
     /** Creates the connection and returns its SDP offer. */
     suspend fun offer(events: Events): String
+    /** Live uses a complete offer; Realtime keeps its existing connection flow. */
+    suspend fun liveOffer(events: Events): String = offer(events)
+    /** Incoming audio activity for playback UI, independent of transcripts. */
+    suspend fun outputLevel(): Float = 0f
+    fun speaker(enabled: Boolean) {}
     suspend fun answer(sdp: String)
     val isOpen: Boolean
     fun send(text: String)

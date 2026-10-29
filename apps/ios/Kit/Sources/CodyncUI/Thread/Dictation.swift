@@ -12,6 +12,8 @@ struct DictationService {
     var allowMic: @MainActor () async -> Bool
     /// Starts `engine`'s microphone, handing `heard` 16 kHz mono PCM16 and its level, 0…1; false when it can't be used.
     var openMic: @MainActor (_ engine: AVAudioEngine, _ heard: @escaping @Sendable (Data, Float) -> Void) -> Bool
+    /// Releases the same microphone opened by `openMic`, including its audio-session ownership.
+    var closeMic: @MainActor (AVAudioEngine) -> Void
     var transcribe: @MainActor (Data, VoiceProvider, BotStore) async throws -> String
 
     /// The user's setting, this phone's microphone, and their computer on their own key.
@@ -25,6 +27,7 @@ struct DictationService {
             },
             allowMic: { await AVAudioApplication.requestRecordPermission() },
             openMic: { engine, heard in Dictation.openMic(engine, bufferSize: 2048) { MicTap.pcm16k(from: $0, out: heard) } },
+            closeMic: { engine in Dictation.closeMic(engine) },
             transcribe: { pcm, provider, model in
                 let said = try await Dictation.transcribe(pcm, provider: provider, on: model)
                 VoiceUsage.add(seconds: pcm.count / MicTap.bytesPerSecond, for: provider)
@@ -134,9 +137,7 @@ final class Dictation {
         // Only a microphone that was opened: touching `inputNode` starts the audio system (on every send and chat
         // change), and on a busy simulator its start can time out and abort the process.
         if listening {
-            engine.inputNode.removeTap(onBus: 0)
-            if engine.isRunning { engine.stop() }
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            service.closeMic(engine)
         }
         listening = false
         level = 0
@@ -218,6 +219,12 @@ final class Dictation {
             try? audio.setActive(false, options: .notifyOthersOnDeactivation)
             return false
         }
+    }
+
+    fileprivate static func closeMic(_ engine: AVAudioEngine) {
+        engine.inputNode.removeTap(onBus: 0)
+        if engine.isRunning { engine.stop() }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     /// Byte ranges of a recording's 20 s pieces; a tail under half a second stays with the piece before.

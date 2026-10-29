@@ -1,4 +1,5 @@
 import type { CallLink, CallSession } from './call-link'
+import { gatheredOffer, isLiveModel, OpenAILiveSession, type LiveUpdateKind } from './openai-live-session'
 import { errorMessage, microphone, onDevicesChanged, PROGRESS_TAG, reconnect, VoiceEngine, VoiceSettings } from './voice'
 
 /**
@@ -23,6 +24,12 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
   /** The session was set up once: a drop after that is tried again instead of ending the call. */
   private connected = false
   private reconnects = 0
+  private live: OpenAILiveSession | null = null
+  private livePending: { kind: LiveUpdateKind; text: string }[] = []
+  private playbackTimer: ReturnType<typeof setInterval> | null = null
+  private playbackMuted = false
+  private generation = 0
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private stopDevices: (() => void) | null = null
 
   private model: string
@@ -53,14 +60,16 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
    * far, for a session that replaces a dropped one).
    */
   private async open() {
+    const generation = ++this.generation
     try {
+      if (isLiveModel(this.model)) return await this.connect('')
       const session = await this.link.start('realtime', 'openai', this.model, this.voice)
-      if (this.ended) return
+      if (this.ended || generation !== this.generation) return
       if (!session.credential) throw new Error('OpenAI sent no session credential.')
       this.session = session
       await this.connect(session.credential)
     } catch (e) {
-      if (this.ended) return
+      if (this.ended || generation !== this.generation) return
       if (this.connected) this.dropped(errorMessage(e))
       else this.fail(errorMessage(e), 'provider')
     }
@@ -74,7 +83,10 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     this.reconnects++
     this.close()
     this.setPhase('reconnecting')
-    setTimeout(() => {
+    const generation = this.generation
+    this.reconnectTimer = setTimeout(() => {
+      if (generation !== this.generation) return
+      this.reconnectTimer = null
       if (!this.ended) void this.open()
     }, delay)
   }
@@ -110,34 +122,65 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
     }
     pc.oniceconnectionstatechange = () => this.pc === pc && this.iceChanged(pc.iceConnectionState)
     const events = pc.createDataChannel('oai-events')
-    events.onopen = () => this.opened()
-    events.onmessage = (e) => typeof e.data === 'string' && this.received(e.data)
+    events.onopen = () => this.events === events && this.opened()
+    events.onmessage = (e) => this.events === events && typeof e.data === 'string' && this.received(e.data)
     events.onclose = () => this.events === events && this.connected && this.dropped('Lost the connection to OpenAI.')
     this.events = events
 
+    const live = isLiveModel(this.model)
+      ? new OpenAILiveSession(this.link,
+        (event) => { if (this.pc === pc) this.send(event) },
+        (message) => { if (this.pc === pc && !this.ended) this.fail(message, 'provider') })
+      : null
+    this.live = live
     const offer = await pc.createOffer()
+    if (this.ended || this.pc !== pc) return
     await pc.setLocalDescription(offer)
-    const response = await fetch('https://api.openai.com/v1/realtime/calls', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/sdp' },
-      body: offer.sdp,
-      signal: AbortSignal.timeout(15_000),
-    })
-    const body = await response.text()
-    if (this.ended) return
-    if (!response.ok) {
-      let message: string | undefined
-      try {
-        message = (JSON.parse(body) as { error?: { message?: string } }).error?.message
-      } catch {}
-      throw new Error(message ?? `OpenAI answered ${response.status}.`)
-    }
-    await pc.setRemoteDescription({ type: 'answer', sdp: body })
+    if (this.ended || this.pc !== pc) return
+    const answer = live
+      ? await live.start(this.model, this.voice, await gatheredOffer(pc))
+      : await this.realtimeAnswer(secret, offer.sdp ?? '')
+    if (this.ended || this.pc !== pc) return
+    await pc.setRemoteDescription({ type: 'answer', sdp: answer })
+    if (this.ended || this.pc !== pc) return
+    if (live) this.watchPlayback(pc)
     this.dropTimer = setTimeout(() => {
-      if (this.ended || !this.isConnecting) return
+      if (this.ended || this.pc !== pc || !this.isConnecting) return
       if (this.connected) this.dropped("Couldn't reach OpenAI.")
       else this.fail("Couldn't reach OpenAI.", 'connection')
     }, 15_000)
+  }
+
+  private async realtimeAnswer(secret: string, sdp: string) {
+    const response = await fetch('https://api.openai.com/v1/realtime/calls', {
+      method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/sdp' },
+      body: sdp, signal: AbortSignal.timeout(15_000),
+    })
+    const body = await response.text()
+    if (!response.ok) {
+      let message: string | undefined
+      try { message = (JSON.parse(body) as { error?: { message?: string } }).error?.message } catch { /* The provider may return plain text. */ }
+      throw new Error(message ?? `OpenAI answered ${response.status}.`)
+    }
+    return body
+  }
+
+  /** Live has no speech-done event. The received media's audio level drives the speaking indicator. */
+  private watchPlayback(pc: RTCPeerConnection) {
+    let reading = false
+    this.playbackTimer = setInterval(() => {
+      if (reading || this.ended || this.pc !== pc || !this.isActive) return
+      reading = true
+      void pc.getStats().then((stats) => {
+        if (this.ended || this.pc !== pc || !this.isActive) return
+        let playing = false
+        stats.forEach((report) => {
+          if (report.type === 'inbound-rtp' && report.kind === 'audio' && report.audioLevel > 0.01) playing = true
+        })
+        this.setPhase(playing && !this.playbackMuted ? 'speaking' : 'listening')
+      }).catch(() => { /* ICE events handle connection failures; missing stats do not terminate audio. */ })
+        .finally(() => { reading = false })
+    }, 150)
   }
 
   private release() {
@@ -147,16 +190,29 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
 
   end() {
     this.ended = true
+    this.generation++
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.onActivityChanged?.(false)
     this.stopDevices?.()
     this.stopDevices = null
-    this.close()
+    if (this.audio) this.audio.muted = true
     this.release()
+    const live = this.live
+    if (live) void live.shutdown().finally(() => { if (this.live === live) this.close() })
+    else this.close()
   }
 
   /** Closes the session, keeping the microphone for the next one. */
   private close() {
+    this.generation++
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
     if (this.dropTimer) clearTimeout(this.dropTimer)
+    if (this.playbackTimer) clearInterval(this.playbackTimer)
+    this.playbackTimer = null
+    this.live?.discard()
+    this.live = null
+    this.playbackMuted = false
     const events = this.events
     this.events = null
     events?.close()
@@ -176,6 +232,12 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
 
   interrupt() {
     if (this.phase !== 'speaking') return
+    if (this.live) {
+      this.playbackMuted = true
+      if (this.audio) this.audio.muted = true
+      this.setPhase('listening')
+      return
+    }
     this.send({ type: 'response.cancel' })
     this.send({ type: 'output_audio_buffer.clear' })
     this.setPhase('listening')
@@ -183,12 +245,14 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
 
   speak(reply: string) {
     if (this.ended || this.phase === 'failed') return
+    if (isLiveModel(this.model)) return this.queueLive('reply', reply)
     this.pending.push(this.link.reply(reply))
     this.flush()
   }
 
   announce(notice: string) {
     if (this.ended || this.phase === 'failed') return
+    if (isLiveModel(this.model)) return this.queueLive('notice', notice)
     this.pending.push(this.link.notice(notice))
     this.flush()
   }
@@ -196,15 +260,28 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
   /** Only the newest progress waits to be said. */
   progress(text: string) {
     if (this.ended || this.phase === 'failed') return
+    if (isLiveModel(this.model)) return this.queueLive('progress', text)
     this.pending = this.pending.filter((p) => !p.startsWith(PROGRESS_TAG))
     this.pending.push(this.link.progress(text))
     this.flush()
   }
 
+  private queueLive(kind: LiveUpdateKind, text: string) {
+    if (kind === 'progress') this.livePending = this.livePending.filter((p) => p.kind !== 'progress')
+    if (this.livePending.length >= 32) return this.fail('Too many voice updates are waiting for GPT-Live.', 'connection')
+    this.livePending.push({ kind, text })
+    this.flushLive()
+  }
+
+  private flushLive() {
+    if (!this.live || !this.isActive || this.events?.readyState !== 'open') return
+    for (const update of this.livePending.splice(0)) this.live.update(update.kind, update.text)
+  }
+
   // MARK: events
 
   private opened() {
-    if (this.ended) return
+    if (this.ended || this.live) return
     this.send({
       type: 'session.update',
       session: {
@@ -218,13 +295,29 @@ export class OpenAIRealtimeEngine extends VoiceEngine {
   }
 
   private received(data: string) {
-    if (this.ended) return
     let msg: Record<string, unknown>
     try {
       msg = JSON.parse(data) as Record<string, unknown>
     } catch {
       return
     }
+    if (this.live) {
+      this.live.receive(msg)
+      if (this.ended) return
+      if (msg.type === 'session.started' && this.isConnecting) {
+        if (this.dropTimer) clearTimeout(this.dropTimer)
+        this.connected = true
+        this.reconnects = 0
+        this.setPhase('listening')
+        this.flushLive()
+      }
+      if (msg.type === 'session.input_transcript.delta') {
+        this.playbackMuted = false
+        if (this.audio) this.audio.muted = false
+      }
+      return
+    }
+    if (this.ended) return
     switch (msg.type) {
       case 'session.updated':
         // Connected once the session has the instructions and tools, not when the channel opens.

@@ -180,7 +180,11 @@ private struct ProviderVoiceSettings: View {
 
     private var footer: String? {
         guard hasKey else { return "Add a key to choose from \(provider.name)'s models." }
-        return dictationOnly ? "For dictation in the message box." : nil
+        if dictationOnly { return "For dictation in the message box." }
+        if provider == .openAI && !speechMode && LiveCallTransport.isModel(model) {
+            return "GPT-Live voice and the Responses tool router are billed separately by OpenAI."
+        }
+        return nil
     }
 
     /// The key is on the computer: say so, and offer test / replace / remove.
@@ -312,7 +316,8 @@ private struct ProviderVoiceSettings: View {
                 } else {
                     _ = try await client.voiceSession(provider, model: model, voice: voice)
                 }
-                result = (true, "Key works")
+                result = (true, provider == .openAI && !dictationOnly && !speechMode && LiveCallTransport.isModel(model)
+                    ? "Model access verified" : "Key works")
             } else {
                 saved = try await client.setVoiceKey(typed, for: provider).configured(provider)
                 key = ""

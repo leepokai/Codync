@@ -1,5 +1,6 @@
 import type { HostClient } from '../../client/host-client'
 import { pref, type Pref } from '../../lib/prefs'
+import { requireLiveHost } from '../call/openai-live-host'
 
 // Realtime voice on the user's own provider keys (host/src/voice.rs, kit Voice.swift +
 // VoiceSettings). The keys stay on the computer; these are this device's choices.
@@ -145,12 +146,14 @@ export async function voiceStatus(c: HostClient) {
 /** Checks the key with the provider before the computer keeps it; an empty key removes it. */
 export const setVoiceKey = (c: HostClient, p: VoiceProvider, key: string) => c.call<VoiceStatus>('setVoiceKey', { provider: p, key }, 30_000)
 
-/** A short-lived credential for one call's audio session. */
-export const voiceSession = async (c: HostClient, p: VoiceProvider, model: string, voice: string) =>
-  (await c.call<{ credential: string }>('voiceSession', { provider: p, model, voice }, 30_000)).credential
+/** Validate access. Realtime also returns a short-lived credential; Live does not create a billed session. */
+export const voiceSession = async (c: HostClient, p: VoiceProvider, model: string, voice: string) => {
+  if (p === 'openai' && model.startsWith('gpt-live-')) await requireLiveHost(c)
+  return (await c.call<{ credential?: string; validated?: boolean }>('voiceSession', { provider: p, model, voice }, 30_000)).credential
+}
 
 /** The models the computer's key can use, per voice mode. */
-export const voiceModels = (c: HostClient, p: VoiceProvider) => c.call<VoiceModels>('voiceModels', { provider: p }, 30_000)
+export const voiceModels = (c: HostClient, p: VoiceProvider) => c.call<VoiceModels>('voiceModels', { provider: p, supportsLive: true }, 30_000)
 
 /** Text to speech for a stretch of a reply: base64 audio and its format (`aac` or `wav`). */
 export const voiceSpeak = (c: HostClient, p: VoiceProvider, model: string, voice: string, text: string) =>

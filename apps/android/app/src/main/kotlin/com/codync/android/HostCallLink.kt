@@ -29,7 +29,7 @@ internal fun VoiceBinding.link(store: AppStore): HostCallLink = link ?: HostCall
  * computer gets what was said, the tool calls and the end one at a time, in order: a hand-off never overtakes the
  * words it hands on, and lines it didn't get go out with the next request.
  */
-internal class HostCallLink(private val store: AppStore, private val call: VoiceBinding) : CallLink {
+internal class HostCallLink(private val store: AppStore, private val call: VoiceBinding) : CallLink, LiveCallLink {
     private val transcript = CallTranscript(script = ::inReadersScript) { flush() }
     private val order = Mutex()
     /** The user's last words are still being written down (OpenAI transcribes them after the turn). */
@@ -40,6 +40,27 @@ internal class HostCallLink(private val store: AppStore, private val call: Voice
             put("botId", call.botId); put("callId", call.id); put("mode", "realtime"); put("provider", provider.id)
             put("model", model); put("voice", voice); put("language", java.util.Locale.getDefault().toLanguageTag())
         }, 30_000).jsonObject)
+
+    override suspend fun startLive(model: String, voice: String, sdp: String): LiveCallSession {
+        requireOpenAILiveSupport(store.hostCall("voiceStatus", JsonObject(emptyMap()), 30_000).jsonObject)
+        val result = store.hostCall("startLiveCall", buildJsonObject {
+            put("botId", call.botId); put("callId", call.id); put("model", model); put("voice", voice); put("sdp", sdp)
+            put("language", java.util.Locale.getDefault().toLanguageTag())
+        }, 30_000).jsonObject
+        return LiveCallSession.decode(result)
+    }
+
+    override suspend fun liveEvent(session: String, event: JsonObject): List<JsonObject> = liveCall("callLiveEvent", session) { put("event", event) }
+
+    override suspend fun liveUpdate(session: String, kind: String, text: String): List<JsonObject> = liveCall("callLiveUpdate", session) {
+        put("kind", kind); put("text", text)
+    }
+
+    private suspend fun liveCall(method: String, session: String, content: JsonObjectBuilder.() -> Unit): List<JsonObject> = order.withLock {
+        val result = store.hostCall(method, buildJsonObject { put("callId", call.id); put("sessionId", session); content() }, 60_000).jsonObject
+        val events = result["events"] as? JsonArray ?: throw java.io.IOException("The computer sent no Live events.")
+        events.map { it as? JsonObject ?: throw java.io.IOException("The computer sent an invalid Live event.") }
+    }
 
     override suspend fun tool(name: String, arguments: JsonObject): JsonElement {
         withTimeoutOrNull(HEARING_PATIENCE_MS) { while (hearing) delay(100) }

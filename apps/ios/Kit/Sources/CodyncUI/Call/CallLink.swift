@@ -29,7 +29,7 @@ final class CallLink {
         self.call = call
     }
 
-    private func client() throws -> HostClient {
+    func client() throws -> HostClient {
         guard let client = model.client else { throw VoiceError("Not connected to \(model.hostName).") }
         return client
     }

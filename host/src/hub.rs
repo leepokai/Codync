@@ -1,5 +1,7 @@
 //! Shared host state: store, event fan-out, bot actors, push, usage.
 
+mod init;
+
 use crate::LockExt;
 use crate::agent::bot::{self, BotHandle, Cmd};
 use crate::api::devices::Pairing;
@@ -81,6 +83,7 @@ pub struct Hub {
     pub waiting: crate::chat::team::remote::Waiting,
     /// The user's cloud assistant: its requests to this computer's bots and their replies.
     pub assistant: crate::chat::team::assistant::Replies,
+    pub live_calls: crate::chat::calls::live::Calls,
     pub store: Store,
     pub host_id: String,
     pub identity: Identity,
@@ -114,39 +117,6 @@ impl Hub {
     pub fn busy(&self) -> bool {
         self.runtime.locked().values().any(|r| matches!(r.status, BotStatus::Working | BotStatus::NeedsInput))
             || self.terms.busy()
-    }
-
-    pub fn new(store: Store, host_id: String, identity: Identity, token: String, port: u16) -> Arc<Self> {
-        let (events, _) = broadcast::channel(1024);
-        let screen = Arc::new(Screen::new(Screen::load_enabled(&store), events.clone()));
-        Arc::new(Self {
-            analytics: crate::analytics::Analytics::load(&store),
-            routines: crate::routines::Routines::default(),
-            team: crate::chat::team::Requests::default(),
-            groups: crate::chat::group::Rooms::default(),
-            network: crate::network::Network::default(),
-            waiting: crate::chat::team::remote::Waiting::default(),
-            assistant: crate::chat::team::assistant::Replies::default(),
-            store,
-            host_id,
-            identity,
-            token,
-            port,
-            events,
-            emit_lock: Mutex::new(()),
-            bots: Mutex::default(),
-            runtime: Mutex::default(),
-            phone_clients: AtomicUsize::new(0),
-            usage: Mutex::default(),
-            keep_awake: Mutex::default(),
-            auth: watch::Sender::new(0),
-            pairing: Mutex::default(),
-            connected: Mutex::default(),
-            cloud_synced: AtomicBool::new(false),
-            cloud: crate::remote::cloud::Cloud::default(),
-            screen,
-            terms: Arc::default(),
-        })
     }
 
     pub fn start(self: &Arc<Self>) -> Result<()> {

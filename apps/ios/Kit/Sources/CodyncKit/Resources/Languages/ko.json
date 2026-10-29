@@ -1390,5 +1390,7 @@
   "this computer isn't in a network": "이 컴퓨터는 네트워크에 속해 있지 않습니다",
   "cloud assistants are off here": "여기서는 클라우드 어시스턴트가 꺼져 있습니다",
   "Offered to the network: bots on your other computers can see and message this bot.": "네트워크에 공개: 다른 컴퓨터의 봇이 이 봇을 보고 메시지를 보낼 수 있습니다.",
-  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "클라우드 어시스턴트가 연락 가능: Codync 계정의 ChatGPT나 Claude가 이 봇을 보고 메시지를 보낼 수 있습니다."
+  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "클라우드 어시스턴트가 연락 가능: Codync 계정의 ChatGPT나 Claude가 이 봇을 보고 메시지를 보낼 수 있습니다.",
+  "GPT-Live voice and the Responses tool router are billed separately by OpenAI.": "GPT-Live 음성과 Responses 도구 라우터는 OpenAI에서 별도로 요금을 청구합니다.",
+  "Model access verified": "모델 접근 권한 확인됨"
 }

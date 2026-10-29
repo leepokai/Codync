@@ -38,7 +38,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::voice::session(&hub.store, provider, str_arg(&b, "model")?, str_arg(&b, "voice")?).await?
         }
         "voiceModels" => {
-            crate::voice::models(&hub.store, crate::voice::Provider::parse(str_arg(&b, "provider")?)?).await?
+            crate::voice::models_for_client(
+                &hub.store,
+                crate::voice::Provider::parse(str_arg(&b, "provider")?)?,
+                b["supportsLive"].as_bool().unwrap_or(false),
+            )
+            .await?
         }
         "voiceTranscribe" => {
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;

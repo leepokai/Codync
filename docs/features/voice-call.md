@@ -211,7 +211,7 @@ computer) or the waveform button on a computer's card in **Computers & devices**
 on the computer only: the host takes `setVoiceKey` from loopback, and the iPhone shows whether a key
 is there and can test it. Picking a cloud engine shows its key form instead of the on-device settings: a secure field, a link
 to the provider's key page, **Test** (the computer checks a new key with the provider and keeps it
-only if it works, otherwise the provider's error is shown; with a key saved, it mints a call
+only if it works, otherwise the provider's error is shown; with a key saved, it checks Live model access or mints a Realtime/Gemini call
 credential for the chosen model and voice), a model picker, a voice picker, and minutes used this month.
 Speech mode adds speech-to-text and text-to-speech pickers and the pause length; dictating with
 the provider shows its speech-to-text picker too. When dictation's engine is a provider the call
@@ -228,13 +228,13 @@ shows the provider's name next to the dots whenever audio leaves the device.
   desktop app. It reaches the host once, over the encrypted channel, and never leaves it again; it is never
   logged and never sent to the relay or our cloud.
 - Host methods (control scope): `voiceStatus` (which providers have a key), `setVoiceKey
-  {provider, key}` (checked with one credential mint before it's kept; empty removes it),
-  `voiceSession {provider, model, voice}` → `{credential}`, `voiceModels {provider}` → `{models,
+  {provider, key}` (validated against an available voice model before it's kept; Live-only keys use model access rather than a billable session; empty removes it),
+  `voiceSession {provider, model, voice}` → `{credential}` for Realtime/Gemini or `{validated:true}` for GPT-Live, `voiceModels {provider, supportsLive?}` → `{models,
   transcribe, speech}`, `voiceTranscribe {provider, model, audio}` (base64 16 kHz WAV) → `{text}`,
   `voiceSpeak {provider, model, voice, text}` → `{audio, format}`.
 - The long-lived key is used for minting a short-lived credential at call start (OpenAI
   `POST /v1/realtime/client_secrets`, 10 minutes; Gemini `POST v1alpha/auth_tokens`, one use) and
-  listing models. The client's audio session only ever sees that credential.
+  listing models. GPT-Live uses the key on the host to create the SDP session instead; the client receives only the answer and session ID.
 - Audio is not proxied through the host: it would cross the encrypted channel and the relay
   (latency, relay bandwidth). The device streams to the provider directly.
 
@@ -436,3 +436,20 @@ simulated: on a physical iPhone, check both engines with a real key (talk over a
 are you doing?", approve by voice, and turn Wi-Fi off for a moment mid-call: the bar shows Reconnecting, comes back
 to Listening and still says the replies; with no network at all, after three tries, the call falls back to on-device
 voice).
+
+
+## OpenAI GPT-Live (2.32.0)
+
+GPT-Live is opt-in through the existing OpenAI realtime model picker. `voiceStatus.supportsLive` advertises support; clients check the current host before starting or testing a saved Live selection and show an update instruction for older hosts. New clients request `voiceModels` with `supportsLive: true`; only those responses include conversational `gpt-live-*` models (not transcription models). Cached defaults remain Realtime, so an older client never automatically receives an incompatible model. Explicit Realtime selections continue through their existing engine.
+
+The host implements `startLiveCall`, `callLiveEvent` and `callLiveUpdate`. It creates `POST /v1/live/sessions` with the client's gathered SDP offer, the provider key from its vault, `store: false`, and Responses delegation through `gpt-6-luna`. The voice prompt handles conversation and delegation; the existing call instructions and six tools belong to the Responses backend. The API key and routing configuration never go to the client. Audio remains direct WebRTC between the device and OpenAI.
+
+The host configures the provider's data-channel subscription to deliver transcripts, session start/close/errors, and only the Responses lifecycle/completed-item events it uses. Backend token and function-argument deltas never enter the clients' ordered Host RPC queues, avoiding backlog on remote connections. The host owns transcript persistence, completed function-call handling, duplicate protection, and response continuation. An owner and provider-session check rejects another device, an ended call, or a stale connection. Completed tool outputs are sent before a single continuation for their response; lifecycle snapshots cannot be used to discover tools because Live forwards empty `response.output` arrays. Bot reply/notice cues become `session.commentary.append`, progress becomes `session.thinking.append`; the host splits updates into conservative UTF-8 byte-bounded pieces below the 500-token append limit. Transcript handoffs preserve speaker, pause and session boundaries while retaining exact spelling within split utterances.
+
+Clients reuse their WebRTC transport and only send host-produced protocol messages back to the corresponding connection. They become ready on `session.started`, derive speaking state from received media activity (Live has no speech-done event), and fence all asynchronous results when a connection is replaced. Ending sends `session.close` and waits briefly for `session.closed`; timeout is recorded as unconfirmed finalization. Manual interruption gates local playback until the next input transcript, without issuing unsupported Realtime cancellation commands.
+
+The Live model test checks API model access, not audio or Responses routing availability, and does not create a billable no-media session. Voice duration and the Responses router are charged separately. Terminal UI does not run an audio engine or model picker; its existing call transcript display is unchanged.
+
+Saving an OpenAI key discovers a suitable model when model-list access is allowed. If discovery fails, it retains the existing Realtime credential-mint validation against the saved default; a failed mint still rejects the key. Discovery and validation share a 20-second budget before saving. Successful discovery supplies cached defaults directly, with no second network request after the key is saved. Restricted keys do not need model-list permission just to keep using Realtime, but discovering or testing GPT-Live models requires the corresponding model-read permissions.
+
+Provider references: [WebRTC](https://developers.openai.com/api/docs/guides/voice-webrtc), [delegation and tools](https://developers.openai.com/api/docs/guides/live-delegation), [migration](https://developers.openai.com/api/docs/guides/live-migration).

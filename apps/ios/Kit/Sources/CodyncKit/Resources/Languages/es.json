@@ -1390,5 +1390,7 @@
   "this computer isn't in a network": "esta computadora no está en ninguna red",
   "cloud assistants are off here": "los asistentes en la nube están desactivados aquí",
   "Offered to the network: bots on your other computers can see and message this bot.": "Ofrecido a la red: los bots de tus otras computadoras pueden ver este bot y escribirle.",
-  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "Accesible para asistentes en la nube: ChatGPT o Claude en tu cuenta de Codync pueden ver este bot y escribirle."
+  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "Accesible para asistentes en la nube: ChatGPT o Claude en tu cuenta de Codync pueden ver este bot y escribirle.",
+  "GPT-Live voice and the Responses tool router are billed separately by OpenAI.": "OpenAI factura por separado la voz de GPT-Live y el enrutamiento de herramientas mediante Responses.",
+  "Model access verified": "Acceso al modelo verificado"
 }

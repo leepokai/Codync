@@ -197,6 +197,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         // A voice call, owned by the host (`chat::calls`); only the device that starts it hears what its voice should
         // say.
+        "startLiveCall" => crate::chat::calls::live::start(hub, &b, caller.device_key()).await?,
+        "callLiveEvent" => crate::chat::calls::live::event(hub, &b, caller.device_key()).await?,
+        "callLiveUpdate" => crate::chat::calls::live::update(hub, &b, caller.device_key()).await?,
         "startCall" => crate::chat::calls::start(hub, &b, caller.device_key()).await?,
         // `lines`: what was said on the call that the app hadn't sent yet, which the tool may hand on.
         "callTool" => {

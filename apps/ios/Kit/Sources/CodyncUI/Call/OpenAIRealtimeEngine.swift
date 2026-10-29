@@ -7,9 +7,8 @@ import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Call")
 
-/// OpenAI Realtime over WebRTC, phone ↔ OpenAI directly: the microphone is a WebRTC audio track,
-/// the model's voice plays from the remote track, and events (tools, replies) go over `oai-events`.
-/// The user's key stays on the computer, which mints the client secret; the host never sees audio.
+/// OpenAI Realtime or GPT-Live over WebRTC: audio goes directly between this phone and OpenAI.
+/// The host exchanges Live offers or mints Realtime credentials; Live event handling stays on the host.
 @MainActor
 @Observable
 final class OpenAIRealtimeEngine: VoiceEngine {
@@ -46,6 +45,12 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     private var connected = false
     private var reconnects = 0
     private var audioEvents: AudioSessionEvents?
+    private var live: LiveCallTransport?
+    private var livePending: [(CallCue.Kind, String)] = []
+    private var activity: WebRTCAudioActivity?
+    private var generation = 0
+    private var outputSuppressed = false
+    private var usesLive: Bool { LiveCallTransport.isModel(model) }
 
     init(model: String, voice: String, link: CallLink) {
         self.model = model
@@ -62,22 +67,23 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         await open()
     }
 
-    /// A session with OpenAI: the computer mints its client secret and writes the voice's instructions (with the call
-    /// so far, for a session that replaces a dropped one).
+    /// A new provider session resumes the call using context retained on the host.
     private func open() async {
+        let attempt = generation
         do {
+            if usesLive { return try await connect(secret: nil) }
             let session = try await link.start("realtime", provider: .openAI, model: model, voice: voice)
-            guard !ended else { return }
+            guard !ended, generation == attempt else { return }
             guard let secret = session.credential else { throw VoiceError("OpenAI sent no session credential.") }
             self.session = session
             try await connect(secret: secret)
         } catch {
-            guard !ended else { return }
+            guard !ended, generation == attempt else { return }
             if connected { dropped(error.localizedDescription) } else { fail(error.localizedDescription, .provider) }
         }
     }
 
-    private func connect(secret: String) async throws {
+    private func connect(secret: String?) async throws {
         let audio = RTCAudioSessionConfiguration.webRTC()
         audio.categoryOptions = CallAudioSession.options
         RTCAudioSessionConfiguration.setWebRTC(audio)
@@ -85,7 +91,8 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
         config.bundlePolicy = .maxBundle
-        let delegate = RealtimeEvents(owner: self)
+        let attempt = generation
+        let delegate = RealtimeEvents(owner: self, generation: attempt)
         guard let pc = Self.factory.peerConnection(with: config, constraints: Self.noConstraints, delegate: delegate) else {
             throw VoiceError( "Couldn't start the call audio.")
         }
@@ -101,22 +108,51 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         self.events = events
 
         let offer = try await pc.offer(for: Self.noConstraints)
+        guard !ended, generation == attempt else { throw CancellationError() }
         try await pc.setLocalDescription(offer)
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/realtime/calls")!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/sdp", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Data(offer.sdp.utf8)
-        request.timeoutInterval = 15
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard !ended else { return }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else {
-            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let message = (json?["error"] as? [String: Any])?["message"] as? String
-            throw VoiceError( message ?? "OpenAI answered \(status).")
+        guard !ended, generation == attempt else { throw CancellationError() }
+        let answer: String
+        if usesLive {
+            let transport = LiveCallTransport(link: link, send: { [weak self] data in
+                guard let self, self.generation == attempt else { return }
+                self.sendData(data)
+            }, ready: { [weak self] in
+                guard let self, self.generation == attempt else { return }
+                self.becameReady()
+            }, failed: { [weak self] message in
+                guard let self, self.generation == attempt else { return }
+                self.fail(message, .provider)
+            })
+            live = transport
+            for (kind, text) in livePending { transport.update(kind, text) }
+            livePending.removeAll()
+            let deadline = ContinuousClock.now + .seconds(5)
+            while pc.iceGatheringState != .complete && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(50))
+                guard !ended, generation == attempt else { throw CancellationError() }
+            }
+            guard pc.iceGatheringState == .complete else {
+                throw VoiceError("Could not prepare the GPT-Live audio connection. Try again.")
+            }
+            let result = try await link.client().startLiveCall(botId: link.botId, call: link.call, model: model,
+                voice: voice, language: Locale.preferredLanguages.first, sdp: pc.localDescription?.sdp ?? offer.sdp)
+            guard !ended, generation == attempt else { throw CancellationError() }
+            transport.attach(result.sessionId)
+            answer = result.sdp
+        } else {
+            guard let secret else { throw VoiceError("OpenAI sent no session credential.") }
+            answer = try await realtimeAnswer(secret: secret, offer: offer.sdp)
         }
-        try await pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: String(decoding: data, as: UTF8.self)))
+        guard !ended, generation == attempt else { throw CancellationError() }
+        try await pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer))
+        guard !ended, generation == attempt else { throw CancellationError() }
+        if usesLive {
+            activity = WebRTCAudioActivity(peer: pc) { [weak self] speaking, level in
+                guard let self, self.generation == attempt, !self.ended, self.phase.isActive else { return }
+                self.level = self.muted ? 0 : level
+                self.phase = speaking && !self.outputSuppressed ? .speaking : .listening
+            }
+        }
         dropTimer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(15))
             guard let self, !Task.isCancelled, self.phase.isConnecting else { return }
@@ -125,15 +161,36 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     }
 
     func end() {
+        guard !ended else { return }
         ended = true
+        livePending.removeAll()
         onActivityChanged?(false)
         audioEvents?.stop()
         audioEvents = nil
-        close()
+        mic?.isEnabled = false
+        pc?.receivers.forEach { $0.track?.isEnabled = false }
+        activity?.stop()
+        if let live {
+            live.requestClose()
+            Task { [weak self] in
+                let deadline = ContinuousClock.now + .seconds(1)
+                while !live.isClosed && ContinuousClock.now < deadline {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                if !live.isClosed { log.info("GPT-Live closure was not confirmed before disconnecting.") }
+                self?.close()
+            }
+        } else { close() }
     }
 
     private func close() {
+        generation += 1
         dropTimer?.cancel()
+        activity?.stop()
+        activity = nil
+        live?.stop()
+        live = nil
+        outputSuppressed = false
         events?.close()
         pc?.close()
         events = nil
@@ -141,6 +198,7 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         mic = nil
         delegate = nil
         responding = false
+        toolsRunning = 0
     }
 
     /// The connection to OpenAI dropped mid-call: a new session, primed by the computer with the call so far, a few
@@ -152,9 +210,10 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         reconnects += 1
         close()
         if phase != .interrupted { phase = .reconnecting }
+        let attempt = generation
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard let self, !self.ended else { return }
+            guard let self, !self.ended, self.generation == attempt else { return }
             await self.open()
         }
     }
@@ -179,6 +238,12 @@ final class OpenAIRealtimeEngine: VoiceEngine {
 
     func interrupt() {
         guard phase == .speaking else { return }
+        if usesLive {
+            outputSuppressed = true
+            pc?.receivers.forEach { $0.track?.isEnabled = false }
+            phase = .listening
+            return
+        }
         send(["type": "response.cancel"])
         send(["type": "output_audio_buffer.clear"])
         phase = .listening
@@ -186,12 +251,14 @@ final class OpenAIRealtimeEngine: VoiceEngine {
 
     func speak(reply: String) {
         guard !ended, !phase.isFailed else { return }
+        if usesLive { return updateLive(.reply, reply) }
         pending.append(link.reply(reply))
         flush()
     }
 
     func announce(_ notice: String) {
         guard !ended, !phase.isFailed else { return }
+        if usesLive { return updateLive(.notice, notice) }
         pending.append(link.notice(notice))
         flush()
     }
@@ -199,15 +266,23 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     /// Only the newest progress waits to be said.
     func progress(_ text: String) {
         guard !ended, !phase.isFailed else { return }
+        if usesLive { return updateLive(.progress, text) }
         pending.removeAll { $0.hasPrefix(CallLink.progressTag) }
         pending.append(link.progress(text))
         flush()
     }
 
+    private func updateLive(_ kind: CallCue.Kind, _ text: String) {
+        if let live { return live.update(kind, text) }
+        if kind == .progress { livePending.removeAll { $0.0 == .progress } }
+        guard livePending.count < 32 else { return fail("Too many voice updates are waiting for GPT-Live.", .connection) }
+        livePending.append((kind, text))
+    }
+
     // MARK: events
 
-    fileprivate func opened() {
-        guard !ended else { return }
+    func opened(generation attempt: Int) {
+        guard !ended, generation == attempt, !usesLive else { return }
         let declared = session.flatMap { (try? JSONSerialization.jsonObject(with: $0.tools)) as? [[String: Any]] } ?? []
         let tools: [[String: Any]] = declared.map {
             ["type": "function", "name": $0["name"] ?? "", "description": $0["description"] ?? "", "parameters": $0["parameters"] ?? [:]]
@@ -227,16 +302,23 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         ])
     }
 
-    func received(_ data: Data) {
+    func received(_ data: Data, generation attempt: Int? = nil) {
+        guard attempt == nil || generation == attempt else { return }
+        if let live {
+            if !ended, outputSuppressed,
+               let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+               message["type"] as? String == "session.input_transcript.delta" {
+                outputSuppressed = false
+                pc?.receivers.forEach { $0.track?.isEnabled = true }
+            }
+            live.receive(data)
+            return
+        }
         guard !ended, let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
         switch msg["type"] as? String {
         // Connected once the session has the instructions and tools, not when the channel opens.
         case "session.updated" where phase.isConnecting:
-            dropTimer?.cancel()
-            connected = true
-            reconnects = 0
-            phase = .listening
-            flush()
+            becameReady()
         case "input_audio_buffer.speech_started": level = muted ? 0 : 0.7
         case "input_audio_buffer.speech_stopped": level = 0
         case "input_audio_buffer.committed": link.transcribing(true)
@@ -258,9 +340,10 @@ final class OpenAIRealtimeEngine: VoiceEngine {
             let args = Data((msg["arguments"] as? String ?? "{}").utf8)
             // The tool runs on the computer.
             toolsRunning += 1
+            let attempt = generation
             Task { [weak self, link] in
                 let output = String(decoding: await link.tool(name, arguments: args), as: UTF8.self)
-                guard let self else { return }
+                guard let self, self.generation == attempt else { return }
                 self.toolsRunning -= 1
                 guard !self.ended else { return }
                 self.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": id, "output": output]])
@@ -275,7 +358,8 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         }
     }
 
-    func iceChanged(_ state: RTCIceConnectionState) {
+    func iceChanged(_ state: RTCIceConnectionState, generation attempt: Int? = nil) {
+        guard attempt == nil || generation == attempt else { return }
         // While connecting, only a failure counts: the start timer runs until the session is set up.
         guard !ended, !phase.isConnecting || state == .failed else { return }
         switch state {
@@ -293,14 +377,14 @@ final class OpenAIRealtimeEngine: VoiceEngine {
     }
 
     /// The events channel closed under a running session.
-    fileprivate func channelClosed(_ channel: ObjectIdentifier) {
-        guard !ended, connected, events.map(ObjectIdentifier.init) == channel else { return }
+    func channelClosed(_ channel: ObjectIdentifier, generation attempt: Int) {
+        guard !ended, generation == attempt, connected, events.map(ObjectIdentifier.init) == channel else { return }
         dropped("Lost the connection to OpenAI.")
     }
 
     /// Hands waiting replies (and tool results, as empty entries) to the model once it's free.
     private func flush() {
-        guard !responding, toolsRunning == 0, phase.isActive, events?.readyState == .open, !pending.isEmpty else { return }
+        guard !usesLive, !responding, toolsRunning == 0, phase.isActive, events?.readyState == .open, !pending.isEmpty else { return }
         for text in pending where !text.isEmpty {
             send(["type": "conversation.item.create", "item": [
                 "type": "message", "role": "user", "content": [["type": "input_text", "text": text]],
@@ -309,6 +393,20 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         pending.removeAll()
         responding = true
         send(["type": "response.create"])
+    }
+
+    private func becameReady() {
+        guard !ended else { return }
+        dropTimer?.cancel()
+        connected = true
+        reconnects = 0
+        phase = .listening
+        flush()
+    }
+
+    private func sendData(_ data: Data) {
+        guard let events, events.readyState == .open else { return }
+        events.sendData(RTCDataBuffer(data: data, isBinary: false))
     }
 
     private func send(_ event: [String: Any]) {
@@ -322,50 +420,27 @@ final class OpenAIRealtimeEngine: VoiceEngine {
         phase = .failed(message, kind)
     }
 
+    private func realtimeAnswer(secret: String, offer: String) async throws -> String {
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/realtime/calls")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/sdp", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data(offer.utf8)
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let message = (json?["error"] as? [String: Any])?["message"] as? String
+            throw VoiceError( message ?? "OpenAI answered \(status).")
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
     private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
         return RTCPeerConnectionFactory()
     }()
 
     private static let noConstraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-}
-
-/// WebRTC callbacks arrive on its signaling thread; this hops them to the main actor.
-private final class RealtimeEvents: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, Sendable {
-    private let owner: WeakEngine
-
-    @MainActor init(owner: OpenAIRealtimeEngine) { self.owner = WeakEngine(owner) }
-
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
-    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
-
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        let owner = owner
-        Task { @MainActor in owner.value?.iceChanged(newState) }
-    }
-
-    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-        let (state, channel) = (dataChannel.readyState, ObjectIdentifier(dataChannel))
-        let owner = owner
-        Task { @MainActor in
-            if state == .open { owner.value?.opened() } else if state == .closed { owner.value?.channelClosed(channel) }
-        }
-    }
-
-    func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
-        let data = buffer.data
-        let owner = owner
-        Task { @MainActor in owner.value?.received(data) }
-    }
-}
-
-private final class WeakEngine: Sendable {
-    @MainActor weak var value: OpenAIRealtimeEngine?
-    @MainActor init(_ value: OpenAIRealtimeEngine) { self.value = value }
 }

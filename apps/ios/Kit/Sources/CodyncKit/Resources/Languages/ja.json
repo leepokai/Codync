@@ -1390,5 +1390,7 @@
   "this computer isn't in a network": "このコンピューターはネットワークに入っていません",
   "cloud assistants are off here": "ここではクラウドアシスタントがオフです",
   "Offered to the network: bots on your other computers can see and message this bot.": "ネットワークに公開：ほかのコンピューターのボットがこのボットを見つけてメッセージを送れます。",
-  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "クラウドアシスタントから利用可能：Codync アカウントの ChatGPT や Claude がこのボットを見つけてメッセージを送れます。"
+  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "クラウドアシスタントから利用可能：Codync アカウントの ChatGPT や Claude がこのボットを見つけてメッセージを送れます。",
+  "GPT-Live voice and the Responses tool router are billed separately by OpenAI.": "GPT-Live の音声と Responses のツールルーターは、OpenAI により個別に課金されます。",
+  "Model access verified": "モデルへのアクセスを確認しました"
 }

@@ -91,6 +91,8 @@ public struct VoiceStatus: Decodable, Sendable {
     }
 
     public var providers: [Provider]
+    /// Missing on hosts without GPT-Live session and event APIs.
+    public var supportsLive: Bool?
 
     public func configured(_ provider: VoiceProvider) -> Bool {
         providers.first { $0.provider == provider }?.configured == true
@@ -121,16 +123,21 @@ public extension HostClient {
         try await call("setVoiceKey", ["provider": provider.rawValue, "key": key], timeout: 30)
     }
 
-    /// A short-lived credential for one call's audio session.
+    /// Tests model access. Realtime returns a credential; Live validation returns an empty string without starting a billed session.
     func voiceSession(_ provider: VoiceProvider, model: String, voice: String) async throws -> String {
-        struct Session: Decodable { var credential: String }
+        if provider == .openAI && model.hasPrefix("gpt-live-") && !model.contains("transcribe") {
+            try await requireLiveSupport()
+        }
+        struct Session: Decodable { var credential: String?; var validated: Bool? }
         let s: Session = try await call("voiceSession", ["provider": provider.rawValue, "model": model, "voice": voice], timeout: 30)
-        return s.credential
+        guard s.credential != nil || s.validated == true else { throw HostError.http(0, "The computer did not verify model access.") }
+        return s.credential ?? ""
     }
 
     /// The models the computer's key can use, per voice mode.
     func voiceModels(_ provider: VoiceProvider) async throws -> VoiceModels {
-        try await call("voiceModels", ["provider": provider.rawValue], timeout: 30)
+        struct Body: Encodable { var provider: String; var supportsLive = true }
+        return try await call("voiceModels", Body(provider: provider.rawValue), timeout: 30)
     }
 
     /// Speech to text for one utterance (a WAV file), with the computer's key.

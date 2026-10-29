@@ -1390,5 +1390,7 @@
   "this computer isn't in a network": "这台电脑不在任何网络里",
   "cloud assistants are off here": "这里的云端助手已关闭",
   "Offered to the network: bots on your other computers can see and message this bot.": "提供给网络：你其他电脑上的 Bot 能看到这个 Bot 并给它发消息。",
-  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "云端助手可联系：你 Codync 账户里的 ChatGPT 或 Claude 能看到这个 Bot 并给它发消息。"
+  "Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.": "云端助手可联系：你 Codync 账户里的 ChatGPT 或 Claude 能看到这个 Bot 并给它发消息。",
+  "GPT-Live voice and the Responses tool router are billed separately by OpenAI.": "GPT-Live 语音和 Responses 工具路由由 OpenAI 分别计费。",
+  "Model access verified": "已验证模型访问权限"
 }

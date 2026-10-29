@@ -54,6 +54,7 @@ import Testing
 @MainActor private final class Mic {
     /// Where the open microphone's audio goes; nil until it's opened.
     var heard: (@Sendable (Data, Float) -> Void)?
+    var closes = 0
 }
 
 private struct Offline: LocalizedError {
@@ -78,8 +79,30 @@ private struct Offline: LocalizedError {
                                        mic.heard = heard
                                        return true
                                    },
+                                   closeMic: { _ in
+                                       mic.closes += 1
+                                       mic.heard = nil
+                                   },
                                    transcribe: { _, _, _ in try await transcript.call() })
     await body(Dictation(service: service), store)
+}
+
+/// A mocked recorder must own cleanup too: reaching the real input node can abort a CI simulator.
+@MainActor @Test func dictationClosesOnlyTheMicrophoneItOpenedOnce() async {
+    let mic = Mic()
+    await dictating(mic: mic) { dictation, store in
+        dictation.stop()
+        #expect(mic.closes == 0)
+        await dictation.start(after: "", model: store) { _ in }
+        #expect(mic.heard != nil)
+        dictation.stop()
+        dictation.stop()
+        #expect(mic.closes == 1 && mic.heard == nil)
+        await dictation.start(after: "", model: store) { _ in }
+        dictation.finish()
+        #expect(mic.closes == 2 && mic.heard == nil)
+        #expect(!dictation.listening && !dictation.transcribing)
+    }
 }
 
 private extension Dictation {

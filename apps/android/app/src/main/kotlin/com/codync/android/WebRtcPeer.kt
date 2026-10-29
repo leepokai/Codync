@@ -7,6 +7,8 @@ import java.nio.ByteBuffer
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.webrtc.*
@@ -42,7 +44,13 @@ internal class WebRtcPeer(private val context: Context) : RealtimePeer {
         channel = connection.createDataChannel("oai-events", DataChannel.Init()).apply {
             registerObserver(object : DataChannel.Observer {
                 override fun onBufferedAmountChange(previousAmount: Long) { }
-                override fun onStateChange() { if (state() == DataChannel.State.OPEN) events.opened() }
+                override fun onStateChange() {
+                    when (state()) {
+                        DataChannel.State.OPEN -> events.opened()
+                        DataChannel.State.CLOSED -> events.closed()
+                        else -> { }
+                    }
+                }
                 override fun onMessage(buffer: DataChannel.Buffer) {
                     val bytes = ByteArray(buffer.data.remaining()).also { buffer.data.get(it) }
                     events.received(String(bytes, Charsets.UTF_8))
@@ -52,6 +60,31 @@ internal class WebRtcPeer(private val context: Context) : RealtimePeer {
         val offer = sdp<SessionDescription> { connection.createOffer(it, MediaConstraints()) }
         sdp<Unit> { connection.setLocalDescription(it, offer) }
         return offer.description
+    }
+
+    override suspend fun liveOffer(events: RealtimePeer.Events): String {
+        offer(events)
+        val pc = connection ?: throw IOException("The call ended.")
+        withTimeout(10_000) {
+            while (pc.iceGatheringState() != PeerConnection.IceGatheringState.COMPLETE) {
+                if (connection !== pc) throw IOException("The call ended.")
+                delay(50)
+            }
+        }
+        return pc.localDescription?.description ?: throw IOException("The call has no SDP offer.")
+    }
+
+    override fun speaker(enabled: Boolean) { audio?.setSpeakerMute(!enabled) }
+
+    override suspend fun outputLevel(): Float = suspendCancellableCoroutine { done ->
+        val pc = connection
+        if (pc == null) { done.resume(0f); return@suspendCancellableCoroutine }
+        pc.getStats { report ->
+            val level = report.statsMap.values.filter { it.type == "inbound-rtp" &&
+                (it.members["kind"] == "audio" || it.members["mediaType"] == "audio") }
+                .mapNotNull { (it.members["audioLevel"] as? Number)?.toFloat() }.maxOrNull() ?: 0f
+            if (done.isActive) done.resume(if (connection === pc) level else 0f)
+        }
     }
 
     override suspend fun answer(sdp: String) {

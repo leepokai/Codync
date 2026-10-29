@@ -2,6 +2,7 @@ import type { CallLine } from '@shared/calls'
 import { sleep } from '../../store/bot-sync'
 import type { BotStore } from '../../store/bot-store'
 import { PROGRESS_TAG, spokenText, type VoiceProvider } from './voice'
+import { requireLiveHost } from './openai-live-host'
 
 /** How long a tool call waits for the user's words that are still being written down. */
 const HEARING_PATIENCE_MS = 2_000
@@ -41,6 +42,26 @@ export class CallLink {
     const client = await this.store.ready()
     return client.call<CallSession>('startCall', {
       botId: this.botId, callId: this.call, mode, provider, model, voice, language: navigator.language,
+    }, 30_000)
+  }
+
+  async startLive(model: string, voice: string, sdp: string) {
+    const client = await this.store.ready()
+    await requireLiveHost(client)
+    return client.call<{ sessionId: string; sdp: string }>('startLiveCall', {
+      botId: this.botId, callId: this.call, model, voice, sdp, language: navigator.language,
+    }, 30_000)
+  }
+
+  async liveEvent(sessionId: string, event: unknown) {
+    return (await this.store.ready()).call<{ events: unknown[] }>('callLiveEvent', {
+      callId: this.call, sessionId, event,
+    }, 60_000)
+  }
+
+  async liveUpdate(sessionId: string, kind: 'reply' | 'notice' | 'progress', text: string) {
+    return (await this.store.ready()).call<{ events: unknown[] }>('callLiveUpdate', {
+      callId: this.call, sessionId, kind, text,
     }, 30_000)
   }
 

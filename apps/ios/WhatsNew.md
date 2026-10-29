@@ -6,14 +6,12 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.31.2
+## 2.32.0
 
 ### zh-Hant
-- 從手機更新電腦時，電腦重新啟動的期間會顯示「正在更新…」，不會再要你申請訪問。
-- Codex bot 現在拿得到和你 Codex 設定裡同名的聯結器（例如 Notion），不會再看不到它的工具。
-- Codex bot 傳訊息和整理記憶的動作，不會再出現在工作步驟裡。
+- OpenAI 即時語音新增 GPT-Live 選項，可在交談時交辦工作、查詢進度與回覆審批。原有 Realtime 設定不變。
+- GPT-Live 的模型測試會確認存取權限；語音與工具路由分別計費。
 
 ### en-US
-- While a computer restarts for an update you started from your phone, it shows Updating… instead of asking you for access.
-- Codex bots now get a connector that shares its name with a server in your Codex config, such as Notion, instead of missing its tools.
-- A Codex bot's own messages and memory upkeep no longer show among its working steps.
+- Choose GPT-Live for OpenAI voice calls while your bots handle tasks, status checks and approvals. Existing Realtime settings stay unchanged.
+- GPT-Live model tests verify access without starting a paid call. Voice and tool routing are billed separately.

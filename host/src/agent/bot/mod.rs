@@ -423,13 +423,18 @@ impl Actor {
 
     /// A notice in the running turn's lane (or the bot's own chat between turns).
     fn notice(&self, text: &str, style: NoticeStyle) {
+        self.notice_data(json!({"text": text, "style": style}));
+    }
+
+    /// `notice` with more fields than its text and style.
+    fn notice_data(&self, data: Value) {
         let Some(turn) = self.turn else {
             let main = Lane::main(&self.cfg.id);
             let turn = self.hub.store.max_turn(&self.cfg.id);
-            self.hub.add_entry(&main, EntryKind::Notice, turn, &json!({"text": text, "style": style}));
+            self.hub.add_entry(&main, EntryKind::Notice, turn, &data);
             return;
         };
-        self.add(EntryKind::Notice, turn, json!({"text": text, "style": style}));
+        self.add(EntryKind::Notice, turn, data);
     }
 }
 

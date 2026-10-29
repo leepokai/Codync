@@ -43,6 +43,10 @@ def turn(message):
         send({"id": rid, "error": {"code": -32000, "message": "fixture failure"}})
         prompts.pop(rid, None)
         return
+    if mode == "silent":
+        send({"id": rid, "result": {"stopReason": "end_turn"}})
+        prompts.pop(rid, None)
+        return
     if mode == "hold":
         update(session, "agent_thought_chunk", "OLD is working")
         time.sleep(3)

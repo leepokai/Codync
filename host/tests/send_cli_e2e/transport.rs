@@ -19,7 +19,6 @@ pub enum Mode {
     DroppedResponse,
     EarlyFinal,
     Rejected,
-    HistoryRejected,
     Resync,
     PriorApproval,
 }
@@ -29,7 +28,6 @@ struct Shared {
     mode: Mode,
     token: String,
     requests: Arc<Mutex<Vec<Value>>>,
-    entries: Arc<Mutex<Vec<Value>>>,
     events: broadcast::Sender<Value>,
 }
 
@@ -48,20 +46,11 @@ impl Drop for MockHost {
 impl MockHost {
     pub async fn start(mode: Mode, token: &str) -> Self {
         let (events, _) = broadcast::channel(32);
-        let state = Shared {
-            mode,
-            token: token.to_owned(),
-            requests: Arc::new(Mutex::new(Vec::new())),
-            entries: Arc::new(Mutex::new(Vec::new())),
-            events,
-        };
+        let state = Shared { mode, token: token.to_owned(), requests: Arc::new(Mutex::new(Vec::new())), events };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port().to_string();
-        let app = Router::new()
-            .route("/events", get(events_stream))
-            .route("/api/send", post(send))
-            .route("/api/history", post(history))
-            .with_state(state.clone());
+        let app =
+            Router::new().route("/events", get(events_stream)).route("/api/send", post(send)).with_state(state.clone());
         let task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
@@ -78,7 +67,12 @@ fn bot(status: &str, rev: i64) -> Value {
 }
 
 fn entry(status: &str, rev: i64) -> Value {
-    json!({"id":"message","botId":"transport-bot","seq":2,"turn":1,"threadId":null,"kind":"user","rev":rev,"data":{"status":status}})
+    json!({"id":"message","botId":"transport-bot","seq":2,"turn":1,"kind":"user","rev":rev,"data":{"status":status}})
+}
+
+fn reply(id: &str, seq: i64, text: &str, rev: i64) -> Value {
+    let reply = json!({"id":id,"botId":"transport-bot","seq":seq,"turn":1,"kind":"agent","rev":rev,"data":{"final":true,"text":text}});
+    json!({"type":"entry","rev":rev,"entry":reply})
 }
 
 fn permission(status: &str, rev: i64) -> Value {
@@ -87,10 +81,11 @@ fn permission(status: &str, rev: i64) -> Value {
 
 async fn events_stream(State(state): State<Shared>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let receiver = state.events.subscribe();
+    // `rev` is ahead of the catch-up, as after a write no event carries (a memory file, say).
     let head = if state.mode == Mode::PriorApproval {
-        vec![json!({"type":"hello","rev":2}), bot("needsInput", 1), permission("pending", 2)]
+        vec![json!({"type":"hello","rev":9,"catchUp":2}), bot("needsInput", 1), permission("pending", 2)]
     } else {
-        vec![json!({"type":"hello","rev":1}), bot("idle", 1)]
+        vec![json!({"type":"hello","rev":9,"catchUp":1}), bot("idle", 1)]
     };
     let head = futures::stream::iter(head);
     let tail = BroadcastStream::new(receiver).filter_map(|event| async move { event.ok() });
@@ -120,26 +115,16 @@ async fn send(State(state): State<Shared>, Json(body): Json<Value>) -> Response 
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 let _ = state.events.send(permission("approved", 3));
             }
-            let sent = entry("sent", 4);
-            state.entries.lock().unwrap().push(sent.clone());
-            let _ = state.events.send(json!({"type":"entry","rev":4,"entry":sent}));
+            let _ = state.events.send(json!({"type":"entry","rev":4,"entry":entry("sent", 4)}));
             let _ = state.events.send(bot("working", 5));
-            let reply = json!({"id":"reply","botId":"transport-bot","seq":3,"turn":1,"threadId":null,"kind":"agent","rev":6,"data":{"final":true,"text":"Early final"}});
-            state.entries.lock().unwrap().push(reply.clone());
-            let _ = state.events.send(json!({"type":"entry","rev":6,"entry":reply}));
+            let _ = state.events.send(reply("first", 3, "Early final", 6));
             if state.mode == Mode::EarlyFinal {
                 tokio::time::sleep(Duration::from_millis(1200)).await;
+                // A second message of the same reply (send_message).
+                let _ = state.events.send(reply("second", 4, "Second bubble", 7));
             }
-            let _ = state.events.send(bot("idle", 7));
+            let _ = state.events.send(bot("idle", 8));
         });
     }
     Json(json!({"entry":entry("queued", 2)})).into_response()
-}
-
-async fn history(State(state): State<Shared>) -> Response {
-    if state.mode == Mode::HistoryRejected {
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-        return (StatusCode::FORBIDDEN, Json(json!({"error":format!("denied {}", state.token)}))).into_response();
-    }
-    Json(json!({"entries":state.entries.lock().unwrap().clone()})).into_response()
 }

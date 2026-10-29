@@ -31,10 +31,37 @@ async fn sends_plain_text_json_and_an_unwaited_acknowledgement() {
     assert_eq!(result["notices"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
     assert!(result["elapsedSeconds"].as_f64().unwrap() >= 0.0);
     assert_eq!(result["waitedForApprovalSeconds"], 0.0);
+    assert!(result["entryId"].is_string() && result["replyId"].is_string());
     let ack = host.run(&["--bot", &bot, "CLI_MODE=normal"]).await;
     assert_eq!(ack.status.code(), Some(0));
     let ack = String::from_utf8(ack.stdout).unwrap();
-    assert!(ack.starts_with("seq=") && ack.contains(" turn="));
+    assert!(ack.starts_with("id=") && ack.contains(" seq=") && ack.contains(" turn="), "{ack}");
+}
+
+#[tokio::test]
+async fn a_turn_without_a_text_reply_completes_when_the_bot_is_idle() {
+    let host = Host::start().await;
+    let bot = host.bot("Silent").await;
+    let result =
+        json_output(&host.run(&["--bot", &bot, "--wait", "--json", "--timeout", "20", "CLI_MODE=silent"]).await, 0);
+    assert_eq!(result["status"], "completed");
+    assert_eq!(result["stopReason"], "end_turn");
+    assert!(result["reply"].is_null() && result["replyId"].is_null());
+}
+
+#[tokio::test]
+async fn waiting_on_a_group_chat_is_refused_before_sending() {
+    let host = Host::start().await;
+    let bot = host.bot("Member").await;
+    let group = host.call("createBot", json!({"name": "Room", "kind": "group", "members": [bot]})).await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let output = host.run(&["--bot", &group, "--wait", "hello"]).await;
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("group chats"));
+    let history = host.call("history", json!({"botId": group})).await;
+    assert!(history["entries"].as_array().unwrap().iter().all(|e| e["kind"] != "user"));
 }
 
 #[tokio::test]
@@ -71,8 +98,7 @@ async fn a_timeout_leaves_the_bot_working() {
         String::from_utf8_lossy(&output.stderr)
             .contains("timed out after 2s (the bot is still working; nothing was stopped)")
     );
-    let snapshot = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).unwrap()["status"], "working");
+    assert_eq!(common::bot(&host.snapshot().await, &bot)["status"], "working");
     host.call("stop", json!({"botId":bot})).await;
 }
 
@@ -125,16 +151,14 @@ async fn accepts_utf8_files_stdin_and_quote_replies_without_exposing_the_token()
     let output = host.stdin(&bot, "CLI_MODE=echo\nCLI_TEXT=stdin reply").await;
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "stdin reply\n");
-    let quoted = host.call("send", json!({"botId":bot,"text":"CLI_MODE=normal"})).await["entry"]["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    host.entry(&bot, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    // Quote the reply an earlier result named.
+    let earlier = json_output(&host.run(&["--bot", &bot, "--wait", "--json", "CLI_MODE=normal"]).await, 0);
+    let quoted = earlier["replyId"].as_str().unwrap();
     let result =
-        json_output(&host.run(&["--bot", &bot, "--wait", "--json", "--reply-to", &quoted, "CLI_MODE=normal"]).await, 0);
+        json_output(&host.run(&["--bot", &bot, "--wait", "--json", "--reply-to", quoted, "CLI_MODE=normal"]).await, 0);
     assert_eq!(result["reply"], "CLI reply");
-    let sent = host.entry(&bot, |e| e["seq"] == result["entrySeq"]).await;
-    assert_eq!(sent["data"]["replyTo"]["id"], quoted.as_str());
+    let sent = host.entry(&bot, |e| e["id"] == result["entryId"]).await;
+    assert_eq!(sent["data"]["replyTo"]["id"], quoted);
     let message = format!("CLI_MODE=echo\nCLI_TEXT={}", host.token);
     let output = host.run(&["--bot", &bot, "--wait", "--json", &message]).await;
     let result = json_output(&output, 0);
@@ -194,13 +218,14 @@ async fn help_arguments_and_unreachable_hosts_use_the_documented_exit_codes() {
 }
 
 #[tokio::test]
-async fn a_final_reply_waits_for_the_working_turn_to_become_idle() {
+async fn a_reply_joins_its_messages_once_the_working_turn_is_idle() {
     let host = Host::start().await;
     let mock = MockHost::start(Mode::EarlyFinal, &host.token).await;
     let started = Instant::now();
     let output = host.run(&["--port", &mock.port, "--bot", "Transport", "--wait", "--json", "test"]).await;
     let result = json_output(&output, 0);
-    assert_eq!(result["reply"], "Early final");
+    assert_eq!(result["reply"], "Early final\n\nSecond bubble");
+    assert_eq!(result["replyId"], "second");
     assert!(started.elapsed() >= Duration::from_millis(1100));
     assert!(result["elapsedSeconds"].as_f64().unwrap() >= 1.1);
 }
@@ -230,27 +255,21 @@ async fn a_refused_request_does_not_retry_or_reveal_the_token() {
 }
 
 #[tokio::test]
-async fn post_acceptance_api_errors_and_lost_events_fail_without_stopping_the_bot() {
+async fn lost_events_fail_after_acceptance_without_stopping_the_bot() {
     let host = Host::start().await;
-    for mode in [Mode::HistoryRejected, Mode::Resync] {
-        let mock = MockHost::start(mode, &host.token).await;
-        let output = host.run(&["--port", &mock.port, "--bot", "Transport", "--wait", "--json", "test"]).await;
-        let result = json_output(&output, 3);
-        assert_eq!(result["status"], "failed");
-        assert_eq!(result["stopReason"], "error");
-        assert_ne!(result["notices"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
-        if mode == Mode::HistoryRejected {
-            assert!(result["elapsedSeconds"].as_f64().unwrap() >= 1.1);
-            assert!(String::from_utf8_lossy(&output.stderr).contains("denied [redacted]"));
-        }
-        assert!(!String::from_utf8_lossy(&output.stderr).contains(&host.token));
-        assert!(!String::from_utf8_lossy(&output.stdout).contains(&host.token));
-        assert_eq!(mock.requests().len(), 1);
-    }
+    let mock = MockHost::start(Mode::Resync, &host.token).await;
+    let output = host.run(&["--port", &mock.port, "--bot", "Transport", "--wait", "--json", "test"]).await;
+    let result = json_output(&output, 3);
+    assert_eq!(result["status"], "failed");
+    assert_eq!(result["stopReason"], "error");
+    assert_ne!(result["notices"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(&host.token));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(&host.token));
+    assert_eq!(mock.requests().len(), 1);
 }
 
 #[tokio::test]
-async fn an_existing_approval_outside_history_is_reported_and_pauses_the_clock() {
+async fn an_approval_from_before_the_send_is_reported_and_pauses_the_clock() {
     let host = Host::start().await;
     let mock = MockHost::start(Mode::PriorApproval, &host.token).await;
     let output =

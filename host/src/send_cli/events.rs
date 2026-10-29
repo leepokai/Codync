@@ -1,7 +1,6 @@
-//! The same bot snapshots clients receive; no separate bot-list API exists.
+//! The host's event stream as the apps read it: bot snapshots, approval cards and the tracked bot's chat.
 
-use super::api::Api;
-use super::send::Failure;
+use super::{Failure, redact};
 use futures::StreamExt;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -10,10 +9,20 @@ use tokio::sync::watch;
 
 #[derive(Default, PartialEq, Eq)]
 enum Phase {
+    /// Reading the catch-up.
     #[default]
     Loading,
     Ready,
+    /// The running host is older than this command: its `hello` doesn't say how long the catch-up is.
+    Outdated,
     Disconnected,
+}
+
+/// How a tracked turn ended, as the bot's status said.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Settled {
+    Idle,
+    Error,
 }
 
 #[derive(Default)]
@@ -24,6 +33,7 @@ struct State {
     tracking: Option<Tracking>,
 }
 
+/// The bot `--wait` follows: its chat since tracking began, and which turn took each sent message.
 struct Tracking {
     bot: String,
     started: Instant,
@@ -32,7 +42,7 @@ struct Tracking {
     starting: Vec<(String, i64)>,
     assigned: HashMap<String, i64>,
     active_turn: Option<i64>,
-    settled: HashMap<i64, String>,
+    settled: HashMap<i64, Settled>,
     paused: Duration,
     pause_started: Option<Instant>,
 }
@@ -53,6 +63,7 @@ impl Tracking {
         }
     }
 
+    /// Time since tracking began, and how much of it an approval held.
     fn timing(&self) -> (Duration, Duration) {
         let approval = self.paused + self.pause_started.map_or(Duration::ZERO, |start| start.elapsed());
         (self.started.elapsed(), approval)
@@ -64,9 +75,10 @@ pub(super) struct Progress {
     pub entries: Vec<Value>,
     pub approvals: Vec<Value>,
     pub turn: Option<i64>,
-    pub settled: Option<String>,
+    pub settled: Option<Settled>,
     pub elapsed: Duration,
     pub approval: Duration,
+    /// Waiting for an approval (the timeout's clock is stopped).
     pub pending: bool,
 }
 
@@ -83,8 +95,18 @@ impl Drop for BotFeed {
 }
 
 impl BotFeed {
-    pub async fn connect(api: &Api) -> Result<Self, Failure> {
-        let response = api.events().await?;
+    /// Opens the event stream and reads its catch-up.
+    pub async fn connect(base: &str, token: &str) -> Result<Self, Failure> {
+        let request = crate::http().get(format!("{base}/events?since=0&client=cli-send")).bearer_auth(token).send();
+        let response = tokio::time::timeout(Duration::from_secs(20), request)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .ok_or_else(|| Failure::host(crate::NOT_RUNNING))?;
+        if !response.status().is_success() {
+            let body: Value = response.json().await.unwrap_or_default();
+            return Err(Failure::host(redact(body["error"].as_str().unwrap_or("the host refused"), token)));
+        }
         let (sender, receiver) = watch::channel(State::default());
         let writer = sender.clone();
         let task = tokio::spawn(async move {
@@ -96,14 +118,17 @@ impl BotFeed {
             loop {
                 match feed.receiver.borrow().phase {
                     Phase::Ready => return Ok(()),
-                    Phase::Disconnected => return Err(Failure::api("the host event stream disconnected")),
+                    Phase::Outdated => {
+                        return Err(Failure::host("the running host is older than this command; restart it"));
+                    }
+                    Phase::Disconnected => return Err(Failure::host("the host event stream disconnected")),
                     Phase::Loading => {}
                 }
                 feed.changed().await?;
             }
         })
         .await
-        .map_err(|_| Failure::api("couldn't read the host's bot snapshot"))??;
+        .map_err(|_| Failure::host("couldn't read the host's bot snapshot"))??;
         Ok(feed)
     }
 
@@ -118,22 +143,14 @@ impl BotFeed {
         });
     }
 
-    pub fn merge(&self, entries: &[Value]) {
-        self.sender.send_modify(|s| {
-            for entry in entries {
-                s.entry(entry, false);
-            }
-            s.update_pause();
-        });
-    }
-
-    pub fn progress(&self, entry: &Value) -> Result<Progress, Failure> {
+    /// Where the turn answering sent message `entry` stands.
+    pub fn progress(&self, entry: &str) -> Result<Progress, Failure> {
         let state = self.receiver.borrow();
         if state.phase == Phase::Disconnected {
-            return Err(Failure::api("the host event stream disconnected"));
+            return Err(Failure::host("the host event stream disconnected"));
         }
         let tracked = state.tracking.as_ref().expect("track is called before waiting");
-        let turn = entry["id"].as_str().and_then(|id| tracked.assigned.get(id)).copied();
+        let turn = tracked.assigned.get(entry).copied();
         let (elapsed, approval) = tracked.timing();
         Ok(Progress {
             bot: state.bots.get(&tracked.bot).cloned().unwrap_or(Value::Null),
@@ -145,7 +162,7 @@ impl BotFeed {
                 .cloned()
                 .collect(),
             turn,
-            settled: turn.and_then(|turn| tracked.settled.get(&turn).cloned()),
+            settled: turn.and_then(|turn| tracked.settled.get(&turn).copied()),
             elapsed,
             approval,
             pending: tracked.pause_started.is_some(),
@@ -157,12 +174,12 @@ impl BotFeed {
     }
 
     pub async fn changed(&mut self) -> Result<(), Failure> {
-        self.receiver.changed().await.map_err(|_| Failure::api("the host event stream disconnected"))
+        self.receiver.changed().await.map_err(|_| Failure::host("the host event stream disconnected"))
     }
 }
 
 impl State {
-    fn entry(&mut self, entry: &Value, live: bool) {
+    fn entry(&mut self, entry: &Value) {
         let kind = entry["kind"].as_str().unwrap_or_default();
         if kind == "permission"
             && let Some(id) = entry["id"].as_str()
@@ -171,11 +188,10 @@ impl State {
             self.permissions.insert(id.to_owned(), entry.clone());
         }
         let Some(tracked) = self.tracking.as_mut().filter(|t| entry["botId"] == t.bot) else { return };
-        if !matches!(kind, "user" | "agent" | "permission" | "notice") {
+        if !matches!(kind, "user" | "agent" | "notice") {
             return;
         }
-        if live
-            && kind == "user"
+        if kind == "user"
             && entry["data"]["status"] == "sent"
             && let (Some(id), Some(turn)) = (entry["id"].as_str(), entry["turn"].as_i64())
             && tracked.sent.insert(id.to_owned())
@@ -191,33 +207,38 @@ impl State {
 
     fn event(&mut self, event: &Value) {
         match event["type"].as_str() {
-            Some("bot") => {
-                let bot = &event["bot"];
-                if let Some(id) = bot["id"].as_str() {
-                    if self.bots.get(id).is_some_and(|old| old["rev"].as_i64() > bot["rev"].as_i64()) {
-                        return;
-                    }
-                    self.bots.insert(id.to_owned(), bot.clone());
-                    if let Some(t) = self.tracking.as_mut().filter(|t| t.bot == id) {
-                        if bot["status"] == "working" && !t.starting.is_empty() {
-                            // Consecutive queued messages in one lane become one host turn.
-                            let turn = t.starting.iter().map(|(_, turn)| *turn).max().expect("nonempty batch");
-                            for (id, _) in t.starting.drain(..) {
-                                t.assigned.insert(id, turn);
-                            }
-                            t.active_turn = Some(turn);
-                        } else if matches!(bot["status"].as_str(), Some("idle" | "error"))
-                            && let Some(turn) = t.active_turn.take()
-                        {
-                            t.settled.insert(turn, bot["status"].as_str().unwrap_or("error").to_owned());
-                        }
-                    }
-                }
-            }
-            Some("entry") => self.entry(&event["entry"], true),
+            Some("bot") => self.bot(&event["bot"]),
+            Some("entry") => self.entry(&event["entry"]),
             _ => {}
         }
         self.update_pause();
+    }
+
+    fn bot(&mut self, bot: &Value) {
+        let Some(id) = bot["id"].as_str() else { return };
+        if self.bots.get(id).is_some_and(|old| old["rev"].as_i64() > bot["rev"].as_i64()) {
+            return;
+        }
+        self.bots.insert(id.to_owned(), bot.clone());
+        let Some(t) = self.tracking.as_mut().filter(|t| t.bot == id) else { return };
+        let settled = match bot["status"].as_str() {
+            Some("idle") => Some(Settled::Idle),
+            Some("error") => Some(Settled::Error),
+            _ => None,
+        };
+        if bot["status"] == "working" && !t.starting.is_empty() {
+            // Consecutive queued messages in one lane become one host turn: the last one's (`start_turn`), whose `sent`
+            // comes last. Not the highest: two sends at once can queue in the other order than their turns.
+            let turn = t.starting.last().map(|(_, turn)| *turn).expect("nonempty batch");
+            for (id, _) in t.starting.drain(..) {
+                t.assigned.insert(id, turn);
+            }
+            t.active_turn = Some(turn);
+        } else if let Some(settled) = settled
+            && let Some(turn) = t.active_turn.take()
+        {
+            t.settled.insert(turn, settled);
+        }
     }
 
     fn update_pause(&mut self) {
@@ -233,34 +254,27 @@ impl State {
 }
 
 async fn read_events(response: reqwest::Response, sender: &watch::Sender<State>) {
-    let mut stream = response.bytes_stream();
-    let mut buffer = Vec::new();
-    let mut target = None;
-    while let Some(Ok(chunk)) = stream.next().await {
-        buffer.extend_from_slice(&chunk);
-        while let Some(end) = buffer.windows(2).position(|bytes| bytes == b"\n\n") {
-            let frame: Vec<_> = buffer.drain(..end + 2).collect();
-            let Some(data) = frame.split(|b| *b == b'\n').find_map(|line| line.strip_prefix(b"data:")) else {
-                continue;
-            };
-            let Ok(event) = serde_json::from_slice::<Value>(data) else { return };
-            if event["type"] == "resync" {
-                // Missing turn transitions cannot be recovered from a current bot snapshot.
-                return;
-            }
+    let mut events = std::pin::pin!(crate::tui::net::sse_values(response));
+    // Catch-up events still to come, once `hello` has said how many.
+    let mut left = None;
+    while let Some(Ok(event)) = events.next().await {
+        // A lagged stream lost turn transitions that a current bot snapshot can't bring back.
+        if event["type"] == "resync" {
+            return;
+        }
+        sender.send_modify(|s| {
             if event["type"] == "hello" {
-                target = event["rev"].as_i64();
-                if target == Some(0) {
-                    sender.send_modify(|s| s.phase = Phase::Ready);
+                left = event["catchUp"].as_u64();
+                if left.is_none() {
+                    s.phase = Phase::Outdated;
                 }
             } else {
-                sender.send_modify(|s| {
-                    s.event(&event);
-                    if target.is_some_and(|rev| event["rev"].as_i64().is_some_and(|seen| seen >= rev)) {
-                        s.phase = Phase::Ready;
-                    }
-                });
+                s.event(&event);
+                left = left.map(|n| n.saturating_sub(1));
             }
-        }
+            if left == Some(0) {
+                s.phase = Phase::Ready;
+            }
+        });
     }
 }

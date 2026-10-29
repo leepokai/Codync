@@ -153,3 +153,30 @@ Codync reads plan limits from the agents installed on your computer. Claude Code
 - **iPhone:** the **State** tab, then **Usage limits**. There's also a Usage widget.
 - **Desktop:** the menu bar or tray menu, or **Usage** in the account menu at the bottom of the sidebar.
 - **Terminal UI:** press `U`.
+
+## From a script
+
+`codync-host send` messages a bot from a terminal or a script on the computer the host runs on:
+
+```sh
+codync-host send --bot Reviewer "Review the current diff without changing files."
+codync-host send --bot Reviewer --wait --json --file request.txt
+git diff | codync-host send --bot Reviewer --wait --file -
+```
+
+- `--bot` takes the bot's name (any letter case) or its ID. When two bots share a name, use the ID.
+- The message is the words after the options, or a UTF-8 file with `--file`. `--file -` reads it from the input.
+- Without `--wait`, the command prints the message's `id`, `seq` and `turn` once the host has it. With `--wait`, it waits until the bot is done and prints its reply. A reply in several messages comes joined. A turn that ends with no text, such as only a reaction, prints nothing. Group chats can't be waited on.
+- `--json` prints one line of JSON instead: `botId`, `entryId`, `entrySeq`, `turn`, `status` (`completed`, `failed` or `timeout`), `stopReason`, `reply`, `replyId`, `notices`, `elapsedSeconds` and `waitedForApprovalSeconds`.
+- `--reply-to <id>` quotes a message, like [Reply](#replying-to-a-message): pass the `entryId` or `replyId` of an earlier `--json` result.
+- `--timeout <seconds>` (30 minutes by default) is how long `--wait` waits. Time waiting for an [approval](#approval-cards) doesn't count, and the command never approves anything. When the time runs out, the bot keeps working.
+
+Notices and approvals the bot waits for go to the error output. The exit code says how it went:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Done (without `--wait`: the host took the message) |
+| 1 | The turn was stopped, hit a limit, was declined or failed |
+| 2 | Wrong options, no bot or more than one with that name, or `--wait` on a group chat |
+| 3 | The host isn't running or refused the message |
+| 4 | `--wait` ran out of time |

@@ -1,6 +1,9 @@
+//! A real host (`common::host::Host`) and `codync-host send` run against it.
+
+use super::common::host::Host as RealHost;
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::process::{Child, Output, Stdio};
+use std::process::{Output, Stdio};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
@@ -9,19 +12,16 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 static HOSTS: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(1)));
 
 pub struct Host {
-    child: Child,
-    pub base: String,
-    pub home: PathBuf,
-    pub token: String,
-    port: u16,
+    host: RealHost,
+    // Dropped after the host has stopped.
     _serial: OwnedSemaphorePermit,
 }
 
-impl Drop for Host {
-    fn drop(&mut self) {
-        super::common::stop(&mut self.child);
-        assert!(self.home.starts_with(std::env::temp_dir()));
-        let _ = std::fs::remove_dir_all(&self.home);
+impl std::ops::Deref for Host {
+    type Target = RealHost;
+
+    fn deref(&self) -> &RealHost {
+        &self.host
     }
 }
 
@@ -29,50 +29,24 @@ impl Host {
     pub async fn start() -> Self {
         // Isolate process-heavy cases from each other on small Windows runners.
         let serial = HOSTS.clone().acquire_owned().await.unwrap();
-        let home = std::env::temp_dir().join(format!("codync-send-cli-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&home).unwrap();
-        let (child, base) = super::common::serve(&home).await;
-        let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
-        let port = base.rsplit(':').next().unwrap().parse().unwrap();
-        let host = Self { child, base, home, token, port, _serial: serial };
+        let host = RealHost::start().await;
         host.call("setAnalytics", json!({"enabled":false})).await;
-        host
+        Self { host, _serial: serial }
     }
 
-    pub async fn call(&self, method: &str, body: Value) -> Value {
-        let response = reqwest::Client::new()
-            .post(format!("{}/api/{method}", self.base))
-            .bearer_auth(&self.token)
-            .json(&body)
-            .send()
-            .await
-            .unwrap();
-        let status = response.status();
-        let value: Value = response.json().await.unwrap();
-        assert!(status.is_success(), "{method} failed: {value}");
-        value
-    }
-
+    /// A bot running `send_cli_agent.py` that asks before using tools.
     pub async fn bot(&self, name: &str) -> String {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/send_cli_agent.py");
-        self.call(
-            "createBot",
-            json!({
-                "name":name,"backend":"custom","command":super::common::python_agent(&fixture),
-                "cwd":self.home,"permission":"ask","connectors":[],"skills":[],"notify":false,
-            }),
-        )
-        .await["bot"]["id"]
-            .as_str()
-            .unwrap()
-            .to_owned()
+        let bot = json!({"name":name,"backend":"custom","command":super::common::python_agent(&fixture),
+            "permission":"ask","connectors":[],"notify":false});
+        self.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
     }
 
     pub fn command(&self, args: &[&str]) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_codync-host"));
         command.arg("send");
         if !args.contains(&"--port") {
-            command.args(["--port", &self.port.to_string()]);
+            command.args(["--port", self.base.rsplit(':').next().unwrap()]);
         }
         command
             .env("CODYNC_HOME", &self.home)
@@ -97,6 +71,7 @@ impl Host {
         tokio::time::timeout(Duration::from_secs(45), child.wait_with_output()).await.unwrap().unwrap()
     }
 
+    /// The newest entry of `bot`'s chat that matches, once there is one.
     pub async fn entry(&self, bot: &str, predicate: impl Fn(&Value) -> bool) -> Value {
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {

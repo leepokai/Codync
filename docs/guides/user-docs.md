@@ -20,7 +20,7 @@ the change.
 | `getting-started` | Install, pair, first bot | `README.md`, [updates](updates.md), [dev app](dev-app.md) for names only |
 | `bots` | Creating, settings, workspaces, hiding, permissions, new session | [bot workspaces](../features/bot-workspaces.md), [conversation runtime](../architecture/conversation-runtime.md) |
 | `agents` | Known agents, registry, custom command, Extensions, sign-in, models | [extensions](../features/marketplace.md), `host/src/agent/backends.rs` |
-| `conversations` | Messages, files, approval cards, stop, replies, reactions, commands, fresh conversations, notifications | [chat messages](../features/chat-messages.md), [file attachments](../features/file-attachments.md), [context and memory](../features/context-and-memory.md), [notifications](../design/push-and-live-activity.md) |
+| `conversations` | Messages, files, approval cards, stop, replies, reactions, commands, fresh conversations, notifications, sending from a script (`codync-host send`) | `README.md` (`codync-host send`), [chat messages](../features/chat-messages.md), [file attachments](../features/file-attachments.md), [context and memory](../features/context-and-memory.md), [notifications](../design/push-and-live-activity.md) |
 | `groups` | Group chats | [groups and replies](../features/groups-and-replies.md) |
 | `teamwork` | Bots messaging bots, bots on your other computers, Manage the team | [bot collaboration](../features/bot-collaboration.md), [codync-network](../features/codync-network.md) |
 | `cloud-assistants` | The MCP connector for ChatGPT, Claude and other assistants: turning it on, adding it, what it can do, privacy | [cloud assistants](../features/cloud-assistants.md) |

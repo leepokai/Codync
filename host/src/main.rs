@@ -5,7 +5,6 @@ mod analytics;
 mod api;
 mod background;
 mod chat;
-mod cli;
 mod cloud_cli;
 mod compat;
 mod environment;
@@ -18,6 +17,7 @@ mod remote;
 mod routines;
 mod screen;
 mod secret_prompt;
+mod send_cli;
 mod service;
 mod shell;
 mod store;
@@ -163,7 +163,7 @@ enum Sub {
     /// Rotate the local API token used by this computer's own apps and helpers.
     ResetToken,
     /// Send a message to a bot, optionally waiting for its reply.
-    Send(cli::send::Args),
+    Send(send_cli::SendArgs),
     /// Message your bots from this terminal.
     Tui {
         /// Host to connect to (default: this computer). The API only answers local
@@ -347,13 +347,7 @@ async fn main() -> Result<()> {
         Sub::Serve { port, bind } => serve(&bind, port).await,
         Sub::Pair { port, json } => pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
-        Sub::Send(args) => {
-            let code = cli::send::run(args).await;
-            if code != 0 {
-                std::process::exit(code);
-            }
-            Ok(())
-        }
+        Sub::Send(args) => send_cli::run(args).await,
         Sub::Devices { port, action } => match action.unwrap_or(DevicesAction::List) {
             DevicesAction::List => {
                 let v = local_call(port, "devices", json!({})).await?;
@@ -577,10 +571,12 @@ async fn shutdown_signal() {
     }
 }
 
+/// What a local command says when it can't reach the running host.
+const NOT_RUNNING: &str = "codync-host isn't running here. Start it with `codync-host install` (or `serve`).";
+
 /// Calls the running host's local API (`~/.codync/token` over loopback).
 async fn local_call(port: u16, method: &str, body: serde_json::Value) -> Result<serde_json::Value> {
-    let not_running =
-        || anyhow::anyhow!("codync-host isn't running here. Start it with `codync-host install` (or `serve`).");
+    let not_running = || anyhow::anyhow!(NOT_RUNNING);
     let token = std::fs::read_to_string(service::data_dir().join("token")).map_err(|_| not_running())?;
     let res = http()
         .post(format!("http://127.0.0.1:{port}/api/{method}"))

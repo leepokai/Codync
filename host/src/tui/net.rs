@@ -173,19 +173,12 @@ impl Client {
                 let _ = tx.send(Msg::Term(id, json!({"type": "exit", "code": -1})));
                 return;
             };
-            let mut body = res.bytes_stream();
-            let mut buf = Vec::new();
-            while let Some(Ok(chunk)) = body.next().await {
-                buf.extend_from_slice(&chunk);
-                while let Some(i) = buf.iter().position(|&b| b == b'\n') {
-                    let line: Vec<u8> = buf.drain(..=i).collect();
-                    let line = String::from_utf8_lossy(&line);
-                    let Some(data) = line.trim_end().strip_prefix("data:") else { continue };
-                    if let Ok(v) = serde_json::from_str::<Value>(data.trim_start())
-                        && tx.send(Msg::Term(id.clone(), v)).is_err()
-                    {
-                        return;
-                    }
+            let mut events = std::pin::pin!(sse_values(res));
+            while let Some(v) = events.next().await {
+                if let Ok(v) = v
+                    && tx.send(Msg::Term(id.clone(), v)).is_err()
+                {
+                    return;
                 }
             }
         });
@@ -237,29 +230,22 @@ impl Client {
                     if tx.send(Msg::Online(true)).is_err() || tx.send(Msg::Connected { since }).is_err() {
                         return;
                     }
-                    let mut body = res.bytes_stream();
-                    let mut buf = Vec::new();
-                    'read: while let Some(Ok(chunk)) = body.next().await {
-                        buf.extend_from_slice(&chunk);
-                        while let Some(i) = buf.iter().position(|&b| b == b'\n') {
-                            let line: Vec<u8> = buf.drain(..=i).collect();
-                            let line = String::from_utf8_lossy(&line);
-                            let Some(data) = line.trim_end().strip_prefix("data:") else { continue };
-                            let Ok(v) = serde_json::from_str::<Value>(data.trim_start()) else {
-                                // Never skip what we can't read: start over from scratch.
-                                c.rev.store(0, Ordering::Relaxed);
-                                let _ = tx.send(Msg::Rewind);
-                                break 'read;
-                            };
-                            if v["type"] == "resync" {
-                                break 'read;
-                            }
-                            if let Some(rev) = v["rev"].as_i64() {
-                                c.rev.fetch_max(rev, Ordering::Relaxed);
-                            }
-                            if tx.send(Msg::Event(v)).is_err() {
-                                return;
-                            }
+                    let mut events = std::pin::pin!(sse_values(res));
+                    while let Some(v) = events.next().await {
+                        let Ok(v) = v else {
+                            // Never skip what we can't read: start over from scratch.
+                            c.rev.store(0, Ordering::Relaxed);
+                            let _ = tx.send(Msg::Rewind);
+                            break;
+                        };
+                        if v["type"] == "resync" {
+                            break;
+                        }
+                        if let Some(rev) = v["rev"].as_i64() {
+                            c.rev.fetch_max(rev, Ordering::Relaxed);
+                        }
+                        if tx.send(Msg::Event(v)).is_err() {
+                            return;
                         }
                     }
                 }
@@ -270,6 +256,23 @@ impl Client {
             }
         });
     }
+}
+
+/// The JSON of each `data:` line of a server-sent event stream until it ends (`Err` for one that isn't JSON).
+pub fn sse_values(res: reqwest::Response) -> impl futures::Stream<Item = serde_json::Result<Value>> {
+    let lines = futures::stream::unfold((Box::pin(res.bytes_stream()), Vec::new()), |(mut body, mut buf)| async move {
+        loop {
+            if let Some(i) = buf.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = buf.drain(..=i).collect();
+                return Some((line, (body, buf)));
+            }
+            buf.extend_from_slice(&body.next().await?.ok()?);
+        }
+    });
+    lines.filter_map(|line| async move {
+        let line = String::from_utf8_lossy(&line);
+        line.trim_end().strip_prefix("data:").map(|data| serde_json::from_str(data.trim_start()))
+    })
 }
 
 /// `dir/name`, or `name (2)` … when that's taken. The name is only its last part (no `../`).

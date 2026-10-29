@@ -68,6 +68,8 @@ pub fn events_stream(
     }
     catch_up.extend(crate::chat::artifacts::since(&hub.store, since));
     catch_up.sort_by_key(|v| v["rev"].as_i64().unwrap_or(0));
+    // What the voice of a call this device holds should have heard while it was away.
+    catch_up.extend(crate::chat::calls::replay(caller.device_key()));
     let hello = json!({
         "type": "hello",
         "hostId": hub.host_id,
@@ -77,10 +79,10 @@ pub fn events_stream(
         "screen": hub.screen.state(),
         // Live state like the two above: a `network` event sent before this stream began is in it.
         "network": crate::network::status(hub),
+        // How many catch-up events follow: `rev` can be ahead of all of them (a write no event carries).
+        "catchUp": catch_up.len(),
     });
     catch_up.insert(0, hello);
-    // What the voice of a call this device holds should have heard while it was away.
-    catch_up.extend(crate::chat::calls::replay(caller.device_key()));
 
     let local = matches!(caller, Caller::Local);
     let key = caller.device_key().to_owned();

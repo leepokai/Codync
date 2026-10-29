@@ -21,7 +21,7 @@ pub(super) async fn reply(
         let progress = feed.progress(entry)?;
         update_report(&progress, report);
         print_approvals(&progress, api, &mut approvals);
-        if finish(&progress, entry, args.thread.as_deref(), report, api, &mut printed) {
+        if finish(&progress, entry, report, api, &mut printed) {
             return Ok(());
         }
         if expired(args, &progress) {
@@ -89,14 +89,7 @@ fn print_approvals(progress: &Progress, api: &Api, printed: &mut HashSet<String>
     }
 }
 
-fn finish(
-    progress: &Progress,
-    sent: &Value,
-    thread: Option<&str>,
-    report: &mut Report,
-    api: &Api,
-    printed: &mut HashSet<String>,
-) -> bool {
+fn finish(progress: &Progress, sent: &Value, report: &mut Report, api: &Api, printed: &mut HashSet<String>) -> bool {
     if progress.bot.is_null() || progress.bot["deleted"] == true {
         report.notices.push("The bot was deleted while waiting.".into());
         report.status = Status::Failed;
@@ -114,11 +107,11 @@ fn finish(
         return true;
     }
     let Some(turn) = progress.turn else { return false };
-    for e in progress.entries.iter().filter(|e| {
-        e["seq"].as_i64().is_some_and(|seq| seq > report.entry_seq)
-            && e["turn"] == turn
-            && e["threadId"].as_str() == thread
-    }) {
+    for e in progress
+        .entries
+        .iter()
+        .filter(|e| e["seq"].as_i64().is_some_and(|seq| seq > report.entry_seq) && e["turn"] == turn)
+    {
         if e["kind"] == "agent" && e["data"]["final"] == true {
             report.reply = e["data"]["text"].as_str().map(str::to_owned);
         } else if e["kind"] == "notice"
@@ -197,11 +190,6 @@ async fn history(
     sent: &Value,
     bot: &str,
 ) -> Result<Option<Vec<Value>>, Failure> {
-    if let Some(root) = &args.thread {
-        // history intentionally excludes threads; this is the client's existing thread method.
-        let value = bounded(args, feed, sent, api.call("thread", json!({"botId":bot, "rootId":root}))).await?;
-        return Ok(value.map(|v| v["entries"].as_array().cloned().unwrap_or_default()));
-    }
     let mut entries = Vec::new();
     let mut before = i64::MAX;
     loop {

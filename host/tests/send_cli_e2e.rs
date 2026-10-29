@@ -114,7 +114,7 @@ async fn resolves_exact_names_and_rejects_missing_or_ambiguous_names() {
 }
 
 #[tokio::test]
-async fn accepts_utf8_files_stdin_and_thread_replies_without_exposing_the_token() {
+async fn accepts_utf8_files_stdin_and_quote_replies_without_exposing_the_token() {
     let host = Host::start().await;
     let bot = host.bot("Input").await;
     let file = host.home.join("message.txt");
@@ -125,16 +125,16 @@ async fn accepts_utf8_files_stdin_and_thread_replies_without_exposing_the_token(
     let output = host.stdin(&bot, "CLI_MODE=echo\nCLI_TEXT=stdin reply").await;
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "stdin reply\n");
-    let root = host.call("send", json!({"botId":bot,"text":"CLI_MODE=normal"})).await["entry"]["id"]
+    let quoted = host.call("send", json!({"botId":bot,"text":"CLI_MODE=normal"})).await["entry"]["id"]
         .as_str()
         .unwrap()
         .to_owned();
     host.entry(&bot, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
     let result =
-        json_output(&host.run(&["--bot", &bot, "--wait", "--json", "--thread", &root, "CLI_MODE=normal"]).await, 0);
+        json_output(&host.run(&["--bot", &bot, "--wait", "--json", "--reply-to", &quoted, "CLI_MODE=normal"]).await, 0);
     assert_eq!(result["reply"], "CLI reply");
-    let entries = host.call("thread", json!({"botId":bot,"rootId":root})).await;
-    assert!(entries["entries"].as_array().unwrap().iter().any(|e| e["seq"] == result["entrySeq"]));
+    let sent = host.entry(&bot, |e| e["seq"] == result["entrySeq"]).await;
+    assert_eq!(sent["data"]["replyTo"]["id"], quoted.as_str());
     let message = format!("CLI_MODE=echo\nCLI_TEXT={}", host.token);
     let output = host.run(&["--bot", &bot, "--wait", "--json", &message]).await;
     let result = json_output(&output, 0);
@@ -170,7 +170,7 @@ async fn help_arguments_and_unreachable_hosts_use_the_documented_exit_codes() {
     let help = host.run(&["--help"]).await;
     assert_eq!(help.status.code(), Some(0));
     let help = String::from_utf8(help.stdout).unwrap();
-    for flag in ["--bot", "--file", "--wait", "--timeout", "--json", "--thread", "--port", "Exit codes:"] {
+    for flag in ["--bot", "--file", "--wait", "--timeout", "--json", "--reply-to", "--port", "Exit codes:"] {
         assert!(help.contains(flag), "help must describe {flag}");
     }
     for args in [

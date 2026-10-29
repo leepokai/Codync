@@ -31,7 +31,6 @@ impl Host {
         let serial = HOSTS.clone().acquire_owned().await.unwrap();
         let home = std::env::temp_dir().join(format!("codync-send-cli-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        super::common::seed_memory_runtime(&home);
         let (child, base) = super::common::serve(&home).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
         let port = base.rsplit(':').next().unwrap().parse().unwrap();

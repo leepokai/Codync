@@ -30,7 +30,7 @@ def turn(message):
     rid = message["id"]
     session = message["params"]["sessionId"]
     text = "\n".join(block.get("text", "") for block in message["params"]["prompt"])
-    # A thread's intro includes parent messages; only the latest command is current.
+    # A quote reply's note repeats the quoted message; only the latest command is current.
     modes = re.findall(r"CLI_MODE=([a-z_]+)", text)
     mode = modes[-1] if modes else "normal"
     event = threading.Event()

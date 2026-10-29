@@ -1,4 +1,5 @@
 //! Durable bot routines, shared by API clients and the built-in MCP server.
+mod chain;
 mod check;
 pub use check::Checked;
 mod editor;
@@ -163,7 +164,7 @@ fn hook_set(state: &State) -> Vec<Hook> {
     state
         .routines
         .iter()
-        .filter(|r| !r.deleted && r.triggers.iter().any(|t| matches!(t, Trigger::Webhook | Trigger::Event { .. })))
+        .filter(|r| !r.deleted && r.triggers.iter().any(Trigger::external))
         .map(|r| Hook { id: r.id.clone(), key: r.webhook_key.clone(), enabled: r.enabled })
         .collect()
 }
@@ -239,7 +240,7 @@ impl Routines {
         // The next one to happen first, as every list of them shows.
         let mut follow_ups: Vec<_> = state.follow_ups.iter().filter(|f| f.bot_id == bot).collect();
         follow_ups.sort_by_key(|f| f.at);
-        json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(public).collect::<Vec<_>>(),
+        json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(|r| public(&state, r)).collect::<Vec<_>>(),
             "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>(),
             "followUps": follow_ups})
     }
@@ -294,12 +295,17 @@ impl Routines {
             Ok(r)
         })?;
         hub.add_entry(&Lane::main(bot), EntryKind::Notice, 0, &json!({"text":format!("{} routine: {name}", if updated {"Updated"} else {"Created"}), "routineId": id, "style":"info"}));
-        Ok(json!({"routine":public(&routine)}))
+        Ok(json!({"routine":public(&self.state.locked(), &routine)}))
     }
 
     pub fn set_enabled(&self, store: &Store, bot: &str, id: &str, enabled: bool) -> Result<Value> {
         self.change(store, |s| {
-            let r = own_mut(&mut s.routines, bot, id)?;
+            let i = s
+                .routines
+                .iter()
+                .position(|r| r.id == id && r.bot_id == bot && !r.deleted)
+                .context("routine not found")?;
+            let r = &mut s.routines[i];
             if enabled && !r.enabled {
                 r.next_runs = r.triggers.iter().map(|t| t.next(now_ms())).collect::<Result<_>>()?;
             }
@@ -312,7 +318,7 @@ impl Routines {
                     }
                 }
             }
-            Ok(json!({"routine":public(r)}))
+            Ok(json!({"routine":public(s, &s.routines[i])}))
         })
     }
 
@@ -448,10 +454,18 @@ fn agent_bot(hub: &Hub, bot: &str) -> Result<crate::store::BotRow> {
 fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {
     body[key].as_str().with_context(|| format!("{key} is required"))
 }
-fn public(r: &Routine) -> Value {
+fn public(s: &State, r: &Routine) -> Value {
+    let descriptions: Vec<String> = r
+        .triggers
+        .iter()
+        .map(|t| match (t, chain::upstream_name(s, t)) {
+            (Trigger::Event { event, filters, .. }, Some(name)) => chain::describe(&name, event, filters),
+            _ => t.description(),
+        })
+        .collect();
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,
-        "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
+        "triggerDescriptions":descriptions,"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
 fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
     Run {

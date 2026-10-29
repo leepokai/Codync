@@ -76,13 +76,17 @@ The cards themselves hold no credentials. You can answer them in the iPhone app,
 
 ## Turn connectors and skills on or off per bot
 
-A connector or skill you add is turned on for every bot, and new bots start with all of them on (without a credential store, as on a [headless Linux server](/docs/linux-servers#limits-on-a-headless-server), new bots start with no connectors). To turn one off for a bot, open the bot's **Settings** tab:
+A connector or skill you add is turned on for every bot, and new bots start with all of them on (without a credential store, as on a [headless Linux server](/docs/linux-servers#limits-on-a-headless-server), new bots start with no connectors). To turn one off for a bot, open the bot and choose **Settings**. Each switch there is one Codync passes on.
 
 - **Desktop app:** click the bot's name at the top of the chat, then **Settings**.
-- **iPhone:** tap the bot's name at the top of the chat, then the **Settings** tab.
-- **Terminal UI:** press `e` on the bot, then use the **Connectors** and **Skills** fields (space toggles).
+- **iPhone and Android:** tap the bot's name at the top of the chat, then **Settings**.
+- **Terminal UI:** press `e` on the bot. The settings form has the same switches.
 
 The bot picks up the change on its next turn, in the same conversation.
+
+On a Codex bot, a connector named like an MCP server in your own Codex config (for example `notion`, after `codex mcp add notion`) reaches the bot as `codync-notion`, so the bot gets both: Codex keeps its own entry and skips any other server with that name.
+
+What that agent already brings is on its own page, not the bot's. Open **Extensions → Agents**, choose the agent, and look under **Sign in**. **Skills**, **Connectors**, **Rules** and **Plugins** each show a count and open to the list. The section is left out when the agent has none of them. Those rows are read only. In the terminal, the same lists open from **What the agent brings** on the agent's sign-in sheet.
 
 ## Skills
 

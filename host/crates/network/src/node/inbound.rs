@@ -121,12 +121,14 @@ impl Inner {
         if let Err(reason) = locked(&self.guard).admit(pair.clone(), envelope.hops, said, Instant::now()) {
             return refuse(reason);
         }
-        let (id, hops) = (envelope.id.clone(), envelope.hops);
         // An answer that says how the request ended (`meta`) is the last one past the rules.
         let ended = envelope.reply_to.clone().filter(|_| answers && envelope.meta.is_some());
-        match self.hand_over(&reach, envelope.open(name(&peer))).await {
+        // A recipient can reply as soon as delivery wakes it, before the handoff returns.
+        // Keep this bounded metadata even on failure: a harness may already have seen the letter.
+        self.heard(&envelope.id, envelope.hops);
+        let handed_over = self.hand_over(&reach, envelope.open(name(&peer))).await;
+        match handed_over {
             Ok(()) => {
-                self.heard(&id, hops);
                 remember(&mut locked(&self.taken), key, TAKEN_MAX);
                 if let Some(request) = ended {
                     locked(&self.asked).retain(|(sent, to, _)| *sent != request || *to != peer);
@@ -184,5 +186,51 @@ impl Inner {
         tracing::info!(peer = %peer.fmt_short(), "a computer joined the network");
         self.clone().hello_all();
         Ok(welcome)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::node::Node;
+    use crate::types::{Connector, Letter, Sent};
+    use crate::wire::{Agent, AgentKind};
+    use std::sync::Mutex;
+    use std::task::{Context, Wake, Waker};
+
+    struct ObserveHops {
+        inner: Arc<Inner>,
+        letter: String,
+        observed: Mutex<Option<u8>>,
+    }
+
+    impl Wake for ObserveHops {
+        fn wake(self: Arc<Self>) {
+            *locked(&self.observed) = self.inner.hops_of(&self.letter);
+        }
+    }
+
+    #[tokio::test]
+    async fn reply_hops_are_available_when_delivery_wakes_the_recipient() {
+        let dir = std::env::temp_dir().join(format!("codync-network-hops-{}", wire::random_hex(8)));
+        let started = Node::start(&dir, &Connector::Private).await;
+        let (node, mut inbox) = started.expect("start an isolated node");
+        node.set_agents(["sender", "recipient"].map(|id| {
+            (Agent { id: id.into(), name: id.into(), about: String::new(), kind: AgentKind::Codync }, Reach::App)
+        }));
+        let recipient = node.resolve("recipient").expect("local recipient");
+        let letter = Letter::new("sender", recipient, "reply immediately").hops(3);
+        let observer =
+            Arc::new(ObserveHops { inner: node.inner.clone(), letter: letter.id.clone(), observed: Mutex::new(None) });
+        let waker = Waker::from(observer.clone());
+        let mut context = Context::from_waker(&waker);
+        assert!(inbox.poll_recv(&mut context).is_pending());
+
+        let sent = node.send(letter).await;
+        assert_eq!(sent.expect("deliver locally"), Sent::Delivered);
+        let delivered_hops = *locked(&observer.observed);
+        node.shutdown().await;
+        std::fs::remove_dir_all(dir).expect("remove isolated state");
+        assert_eq!(delivered_hops, Some(3), "an immediately woken reader must retain the reply chain");
     }
 }

@@ -108,6 +108,47 @@ public struct MarketConnector: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// Skills, connectors, rules and plugins an agent keeps for itself (`agentGear`). Codync's own skills and connectors are separate.
+public struct AgentGear: Decodable, Sendable, Equatable {
+    public var skills: [AgentGearItem]
+    public var connectors: [AgentGearItem]
+    public var rules: [AgentGearItem]
+    public var plugins: [AgentGearItem]
+
+    public init(skills: [AgentGearItem] = [], connectors: [AgentGearItem] = [], rules: [AgentGearItem] = [], plugins: [AgentGearItem] = []) {
+        self.skills = skills
+        self.connectors = connectors
+        self.rules = rules
+        self.plugins = plugins
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        skills = try c.decodeIfPresent([AgentGearItem].self, forKey: .skills) ?? []
+        connectors = try c.decodeIfPresent([AgentGearItem].self, forKey: .connectors) ?? []
+        rules = try c.decodeIfPresent([AgentGearItem].self, forKey: .rules) ?? []
+        plugins = try c.decodeIfPresent([AgentGearItem].self, forKey: .plugins) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey { case skills, connectors, rules, plugins }
+}
+
+public struct AgentGearItem: Decodable, Sendable, Equatable, Identifiable {
+    public var name: String
+    public var description: String
+    public var detail: String
+    public var id: String { name }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        detail = try c.decodeIfPresent(String.self, forKey: .detail) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, description, detail }
+}
+
 public struct InstalledSkill: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var name: String
@@ -201,6 +242,11 @@ public extension HostClient {
 
     func composioConnection(_ id: String) async throws -> ComposioConnectionState {
         try await call("composioConnection", ["id": id], timeout: 30)
+    }
+
+    /// What `backend` already has in the user's home: skills, connectors, rules and plugins, not Codync's.
+    func agentGear(backend: String) async throws -> AgentGear {
+        try await call("agentGear", ["backend": backend])
     }
 
     func skills() async throws -> [InstalledSkill] {

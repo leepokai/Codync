@@ -1,0 +1,16 @@
+flowchart LR
+  subgraph A["Computer A · sender"]
+    AA["Agent or application"] --> NA["Node · identity key + signed roster"]
+    NA --> OA["Outbox · retry while peer is away"]
+    OA --> NA
+  end
+  subgraph B["Computer B · receiver"]
+    NB["Node · identity key + signed roster"] --> G["Membership + delivery ID + budgets"]
+    G --> R["Reach · deliver to the selected agent"]
+    R --> APP["App inbox"]
+    R --> CL["Claude Code session"]
+    R --> CX["Codex thread"]
+  end
+  NA <-->|"Encrypted QUIC · direct first"| NB
+  NA -.-> RELAY["Optional relay · ciphertext only"]
+  RELAY -.-> NB

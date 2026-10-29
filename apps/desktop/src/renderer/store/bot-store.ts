@@ -380,6 +380,14 @@ export class BotStore extends BotSync {
     return (await this.ready()).botConversation(botId, peerId)
   }
 
+  /** What `backend` already has in the user's home, not the Codync skills and connectors a bot passes on. */
+  async agentGear(backend: string): Promise<{ skills: AgentGearItem[]; connectors: AgentGearItem[]; rules: AgentGearItem[]; plugins: AgentGearItem[] }> {
+    const client = this.client
+    if (!client) throw new Error("Couldn't load what this agent brings.")
+    const value = await client.call<{ skills?: AgentGearItem[]; connectors?: AgentGearItem[]; rules?: AgentGearItem[]; plugins?: AgentGearItem[] }>('agentGear', { backend })
+    return { skills: value.skills ?? [], connectors: value.connectors ?? [], rules: value.rules ?? [], plugins: value.plugins ?? [] }
+  }
+
   async save(draft: BotDraft) {
     const client = await this.ready()
     const res = draft.id
@@ -461,3 +469,10 @@ function cacheAttachment(id: string, data: Uint8Array) {
 }
 
 export { isWorking, needsInput }
+
+/** One skill or connector an agent keeps for itself (`agentGear`). */
+export interface AgentGearItem {
+  name: string
+  description?: string
+  detail?: string
+}

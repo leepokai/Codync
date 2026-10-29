@@ -123,6 +123,12 @@ export class BotMirror extends Observable {
       offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os)
   }
 
+  /** Out of reach while an update asked from here installs: the computer restarts on its own, so it
+   *  reads as updating, not as a lost connection (kit's `BotStore.isUpdating`). */
+  get isUpdating(): boolean {
+    return this.connection.kind !== 'online' && this.hostUpdateOffer.kind === 'updating'
+  }
+
   /** When an update asked from here stops reading as under way; null when none was asked. */
   get hostUpdateWaitEnds(): number | null {
     return this.hostUpdate?.kind === 'requested' ? this.hostUpdate.at + HOST_UPDATE_WAIT : null

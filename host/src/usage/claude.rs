@@ -5,13 +5,26 @@ use serde_json::Value;
 
 use super::Window;
 
+/// Flags for `claude -p /usage`. The empty strict MCP config keeps the check
+/// from starting every MCP server the user has set up.
+const USAGE_ARGS: [&str; 8] = [
+    "-p",
+    "/usage",
+    "--output-format",
+    "json",
+    "--no-session-persistence",
+    "--strict-mcp-config",
+    "--mcp-config",
+    r#"{"mcpServers":{}}"#,
+];
+
 /// `claude -p /usage`: Claude Code's own local usage report, no model call.
 pub(super) async fn collect() -> Option<Vec<Window>> {
     let bin = super::command::program("claude")?;
     let out = tokio::time::timeout(
         std::time::Duration::from_mins(1),
         tokio::process::Command::new(bin)
-            .args(["-p", "/usage", "--output-format", "json", "--no-session-persistence"])
+            .args(USAGE_ARGS)
             .current_dir(dirs::home_dir()?)
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)
@@ -88,6 +101,15 @@ fn claude_window(info: &Value) -> Option<Window> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn usage_check_starts_no_mcp_servers() {
+        let strict = USAGE_ARGS.iter().position(|a| *a == "--strict-mcp-config");
+        assert!(strict.is_some(), "--strict-mcp-config missing");
+        let config = USAGE_ARGS.iter().position(|a| *a == "--mcp-config").expect("--mcp-config missing");
+        let empty: Value = serde_json::from_str(USAGE_ARGS[config + 1]).unwrap();
+        assert_eq!(empty, json!({ "mcpServers": {} }));
+    }
 
     #[test]
     fn parses_claude_usage_report() {

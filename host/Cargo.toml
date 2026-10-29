@@ -1,6 +1,6 @@
 [package]
 name = "codync-host"
-version = "2.29.0"
+version = "2.31.2"
 edition = "2024"
 # iroh (codync-network) needs 1.91.
 rust-version = "1.91"
@@ -53,9 +53,11 @@ tar = "0.4.46"
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+toml_edit = { version = "0.25.15", default-features = false, features = ["parse"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 unicode-width = "0.2"
+url = "2.5.8"
 uuid = { version = "1.26.1", features = ["v4", "v7"] }
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 

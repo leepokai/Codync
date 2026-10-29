@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "codync-host"
-version = "2.29.0"
+version = "2.31.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -750,9 +750,11 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
+ "toml_edit",
  "tracing",
  "tracing-subscriber",
  "unicode-width",
+ "url",
  "uuid",
  "windows-sys 0.61.2",
  "x25519-dalek",
@@ -771,7 +773,7 @@ dependencies = [
 
 [[package]]
 name = "codync-network"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",

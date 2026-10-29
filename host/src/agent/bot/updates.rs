@@ -83,9 +83,9 @@ impl Actor {
                     "locations": u["locations"].clone(),
                 });
                 merge_tool_content(&mut data, &u["content"]);
-                mark_bookkeeping(&self.cfg, &mut data);
+                mark_bookkeeping(&self.cfg, self.renamed(), &mut data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &data);
-                let working = activity(&data).to_owned();
+                let working = activity(&data, self.renamed()).to_owned();
                 if let Some(e) = self.add(EntryKind::Tool, turn, data) {
                     self.tools.insert(tool_id, e.id);
                 }
@@ -104,9 +104,9 @@ impl Actor {
                     e.data["locations"] = u["locations"].clone();
                 }
                 merge_tool_content(&mut e.data, &u["content"]);
-                mark_bookkeeping(&self.cfg, &mut e.data);
+                mark_bookkeeping(&self.cfg, self.renamed(), &mut e.data);
                 crate::chat::memory::turns::touched(&self.hub, &self.cfg, &e.data);
-                let working = (e.data["status"] == "in_progress").then(|| activity(&e.data).to_owned());
+                let working = (e.data["status"] == "in_progress").then(|| activity(&e.data, self.renamed()).to_owned());
                 self.hub.set_entry(&entry_id, &e.data);
                 if let Some(working) = working {
                     self.set_activity(&working);

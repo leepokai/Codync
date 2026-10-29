@@ -5,7 +5,8 @@ import SwiftUI
 extension BotStore {
     /// One short line for a computer's connection, used next to its name.
     var statusText: String {
-        switch connection {
+        if isUpdating { return "Updating…" }
+        return switch connection {
         case .online where mismatch != nil: "Needs update"
         case .online: "Online"
         case .connecting: "Connecting…"

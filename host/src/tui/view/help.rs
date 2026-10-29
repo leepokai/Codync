@@ -63,7 +63,7 @@ const HELP: [(&str, &str, &str); 69] = [
     ("BOTS", "R", "details: routines, computer"),
     ("BOTS", "B", "details: switch back to the bot's own agent"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),
-    ("BOTS", "⇧← ⇧→", "between details, library, memory, settings"),
+    ("BOTS", "⇧← ⇧→", "between details, library, memory and settings"),
     ("BOTS", "A", "extensions, sign-in"),
     ("BOTS", "x", "delete bot or group"),
     ("VIEW", "t", "trace pane"),

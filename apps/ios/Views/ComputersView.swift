@@ -179,7 +179,8 @@ private struct ComputerRows: View {
         }
         .toggleStyle(.codync)
         connection
-        if store.connection == .online, store.hello != nil {
+        // Kept while an update asked from here restarts the computer: its spinner says it's updating.
+        if store.connection == .online || store.isUpdating, store.hello != nil {
             CodyncVersionRow(store: store)
         }
         if accounts.isStale(store.computer.id), inAccount == nil {
@@ -202,7 +203,7 @@ private struct ComputerRows: View {
                 }
             }
             connectionDetail
-            if store.isOffline, let ask {
+            if store.isOffline, !store.isUpdating, let ask {
                 Button(accounts.pendingAccess[store.computer.id] == nil ? "Ask for access" : "Show code", action: ask)
                     .buttonStyle(.secondary)
             }
@@ -271,7 +272,7 @@ private struct ComputerRows: View {
 
     private var connectionDetail: some View {
         Text(L10n.tr(detail)).font(.footnote)
-            .foregroundStyle(store.isOffline ? Palette.warning : Palette.secondary)
+            .foregroundStyle(store.isOffline && !store.isUpdating ? Palette.warning : Palette.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
 

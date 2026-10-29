@@ -26,9 +26,9 @@ pub async fn serve(home: &Path) -> (Child, String) {
             .spawn()
             .expect("start the host");
         while child.try_wait().expect("host state").is_none() {
-            match reqwest::get(format!("{base}/health")).await {
-                Ok(_) => return (child, base),
-                Err(e) => last = format!("{e:?}"),
+            match ready(&base, home).await {
+                Ok(()) => return (child, base),
+                Err(e) => last = e,
             }
             assert!(Instant::now() < deadline, "{}", not_started(&log, &last));
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -37,12 +37,25 @@ pub async fn serve(home: &Path) -> (Child, String) {
     }
 }
 
-/// Why a test host didn't answer: the last health check's error and the end of the host's log.
+/// Why a test host didn't answer: the last readiness check's error and the end of the host's log.
 fn not_started(log: &Path, last: &str) -> String {
     let text = std::fs::read_to_string(log).unwrap_or_default();
     let lines: Vec<&str> = text.lines().collect();
     let tail = lines[lines.len().saturating_sub(30)..].join("\n");
-    format!("host didn't start; last health check: {last}\n--- host log ---\n{tail}")
+    format!("host didn't start; last readiness check: {last}\n--- host log ---\n{tail}")
+}
+
+/// Whether `base` is this home's host: on a reused port another test's host answers `/health` too.
+pub async fn ready(base: &str, home: &Path) -> Result<(), String> {
+    let token = std::fs::read_to_string(home.join("token")).map_err(|e| format!("no token yet: {e}"))?;
+    let res = reqwest::Client::new()
+        .get(format!("{base}/events?since=0&client=test"))
+        .bearer_auth(token.trim())
+        .timeout(Duration::from_secs(1))
+        .send()
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    res.status().is_success().then_some(()).ok_or_else(|| format!("status {}", res.status()))
 }
 
 /// Stops a test host the way launchd does (SIGTERM), so it shuts down its own
@@ -115,6 +128,18 @@ pub async fn snapshot(base: &str, token: &str) -> serde_json::Value {
         }
     }
     serde_json::json!({"rev": rev, "bots": bots, "entries": entries})
+}
+
+/// How many routine runs still hold a session in `home`'s store: the host keeps each as a
+/// `lane.session.<bot>@<bot>/routine-<run>` row (`store::model::run_session_key`) and forgets
+/// it when the run ends.
+#[allow(dead_code, reason = "only the routine tests wait for runs")]
+pub fn routine_sessions(home: &Path) -> i64 {
+    rusqlite::Connection::open(home.join("codync.db"))
+        .and_then(|db| {
+            db.query_row("SELECT COUNT(*) FROM kv WHERE k GLOB 'lane.session.*/routine-*'", [], |r| r.get(0))
+        })
+        .expect("read the host's store")
 }
 
 /// Bot `id` in a [`snapshot`] (which also holds the lead bot every host makes).

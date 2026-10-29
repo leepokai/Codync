@@ -1,0 +1,26 @@
+sequenceDiagram
+  participant C as Caller / host
+  participant F as Markdown files
+  participant M as codync-mem
+  participant D as Caller-owned SQLite
+  participant A as Agent / model
+  C->>M: Load opening for bot and optional shared layer
+  M->>D: Read recorded MEMORY.md versions
+  M-->>C: Render memory context and note references
+  C->>A: Start session with memory context
+  A->>C: Request a topic note when needed
+  C->>F: Read topic note
+  F-->>C: Note content
+  C-->>A: Return requested note
+  Note over C,M: For a proposed memory change
+  C->>M: Check content, caps and write permissions
+  M->>D: Consult fact authorship and forgotten facts
+  alt Change admitted
+    C->>F: Apply approved content
+    C->>M: Record version and reconcile facts
+    M->>D: Write within caller's transaction
+  else Change refused
+    M-->>C: Refusal reason
+  end
+  Note over C,A: Between turns, caller may run a dream model.
+  Note over C,M: dream audits proposals, caller applies accepted edits.

@@ -18,9 +18,10 @@ The host on your computer runs every bot. A bot's agent starts when you send it 
 
 ## Where to change a bot's settings
 
-- **iPhone:** open the bot's chat and tap its name at the top, for the tabs **Details**, **Library**, **Memory** and **Settings**. **Details** shows its instructions, agent, model and routines; **Settings** shows the rest. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
-- **Desktop:** click the bot's name at the top of the chat to open the details panel, with the tabs **Details**, **Library**, **Memory** and **Settings**. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
-- **Terminal UI:** select the bot and press `e`. Press Ctrl+S to save, or Esc to drop your changes.
+- **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Library**, **Memory** and **Settings**. **Details** shows its instructions, agent, model and routines; **Settings** shows the rest, including the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
+- **Desktop:** click the bot's name at the top of the chat to open the details panel, with the same tabs. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
+- **Android:** the same sheet, without **Memory** until that screen is ported.
+- **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
 
 ## Profile
 
@@ -75,7 +76,9 @@ How approval cards work: [Conversations](/docs/conversations#approval-cards).
 
 ## Connectors and skills
 
-The **Connectors** and **Skills** sections list everything installed on the computer, each with a switch. A new bot starts with all of them on; turn off what a bot shouldn't use. A skill a bot writes for itself is on only for that bot until you turn it on for others. See [Connectors and skills](/docs/connectors-and-skills).
+**Settings** lists the Codync skills and connectors this bot passes on. Each has a switch. A new bot starts with all of them on; turn off what a bot shouldn't use. A skill a bot writes for itself is on only for that bot until you turn it on for others. The full editor (Edit profile) has the same switches.
+
+What the agent already has — its own skills, connectors, rules and plugins — is on that agent's page: **Extensions → Agents**, under **Sign in**. Each list opens to show its name and a short description. Those lists are read only, and they come from the agent's files in your home folder, not from a project. Codync does not add rules or plugins of its own. See [Connectors and skills](/docs/connectors-and-skills).
 
 ## Memory and routines
 

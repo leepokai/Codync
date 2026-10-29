@@ -1,0 +1,29 @@
+sequenceDiagram
+  participant A as Sending agent
+  participant S as Sender Node
+  participant R as Receiver Node
+  participant T as Target agent
+  A->>S: Letter to agent@computer
+  S->>S: Resolve address and check hop limit
+  S->>R: Try encrypted delivery
+  alt Peer unreachable
+    S->>S: Queue in outbox and retry (up to one day)
+  else Peer reachable
+    R->>R: Check membership, delivery ID and budgets
+    alt Already accepted delivery ID
+      R-->>S: Acknowledge without delivering again
+    else Refused by policy
+      R-->>S: Return refusal
+    else New accepted letter
+      alt App-managed agent
+        R->>T: Put message in app inbox (caller handles wake)
+      else Claude Code or Codex notice
+        R->>R: Keep until the next waking message
+      else Claude Code or Codex waking message
+        R->>T: Reach: deliver message and pending notices
+      end
+      R-->>S: Acknowledge acceptance
+    end
+  end
+  Note over S,R: An acknowledgement is not the agent's reply.
+  Note over A,T: Replies are new letters with reply_to set.

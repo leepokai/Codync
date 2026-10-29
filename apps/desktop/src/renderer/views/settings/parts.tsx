@@ -40,6 +40,7 @@ export function relativeDay(date: Date, now = new Date()) {
 
 /** One short line for a computer's connection, used next to its name. */
 export function statusText(store: BotStore) {
+  if (store.isUpdating) return 'Updating…'
   const c = store.connection
   switch (c.kind) {
     case 'online':

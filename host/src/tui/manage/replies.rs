@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle};
+use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle, rename_fold};
 use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
@@ -181,6 +181,10 @@ impl App {
                 self.flash("Saved");
                 self.refresh_sheets();
             }
+            Reply::SectionRenamed { from, to } => {
+                rename_fold(&mut self.folded, &from, to.as_deref());
+                self.on_sheet_reply(Reply::FieldsSaved, Ok(v));
+            }
             Reply::SignIn => {
                 let url = s(&v, "url");
                 super::super::app::copy(&url);
@@ -241,7 +245,7 @@ impl App {
                     f.error = Some(e);
                 }
             }
-            Reply::FieldsSaved => match self.overlays.last_mut() {
+            Reply::FieldsSaved | Reply::SectionRenamed { .. } => match self.overlays.last_mut() {
                 Some(Overlay::Fields(f)) => {
                     f.saving = false;
                     f.error = Some(e);

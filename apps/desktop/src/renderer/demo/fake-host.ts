@@ -227,6 +227,11 @@ export class FakeHost {
         })
         return {}
       }
+      case 'renameSection': {
+        const to = typeof b.to === 'string' ? b.to.trim() || undefined : undefined
+        for (const bot of this.bots.values()) if (bot.section === str('from')) this.emitBot(Object.assign(bot, { section: to }))
+        return {}
+      }
       case 'deleteBot': {
         const id = str('botId')
         this.bots.delete(id)

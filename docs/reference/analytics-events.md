@@ -64,8 +64,9 @@ host answers and sends it once the host is up.
 |---|---|---|---|
 | `screen_viewed` | host `track` (desktop, TUI), iOS, Android | A screen, sheet or tab is shown | `screen` (see *Screens*) |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
-| `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `modelOptions`, `fastMode`, …), never their values |
+| `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values |
 | `bots_reordered` | host | `reorderBots` | — |
+| `section_renamed` | host | `renameSection` | `removed`: whether it removed the section (`to` empty or `null`); never the names |
 | `bot_deleted` | host | `deleteBot` | — |
 | `message_sent` | host | `send` (a resend counts once) | `kind`, `agent`, `reply` (whether it quotes a message), `attachments` (count) |
 | `turn_stopped` | host | `stop` | — |

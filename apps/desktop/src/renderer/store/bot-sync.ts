@@ -1,6 +1,7 @@
 import { isChat, type AccessRequest, type CloudStatus, type Entry } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
+import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
 import type { CallCue } from '@shared/calls'
@@ -392,9 +393,10 @@ export class BotSync extends BotMirror {
     }
   }
 
-  protected perform(op: (c: HostClient) => Promise<unknown>, replay = false) {
-    void this.withLink(op, replay).catch((error: unknown) => {
-      this.lastError = error instanceof Error ? error.message : String(error)
+  /** Fire and forget (resolving to whether it went through): what waiting and retrying couldn't settle reaches the dialog, after `undo` takes back what the action already showed. */
+  protected perform(op: (c: HostClient) => Promise<unknown>, replay = false, undo?: () => void): Promise<boolean> {
+    return undoOnFailure(this.withLink(op, replay), undo, (message) => {
+      this.lastError = message
       this.changed()
     })
   }

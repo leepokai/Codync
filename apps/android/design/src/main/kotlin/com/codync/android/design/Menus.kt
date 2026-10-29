@@ -79,8 +79,13 @@ class MenuItem(
     val divider: Boolean = false,
     val enabled: Boolean = true,
     val children: List<MenuItem>? = null,
+    /** Shows [title] as it is, never translated: a name the user gave (a section's). */
+    val verbatim: Boolean = false,
     val action: () -> Unit = {},
-)
+) {
+    /** [title] as the row shows it: through [translate], unless [verbatim]. */
+    fun shownTitle(translate: (String) -> String): String = if (verbatim) title else translate(title)
+}
 
 /** A row of emoji above a message's menu (Slack's quick reactions). */
 class ReactionPick(val emoji: List<String>, val chosen: List<String>, val toggle: (String) -> Unit)
@@ -134,13 +139,17 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
             hold()
             var moved = 0f
             var started = false
-            drag(held.id) { change ->
-                val step = change.positionChange().y
-                moved += step
-                if (!started && abs(moved) > viewConfiguration.touchSlop) { started = true; open = false; reorder.start() }
-                if (started) { reorder.move(step); change.consume() }
+            // finally: a cancelled gesture (the row left the list, the handler restarted) still ends the drag.
+            try {
+                drag(held.id) { change ->
+                    val step = change.positionChange().y
+                    moved += step
+                    if (!started && abs(moved) > viewConfiguration.touchSlop) { started = true; open = false; reorder.start() }
+                    if (started) { reorder.move(step); change.consume() }
+                }
+            } finally {
+                if (started) reorder.end()
             }
-            if (started) reorder.end()
         }
     }
     return onGloballyPositioned { anchor = it.boundsInRoot() }.then(gestures)
@@ -250,7 +259,7 @@ private val MenuShape = RoundedRectangle(26.dp)
         Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
             if (leading != null) Symbol(leading, size = 21.dp, tint = ink)
         }
-        Text(tr(item.title), Modifier.weight(1f), style = if (bold) Type.body.semibold else Type.body, color = ink)
+        Text(item.shownTitle(translator()), Modifier.weight(1f), style = if (bold) Type.body.semibold else Type.body, color = ink)
         if (item.children != null) Symbol("chevron.right", size = 16.dp, tint = Palette.secondary)
     }
 }

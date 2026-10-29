@@ -155,6 +155,8 @@ async fn wire_shape_matches_the_snapshot() {
         .await;
     let made = host.wait_for(&lead, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
     assert!(made["data"]["text"].as_str().unwrap().starts_with("Done: "), "{made}");
+    // A bot in a roster section: its `section`.
+    host.call("updateBot", json!({"id": bot, "section": "Work"})).await;
 
     let hello = host.call("hello", json!({})).await;
     let min_app = hello["minApp"].as_str().unwrap().to_owned();

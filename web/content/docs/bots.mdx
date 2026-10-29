@@ -10,7 +10,7 @@ Every computer comes with one bot of its own, named **Codync** until you rename 
 - **It checks in.** Its routine **Check in** runs at 9:00 and 18:00 on your computer's clock. If something deserves your attention, or there's a step it can take for you, it messages you; otherwise it stays quiet. What it reads in your email, documents or web pages is information to it, never instructions, and it doesn't send, forward, reply to, delete, pay for or post anything you didn't ask for in the chat. It skips a check-in while your agent plan is above 75% of a limit. Change the times, pause it or delete it like any routine. See [Routines](/docs/routines).
 - **It speaks first on a call.** Call it and it opens with what's worth your attention, or a greeting. Other bots wait for you to speak. See [Voice](/docs/voice).
 
-You set it up like any bot: name, avatar, agent, folder, connectors. It can't be deleted or hidden, and it stays on top, so it has no Pin.
+You set it up like any bot: name, avatar, agent, folder, connectors. It can't be deleted or hidden, and it stays on top, outside [sections](#sections), so it has no Pin or Move to section.
 
 ## How a bot runs
 
@@ -94,6 +94,15 @@ Each bot keeps a long-term memory across sessions, which you can read on its **M
   - **Desktop:** open **Settings → General** and click the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Terminal UI:** press Ctrl+K, type `unhide`, and pick **Unhide** followed by the bot's name.
 - **Mark as read:** clears a bot's unread badge, from the same menus.
+
+### Sections
+
+Sections group a computer's bots under headings you name, such as Work and Personal. They need Codync 2.32.0 or newer on the computer.
+
+- **Move a bot into a section:** open the bot's menu (iPhone: touch and hold it; Desktop: right-click it) and choose **Move to section**, then a section, **New section…** or **Remove from section**. Terminal UI: `w`, then type the section's name, or leave it empty to take the bot out.
+- **Fold a section:** tap or click its heading to fold its bots away. A folded heading shows their unread count. Each device keeps its own folds. Terminal UI: `z`, or click the section's label; its folds last until you quit.
+- **Rename or remove a section:** touch and hold its heading (Desktop: right-click it) and choose **Rename section…** or **Remove section**. Its bots stay, without a section. Renaming it to another section's name merges the two. Terminal UI: `W`; an empty name removes the section.
+- Your lead bot and pinned bots stay on top, outside sections, and the lead bot has no **Move to section**. A pinned bot goes back to its section when you unpin it. Bots in no section sit under a **Bots** label, and dragging moves a bot only within its section.
 
 ## New session
 

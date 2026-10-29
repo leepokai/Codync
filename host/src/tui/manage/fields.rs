@@ -78,6 +78,14 @@ impl App {
             Submit::Handoff(entry) => {
                 self.sheet("editHandoff", json!({"entryId": entry, "text": values["text"]}), Reply::FieldsSaved);
             }
+            Submit::Section(bot) => {
+                self.sheet("updateBot", json!({"id": bot, "section": values.get("name")}), Reply::FieldsSaved);
+            }
+            Submit::RenameSection(from) => {
+                let to = values.get("name").and_then(Value::as_str).map(str::to_owned);
+                let r = Reply::SectionRenamed { from: from.clone(), to: to.clone() };
+                self.sheet("renameSection", json!({"from": from, "to": to}), r);
+            }
             Submit::RenameArtifact { bot, artifact } => {
                 let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
                 self.sheet("renameArtifact", body, Reply::FieldsSaved);
@@ -106,5 +114,28 @@ pub fn handoff_fields(entry: &Entry) -> Fields {
         error: None,
         saving: false,
         submit: Submit::Handoff(entry.id.clone()),
+    }
+}
+
+/// Asks for a section name: where a bot goes, or a section's new name. Empty is allowed.
+pub fn section_fields(title: &str, note: String, current: Option<&str>, submit: Submit) -> Fields {
+    Fields {
+        title: title.into(),
+        note,
+        choices: vec![],
+        choice: 0,
+        inputs: vec![Input {
+            name: "name".into(),
+            label: "Section".into(),
+            secret: false,
+            required: false,
+            multiline: false,
+            placeholder: "Section name".into(),
+            ed: Editor::with(current.unwrap_or_default()),
+        }],
+        cursor: 0,
+        error: None,
+        saving: false,
+        submit,
     }
 }

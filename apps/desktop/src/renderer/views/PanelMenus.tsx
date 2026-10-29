@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Spinner } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import type { MenuItem } from '../components/Overlay'
@@ -41,6 +41,8 @@ interface PanelItem {
   chevron?: boolean
   disabled?: boolean
   destructive?: boolean
+  /** A name the user gave: shown as typed, never translated. */
+  verbatim?: boolean
   action: () => void
 }
 
@@ -110,9 +112,15 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
   )
 }
 
-function PanelRows({ items, onDismiss, after, dismissOnActivate = false }: { items: PanelItem[]; onDismiss: () => void; after?: (i: number) => ReactNode; dismissOnActivate?: boolean }) {
+function PanelRows({ items, onDismiss, after }: { items: PanelItem[]; onDismiss: () => void; after?: (i: number) => ReactNode }) {
   const tr = useTr()
   const [highlighted, setHighlighted] = useState(0)
+  const highlightedRow = useRef<HTMLButtonElement>(null)
+  // A long list scrolls: ↑/↓ and Tab bring the row Enter would run into view.
+  // A block, not an arrow's value: Chromium's scrollIntoView returns a promise, which React would call as the clean-up.
+  useEffect(() => {
+    highlightedRow.current?.scrollIntoView({ block: 'nearest' })
+  }, [highlighted])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -127,32 +135,28 @@ function PanelRows({ items, onDismiss, after, dismissOnActivate = false }: { ite
       } else if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault()
         const item = items[highlighted]
-        if (item && !item.disabled) {
-          if (dismissOnActivate) onDismiss()
-          item.action()
-        }
+        if (item && !item.disabled) item.action()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [items, highlighted, onDismiss, dismissOnActivate])
+  }, [items, highlighted, onDismiss])
   return (
     <VStack gap={2}>
       {items.map((item, i) => (
         <div key={item.title}>
           <button
+            ref={highlighted === i ? highlightedRow : undefined}
             className={`panel-row ${highlighted === i ? 'highlight' : ''} ${item.destructive ? 'destructive' : ''}`}
             disabled={item.disabled}
-            onMouseEnter={() => setHighlighted(i)}
-            onClick={() => {
-              if (dismissOnActivate) onDismiss()
-              item.action()
-            }}
+            // Movement, not enter: Chromium re-enters the row under a resting pointer after a scroll, which would undo ↑/↓.
+            onMouseMove={() => setHighlighted(i)}
+            onClick={item.action}
           >
             <IconSlot width={20}>
               {item.image ? <img src={item.image} alt="" width={14} height={14} /> : <Icon name={item.icon} size={14} />}
             </IconSlot>
-            <Text size="callout" truncate grow>{tr(item.title)}</Text>
+            <Text size="callout" truncate grow>{item.verbatim ? item.title : tr(item.title)}</Text>
             {item.detail ? <Text size="body" tone="secondary">{item.detail}</Text> : null}
             {item.chevron ? <Icon name="chevron.right" size={11} color="var(--secondary)" /> : null}
           </button>
@@ -163,17 +167,32 @@ function PanelRows({ items, onDismiss, after, dismissOnActivate = false }: { ite
   )
 }
 
-/** The roster's right-click actions, shared by pointer and keyboard. */
-export function DesktopActionMenu({ items, onDismiss, style }: { items: MenuItem[]; onDismiss: () => void; style: React.CSSProperties }) {
-  const rows = items.map<PanelItem>((m) => ({ title: m.title, icon: m.icon ?? 'circle', destructive: m.destructive, action: m.action }))
+/** A roster menu row: an action, or with `submenu`, rows that open in the menu's place (as the account menu opens Support). */
+export type ActionItem = MenuItem | (Omit<MenuItem, 'action'> & { submenu: MenuItem[] })
+
+/** The roster's right-click actions at `x`, `y`, shared by pointer and keyboard; kept inside the window, a long list scrolling. */
+export function DesktopActionMenu({ items, onDismiss, x, y }: { items: ActionItem[]; onDismiss: () => void; x: number; y: number }) {
+  const [submenu, setSubmenu] = useState<{ title: string; items: MenuItem[] } | null>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  // Measured after every render: a submenu, or a window resized under it, changes its height.
+  const [height, setHeight] = useState(0)
+  useLayoutEffect(() => setHeight(menu.current?.offsetHeight ?? 0))
+  const row = (m: ActionItem): PanelItem => 'submenu' in m
+    ? { title: m.title, icon: m.icon ?? 'circle', chevron: true, action: () => setSubmenu({ title: m.title, items: m.submenu }) }
+    : { title: m.title, icon: m.icon ?? 'circle', destructive: m.destructive, verbatim: m.verbatim, action: () => { onDismiss(); m.action() } }
+  const rows: { row: PanelItem; divider?: boolean }[] = submenu
+    ? [{ row: { title: submenu.title, icon: 'chevron.left', action: () => setSubmenu(null) } }, ...submenu.items.map((m, i) => ({ row: row(m), divider: i === 0 || m.divider }))]
+    : items.map((m) => ({ row: row(m), divider: m.divider }))
   return (
-    <div className="action-menu" style={style}>
-      <PanelRows
-        items={rows}
-        onDismiss={onDismiss}
-        dismissOnActivate
-        after={(i) => (items[i + 1]?.divider ? <div className="panel-divider" /> : null)}
-      />
+    <div ref={menu} className="action-menu" style={{ left: Math.min(Math.max(8, x), window.innerWidth - 268), top: Math.max(8, Math.min(y, window.innerHeight - 8 - height)) }}>
+      <div className="action-menu-rows">
+        <PanelRows
+          key={submenu?.title}
+          items={rows.map((r) => r.row)}
+          onDismiss={onDismiss}
+          after={(i) => (rows[i + 1]?.divider ? <div className="panel-divider" /> : null)}
+        />
+      </div>
     </div>
   )
 }

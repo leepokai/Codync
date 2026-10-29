@@ -45,10 +45,16 @@ pointer), every section folds into its heading, the others make room as it passe
 they unfold on release (`BotRoster.tsx`). Click a heading to fold its bots.
 Order and folded sections stay on this device; the iPhone and other computers keep
 independent orders even when signed in to the same account. Filtering a computer out
-does not discard its position. One selected computer keeps a flat roster. Bots stay within
-their computer's section; drag a bot row or press Alt+Up/Down on the selected bot to reorder
+does not discard its position. One selected computer gets no heading. Inside each computer,
+the lead bot comes first, then pinned rows, then foldable section headers sorted by name (name,
+bot count, and the unread total while folded; folded state saved on this device), then rows in no
+section (under a "Bots" label when there are sections). A row's right-click menu has Move to
+section (not the lead's), a section header's has Rename section and Remove section (both only for
+a host at 2.32.0 or newer); a move or rename the host refuses is put back. Bots stay among their
+computer's bots (the lead stays on top, pinned bots move among all pinned bots, an unpinned bot
+also stays inside its section); drag a bot row or press Alt+Up/Down on the selected bot to reorder
 it ([bot order](../features/computer-order.md#bot-order), synced through the host), and
-arrow-key navigation skips folded sections.
+Up/Down navigation skips folded computers and sections.
 Search still includes their bots. The compact sidebar uses computer badges for the same
 section controls. Ordering is saved locally immediately and survives restart, with separate
 preferences per account and cloud environment. See [computer ordering](../features/computer-order.md).

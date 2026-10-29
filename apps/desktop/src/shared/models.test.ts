@@ -8,6 +8,12 @@ test('a bot keeps its Fast mode through the settings draft', () => {
   assert.equal(draftOf(bot).fastMode, true)
 })
 
+test('a bot without a section, or with a cleared one, has none', () => {
+  assert.equal(normalizeBot({ id: 'b', section: 'Work' }).section, 'Work')
+  assert.equal(normalizeBot({ id: 'b' }).section, undefined)
+  assert.equal(normalizeBot({ id: 'b', section: '' }).section, undefined)
+})
+
 test('a host without Fast mode reads as off', () => {
   assert.equal(normalizeBot({ id: 'b' }).fastMode, false)
 })

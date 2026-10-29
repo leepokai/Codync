@@ -36,7 +36,9 @@ export { EmptyState } from './HostStateView'
 import { RefreshIndicator } from './RefreshIndicator'
 import { StarPrompt } from './StarPrompt'
 import { OpenVoiceSettings } from './call/CallView'
-import { AccountPanelLayer, DesktopActionMenu, ProfileAvatar } from './PanelMenus'
+import { AccountPanelLayer, DesktopActionMenu, ProfileAvatar, type ActionItem } from './PanelMenus'
+import { moveToSectionItems, sectionHeaderItems, type SectionNaming } from './section-menus'
+import { SectionNameDialog } from './SectionNameDialog'
 import { useTraySummary } from './tray-summary'
 import { useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
@@ -199,7 +201,8 @@ function ChatSplitView() {
   const [creating, setCreating] = useState<CreateTarget | null>(null)
   const [newMenu, setNewMenu] = useState(false)
   const [railNewMenu, setRailNewMenu] = useState(false)
-  const [contextBot, setContextBot] = useState<{ target: BotTarget; x: number; y: number } | null>(null)
+  const [context, setContext] = useState<{ items: ActionItem[]; x: number; y: number } | null>(null)
+  const [naming, setNaming] = useState<SectionNaming | null>(null)
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [newSessionBot, setNewSessionBot] = useState<BotTarget | null>(null)
@@ -286,9 +289,10 @@ function ChatSplitView() {
 
   const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
 
-  // The lead stays on top and can't go: no pin, hide or delete.
-  const botActions = (bot: Bot, store: BotStore): MenuItem[] => [
+  // The lead stays on top and can't go: no pin, section, hide or delete.
+  const botActions = (bot: Bot, store: BotStore): ActionItem[] => [
     ...(bot.lead ? [] : [{ title: bot.pinned ? 'Unpin' : 'Pin', icon: 'pin', action: () => store.setPinned(bot, !bot.pinned) }]),
+    ...moveToSectionItems(bot, store, setNaming),
     { title: 'Mark as Read', icon: 'bell.badge', action: () => store.markAllRead(bot.id) },
     { title: 'Edit Profile…', icon: 'square.and.pencil', divider: true, action: () => setEditing({ id: crypto.randomUUID(), draft: draftOf(bot), store }) },
     { title: 'Copy conversation ID', icon: 'square.on.square', divider: true, action: () => window.codync.app.copy(bot.id) },
@@ -359,7 +363,7 @@ function ChatSplitView() {
 
   const width = compact ? 76 : sidebarWidth
   return (
-    <div className={`split ${showAccount || contextBot ? 'covered' : ''}`}>
+    <div className={`split ${showAccount || context ? 'covered' : ''}`}>
       <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }}>
         <div className="sidebar-header drag" inert={compact}>
           <Spacer />
@@ -379,11 +383,17 @@ function ChatSplitView() {
         ) : null}
         <div className="roster" ref={listRef} tabIndex={0} onKeyDown={onListKey}>
           {roster.grouped && !compact ? <ExtensionsMovedTip /> : null}
-          <BotRoster roster={roster} compact={compact} onContext={(bot, store, x, y) => setContextBot({ target: { bot, store }, x, y })} openExtensions={(id) => {
-            // Found it: the tip about where Extensions went has done its job.
-            prefs.extensionsMovedTipSeen.set(true)
-            setMarketplace(id)
-          }} />
+          <BotRoster roster={roster} compact={compact}
+            onContext={(bot, store, x, y) => setContext({ items: botActions(bot, store), x, y })}
+            onSectionContext={(section, store, x, y) => {
+              const items = sectionHeaderItems(section, store, setNaming, (to) => roster.renameSection(store, section, to))
+              if (items.length) setContext({ items, x, y })
+            }}
+            openExtensions={(id) => {
+              // Found it: the tip about where Extensions went has done its job.
+              prefs.extensionsMovedTipSeen.set(true)
+              setMarketplace(id)
+            }} />
           {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
               <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
@@ -428,12 +438,13 @@ function ChatSplitView() {
           }}
         />
       ) : null}
-      {contextBot ? (
-        <div className="context-layer" onMouseDown={(e) => e.target === e.currentTarget && setContextBot(null)}>
+      {context ? (
+        <div className="context-layer" onMouseDown={(e) => e.target === e.currentTarget && setContext(null)}>
           <DesktopActionMenu
-            items={botActions(contextBot.target.bot, contextBot.target.store)}
-            onDismiss={() => setContextBot(null)}
-            style={{ left: Math.min(Math.max(8, contextBot.x), windowSize.width - 268), top: Math.min(Math.max(8, contextBot.y), Math.max(8, windowSize.height - 344)) }}
+            items={context.items}
+            onDismiss={() => setContext(null)}
+            x={context.x}
+            y={context.y}
           />
         </div>
       ) : null}
@@ -478,6 +489,7 @@ function ChatSplitView() {
         actions={confirmDelete ? [{ title: 'Delete bot and its conversation', destructive: true, action: () => confirmDelete.store.delete(confirmDelete.bot) }] : []}
         onClose={() => setConfirmDelete(null)}
       />
+      <SectionNameDialog naming={naming} onClose={() => setNaming(null)} />
       <Dialog open={errorMessage !== null} title={tr('Something went wrong')} message={errorMessage} actions={[]} cancel="OK" onClose={() => app.clearErrors()} />
     </div>
   )

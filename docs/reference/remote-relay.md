@@ -316,7 +316,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 | loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token） |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
 | screen scope | `screenPrepare`, `screenOffer`, `screenCandidate`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
-| control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
+| control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `renameSection`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
 
 The `screenCandidates` subscription also requires `screen` scope and belongs to its device’s screen session. It carries ordered candidates and completion separately from chat events; see [remote screen](../features/remote-screen.md).
 

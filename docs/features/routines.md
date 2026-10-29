@@ -71,6 +71,24 @@ A routine has an OR list of triggers:
 - `event`: `source`, `event` (`*` matches all), and optional exact-match `filters`.
   `messageContains` matches a substring of `text`. Source names are `slack`,
   `github`, `origin`, `microsoftTeams`, `linear`, `sentry`, `pagerduty`, and `email`.
+- `event` with `source: "routine"`: runs after another routine, any bot's, finishes for
+  good (below).
+
+### After another routine (`routines/chain.rs`)
+
+`{type:"event", source:"routine", event:"succeeded"|"failed"|"*", filters:{routineId,
+messageContains?, passed?}}`. `routineId` is required; `passed` is `"true"` (the run had
+nothing to report: `(pass)` or no reply) or `"false"`. When a run ends, the host queues
+every enabled routine whose trigger matches, with the trigger data
+`{source:"routine", event, routineId, routineName, botId, runId, passed, text, finishedAt,
+depth}` (`text` is the reply, up to 16 KB, empty on a pass). Only the final outcome counts:
+a failure that will be retried on its own, and a cancelled run, trigger nothing. These events
+never leave the host, so such a routine registers no webhook. Saving refuses an unknown
+upstream and a loop (a routine running after itself, directly or further up); at run time a
+chain stops after 5 routines in a row, and a routine still running or queued is skipped. Both
+skips are left in the routine's `lastError`. The apps keep the trigger as is and show its
+description, such as `After "Server check" succeeds with something to report`. Design:
+[routine chaining](../plans/routine-chaining.md).
 
 For example, Sunday at 14:20 in Taipei is `20 14 * * 0` with `Asia/Taipei`.
 The host computes and displays the next occurrence. Calendar parsing uses
@@ -244,7 +262,7 @@ follow-up reply counts once again when it is final. Unit tests cover
 the retry ladder, a queued scheduled fire standing in for the retry, paused routines,
 keeping only the latest failure's event, the user retry's busy/paused refusals and
 deleting the routine (`routines/retry.rs`), waiting retries vs. Stop, the tick and a
-scheduled fire (`routines/runner.rs`), timezone calculation, invalid schedules, event filters,
+scheduled fire (`routines/runner.rs`), routines run after another (outcome and result filters, final failures only, busy and depth skips, loop checks, no webhook), timezone calculation, invalid schedules, event filters,
 persistence, pause/resume, bot ownership, bearer/HMAC checks, GitHub event mapping and
 the relay's hook registration, acks and retries. `cloud/test/hooks.test.ts` covers the
 edge checks, queue limits, deduplication, ordering, retry and expiry; the cloud e2e

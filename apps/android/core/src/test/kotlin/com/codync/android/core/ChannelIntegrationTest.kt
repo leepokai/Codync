@@ -3,6 +3,9 @@ package com.codync.android.core
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicReference
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.take
@@ -42,7 +45,7 @@ class ChannelIntegrationTest {
     private fun identity(): DeviceIdentity = DeviceIdentity(ByteArray(32) { 3 }, ByteArray(32) { 12 })
 
     private fun enqueueHost(forgeSignature: Boolean = false, holdCalls: Boolean = false, burst: Int = 0, welcomeDelay: Long = 0,
-        snapshotHead: Int = 5, reject: String? = null) {
+        snapshotHead: Int = 5, reject: String? = null, screenBurst: Int = 0) {
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
             private lateinit var opener: FrameOpener
             private lateinit var sealer: FrameSealer
@@ -81,7 +84,14 @@ class ChannelIntegrationTest {
                     return
                 }
                 if (holdCalls) return
-                if (request.text("sub") == "events") {
+                if (request.text("sub") == "screenCandidates") {
+                    send(webSocket, buildJsonObject { put("id", id); put("ev", buildJsonObject { put("type", "ready") }) })
+                    repeat(screenBurst) { index -> send(webSocket, buildJsonObject {
+                        put("id", id); put("ev", buildJsonObject {
+                            put("type", "candidate"); put("candidate", "candidate:$index 1 udp 1 192.0.2.1 1234 typ host"); put("sdpMLineIndex", 0)
+                        })
+                    }) }
+                } else if (request.text("sub") == "events") {
                     assertEquals("android", request.getValue("b").jsonObject.text("client"))
                     if (burst > 0) {
                         repeat(burst) { index -> send(webSocket, buildJsonObject {
@@ -107,6 +117,33 @@ class ChannelIntegrationTest {
                 }
             }
         }))
+    }
+
+    @Test fun `screen overflow cannot block unrelated RPC responses`() = runBlocking {
+        enqueueHost(screenBurst = 300)
+        val channel = HostConnector.connect(computer(), identity())
+        val waiting = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val stream = async {
+            runCatching {
+                channel.subscribe("screenCandidates", buildJsonObject { put("session", "screen") }).collect { event ->
+                    if (event.text("type") == "ready") { waiting.complete(Unit); release.await() }
+                }
+            }
+        }
+        try {
+            withTimeout(5_000) { waiting.await() }
+            val response = withTimeout(5_000) { channel.call("probe") }
+            assertEquals(cid, response.jsonObject.text("computerId"))
+            release.complete(Unit)
+            val result = withTimeout(5_000) { stream.await() }
+            assertTrue(result.exceptionOrNull() is ScreenProtocolException)
+            withTimeout(5_000) { while (cancelled.get() == null) delay(10) }
+        } finally {
+            release.complete(Unit)
+            stream.cancelAndJoin()
+            channel.close()
+        }
     }
 
     @After fun shutdown() {

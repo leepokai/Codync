@@ -72,7 +72,8 @@ data class ScreenDisplay(
 
 /** A reserved viewer session and the ICE servers to reach it (`screenPrepare`). */
 @Serializable
-data class ScreenConnection(val session: String, val iceServers: List<ScreenIceServer>, /** Unix milliseconds. */ val expiresAt: Long) {
+data class ScreenConnection(val session: String, val iceServers: List<ScreenIceServer>, /** Unix milliseconds. */ val expiresAt: Long,
+    /** False when an older host or helper requires complete SDP. */ val trickle: Boolean = false) {
     /** Renew five minutes before the TURN credentials expire, never sooner than a second from now. */
     fun renewIn(nowMillis: Long): Long = maxOf(1_000, expiresAt - nowMillis - 300_000)
 }

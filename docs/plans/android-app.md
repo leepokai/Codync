@@ -16,7 +16,7 @@ emulator against a real host; device acceptance is listed separately.
 | --- | --- | --- |
 | Welcome/pairing | Ported: welcome crew and chat glimpse, Install (Mac/Linux) and Scan pages with the camera on the page, paste link, Tailscale note, sign-in | Physical optical scan, camera permission denial |
 | Accounts/access | Ported: account sheet and switcher, Computer management (connection status, badge color, Revoke this phone's access, older copies removed from the account), account computer access with its code, access banner, `codync-dev://computers` and `codync-dev://plugins` | Provider browser round trip on a device; Revoke and older copies against a signed-in account (covered by cloud request tests only); one computer per phone ([multiple computers are future work](../architecture/overview.md)) |
-| Roster | Ported: rows, menus, pin/hide/delete, New session (bots only), groups, drag to reorder (host-synced order) and TalkBack Move up/down, computer header, pull to refresh (also in Computer management) | Multiple computers |
+| Roster | Ported: rows, menus, pin/hide/delete, New session (bots only), groups, sections (move to, fold per device, rename, remove), drag to reorder (host-synced order) and TalkBack Move up/down, computer header, pull to refresh (also in Computer management) | Multiple computers |
 | Conversation | Ported: bubbles, Markdown/code, permissions, reactions, quote replies, Full conversation, bot-to-bot exchange lines and their conversation, routine notices that open their routine, files a bot shares (verified download, then the share sheet), sent images full size, pull down to reconnect, jump to latest, read receipts for every conversation on screen | Physical keyboard and TalkBack |
 | Composer | Ported: files/photos/paste (groups too, image thumbnails, Paste only when the clipboard holds files), `/` commands (Fast mode, skills listed fresh on `/`), @mentions in groups, call/send/stop/interrupt button | Dictation ([voice call](../features/voice-call.md)): the mic, its recording pill, the engine menu beside it (On device, or OpenAI / Gemini transcribed on the user's key with *Transcribing…*) and the *Couldn't dictate* dialog |
 | Bot and group editors | Ported: avatar, profile, agent and model options, Fast mode, workspace folder picker, permissions, activity, connectors, skills (with their details); the bot details sheet (`BotDetailsView`, from the chat's title, a routine notice or Add a fallback): Details (instructions, agent, Use the computer, Routines), Library, Settings (Codync's skill and connector switches), saved as you edit, Create template; a group's title opens its editor. An agent's own skills, connectors, rules and plugins are on its sheet in Extensions, under Sign in | The details' Memory tab (see Memory) |
@@ -28,7 +28,7 @@ emulator against a real host; device acceptance is listed separately.
 | Notifications | Ported: alerts as conversations with the bot's face (a group's face and its speaking member), conversation shortcuts, what happened ("Task complete") as sub text | Android's conversation layout doesn't draw sub text; background delivery needs FCM in the deployment |
 | Live updates | Android 16 Live updates (`ProgressStyle`), the status bar chip on Android 16 QPR1 (API 36.1) | Background updates need FCM in the deployment |
 | Version check | `VersionMismatch.MIN_HOST`, the host's `minApp`, the update card in the roster and in place of the composer | Set `MIN_HOST` to the first release that ships Android support when it's cut |
-| Remote screen | Ported: viewer from Computers, the chat header (watch a bot, then take over) and `codync-dev://screen`; WebRTC H.264, trackpad and direct touch, long-press drag, two-finger scroll, pinch zoom streaming the visible region, keyboard with IME and modifier keys, clipboard, displays, take over/hand back, Rotate | Trickle ICE and keeping the video through a channel reconnect (see [Not ported yet](#not-ported-yet)); pinch, IME composition and a hardware keyboard on a device; TURN relay path and renewal |
+| Remote screen | Ported: viewer from Computers, the chat header (watch a bot, then take over) and `codync-dev://screen`; WebRTC H.264, trackpad and direct touch, long-press drag, two-finger scroll, pinch zoom streaming the visible region, keyboard with IME and modifier keys, clipboard, displays, take over/hand back, Rotate, trickle ICE that keeps the video through a channel reconnect | Pinch, IME composition and a hardware keyboard on a device; TURN relay path and renewal |
 | Analytics | Ported: PostHog feature events with the Settings switch (and its sheet), crash reports sent on the next launch | — |
 | Packaging | Debug, R8 release signed with the Play upload key, `versionCode` from the version, Firebase (`codync-auth`) and private configuration, `Submit Android` to Google Play (internal testing since 2.24.0) | Production access (closed test), see [Before a Play release](#before-a-play-release) |
 
@@ -54,12 +54,6 @@ was walked through on an emulator against a real host.
   sheet, the harness's own memory switch with its info sheet (2.19.0), the "Shared" row for harnesses whose memory every bot shares (2.25.0) and the handoff card. Since 2.21.0 the memory screen is read-only
   (the user changes memory by telling the bot), so the port drops its add and edit controls. Port them from the
   iPhone (`MemoryView.swift`, `MemoryFilesView.swift`, `MemoryInfoSheet.swift`, `HandoffRows.swift`).
-- **Remote screen trickle ICE (2.32.0).** The iPhone exchanges ICE candidates as they are found
-  (`screenPrepare` with `trickle`, `screenCandidate`, the `screenCandidates` subscription), keeps the video
-  once connected when the host channel reconnects, waits for the channel to come back before spending a
-  reconnect attempt, and reconnects only on errors that end the connection. Android still sends complete SDP
-  (gathering up to 10 s) and drops the screen when the channel reconnects; the host keeps complete SDP for it.
-  The port is #235 (`ScreenSession.kt`).
 
 ### Not verified (needs an account, a key, a device or the real Mac)
 

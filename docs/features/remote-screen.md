@@ -44,13 +44,32 @@ back to the bots, then reconnects when the app returns.
 - A trickle session accepts one offer and one candidate subscription. Each direction permits 128 candidates of at most 4096 bytes followed by one `complete` event. Candidates include `candidate`, `sdpMLineIndex` and optional `sdpMid`; `type` distinguishes `candidate` and `complete`. The subscription starts with `ready` and may report `error` before ending. It never uses the shared chat broadcast.
 - Both directions buffer candidates until the phone installs its answer. Native candidate additions and upload acknowledgments are awaited in order. Completion follows every candidate; Apple WebRTC records completion at app level because its native API has no usable null-candidate operation. The finite connection deadline remains in place.
 - Overflow and candidate protocol errors end the attempt. Signaling loss ends an unfinished negotiation; once ICE connects or both directions deliver completion (including the phone upload acknowledgment), it detaches the candidate subscription and leaves media and input running. Credentials, Screen authorization and the on/off switch continue to govern the viewer independently. Recovery reserves a fresh session rather than resubscribing, reoffering or replaying an uncertain candidate addition. The phone waits for a ready host channel before spending one of its three recovery attempts; a successful answer alone does not reset that budget. A permanently stopped channel ends recovery with its authorization or update error. Closing, disabling screen access, changing helpers or removing Screen authorization closes media.
-- Android still negotiates with complete SDP until it gets trickle ICE ([Android plan](../plans/android-app.md#not-ported-yet)); desktop, terminal UI and Apple Watch have no remote-screen viewer. Their screen-helper management and permission controls are unaffected. Cloud and relay forwarding already carry the encrypted subscription and RPC frames; they need no signaling changes.
+- Android negotiates the same way (`core` `ScreenSignaling`, `ScreenCandidate`, `ScreenRoute`); desktop, terminal UI and Apple Watch have no remote-screen viewer. Their screen-helper management and permission controls are unaffected. Cloud and relay forwarding already carry the encrypted subscription and RPC frames; they need no signaling changes.
 - Phone viewers: iOS in `apps/ios/Kit/Sources/CodyncUI/Screen/`. Android keeps the same structure in `apps/android/app/.../Screen*.kt`, with gesture-to-input and viewport logic in `core` (`ScreenControl`, `ScreenViewport`). Both offer hardware H.264 first, High then Constrained Baseline.
 - The Linux helper answers with the packetized H.264 payload the phone offers, feeds the encoder 8-bit 4:2:0 video and timestamps capture on the system clock. It answers before capture starts, so the profile is negotiated before the encoder fixes its output.
 - Screen access is on by default on macOS and on Linux while a graphical session (Wayland or X11) is running; headless servers stay off. Turning it on or off is remembered. Enabling through `setScreenEnabled` requires a loopback caller. Interactive OS permission prompts must be completed on the computer.
 - Bots with their computer capability enabled receive the built-in `computer` MCP tools, run by the computer-use driver that Codync Screen starts on macOS ([computer use](computer-use.md)). Their permission policy still applies. An interactive phone can take over; bots may still look.
 - Each device may hold four sessions; the host allows 32 total, including pending sessions. Credential issuance is limited to 12 requests per minute per account by `TURN_LIMITER` (Cloudflare's per-location rate limiter).
 - Closing a session stops its media; issued TURN credentials remain usable until their one-hour TTL. Issuance limits and encoder limits do not constitute a hard monthly spending cap. Track Realtime egress by the credential's custom identifier.
+
+## Android incremental ICE
+
+Android advertises `trickle: true` in `screenPrepare`, then uses incremental ICE
+only when the host returns `trickle: true`. An omitted or false capability keeps
+complete-SDP negotiation for older hosts and helpers. The host/helper protocol
+is introduced in [PR #40](https://github.com/leepokai/Codync/pull/40).
+
+The Android viewer subscribes to `screenCandidates` before offering, waits for
+`ready`, and installs the answer before applying or uploading candidates. Each
+direction permits 128 candidates of at most 4096 UTF-8 bytes, followed by one
+completion. A full screen-signaling queue fails that session without blocking
+unrelated RPCs. Protocol errors remain fatal; a transport disconnect after media
+connects or both directions acknowledge completion leaves WebRTC running.
+
+Android core owns `ScreenCandidate` and `ScreenSignaling`; the app's
+`ScreenSession` connects them to native WebRTC. The iOS implementation and
+host/helper contract are covered by PR #40. Desktop, terminal UI and Watch have
+no viewer and receive no client signaling changes here.
 
 ## Cloud setup
 

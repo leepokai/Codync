@@ -76,6 +76,14 @@ current pairing in Computer management before pairing another. Multiple-computer
 support is tracked in the checklist. Accounts have separate device keys, mirrors,
 files, image caches and composer drafts.
 
+Remote screen negotiates incremental ICE with hosts and helpers that advertise
+support. It exchanges offers and answers while candidates are still gathering,
+buffers candidates until the answer is installed, and keeps established media
+running through a brief signaling disconnect. Older hosts and helpers continue
+using complete SDP. This adopts the host/helper protocol in
+[PR #40](https://github.com/leepokai/Codync/pull/40); either side can be upgraded
+first.
+
 The roster shows activity, previews, unread counts, groups and pin/hide actions;
 touch and hold a bot, then move it, to reorder (the order syncs through the host). Cached bots remain readable offline and are labeled as saved. An
 unreachable computer is distinguished from an empty online roster. Chat supports

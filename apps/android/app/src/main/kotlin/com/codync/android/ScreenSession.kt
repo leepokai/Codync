@@ -222,7 +222,8 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
     }
 
     private suspend fun addCandidate(pc: PeerConnection, event: ScreenCandidate) = suspendCancellableCoroutine<Unit> { done ->
-        val candidate = IceCandidate(event.sdpMid, requireNotNull(event.sdpMLineIndex), requireNotNull(event.candidate))
+        // The Linux helper sends no sdpMid; native WebRTC can't take null, and an empty mid falls back to the index.
+        val candidate = IceCandidate(event.sdpMid ?: "", requireNotNull(event.sdpMLineIndex), requireNotNull(event.candidate))
         pc.addIceCandidate(candidate, object : AddIceObserver {
             override fun onAddSuccess() { if (done.isActive) done.resume(Unit) }
             override fun onAddFailure(error: String?) {
@@ -290,12 +291,14 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
                 catch (error: Exception) {
                     if (phase == Phase.Closed) return@launch
                     lastError = error.message
-                    if (error is HostError && error.status in 400..499) {
+                    Log.i("CodyncScreen", "screen reconnect failed: ${error.message}")
+                    // The host answers most errors with 400 (a restarting helper, a replaced session): only a denial or a
+                    // required update ends recovery early, and the last attempt fails at once, as on the iPhone.
+                    if ((error is HostError && error.status in screenTerminalStatuses) || recoveryAttempts >= 3) {
                         close()
-                        phase = Phase.Failed(error.message)
+                        phase = Phase.Failed(lastError ?: "Couldn't reconnect to the remote screen.")
                         return@launch
                     }
-                    Log.i("CodyncScreen", "screen reconnect failed: ${error.message}")
                 }
                 if (phase != Phase.Reconnecting) return@launch
                 delay(minOf(maxOf(1, recoveryAttempts) * 2_000L, 10_000L))

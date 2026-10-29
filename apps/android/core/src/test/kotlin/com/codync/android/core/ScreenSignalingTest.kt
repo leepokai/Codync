@@ -75,6 +75,17 @@ class ScreenSignalingTest {
         f.signal.stop()
     }
 
+    @Test fun `a signaling failure before ready throws its reason`() = runTest {
+        val f = Fixture(backgroundScope)
+        val subscription = async { runCatching { f.signal.subscribe() } }
+        runCurrent()
+        f.incoming.trySend(ScreenCandidate(ScreenCandidate.Kind.Error, message = "unknown screen session")).getOrThrow()
+        runCurrent()
+        val error = subscription.await().exceptionOrNull()
+        assertTrue(error is ScreenProtocolException)
+        assertEquals("unknown screen session", error?.message)
+    }
+
     @Test fun `losing signaling before media and completion fails negotiation`() = runTest {
         val f = Fixture(backgroundScope)
         val subscription = async { f.signal.subscribe() }

@@ -1,6 +1,5 @@
 package com.codync.android.core
 
-import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceTimeBy
@@ -31,11 +30,14 @@ class ScreenRouteTest {
         }
     }
 
-    @Test fun `unavailable route has a finite deadline`() = runTest {
-        val waiting = async { runCatching { waitForScreenRoute { LinkState.ComputerOffline(null) } } }
-        runCurrent(); advanceTimeBy(20_000); runCurrent()
-        val result = waiting.await()
-        assertTrue(result.exceptionOrNull() is IOException)
+    @Test fun `a long outage keeps waiting, as on the iPhone`() = runTest {
+        var link: LinkState = LinkState.ComputerOffline(null)
+        val waiting = async { waitForScreenRoute { link } }
+        runCurrent(); advanceTimeBy(120_000); runCurrent()
+        assertFalse(waiting.isCompleted)
+        link = LinkState.Ready(HostRoute.Relay)
+        advanceTimeBy(100); runCurrent()
+        waiting.await()
     }
 
     @Test fun `closing the screen cancels its route wait`() = runTest {

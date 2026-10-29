@@ -10,6 +10,9 @@ export interface Resolved {
   hostKeyAlias: string | null
   proxyJump: string | null
   proxyCommand: string | null
+  /** What the connection will negotiate, so a key read before it (Windows) is one the connection accepts. */
+  hostKeyAlgorithms: string | null
+  kexAlgorithms: string | null
 }
 
 export const usesProxy = (r: Resolved) => r.proxyJump !== null || r.proxyCommand !== null
@@ -34,7 +37,10 @@ export function parseConfig(text: string): Resolved | null {
   const hostname = set('hostname')
   const port = Number(values.get('port'))
   if (!hostname || !Number.isInteger(port) || !values.get('port')) return null
-  return { hostname, port, hostKeyAlias: set('hostkeyalias'), proxyJump: set('proxyjump'), proxyCommand: set('proxycommand') }
+  return {
+    hostname, port, hostKeyAlias: set('hostkeyalias'), proxyJump: set('proxyjump'), proxyCommand: set('proxycommand'),
+    hostKeyAlgorithms: set('hostkeyalgorithms'), kexAlgorithms: set('kexalgorithms'),
+  }
 }
 
 /** `type key` of each host key line (known_hosts or ssh-keyscan output); comments and revoked keys skipped. */

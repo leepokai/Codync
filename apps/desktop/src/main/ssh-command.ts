@@ -54,13 +54,18 @@ function targetOptions(p: SSHProfile) {
 
 export const keyscanArguments = (r: Resolved) => ['-T', '5', '-p', String(r.port), '--', r.hostname]
 
-/** Like ssh-keyscan, but ssh itself files the key the host presents in `file` (accept-new) and stops at sign-in: no config, no sign-in method. */
+/**
+ * Like ssh-keyscan, but ssh itself files the key the host presents in `file` (accept-new) and stops at sign-in: no
+ * config and no sign-in method, with the algorithms the connection resolved, so the key filed is the one it will check.
+ */
 export function presentedKeyArguments(r: Resolved, file: string) {
   const known = `"${file.replaceAll('\\', '/')}"`
+  const algorithms = [['HostKeyAlgorithms', r.hostKeyAlgorithms], ['KexAlgorithms', r.kexAlgorithms]]
+    .flatMap(([name, value]) => value ? ['-o', `${name}=${value}`] : [])
   return [
     '-F', 'none', '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'PreferredAuthentications=none',
     '-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${known}`, '-o', `GlobalKnownHostsFile=${known}`,
-    '-p', String(r.port), '--', r.hostname,
+    ...algorithms, '-p', String(r.port), '--', r.hostname,
   ]
 }
 

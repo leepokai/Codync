@@ -125,7 +125,8 @@ for (let round = 1; round <= 2; round++) {
       const history = await historyResponse.json()
       assert.ok(Array.isArray(history.entries))
     }
-    console.log(`PASS round ${round}: owned listener, host identity, authentication, ${bots.length} bots, SSE catch-up, history`)
+    const historyCheck = bot ? 'history' : 'history skipped (no bot on that computer)'
+    console.log(`PASS round ${round}: owned listener, host identity, authentication, ${bots.length} bots, SSE catch-up, ${historyCheck}`)
   } finally {
     child.kill()
     await exited

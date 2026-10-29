@@ -30,7 +30,11 @@ test('Windows uses native OpenSSH and normalizes quoted known_hosts paths', asyn
 })
 
 test('Windows host key scan files the presented key in a scratch known_hosts and never signs in', async () => {
-  const args = presentedKeyArguments({ hostname: '127.0.0.1', port: 2222, hostKeyAlias: null, proxyJump: null, proxyCommand: null }, 'C:\\Users\\Test User\\Temp\\known_hosts')
+  const resolved = {
+    hostname: '127.0.0.1', port: 2222, hostKeyAlias: null, proxyJump: null, proxyCommand: null,
+    hostKeyAlgorithms: 'rsa-sha2-512,rsa-sha2-256', kexAlgorithms: 'curve25519-sha256',
+  }
+  const args = presentedKeyArguments(resolved, 'C:\\Users\\Test User\\Temp\\known_hosts')
   const result = await run(sshTools().ssh, ['-G', ...args])
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /^userknownhostsfile C:\/Users\/Test User\/Temp\/known_hosts$/m)
@@ -39,6 +43,8 @@ test('Windows host key scan files the presented key in a scratch known_hosts and
   assert.match(result.stdout, /^preferredauthentications none$/m)
   assert.match(result.stdout, /^batchmode yes$/m)
   assert.match(result.stdout, /^port 2222$/m)
+  assert.match(result.stdout, /^hostkeyalgorithms rsa-sha2-512,rsa-sha2-256$/m)
+  assert.match(result.stdout, /^kexalgorithms curve25519-sha256$/m)
 })
 
 test('key selection accepts native absolute paths and rejects drive-relative paths', () => {

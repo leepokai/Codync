@@ -1,6 +1,7 @@
 //! Tool-call entries: ACP content folded into output and diffs, the working line a call shows,
 //! and which calls are the bot's own bookkeeping.
 
+use super::codex_names::{Renamed, name_of};
 use crate::agent::acp;
 use crate::chat::memory::files;
 use crate::store::BotConfig;
@@ -66,16 +67,24 @@ fn diff_summary(path: &str, old: &str, new: &str) -> Value {
     })
 }
 
-/// Composing the bot's message: the `chat` MCP server's `send_message`, by the name the agent titles the call with.
-fn sends_message(title: &str) -> bool {
-    ["mcp__chat__send_message", "chat.send_message"].iter().any(|name| title.starts_with(name))
+/// A call of Codync's MCP server `server` (a tool starting with `tool`), by the name the agent titles it with:
+/// Claude's `mcp__chat__send_message`, codex-acp's `mcp.chat.send_message` (older ones `chat.send_message`), the
+/// server under the name Codex knows it by (`codync-chat` when the user's Codex config has its own `chat`).
+fn calls(title: &str, renamed: &Renamed, server: &str, tool: &str) -> bool {
+    let codex = title.strip_prefix("mcp.").unwrap_or(title);
+    title.starts_with(&format!("mcp__{server}__{tool}"))
+        || codex.starts_with(&format!("{}.{tool}", name_of(renamed, server)))
+}
+
+/// Composing the bot's message: the `chat` MCP server's `send_message`.
+fn sends_message(title: &str, renamed: &Renamed) -> bool {
+    calls(title, renamed, "chat", "send_message")
 }
 
 /// Keeping the bot's memory: a call of the `memory` MCP server, or one that names a file in a memory folder the
 /// bot sees (in its `locations` or diffs, as `chat::memory::turns::touched` reads them).
-fn keeps_memory(cfg: &BotConfig, data: &Value) -> bool {
-    let title = data["title"].as_str().unwrap_or_default();
-    if ["mcp__memory__", "memory."].iter().any(|server| title.starts_with(server)) {
+fn keeps_memory(cfg: &BotConfig, renamed: &Renamed, data: &Value) -> bool {
+    if calls(data["title"].as_str().unwrap_or_default(), renamed, "memory", "") {
         return true;
     }
     let folders: Vec<PathBuf> = files::layers(cfg).iter().map(|layer| files::folder(layer.as_deref())).collect();
@@ -91,16 +100,16 @@ fn keeps_memory(cfg: &BotConfig, data: &Value) -> bool {
 /// Flags whether a call is the bot's own bookkeeping (composing its message, keeping its memory), which the
 /// working steps a chat unfolds leave out. An update can change the title or paths, so the flag follows them.
 /// Always written, so clients tell an older host's unflagged call from one that isn't bookkeeping.
-pub(super) fn mark_bookkeeping(cfg: &BotConfig, data: &mut Value) {
-    let flag = sends_message(data["title"].as_str().unwrap_or_default()) || keeps_memory(cfg, data);
+pub(super) fn mark_bookkeeping(cfg: &BotConfig, renamed: &Renamed, data: &mut Value) {
+    let flag = sends_message(data["title"].as_str().unwrap_or_default(), renamed) || keeps_memory(cfg, renamed, data);
     data["bookkeeping"] = flag.into();
 }
 
 /// The working line for a flagged tool call: composing a message reads as typing, and memory stays out of the
 /// chat, its working line included (the memory settings show it).
-pub(super) fn activity(data: &Value) -> &str {
+pub(super) fn activity<'a>(data: &'a Value, renamed: &Renamed) -> &'a str {
     let title = data["title"].as_str().unwrap_or("Tool");
-    if sends_message(title) {
+    if sends_message(title, renamed) {
         "Typing…"
     } else if data["bookkeeping"] == true {
         "Thinking…"
@@ -116,7 +125,16 @@ mod tests {
     fn marked(mut data: Value) -> Value {
         let cfg = serde_json::from_value(json!({"id": "b", "name": "Bot", "backend": "claude", "cwd": "/tmp"}))
             .expect("a bot config");
-        mark_bookkeeping(&cfg, &mut data);
+        mark_bookkeeping(&cfg, &Renamed::new(), &mut data);
+        data
+    }
+
+    /// Marked for a Codex bot whose Codex config has its own `memory` server.
+    fn marked_renamed(mut data: Value) -> Value {
+        let cfg = serde_json::from_value(json!({"id": "b", "name": "Bot", "backend": "codex", "cwd": "/tmp"}))
+            .expect("a bot config");
+        let renamed = Renamed::from([("memory".to_owned(), "codync-memory".to_owned())]);
+        mark_bookkeeping(&cfg, &renamed, &mut data);
         data
     }
 
@@ -128,6 +146,8 @@ mod tests {
             json!({"title": "chat.send_message"}),
             json!({"title": "mcp__memory__edit_memory"}),
             json!({"title": "memory.search_memory"}),
+            json!({"title": "mcp.chat.send_message"}),
+            json!({"title": "mcp.memory.edit_memory"}),
             json!({"title": "Write", "locations": [{"path": note}]}),
             json!({"title": "Edit", "diffs": [{"path": note}]}),
         ] {
@@ -148,6 +168,13 @@ mod tests {
     }
 
     #[test]
+    fn a_renamed_server_is_ours_and_the_users_own_is_not() {
+        assert_eq!(marked_renamed(json!({"title": "mcp.codync-memory.edit_memory"}))["bookkeeping"], true);
+        assert_eq!(marked_renamed(json!({"title": "mcp.memory.create_entities"}))["bookkeeping"], false);
+        assert_eq!(marked_renamed(json!({"title": "mcp.chat.send_message"}))["bookkeeping"], true);
+    }
+
+    #[test]
     fn bookkeeping_follows_the_title() {
         let mut data = marked(json!({"title": "Tool"}));
         assert_eq!(data["bookkeeping"], false);
@@ -157,10 +184,10 @@ mod tests {
 
     #[test]
     fn memory_work_reads_as_thinking() {
-        assert_eq!(activity(&marked(json!({"title": "mcp__chat__send_message"}))), "Typing…");
-        assert_eq!(activity(&marked(json!({"title": "mcp__memory__edit_memory"}))), "Thinking…");
-        assert_eq!(activity(&marked(json!({"title": "Read src/memory.rs"}))), "Read src/memory.rs");
-        assert_eq!(activity(&marked(json!({"title": "Terminal"}))), "Terminal");
+        assert_eq!(activity(&marked(json!({"title": "mcp__chat__send_message"})), &Renamed::new()), "Typing…");
+        assert_eq!(activity(&marked(json!({"title": "mcp__memory__edit_memory"})), &Renamed::new()), "Thinking…");
+        assert_eq!(activity(&marked(json!({"title": "Read src/memory.rs"})), &Renamed::new()), "Read src/memory.rs");
+        assert_eq!(activity(&marked(json!({"title": "Terminal"})), &Renamed::new()), "Terminal");
     }
 
     #[test]

@@ -17,6 +17,7 @@
 //! from a session of its own (see `session`).
 
 mod cmd;
+mod codex_names;
 mod compaction;
 mod fallback;
 mod fast_mode;
@@ -186,6 +187,8 @@ pub(crate) struct Conn {
     reports_compaction: bool,
     /// Each session's context use and window size at its last `usage_update`.
     usage: HashMap<String, (u64, u64)>,
+    /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
+    renamed: HashMap<String, codex_names::Renamed>,
 }
 
 impl Conn {

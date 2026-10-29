@@ -117,7 +117,7 @@ trails them (App Store review), so nudging a computer from it would only be nois
 
 ### Wire shape snapshot
 
-`wire_shape_matches_the_snapshot` (`host/tests/e2e.rs`) runs a full turn against a real host
+`wire_shape_matches_the_snapshot` (`host/tests/e2e/wire_shape.rs`) runs a full turn against a real host
 (fake agent: user message, narration, tool call with a diff, plan, permission, final reply),
 then records every field path and JSON type of `hello` and the event stream's catch-up (bot
 and entry events, entries per kind) in `host/tests/fixtures/wire-shape.json`, together with
@@ -131,7 +131,7 @@ the host's `minApp`.
 
 So a breaking change can't land by accident: it either keeps the old field or raises the
 floor. `null` fields match any type. Not covered: subtrees that depend on the machine rather
-than the code (`backends`, `screen`, `urls`, `usage`), fields the sample turn doesn't produce
+than the code (`backends`, `screen`, `urls`, `usage`, including asynchronous usage events), fields the sample turn doesn't produce
 (replies, group chats, routines and other method responses), and what the host
 accepts in requests. Changes there still follow the rule by review.
 

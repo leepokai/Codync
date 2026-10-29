@@ -7,7 +7,7 @@
 **A private network for your agents.**<br>
 Connect agents across computers. Direct, encrypted, peer to peer.
 
-[Install](#install) · [API reference](https://docs.rs/codync-network) · [Codync](https://github.com/leepokai/Codync) · [Contributing](#status)
+[Install](#install) · [Architecture](#architecture) · [API reference](https://docs.rs/codync-network) · [Codync](https://github.com/leepokai/Codync) · [Contributing](#status)
 
 [![Crates.io](https://img.shields.io/crates/v/codync-network?label=crates.io&style=flat&color=30343B&labelColor=202328)](https://crates.io/crates/codync-network) [![CI](https://img.shields.io/github/actions/workflow/status/leepokai/codync-network/ci.yml?branch=main&label=CI&style=flat&color=30343B&labelColor=202328)](https://github.com/leepokai/codync-network/actions/workflows/ci.yml) [![Docs](https://img.shields.io/docsrs/codync-network?label=docs.rs&style=flat&color=30343B&labelColor=202328)](https://docs.rs/codync-network) [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-30343B?label=license&style=flat&color=30343B&labelColor=202328)](LICENSE)
 
@@ -51,6 +51,29 @@ standalone crate, and it reaches Claude Code and Codex sessions too.
   meanwhile doesn't strand it.
 - **A computer that moves says so.** When its addresses change (a laptop on another Wi-Fi), it signs where it is
   now into the roster and tells the others, so they find it without a restart.
+
+## Architecture
+
+Each computer runs a `Node` with its own key and a copy of the signed roster. Agents use
+`agent@computer` addresses; `Reach` determines how the receiving node hands a letter to its target.
+
+![Network architecture: two computers connect directly, with an optional encrypted relay fallback.](assets/architecture.svg)
+
+The solid connection is the preferred direct path. The dashed path is the relay fallback when the
+configured connector allows it; `private` disables relays. The relay cannot read letters. The
+outbox belongs to the sender and waits for an unreachable peer; it is not a central message server.
+
+### How a letter arrives
+
+![Letter delivery flow, including offline queuing, duplicate acknowledgement, policy refusal and notices.](assets/message-flow.svg)
+
+The receiver enforces chain, burst and repetition budgets. Delivery IDs prevent a transport retry
+from delivering the same letter twice. For Claude Code and Codex, notices wait for a waking
+message. `Reach::App` passes both kinds of message to the caller's inbox, where the application
+handles wake behavior. Accepted delivery is distinct from an agent's eventual reply.
+
+Diagram sources: [architecture](assets/architecture.mmd) · [message flow](assets/message-flow.mmd).
+Render the Mermaid sources with the shared [theme](assets/diagram-theme.json) and a white background.
 
 ## Layers
 

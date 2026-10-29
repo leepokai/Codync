@@ -2,7 +2,7 @@
 
 use super::fast_mode::Listing;
 use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
-use super::{Actor, Conn, Instructions};
+use super::{Actor, Adapter, Conn, Instructions, codex_names};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::agent::registry::Candidate;
@@ -74,6 +74,13 @@ impl Actor {
             params["additionalDirectories"] = json!(memory::files::folders(&self.cfg));
         }
         params
+    }
+
+    /// What the turn's session calls Codync's MCP servers that it knows by another name.
+    pub(super) fn renamed(&self) -> &codex_names::Renamed {
+        static NONE: codex_names::Renamed = codex_names::Renamed::new();
+        let sid = self.turn_session.as_ref();
+        self.conn.as_ref().zip(sid).and_then(|(c, sid)| c.renamed.get(sid)).unwrap_or(&NONE)
     }
 
     /// ACP connectors, team collaboration, and optional team management and computer control.
@@ -182,7 +189,18 @@ impl Actor {
                 return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
             }
         }
-        let servers = self.mcp_servers()?;
+        let mut servers = self.mcp_servers()?;
+        let renamed = if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
+            // A `CODEX_HOME` saved for Codex (`setAgentEnv`) is where its own config is.
+            let saved = crate::agent::auth::env(&self.hub.store, &self.cfg.backend).unwrap_or_else(|e| {
+                tracing::warn!(error = format!("{e:#}"), "couldn't read Codex's saved environment");
+                Vec::new()
+            });
+            let home = saved.into_iter().find(|(k, _)| k == "CODEX_HOME").map(|(_, v)| v.into());
+            codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, home).await
+        } else {
+            codex_names::Renamed::new()
+        };
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         // Claude gets the frozen instructions as its system prompt. When a compaction
         // re-rendered them, loading the session again swaps the prompt in (the adapter
@@ -231,6 +249,7 @@ impl Actor {
                         res
                     };
                     conn.loaded.insert(sid.clone(), Instant::now());
+                    conn.renamed.insert(sid.clone(), renamed);
                     self.note_options(&sid, &res, Listing::Session);
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.
@@ -263,6 +282,7 @@ impl Actor {
         let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
+        conn.renamed.insert(sid.clone(), renamed);
         let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
         self.note_options(&sid, &options, Listing::Session);
         self.set_session(slot, Some(&sid));

@@ -124,6 +124,7 @@ impl App {
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
             Overlay::Library(l) => self.library_key(l, k),
+            Overlay::Gear(g) => Self::gear_key(g, k),
             Overlay::Market(m) => self.market_key(m, k),
             Overlay::Agent(a) => self.agent_key(a, k),
             Overlay::Fields(f) => self.fields_key(f, k),

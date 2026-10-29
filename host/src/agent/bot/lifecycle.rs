@@ -123,6 +123,7 @@ impl Actor {
                 conn.loaded.remove(sid);
                 conn.fast_options.remove(sid);
                 conn.usage.remove(sid);
+                conn.renamed.remove(sid);
                 self.applied_system.remove(sid);
             }
             Err(error) => {

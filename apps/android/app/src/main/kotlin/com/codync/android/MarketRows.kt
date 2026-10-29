@@ -104,7 +104,7 @@ import com.kyant.shapes.RoundedRectangle
 // Registry logos are one color; these carry their brand's (a gradient's middle for Gemini and omp).
 private val AGENT_TINTS = mapOf("claude-acp" to 0xFFD97857, "gemini" to 0xFF9178C7, "antigravity-acp" to 0xFF4285F5,
     "mistral-vibe" to 0xFFFA520F, "qwen-code" to 0xFF615CED, "amp-acp" to 0xFFF24F40, "kiro" to 0xFF8F45FF,
-    "cortex-code" to 0xFF29B5E8, "omp" to 0xFF9C4DFF)
+    "cortex-code" to 0xFF29B5E8, "omp" to 0xFF9C4DFF, "dsh" to 0xFF4D6BFE)
 
 /** Placeholder rows while a list loads, shaped like the real ones. */
 @Composable internal fun SkeletonRows() {

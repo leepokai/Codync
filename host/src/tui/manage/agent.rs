@@ -58,6 +58,7 @@ impl App {
             }
         }
         rows.push(SetupRow::Check);
+        rows.push(SetupRow::Brings);
         rows
     }
 
@@ -102,6 +103,11 @@ impl App {
                             );
                         }
                     },
+                    Some(SetupRow::Brings) => {
+                        self.overlays.push(Overlay::Agent(a));
+                        self.open_agent_gear(&backend);
+                        return None;
+                    }
                     Some(SetupRow::Check) | None => {
                         a.busy = true;
                         a.error = None;

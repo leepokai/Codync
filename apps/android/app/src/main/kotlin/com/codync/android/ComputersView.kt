@@ -131,7 +131,8 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         }
     }
     row { ConnectionRow(state.computers.first(), store) }
-    if (state.connection is LinkState.Ready && state.hello != null) row { CodyncVersionRow(state, store::requestHostUpdate) }
+    // Kept while an update asked from here restarts the computer: its spinner says it's updating.
+    if ((state.connection is LinkState.Ready || state.isUpdating) && state.hello != null) row { CodyncVersionRow(state, store::requestHostUpdate) }
     if (state.isStale && !inAccount) row { RowLabel("Remove", "trash", Palette.danger, modifier = Modifier.plainButton(action = actions.remove)) }
 }
 
@@ -160,7 +161,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
             Text(state.hello?.text("name") ?: computer.name, Modifier.weight(1f), style = Type.body.semibold, color = Palette.text)
             if (inAccount) Symbol("person.crop.circle.badge.checkmark", size = 20.dp, tint = Palette.tertiary, contentDescription = "In your account")
         }
-        val unreachable = link is LinkState.ComputerOffline || link is LinkState.Failed
+        val unreachable = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating
         Text(detail, style = Type.footnote, color = if (unreachable) Palette.warning else Palette.secondary)
         if (unreachable && actions.ask != null) {
             SecondaryButton(if (state.access?.computerId == computer.id) "Show code" else "Ask for access", action = actions.ask)

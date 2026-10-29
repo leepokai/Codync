@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Library, Market, MemorySheet, NetworkSheet, RoutineForm,
+    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Gear, Library, Market, MemorySheet, NetworkSheet, RoutineForm,
     RoutineList, SkillSheet,
 };
 use super::{Editor, Mark};
@@ -320,6 +320,7 @@ pub enum Overlay {
     Routines(RoutineList),
     Routine(Box<RoutineForm>),
     Library(Library),
+    Gear(Gear),
     Market(Box<Market>),
     Agent(AgentSetup),
     Fields(Box<Fields>),

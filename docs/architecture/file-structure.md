@@ -136,8 +136,9 @@ Codync/
 
 | Term | Meaning |
 |---|---|
-| bot | Named agent persona; a group is also a roster entry with `kind: group` |
-| agent / backend | Coding harness and its ACP adapter |
+| bot | What the user builds and talks to: one agent combined with a profile (name, avatar, instructions), working folder, memory, skills, routines and connectors. Never call a bot an agent. A group is also a roster entry with `kind: group` |
+| agent / backend | A coding harness Codync composes into bots (Claude Code, Codex, …) and its ACP adapter |
+| `agent@computer` | A codync-network address: whoever can take a letter there, whether a bot, a bare agent session (Claude Code, Codex) or a person at a terminal |
 | chat | Main, persistent conversation with a bot or group |
 | reply | A user message answering an earlier message of its chat, with that message's quote |
 | group | Chat with several bots and the user; no agent process of its own |

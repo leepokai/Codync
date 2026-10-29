@@ -14,7 +14,7 @@ import com.codync.android.core.Pairing
 private val LinkState.unauthorized get() = this is LinkState.Failed && status == 403
 
 /** One short line for the computer's connection, next to its name (iOS `BotStore.statusText`). */
-internal fun statusText(state: AppState): String = if (state.computers.isEmpty()) "Not paired" else when (val link = state.connection) {
+internal fun statusText(state: AppState): String = if (state.computers.isEmpty()) "Not paired" else if (state.isUpdating) "Updating…" else when (val link = state.connection) {
     is LinkState.Ready -> if (state.mismatch != null) "Needs update" else "Online"
     LinkState.Connecting -> "Connecting…"
     is LinkState.ComputerOffline -> link.lastSeenAt?.let { "Offline · seen ${RelativeTime.day(it)}" } ?: "Offline"

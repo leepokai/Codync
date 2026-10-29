@@ -235,7 +235,8 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
               ]
             : []),
           // On macOS and Windows this computer's Codync is this app: its version and update are on the Updates page.
-          online && store.hello && !(store === app.local && window.codync.platform !== 'linux')
+          // Kept while an update asked from here restarts the computer: its spinner says it's updating.
+          (online || store.isUpdating) && store.hello && !(store === app.local && window.codync.platform !== 'linux')
             ? <CodyncVersionRow key="codync" store={store} />
             : null,
         ]}

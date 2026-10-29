@@ -142,6 +142,7 @@ struct AgentSheet: View {
                 }
             }
             signInSection
+            AgentBrings(backendId: backend.id)
             if let error {
                 CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
             }

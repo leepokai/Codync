@@ -7,7 +7,7 @@
 **Memory that stays with your agents.**<br>
 Layered Markdown memory, clear write rules, and a record of every change.
 
-[Quick start](#use) · [API reference](https://docs.rs/codync-mem) · [Codync](https://github.com/leepokai/Codync) · [Contributing](#status)
+[Quick start](#use) · [Architecture](#architecture) · [API reference](https://docs.rs/codync-mem) · [Codync](https://github.com/leepokai/Codync) · [Contributing](#status)
 
 [![Crates.io](https://img.shields.io/crates/v/codync-mem?label=crates.io&style=flat&color=30343B&labelColor=202328)](https://crates.io/crates/codync-mem) [![CI](https://img.shields.io/github/actions/workflow/status/leepokai/codync-mem/ci.yml?branch=main&label=CI&style=flat&color=30343B&labelColor=202328)](https://github.com/leepokai/codync-mem/actions/workflows/ci.yml) [![Docs](https://img.shields.io/docsrs/codync-mem?label=docs.rs&style=flat&color=30343B&labelColor=202328)](https://docs.rs/codync-mem) [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-30343B?label=license&style=flat&color=30343B&labelColor=202328)](LICENSE)
 
@@ -34,6 +34,29 @@ Specially designed for bot-based memory: the memory system the coding-agent bots
 The crate decides; the caller acts. It starts no processes, opens no network connections, calls no models and
 spawns no threads. It keeps its own tables on the caller's SQLite connection and writes inside the caller's
 transaction, so a memory change commits together with whatever the caller records alongside it.
+
+## Architecture
+
+The caller owns execution: file reads and writes, model calls, scheduling, and the SQLite connection
+and transaction. `codync-mem` validates changes, records their history, and prepares memory context.
+
+![Memory architecture separating caller-owned I/O and model execution from crate rules and records.](assets/architecture.svg)
+
+Markdown files are the live copy on disk. SQLite records versions, authorship and forgotten facts;
+it is also where `opening` reads the recorded memory for a session. The caller keeps disk changes
+and recorded versions in step. The SQLite transaction covers database records, not filesystem writes.
+
+### From session context to a memory change
+
+![Memory lifecycle: load context, read notes on demand, validate changes and record approved edits.](assets/memory-flow.svg)
+
+A session receives its bot's `MEMORY.md` and, when enabled, the shared “yours” layer. Topic notes
+are read as needed. Dreaming follows the same ownership boundary: the crate builds a prompt and
+audits the answer; the caller runs the model, checks the files still match the snapshot, applies
+accepted edits and records the run. The crate does not run a background model or write files itself.
+
+Diagram sources: [architecture](assets/architecture.mmd) · [memory flow](assets/memory-flow.mmd).
+Render the Mermaid sources with the shared [theme](assets/diagram-theme.json) and a white background.
 
 ## Status
 

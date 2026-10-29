@@ -3,6 +3,6 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp" android:viewportWidth="16" android:viewportHeight="16">
     <group android:translateX="0" android:translateY="0">
-        <path android:pathData="M8 1C4.13 1 1 4.13 1 8s3.13 7 7 7c1.5 0 2.9-0.47 4.05-1.28l1.12 1.12a0.750.75 0 1 0 1.06-1.06l-1.12-1.12A6.97 6.97 0 0 0 15 8c0-3.87-3.13-7-7-7Zm0 2c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5Z" android:fillColor="#FF000000"/>
+        <path android:pathData="M8 1C4.13 1 1 4.13 1 8s3.13 7 7 7c1.5 0 2.9-0.47 4.05-1.28l1.12 1.12a0.75 0.75 0 1 0 1.06-1.06l-1.12-1.12A6.97 6.97 0 0 0 15 8c0-3.87-3.13-7-7-7Zm0 2c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5Z" android:fillColor="#FF000000"/>
     </group>
 </vector>

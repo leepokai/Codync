@@ -1,7 +1,7 @@
 //! Subscription usage, read on the host.
 //!
 //! Claude: `claude -p /usage`, the status line, and the ACP rate-limit event.
-//! Codex: the newest rollout's `rate_limits`. The other agents Codync runs are
+//! Codex: the CLI's live account rate limits. The other agents Codync runs are
 //! read the same way when they can report locally: `omp usage`, `amp usage`,
 //! `kiro-cli /usage`, a `kimi` screen, Antigravity's language server, OpenCode's
 //! database, Vibe's session logs, and the `JetBrains` IDE quota file.
@@ -146,7 +146,7 @@ pub async fn refresh(hub: &Hub) {
         junie,
         cursor_windows,
     ) = tokio::join!(
-        tokio::task::spawn_blocking(codex::collect),
+        codex::collect(),
         claude::collect(),
         omp::collect(),
         amp::collect(),
@@ -158,7 +158,7 @@ pub async fn refresh(hub: &Hub) {
         tokio::task::spawn_blocking(junie::collect),
         cursor::collect(),
     );
-    apply(hub, joined(codex), "codex", "Codex", "sessions");
+    apply(hub, codex, "codex", "Codex", "Codex CLI");
     apply(hub, claude, "claude", "Claude", "claude");
     apply(hub, omp_windows, "omp", "oh-my-pi", "omp usage");
     apply(hub, amp_windows, "amp", "Amp", "amp usage");

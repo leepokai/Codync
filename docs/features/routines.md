@@ -237,7 +237,10 @@ session recovery, hung-agent timeout, recurring work after failure, single-host
 ownership, silent completion, and the advertised routine MCP server (including key
 rotation). `host/tests/routine_retry_e2e.rs` checks a webhook run that failed before
 acting waiting 1 minute with its event (and running at once on a test run), and one
-that acted waiting for `retryRoutineRun`, which reuses the event once. Unit tests cover
+that acted waiting for `retryRoutineRun`, which reuses the event once.
+`host/tests/routine_unread_e2e.rs` checks that a routine result counts one unread in the
+main chat, that `markRead` clears it once the run has released its session, and that a
+follow-up reply counts once again when it is final. Unit tests cover
 the retry ladder, a queued scheduled fire standing in for the retry, paused routines,
 keeping only the latest failure's event, the user retry's busy/paused refusals and
 deleting the routine (`routines/retry.rs`), waiting retries vs. Stop, the tick and a

@@ -75,6 +75,10 @@ extension BotStore {
     /// While it updates, `hello` is asked this often, so the notice goes away soon after.
     static let updatingRecheck: Duration = .seconds(5)
 
+    /// Out of reach while an update asked from here installs: the computer restarts on its own, so it
+    /// reads as updating, not as a lost connection or access to ask for.
+    public var isUpdating: Bool { connection != .online && hostUpdateOffer() == .updating }
+
     public func hostUpdateOffer(now: Date = .now) -> HostUpdateOffer {
         if case let .requested(at) = hostUpdate, now.timeIntervalSince(at) < Self.hostUpdateWait { return .updating }
         return hello?.canUpdate == true ? .available(last: hostUpdate) : .unavailable

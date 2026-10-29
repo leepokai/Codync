@@ -51,6 +51,16 @@ class ConnectionPresentationTest {
         assertEquals("Offline · seen ${RelativeTime.day(seen)}", statusText(state(LinkState.ComputerOffline(seen))))
     }
 
+    @Test fun aComputerRestartingForAnUpdateAskedHereReadsAsUpdating() {
+        val asked = HostUpdate.Requested(System.currentTimeMillis())
+        val restarting = state(LinkState.Failed("Connection closed.")).copy(hostUpdate = asked)
+        assertTrue(restarting.isUpdating)
+        assertEquals("Updating…", statusText(restarting))
+        assertFalse(state(LinkState.Ready(HostRoute.Direct)).copy(hostUpdate = asked).isUpdating)
+        val longAgo = HostUpdate.Requested(System.currentTimeMillis() - HOST_UPDATE_WAIT_MS - 1)
+        assertEquals("Can't reach", statusText(restarting.copy(hostUpdate = longAgo)))
+    }
+
     @Test fun aComputerBehindTheAppNeedsAnUpdate() {
         val online = state(LinkState.Ready(HostRoute.Direct)).copy(hello = buildJsonObject { put("version", "2.0.0"); put("minApp", "2.0.0") })
         assertEquals("Needs update", statusText(online))

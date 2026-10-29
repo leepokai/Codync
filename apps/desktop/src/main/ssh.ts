@@ -1,141 +1,23 @@
 import { identity } from './environment'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { existsSync, promises as fs, readFileSync, statSync } from 'node:fs'
+import { existsSync, promises as fs, readFileSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { homedir, platform } from 'node:os'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
-import { isSSHHost, type SSHAttachment, type SSHProfile, type SSHState, type SSHStatus } from '../shared/ssh'
 import { dataDir } from './host-controller'
-import { infoArguments, knownHostsFiles, orphanTunnelPattern, resolveArguments, tunnelArguments } from './ssh-command'
+import type { SSHAttachment, SSHProfile, SSHState, SSHStatus } from '../shared/ssh'
+import { codyncKnownHosts, infoArguments, keyscanArguments, knownHostsFiles, resolveArguments, tunnelArguments } from './ssh-command'
+import { authRefused, consistent, hostKeys, knownHostsLines, knownHostsName, parseConfig, parseInfo, usesProxy } from './ssh-parse'
+import { KEYGEN, KEYSCAN, SSH, killOrphanTunnels, lastLine, missingTools, run, scanHostKeys, sshListens } from './ssh-process'
+import { validate } from './ssh-profile'
 
 // SSH computers: profiles, host key checks and one
 // OpenSSH tunnel per connected profile. Arguments are always an argv array, never a shell string.
 
-const SSH = '/usr/bin/ssh'
-const KEYGEN = '/usr/bin/ssh-keygen'
-const KEYSCAN = '/usr/bin/ssh-keyscan'
-const LSOF = ['/usr/sbin/lsof', '/usr/bin/lsof'].find((p) => existsSync(p)) ?? null
 const home = homedir()
 
-// MARK: pure helpers
-
-/** A reason the profile can't be used, or null. */
-export function validate(p: SSHProfile): string | null {
-  if (!isSSHHost(p.host)) {
-    return 'Use an SSH alias or a hostname: letters, digits, dots, dashes and underscores.'
-  }
-  if (p.user !== null && !/^[A-Za-z_][A-Za-z0-9._-]*$/.test(p.user)) return "That user name isn't valid."
-  const inRange = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535
-  if (p.port !== null && !inRange(p.port)) return 'The SSH port must be between 1 and 65535.'
-  if (!inRange(p.remotePort)) return 'The Codync port must be between 1 and 65535.'
-  if (p.identityFile !== null) {
-    let ok = false
-    try {
-      ok = p.identityFile.startsWith('/') && statSync(p.identityFile).isFile()
-    } catch {}
-    if (!ok) return "The key file doesn't exist."
-  }
-  return null
-}
-
-/** The far side rejected our key (BatchMode never prompts, so a password or passphrase can't help). */
-export const authRefused = (stderr: string) => stderr.includes('Permission denied') || stderr.includes('Too many authentication failures')
-
-/** What `ssh -G` resolved the destination to. */
-export interface Resolved {
-  hostname: string
-  port: number
-  hostKeyAlias: string | null
-  proxyJump: string | null
-  proxyCommand: string | null
-}
-
-const usesProxy = (r: Resolved) => r.proxyJump !== null || r.proxyCommand !== null
-/** The name ssh looks up in known_hosts. */
-export const knownHostsName = (r: Resolved) => {
-  const name = r.hostKeyAlias ?? r.hostname
-  return r.port === 22 ? name : `[${name}]:${r.port}`
-}
-
-export function parseConfig(text: string): Resolved | null {
-  const values = new Map<string, string>()
-  for (const line of text.split(/\r?\n/)) {
-    const at = line.indexOf(' ')
-    if (at < 0) continue
-    const key = line.slice(0, at).toLowerCase()
-    if (!values.has(key)) values.set(key, line.slice(at + 1).trim())
-  }
-  const set = (k: string) => {
-    const v = values.get(k)
-    return v && v !== 'none' ? v : null
-  }
-  const hostname = set('hostname')
-  const port = Number(values.get('port'))
-  if (!hostname || !Number.isInteger(port) || !values.get('port')) return null
-  return { hostname, port, hostKeyAlias: set('hostkeyalias'), proxyJump: set('proxyjump'), proxyCommand: set('proxycommand') }
-}
-
-const keyscanArguments = (r: Resolved) => ['-T', '5', '-p', String(r.port), '--', r.hostname]
-
-/** `type key` of each host key line (known_hosts or ssh-keyscan output); comments and revoked keys skipped. */
-export function hostKeys(text: string, certAuthorities = true): Set<string> {
-  const keys = new Set<string>()
-  for (const line of text.split(/\r?\n/)) {
-    const fields = line.split(/\s+/).filter(Boolean)
-    const first = fields[0]
-    if (!first || first.startsWith('#')) continue
-    if (first.startsWith('@')) {
-      if (!certAuthorities || first !== '@cert-authority') continue
-      fields.shift()
-    }
-    if (fields.length >= 3) keys.add(`${fields[1]} ${fields[2]}`)
-  }
-  return keys
-}
-
-/** ssh-keyscan's lines, filed under the name ssh will look up. */
-export const knownHostsLines = (scan: string, name: string) => [...hostKeys(scan)].sort().map((k) => `${name} ${k}`)
-
-/** A computer id is the first 16 bytes of SHA-256 of its signing key, base64url. */
-function consistent(id: string, signKey: string) {
-  const key = Buffer.from(signKey, 'base64url')
-  return key.length === 32 && createHash('sha256').update(key).digest().subarray(0, 16).toString('base64url') === id
-}
-
 // MARK: processes
-
-interface Result {
-  status: number
-  stdout: string
-  stderr: string
-}
-
-/** The last thing the tool said, for showing next to an error. */
-const lastLine = (text: string) => text.split(/\r?\n/).filter(Boolean).pop() ?? ''
-
-/** Runs a tool to completion; both pipes are drained while it runs. */
-function run(bin: string, args: string[], input?: string): Promise<Result> {
-  return new Promise((resolve) => {
-    let stdout = ''
-    let stderr = ''
-    let child: ChildProcess
-    try {
-      child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
-    } catch {
-      return resolve({ status: -1, stdout, stderr })
-    }
-    child.stdout?.on('data', (d: Buffer) => (stdout += d.toString()))
-    child.stderr?.on('data', (d: Buffer) => (stderr += d.toString()))
-    child.on('error', () => resolve({ status: -1, stdout, stderr }))
-    child.on('close', (code) => resolve({ status: code ?? -1, stdout, stderr }))
-    if (input !== undefined) child.stdin?.end(input)
-  })
-}
-
-/** Tunnels a crashed or force-quit Codync left running: only Codync's tunnels carry this known_hosts file. */
-const killOrphanTunnels = () => run('/usr/bin/pkill', ['-f', '--', orphanTunnelPattern(dataDir)])
 
 /** Binds port 0 on loopback to learn a free port. */
 function freeLocalPort(): Promise<number | null> {
@@ -149,30 +31,6 @@ function freeLocalPort(): Promise<number | null> {
   })
 }
 
-/** Whether process `pid` holds the listening socket on 127.0.0.1:`port`. */
-async function sshListens(pid: number, port: number): Promise<boolean> {
-  if (LSOF) {
-    const found = await run(LSOF, ['-a', '-n', '-P', '-p', String(pid), `-iTCP@127.0.0.1:${port}`, '-sTCP:LISTEN', '-t'])
-    return found.status === 0 && found.stdout.split(/\r?\n/).includes(String(pid))
-  }
-  if (platform() !== 'linux') return false
-  // No lsof: the listening socket's inode from /proc/net/tcp, then whether `pid` holds it.
-  try {
-    const local = `0100007F:${port.toString(16).toUpperCase().padStart(4, '0')}`
-    const inodes = (await fs.readFile('/proc/net/tcp', 'utf8'))
-      .split('\n')
-      .map((l) => l.trim().split(/\s+/))
-      .filter((f) => f[1] === local && f[3] === '0A')
-      .map((f) => `socket:[${f[9]}]`)
-    if (inodes.length === 0) return false
-    for (const fd of await fs.readdir(`/proc/${pid}/fd`)) {
-      const link = await fs.readlink(`/proc/${pid}/fd/${fd}`).catch(() => '')
-      if (inodes.includes(link)) return true
-    }
-  } catch {}
-  return false
-}
-
 async function healthOf(baseURL: string): Promise<{ computerId?: string } | null> {
   try {
     const res = await fetch(`${baseURL}/health`, { signal: AbortSignal.timeout(1000) })
@@ -183,27 +41,6 @@ async function healthOf(baseURL: string): Promise<{ computerId?: string } | null
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-/** What `codync-host info --json` prints. */
-interface RemoteInfo {
-  name: string
-  computerId: string
-  signKey: string
-  boxKey?: string | null
-  token: string
-  running: boolean
-}
-
-function parseInfo(text: string): RemoteInfo | null {
-  try {
-    const v = JSON.parse(text) as Partial<RemoteInfo>
-    return typeof v.name === 'string' && typeof v.computerId === 'string' && typeof v.signKey === 'string' && typeof v.token === 'string' && typeof v.running === 'boolean'
-      ? (v as RemoteInfo)
-      : null
-  } catch {
-    return null
-  }
-}
 
 // MARK: the manager
 
@@ -247,7 +84,7 @@ class SSHComputers {
 
   async connectAll() {
     // Before this copy has tunnels of its own, so only leftovers from an earlier copy match.
-    if (this.tunnels.size === 0 && this.tasks.size === 0) await killOrphanTunnels()
+    if (this.tunnels.size === 0 && this.tasks.size === 0) await killOrphanTunnels(dataDir)
     for (const p of this.profiles) if (!this.tasks.has(p.id) && !this.tunnels.has(p.id)) this.connect(p.id)
   }
 
@@ -304,7 +141,7 @@ class SSHComputers {
     if (this.status.get(id)?.kind !== 'confirmHostKey' || !lines) return
     try {
       await fs.mkdir(dataDir, { recursive: true, mode: 0o700 })
-      await fs.appendFile(join(dataDir, 'ssh_known_hosts'), lines.join('\n') + '\n', { mode: 0o600 })
+      await fs.appendFile(codyncKnownHosts(dataDir), lines.join('\n') + '\n', { mode: 0o600 })
     } catch (e) {
       return this.setStatus(id, { kind: 'failed', message: `Couldn't save the host key: ${e instanceof Error ? e.message : String(e)}` })
     }
@@ -344,7 +181,7 @@ class SSHComputers {
     const id = profile.id
     const stop = (status: SSHStatus): Outcome => ({ kind: 'stop', status })
     const idle = stop({ kind: 'idle' })
-    const problem = validate(profile)
+    const problem = missingTools() ?? validate(profile)
     if (problem) return stop({ kind: 'failed', message: problem })
     this.setStatus(id, { kind: 'connecting', step: 'Reading SSH settings…' })
     const config = await run(SSH, resolveArguments(profile))
@@ -354,13 +191,13 @@ class SSHComputers {
     const name = knownHostsName(resolved)
 
     // Host key (never by reading ssh's error text).
-    if ((await this.recordedKeys(name)).size === 0) {
+    const recorded = await this.recordedKeys(name)
+    if (recorded.size === 0) {
       if (usesProxy(resolved)) {
         return stop({ kind: 'failed', message: `${profile.host} goes through a jump host. Connect once with ssh in Terminal to confirm its host key, then try again.` })
       }
       this.setStatus(id, { kind: 'connecting', step: 'Reading the host key…' })
-      const scan = await run(KEYSCAN, keyscanArguments(resolved))
-      const lines = knownHostsLines(scan.stdout, name)
+      const lines = knownHostsLines(await scanHostKeys(resolved), name)
       if (lines.length === 0) return { kind: 'retry', message: `Can't reach ${resolved.hostname}:${resolved.port}.` }
       const prints = await run(KEYGEN, ['-l', '-f', '-'], lines.join('\n') + '\n')
       const fingerprints = prints.stdout.split(/\r?\n/).filter(Boolean)
@@ -374,8 +211,10 @@ class SSHComputers {
     if (token.cancelled) return idle
     if (result.status === 255) {
       if (authRefused(result.stderr)) return stop({ kind: 'failed', message: signInRefused(profile) })
-      if (!usesProxy(resolved)) {
-        const current = hostKeys((await run(KEYSCAN, keyscanArguments(resolved))).stdout)
+      // Windows reads only the one key the host presents, which needn't be the pinned key's type.
+      if (!usesProxy(resolved) && process.platform !== 'win32') {
+        const scan = await run(KEYSCAN, keyscanArguments(resolved))
+        const current = hostKeys(scan.stdout)
         // Only plain host keys can be compared: a `@cert-authority` key is never what keyscan returns.
         const pinned = await this.recordedKeys(name, false)
         if (current.size > 0 && pinned.size > 0 && ![...current].some((k) => pinned.has(k))) {
@@ -429,7 +268,7 @@ class SSHComputers {
       }
       // /health is public, so the answer alone doesn't prove it came through ssh: another
       // local user could have taken the port. Only a listener ssh owns gets the token.
-      const listens = child.pid !== undefined && (await sshListens(child.pid, port))
+      const listens = child.pid !== undefined ? await sshListens(child.pid, port) : false
       // Disconnected, removed or edited meanwhile: this attempt must not register its tunnel.
       if (token.cancelled) {
         child.kill()
@@ -473,7 +312,7 @@ class SSHComputers {
     let done = false
     let child: ChildProcess
     try {
-      child = spawn(SSH, tunnelArguments(profile, localPort, home, dataDir), { stdio: ['ignore', 'ignore', 'pipe'] })
+      child = spawn(SSH, tunnelArguments(profile, localPort, home, dataDir), { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
     } catch {
       return null
     }

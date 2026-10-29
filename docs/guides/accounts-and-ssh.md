@@ -225,15 +225,20 @@ revealed its code.
 
 SSH computers use the system OpenSSH (`apps/desktop/src/main/ssh.ts`): `ssh -G` to
 resolve the target, `ssh-keygen -F` against `~/.ssh/known_hosts` and
-`~/.codync/ssh_known_hosts`, a fingerprint confirmation on first contact (no proxy),
+`~/.codync/ssh_known_hosts`, a fingerprint confirmation on first contact (no proxy; the key comes
+from `ssh-keyscan`, on Windows from `ssh` itself, since its `ssh-keyscan` can't negotiate with current servers),
 `codync-host info --json` for the identity and loopback token, then
 `ssh -N -L 127.0.0.1:<free port>:127.0.0.1:<remote port>` with keepalive and backoff.
 A changed host key or a different computer ID blocks the connection. Sign-in is key or
 ssh-agent only (`BatchMode`: nothing prompts for a password or passphrase); a refused key
 stops with a message instead of retrying. The remote command searches Homebrew,
 `~/.local/bin` and the Mac app bundle for `codync-host` too, since `sh -l` doesn't read
-`~/.zprofile`. At launch the app kills tunnels a crashed or force-quit copy left behind
-(`pkill` on the `.codync/ssh_known_hosts` argument only Codync's tunnels carry).
+`~/.zprofile`. At launch the app removes tunnels a crashed or force-quit copy left behind.
+Unix uses `pkill` with this app's exact data directory and `ssh_known_hosts` path,
+so development sandboxes stay separate. Windows inspects native OpenSSH
+processes and terminates only tunnels whose executable and quoted known-hosts
+path match this app. It uses Windows' OpenSSH Client feature and the device's
+existing SSH config and agent.
 
 *Over SSH* also offers the `Host` entries of `~/.ssh/config` and the files it `Include`s
 (`main/ssh-config.ts`, parser in `shared/ssh-config.ts`): named hosts only, not patterns, `Match`

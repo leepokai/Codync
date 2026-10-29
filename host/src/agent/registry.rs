@@ -16,7 +16,7 @@ use std::time::Duration;
 
 const URL: &str = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 /// Upstream updates hourly; once a day is plenty for picking agents.
-const REFRESH_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+const REFRESH_EVERY: Duration = Duration::from_hours(24);
 
 static CACHE: Mutex<Option<Value>> = Mutex::new(None);
 
@@ -44,6 +44,12 @@ pub fn agents() -> Vec<Value> {
 
 pub fn agent(id: &str) -> Option<Value> {
     agents().into_iter().find(|a| a["id"] == id)
+}
+
+/// Replaces the registry for a test, which serializes on `TestSearchPath` and puts `None` back.
+#[cfg(test)]
+pub(crate) fn set_cache(registry: Option<Value>) {
+    *CACHE.locked() = registry;
 }
 
 pub async fn refresh_loop() {
@@ -144,7 +150,26 @@ pub struct Cmd {
 impl Cmd {
     /// The shell command that starts it over ACP stdio.
     pub fn acp(&self) -> String {
-        format!("{} {}", self.program, self.args)
+        if self.args.is_empty() { self.program.clone() } else { format!("{} {}", self.program, self.args) }
+    }
+}
+
+/// One way to start an agent. A registry build is resolved only when it's tried: that can mean a
+/// download, which an installed CLI that starts never needs.
+pub enum Candidate {
+    /// Runs as it is: an installed CLI's own ACP mode, or a bot's own command.
+    Ready(Cmd),
+    /// A registry agent, downloaded first if needed.
+    Build(Value),
+}
+
+impl Candidate {
+    /// `progress` receives short status lines ("Downloading Cursor…").
+    pub async fn resolve(self, progress: impl Fn(&str)) -> Result<Cmd> {
+        match self {
+            Self::Ready(cmd) => Ok(cmd),
+            Self::Build(agent) => command(&agent, progress).await,
+        }
     }
 }
 
@@ -215,7 +240,7 @@ async fn prepare_npx(package: &str, name: &str, progress: &impl Fn(&str)) -> Res
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
         .output();
-    let failure = match tokio::time::timeout(Duration::from_secs(20 * 60), install).await {
+    let failure = match tokio::time::timeout(Duration::from_mins(20), install).await {
         Ok(Ok(out)) if out.status.success() => return Ok(()),
         Ok(Ok(out)) => npm_error(&String::from_utf8_lossy(&out.stderr)).to_owned(),
         Ok(Err(e)) => format!("{e}"),
@@ -284,7 +309,7 @@ async fn install_binary(agent: &Value, target: &Value, cmd: &Path, progress: &im
     progress(&format!("Downloading {}…", agent["name"].as_str().unwrap_or(id)));
     let bytes = crate::http()
         .get(url)
-        .timeout(Duration::from_secs(600))
+        .timeout(Duration::from_mins(10))
         .send()
         .await?
         .error_for_status()?

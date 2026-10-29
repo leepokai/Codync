@@ -3,16 +3,21 @@ package com.codync.android
 import android.app.Activity
 import com.clerk.api.Clerk
 import com.clerk.api.ClerkConfigurationOptions
+import com.clerk.api.hostedauth.HostedAuthCancellationException
 import com.clerk.api.network.serialization.ClerkResult
 import com.clerk.api.network.serialization.errorMessage
 import com.clerk.api.session.Session
 import com.clerk.api.sso.OAuthProvider
+import com.clerk.api.sso.SSOCancellationException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.io.IOException
+
+/** A sign-in that ended without an account, and why. */
+internal class SignInError(val reason: SignInFailure, message: String, cause: Throwable? = null) : IOException(message, cause)
 
 data class SavedAccount(val userId: String, val sessionId: String, val email: String, val avatar: String?)
 data class AccountState(val ready: Boolean = false, val configured: Boolean = NativeAccounts.configured,
@@ -36,20 +41,24 @@ object NativeAccounts {
                 .mapNotNull { session -> session.user?.let { user -> SavedAccount(user.id, session.id,
                     user.primaryEmailAddress?.emailAddress ?: "Codync account", user.imageUrl.takeIf { it.startsWith("https://") }) } }
                 .distinctBy(SavedAccount::userId)
-            val selectedId = selected?.takeIf { it.status == Session.SessionStatus.ACTIVE && it.expireAt > System.currentTimeMillis() }?.user?.id
-            AccountState(ready, true, selectedId, accounts, multiple,
+            AccountState(ready, true, selected?.usableUserId(), accounts, multiple,
                 if (error != null && !ready) "Couldn't restore sign-in. Check your connection and retry." else null)
         }.collect { update(it) }
     }
+
+    /** The signed-in account right now; `observe` reports the same once its flows catch up. */
+    fun activeUserId(): String? = if (configured) Clerk.activeSession?.usableUserId() else null
+
+    private fun Session.usableUserId(): String? = takeIf { it.status == Session.SessionStatus.ACTIVE && it.expireAt > System.currentTimeMillis() }?.user?.id
 
     suspend fun signIn(apple: Boolean) {
         require(Clerk.isInitialized.value) { "Wait for sign-in to finish loading." }
         val result = Clerk.auth.signInWithOAuth(if (apple) OAuthProvider.APPLE else OAuthProvider.GOOGLE)
         when (result) {
-            is ClerkResult.Failure -> throw IOException(result.errorMessage)
+            is ClerkResult.Failure -> throw signInError(result)
             is ClerkResult.Success -> {
                 val sessionId = result.value.signIn?.createdSessionId ?: result.value.signUp?.createdSessionId
-                require(sessionId != null) { "Sign-in needs additional verification. Continue using the other sign-in options." }
+                    ?: throw SignInError(SignInFailure.Verification, "Sign-in needs additional verification. Continue using the other sign-in options.")
                 val activated = Clerk.auth.setActive(sessionId)
                 requireSuccess(activated)
             }
@@ -58,7 +67,17 @@ object NativeAccounts {
 
     suspend fun hostedSignIn() {
         val result = Clerk.auth.startHostedAuth()
-        requireSuccess(result)
+        if (result is ClerkResult.Failure) throw signInError(result)
+    }
+
+    private fun signInError(failure: ClerkResult.Failure<com.clerk.api.network.model.error.ClerkErrorResponse>): SignInError {
+        val cause = failure.throwable
+        val reason = when {
+            cause is SSOCancellationException || cause is HostedAuthCancellationException -> SignInFailure.Cancelled
+            cause?.isTimeout == true -> SignInFailure.Timeout
+            else -> SignInFailure.Error
+        }
+        return SignInError(reason, failure.errorMessage, cause)
     }
 
     suspend fun switch(account: SavedAccount) {

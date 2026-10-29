@@ -27,7 +27,8 @@ import com.codync.android.design.*
  */
 @Composable internal fun PlainInput(text: String, onChange: (String) -> Unit, prompt: String, modifier: Modifier = Modifier,
     secret: Boolean = false, style: TextStyle = Type.body, minLines: Int = 1, maxLines: Int = 1, enabled: Boolean = true) {
-    BasicTextField(text, onChange, modifier.fillMaxWidth().semantics { contentDescription = prompt }, enabled = enabled,
+    val hint = tr(prompt)
+    BasicTextField(text, onChange, modifier.fillMaxWidth().semantics { contentDescription = hint }, enabled = enabled,
         singleLine = maxLines == 1, minLines = minLines, maxLines = maxLines, textStyle = style.copy(color = Palette.text),
         cursorBrush = SolidColor(Palette.accent),
         visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
@@ -35,7 +36,7 @@ import com.codync.android.design.*
             keyboardType = if (secret) KeyboardType.Password else KeyboardType.Text),
         decorationBox = { field ->
             Box(contentAlignment = Alignment.CenterStart) {
-                if (text.isEmpty()) Text(prompt, style = style, color = Palette.tertiary, maxLines = maxLines)
+                if (text.isEmpty()) Text(hint, style = style, color = Palette.tertiary, maxLines = maxLines)
                 field()
             }
         })
@@ -44,7 +45,7 @@ import com.codync.android.design.*
 /** A small caption over a field (iOS `CredentialFieldRow`). */
 @Composable internal fun FieldRow(title: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = Type.caption, color = Palette.secondary)
+        Text(tr(title), style = Type.caption, color = Palette.secondary)
         content()
     }
 }
@@ -53,9 +54,9 @@ import com.codync.android.design.*
 @Composable internal fun NotedInput(text: String, onChange: (String) -> Unit, prompt: String, note: String?, secret: Boolean = false) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         PlainInput(text, onChange, prompt, secret = secret)
-        if (note != null) Text(note, style = Type.caption, color = Palette.secondary)
+        if (note != null) Text(tr(note), style = Type.caption, color = Palette.secondary)
     }
 }
 
 /** An error inside a card. */
-@Composable internal fun ErrorRow(text: String) = Text(text, style = Type.body, color = Palette.danger)
+@Composable internal fun ErrorRow(text: String) = Text(tr(text), style = Type.body, color = Palette.danger)

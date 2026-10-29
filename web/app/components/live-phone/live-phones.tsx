@@ -4,9 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import Phone from "../phone";
 import { approvalReply, initialChats, scriptedReply, type Chat, type Entry } from "./data";
+import { ease } from "../motion";
 import { Roster, SCREEN, StatusBar, Thread } from "./screens";
 
-const ease = [0.16, 1, 0.3, 1] as const;
 /** iOS push/pop: the new screen slides in over the old one, which drifts left. */
 const push = { type: "spring", duration: 0.5, bounce: 0 } as const;
 

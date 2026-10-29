@@ -84,19 +84,31 @@ class LocalStore(context: Context, val contextId: String = "local") {
         check(directory.mkdirs()) { "Couldn't create new local storage." }
     }
 
-    private fun write(file: AtomicFile, bytes: ByteArray) {
-        val output = file.startWrite()
-        try { output.write(bytes); file.finishWrite(output) }
-        catch (error: Throwable) { file.failWrite(output); throw error }
-    }
-
     companion object {
+        private fun write(file: AtomicFile, bytes: ByteArray) {
+            val output = file.startWrite()
+            try { output.write(bytes); file.finishWrite(output) }
+            catch (error: Throwable) { file.failWrite(output); throw error }
+        }
+
+        /** Every account's folder (signed out included), by its scope id. */
+        private fun scopes(context: Context): List<File> =
+            context.noBackupFilesDir.listFiles()?.filter { it.isDirectory && it.name.matches(Regex("[a-f0-9]{64}")) }.orEmpty()
+
+        /** Push switched off on every account's saved computers (`PushPreferences.splitSwitch`). */
+        fun pushOffEverywhere(context: Context) {
+            val json = Json { ignoreUnknownKeys = true }
+            for (file in scopes(context).map { AtomicFile(File(it, "computers.json")) }.filter { it.baseFile.exists() }) {
+                val computers = json.decodeFromString<List<Computer>>(file.readFully().toString(Charsets.UTF_8))
+                write(file, json.encodeToString(computers.map { it.copy(notifications = false) }).toByteArray())
+            }
+        }
+
         fun referenceId(contextId: String): String = if (contextId == "local") "local" else MessageDigest.getInstance("SHA-256")
             .digest(contextId.toByteArray()).joinToString("") { "%02x".format(it) }
         /** Reset includes inactive accounts and their wrapping keys, never host data. */
         fun eraseAll(context: Context) {
-            context.noBackupFilesDir.listFiles()?.filter { it.isDirectory && it.name.matches(Regex("[a-f0-9]{64}")) }
-                ?.forEach { check(it.deleteRecursively()) { "Couldn't erase local account data." } }
+            scopes(context).forEach { check(it.deleteRecursively()) { "Couldn't erase local account data." } }
             val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             keys.aliases().toList().filter { it.startsWith("codync.identity.") }.forEach(keys::deleteEntry)
         }

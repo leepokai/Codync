@@ -1,5 +1,5 @@
 import { ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { SSHBridge, SSHState } from '../shared/ssh'
+import type { SSHBridge, SSHConfigHosts, SSHState } from '../shared/ssh'
 
 /** `window.codync.ssh`: SSH computers, run by the main process (main/ssh.ts). */
 export const sshBridge: SSHBridge = {
@@ -15,4 +15,6 @@ export const sshBridge: SSHBridge = {
   disconnect: (id) => ipcRenderer.send('ssh:disconnect', id),
   trustHostKey: (id) => ipcRenderer.send('ssh:trustHostKey', id),
   chooseKey: () => ipcRenderer.invoke('ssh:chooseKey') as Promise<string | null>,
+  configHosts: () => ipcRenderer.invoke('ssh:configHosts') as Promise<SSHConfigHosts>,
+  setConfigAccess: (access) => ipcRenderer.invoke('ssh:setConfigAccess', access) as Promise<SSHConfigHosts>,
 }

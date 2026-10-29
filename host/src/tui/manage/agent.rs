@@ -7,6 +7,11 @@ use super::super::app::{After, App, Editor, Overlay};
 use super::{AgentSetup, Fields, Input, Reply, SetupRow, Submit, ctrl, s};
 
 impl App {
+    /// What the user calls agent `id` on this computer ("Claude Code").
+    pub fn agent_name(&self, id: &str) -> String {
+        self.backends.iter().find(|b| b["id"] == id).and_then(|b| b["name"].as_str()).unwrap_or(id).to_owned()
+    }
+
     /// `recheck`: opened from a chat's sign-in request, whose agent refused a turn, so the agent
     /// is asked again however signed in it looked.
     pub fn open_agent(&mut self, backend: &str, recheck: bool) {
@@ -14,11 +19,23 @@ impl App {
         // An agent without its Node.js can't start, so there's nothing to ask it yet.
         let known = b.is_some_and(|b| (b["signedIn"] == true && !recheck) || b["node"] == "missing");
         let mut a = AgentSetup { backend: backend.to_owned(), auth: None, busy: false, cursor: 0, error: None };
-        if !known {
+        // Opening never downloads an agent: one not set up waits for Set up.
+        if !known && (recheck || self.agent_set_up(&a)) {
             a.busy = true;
             self.sheet("agentAuth", json!({"backend": backend}), Reply::Auth(backend.to_owned()));
         }
         self.overlays.push(Overlay::Agent(a));
+    }
+
+    /// It has run on this computer: its CLI is there, or an earlier check started it. Until then, a
+    /// check can download it, so only Set up starts one.
+    pub fn agent_set_up(&self, a: &AgentSetup) -> bool {
+        a.auth.is_some()
+            || self
+                .backends
+                .iter()
+                .find(|b| b["id"] == a.backend.as_str())
+                .is_some_and(|b| b["installed"] == true || !b["signedIn"].is_null())
     }
 
     pub fn agent_rows(&self, a: &AgentSetup) -> Vec<SetupRow> {
@@ -41,6 +58,7 @@ impl App {
             }
         }
         rows.push(SetupRow::Check);
+        rows.push(SetupRow::Brings);
         rows
     }
 
@@ -85,6 +103,11 @@ impl App {
                             );
                         }
                     },
+                    Some(SetupRow::Brings) => {
+                        self.overlays.push(Overlay::Agent(a));
+                        self.open_agent_gear(&backend);
+                        return None;
+                    }
                     Some(SetupRow::Check) | None => {
                         a.busy = true;
                         a.error = None;

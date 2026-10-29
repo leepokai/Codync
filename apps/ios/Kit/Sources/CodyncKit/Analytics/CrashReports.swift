@@ -3,10 +3,11 @@ import MetricKit
 
 /// Crashes as `$exception` events for PostHog Error Tracking. MetricKit hands the app its own
 /// crash reports on the next launch; each becomes one event with the exception and signal names
-/// and binary + offset frames, never a message, reason or memory detail.
+/// and code addresses, never a message, reason or memory detail.
 public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
     public static let shared = CrashReports()
-    private static let maxFrames = 50
+    /// A SwiftUI update alone runs dozens of frames deep: fewer would cut off the app's own.
+    private static let maxFrames = 200
 
     /// Subscribes once, at app launch (widgets and the notification extension never do).
     public func start() {
@@ -20,50 +21,74 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
         }
         guard !events.isEmpty else { return }
         Task { @MainActor in
-            events.forEach { Analytics.shared.record("$exception", $0) }
+            events.forEach { Analytics.shared.recordCrash($0) }
             Analytics.shared.flush()
         }
     }
 
     /// The `$exception` properties for one crash.
     static func properties(callStack: Data, exceptionType: Int?, signal: Int?, appVersion: String) -> [String: Analytics.Value] {
+        let (frames, images) = stack(callStack)
         let exception: [String: Analytics.Value] = [
             "type": .string(exceptionType.flatMap { machExceptions[$0] } ?? "Crash"),
             "value": .string(signal.flatMap { signals[$0] } ?? ""),
             "mechanism": .object(["type": .string("metrickit"), "handled": .bool(false), "synthetic": .bool(false)]),
-            "stacktrace": .object(["type": .string("raw"), "frames": .array(frames(callStack))]),
+            "stacktrace": .object(["type": .string("raw"), "frames": .array(frames)]),
         ]
-        return [
+        var properties: [String: Analytics.Value] = [
             "$exception_list": .array([.object(exception)]),
             "$exception_level": .string("fatal"),
             "process": .string("ios"),
             "app_version": .string(appVersion),
         ]
+        if !images.isEmpty { properties["$debug_images"] = .array(images) }
+        return properties
     }
 
-    /// The crashed thread's frames, oldest first and the crashing frame last (PostHog's order).
-    static func frames(_ callStack: Data) -> [Analytics.Value] {
+    /// The crashed thread's frames as PostHog `apple` frames, oldest first and the crashing frame
+    /// last (PostHog's order), and the binaries they ran in. PostHog symbolicates them with the
+    /// dSYMs each release uploads (tools/upload-dsyms.py); a frame it can't resolve (the system's)
+    /// keeps its `binary + offset` name.
+    static func stack(_ callStack: Data) -> (frames: [Analytics.Value], images: [Analytics.Value]) {
         guard let tree = try? JSONDecoder().decode(Tree.self, from: callStack),
-              let stack = tree.callStacks.first(where: { $0.threadAttributed == true }) ?? tree.callStacks.first
-        else { return [] }
+              let thread = tree.callStacks.first(where: { $0.threadAttributed == true }) ?? tree.callStacks.first
+        else { return ([], []) }
         // Root frame is where it crashed; each first sub-frame is its caller.
         var walk: [Frame] = []
-        var next = stack.callStackRootFrames.first
+        var next = thread.callStackRootFrames.first
         while let frame = next, walk.count < maxFrames {
             walk.append(frame)
             next = frame.subFrames?.first
         }
-        return walk.reversed().map { frame in
+        var frames: [Analytics.Value] = []
+        var images: [Analytics.Value] = []
+        var loaded: Set<UInt64> = []
+        for frame in walk.reversed() {
             let binary = frame.binaryName ?? "???"
-            return .object([
-                "platform": .string("custom"),
-                "lang": .string("swift"),
-                "function": .string("\(binary) + \(frame.offsetIntoBinaryTextSegment ?? 0)"),
+            let offset = frame.offsetIntoBinaryTextSegment ?? 0
+            var apple: [String: Analytics.Value] = [
+                "platform": .string("apple"),
+                "function": .string("\(binary) + \(offset)"),
                 "module": .string(binary),
-                "resolved": .bool(false),
                 "in_app": .bool(binary.hasPrefix("Codync")),
-            ])
+            ]
+            // Pointer authentication bits off (arm64e); the binary was loaded at address - offset.
+            if let address = frame.address.map({ $0 & 0xF_FFFF_FFFF }), offset <= address {
+                let base = address - offset
+                apple["instruction_addr"] = .string(hex(address))
+                apple["image_addr"] = .string(hex(base))
+                // PostHog matches the dSYM by its UUID in this exact form (uppercase, dashed).
+                if let uuid = frame.binaryUUID.flatMap(UUID.init(uuidString:)), loaded.insert(base).inserted {
+                    images.append(.object(["type": .string("macho"), "debug_id": .string(uuid.uuidString), "image_addr": .string(hex(base))]))
+                }
+            }
+            frames.append(.object(apple))
         }
+        return (frames, images)
+    }
+
+    private static func hex(_ address: UInt64) -> String {
+        "0x" + String(address, radix: 16)
     }
 
     private struct Tree: Decodable {
@@ -77,7 +102,9 @@ public final class CrashReports: NSObject, MXMetricManagerSubscriber, Sendable {
 
     private struct Frame: Decodable {
         let binaryName: String?
-        let offsetIntoBinaryTextSegment: Int?
+        let binaryUUID: String?
+        let address: UInt64?
+        let offsetIntoBinaryTextSegment: UInt64?
         let subFrames: [Frame]?
     }
 

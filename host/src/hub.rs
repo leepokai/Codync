@@ -7,7 +7,7 @@ use crate::remote::identity::Identity;
 use crate::remote::push;
 use crate::screen::Screen;
 use crate::service;
-use crate::store::{BotConfig, Entry, EntryKind, Lane, ReadScope, Store};
+use crate::store::{BotConfig, Entry, EntryKind, Lane, Store};
 use crate::usage::Usage;
 use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
@@ -19,7 +19,10 @@ use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 
 mod order;
+mod reactions;
 mod sync;
+mod validate;
+pub(crate) use validate::validate;
 
 /// What a bot is doing right now (wire values: `idle` / `working` / `needsInput` / `error`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -37,19 +40,47 @@ pub struct Runtime {
     pub status: BotStatus,
     pub activity: String,
     pub started_at: Option<i64>,
-    /// Where the running turn talks: its own chat, a thread, or a group.
+    /// Where the running turn talks: its own chat or a group.
     pub lane: Option<Lane>,
+    /// The user's message that started the running turn, typed in the bot's own chat; `None` for a turn a routine,
+    /// a room, another bot or the host started. Memory cites it as where a fact was learned, and only such a turn
+    /// may change or take out what memory says.
+    pub message: Option<String>,
+    /// The ACP session the running turn prompts. A memory write made there is one that session already knows.
+    pub session: Option<String>,
     pub fast_mode: crate::agent::config::FastModeSupport,
+    /// The fallback the bot is on; `None` on its own agent (see `agent::fallback`).
+    pub agent_step: Option<AgentStep>,
 }
 
-/// Reactions per message: a handful of distinct emoji.
-const MAX_REACTIONS: usize = 8;
+/// The bot runs on one of its fallbacks: which, since when, and why it left the agent before.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStep {
+    pub step: usize,
+    pub agent: String,
+    pub model: Option<String>,
+    pub since: i64,
+    pub reason: Option<crate::agent::fallback::Reason>,
+}
+
+impl AgentStep {
+    pub fn new(cfg: &BotConfig, step: usize, reason: Option<crate::agent::fallback::Reason>) -> Self {
+        Self { step, agent: cfg.backend.clone(), model: cfg.model.clone(), since: crate::store::now_ms(), reason }
+    }
+}
 
 pub struct Hub {
     pub analytics: crate::analytics::Analytics,
     pub routines: crate::routines::Routines,
     pub team: crate::chat::team::Requests,
     pub groups: crate::chat::group::Rooms,
+    /// The user's other computers (codync-network), once this one is in a network.
+    pub network: crate::network::Network,
+    /// Requests this computer's bots sent to bots on the other computers, until they're answered.
+    pub waiting: crate::chat::team::remote::Waiting,
+    /// The user's cloud assistant: its requests to this computer's bots and their replies.
+    pub assistant: crate::chat::team::assistant::Replies,
     pub store: Store,
     pub host_id: String,
     pub identity: Identity,
@@ -93,6 +124,9 @@ impl Hub {
             routines: crate::routines::Routines::default(),
             team: crate::chat::team::Requests::default(),
             groups: crate::chat::group::Rooms::default(),
+            network: crate::network::Network::default(),
+            waiting: crate::chat::team::remote::Waiting::default(),
+            assistant: crate::chat::team::assistant::Replies::default(),
             store,
             host_id,
             identity,
@@ -118,6 +152,7 @@ impl Hub {
     pub fn start(self: &Arc<Self>) -> Result<()> {
         // Approval cards and queued sends from a previous run can't be honored anymore.
         self.store.expire_pending()?;
+        crate::chat::memory::import_old_memory(self);
         self.routines.restore(&self.store)?;
         crate::market::turn_on_installed_once(&self.store)?;
         for row in self.store.bots()? {
@@ -127,6 +162,7 @@ impl Hub {
                 self.spawn_bot(row.config);
             }
         }
+        crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::analytics::start(self);
         Ok(())
@@ -169,7 +205,7 @@ impl Hub {
     }
 
     /// A group is busy while one of its members works in it: that member's status and activity.
-    fn group_runtime(&self, group: &BotConfig) -> Runtime {
+    pub fn group_runtime(&self, group: &BotConfig) -> Runtime {
         let busy = {
             let runtime = self.runtime.locked();
             group.members.iter().find_map(|m| {
@@ -200,14 +236,17 @@ impl Hub {
                 return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
             }
         }
+        crate::agent::fallback::tidy(&mut cfg);
         validate(&cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
         {
             let _g = self.emit_lock.locked();
             self.store.save_bot(&cfg)?;
         }
+        crate::network::publish(self);
         if !cfg.is_group() {
             self.spawn_bot(cfg.clone());
+            crate::market::agent_sign_in::ask_before_first_message(self, &cfg);
         }
         self.emit_bot(&cfg.id);
         Ok(self.bot_value(&cfg.id).unwrap_or(Value::Null))
@@ -218,7 +257,7 @@ impl Hub {
         let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
         let mut merged = serde_json::to_value(&row.config)?;
         for (k, v) in patch.as_object().into_iter().flatten() {
-            if k != "id" && k != "createdAt" {
+            if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead") {
                 merged[k] = v.clone();
             }
         }
@@ -240,13 +279,19 @@ impl Hub {
         if cfg.is_group() {
             cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
         }
+        crate::agent::fallback::tidy(&mut cfg);
         validate(&cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
+        crate::agent::own_memory::settle(&mut cfg, &row.config, patch);
         {
             let _g = self.emit_lock.locked();
             self.store.save_bot(&cfg)?;
         }
+        crate::network::publish(self);
         if !cfg.is_group() {
+            if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&row.config) {
+                crate::chat::memory::changed(self, Some(&id));
+            }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }
         self.emit_bot(&id);
@@ -254,8 +299,9 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
+        crate::chat::lead::may_delete(&self.store, id)?;
         self.routines.disable_bot(&self.store, id)?;
-        self.team.cancel_bot(id);
+        self.team.end_turn(id);
         self.groups.stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
@@ -266,13 +312,18 @@ impl Hub {
             let _ =
                 self.events.send(json!({"type": "bot", "rev": rev, "bot": {"id": id, "deleted": true, "rev": rev}}));
         }
-        // Its shared files are unreachable once the bot is deleted.
-        let files = crate::chat::files::root(id);
+        crate::network::publish(self);
+        // Its shared files and artifacts are unreachable once the bot is deleted.
+        let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];
+        let bot = id.to_owned();
         tokio::task::spawn_blocking(move || {
-            if let Err(error) = std::fs::remove_dir_all(&files)
-                && error.kind() != std::io::ErrorKind::NotFound
-            {
-                tracing::warn!(error = %error, "couldn't remove a deleted bot's shared files");
+            crate::chat::memory::files::remove_bot(&bot);
+            for folder in folders {
+                if let Err(error) = std::fs::remove_dir_all(&folder)
+                    && error.kind() != std::io::ErrorKind::NotFound
+                {
+                    tracing::warn!(error = %error, "couldn't remove a deleted bot's shared files or artifacts");
+                }
             }
         });
         // A deleted bot leaves its groups; what it said there stays.
@@ -291,38 +342,16 @@ impl Hub {
     }
 
     /// Marks what the user has seen as read. Nothing unread there is a no-op, so clients
-    /// may call it whenever a chat or thread is on screen.
-    pub fn mark_read(&self, id: &str, scope: ReadScope) -> Result<()> {
+    /// may call it whenever a chat is on screen.
+    pub fn mark_read(&self, id: &str) -> Result<()> {
         let Some(row) = self.store.bot(id)? else { bail!("unknown bot") };
-        if let ReadScope::Thread(root) = scope
-            && !self.store.entry(root).is_some_and(|r| r.bot_id == id && r.thread_id.is_none())
-        {
-            bail!("unknown thread");
-        }
-        // A thread gets its own read mark the first time, or the main chat's would cover it.
-        let first = matches!(scope, ReadScope::Thread(root) if self.store.kv_get(&format!("read.{root}")).is_none());
-        if !first && self.store.unread(id, row.read_rev, scope) == 0 {
+        if self.store.unread(id, row.read_rev) == 0 {
             return Ok(());
         }
-        let roots = match scope {
-            ReadScope::All => self.store.unread_roots(id),
-            ReadScope::Thread(root) => vec![root.to_owned()],
-            ReadScope::Chat => Vec::new(),
-        };
-        {
-            let _g = self.emit_lock.locked();
-            match scope {
-                ReadScope::All => self.store.mark_all_read(id)?,
-                ReadScope::Chat => self.store.mark_read(id)?,
-                ReadScope::Thread(root) => self.store.mark_thread_read(id, root)?,
-            };
-            // Before the summaries' later revs: a client resuming after them must not miss the row.
-            if let Some(v) = self.bot_value(id) {
-                let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
-            }
-        }
-        for root in roots {
-            self.refresh_thread_summary(id, &root);
+        let _g = self.emit_lock.locked();
+        self.store.mark_read(id)?;
+        if let Some(v) = self.bot_value(id) {
+            let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
         }
         Ok(())
     }
@@ -334,6 +363,13 @@ impl Hub {
 
     fn bot_value(&self, id: &str) -> Option<Value> {
         self.store.bot(id).ok().flatten().map(|r| self.bot_json(&r))
+    }
+
+    /// Saves a change that stamps its own rev and broadcasts the event `save` returns, in rev order.
+    pub fn emit_change(&self, save: impl FnOnce() -> Result<Value>) -> Result<()> {
+        let _g = self.emit_lock.locked();
+        let _ = self.events.send(save()?);
+        Ok(())
     }
 
     /// Bumps the bot's rev and broadcasts its current state.
@@ -358,6 +394,7 @@ impl Hub {
             || before.activity != after.activity
             || before.lane != after.lane
             || before.fast_mode != after.fast_mode
+            || before.agent_step != after.agent_step
         {
             self.emit_bot(id);
             // A group shows what its busy member is doing.
@@ -393,114 +430,69 @@ impl Hub {
     /// Persists and broadcasts a new transcript entry. A failed write is logged here
     /// (once) and yields `None`: the conversation goes on without that line.
     pub fn add_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Option<Entry> {
-        let added = {
-            let _g = self.emit_lock.locked();
-            match self.store.insert_entry(lane, kind, turn, data) {
-                Ok(e) => {
-                    let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
-                    Some(e)
-                }
-                Err(error) => {
-                    tracing::error!(
-                        error = format!("{error:#}"),
-                        chat = lane.chat,
-                        kind = kind.as_str(),
-                        "couldn't save transcript entry"
-                    );
-                    None
-                }
+        let _g = self.emit_lock.locked();
+        match self.store.insert_entry(lane, kind, turn, data) {
+            Ok(e) => {
+                let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+                Some(e)
             }
-        };
-        if let Some(e) = &added {
-            self.update_thread_summary(e);
+            Err(error) => {
+                tracing::error!(
+                    error = format!("{error:#}"),
+                    chat = lane.chat,
+                    kind = kind.as_str(),
+                    "couldn't save transcript entry"
+                );
+                None
+            }
         }
-        added
     }
 
-    pub fn add_entry_once(&self, id: &str, lane: &Lane, kind: EntryKind, data: &Value) -> Result<(Entry, bool)> {
-        let (entry, added) = {
-            let _guard = self.emit_lock.locked();
-            let (entry, added) = self.store.insert_entry_once(id, lane, kind, data)?;
-            if added {
-                let _ = self.events.send(json!({"type":"entry","rev":entry.rev,"entry":entry}));
-            }
-            (entry, added)
-        };
+    pub fn add_entry_once(
+        &self,
+        id: &str,
+        lane: &Lane,
+        kind: EntryKind,
+        turn: i64,
+        data: &Value,
+    ) -> Result<(Entry, bool)> {
+        let _guard = self.emit_lock.locked();
+        let (entry, added) = self.store.insert_entry_once(id, lane, kind, turn, data)?;
         if added {
-            self.update_thread_summary(&entry);
+            let _ = self.events.send(json!({"type":"entry","rev":entry.rev,"entry":entry}));
         }
         Ok((entry, added))
     }
 
     /// Updates and broadcasts an entry; failures are logged here, like [`Self::add_entry`].
     pub fn set_entry(&self, id: &str, data: &Value) -> Option<Entry> {
-        let updated = {
-            let _g = self.emit_lock.locked();
-            match self.store.update_entry(id, data) {
-                Ok(e) => {
-                    if let Some(e) = &e {
-                        let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
-                    }
-                    e
+        let _g = self.emit_lock.locked();
+        match self.store.update_entry(id, data) {
+            Ok(e) => {
+                if let Some(e) = &e {
+                    let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
                 }
-                Err(error) => {
-                    tracing::error!(error = format!("{error:#}"), entry = id, "couldn't update transcript entry");
-                    None
-                }
+                e
             }
-        };
-        if let Some(e) = &updated {
-            self.update_thread_summary(e);
+            Err(error) => {
+                tracing::error!(error = format!("{error:#}"), entry = id, "couldn't update transcript entry");
+                None
+            }
         }
-        updated
     }
 
-    /// Toggles the user's `emoji` reaction on a chat message (`data.reactions`, oldest first).
-    /// A message keeps `reactions: []` once reacted to, so it never turns unread again.
-    pub fn react(&self, id: &str, emoji: &str) -> Result<Entry> {
-        let emoji = emoji.trim();
-        if emoji.is_empty() || emoji.len() > 32 || emoji.chars().any(|c| c.is_alphanumeric() || c.is_whitespace()) {
-            bail!("`emoji` must be one emoji");
-        }
+    /// Changes part of an entry and broadcasts it, reading and writing under the emission lock: an edit made
+    /// meanwhile elsewhere (a reaction from another device) isn't written over. `edit` returns `false` to leave the
+    /// entry as it is.
+    pub fn edit_entry(&self, id: &str, edit: impl FnOnce(&mut Entry) -> Result<bool>) -> Result<Entry> {
+        let _g = self.emit_lock.locked();
         let mut e = self.store.entry(id).ok_or_else(|| anyhow!("unknown message"))?;
-        let visible =
-            e.kind == EntryKind::User.as_str() || (e.kind == EntryKind::Agent.as_str() && e.data["final"] == true);
-        if !visible {
-            bail!("only chat messages take reactions");
+        if !edit(&mut e)? {
+            return Ok(e);
         }
-        let mut reactions: Vec<String> = serde_json::from_value(e.data["reactions"].clone()).unwrap_or_default();
-        if let Some(i) = reactions.iter().position(|r| r == emoji) {
-            reactions.remove(i);
-        } else if reactions.len() >= MAX_REACTIONS {
-            bail!("a message takes at most {MAX_REACTIONS} reactions");
-        } else {
-            reactions.push(emoji.to_owned());
-        }
-        e.data["reactions"] = json!(reactions);
-        self.set_entry(id, &e.data).ok_or_else(|| anyhow!("couldn't save the reaction"))
-    }
-
-    /// A message in a thread refreshes the summary on its root (`data.thread`: reply count,
-    /// newest reply, who replied, unread replies), which the main chat shows under it.
-    fn update_thread_summary(&self, e: &Entry) {
-        let Some(root) = &e.thread_id else { return };
-        let visible =
-            e.kind == EntryKind::User.as_str() || (e.kind == EntryKind::Agent.as_str() && e.data["final"] == true);
-        if visible {
-            self.refresh_thread_summary(&e.bot_id, root);
-        }
-    }
-
-    fn refresh_thread_summary(&self, chat: &str, root: &str) {
-        let Some(mut root_entry) = self.store.entry(root) else { return };
-        match self.store.thread_summary(chat, root) {
-            Ok(summary) if root_entry.data["thread"] != summary => {
-                root_entry.data["thread"] = summary;
-                self.set_entry(root, &root_entry.data);
-            }
-            Ok(_) => {}
-            Err(error) => tracing::warn!(error = format!("{error:#}"), root, "couldn't summarize thread"),
-        }
+        let e = self.store.update_entry(id, &e.data)?.ok_or_else(|| anyhow!("unknown message"))?;
+        let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+        Ok(e)
     }
 
     pub fn set_usage(&self, usage: Usage) {
@@ -528,22 +520,4 @@ impl Hub {
     pub fn phone_connected(&self) -> bool {
         self.phone_clients.load(Ordering::Relaxed) > 0
     }
-}
-
-fn validate(cfg: &BotConfig) -> Result<()> {
-    if cfg.name.trim().is_empty() {
-        bail!("name is required");
-    }
-    if cfg.is_group() {
-        return Ok(());
-    }
-    if !cfg.cwd.is_empty() && !std::path::Path::new(&cfg.cwd).is_dir() {
-        bail!("workspace folder does not exist: {}", cfg.cwd);
-    }
-    if cfg.command.as_deref().map(str::trim).unwrap_or_default().is_empty()
-        && !crate::agent::backends::is_known(&cfg.backend)
-    {
-        bail!("unknown backend {}", cfg.backend);
-    }
-    Ok(())
 }

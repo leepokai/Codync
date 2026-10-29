@@ -32,9 +32,9 @@ pub const MAX_WS_MESSAGE: usize = 1 << 20;
 const MAX_INBOUND: usize = 1 << 20;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Channel keys are replaced (close `4011`) after this long.
-const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const MAX_AGE: Duration = Duration::from_hours(24);
 /// A pairing channel only lives long enough to redeem its code.
-const PAIRING_MAX_AGE: Duration = Duration::from_secs(120);
+const PAIRING_MAX_AGE: Duration = Duration::from_mins(2);
 const DIRECT_PING: Duration = Duration::from_secs(15);
 const MAX_REQUESTS: usize = 32;
 const MAX_SUBS: usize = 4;
@@ -202,7 +202,10 @@ pub async fn run(hub: Arc<Hub>, t: Transport, kind: ChannelKind) {
     let _ = ch.tx.send(ToDevice::Close(code, reason)).await;
     let hub = ch.hub.clone();
     drop(ch);
-    let _ = writer.await;
+    // `serve` already took the writer's end when it stopped first; polling it again panics.
+    if !writer.is_finished() {
+        let _ = writer.await;
+    }
     // Only now, with the answer and the `4100` handed to the transport: a relay publishes the
     // new ACL (offer gone) behind them on the same socket, so the pairing link isn't cut first.
     if code == close::PAIRED {
@@ -316,6 +319,7 @@ impl Online {
         if let Err(error) = hub.store.touch_device(&key) {
             tracing::warn!(error = format!("{error:#}"), "couldn't record when a device was last seen");
         }
+        crate::analytics::phone_connected(&hub, &key);
         Self(hub, key)
     }
 }
@@ -397,6 +401,9 @@ impl Channel {
         writer: &mut tokio::task::JoinHandle<()>,
     ) -> CloseWith {
         let mut auth = self.hub.auth.subscribe();
+        // A new relay address (or the relay on or off) reaches phones only in `hello`: reconnecting
+        // reads it again, over this route or the old relay while it is still up (`relay::MOVE_GRACE`).
+        let mut cloud = self.hub.cloud.config.subscribe();
         let rekey_at = Instant::now() + MAX_AGE;
         loop {
             let lease = self.lease;
@@ -430,6 +437,7 @@ impl Channel {
                     }
                 }
                 () = sleep_until(rekey_at) => return (close::REKEY, "rekey"),
+                _ = cloud.changed() => return (close::REKEY, "relay"),
                 _ = &mut *writer => return (close::NORMAL, ""),
             }
         }
@@ -596,6 +604,7 @@ impl Channel {
             return (close::NORMAL, "");
         }
         tracing::info!(device = self.key, platform, "device paired");
+        crate::analytics::device_paired(&self.hub, crate::analytics::Via::Qr, platform, false);
         let name = crate::service::host_name();
         self.send(json!({"id": id, "ok": {"computerId": self.hub.identity.computer_id(), "name": name}})).await;
         (close::PAIRED, "paired")
@@ -625,14 +634,16 @@ mod tests {
         rx: mpsc::Receiver<Out>,
         sealer: Option<Sealer>,
         opener: Option<Opener>,
+        /// The host's side of this channel.
+        run: tokio::task::JoinHandle<()>,
     }
 
     impl Phone {
         fn connect(hub: &Arc<Hub>, key: SigningKey, kind: ChannelKind) -> Self {
             let (tx, incoming) = mpsc::channel(64);
             let (outgoing, rx) = mpsc::channel(64);
-            tokio::spawn(run(hub.clone(), Transport { incoming, outgoing }, kind));
-            Self { key, tx, rx, sealer: None, opener: None }
+            let run = tokio::spawn(run(hub.clone(), Transport { incoming, outgoing }, kind));
+            Self { key, tx, rx, sealer: None, opener: None, run }
         }
 
         fn direct(hub: &Arc<Hub>, key: SigningKey) -> Self {
@@ -861,6 +872,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_new_relay_address_makes_phones_reconnect_and_read_it() {
+        let hub = temp_hub();
+        let key = paired_phone(&hub).await;
+        let mut p = Phone::direct(&hub, key);
+        p.hello(&hub, false).await;
+        assert!(p.call(1, "hello", json!({})).await["ok"].is_object());
+        hub.store.kv_set("test_cloud_url", "https://relay.example.com").unwrap();
+        hub.cloud.config.send_modify(|g| *g += 1);
+        let (code, _) = p.recv().await.unwrap_err();
+        assert_eq!(code, close::REKEY, "a rekey close reconnects at once on every client");
+        let key = paired_phone(&hub).await;
+        let mut again = Phone::direct(&hub, key);
+        again.hello(&hub, false).await;
+        assert_eq!(again.call(1, "hello", json!({})).await["ok"]["cloud"], "https://relay.example.com");
+    }
+
+    #[tokio::test]
     async fn account_devices_need_a_synced_live_lease() {
         let hub = temp_hub();
         let key = SigningKey::from_bytes(&crypto::random());
@@ -949,5 +977,18 @@ mod tests {
             last = Some(out);
         }
         assert!(matches!(last, Some(Out::Close(close::PAIRED, _))), "got {last:?}");
+    }
+
+    #[tokio::test]
+    async fn a_device_that_stops_reading_ends_the_channel_cleanly() {
+        let hub = temp_hub();
+        let key = paired_phone(&hub).await;
+        let mut p = Phone::direct(&hub, key);
+        p.hello(&hub, false).await;
+        assert_eq!(p.call(1, "hello", json!({})).await["id"], 1);
+        // The transport is gone: the next answer can't be written, so the writer ends first.
+        p.rx.close();
+        p.send(json!({"id": 2, "m": "hello", "b": {}})).await;
+        timeout(Duration::from_secs(5), p.run).await.expect("the channel ends").expect("without a panic");
     }
 }

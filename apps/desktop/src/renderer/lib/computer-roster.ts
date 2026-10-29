@@ -1,3 +1,13 @@
+import type { Bot } from '@shared/models'
+
+type Ranked = Pick<Bot, 'lead' | 'pinned' | 'position' | 'lastAt'>
+
+/** A bot's band in its computer's roster: the lead, then pinned bots, then the rest. A drag moves a bot only within its band. */
+export const rosterBand = (b: Pick<Bot, 'lead' | 'pinned'>) => (b.lead ? 0 : b.pinned ? 1 : 2)
+
+/** Roster order: by band, then where the user dragged them, then most recent activity. */
+export const rosterOrder = (a: Ranked, b: Ranked) => rosterBand(a) - rosterBand(b) || a.position - b.position || b.lastAt - a.lastAt
+
 /** Saved computers retain their order; newly connected computers follow them. */
 export function orderedComputers<T extends { id: string }>(computers: T[], order: string[]): T[] {
   const ranks = new Map(order.map((id, index) => [id, index]))

@@ -3,11 +3,12 @@ import { AppleLogo } from "./apple-logo";
 import Eyebrow from "./eyebrow";
 import Halftone from "./halftone";
 import Phone from "./phone";
+import Points, { type Point } from "./points";
 import Reveal from "./reveal";
 
 const agents = ["Claude Code", "Codex", "Cursor", "Gemini", "Copilot", "OpenCode", "Pi", "Grok Build"];
 
-const platforms = [
+const platforms: Point[] = [
   { icon: AppleLogo, title: "Mac", body: "A menu bar app with a chat window. Pairs your phone and installs the host itself." },
   { icon: WindowsLogo, title: "Windows", body: "The same desktop app, with a tray icon. It runs the host for you; Remote screen isn't there yet." },
   { icon: LinuxLogo, title: "Linux", body: "The same desktop app as the Mac (AppImage or deb), or just the host on a headless server or cloud VM." },
@@ -116,15 +117,7 @@ export function Features() {
                 One Rust host runs on all three, on your desk or, on Linux, on a server. Every client talks to the same host, so your
                 bots and chats are the same everywhere.
               </p>
-              <ul className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                {platforms.map(({ icon: Icon, title, body }) => (
-                  <li key={title}>
-                    <Icon size={24} weight="fill" className="text-neutral-50" />
-                    <p className="mt-3 font-medium text-neutral-50">{title}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-neutral-400">{body}</p>
-                  </li>
-                ))}
-              </ul>
+              <Points points={platforms} className="mt-8 sm:grid-cols-2 lg:grid-cols-4" weight="fill" />
             </div>
           </Reveal>
         </div>

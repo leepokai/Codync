@@ -1,5 +1,5 @@
 //! A real host driving scripted ACP agents: Stop on an agent that ignores it, room turns
-//! that a newer group message replaced, and Fast mode across session resumes.
+//! that a newer group message replaced, a reaction as the whole reply, and Fast mode across session resumes.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -28,7 +28,6 @@ impl Host {
     async fn start() -> Self {
         let home = std::env::temp_dir().join(format!("codync-turns-e2e-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        common::seed_memory_runtime(&home);
         let (child, base) = common::serve(&home).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
         Self { child, base, token, home }
@@ -75,6 +74,20 @@ impl Host {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
+
+    /// Polls until every bot is idle.
+    async fn wait_idle(&self) {
+        let deadline = Instant::now() + Duration::from_mins(1);
+        while common::snapshot(&self.base, &self.token).await["bots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["status"] != "idle")
+        {
+            assert!(Instant::now() < deadline, "a turn didn't finish");
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
 }
 
 fn python_missing() -> bool {
@@ -93,12 +106,12 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
     let host = Host::start().await;
     let bot = host.bot("Stuck", "tests/fixtures/stubborn_agent.py").await;
     host.call("send", json!({"botId": bot, "text": "go"})).await;
-    host.wait_for(&bot, Duration::from_secs(60), |e| e["data"]["text"] == "Working on it").await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Working on it").await;
     host.call("stop", json!({"botId": bot})).await;
     // The agent never answers: after the grace period its process is stopped and the turn ends.
     host.wait_for(&bot, Duration::from_secs(40), |e| e["kind"] == "notice" && e["data"]["text"] == "Stopped.").await;
     let sync = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(sync["bots"][0]["status"], "idle");
+    assert_eq!(common::bot(&sync, &bot)["status"], "idle");
 }
 
 #[tokio::test]
@@ -118,7 +131,7 @@ async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
     host.call("send", json!({"botId": member, "text": "BLOCK"})).await;
     let started = Instant::now();
     while !std::fs::read_to_string(folder.join("prompts.jsonl")).is_ok_and(|p| p.contains("BLOCK")) {
-        assert!(started.elapsed() < Duration::from_secs(60), "the member never started");
+        assert!(started.elapsed() < Duration::from_mins(1), "the member never started");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     host.call("send", json!({"botId": group, "text": "first"})).await;
@@ -140,12 +153,65 @@ async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
     assert_eq!(finals.count(), 1);
 }
 
-/// A final reply that starts with `speed` and quotes `word` from its prompt.
+#[tokio::test]
+async fn a_reaction_can_be_the_whole_reply() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Warm", "tests/fixtures/team_agent.py").await;
+    let finals = |entries: Vec<Value>| {
+        entries.into_iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true).count()
+    };
+
+    // In its own chat: the heart on the user's message is the reply; what the agent wrote stays in the trace.
+    let thanks = host.call("send", json!({"botId": bot, "text": "THANKS"})).await;
+    let heart = json!([{"bot": bot, "emoji": "❤️"}]);
+    host.wait_for(&bot, Duration::from_mins(1), |e| {
+        e["id"] == thanks["entry"]["id"] && e["data"]["botReactions"] == heart
+    })
+    .await;
+    host.wait_idle().await;
+    let entries = host.entries(&bot).await;
+    assert!(entries.iter().any(|e| e["data"]["text"] == "Reacted with a heart" && e["data"]["final"] == false));
+    assert_eq!(finals(entries), 0);
+
+    // Reactions stay rare: thanked again right away, it holds back, and still says nothing.
+    let again = host.call("send", json!({"botId": bot, "text": "THANKS"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Held back a reaction").await;
+    host.wait_idle().await;
+    let entries = host.entries(&bot).await;
+    assert!(entries.iter().any(|e| e["id"] == again["entry"]["id"] && e["data"]["botReactions"].is_null()));
+    assert_eq!(finals(entries), 0);
+
+    // A message that needs neither words nor a reaction: the bot passes, and the user sees nothing.
+    host.call("send", json!({"botId": bot, "text": "OK"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "(pass)").await;
+    host.wait_idle().await;
+    assert_eq!(finals(host.entries(&bot).await), 0);
+
+    // In a room: the member reacts to the user's message and passes.
+    let group = host.call("createBot", json!({"name": "Room", "kind": "group", "members": [bot]})).await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let asked = host.call("send", json!({"botId": group, "text": "REACT if you agree"})).await;
+    let thumb = json!([{"bot": bot, "emoji": "👍"}]);
+    host.wait_for(&group, Duration::from_mins(1), |e| {
+        e["id"] == asked["entry"]["id"] && e["data"]["botReactions"] == thumb
+    })
+    .await;
+    host.wait_idle().await;
+    assert_eq!(finals(host.entries(&group).await), 0);
+}
+
+/// A final reply that starts with `speed` and ends with `word`, the user's message: the instructions before it in
+/// the prompt may hold the word too.
 fn speed_reply(speed: &'static str, word: &'static str) -> impl Fn(&Value) -> bool {
     move |e: &Value| {
         e["kind"] == "agent"
             && e["data"]["final"] == true
-            && e["data"]["text"].as_str().is_some_and(|t| t.starts_with(speed) && t.contains(word))
+            && e["data"]["text"].as_str().is_some_and(|t| t.starts_with(speed) && t.trim_end().ends_with(word))
     }
 }
 
@@ -164,18 +230,18 @@ async fn fast_mode_switches_live_sessions_without_a_restart() {
 
     host.call("updateBot", json!({"id": bot, "fastMode": true})).await;
     host.call("send", json!({"botId": bot, "text": "one"})).await;
-    host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast on", "one")).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("fast on", "one")).await;
     assert_eq!(log().matches(FAST_ON).count(), 1);
     let sync = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(sync["bots"][0]["fastModeSupport"], "offered");
+    assert_eq!(common::bot(&sync, &bot)["fastModeSupport"], "offered");
 
     // Off and on again: the same agent process switches the live session before each turn.
     host.call("updateBot", json!({"id": bot, "fastMode": false})).await;
     host.call("send", json!({"botId": bot, "text": "two"})).await;
-    host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast off", "two")).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("fast off", "two")).await;
     host.call("updateBot", json!({"id": bot, "fastMode": true})).await;
     host.call("send", json!({"botId": bot, "text": "three"})).await;
-    host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast on", "three")).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("fast on", "three")).await;
     let log = log();
     assert!(!log.contains("session/load"), "{log}");
     assert_eq!((log.matches(FAST_ON).count(), log.matches(FAST_OFF).count()), (2, 1), "{log}");
@@ -189,11 +255,12 @@ async fn an_agent_without_config_options_has_no_fast_mode() {
     let host = Host::start().await;
     let bot = host.bot("Plain", "tests/fixtures/fast_mode_agent.py").await;
     std::fs::write(host.home.join("Plain").join("plain"), "").unwrap();
-    let support = || async { common::snapshot(&host.base, &host.token).await["bots"][0]["fastModeSupport"].clone() };
+    let support =
+        || async { common::bot(&common::snapshot(&host.base, &host.token).await, &bot)["fastModeSupport"].clone() };
     assert_eq!(support().await, "unknown", "clients offer /fast until a session says");
 
     host.call("send", json!({"botId": bot, "text": "one"})).await;
-    host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast off", "one")).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("fast off", "one")).await;
     assert_eq!(support().await, "unsupported");
 }
 
@@ -210,20 +277,72 @@ async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
 
     host.call("updateBot", json!({"id": bot, "fastMode": true})).await;
     host.call("send", json!({"botId": bot, "text": "one"})).await;
-    host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast off", "one")).await;
-    let state = &common::snapshot(&host.base, &host.token).await["bots"][0];
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("fast off", "one")).await;
+    let sync = common::snapshot(&host.base, &host.token).await;
+    let state = common::bot(&sync, &bot);
     assert_eq!(state["fastModeSupport"], "refused");
     assert_eq!(state["fastModeIssue"], "requires extra usage");
     assert_eq!(state["fastMode"], true, "the user's choice stays");
 
     host.call("send", json!({"botId": bot, "text": "two"})).await;
-    host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast off", "two")).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("fast off", "two")).await;
     assert_eq!(log().matches(FAST_ON).count(), 1, "asked again after a refusal");
 
     // Changing the setting asks again.
     host.call("updateBot", json!({"id": bot, "fastMode": false})).await;
     host.call("updateBot", json!({"id": bot, "fastMode": true})).await;
     host.call("send", json!({"botId": bot, "text": "three"})).await;
-    host.wait_for(&bot, Duration::from_secs(60), speed_reply("fast off", "three")).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("fast off", "three")).await;
     assert_eq!(log().matches(FAST_ON).count(), 2);
+}
+
+#[tokio::test]
+async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Ended", "tests/fixtures/ended_session_agent.py").await;
+    host.call("send", json!({"botId": bot, "text": "hello"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["kind"] == "agent" && e["data"]["text"] == "pong").await;
+    host.call("send", json!({"botId": bot, "text": "end-this-session"})).await;
+    host.wait_for(&bot, Duration::from_secs(30), |e| {
+        e["kind"] == "notice" && e["data"]["text"].as_str().is_some_and(|t| t.contains("session has ended"))
+    })
+    .await;
+    // Left open, the ended session would refuse this one too.
+    host.call("send", json!({"botId": bot, "text": "still there?"})).await;
+    host.wait_for(&bot, Duration::from_secs(30), |e| e["kind"] == "agent" && e["data"]["text"] == "still here").await;
+}
+
+#[tokio::test]
+async fn reasoning_is_per_bot_and_applies_with_default_and_legacy_models() {
+    if python_missing() {
+        return;
+    }
+    let mut host = Host::start().await;
+    let bot = host.bot("Reasoning", "tests/fixtures/reasoning_agent.py").await;
+    let other = host.bot("Other", "tests/fixtures/reasoning_agent.py").await;
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"effort": "high"}})).await;
+    host.call("send", json!({"botId": bot, "text": "one"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("default high", "one")).await;
+    host.call("send", json!({"botId": other, "text": "other"})).await;
+    host.wait_for(&other, Duration::from_mins(1), speed_reply("default medium", "other")).await;
+    host.wait_idle().await;
+
+    // The saved preference survives the host and agent process restarting.
+    common::stop(&mut host.child);
+    let (child, base) = common::serve(&host.home).await;
+    host.child = child;
+    host.base = base;
+    host.call("send", json!({"botId": bot, "text": "resumed"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("default high", "resumed")).await;
+    host.wait_idle().await;
+    host.call("updateBot", json!({"id": bot, "model": "explicit", "modelOptions": {"effort": "low"}})).await;
+    host.call("send", json!({"botId": bot, "text": "explicit"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("explicit low", "explicit")).await;
+    host.wait_idle().await;
+    host.call("updateBot", json!({"id": bot, "modelOptions": {}})).await;
+    host.call("send", json!({"botId": bot, "text": "reset"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("explicit medium", "reset")).await;
 }

@@ -10,8 +10,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
@@ -49,14 +47,24 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -67,27 +75,32 @@ import kotlinx.coroutines.launch
 private enum class Trailing { Interrupt, Stop, Call, Send }
 
 /**
- * The message box under a chat or a thread, as iOS `Composer`: a glass + for files, a glass
- * field whose trailing button morphs between call, send, stop and interrupt. `onInterrupt`
- * cuts the bot off while it speaks in a voice call.
+ * The message box under a chat, as iOS `Composer`: a glass + for files, a glass field whose
+ * trailing button morphs between call, send, stop and interrupt. `onInterrupt` cuts the bot off
+ * while it speaks in a voice call. `replyTo` is the message the next send quotes, shown on top. `about`, in an artifact's
+ * viewer: the artifact's title, which the box names in place of the quote (its card) it sends with; `draftKey` is then the
+ * artifact's draft, apart from the chat's.
  */
 @OptIn(ExperimentalFoundationApi::class)
-@Composable fun MessageComposer(bot: Bot, thread: String?, state: AppState, store: AppStore, onCall: (() -> Unit)?,
-    onInterrupt: (() -> Unit)? = null) {
-    val lane = ComposerDraft.lane(bot.id, thread)
-    val draft = state.drafts[lane]
+@Composable fun MessageComposer(bot: Bot, state: AppState, store: AppStore, onCall: (() -> Unit)?,
+    onInterrupt: (() -> Unit)? = null, replyTo: ReplyQuote? = null, cancelReply: () -> Unit = {}, about: String? = null,
+    draftKey: String = bot.id) {
+    val draft = state.drafts[draftKey]
     val text = rememberTextFieldState(initialText = draft?.text.orEmpty())
     val files = draft?.files.orEmpty()
-    val queuing = "draft-send:" + lane in state.busy
+    val queuing = "draft-send:$draftKey" in state.busy
     val importing = "attachments" in state.busy
     // What this box sent to the store, so a draft set elsewhere (a routine request) can be told from our own echo.
-    val echoes = remember(lane) { ArrayDeque<String>() }
-    LaunchedEffect(text, bot.id, thread) {
+    val echoes = remember(draftKey) { ArrayDeque<String>() }
+    LaunchedEffect(text, draftKey) {
         snapshotFlow { text.text.toString() }.collect {
             echoes.addLast(it); while (echoes.size > 32) echoes.removeFirst()
-            store.editDraft(bot.id, thread, it)
+            store.editDraft(draftKey, it)
         }
     }
+    // Choosing a message to reply to goes straight to typing.
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(replyTo?.id) { if (replyTo != null && about == null) focus.requestFocus() }
     LaunchedEffect(draft?.text) {
         val external = draft?.text.orEmpty()
         if (external != text.text.toString() && external !in echoes) text.setTextAndPlaceCursorAtEnd(external)
@@ -96,16 +109,16 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val clips = LocalContext.current.getSystemService(ClipboardManager::class.java)
     val scope = rememberCoroutineScope()
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
-        if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+        if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(draftKey, it) }
     }
     val documents = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+        if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(draftKey, it) }
     }
-    val receiver = remember(bot.id, importing, queuing) { ReceiveContentListener { content ->
+    val receiver = remember(draftKey, importing, queuing) { ReceiveContentListener { content ->
         if (importing || queuing) content else {
             val uris = mutableListOf<android.net.Uri>()
             val remaining = content.consume { item -> item.uri?.takeIf { it.scheme == "content" }?.let { uris.add(it); true } ?: false }
-            if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+            if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(draftKey, it) }
             remaining
         }
     } }
@@ -113,7 +126,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val empty = text.text.isBlank() && files.isEmpty()
     // Offline computers still take text when the relay can hold it; files need the computer.
     val canSend = !empty && !importing && !queuing && (online || state.actualConnection is LinkState.ComputerOffline && files.isEmpty())
-    val working = bot.isWorking(bot.id, thread)
+    val working = bot.isWorking(bot.id)
     val bare = text.text.isEmpty() && files.isEmpty()
     val trailing = when {
         onInterrupt != null && bare -> Trailing.Interrupt
@@ -122,27 +135,33 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         else -> Trailing.Send
     }
     val placeholder = when {
-        thread != null -> "Reply…"
-        bot.kind == "group" -> "Message everyone · @ to ask one bot"
-        working -> "Queue a message for ${bot.name}"
-        else -> "Ask ${bot.name}"
+        about != null -> tr("Message about “{title}”").replace("{title}", about)
+        replyTo != null -> tr("Reply…")
+        bot.kind == "group" -> tr("Ask everyone · @ to ask one bot")
+        working -> tr("Queue a message for {name}").replace("{name}", bot.name)
+        else -> tr("Ask {name}").replace("{name}", bot.name)
     }
     val typed = text.text.toString()
-    val commands = SlashCommands.query(typed)?.let { SlashCommands.list(bot, it, state.plugins?.skills.orEmpty(), state.hello?.text("version")) }.orEmpty()
+    val members = bot.memberBots(state.bots)
+    val commands = SlashCommands.query(typed)?.let { SlashCommands.list(bot, it, state.plugins?.skills.orEmpty(), members) }.orEmpty()
     // Starting a command: list the computer's skills again, once each time the draft becomes "/".
-    val startingCommand = typed == "/" && bot.kind != "group"
+    val startingCommand = typed == "/"
     LaunchedEffect(startingCommand) { if (startingCommand && online) store.refreshPlugins() }
+    // The one way a group's box differs: @ asks one of its bots.
     val mentions = if (bot.kind != "group") emptyList() else mentionQuery(typed)?.let { query ->
-        bot.members.mapNotNull { id -> state.bots.firstOrNull { it.id == id } }.filter { query.isEmpty() || it.name.contains(query, true) }
+        members.filter { query.isEmpty() || it.name.contains(query, true) }
     }.orEmpty()
     fun clear() = text.edit { replace(0, length, "") }
     fun run(command: SlashCommand) {
         val skill = command.skill
         when {
             skill != null -> text.setTextAndPlaceCursorAtEnd("/$skill ")
-            command.name == "fast" -> { store.command("updateBot", buildJsonObject { put("id", bot.id); put("fastMode", !bot.fastMode) }, "roster:" + bot.id); clear() }
-            else -> { store.command("newSession", body("botId" to bot.id)); clear() }
+            else -> { store.toggleFastMode(bot); clear() }
         }
+    }
+    fun send() {
+        val command = if (files.isEmpty()) SlashCommands.builtIn(bot, typed, members) else null
+        if (command != null) run(command) else store.sendDraft(draftKey, bot.id, typed, replyTo) { clear(); cancelReply() }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     AnimatedVisibility(commands.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
@@ -161,31 +180,42 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
             if (clipOffersFiles(clips.primaryClipDescription?.mimeTypes().orEmpty())) add(MenuItem("Paste", icon = "doc.on.clipboard") { scope.launch {
                 val data = clipboard.getClipEntry()?.clipData
                 val uris = if (data == null) emptyList() else (0 until data.itemCount).mapNotNull { data.getItemAt(it).uri?.takeIf { uri -> uri.scheme == "content" } }
-                if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(bot.id, thread, it) }
+                if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(draftKey, it) }
             } })
         } }, Modifier.size(FIELD_HEIGHT).glass(Capsule()), enabled = !queuing, label = "Add files") {
             Symbol("plus", size = 26.dp, tint = Palette.text)
         }
         Column(Modifier.weight(1f).glass(RoundedRectangle(24.dp)).animateContentSize(Motion.layoutSize)) {
+            // Each quote keeps its own bar through the transition, so a cancelled one fades out with its text.
+            AnimatedContent(replyTo?.text?.takeIf { about == null }, transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) },
+                label = "Reply") { quote ->
+                if (quote != null) Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    QuoteLine(quote, Modifier.weight(1f))
+                    IconButton("Cancel reply", "xmark", action = cancelReply)
+                }
+            }
             if (files.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (file in files) ComposerAttachment(file) { store.removeDraftFile(bot.id, thread, file) }
+                for (file in files) ComposerAttachment(file) { store.removeDraftFile(draftKey, file) }
             }
             Row(Modifier.padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BasicTextField(state = text, enabled = !queuing, modifier = Modifier.weight(1f).contentReceiver(receiver).padding(vertical = 10.dp),
+                // A hardware keyboard's Enter is a new line; Ctrl/Meta+Enter (⌘↩ on iOS) sends, and never stops or calls.
+                val sendKey = Modifier.onPreviewKeyEvent { e ->
+                    val ctrlEnter = e.type == KeyEventType.KeyDown && e.key == Key.Enter && (e.isCtrlPressed || e.isMetaPressed)
+                    if (ctrlEnter && trailing == Trailing.Send && canSend) send()
+                    ctrlEnter
+                }
+                BasicTextField(state = text, enabled = !queuing, modifier = Modifier.weight(1f).focusRequester(focus).contentReceiver(receiver).then(sendKey).padding(vertical = 10.dp),
                     textStyle = Type.body.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent),
                     lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
-                    decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1); input() } })
+                    decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis); input() } })
                 TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp)) {
                     when (trailing) {
                         Trailing.Interrupt -> onInterrupt?.invoke()
                         Trailing.Stop -> store.command("stop", body("botId" to bot.id))
                         Trailing.Call -> onCall?.invoke()
-                        Trailing.Send -> {
-                            val command = if (files.isEmpty()) SlashCommands.builtIn(bot, typed) else null
-                            if (command != null) run(command) else store.sendDraft(bot.id, thread, typed) { clear() }
-                        }
+                        Trailing.Send -> send()
                     }
                 }
             }

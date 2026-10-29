@@ -4,6 +4,10 @@
   gap: 6px;
   margin: 0 auto;
   padding: 10px 0;
+  color: var(--secondary);
+}
+.bot-message-row.failed {
+  color: var(--danger);
 }
 .bot-conversation {
   display: flex;
@@ -21,4 +25,11 @@
 }
 .bot-conversation-rows {
   padding: 0 16px 8px;
+}
+.bot-conversation-note {
+  text-align: center;
+  padding-top: 24px;
+}
+.bot-conversation-status {
+  padding: 6px 12px;
 }

@@ -22,11 +22,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "installHostUpdate" => {
             let port = hub.port;
             let force = b["force"].as_bool().unwrap_or(false);
-            let skip_app_check = b["skipAppCheck"].as_bool().unwrap_or(false);
             if !force && hub.busy() {
-                bail!("host is busy; retry when idle or explicitly allow interruption");
+                bail!("A bot is working on this computer. Update it once the bot is done.");
             }
-            tokio::task::spawn_blocking(move || crate::update::spawn_worker(port, force, skip_app_check)).await??;
+            tokio::task::spawn_blocking(move || crate::update::request_install(port, force)).await??;
             json!({"scheduled": true})
         }
         "voiceStatus" => crate::voice::status(&hub.store)?,
@@ -67,6 +66,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "name": crate::service::host_name(),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
+                // Whether `installHostUpdate` can update this computer, from here or a phone.
+                "canUpdate": tokio::task::spawn_blocking(crate::update::installable).await?,
+                // The latest release, so a phone can say whether this computer is current (null: unknown).
+                "latestVersion": tokio::task::spawn_blocking(crate::update::latest_version).await?,
                 "os": std::env::consts::OS,
                 "device": tokio::task::spawn_blocking(crate::service::device).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
@@ -80,7 +83,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "refreshBackends" => {
             tokio::task::spawn_blocking(backends::hydrate_path).await?;
-            backends::refresh_sign_in().await;
+            crate::market::agent_sign_in::refresh(hub).await;
             json!({"backends": backends::list()})
         }
         "usage" => {
@@ -116,7 +119,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             };
             // Chats that asked the user to sign in get their messages answered now.
             if status["signedIn"] == true {
-                crate::market::requests::agent_signed_in(hub, backend)?;
+                crate::market::agent_sign_in::agent_signed_in(hub, backend)?;
             }
             status
         }

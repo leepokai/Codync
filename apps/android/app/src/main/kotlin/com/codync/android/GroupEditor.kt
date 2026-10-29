@@ -31,20 +31,20 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.Bot
 import com.codync.android.core.GroupDraft
 import com.codync.android.design.*
 
 /**
- * Create a group chat, or change its name, what it's for and who's in it (iOS `GroupEditorView`).
+ * Change a group chat's name, what it's for and who's in it (iOS `GroupEditorView`); new groups start in [NewGroupView].
  * Bots are picked like recipients: members on top, a search, and the bots not in it yet.
  */
 @Composable internal fun GroupEditor(state: AppState, initial: GroupDraft, store: AppStore) {
     val dismiss = LocalDismissModal.current
     var draft by remember(initial.id) { mutableStateOf(initial) }
     var query by remember { mutableStateOf("") }
-    // A new group starts in the picker; an existing one shows its members first.
-    var adding by remember { mutableStateOf(initial.id == null && initial.members.isEmpty()) }
+    var adding by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val saving = "editor" in state.busy
     val picked = draft.members.mapNotNull { id -> state.bots.firstOrNull { it.id == id } }
@@ -55,9 +55,9 @@ import com.codync.android.design.*
         query = ""
     }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader(if (draft.id == null) "New group chat" else "Group chat") {
+        ModalHeader("Group chat") {
             if (saving) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
-            else IconButton(if (draft.id == null) "Create" else "Save", "checkmark", enabled = draft.members.isNotEmpty()) {
+            else IconButton("Save", "checkmark", enabled = draft.members.isNotEmpty()) {
                 store.saveGroup(draft) { dismiss() }
             }
         }
@@ -91,7 +91,7 @@ import com.codync.android.design.*
             AnimatedVisibility(state.error != null, enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
                 Text(state.error.orEmpty(), style = Type.footnote, color = Palette.danger)
             }
-            if (draft.id != null) LinkButton("Delete group chat", color = Palette.danger) { confirmDelete = true }
+            LinkButton("Delete group chat", color = Palette.danger) { confirmDelete = true }
         }
     }
     val group = state.bots.firstOrNull { it.id == draft.id }
@@ -104,7 +104,7 @@ import com.codync.android.design.*
 @Composable private fun MemberRow(bot: Bot, bots: List<Bot>, dimmed: Boolean = false, trailing: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         BotAvatar(bot, bots, 32.dp)
-        Text(bot.name, Modifier.weight(1f), style = Type.body, color = if (dimmed) Palette.secondary else Palette.text, maxLines = 1)
+        Text(bot.name, Modifier.weight(1f), style = Type.body, color = if (dimmed) Palette.secondary else Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         trailing()
     }
 }

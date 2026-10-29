@@ -1,26 +1,34 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
 mod analytics;
+mod bot;
 mod editor;
 mod events;
 mod exchange;
+mod fallbacks;
 mod forms;
 mod input;
 mod model;
 mod navigate;
+mod new_bot;
 mod overlay_keys;
 mod slash;
+mod steps;
 mod ui;
 
+pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
-pub use model::{After, AgentModel, Bot, Entry, Kind, Mark, ModelOption, Msg, Status};
+pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use slash::SlashAction;
+pub(super) use steps::{running_turn, working_steps};
 pub use ui::{
-    ACTIONS, Action, AgentPicker, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderPicker,
-    Form, Goto, GotoItem, GroupField, GroupForm, Hits, NEW_GROUP, Overlay, SHAPES, Toast, Toggle, TraceMode, Width,
+    ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderPicker, Form, Goto,
+    GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle, TraceMode,
+    Width,
 };
 
+use crate::tui::l10n::tr;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write as _;
@@ -53,18 +61,25 @@ pub struct App {
     pub entries: HashMap<String, BTreeMap<i64, Entry>>,
     pub usage: Value,
     pub screen: Value,
+    /// This computer's network (`networkView`'s shape); null on hosts without one.
+    pub network: Value,
     pub backends: Vec<Value>,
     pub selected: Option<String>,
     pub focus: Focus,
     pub typing: bool,
     /// Narrow layout: showing the chat page (else the roster page).
     pub chat_page: bool,
+    /// The composer's draft in each chat (bot id).
     pub drafts: HashMap<String, Editor>,
     /// The `/` list's highlighted row and the draft it was picked for.
     pub slash_pick: (String, usize),
     /// Files dropped on the composer (pasted paths), per draft like the text.
     pub files: HashMap<String, Vec<std::path::PathBuf>>,
+    /// What was pasted into each draft, sent along so memory never takes it as the user's own words.
+    pub pasted: HashMap<String, Vec<String>>,
     pub download: Option<super::net::files::Download>,
+    /// Each artifact's newest title, for its cards.
+    pub artifact_titles: super::manage::ArtifactTitles,
     sends: HashMap<String, PendingSend>,
     /// Lines scrolled up from the bottom of the chat (0 = follow new messages).
     pub chat_scroll: usize,
@@ -72,6 +87,8 @@ pub struct App {
     pub trace: TraceMode,
     /// Turn shown in the trace; `None` follows the latest.
     pub trace_turn: Option<i64>,
+    /// The bot and turn whose working steps are unfolded.
+    pub steps_open: Option<(String, i64)>,
     pub compact: bool,
     pub overlays: Vec<Overlay>,
     pub toasts: Vec<Toast>,
@@ -83,10 +100,14 @@ pub struct App {
     /// Chat/trace viewport heights from the last draw, for page scrolling.
     pub chat_height: usize,
     pub chat_top: bool,
-    /// The open thread's root entry in the selected chat; `None` shows the main chat.
-    pub thread: Option<String>,
-    /// A main-chat message picked to reply to in its thread (`r`, then j/k and ↵).
+    /// The message the next one sent replies to (`r` on a picked message; esc cancels).
+    pub reply: Option<String>,
+    /// A message picked to act on: reply, react, copy, save its files (`r`, then j/k and ↵).
     pub pick: Option<String>,
+    /// Chat lines showing their full text: a handoff (`o` on the picked line).
+    pub unfolded: HashSet<String>,
+    /// Voice calls' own messages, by call id (`callEntries`): the chat loaded here may not reach back to them.
+    pub call_entries: HashMap<String, Vec<Entry>>,
     pub market: (Vec<Toggle>, Vec<Toggle>),
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
@@ -96,7 +117,7 @@ pub struct App {
     pub fast_mode: HashSet<String>,
     /// A setup terminal holding the screen.
     pub shell: Option<Shell>,
-    /// Chats and threads (`bot` / `bot/root`) marked read since their bot's unread count last changed.
+    /// Chats marked read since their bot's unread count last changed.
     reading: HashSet<String>,
     history_busy: HashSet<String>,
     /// Permission cards whose answer is on its way, with the chosen option.
@@ -110,14 +131,15 @@ pub struct App {
     pub hint: Option<(String, Instant)>,
     /// Whether this computer shares usage analytics (`None`: before the first `hello`).
     pub analytics: Option<bool>,
-    /// The first `hello` of this run was handled (`app_opened`).
-    opened: bool,
+    /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
+    seen: analytics::Seen,
 }
 
 impl App {
     pub fn new(client: Client, tx: UnboundedSender<Msg>, url: String) -> Self {
         Self {
             download: None,
+            artifact_titles: super::manage::ArtifactTitles::default(),
             client,
             tx,
             url,
@@ -130,6 +152,7 @@ impl App {
             entries: HashMap::new(),
             usage: Value::Null,
             screen: Value::Null,
+            network: Value::Null,
             backends: vec![],
             selected: None,
             focus: Focus::Roster,
@@ -138,11 +161,13 @@ impl App {
             drafts: HashMap::new(),
             slash_pick: (String::new(), 0),
             files: HashMap::new(),
+            pasted: HashMap::new(),
             sends: HashMap::new(),
             chat_scroll: 0,
             trace_scroll: 0,
             trace: TraceMode::Off,
             trace_turn: None,
+            steps_open: None,
             compact: false,
             overlays: vec![],
             toasts: vec![],
@@ -153,8 +178,10 @@ impl App {
             width: Width::Wide,
             chat_height: 20,
             chat_top: false,
-            thread: None,
+            reply: None,
             pick: None,
+            unfolded: HashSet::new(),
+            call_entries: HashMap::new(),
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),
             models: HashMap::new(),
@@ -168,7 +195,7 @@ impl App {
             floors: HashMap::new(),
             hint: None,
             analytics: None,
-            opened: false,
+            seen: analytics::Seen::default(),
         }
     }
 
@@ -178,12 +205,12 @@ impl App {
 
     // ---------- derived ----------
 
-    /// Roster order: pinned first, then where the user put them, then most recent (same as the phone).
+    /// Roster order: the lead, pinned bots, then where the user put them, then most recent (same as the phone).
     pub fn roster(&self) -> Vec<&Bot> {
         let mut v: Vec<&Bot> = self.bots.values().filter(|b| !b.hidden).collect();
         v.sort_by(|a, b| {
-            b.pinned
-                .cmp(&a.pinned)
+            a.band()
+                .cmp(&b.band())
                 .then(a.position.cmp(&b.position))
                 .then(b.last_at.cmp(&a.last_at))
                 .then(a.name.cmp(&b.name))
@@ -209,14 +236,13 @@ impl App {
         c
     }
 
-    /// A chat's entries in the lane on screen (main chat, or the open thread's replies), in display order.
+    /// A chat's entries, in display order.
     pub fn lane(&self, bot: &str) -> Vec<&Entry> {
-        let thread = self.thread.as_deref();
-        let mut v: Vec<&Entry> = self
-            .entries
-            .get(bot)
-            .map(|m| m.values().filter(|e| e.thread_id.as_deref() == thread).collect())
-            .unwrap_or_default();
+        let mut v: Vec<&Entry> = self.entries.get(bot).map(|m| m.values().collect()).unwrap_or_default();
+        // What a voice call carries shows behind its line (`o`), on whichever device the call is: the host writes the
+        // line when the call ends, or when its app went away. A file or an artifact the bot sent stays, to be opened.
+        let opens = |e: &Entry| e.artifact().is_some() || e.data["files"].as_array().is_some_and(|f| !f.is_empty());
+        v.retain(|e| e.kind == Kind::Notice || e.call().is_none() || opens(e));
         // A message sent mid-turn belongs after that turn's reply.
         v.sort_by_key(|e| (e.turn, e.seq));
         v
@@ -227,18 +253,18 @@ impl App {
         self.lane(id).into_iter().rev().find(|e| e.pending())
     }
 
-    /// Where the composer's draft lives: per chat, and per thread in it.
-    fn draft_key(&self) -> Option<String> {
-        let id = self.selected.as_ref()?;
-        Some(self.thread.as_ref().map_or_else(|| id.clone(), |root| format!("{id}#{root}")))
+    /// The message the composer replies to, in the selected chat.
+    pub fn replying_to(&self) -> Option<&Entry> {
+        let (id, reply) = (self.selected.as_ref()?, self.reply.as_ref()?);
+        self.entries.get(id)?.values().find(|e| &e.id == reply)
     }
 
     pub fn draft(&self) -> Editor {
-        self.draft_key().and_then(|k| self.drafts.get(&k).cloned()).unwrap_or_default()
+        self.selected.as_ref().and_then(|id| self.drafts.get(id).cloned()).unwrap_or_default()
     }
 
     pub fn draft_files(&self) -> &[std::path::PathBuf] {
-        self.draft_key().and_then(|k| self.files.get(&k)).map_or(&[], Vec::as_slice)
+        self.selected.as_ref().and_then(|id| self.files.get(id)).map_or(&[], Vec::as_slice)
     }
 
     /// Name of an entry's author (a group reply's bot), as the apps show it.
@@ -246,8 +272,7 @@ impl App {
         id.and_then(|id| self.bots.get(id)).map_or_else(|| "A deleted bot".into(), |b| b.name.clone())
     }
 
-    /// The turns of the lane on screen, oldest first: the trace steps through these.
-    /// Turn numbers count per bot, so a lane's own are not consecutive.
+    /// The chat's turns, oldest first: the trace steps through these.
     pub fn lane_turns(&self, bot: &str) -> Vec<i64> {
         let mut v: Vec<i64> = self.lane(bot).iter().map(|e| e.turn).collect();
         v.sort_unstable();
@@ -259,12 +284,11 @@ impl App {
     pub fn history_complete(&self, id: &str) -> bool {
         self.history_done.contains(id)
             || self.entries.get(id).is_none_or(BTreeMap::is_empty)
-            || self.oldest_main(id).is_some_and(|s| s <= 1)
+            || self.oldest(id).is_some_and(|s| s <= 1)
     }
 
-    /// Paging (`history`) covers the main chat only; thread replies don't count.
-    fn oldest_main(&self, id: &str) -> Option<i64> {
-        self.entries.get(id)?.values().find(|e| e.thread_id.is_none()).map(|e| e.seq)
+    fn oldest(&self, id: &str) -> Option<i64> {
+        self.entries.get(id)?.values().next().map(|e| e.seq)
     }
 
     pub fn chat_visible(&self) -> bool {
@@ -282,7 +306,7 @@ impl App {
     fn select(&mut self, id: &str) {
         if self.selected.as_deref() != Some(id) {
             self.selected = Some(id.to_owned());
-            self.thread = None;
+            self.reply = None;
             self.pick = None;
             self.chat_scroll = 0;
             self.trace_scroll = 0;
@@ -320,11 +344,6 @@ impl App {
                 self.select(&id);
                 self.chat_page = true;
                 self.focus = Focus::Chat;
-                // A card waiting in a thread shows there.
-                let thread = self.bots.get(&id).and_then(|b| b.working_thread.clone()).filter(|_| want == Mark::Need);
-                if let Some(root) = thread {
-                    self.open_thread(root);
-                }
             }
             None => self.flash(match want {
                 Mark::Need => "No bot needs you",
@@ -335,7 +354,7 @@ impl App {
     }
 
     pub fn flash(&mut self, s: &str) {
-        self.hint = Some((s.to_owned(), Instant::now() + Duration::from_secs(3)));
+        self.hint = Some((tr(s).into_owned(), Instant::now() + Duration::from_secs(3)));
     }
 
     fn toast(&mut self, text: String, need: bool) {
@@ -370,12 +389,11 @@ impl App {
             && b.unread > 0
         {
             let id = b.id.clone();
-            let scope = self.thread.as_ref().map_or_else(|| id.clone(), |root| format!("{id}/{root}"));
-            if self.reading.insert(scope) {
-                self.call("markRead", json!({"botId": id, "threadId": self.thread}), After::Nothing);
+            if self.reading.insert(id.clone()) {
+                self.call("markRead", json!({"botId": id}), After::Nothing);
             }
         }
-        if self.chat_top && self.chat_visible() && self.thread.is_none() {
+        if self.chat_top && self.chat_visible() {
             self.load_history();
         }
     }
@@ -385,7 +403,7 @@ impl App {
         if self.history_busy.contains(&id) || self.history_done.contains(&id) {
             return;
         }
-        let oldest = self.oldest_main(&id).unwrap_or(i64::MAX);
+        let oldest = self.oldest(&id).unwrap_or(i64::MAX);
         if oldest <= 1 {
             self.history_done.insert(id);
             return;
@@ -424,11 +442,12 @@ pub(super) fn cycle(i: usize, d: isize, n: usize) -> usize {
     usize::try_from((isize::try_from(i).unwrap_or(0) + d).rem_euclid(n)).unwrap_or(0)
 }
 
-fn merge_toggles(have: &mut Vec<Toggle>, all: &[Toggle], on: bool) {
+/// Names the bot's connectors / skills, and lists the installed ones it doesn't use, off.
+fn merge_toggles(have: &mut Vec<Toggle>, all: &[Toggle]) {
     for t in all {
         match have.iter_mut().find(|h| h.id == t.id) {
             Some(h) => h.name.clone_from(&t.name),
-            None => have.push(Toggle { id: t.id.clone(), name: t.name.clone(), on }),
+            None => have.push(Toggle { id: t.id.clone(), name: t.name.clone(), on: false }),
         }
     }
 }
@@ -464,56 +483,10 @@ pub fn tilde(path: &str, home: &str) -> String {
 }
 
 #[cfg(test)]
-fn test_app() -> App {
+pub(in crate::tui) fn test_app() -> App {
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     App::new(Client::new("http://127.0.0.1:1", None), tx, String::new())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fuzzy_is_a_subsequence_match() {
-        assert!(fuzzy("rx", &["Rex"]));
-        assert!(fuzzy("", &["anything"]));
-        assert!(!fuzzy("xr", &["Rex"]));
-        assert!(fuzzy("web", &["Rex", "~/mycode/web"]));
-    }
-
-    #[test]
-    fn lanes_split_the_chat_from_its_threads() {
-        let g = Bot::parse(&json!({"id": "g", "kind": "group", "members": ["a", "b"], "workingThread": "r"}))
-            .expect("a bot with an id parses");
-        assert!(g.group && g.members == ["a", "b"]);
-        assert!(g.works_in(Some("r")) && !g.works_in(None));
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
-        for (seq, thread) in [(1, Value::Null), (2, json!("r")), (3, Value::Null)] {
-            let v = json!({"botId": "g", "id": format!("e{seq}"), "seq": seq, "turn": seq, "kind": "user", "threadId": thread});
-            let (bot, e) = Entry::parse(&v).expect("a full entry parses");
-            app.entries.entry(bot).or_default().insert(e.seq, e);
-        }
-        let ids = |app: &App| app.lane("g").iter().map(|e| e.id.clone()).collect::<Vec<_>>();
-        assert_eq!(ids(&app), ["e1", "e3"]);
-        assert_eq!(app.lane_turns("g"), [1, 3]);
-        app.thread = Some("r".into());
-        assert_eq!(ids(&app), ["e2"]);
-        assert_eq!(app.lane_turns("g"), [2]);
-    }
-
-    #[tokio::test]
-    async fn a_thread_opened_after_its_chat_is_marked_read_too() {
-        let mut app = test_app();
-        let bot = Bot::parse(&json!({"id": "b", "name": "Bot", "unread": 2})).expect("a bot with an id parses");
-        app.bots.insert("b".into(), bot);
-        app.selected = Some("b".into());
-        (app.width, app.term_focused) = (Width::Wide, true);
-        app.tick();
-        assert!(app.reading.contains("b"));
-        // Reading the chat left the thread's replies unread: opening it reads them.
-        app.thread = Some("r".into());
-        app.tick();
-        assert!(app.reading.contains("b/r"));
-    }
-}
+mod tests;

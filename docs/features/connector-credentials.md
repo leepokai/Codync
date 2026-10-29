@@ -49,6 +49,12 @@ and stops the check process. It never invokes a business tool. Failures and a
 90-second timeout remain visible and retryable. Package acquisition is performed
 by the configured runtime (npx, uvx, Docker, etc.), so that runtime must be present.
 
+Installing a registry connector that is already installed (Add again after a failed
+check, or Connect on a request card) keeps it as it is when nothing new is typed and
+it would run the same way, so its sign-in survives. New values or another way to run
+it (package runtime or hosted) rebuild it in place, under the same id, so each bot
+keeps it on or off as before (`install_server` in `host/src/market/install.rs`).
+
 ## Conversation requests
 
 The built-in `connectors` MCP offers search_connectors, list_connectors,
@@ -59,20 +65,28 @@ bot, service, destination field, purpose and status; they contain no credentials
 Clients submit values through connectorRequestFinish. The host validates the
 request, destination, requesting bot and 24-hour expiry, stores credentials,
 verifies availability, enables the connector for that bot, and queues a non-secret
-acknowledgement in the original conversation/thread. Repeated completed submissions
+acknowledgement in the original conversation. Repeated completed submissions
 return the completed entry. Verification failures remain pending so the user can
 correct credentials and retry. Current clients offer no way to cancel a request
 (it stays until it's done); `cancel: true` remains for older clients, and a
 cancelled request rejects submissions.
 
-The host posts one more kind itself, `agent`: when a bot's own agent (Claude Code…)
-refuses a turn because it needs signing in, the chat gets a card naming the agent
-(`backend`) and the user messages it couldn't answer (`entryIds`) instead of an
-error. A bot keeps one such card; messages that fail later join it. The card's
-Sign in opens the agent's sign-in sheet from Extensions. As soon as a sign-in check
-(`agentAuth`, `agentAuthenticate`, `setAgentEnv`, or connectorRequestFinish on the
-card) finds the agent signed in, every pending card for it completes and its
-messages go out again; a card older than 24 hours only completes.
+The host posts one more kind itself, `agent` (`market/agent_sign_in.rs`): when a bot's
+own agent (Claude Code…) refuses a turn because it needs signing in, the chat gets a
+card naming the agent (`backend`) and the user messages it couldn't answer
+(`entryIds`) instead of an error. Only agents Codync knows by name get the card;
+others show the agent's error. A new bot gets the card before its first message
+when the agent's sign-in check, run in the background as the bot is created, finds
+it signed out. When a [fallback agent](agent-fallback.md) takes the turn over, or a bot skips
+an agent another bot found signed out, the card comes anyway, holding no message (the fallback
+answers it). A bot keeps one such card in each chat; messages that fail later join it. The
+card's Sign in opens the agent's sign-in sheet from Extensions. As soon as a sign-in
+check (`agentAuth`, `agentAuthenticate`, `setAgentEnv`, connectorRequestFinish on the
+card, a new bot's check, or the re-check at host start and `refreshBackends`) finds
+the agent signed in, or a turn of the agent finishes (signed in outside Codync),
+every pending card for it completes, its messages go out again and bots that moved on to a
+fallback while it was signed out come back on their next message;
+a message older than 24 hours isn't sent again. The card itself doesn't expire.
 
 MCP connection requests and runtime secret retrieval are loopback-only. Authorized
 Control devices may submit or cancel requests. No endpoint exposes a generic

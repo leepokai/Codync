@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.*
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
@@ -21,18 +22,25 @@ import kotlinx.coroutines.launch
  * Opened from a call's gear and from Settings.
  */
 @Composable internal fun VoiceChatSettings(state: AppState, store: AppStore) {
+    AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.VoiceSettings))
     val context = LocalContext.current
     val choices = remember { store.voiceChoices() }
     var engine by remember { mutableStateOf(choices.provider) }
     var settings by remember { mutableStateOf(VoicePreferences.load(context)) }
     fun change(next: VoiceSettings) { settings = next; store.voiceSettings(next) }
+    // Closing hands a running call to a different engine picked here.
+    DisposableEffect(Unit) { onDispose { store.switchVoiceEngine() } }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ModalHeader("Voice chat")
+        ModalHeader({
+            Symbol("waveform", size = 24.dp, tint = Palette.text)
+            Spacer(Modifier.width(8.dp))
+            Text(tr("Voice chat"), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        })
         CardForm {
             val provider = engine
             var speech by remember(provider) { mutableStateOf(provider?.let(choices::speechMode) == true) }
-            CardSection("Voice", footer = provider?.let { "Your own ${it.title} key, billed by ${it.title}. Applies from the next call." }
-                ?: "Android speech, on this device. Applies from the next call.", Modifier.animateContentSize(Motion.layoutSize)) {
+            CardSection("Voice", footer = provider?.let { "Your own ${it.title} key, billed by ${it.title}. During a call, applies when you close settings." }
+                ?: "Android speech, on this device. During a call, applies when you close settings.", Modifier.animateContentSize(Motion.layoutSize)) {
                 row {
                     ValueRow("Engine") {
                         ChoicePicker(provider, listOf<Pair<VoiceProvider?, String>>(null to "On device") + VoiceProvider.entries.map { it to it.title },
@@ -148,8 +156,8 @@ import kotlinx.coroutines.launch
                 if (hasKey) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Symbol("key.fill", size = 18.dp, tint = Palette.secondary)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        Text("Key saved", style = Type.body, color = Palette.text, maxLines = 1)
-                        Text("Stays on $host", style = Type.caption, color = Palette.tertiary, maxLines = 1)
+                        Text("Key saved", style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Stays on $host", style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (busy) Spinner() else IconButton("Test key", "checkmark.seal", action = ::test)
                 } else if (saved == false) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

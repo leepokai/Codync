@@ -82,6 +82,7 @@ test('the Update badge downloads the release if needed, then restarts into it', 
   await f.emit('update-downloaded', release)
   assert.equal(f.calls.install, 1, 'restarts without a second click')
   assert.equal(f.preferences.get('updateRelaunchInFront'), true)
+  assert.deepEqual({ ...f.preferences.get('updateInstalling') as object }, { version: release.version, at: f.now() })
 
   const staged = updaterFixture()
   await staged.emit('update-downloaded', release)
@@ -89,6 +90,76 @@ test('the Update badge downloads the release if needed, then restarts into it', 
   await settle()
   assert.equal(staged.calls.check, 0)
   assert.equal(staged.calls.install, 1)
+})
+
+test('the Update badge clicked during an automatic download restarts once it finishes', async () => {
+  const f = updaterFixture()
+  await f.emit('update-available', release)
+  await f.emit('download-progress', { percent: 30 })
+  f.ipc.emit('updates:install')
+  assert.equal(f.calls.check, 0, 'the running download continues')
+  await f.emit('update-downloaded', release)
+  assert.equal(f.calls.install, 1)
+})
+
+test('another device asking this computer to update downloads the release and restarts into it once no bot is working', async () => {
+  const f = updaterFixture({ prefs: { updatesAutoDownload: false } })
+  let upToDate = 0
+  f.updates.on('upToDate', () => upToDate++)
+  f.host.emit('updateRequested')
+  await f.emit('update-not-available')
+  assert.equal(upToDate, 0, 'nobody at this computer asked, so nothing says up to date')
+  f.host.emit('updateRequested')
+  assert.equal(f.calls.check, 2)
+  await f.emit('update-available', release)
+  assert.equal(f.calls.download, 1, 'downloads even with automatic downloads off')
+  f.behavior.focused = true
+  f.behavior.hostIdle = false
+  await f.emit('update-downloaded', release)
+  await f.tick(30_000)
+  assert.equal(f.calls.prepare + f.calls.install, 0, 'a working bot is never stopped')
+  f.behavior.hostIdle = true
+  await f.tick(30_000)
+  assert.equal(f.calls.install, 1, "doesn't wait for the person at this computer")
+  assert.notEqual(f.preferences.get('updateRelaunchInFront'), true, 'the app comes back in the background')
+
+  const staged = updaterFixture()
+  staged.behavior.focused = true
+  await staged.emit('update-downloaded', release)
+  staged.host.emit('updateRequested')
+  await staged.tick(30_000)
+  assert.equal(staged.calls.check, 0)
+  assert.equal(staged.calls.install, 1)
+
+  const lapsed = updaterFixture()
+  lapsed.behavior.focused = true
+  lapsed.behavior.hostIdle = false
+  await lapsed.emit('update-downloaded', release)
+  lapsed.host.emit('updateRequested')
+  lapsed.advance(10 * 60_000)
+  lapsed.behavior.hostIdle = true
+  await lapsed.tick(30_000)
+  assert.equal(lapsed.calls.install, 0, 'a request that lapsed waits for the person again')
+})
+
+test('an older copy opened while the installer runs quits and reopens the app once it stops', () => {
+  const recent = { version: release.version, at: Date.UTC(2026, 9, 9) - 60_000 }
+  for (const [name, marker, job] of [
+    ['this version', { ...recent, version: '2.11.2' }, 'running'],
+    ['marker too old', { ...recent, at: recent.at - 61_000 }, 'running'],
+    ['installer idle', recent, 'idle'],
+    ['installer gone', recent, 'none'],
+  ] as const) {
+    const f = updaterFixture({ prefs: { updateInstalling: marker }, shipIt: { request: true, job } })
+    assert.equal(f.yieldsToInstall(), false, name)
+    assert.equal(f.preferences.get('updateInstalling'), undefined, name)
+    assert.deepEqual(f.spawned, [], name)
+  }
+  assert.equal(updaterFixture().yieldsToInstall(), false)
+  const f = updaterFixture({ prefs: { updateInstalling: recent }, shipIt: { request: true, job: 'running' } })
+  assert.equal(f.yieldsToInstall(), true)
+  assert.deepEqual(f.preferences.get('updateInstalling'), recent)
+  assert.deepEqual(f.spawned.map((args) => args.slice(2)), [['com.pokai.Codync.ShipIt', '/Applications/Codync.app']])
 })
 
 test('the app relaunched by a chosen restart opens its own bundle once to come forward', () => {
@@ -100,8 +171,11 @@ test('the app relaunched by a chosen restart opens its own bundle once to come f
 
 test('latest version records the last check without downloading or stopping the host', async () => {
   const f = updaterFixture()
+  let upToDate = 0
+  f.updates.on('upToDate', () => upToDate++)
   f.updates.check()
   await f.emit('update-not-available')
+  assert.equal(upToDate, 1, 'the check the person asked for says so')
   assert.equal(f.updates.state.checking, false)
   assert.equal(f.updates.state.availableVersion, null)
   assert.equal(f.preferences.get('updatesLastCheck'), f.updates.state.lastCheck)
@@ -110,8 +184,11 @@ test('latest version records the last check without downloading or stopping the 
 
 test('a latest release whose build is still uploading counts as up to date, not an error', async () => {
   const f = updaterFixture()
+  let upToDate = 0
+  f.updates.on('upToDate', () => upToDate++)
   f.updates.check()
   await f.emit('error', Object.assign(new Error('Cannot find latest-mac.yml in the latest release artifacts'), { code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' }))
+  assert.equal(upToDate, 1)
   assert.equal(f.updates.state.error, null)
   assert.equal(f.updates.state.checking, false)
   assert.equal(f.updates.state.availableVersion, null)
@@ -142,11 +219,13 @@ test('installer error restarts the stopped host and retry prepares it again', as
   await f.emit('update-downloaded', release)
   f.updates.check()
   await settle()
+  assert.deepEqual({ ...f.preferences.get('updateInstalling') as object }, { version: release.version, at: f.now() })
   await f.emit('error', new Error('signature rejected'))
   assert.equal(f.calls.resume, 1)
   assert.equal(f.updates.state.error, 'signature rejected')
   assert.equal(f.updates.state.installing, false)
   assert.equal(f.preferences.get('updateRelaunchInFront'), false)
+  assert.equal(f.preferences.get('updateInstalling'), undefined)
   f.updates.check()
   await settle()
   assert.equal(f.calls.prepare, 2)
@@ -187,6 +266,7 @@ test('Quit with a staged update waits for the host then retries Quit once', asyn
   await settle()
   assert.equal(f.calls.quit, 1)
   assert.equal(f.calls.install, 0)
+  assert.deepEqual({ ...f.preferences.get('updateInstalling') as object }, { version: release.version, at: f.now() }, 'an old copy opened while it installs yields')
   f.app.emit('before-quit', { preventDefault: () => assert.fail('prepared Quit must proceed') })
 })
 
@@ -203,9 +283,12 @@ test('failed preparation cancels Quit and reports a retryable error', async () =
 
 test('automatic checks respect opt-out and run daily after the startup check', async () => {
   const f = updaterFixture()
+  let upToDate = 0
+  f.updates.on('upToDate', () => upToDate++)
   await f.tick(30_000)
   assert.equal(f.calls.check, 1)
   await f.emit('update-not-available')
+  assert.equal(upToDate, 0, 'scheduled checks stay silent')
   f.advance(3600_000)
   await f.tick(3600_000)
   assert.equal(f.calls.check, 1)
@@ -250,46 +333,6 @@ for (const block of ['disabled', 'focused', 'recentInput', 'busyHost'] as const)
     assert.equal(f.calls.install, 1)
   })
 }
-
-test('paired iPhones hold an incompatible release until the App Store catches up', async () => {
-  const f = updaterFixture()
-  f.updates.check()
-  await f.emit('update-available', { ...release, minApp: '2.11.0' })
-  assert.equal(f.updates.state.waitingForApp, '2.11.0')
-  assert.match(f.updates.state.error!, /iPhone app 2.11.0/)
-  assert.equal(f.calls.download, 0)
-  f.behavior.storeVersion = '2.11.0'
-  f.updates.check()
-  await f.emit('update-available', { ...release, minApp: '2.11.0' })
-  assert.equal(f.updates.state.waitingForApp, null)
-  assert.equal(f.calls.download, 1)
-})
-
-for (const condition of ['noPhones', 'compatibleHost', 'manualOffline'] as const) {
-  test(`compatibility permits download with ${condition}`, async () => {
-    const f = updaterFixture()
-    if (condition === 'noPhones') f.behavior.devices = []
-    if (condition === 'compatibleHost') f.behavior.minApp = '2.11.0'
-    if (condition === 'manualOffline') f.behavior.storeVersion = null
-    f.updates.check()
-    await f.emit('update-available', { ...release, minApp: '2.11.0' })
-    assert.equal(f.updates.state.waitingForApp, null)
-    assert.equal(f.calls.download, 1)
-  })
-}
-
-test('unattended updates wait when App Store or paired-device information is unknown', async () => {
-  const f = updaterFixture({ prefs: { updatesAutoDownload: true } })
-  f.behavior.storeVersion = null
-  f.behavior.hostFactsFail = true
-  await f.emit('update-available', { ...release, minApp: '2.11.0' })
-  assert.equal(f.calls.download, 0)
-  assert.equal(f.updates.state.waitingForApp, '2.11.0')
-  assert.equal(f.updates.state.error, null)
-  f.advance(3600_000)
-  await f.tick(3600_000)
-  assert.equal(f.calls.check, 1, 'held releases recheck hourly')
-})
 
 test('repeated clicks during host shutdown must invoke the installer once', async () => {
   const f = updaterFixture()

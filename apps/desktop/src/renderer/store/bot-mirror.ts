@@ -9,7 +9,10 @@ import {
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import type { NetworkView, RecoveryCode } from '@shared/network'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
+import { rosterOrder } from '../lib/computer-roster'
+import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
@@ -33,17 +36,23 @@ export class BotMirror extends Observable {
   client: HostClient | null = null
   hello: Hello | null = null
   hostVersion: { version: string; minApp?: string | null } | null = null
+  /** An update asked of this computer from here while it's behind; cleared once its version changes. */
+  hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
   cloud: CloudStatus | null = null
+  /** This computer's network; null until known, and on hosts without `networkView`. */
+  network: NetworkView | null = null
+  /** A new network's recovery code until the user says they saved it: the host keeps it nowhere. */
+  recoveryCode: RecoveryCode | null = null
   historyComplete = new Set<string>()
   routineDrafts = new Map<string, string>()
   readonly composerDrafts: ComposerDrafts
   lastError: string | null = null
-  /** A kit view selected a bot on this store (new chat, editor); the account picks it up. */
+  /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */
   selection: string | null = null
   /** Permission cards whose answer is on its way, with the chosen option. */
   answering = new Map<string, string>()
@@ -102,9 +111,32 @@ export class BotMirror extends Observable {
     return null
   }
 
-  /** Roster order: pinned first, then where the user dragged them, then most recent activity. */
+  /** What the update notice offers while this computer is behind this app. */
+  get hostUpdateOffer(): HostUpdateOffer {
+    return offerHostUpdate(this.hostUpdate, this.hello?.canUpdate === true)
+  }
+
+  /** This computer's Codync row at `now` (Settings > Computers); null until its `hello` arrives. */
+  hostVersionLine(now = Date.now()): HostVersionLine | null {
+    if (!this.hello) return null
+    return hostVersionLine(this.hello.version, this.hello.latestVersion, this.mismatch,
+      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os)
+  }
+
+  /** Out of reach while an update asked from here installs: the computer restarts on its own, so it
+   *  reads as updating, not as a lost connection (kit's `BotStore.isUpdating`). */
+  get isUpdating(): boolean {
+    return this.connection.kind !== 'online' && this.hostUpdateOffer.kind === 'updating'
+  }
+
+  /** When an update asked from here stops reading as under way; null when none was asked. */
+  get hostUpdateWaitEnds(): number | null {
+    return this.hostUpdate?.kind === 'requested' ? this.hostUpdate.at + HOST_UPDATE_WAIT : null
+  }
+
+  /** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */
   get roster(): Bot[] {
-    return [...this.bots.values()].filter((b) => !b.hidden).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.position - b.position || b.lastAt - a.lastAt)
+    return [...this.bots.values()].filter((b) => !b.hidden).sort(rosterOrder)
   }
 
   get hiddenBots(): Bot[] {
@@ -115,11 +147,12 @@ export class BotMirror extends Observable {
     return this.hello?.backends.find((b) => b.id === id)?.name ?? builtInBackendName(id)
   }
 
-  /** A bot's or group's main chat (thread replies are left out). */
-  chat(botId: string) {
-    return (this.entries.get(botId) ?? []).filter((e) => !e.threadId)
+  /** The ACP registry id an agent's logo is under (`AgentIcon`). */
+  agentRegistry(id: string) {
+    return this.hello?.backends.find((b) => b.id === id)?.registry ?? id
   }
 
+  /** A bot's or group's chat, trace entries included. */
   allEntries(botId: string) {
     return this.entries.get(botId) ?? []
   }
@@ -128,28 +161,13 @@ export class BotMirror extends Observable {
     return canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
   }
 
-  replies(botId: string, root: string) {
-    return (this.entries.get(botId) ?? []).filter((e) => e.threadId === root)
-  }
-
   members(group: Bot) {
     return group.members.map((id) => this.bots.get(id)).filter((b): b is Bot => !!b)
   }
 
-  authorName(id: string | null | undefined) {
-    return (id && this.bots.get(id)?.name) || 'A deleted bot'
-  }
-
-  /** The latest thinking of the turn running in a chat (`thread` null) or thread. */
-  currentThinking(botId: string, thread: string | null) {
-    const list = this.allEntries(botId)
-    for (let i = list.length - 1; i >= 0; i--) {
-      const e = list[i]!
-      if ((e.threadId ?? null) !== thread) continue
-      if (e.kind === 'user' || (e.kind === 'agent' && e.data.final === true)) return null
-      if (e.kind === 'thought' && e.data.text) return e.data.text
-    }
-    return null
+  /** A bot's name; `fallback` for one that isn't this computer's (a bot on another computer). */
+  authorName(id: string | null | undefined, fallback?: string) {
+    return (id && this.bots.get(id)?.name) || fallback || 'A deleted bot'
   }
 
   get connectionLabel() {
@@ -202,6 +220,16 @@ export class BotMirror extends Observable {
 
   setError(message: string | null) {
     this.lastError = message
+    this.changed()
+  }
+
+  setNetwork(network: NetworkView | null) {
+    this.network = network
+    this.changed()
+  }
+
+  setRecoveryCode(code: RecoveryCode | null) {
+    this.recoveryCode = code
     this.changed()
   }
 

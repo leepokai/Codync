@@ -15,9 +15,33 @@ Desktop development and builds on macOS generate SF Symbols automatically, inclu
 | Desktop packaging | `npm run dist:<platform>:main` | `npm run dist:<platform>:dev` |
 | Foreground host | `CODYNC_ENV=main cargo run -- serve` | `cargo run -- serve` |
 
-`<platform>` is `mac`, `linux`, or `win`. Desktop `npm run dev` uses the development identity. An unpackaged run needs a matching development host binary; it takes the first that exists of `CODYNC_HOST_BIN`, `apps/desktop/build/native/codync-host` (left by `dist:mac:dev`, or rebuilt alone with `node tools/native-host.mjs dev`) and `host/target/debug/codync-host`, so after a `dist:mac:dev` a plain `cargo build` isn't picked up. On Linux, install a development host as `~/.local/bin/codync-dev-host`; the production binary remains `codync-host`.
+`<platform>` is `mac`, `linux`, or `win`. Desktop `npm run dev` uses the development identity; in a linked worktree it runs a [sandbox](#worktree-sandboxes). In the main checkout, an unpackaged run needs a matching development host binary; it takes the first that exists of `CODYNC_HOST_BIN`, `apps/desktop/build/native/codync-host` (left by `dist:mac:dev`, or rebuilt alone with `node tools/native-host.mjs dev`) and `host/target/debug/codync-host`, so after a `dist:mac:dev` a plain `cargo build` isn't picked up. On Linux, install a development host as `~/.local/bin/codync-dev-host`; the production binary remains `codync-host`.
 
 Xcode configurations separate environment from optimization: `Debug` and `Release` use production; `DevDebug` and `DevRelease` use development. The `iOS` archive remains `Release`, preserving Xcode Cloud's existing production scheme. Configure schemes through `apps/project.yml`, then regenerate with `xcodegen generate --spec apps/project.yml`.
+
+## Worktree sandboxes
+
+`npm run dev` decides by checkout. The main checkout (its `.git` is a folder) runs the default Codync Dev: the launchd/systemd host on 19223 and `~/.codync-dev`, the one a physical iPhone pairs with. A linked worktree (its `.git` is a file) runs a sandbox beside it, so any number of worktrees and agents test at once:
+
+- Host data in `~/.codync-dev-<worktree folder>`, which also holds the app's session, account and single-instance lock (`desktop/`). The window and menu bar read `Codync Dev (<name>)`.
+- A port from 19300–19399, picked free on the first run and kept in that folder's `sandbox.json`, so a paired simulator stays paired.
+- A host built from the worktree's own code (`node tools/native-host.mjs dev`; on Linux `cargo build`, honoring `CARGO_TARGET_DIR`; or `CODYNC_HOST_BIN`), started and stopped with the app, logging to `host.log`. No launchd/systemd service, and the dev cloud is off.
+- The run prints the commands that pair a phone or simulator (`codync-host pair`) and open the terminal UI against the sandbox. Give each sandbox its own simulator: a simulator holds one Codync Dev.
+
+Flags go after `npm run dev --`: `--shared` takes the default Codync Dev from a worktree (quit the main checkout's first); `--sandbox` runs a sandbox from the main checkout, for a second session on `dev`; `--name <name>` runs the sandbox of that name, for another copy of the same checkout; `--cloud` lets the sandbox host use the dev cloud (each sandbox then shows as another computer); `--cdp` opens the DevTools protocol on the sandbox port + 10000; `--list` shows every sandbox; `--prune` deletes the ones whose worktree is gone (and their Clerk test accounts), so run it after removing worktrees.
+
+A sandbox starts past onboarding (welcome and computer-access setup, only where the window hasn't chosen yet); `--onboarding` clears those two settings once per start, so the flow comes back (a signed-in sandbox passes the welcome screen by itself and lands on computer-access setup). With `CODYNC_CLERK_SECRET_KEY` (the Clerk **development** instance's `sk_test_...` key) in the git-ignored `.env.development` at the main checkout's root (copy `.env.development.example`) (every worktree reads that one file) or the environment, it also signs in its own Clerk test account `sandbox-<name>+clerk_test@example.com`: `tools/dev-account.mjs` finds or creates that user through the Backend API and mints a one-time sign-in token, which `account.ts` trades for a session (`ticket` strategy, unpackaged Dev runs only). The token is minted at every start and used only while the sandbox has no active session; the app also requires a `pk_test_` publishable key, and the key never reaches the host or the agents. Keys that aren't `sk_test_` are refused. Without a key a sandbox starts signed out; it never borrows Codync Dev's login.
+
+Still shared: macOS sees every unpackaged run as the same Electron app, so permissions and notifications are shared and a `codync-dev://` sign-in callback may reach another copy (test sign-in on the default Codync Dev); Codync Screen and computer use need the packaged `Codync Dev.app`; a global shortcut (the approval island's) goes to whichever app registered it first.
+
+## Local secrets
+
+Secrets for running the project locally live in git-ignored env files at the main checkout's root, one per environment: `.env.development` for the Clerk and Cloudflare **development** instances, `.env.production` for production. `.gitignore` covers `.env` and `.env.*` but not `.env.*.example`, so each file has a committed template (`.env.development.example`) listing its variables with placeholders; copy it and fill it in. Linked worktrees read the main checkout's file (through `git rev-parse --git-common-dir`), so a new worktree needs no setup. Real values never go in a template, a commit or a log.
+
+- Dev tooling reads `.env.development` only and never loads `.env.production`; a variable already in the environment wins over the file.
+- A development key is checked before use (`CODYNC_CLERK_SECRET_KEY` must be `sk_test_...`), so a production key put there by mistake is refused.
+- Deployed secrets (the Worker's `CLERK_SECRET_KEY` and the like) are set with `wrangler secret put`, not kept in these files.
+- Variables so far: `CODYNC_CLERK_SECRET_KEY` (see [Worktree sandboxes](#worktree-sandboxes)).
 
 ## Resource ownership
 

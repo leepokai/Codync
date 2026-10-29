@@ -1,0 +1,99 @@
+Codync keeps your work on your computer. The phone and desktop apps are windows onto the host running there. This page lists what stays on your devices, what passes through Codync's services and what they can see, and the usage analytics Codync collects. The [Privacy Policy](/privacy) is the formal statement.
+
+## What stays on your computer
+
+- **Bots, conversations, routines and memory** are kept by the host in `~/.codync` on your computer. Your phone keeps a cache so the app opens quickly.
+- **Agents run with their own logins.** Claude Code, Codex and the other agents use the sign-ins you set up on the computer. Your prompts go from the agent to its provider, as they would without Codync.
+- **Secrets are encrypted.** Connector credentials, voice API keys and other keys you enter in Codync are stored encrypted on the computer. The encryption key is held by the system's credential store (Keychain on macOS, Secret Service on Linux, Credential Manager on Windows). They're never sent to Codync's cloud.
+- **Usage limits are read on your computer.** The host reads them from the agents installed there: Claude Code's usage command and status line, the Codex CLI's read-only current-account query, and the same kind of local report from oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie. The Codex query does not start a conversation or model turn, and its CLI manages its own sign-in. Cursor is the exception. It has no local report, so the host reads the sign-in Cursor saved and asks cursor.com for the summary. That token is not logged, and Codync does not call any other provider's API with an agent's login. To read Claude Code's limits, `codync-host install` routes its status line through `codync-host statusline`; a status line you already had keeps working and is restored when you uninstall.
+
+## The relay
+
+When your phone isn't on the same network as your computer, the connection goes through the Codync relay on Cloudflare. Everything inside it is end-to-end encrypted between your phone and your computer. See [Remote access](/docs/remote-access) for how that works and how to turn the relay off.
+
+If you point a computer at [a relay you run yourself](/docs/remote-access#your-own-relay), that relay takes the Codync relay's place for it: whoever runs that server sees what's listed below, and Codync's relay sees none of it. It can't read the encrypted connection either. Sign-in, public routine webhooks and remote screen through the relay aren't available there, and push notifications still go through Codync's push service.
+
+**The relay can't read** your messages, files, bot output, approvals, terminals or anything else you send through the encrypted connection.
+
+**The relay does see:**
+
+- that your computer is registered, with its name, platform, device type, Codync version and public keys;
+- when your computer and your devices connect, how often, and how much data passes;
+- messages you send from the iPhone while the computer is offline, which wait there, encrypted, for up to 24 hours until the computer picks them up;
+- if you sign in: your account's email address, the names and platforms of your signed-in devices, and which of them may use which computer. Sign-in itself is handled by Clerk, the sign-in service Codync uses.
+
+The relay can't add a device to your computer. A new device needs either a pairing code shown on the computer or your approval there. The one exception is the setting **Skip the 6-digit check**, which lets any device signed in to your account in without that check.
+
+**Public routine webhooks are the exception to end-to-end encryption.** A service that calls a routine's public URL sends its data to the relay over HTTPS. The relay can read it and keeps the routine's key to check signatures. If you don't want that, use the routine's local URL instead.
+
+**Cloud assistants are the other exception.** If you turn them on at a computer and add the Codync connector to ChatGPT, Claude or another assistant, the assistant's requests to your bots and the bots' replies pass through the relay over HTTPS, and the relay can read them (it doesn't store them). They're off until you turn them on at the computer, and the relay passes on only requests from your own account. See [Cloud assistants](/docs/cloud-assistants).
+
+**Remote screen** sessions are encrypted between your phone and your computer. When there's no direct path, the video goes through a Cloudflare relay that can't see what's on your screen.
+
+**codync-network**, your computers' network ([bots on your other computers](/docs/teamwork#bots-on-your-other-computers)) doesn't use the Codync relay. Your computers connect to each other directly, encrypted end to end. When two can't, the default connector sends their encrypted traffic through iroh's public relays, run by n0, and they find each other through n0's address lookup; these see your computers' IP addresses and when they connect, not what they say. With your own `iroh-relay` or the private connector, nothing reaches n0.
+
+## Push notifications
+
+On the iPhone, a bot can notify you when it needs you, when it's done, or when it failed. Your computer encrypts each notification's text (the bot's name and a short preview) to a key that only your iPhone holds. Codync's push service, a separate Cloudflare Worker, forwards it to Apple's push service with only a generic text such as "Your task is complete. Open Codync to read the result." Your iPhone decrypts the real text on the device. If it can't (for example before you first unlock the phone after a restart), you see the generic text.
+
+- The push service and Apple see the generic text, the encrypted text, and identifiers that say which computer and bot the alert is for (not their names).
+- Your phone's push token is wrapped in a ticket that only the push service can open. Your computer never sees the raw token. The push service doesn't store notifications.
+- Live Activities on the Lock Screen and in the Dynamic Island get only the bot's status from the computer, never message text.
+- No notification is sent while the iPhone app is connected to the computer. Muted and hidden bots don't notify.
+
+To turn notifications off on an iPhone, tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and turn off **Push notifications** on that computer. Each bot's settings have their own notification options.
+
+## Voice
+
+What leaves your device in a voice call or during dictation depends on the engine you pick. Details: [Voice](/docs/voice).
+
+| Engine | Where your voice goes |
+| --- | --- |
+| On device (the default) | Recognized on your iPhone or Mac with Apple speech. Apple's servers may be used when on-device recognition isn't available for your language. Only the recognized text goes to your computer, as an ordinary message. |
+| OpenAI or Gemini, Realtime mode | Straight from your device to the provider. Your computer gives the device a short-lived credential made from your key. Before the call, the provider also gets the background your computer writes for the voice: the date and time, what your bots remember about you (shared memory and the names of its notes), this bot's settings, routines and memory, the project's git branch, changed files and recent commits, what the bot is working on, the recent messages and calls in the chat, your other bots, and the names of files shared in the chat. When a call reconnects or you switch engine mid-call, it also gets what was said on the call so far. During the call it gets the messages and results the voice reads. Your computer keeps the call's written transcript, in the chat. |
+| OpenAI or Gemini, Speech mode, and dictation with a provider | Your recording goes to your computer over the encrypted connection, and your computer sends it to the provider with your key and the names of the bots on the computer as spelling hints. The provider's spoken replies come back the same way. |
+
+Your provider key stays on your computer, encrypted. It's never sent to the relay or Codync's cloud. Calls with your own key run under your provider account and its privacy policy.
+
+## Usage analytics
+
+Codync records which features you use, to spot bugs sooner and see where people get stuck. Analytics are **on by default**, and nothing asks first. They go to PostHog (US).
+
+**What's recorded:** opening the app and its screens, setting up and pairing (and whether you allow notifications), creating or deleting a bot, sending a message (with the number of attachments, never the files), running a routine or a voice call, and installing a connector. Each event carries the app version, the platform, and the agent and model the bot uses.
+
+**Crashes and errors:** the kind of error and where in Codync's own code it happened. Never the error's message; file paths are cut down to Codync's own files.
+
+**Never recorded:** your messages, prompts, code, files, file names or paths, bot names, credentials, or anything your agents produce.
+
+**Location:** your IP address is used to look up an approximate location (country and city). The IP address itself isn't stored.
+
+**Who it's linked to:** your Codync account when you're signed in; otherwise a random ID made on that device.
+
+Analytics are never sold, never used for ads and never used to track you across other apps and websites. The website, codync.dev, counts page views and download clicks without cookies.
+
+### Turning analytics off
+
+Each phone and each computer has its own switch, **Share usage analytics**. Turning it off stops sending right away and drops anything not sent yet.
+
+- **iPhone:** the **Settings** tab, **Share usage analytics**.
+- **Desktop app:** **Settings → General**, under **Privacy**. This switch belongs to the computer's host, so it also covers the terminal UI on that computer.
+- **Terminal UI:** press `^k` and choose **Share usage analytics**.
+
+The info button next to the switch (**About usage analytics…** in the terminal UI) lists the same details. What you do from the phone on a computer, such as sending a message, is recorded by that computer. To stop all of it, turn the switch off on both.
+
+## Removing your data
+
+Delete a bot to remove its conversation. To remove everything from a computer, see "Uninstalling" in [Updates](/docs/updates). On the iPhone, **Start over** on the **Settings** tab signs out and forgets every computer; your computers keep their bots and chats. Deleting the iPhone app removes its cache.
+
+## iPhone rating invitations
+
+Codync may invite you to rate it after you have used it on several days, viewed a bot's
+completed result, and returned to the bot list. It does not ask when you open the app.
+Invitations are at least 120 days apart, with at most two requests in a year. Apple decides
+whether to show its rating window. You can also choose **Rate on the App Store** on the
+**Settings** tab at any time. **Report an issue** opens a separate feedback link,
+regardless of whether you choose to rate the app.
+
+The timing history stays on your iPhone. If **Share usage analytics** is on, Codync records
+invitation opportunities, cancellation reasons, requests, and taps on the rating link, with
+interaction counts. It does not send conversation content or know whether you rated it.

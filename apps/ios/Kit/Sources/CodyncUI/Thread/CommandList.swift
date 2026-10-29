@@ -7,12 +7,13 @@ struct CommandList: View {
     let pick: (SlashCommand) -> Void
 
     var body: some View {
-        // Scrolls only once it's taller than the room it gets.
-        ViewThatFits(in: .vertical) {
-            rows
-            ScrollView { rows }.scrollIndicators(.hidden)
+        // Hugs its rows; scrolls only once they're taller than 280 points.
+        CappedHeight(max: 280) {
+            ViewThatFits(in: .vertical) {
+                rows
+                ScrollView { rows }.scrollIndicators(.hidden)
+            }
         }
-        .frame(maxHeight: 280, alignment: .bottom)
         .glass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 

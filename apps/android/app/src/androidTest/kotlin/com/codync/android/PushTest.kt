@@ -26,7 +26,6 @@ class PushTest {
 
     @Test fun sealedFallbackStaysGenericAndInactiveContextsCannotNotify() {
         val previous = PushPreferences.activeUser(context)
-        val previousEnabled = PushPreferences.enabled(context)
         val previousVisible = PushDelivery.foreground
         val user = "push-test-${UUID.randomUUID()}"
         val local = LocalStore(context, user)
@@ -41,7 +40,7 @@ class PushTest {
         if (permission) instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         try {
             local.saveComputers(listOf(computer)); local.identity()
-            PushPreferences.active(context, user); PushPreferences.enabled(context, true); PushDelivery.foreground = false
+            PushPreferences.active(context, user); PushDelivery.foreground = false
             val data = mapOf("kind" to "alert", "ctx" to local.referenceId, "computerId" to computer.id, "botId" to bot,
                 "sealed" to "invalid", "title" to "Never display unsealed private text", "body" to "private content")
             PushService.receive(context, data + ("ctx" to "local"))
@@ -58,12 +57,12 @@ class PushTest {
             PushService.receive(context, data)
             assertTrue(manager.activeNotifications.none { it.tag == tag })
             PushDelivery.foreground = false
-            PushPreferences.enabled(context, false)
+            local.saveComputers(listOf(computer.copy(notifications = false)))
             PushService.receive(context, data)
             assertTrue(manager.activeNotifications.none { it.tag == tag })
         } finally {
             manager.cancel(tag, 1); local.erase()
-            PushPreferences.active(context, previous); PushPreferences.enabled(context, previousEnabled); PushDelivery.foreground = previousVisible
+            PushPreferences.active(context, previous); PushDelivery.foreground = previousVisible
             // Revoking this permission kills the test process on newer Android releases.
             // These storage/identity tests run only on disposable emulator installations.
         }

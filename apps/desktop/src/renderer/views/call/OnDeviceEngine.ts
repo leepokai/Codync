@@ -1,5 +1,5 @@
 import type { SpeechEvent } from '@shared/ipc'
-import { onDeviceUnavailableReason, spokenText, VoiceEngine, VoiceSettings } from './voice'
+import { onDeviceUnavailableReason, spokenText, VoiceEngine, VoiceSettings, type VoiceFailureKind } from './voice'
 
 /**
  * The reply's language from its script, for picking a voice (replies may be English while the
@@ -186,9 +186,10 @@ export class OnDeviceEngine extends VoiceEngine {
     this.listen()
   }
 
-  protected fail(message: string) {
+  protected fail(message: string, kind: VoiceFailureKind = 'microphone') {
     this.stopListening()
     this.failure = message
+    this.failureKind = kind
     this.setPhase('failed')
   }
 }

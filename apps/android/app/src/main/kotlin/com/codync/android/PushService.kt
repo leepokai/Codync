@@ -26,7 +26,6 @@ import kotlinx.serialization.json.*
 object PushPreferences {
     private fun prefs(context: Context) = context.getSharedPreferences("codync-push", Context.MODE_PRIVATE)
     fun activeUser(context: Context): String? = prefs(context).getString("user", null)
-    fun enabled(context: Context) = prefs(context).getBoolean("enabled", true)
     fun tasks(context: Context) = prefs(context).getBoolean("tasks", true)
     fun asked(context: Context) = prefs(context).getBoolean("asked", false)
     fun markAsked(context: Context) { prefs(context).edit().putBoolean("asked", true).apply() }
@@ -35,8 +34,16 @@ object PushPreferences {
     fun active(context: Context, user: String?) = synchronized(this) { prefs(context).edit().putString("user", user).putBoolean("retired", false).commit() }
     fun retired(context: Context) = prefs(context).getBoolean("retired", false)
     fun retire(context: Context) = synchronized(this) { prefs(context).edit().putBoolean("retired", true).commit() }
-    fun enabled(context: Context, enabled: Boolean) { prefs(context).edit().putBoolean("enabled", enabled).commit() }
     fun tasks(context: Context, enabled: Boolean) { prefs(context).edit().putBoolean("tasks", enabled).commit() }
+    /** 2.28.0 had one push switch for every computer; switched off, it becomes each saved computer's own, once (iOS `splitPushSwitch`). */
+    fun splitSwitch(context: Context) {
+        synchronized(this) {
+            val prefs = prefs(context)
+            if (!prefs.contains("enabled")) return
+            if (!prefs.getBoolean("enabled", true)) LocalStore.pushOffEverywhere(context)
+            prefs.edit().remove("enabled").commit()
+        }
+    }
     fun reset(context: Context) {
         val token = fid(context)
         prefs(context).edit().clear().putString("fid", token).commit()
@@ -81,7 +88,7 @@ object PushDelivery {
             feed.all().forEach { active.call("unregisterActivity", body("botId" to it.botId)) }
             feed.clear()
         }
-        if (!PushPreferences.enabled(context) || !permitted) {
+        if (!computer.notifications || !permitted) {
             active.call("unregisterDevice")
             if (!permitted || !PushPreferences.tasks(context) || feed.all().none { !it.finished }) return
         }
@@ -94,7 +101,7 @@ object PushDelivery {
             }.addOnFailureListener { error -> continuation.resumeWith(Result.failure(error)) }
         }
         val identity = withContext(Dispatchers.IO) { local.identity() }
-        if (PushPreferences.enabled(context)) {
+        if (computer.notifications) {
             val ticket = PushRelay.ticket(BuildConfig.PUSH_RELAY_URL, token, local.referenceId, computer.id)
             currentCoroutineContext().ensureActive()
             active.call("registerDevice", buildJsonObject {
@@ -112,6 +119,7 @@ object PushDelivery {
     suspend fun background(context: Context) = gate.withLock {
         if (!BuildConfig.PUSH_CONFIGURED) return@withLock
         if (PushPreferences.retired(context)) return@withLock
+        withContext(Dispatchers.IO) { PushPreferences.splitSwitch(context) }
         val local = LocalStore(context, PushPreferences.activeUser(context) ?: "local")
         val computers = withContext(Dispatchers.IO) { local.computers() }
         val computer = computers.firstOrNull() ?: return@withLock
@@ -165,12 +173,13 @@ class PushService : FirebaseMessagingService() {
             synchronized(PushPreferences) {
             try {
                 if (PushPreferences.retired(context)) return
+                PushPreferences.splitSwitch(context)
                 val user = PushPreferences.activeUser(context)
                 val scope = LocalStore.referenceId(user ?: "local")
                 if (data["ctx"] != scope || data["kind"] !in setOf("alert", "task")) return
                 val local = LocalStore(context, user ?: "local")
                 val computerId = data["computerId"] ?: return
-                if (local.computers().none { it.id == computerId }) return
+                val computer = local.computers().firstOrNull { it.id == computerId } ?: return
                 val botId = data["botId"]?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,128}")) } ?: return
                 if (!context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) return
                 NotificationDisplay.channels(context)
@@ -180,7 +189,7 @@ class PushService : FirebaseMessagingService() {
                     NotificationDisplay.task(context, scope, computerId, watch)
                     return
                 }
-                if (!PushPreferences.enabled(context) || PushDelivery.foreground) return
+                if (!computer.notifications || PushDelivery.foreground) return
                 var alert = PushAlert(title = context.getString(R.string.app_name), body = "A bot has an update.")
                 try {
                     if (local.hasIdentity()) {
@@ -188,7 +197,7 @@ class PushService : FirebaseMessagingService() {
                         alert = PushAlert.decode(local.identity().openPush(sealed, computerId).toString(Charsets.UTF_8))
                     }
                 } catch (_: Exception) { /* Locked/unavailable key: show only a generic fallback. */ }
-                NotificationDisplay.alert(context, scope, computerId, botId, alert)
+                NotificationDisplay.alert(context, scope, computerId, botId, alert, data["category"])
             } catch (_: Exception) { /* A malformed push cannot crash the Firebase service. */ }
             }
         }
@@ -198,6 +207,8 @@ class PushService : FirebaseMessagingService() {
 internal object NotificationDisplay {
     const val ALERTS = "codync-alerts"
     const val TASKS = "codync-tasks"
+    /** The tapped alert's kind (the host's `AlertKind`), for `notification_opened`. */
+    const val ALERT_KIND = "codync:alertKind"
     fun channels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(ALERTS, "Bot updates", NotificationManager.IMPORTANCE_HIGH))
@@ -207,18 +218,20 @@ internal object NotificationDisplay {
         val url = Uri.Builder().scheme(BuildConfig.URL_SCHEME).authority("bot").appendPath(bot).appendQueryParameter("scope", scope).appendQueryParameter("computer", computer).build()
         return Intent(context, MainActivity::class.java).setAction(Intent.ACTION_VIEW).setData(url)
     }
-    private fun builder(context: Context, scope: String, computer: String, bot: String, channel: String): NotificationCompat.Builder {
-        val pending = PendingIntent.getActivity(context, 0, open(context, scope, computer, bot), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    /** An alert's tap carries its kind; its own request code keeps it apart from the same bot's task. */
+    private fun builder(context: Context, scope: String, computer: String, bot: String, channel: String, alertKind: String? = null): NotificationCompat.Builder {
+        val intent = open(context, scope, computer, bot).apply { alertKind?.let { putExtra(ALERT_KIND, it) } }
+        val pending = PendingIntent.getActivity(context, if (alertKind != null) 1 else 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val generic = NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.app_name)).setContentText("A bot has an update.").build()
         return NotificationCompat.Builder(context, channel).setSmallIcon(R.drawable.ic_notification).setContentIntent(pending)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(generic).setGroup("$scope/$computer")
     }
     /** The alert's title, what happened and its text; with the chat's face, a conversation from the bot. */
-    fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert) {
+    fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert, kind: String?) {
         channels(context)
         val tag = "$scope/$computer/$bot"
-        val builder = builder(context, scope, computer, bot, ALERTS).setContentTitle(alert.title).setContentText(alert.body)
+        val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty()).setContentTitle(alert.title).setContentText(alert.body)
             .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
             .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
         alert.conversation(bot)?.let { conversation ->

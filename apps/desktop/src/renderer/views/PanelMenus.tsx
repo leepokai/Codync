@@ -2,9 +2,14 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Spinner } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import type { MenuItem } from '../components/Overlay'
-import { font } from '../lib/fonts'
+import { HStack, IconSlot, VStack } from '../components/Stack'
+import { Text } from '../components/Text'
+import type { Link } from '@shared/analytics'
 import { account, useAccount } from '../store/account'
+import { openLink, useScreenViewed } from '../store/analytics'
 import googleLogo from '../assets/google.svg'
+import { useTr } from '../lib/use-language'
+
 
 // The chat window's floating panels: the account menu (with its profile avatar) and the roster's
 // right-click actions, both built on the same keyboard-driven rows.
@@ -12,16 +17,16 @@ import googleLogo from '../assets/google.svg'
 export function ProfileAvatar() {
   const { user, isBusy } = useAccount()
   return (
-    <span className="profile-avatar" aria-hidden style={{ position: 'relative', overflow: 'hidden' }}>
+    <span className="profile-avatar" aria-hidden>
       {user?.avatarURL ? (
-        <img src={user.avatarURL} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <img src={user.avatarURL} alt="" className="profile-avatar-image" />
       ) : (
         <Icon name="person.fill" size={15} weight="medium" color="var(--secondary)" />
       )}
       {isBusy ? (
-        <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <HStack as="span" justify="center" className="profile-avatar-busy">
           <Spinner size={14} />
-        </span>
+        </HStack>
       ) : null}
     </span>
   )
@@ -47,8 +52,10 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
   onUsage: () => void
   onSettings: () => void
 }) {
+  const tr = useTr()
   const [page, setPage] = useState<'main' | 'support'>('main')
   const { user, isBusy, errorMessage } = useAccount()
+  useScreenViewed('account')
   const signedIn = user !== null
   const auth: PanelItem[] = signedIn
     ? [{ title: isBusy ? 'Please wait…' : 'Sign out', icon: 'rectangle.portrait.and.arrow.right', disabled: isBusy, action: () => { onDismiss(); void account.signOut() } }]
@@ -56,27 +63,27 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
         { title: 'Continue with Apple', icon: 'apple.logo', disabled: isBusy, action: () => { onDismiss(); void account.signIn('apple') } },
         { title: 'Continue with Google', icon: 'person.crop.circle.badge.plus', image: googleLogo, disabled: isBusy, action: () => { onDismiss(); void account.signIn('google') } },
       ]
-  const open = (url: string) => {
+  const open = (url: string, link: Link) => {
     onDismiss()
-    window.codync.app.openExternal(url)
+    openLink(url, link)
   }
   const items: PanelItem[] =
     page === 'support'
       ? [
           { title: 'Support', icon: 'chevron.left', action: () => setPage('main') },
-          { title: 'Help & documentation', icon: 'book', chevron: true, action: () => open('https://github.com/leepokai/codync#readme') },
-          { title: 'Report an issue', icon: 'bubble.left', chevron: true, action: () => open('https://github.com/leepokai/codync/issues') },
+          { title: 'Help & documentation', icon: 'book', chevron: true, action: () => open('https://github.com/leepokai/codync#readme', 'docs') },
+          { title: 'Report an issue', icon: 'bubble.left', chevron: true, action: () => open('https://github.com/leepokai/codync/issues', 'issues') },
         ]
       : [
           { title: 'Usage', icon: 'gauge.with.dots.needle.33percent', chevron: true, action: onUsage },
-          { title: 'Get Codync for mobile', icon: 'iphone', action: () => open('https://apps.apple.com/app/id6760984418') },
+          { title: 'Get Codync for mobile', icon: 'iphone', action: () => open('https://apps.apple.com/app/id6760984418', 'app_store') },
           { title: 'Support', icon: 'book.closed', chevron: true, action: () => setPage('support') },
           { title: 'Settings', icon: 'gearshape', detail: approvals > 0 ? String(approvals) : null, action: onSettings },
           ...auth,
         ]
   return (
     <div className="context-layer" onMouseDown={(e) => e.target === e.currentTarget && onDismiss()}>
-      <div className="account-panel" style={{ width: Math.min(260, window.innerWidth - 32), left: 16, bottom: compact ? 68 : 64 }}>
+      <div className={`account-panel ${compact ? 'compact' : ''}`} style={{ width: Math.min(260, window.innerWidth - 32) }}>
         <PanelRows
           items={items}
           onDismiss={onDismiss}
@@ -86,8 +93,8 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
                 <div className="panel-divider" />
                 <div className="panel-identity">
                   <Icon name="person.crop.circle" size={15} />
-                  <span style={{ ...font(12), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.email ?? 'Account'}</span>
-                  {signedIn ? null : <span style={font(11)}>Not signed in</span>}
+                  <Text size="callout" truncate grow>{user?.email ?? tr(`Account`)}</Text>
+                  {signedIn ? null : <Text size="caption">{tr(`Not signed in`)}</Text>}
                 </div>
               </>
             ) : page === 'support' && i === 0 ? (
@@ -96,7 +103,7 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
           }
         />
         {page === 'main' && errorMessage ? (
-          <div style={{ ...font(12), color: 'var(--warning)', padding: '8px 10px' }}>{errorMessage}</div>
+          <Text as="div" size="callout" tone="attention" className="panel-error">{errorMessage}</Text>
         ) : null}
       </div>
     </div>
@@ -104,6 +111,7 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
 }
 
 function PanelRows({ items, onDismiss, after, dismissOnActivate = false }: { items: PanelItem[]; onDismiss: () => void; after?: (i: number) => ReactNode; dismissOnActivate?: boolean }) {
+  const tr = useTr()
   const [highlighted, setHighlighted] = useState(0)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -129,12 +137,11 @@ function PanelRows({ items, onDismiss, after, dismissOnActivate = false }: { ite
     return () => window.removeEventListener('keydown', onKey)
   }, [items, highlighted, onDismiss, dismissOnActivate])
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <VStack gap={2}>
       {items.map((item, i) => (
         <div key={item.title}>
           <button
-            className={`panel-row ${highlighted === i ? 'highlight' : ''}`}
-            style={{ color: item.destructive ? 'var(--danger)' : 'var(--text)' }}
+            className={`panel-row ${highlighted === i ? 'highlight' : ''} ${item.destructive ? 'destructive' : ''}`}
             disabled={item.disabled}
             onMouseEnter={() => setHighlighted(i)}
             onClick={() => {
@@ -142,17 +149,17 @@ function PanelRows({ items, onDismiss, after, dismissOnActivate = false }: { ite
               item.action()
             }}
           >
-            <span style={{ width: 20, display: 'flex', justifyContent: 'center' }}>
+            <IconSlot width={20}>
               {item.image ? <img src={item.image} alt="" width={14} height={14} /> : <Icon name={item.icon} size={14} />}
-            </span>
-            <span style={{ ...font(12), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</span>
-            {item.detail ? <span style={{ ...font(13), color: 'var(--secondary)' }}>{item.detail}</span> : null}
+            </IconSlot>
+            <Text size="callout" truncate grow>{tr(item.title)}</Text>
+            {item.detail ? <Text size="body" tone="secondary">{item.detail}</Text> : null}
             {item.chevron ? <Icon name="chevron.right" size={11} color="var(--secondary)" /> : null}
           </button>
           {after?.(i)}
         </div>
       ))}
-    </div>
+    </VStack>
   )
 }
 

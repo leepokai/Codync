@@ -1,5 +1,5 @@
 import type { CallError } from '@shared/ipc'
-import { isChat, normalizeBot, type Bot, type BotDraft, type Entry, type GroupDraft } from '@shared/models'
+import { isChat, isReplyable, normalizeBot, quoteOf, type Bot, type BotDraft, type Entry, type GroupDraft } from '@shared/models'
 import * as story from './story'
 
 // An in-memory codync-host for the website demo: the methods the renderer calls, with the
@@ -29,7 +29,7 @@ export class FakeHost {
     for (const b of story.bots) {
       this.bots.set(b.id, normalizeBot({ ...b, cwd: b.kind === 'group' ? '' : story.cwd, createdAt: now - 86_400_000, permission: b.permission ?? 'auto' }))
     }
-    for (const s of story.entries) this.add({ botId: s.botId, threadId: s.threadId ?? null, kind: s.kind, data: s.data }, s.id, now - s.at * 60_000, false)
+    for (const s of story.entries) this.add({ botId: s.botId, kind: s.kind, data: s.data }, s.id, now - s.at * 60_000, false)
     for (const b of this.bots.values()) {
       this.refreshPreview(b)
       b.rev = ++this.rev
@@ -81,20 +81,19 @@ export class FakeHost {
     if (b.kind !== 'group') return b
     const busy = b.members.map((m) => this.bots.get(m)).find((m) => m && m.status !== 'idle' && m.workingChat === b.id)
     return busy
-      ? { ...b, status: busy.status, activity: busy.activity, startedAt: busy.startedAt, workingChat: b.id, workingThread: busy.workingThread }
+      ? { ...b, status: busy.status, activity: busy.activity, startedAt: busy.startedAt, workingChat: b.id }
       : b
   }
 
   // MARK: entries
 
-  private add(e: Pick<Entry, 'botId' | 'threadId' | 'kind' | 'data'>, id: string = crypto.randomUUID(), at = Date.now(), emit = true) {
+  private add(e: Pick<Entry, 'botId' | 'kind' | 'data'>, id: string = crypto.randomUUID(), at = Date.now(), emit = true) {
     const entry: Entry = { ...e, id, seq: ++this.seq, rev: ++this.rev, turn: 1, createdAt: at, updatedAt: at }
     this.entries.push(entry)
-    if (entry.threadId) this.summarize(entry.botId, entry.threadId, emit)
     if (emit) {
       this.emit({ type: 'entry', rev: entry.rev, entry })
       const bot = this.bots.get(entry.botId)
-      if (bot && !entry.threadId && isChat(entry)) {
+      if (bot && isChat(entry)) {
         this.refreshPreview(bot)
         if (entry.kind !== 'user') bot.unread++
         this.emitBot(bot)
@@ -103,22 +102,8 @@ export class FakeHost {
     return entry
   }
 
-  /** `data.thread` on the root: reply count, last reply, who replied. */
-  private summarize(botId: string, root: string, emit: boolean) {
-    const rootEntry = this.entries.find((e) => e.id === root)
-    if (!rootEntry) return
-    const replies = this.entries.filter((e) => e.botId === botId && e.threadId === root && isChat(e))
-    const authors: string[] = []
-    for (const r of replies) {
-      const a = r.kind === 'user' ? 'user' : (r.data.author ?? botId)
-      if (!authors.includes(a)) authors.push(a)
-    }
-    rootEntry.data = { ...rootEntry.data, thread: { count: replies.length, lastAt: replies.at(-1)?.createdAt ?? 0, authors, unread: 0 } }
-    if (emit) this.emitEntry(rootEntry)
-  }
-
   private refreshPreview(b: Bot) {
-    const last = this.entries.filter((e) => e.botId === b.id && !e.threadId && (e.kind === 'user' || (e.kind === 'agent' && e.data.final))).at(-1)
+    const last = this.entries.filter((e) => e.botId === b.id && (e.kind === 'user' || (e.kind === 'agent' && e.data.final))).at(-1)
     if (!last) return
     const text = last.data.text ?? ''
     b.lastAt = last.createdAt
@@ -127,10 +112,10 @@ export class FakeHost {
 
   // MARK: turns
 
-  private setStatus(botId: string, status: string, activity = '', chat: string | null = null, thread: string | null = null) {
+  private setStatus(botId: string, status: string, activity = '', chat: string | null = null) {
     const bot = this.bots.get(botId)
     if (!bot) return
-    Object.assign(bot, { status, activity, startedAt: status === 'idle' ? null : Date.now(), workingChat: chat, workingThread: thread })
+    Object.assign(bot, { status, activity, startedAt: status === 'idle' ? null : Date.now(), workingChat: chat })
     this.emitBot(bot)
   }
 
@@ -144,14 +129,14 @@ export class FakeHost {
     else this.setStatus(botId, 'idle')
   }
 
-  /** One bot answers in a chat or thread after a short "Typing…". */
-  private async answer(responder: string, chat: string, thread: string | null, text: string) {
+  /** One bot answers in a chat after a short "Typing…". */
+  private async answer(responder: string, chat: string, text: string) {
     const turn = (this.turns.get(responder) ?? 0) + 1
     this.turns.set(responder, turn)
-    this.setStatus(responder, 'working', 'Typing…', chat, thread)
+    this.setStatus(responder, 'working', 'Typing…', chat)
     await sleep(TYPING_MS + Math.random() * 600)
     if (this.turns.get(responder) !== turn) return
-    this.add({ botId: chat, threadId: thread, kind: 'agent', data: { text, final: true, author: responder } })
+    this.add({ botId: chat, kind: 'agent', data: { text, final: true, author: responder } })
     this.settle(responder)
   }
 
@@ -163,16 +148,15 @@ export class FakeHost {
     return pool[i % pool.length]!
   }
 
-  private async converse(chat: Bot, thread: string | null, text: string) {
+  private async converse(chat: Bot, text: string, quoted: string | undefined) {
     let responders = [chat.id]
     if (chat.kind === 'group') {
       const members = chat.members.filter((m) => this.bots.has(m))
       const mentioned = members.filter((m) => text.toLowerCase().includes(`@${this.bots.get(m)!.name.toLowerCase()}`))
-      const rootAuthor = thread ? this.entries.find((e) => e.id === thread)?.data.author : undefined
-      // A room turn: who was asked, the thread's bot, or the first two members.
-      responders = mentioned.length ? mentioned : rootAuthor && members.includes(rootAuthor) ? [rootAuthor] : members.slice(0, 2)
+      // A room turn: who was asked, the bot whose message it replies to, or the first two members.
+      responders = mentioned.length ? mentioned : quoted && members.includes(quoted) ? [quoted] : members.slice(0, 2)
     }
-    for (const r of responders) await this.answer(r, chat.id, thread, this.replyText(r))
+    for (const r of responders) await this.answer(r, chat.id, this.replyText(r))
   }
 
   // MARK: API
@@ -197,14 +181,13 @@ export class FakeHost {
         return story.usage(Date.now())
       case 'history':
         return { entries: [] }
-      case 'thread':
-        return { entries: this.entries.filter((e) => e.botId === str('botId') && e.threadId === str('rootId')) }
       case 'send': {
         const chat = this.bots.get(str('botId'))
         if (!chat) throw fail('That bot was deleted.')
-        const thread = str('threadId') || null
-        const entry = this.add({ botId: chat.id, threadId: thread, kind: 'user', data: { text: str('text'), status: 'sent', clientNonce: str('clientNonce') } })
-        void this.converse(chat, thread, str('text'))
+        const target = this.entries.find((e) => e.id === str('replyTo') && e.botId === chat.id && isReplyable(e))
+        const replyTo = target && quoteOf(target)
+        const entry = this.add({ botId: chat.id, kind: 'user', data: { text: str('text'), status: 'sent', clientNonce: str('clientNonce'), ...(replyTo ? { replyTo } : {}) } })
+        void this.converse(chat, str('text'), replyTo?.author)
         return { entry }
       }
       case 'markRead': {
@@ -233,7 +216,6 @@ export class FakeHost {
         return {}
       }
       case 'newSession':
-        this.add({ botId: str('botId'), threadId: null, kind: 'notice', data: { text: 'New session', style: 'divider' } })
         return {}
       case 'createBot':
       case 'updateBot':
@@ -256,9 +238,14 @@ export class FakeHost {
       case 'listDirs':
         return { path: '/Users/demo/code', parent: '/Users/demo', isGit: false, dirs: [{ name: 'pace', path: story.cwd, isGit: true }] }
       case 'memory':
-        return { location: '', facts: [], total: 0, nextOffset: null }
+        return {
+          shared: true, yours: { entries: [], used: 0, cap: 400 }, bot: { entries: [], used: 0, cap: 1200 },
+          dreams: [], projectMemory: null, memoryRev: 0,
+        }
       case 'routines':
         return { routines: [], runs: [] }
+      case 'agentGear':
+        return { skills: [], connectors: [], rules: [], plugins: [] }
       case 'skills':
       case 'connectors':
       case 'marketSkills':
@@ -295,7 +282,7 @@ export class FakeHost {
     void (async () => {
       this.setStatus(author, 'working', allowed ? 'Editing src/pace.js' : 'Typing…', e.botId)
       await sleep(TYPING_MS)
-      this.add({ botId: e.botId, threadId: e.threadId ?? null, kind: 'agent', data: { text: allowed ? story.approvedReply : story.deniedReply, final: true, author } })
+      this.add({ botId: e.botId, kind: 'agent', data: { text: allowed ? story.approvedReply : story.deniedReply, final: true, author } })
       this.settle(author)
     })()
     return {}

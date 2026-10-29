@@ -2,7 +2,9 @@
 //! process's stdio. Updates are kept as `serde_json::Value` on purpose so a
 //! newer adapter adding a variant never breaks parsing.
 
+use super::process::Process;
 use crate::LockExt;
+use crate::agent::fallback::reason::{self, Reason};
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -11,9 +13,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::Instant;
+
+pub mod codebuddy;
 
 /// stderr lines kept to explain a crash.
 const STDERR_TAIL_LINES: usize = 12;
@@ -37,10 +40,16 @@ type Pending = Arc<std::sync::Mutex<HashMap<i64, oneshot::Sender<Result<Value, V
 pub struct RpcError {
     pub code: i64,
     pub message: String,
+    /// The adapter's own category (`data.errorKind`: Claude's `rate_limit`, `overloaded`, …; `CodeBuddy`'s
+    /// `data.category`: `auth`, `custom_model_auth`, …; codex-acp's `data.codexErrorInfo` as `usage_limit_exceeded`),
+    /// kept only when it's an identifier, as it can go to usage analytics.
+    pub kind: Option<String>,
 }
 
 /// ACP's "authentication required".
 pub const AUTH_REQUIRED: i64 = -32000;
+/// JSON-RPC's "internal error".
+pub const INTERNAL_ERROR: i64 = -32603;
 
 impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -50,13 +59,23 @@ impl std::fmt::Display for RpcError {
 
 impl std::error::Error for RpcError {}
 
-/// Whether an agent's error asks for signing in: ACP's code, or adapters that only say so.
+/// Whether an agent's error asks for signing in: ACP's code, the category of an adapter that names one, or the
+/// words of one that names none. A named category is believed: `CodeBuddy`'s `custom_model_auth` (a bad key in
+/// `models.json`) says "Authentication failed" but signing in doesn't fix it.
 pub fn needs_sign_in(e: &anyhow::Error) -> bool {
-    let rpc = |c: &(dyn std::error::Error + 'static)| {
-        c.downcast_ref::<RpcError>()
-            .is_some_and(|r| r.code == AUTH_REQUIRED || r.message.to_lowercase().contains("auth"))
-    };
-    e.chain().any(rpc) || e.to_string().to_lowercase().contains("auth")
+    let says_auth = |text: &str| text.to_lowercase().contains("auth");
+    match e.chain().find_map(|c| c.downcast_ref::<RpcError>()) {
+        Some(r) if r.kind.is_some() => reason::of_rpc(r) == Some(Reason::SignedOut),
+        Some(r) => r.code == AUTH_REQUIRED || says_auth(&r.message) || says_auth(&e.to_string()),
+        None => says_auth(&e.to_string()),
+    }
+}
+
+/// Whether a failed prompt may have left its session dead in the agent: an internal error the
+/// adapter gave no category. Claude's adapter answers every later prompt on a session whose query
+/// stream ended with one ("The Claude Agent session has ended") until the session is closed.
+pub fn may_end_session(e: &anyhow::Error) -> bool {
+    e.chain().filter_map(|c| c.downcast_ref::<RpcError>()).any(|r| r.code == INTERNAL_ERROR && r.kind.is_none())
 }
 
 /// A way an agent fails that the host itself recognizes, kept as a type so usage
@@ -69,6 +88,8 @@ pub enum FailureKind {
     Timeout,
     /// The agent process went away mid-request.
     Exited,
+    /// The agent wouldn't take the bot's model.
+    NoModel,
 }
 
 #[derive(Debug)]
@@ -93,25 +114,58 @@ impl std::error::Error for Failure {}
 
 /// A request already written to the agent, waiting for its response.
 pub struct Answer {
-    rx: oneshot::Receiver<std::result::Result<Value, Value>>,
+    id: i64,
+    pending: Pending,
+    rx: Option<oneshot::Receiver<std::result::Result<Value, Value>>>,
 }
 
 impl Answer {
-    pub async fn response(self) -> Result<Value> {
-        match self.rx.await {
+    pub async fn response(mut self) -> Result<Value> {
+        let receiver = self.rx.take().expect("a response is consumed once");
+        match receiver.await {
             Ok(Ok(v)) => Ok(v),
-            Ok(Err(e)) => {
-                let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
-                let message = match e["data"]["details"].as_str().or(e["data"].as_str()) {
-                    Some(d) => format!("{msg} ({d})"),
-                    None => msg,
-                };
-                Err(RpcError { code: e["code"].as_i64().unwrap_or_default(), message }.into())
-            }
+            Ok(Err(e)) => Err(rpc_error(&e).into()),
             // The reader drops every waiter when the process goes away.
             Err(_) => Err(Failure::error(FailureKind::Exited, "agent process exited")),
         }
     }
+}
+
+/// An abandoned request (timed out, cancelled) no longer waits for its response.
+impl Drop for Answer {
+    fn drop(&mut self) {
+        self.pending.locked().remove(&self.id);
+    }
+}
+
+/// A JSON-RPC error object as an [`RpcError`].
+fn rpc_error(e: &Value) -> RpcError {
+    let msg = e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned);
+    let message = match e["data"]["details"].as_str().or(e["data"].as_str()) {
+        Some(d) => format!("{msg} ({d})"),
+        None => msg,
+    };
+    let kind = e["data"]["errorKind"]
+        .as_str()
+        .or(e["data"]["category"].as_str())
+        .map(str::to_owned)
+        .or_else(|| codex_kind(&e["data"]["codexErrorInfo"]))
+        .filter(|k| !k.is_empty() && k.len() <= 40 && k.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'));
+    RpcError { code: e["code"].as_i64().unwrap_or_default(), message, kind }
+}
+
+/// codex-acp's category (`data.codexErrorInfo`: `"usageLimitExceeded"`, or `{"httpConnectionFailed": {…}}`) in the
+/// same form as Claude's `errorKind`: `usage_limit_exceeded`.
+fn codex_kind(info: &Value) -> Option<String> {
+    let name = info.as_str().or_else(|| info.as_object().and_then(|o| o.keys().next()).map(String::as_str))?;
+    let mut kind = String::with_capacity(name.len() + 4);
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            kind.push('_');
+        }
+        kind.push(c.to_ascii_lowercase());
+    }
+    Some(kind)
 }
 
 pub struct Acp {
@@ -119,8 +173,8 @@ pub struct Acp {
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     next_id: AtomicI64,
     pending: Pending,
-    /// `None` once stopped (handed to [`reap`]).
-    child: tokio::sync::Mutex<Option<Child>>,
+    /// Owns the agent's whole process tree: dropping it kills what the agent started.
+    child: Arc<tokio::sync::Mutex<Process>>,
     /// The process (and, on Unix, process group) leader.
     pid: Option<u32>,
 }
@@ -144,10 +198,15 @@ impl Acp {
         // Its own group, so `kill` can stop everything it started.
         #[cfg(unix)]
         process.process_group(0);
+        #[cfg(windows)]
+        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
+        let pid = child.id();
+        let child = Arc::new(tokio::sync::Mutex::new(Process::new(child)?));
+        Process::monitor(&child);
         // Deliberately unbounded: `session/load` replays a whole history as notifications
         // *before* its response, while the bot is still awaiting that response. A bounded
         // queue would stall this reader, and with it the response — a deadlock.
@@ -207,12 +266,11 @@ impl Acp {
             });
         }
 
-        let pid = child.id();
         let acp = Arc::new(Self {
             stdin: tokio::sync::Mutex::new(Some(stdin)),
             next_id: AtomicI64::new(1),
             pending,
-            child: tokio::sync::Mutex::new(Some(child)),
+            child,
             pid,
         });
         Ok((acp, rx))
@@ -233,7 +291,8 @@ impl Acp {
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
-        self.send(method, params).await?.response().await
+        let answer = self.send(method, params).await?;
+        answer.response().await
     }
 
     /// Writes a request and returns its pending answer: anything written after this
@@ -242,8 +301,9 @@ impl Acp {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.locked().insert(id, tx);
+        let answer = Answer { id, pending: self.pending.clone(), rx: Some(rx) };
         self.write(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).await?;
-        Ok(Answer { rx })
+        Ok(answer)
     }
 
     pub async fn notify(&self, method: &str, params: Value) -> Result<()> {
@@ -262,12 +322,15 @@ impl Acp {
     /// lets it exit by itself first: Claude Code killed during an OAuth refresh loses the new
     /// refresh token, and the user's login with it.
     pub async fn kill(&self) {
-        self.stdin.lock().await.take();
-        if let Some(child) = self.child.lock().await.take() {
-            let mut stopping = STOPPING.locked();
-            stopping.retain(|task| !task.is_finished());
-            stopping.push(tokio::spawn(reap(child)));
+        let mut child = self.child.lock().await;
+        if !child.begin_stop() {
+            return;
         }
+        self.stdin.lock().await.take();
+        let owned = self.child.clone();
+        let mut stopping = STOPPING.locked();
+        stopping.retain(|task| !task.is_finished());
+        stopping.push(tokio::spawn(async move { owned.lock().await.stop_within(EXIT_GRACE).await }));
     }
 }
 
@@ -275,52 +338,6 @@ impl Acp {
 pub async fn stopped() {
     let tasks = std::mem::take(&mut *STOPPING.locked());
     futures::future::join_all(tasks).await;
-}
-
-/// Gives the agent [`EXIT_GRACE`] to exit with everything it started (ACP adapters spawn
-/// CLIs, MCP servers and tools), then kills its process group (Windows: process tree).
-async fn reap(mut child: Child) {
-    let Some(pid) = child.id() else { return };
-    let deadline = Instant::now() + EXIT_GRACE;
-    let exited = tokio::time::timeout_at(deadline, child.wait()).await.is_ok();
-    if !exited || outlived(pid, deadline).await {
-        let mut tree = if cfg!(windows) {
-            let mut c = Command::new("taskkill");
-            c.args(["/T", "/F", "/PID", &pid.to_string()]);
-            c
-        } else {
-            let mut c = Command::new("/bin/kill");
-            c.args(["-KILL", "--", &format!("-{pid}")]);
-            c
-        };
-        let _ = tree.stdout(Stdio::null()).stderr(Stdio::null()).status().await;
-    }
-    // Already exited is fine; anything else is worth a log line.
-    if let Err(error) = child.kill().await
-        && error.kind() != std::io::ErrorKind::InvalidInput
-    {
-        tracing::debug!(%error, "couldn't kill agent process");
-    }
-}
-
-/// Whether part of the exited agent's process group is still running at `deadline`.
-#[cfg(unix)]
-async fn outlived(pid: u32, deadline: Instant) -> bool {
-    let Ok(group) = libc::pid_t::try_from(pid) else { return true };
-    // SAFETY: signal 0 sends nothing; it only checks that the group still has a process.
-    let running = || unsafe { libc::killpg(group, 0) } == 0;
-    while running() && Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    running()
-}
-
-/// Windows has no process groups: what the agent started got the same closed pipes, and its
-/// tree can't be found once it's gone.
-#[cfg(windows)]
-#[allow(clippy::unused_async)] // the Unix check's signature
-async fn outlived(_pid: u32, _deadline: Instant) -> bool {
-    false
 }
 
 /// Plain-text rendering of an ACP content block list / tool-call content list.
@@ -355,6 +372,74 @@ pub fn truncate(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
+    async fn descendant_agent() -> (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>) {
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/process_agent.py");
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        let command = format!("{python} -u {}", crate::shell::quote(&script.display().to_string()));
+        let (acp, mut rx) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+        let ready = tokio::time::timeout(Duration::from_secs(15), rx.recv()).await;
+        let ready = ready.unwrap();
+        assert!(matches!(ready, Some(Incoming::Notification { method, .. }) if method == "ready"));
+        (acp, rx)
+    }
+
+    async fn assert_descendant_pipes_close(mut rx: mpsc::UnboundedReceiver<Incoming>) {
+        let closed = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
+        let closed = closed.unwrap();
+        assert!(matches!(closed, Some(Incoming::Closed { .. })));
+    }
+
+    #[tokio::test]
+    async fn leader_exit_releases_descendants_without_waiting_for_stdout_eof() {
+        let (acp, rx) = descendant_agent().await;
+        let notified = acp.notify("exit", json!({})).await;
+        notified.unwrap();
+        assert_descendant_pipes_close(rx).await;
+    }
+
+    #[tokio::test]
+    async fn dropping_an_agent_releases_its_process_tree() {
+        let (acp, rx) = descendant_agent().await;
+        drop(acp);
+        assert_descendant_pipes_close(rx).await;
+    }
+
+    #[tokio::test]
+    async fn actor_unwinding_releases_its_process_tree() {
+        let (acp, rx) = descendant_agent().await;
+        let task = tokio::spawn(async move {
+            let _owned = acp;
+            panic!("simulated actor panic");
+        });
+        let panicked = task.await;
+        assert!(panicked.unwrap_err().is_panic());
+        assert_descendant_pipes_close(rx).await;
+    }
+
+    #[tokio::test]
+    async fn timed_out_requests_do_not_accumulate_pending_answers() {
+        let (acp, rx) = descendant_agent().await;
+        for _ in 0..10 {
+            let response = tokio::time::timeout(Duration::from_millis(10), acp.request("never", json!({}))).await;
+            assert!(response.is_err());
+            assert_eq!(acp.pending.locked().len(), 0);
+        }
+        acp.kill().await;
+        stopped().await;
+        assert_descendant_pipes_close(rx).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_stopped_agent_that_exits_cleanly_does_not_hold_the_host_for_the_grace_period() {
+        let (acp, mut rx) = Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+        let started = tokio::time::Instant::now();
+        acp.kill().await;
+        stopped().await;
+        assert!(started.elapsed() < EXIT_GRACE / 2, "stopping waited out the grace period");
+        assert!(matches!(rx.recv().await, Some(Incoming::Closed { .. })));
+    }
+
     #[test]
     fn content_text_flattens_blocks() {
         let v = json!([
@@ -364,6 +449,31 @@ mod tests {
         ]);
         assert_eq!(content_text(&v), "a\nb");
         assert_eq!(truncate("héllo", 2), "h…");
+    }
+
+    #[tokio::test]
+    async fn an_error_keeps_the_adapters_category_only_when_it_is_an_identifier() {
+        let kind = |data: Value| async move {
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(Err(json!({"code": -32603, "message": "Internal error", "data": data})));
+            let e = Answer { id: 0, pending: Pending::default(), rx: Some(rx) }
+                .response()
+                .await
+                .expect_err("an error answer");
+            e.downcast::<RpcError>().expect("an RpcError").kind
+        };
+        assert_eq!(kind(json!({"errorKind": "rate_limit"})).await.as_deref(), Some("rate_limit"));
+        assert_eq!(kind(json!({"errorKind": "Usage: /Users/me"})).await, None);
+        assert_eq!(kind(json!({"errorKind": ""})).await, None);
+        assert_eq!(kind(json!("details")).await, None);
+        assert_eq!(
+            kind(json!({"codexErrorInfo": "usageLimitExceeded"})).await.as_deref(),
+            Some("usage_limit_exceeded")
+        );
+        assert_eq!(
+            kind(json!({"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 502}}})).await.as_deref(),
+            Some("http_connection_failed")
+        );
     }
 
     #[cfg(unix)]

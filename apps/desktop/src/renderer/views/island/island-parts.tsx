@@ -4,7 +4,7 @@ import { CharacterAvatar, type Mood } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useArrivals, useFlip } from './island-motion'
-import { avatarColor, withAlpha } from '../../lib/theme'
+import { avatarColor, palette, withAlpha } from '../../lib/theme'
 
 // Pieces the island's views share: the big character with its glow and
 // badge, the agent row, the column of other bots and the key hint on a button.
@@ -12,7 +12,7 @@ import { avatarColor, withAlpha } from '../../lib/theme'
 export type Badge = 'working' | 'needsInput' | 'finished' | 'failed' | null
 
 /** State colors: amber needs you, green done, red failed (Codync's palette has no others). */
-export const AMBER = '#F0A030'
+export const AMBER = palette(true).warning
 export const GREEN = '#34D399'
 export const RED = '#F4505E'
 

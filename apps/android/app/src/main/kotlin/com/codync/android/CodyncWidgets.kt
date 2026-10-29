@@ -26,6 +26,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
+import com.codync.android.design.translate
 import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -86,7 +87,9 @@ abstract class CodyncWidget(private val kind: WidgetKind) : GlanceAppWidget() {
             val feed = remember(revision) { WidgetStore.feed(context) }
             val provider = remember(revision) { WidgetStore.provider(context, widget) }
             val team = remember(revision) { WidgetStore.team(context, widget) }
-            WidgetCard(feed, kind, provider, team, sample = false)
+            androidx.compose.runtime.key(revision) {
+                WidgetCard(feed, kind, provider, team, sample = false)
+            }
         }
     }
     override suspend fun providePreview(context: Context, widgetCategory: Int) {
@@ -165,11 +168,11 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
                 highlight = if (provider.id == "claude") 0xFFD97757.toInt() else null)
             Spacer(GlanceModifier.width(7.dp))
             Text(provider.name, GlanceModifier.defaultWeight(), style = style(13f, ink, FontWeight.Medium), maxLines = 1)
-            if (layout != ProviderLayout.Small) Text("Usage", style = style(10f, secondary, FontWeight.Medium))
+            if (layout != ProviderLayout.Small) Text(phrase("Usage"), style = style(10f, secondary, FontWeight.Medium))
         }
         if (layout == ProviderLayout.Small && top != null) {
             Spacer(GlanceModifier.defaultWeight())
-            Text(top.title, style = style(11f, secondary), maxLines = 1)
+            Text(phrase(top.title), style = style(11f, secondary), maxLines = 1)
             Row(verticalAlignment = Alignment.Bottom) {
                 val color = if ((top.percent ?: 0.0) >= 90) danger else ink
                 Text("${(top.percent ?: 0.0).roundToInt()}", style = style(32f, color, FontWeight.Medium))
@@ -177,17 +180,17 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
             }
             Ticks(context, top.percent ?: 0.0, tint, 13.dp)
             Spacer(GlanceModifier.height(6.dp))
-            Text(top.resetsShort() ?: "Usage reported by your computer", style = style(9f, secondary), maxLines = 1)
+            Text(top.resetsShort()?.let { resetSpoken(it) } ?: phrase("Usage reported by your computer"), style = style(9f, secondary), maxLines = 1)
         } else {
             Spacer(GlanceModifier.height(8.dp))
             if (layout == ProviderLayout.Large && top != null) {
                 Row(GlanceModifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
                     Text("${(top.percent ?: 0.0).roundToInt()}%", style = style(36f, if ((top.percent ?: 0.0) >= 90) danger else ink, FontWeight.Medium))
                     Spacer(GlanceModifier.width(8.dp))
-                    Text("${top.title} · highest usage", GlanceModifier.padding(bottom = 6.dp), style = style(11f, secondary), maxLines = 2)
+                    Text("${phrase(top.title)} · ${phrase("highest usage")}", GlanceModifier.padding(bottom = 6.dp), style = style(11f, secondary), maxLines = 2)
                 }
             }
-            for (window in provider.windows.take(if (layout == ProviderLayout.Large) 4 else 2)) WindowRow(context, window, tint)
+            for (window in provider.limits.take(if (layout == ProviderLayout.Large) 4 else 2)) WindowRow(context, window, tint)
         }
     }
 }
@@ -195,12 +198,12 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
 @Composable private fun WindowRow(context: Context, window: UsageWindow, tint: Int) {
     Column(GlanceModifier.fillMaxWidth().padding(bottom = 6.dp)) {
         Row(GlanceModifier.fillMaxWidth()) {
-            Text(window.title, GlanceModifier.defaultWeight(), style = style(11f, secondary, FontWeight.Medium), maxLines = 1)
+            Text(phrase(window.title), GlanceModifier.defaultWeight(), style = style(11f, secondary, FontWeight.Medium), maxLines = 1)
             Text("${(window.percent ?: 0.0).roundToInt()}%", style = style(13f, if ((window.percent ?: 0.0) >= 90) danger else ink, FontWeight.Medium))
         }
         Spacer(GlanceModifier.height(3.dp))
         Ticks(context, window.percent ?: 0.0, tint, 12.dp)
-        window.resetsShort()?.let { Text(it, GlanceModifier.fillMaxWidth(), style = TextStyle(secondary, 9.sp, textAlign = TextAlign.End), maxLines = 1) }
+        window.resetsShort()?.let { Text(resetSpoken(it), GlanceModifier.fillMaxWidth(), style = TextStyle(secondary, 9.sp, textAlign = TextAlign.End), maxLines = 1) }
     }
 }
 
@@ -212,7 +215,7 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
         Column(GlanceModifier.fillMaxSize()) {
             Face(context, "blob", "gray", 26.dp)
             Spacer(GlanceModifier.defaultWeight())
-            Text(if (feed.computerId == null && !sample) "Open Codync to pair with your computer." else "No usage reported yet.",
+            Text(phrase(if (feed.computerId == null && !sample) "Open Codync to pair with your computer." else "No usage reported yet."),
                 style = style(12f, secondary), maxLines = 3)
         }
         return
@@ -240,9 +243,9 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
 @Composable private fun LimitHero(limit: ProviderLimit) {
     val percent = limit.window.percent ?: 0.0
     Column {
-        Text("${limit.provider} · ${limit.window.label}", style = style(12f, secondary), maxLines = 1)
+        Text("${limit.provider} · ${phrase(limit.window.title)}", style = style(12f, secondary), maxLines = 1)
         Text("${percent.roundToInt()}%", style = style(34f, if (percent >= 90) danger else ink, FontWeight.Medium), maxLines = 1)
-        Text(limit.window.resetsShort() ?: " ", style = style(11f, tertiary), maxLines = 1)
+        Text(limit.window.resetsShort()?.let { resetSpoken(it) } ?: " ", style = style(11f, tertiary), maxLines = 1)
     }
 }
 
@@ -250,7 +253,7 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
     val percent = limit.window.percent ?: 0.0
     Column(GlanceModifier.fillMaxWidth()) {
         Row(GlanceModifier.fillMaxWidth()) {
-            Text("${limit.provider} ${limit.window.label}", GlanceModifier.defaultWeight(), style = style(11f, secondary), maxLines = 1)
+            Text("${limit.provider} ${phrase(limit.window.title)}", GlanceModifier.defaultWeight(), style = style(11f, secondary), maxLines = 1)
             Text("${percent.roundToInt()}%", style = style(11f, secondary))
         }
         Spacer(GlanceModifier.height(4.dp))
@@ -260,6 +263,21 @@ private fun dark(context: Context) = context.resources.configuration.uiMode and 
 }
 
 private const val WARNING = 0xFFF0A030.toInt()
+
+@Composable private fun phrase(text: String): String {
+    val context = LocalContext.current
+    val language = AppLanguageStore.get(context).resolved(context.resources.configuration.locales[0].toLanguageTag())
+    val table = AppLanguageStore.phrases(context, language)
+    return translate(text, language, language.usesChinese(false), table)
+}
+
+@Composable private fun resetSpoken(raw: String): String {
+    val context = LocalContext.current
+    val language = AppLanguageStore.get(context).resolved(context.resources.configuration.locales[0].toLanguageTag())
+    val table = AppLanguageStore.phrases(context, language)
+    val systemChinese = language.usesChinese(false)
+    return spokenReset(raw, language.usesChinese(systemChinese)) { translate(it, language, systemChinese, table) }
+}
 
 /** Fine, separated ticks (iOS `UsageTicks`), as a bitmap: widgets can't draw. */
 @Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp) {

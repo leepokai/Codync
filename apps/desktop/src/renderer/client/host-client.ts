@@ -10,6 +10,9 @@ import {
   type ScreenState,
   type Usage,
 } from '@shared/models'
+import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
+import { parseCallCue, type CallCue } from '@shared/calls'
+import type { NetworkView } from '@shared/network'
 
 /** How a client reaches a host API. Only loopback today: the computer's own host or an SSH tunnel. */
 export type HostRoute = 'loopback' | 'direct' | 'relay'
@@ -61,14 +64,21 @@ export class LoopbackTransport implements HostTransport {
 }
 
 export type HostEvent =
-  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null }
+  /** `network` is null from hosts before the network view. */
+  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null }
   | { type: 'bot'; bot: Bot }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
   | { type: 'usage'; usage: Usage }
+  /** An artifact was published, updated or renamed (the catch-up replays it too). */
+  | { type: 'artifact'; artifact: Artifact }
   | { type: 'screen'; screen: ScreenState }
   | { type: 'accessRequests'; requests: AccessRequest[] }
   | { type: 'cloud'; cloud: CloudStatus }
+  /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
+  | { type: 'network'; network: NetworkView }
+  /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
+  | { type: 'call'; cue: CallCue }
   | { type: 'resync' }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
@@ -89,6 +99,7 @@ export function parseEvent(line: string): HostEvent | null {
         rev: (raw.rev as number) ?? 0,
         usage: (raw.usage as Usage) ?? { providers: [] },
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
+        network: (raw.network as NetworkView | undefined) ?? null,
       }
     case 'bot': {
       const bot = raw.bot as (Bot & { deleted?: boolean }) | undefined
@@ -103,6 +114,10 @@ export function parseEvent(line: string): HostEvent | null {
     }
     case 'usage':
       return raw.usage ? { type, usage: raw.usage as Usage } : null
+    case 'artifact': {
+      const artifact = raw.artifact as Artifact | undefined
+      return artifact && typeof artifact.id === 'string' && typeof artifact.botId === 'string' ? { type, artifact } : null
+    }
     case 'screen': {
       const screen = normalizeScreen(raw.screen as ScreenState | undefined)
       return screen ? { type, screen } : null
@@ -111,6 +126,12 @@ export function parseEvent(line: string): HostEvent | null {
       return { type, requests: (raw.requests as AccessRequest[]) ?? [] }
     case 'cloud':
       return raw.cloud ? { type, cloud: raw.cloud as CloudStatus } : null
+    case 'network':
+      return raw.network ? { type, network: raw.network as NetworkView } : null
+    case 'call': {
+      const cue = parseCallCue(raw)
+      return cue ? { type, cue } : null
+    }
     case 'resync':
       return { type }
     default:
@@ -122,6 +143,18 @@ export function parseEvent(line: string): HostEvent | null {
 export class HostClient {
   readFile(entryId: string, fileId: string, offset: number): Promise<{ data: string; size: number }> {
     return this.call('readFile', { entryId, fileId, offset })
+  }
+
+  library(botId: string): Promise<{ items: LibraryItem[] }> {
+    return this.call('library', { botId })
+  }
+
+  readArtifact(botId: string, artifactId: string, offset: number): Promise<ArtifactChunk> {
+    return this.call('readArtifact', { botId, artifactId, offset })
+  }
+
+  renameArtifact(botId: string, artifactId: string, title: string): Promise<{ artifact: Artifact }> {
+    return this.call('renameArtifact', { botId, artifactId, title })
   }
 
   constructor(readonly transport: HostTransport) {}
@@ -147,16 +180,15 @@ export class HostClient {
     return (await this.call<{ entries: Entry[] }>('history', { botId, beforeSeq, limit })).entries
   }
 
-  async thread(botId: string, rootId: string) {
-    return (await this.call<{ entries: Entry[] }>('thread', { botId, rootId })).entries
-  }
-
   async botConversation(botId: string, peerId: string) {
     return (await this.call<{ entries: Entry[] }>('botConversation', { botId, peerId })).entries
   }
 
-  async send(botId: string, text: string, clientNonce: string, threadId: string | null, attachments: string[] | null) {
-    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, threadId, attachments })).entry
+  /** `pasted`: what the user pasted rather than typed, which memory never takes as their own words. `replyTo`: the
+   * chat message this one replies to. */
+  /** `call`: the voice call it was said in (on-device or speech to text). */
+  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: string | null = null, call: string | null = null) {
+    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}), ...(call ? { call } : {}) })).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

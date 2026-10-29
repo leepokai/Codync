@@ -15,10 +15,110 @@
   justify-content: center;
   gap: 10px;
 }
+.empty-state-message {
+  max-width: 360px;
+  text-align: center;
+}
+.empty-state.local-recovery .empty-state-message {
+  text-align: left;
+}
+.empty-state-action {
+  margin-top: 4px;
+}
+/* Host recovery uses the app character; only a starting host bobs. */
+.host-state-bot {
+  position: relative;
+  margin-bottom: 6px;
+  animation: host-state-bot-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.host-state-bot.is-working > canvas {
+  animation: host-state-bot-bob 2.6s ease-in-out infinite;
+}
+.local-recovery .host-state-bot {
+  position: relative;
+  margin-bottom: 0;
+}
+@keyframes host-state-bot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@keyframes host-state-bot-bob {
+  0%,
+  100% {
+    transform: translateY(-4px);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .host-state-bot,
+  .host-state-bot > canvas {
+    animation: none;
+  }
+}
+
+/* The version mismatch notice above a computer's bots (UpdateNeededCard). */
+.update-needed {
+  padding: 14px;
+  background: var(--surface);
+  border-radius: var(--radius-l);
+  /* Long host names (a.b.local) wrap instead of running past the card. */
+  overflow-wrap: anywhere;
+}
+.update-needed-action {
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
+/* The GitHub star ask (StarPrompt): the ask, where it goes, the answers. */
+.star-prompt {
+  width: 420px;
+}
+.star-prompt-body {
+  padding: 4px 20px 20px;
+}
+.star-prompt-message {
+  line-height: 1.5;
+}
+.star-prompt-repo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 10px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  text-align: left;
+  transition: background-color var(--hover), transform var(--press);
+}
+.star-prompt-repo:hover {
+  background: var(--field);
+}
+.star-prompt-repo:active {
+  transform: scale(0.99);
+}
+.star-prompt-icon {
+  width: 44px;
+  height: 44px;
+  flex: none;
+}
+/* The star turns as the pointer reaches the button. */
+.star-prompt-star > :first-child {
+  transition: transform var(--layout);
+}
+.star-prompt-star:hover > :first-child {
+  transform: rotate(-12deg) scale(1.15);
+}
 
 .split {
   display: flex;
   height: 100%;
+}
+/* An open account panel or action menu takes the clicks. */
+.split.covered {
+  pointer-events: none;
 }
 
 .sidebar {
@@ -31,14 +131,31 @@
   overflow: hidden;
   transition: width var(--layout);
 }
+.sidebar.resizing {
+  transition: none;
+}
 .sidebar-header {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 54px;
+  padding-left: 18px;
   padding-right: 14px;
   flex: none;
   transition: opacity var(--layout), padding var(--layout);
+}
+/* Clears the traffic lights. */
+html[data-platform="darwin"] .sidebar-header {
+  padding-left: 80px;
+}
+.sidebar.compact .sidebar-header {
+  padding-left: 0;
+  opacity: 0;
+}
+/* The rail's computer filter. */
+.rail-header {
+  width: 70px;
+  align-self: center;
 }
 
 .roster {
@@ -51,22 +168,119 @@
   outline: none;
   position: relative;
 }
+.roster:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: -2px;
+}
 .sidebar.compact .roster {
   padding-top: 4px;
 }
 .roster-row {
   width: 100%;
-  border-radius: 12px;
+  padding: 0 8px;
+  border-radius: var(--radius-m);
   display: flex;
   transition: background-color var(--hover);
   flex: none;
 }
-.roster-row.dragging {
-  opacity: 0.45;
+.roster-row.compact {
+  padding: 0;
+}
+/* Hover is tracked in JS, so rows passed over during a drag don't light up. */
+.roster-row.hovered {
+  background: var(--bubble-agent);
+}
+.roster-row.selected {
+  background: var(--roster-selected);
+}
+/* Rows the pointer passes over while dragging don't light up. */
+.pointer-dragging .roster-row.hovered:not(.selected) {
+  background: none;
+}
+/* Dragging (iOS's lifted cell): the row's slot stays open while a smaller, translucent copy
+   follows the pointer, then settles into the slot. */
+.roster-row.lifted {
+  opacity: 0;
+}
+.roster-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 400;
+  pointer-events: none;
+}
+.roster-ghost.settling {
+  transition: translate var(--morph);
+}
+.roster-ghost-card {
+  background: var(--roster-selected);
+  box-shadow: var(--shadow-l);
+  scale: 0.94;
+  opacity: 0.85;
+  animation: roster-lift var(--morph) both;
+  transition: scale var(--morph), opacity var(--morph);
+}
+.roster-ghost.settling .roster-ghost-card {
+  scale: 1;
+  opacity: 1;
+  box-shadow: none;
+}
+@keyframes roster-lift {
+  from {
+    scale: 1;
+    opacity: 1;
+  }
+}
+.bot-row {
+  padding: 9px 0;
+  width: 100%;
+}
+.bot-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  line-height: calc(16px * var(--scale));
+  transition: opacity var(--layout);
+}
+.bot-row-text.collapsed {
+  flex: none;
+  width: 0;
+  opacity: 0;
+}
+.unread-badge {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-size: var(--text-caption);
+  font-weight: 600;
 }
 /* A selected row's fill doesn't touch its hovered neighbour's. */
 .roster-row + .roster-row {
   margin-top: 4px;
+}
+/* Once, with several computers: where Extensions went. A filled card, so no outline. */
+.extensions-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0 6px;
+  padding: 10px 6px 10px 10px;
+  border-radius: var(--radius-m);
+  background: var(--bubble-agent);
+}
+.extensions-tip-icon {
+  height: 20px;
+  align-items: center;
+}
+.extensions-tip-text {
+  gap: 2px;
+  min-width: 0;
 }
 .roster-empty {
   position: absolute;
@@ -80,6 +294,7 @@
 }
 
 .profile-avatar {
+  position: relative;
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -87,6 +302,16 @@
   display: grid;
   place-items: center;
   flex: none;
+  overflow: hidden;
+}
+.profile-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-avatar-busy {
+  position: absolute;
+  inset: 0;
 }
 
 .rail-actions {
@@ -100,28 +325,15 @@
 .rail-profile {
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   display: grid;
   place-items: center;
   margin-top: 4px;
 }
+.rail-profile.open {
+  background: var(--bubble-agent);
+}
 
-.sidebar-divider {
-  width: 1px;
-  flex: none;
-  background: var(--border);
-  position: relative;
-  z-index: 2;
-}
-.sidebar-divider::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -4px;
-  width: 9px;
-  cursor: col-resize;
-}
 
 .detail {
   flex: 1;
@@ -129,11 +341,6 @@
   height: 100%;
   position: relative;
   overflow: hidden;
-}
-.detail-column {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
 }
 /* The title bar strip of detail views that draw no top chrome of their own, so the window
    still moves from there. */
@@ -153,6 +360,13 @@
   justify-content: center;
   gap: 14px;
 }
+.empty-detail-crew > :not(:first-child) {
+  margin-left: -10px;
+}
+.empty-detail-message {
+  max-width: 420px;
+  text-align: center;
+}
 
 .context-layer {
   position: fixed;
@@ -166,16 +380,22 @@
   position: absolute;
   padding: 7px;
   background: var(--panel);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-l);
   animation: panel-in var(--fade) both;
 }
 .account-panel {
-  border-radius: 18px;
+  left: 16px;
+  bottom: 64px;
+  border-radius: var(--radius-l);
   transform-origin: bottom left;
+}
+/* Above the rail's profile button. */
+.account-panel.compact {
+  bottom: 68px;
 }
 .action-menu {
   width: 260px;
-  border-radius: 14px;
+  border-radius: var(--radius-l);
 }
 @keyframes panel-in {
   from {
@@ -190,7 +410,11 @@
   width: 100%;
   height: 30px;
   padding: 0 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-s);
+  color: var(--text);
+}
+.panel-row.destructive {
+  color: var(--danger);
 }
 .panel-row.highlight {
   background: rgba(var(--text-rgb), 0.08);
@@ -210,4 +434,16 @@
   height: 30px;
   padding: 0 10px;
   color: var(--secondary);
+}
+.panel-error {
+  padding: 8px 10px;
+}
+
+/* Welcome, computer access and host state fill the window with no chrome: their top edge moves it. */
+.window-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
 }

@@ -1,9 +1,12 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import type { IslandBot, IslandPermission } from '@shared/island'
 import { CharacterAvatar } from '../../components/Avatar'
 import { Button, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
+import { RecordingPill } from '../../components/RecordingPill'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
+import { useModel } from '../../lib/observable'
+import { useTr } from '../../lib/use-language'
 import { avatarColor, withAlpha } from '../../lib/theme'
 import type { IslandModel } from './island-model'
 import { useArrivals, useFlip, useSwap } from './island-motion'
@@ -45,7 +48,7 @@ export function Wings({ model, peek }: { model: IslandModel; peek: boolean }) {
               ))}
             </span>
           ) : focus.status === 'needsInput' ? (
-            <span className="island-dot" style={{ background: AMBER }} />
+            <span className="island-dot needs-you" />
           ) : (
             <ThinkingOrb size={14} color="#F5F6F8" />
           )}
@@ -67,7 +70,7 @@ export function Overview({ model }: { model: IslandModel }) {
   const steps = focus.steps.length ? focus.steps : [{ title: focus.detail, kind: 'other' }]
   return (
     <div className="island-row-cards">
-      <button className="island-card island-focus" style={others.length ? { width: 322 } : { flex: 1 }} onClick={() => model.openBot(focus.ref)} title="Open conversation">
+      <button className={`island-card island-focus ${others.length ? '' : 'alone'}`} onClick={() => model.openBot(focus.ref)} title="Open conversation">
         <span key={focus.ref} className={`island-swap-slot ${swap}`}>
           <BigCharacter bot={focus} size={70} mood={moodOf(focus)} badge={badgeOf(focus)} />
           <span className="island-focus-text">
@@ -75,7 +78,7 @@ export function Overview({ model }: { model: IslandModel }) {
             {steps.map((step, i) => (
               <span key={`${i}-${step.title}`} className={`island-step ${i === steps.length - 1 ? 'current' : ''}`}>
                 <Icon name={stepIcon(step.kind)} size={i === steps.length - 1 ? 13 : 12} scaled={false} />
-                <span className="island-ellipsis">{step.title}</span>
+                <span className="truncate">{step.title}</span>
               </span>
             ))}
           </span>
@@ -96,7 +99,7 @@ export function Overview({ model }: { model: IslandModel }) {
                 <CharacterAvatar shape={b.shape} color={b.color} size={24} mood={moodOf(b)} dark />
                 <StatusDot bot={b} />
               </span>
-              <span className="island-ellipsis">{b.name}</span>
+              <span className="truncate">{b.name}</span>
             </button>
           ))}
         </div>
@@ -166,7 +169,7 @@ export function Notice({ model, bot, failed }: { model: IslandModel; bot: Island
                 <div className="island-error">{bot.error ?? bot.detail}</div>
               </>
             ) : (
-              <div className="island-title island-ellipsis">{bot.detail}</div>
+              <div className="island-title truncate">{bot.detail}</div>
             )}
             <div className="island-buttons start">
               <Button onClick={() => model.openBot(bot.ref)}>Open conversation</Button>
@@ -182,8 +185,11 @@ export function Notice({ model, bot, failed }: { model: IslandModel; bot: Island
 
 /** Writes to a bot without opening Codync: the chip picks the bot, Enter sends, Esc closes. */
 export function Message({ model }: { model: IslandModel }) {
-  const [text, setText] = useState('')
+  const dictation = useModel(model.dictation)
   const bot = model.messageBot
+  /** Why dictation stopped, else how to talk from any app. */
+  const tr = useTr()
+  const hint = dictation.error ?? model.voiceTip
   const swap = useSwap(bot?.ref)
   if (!bot) return null
   return (
@@ -211,24 +217,31 @@ export function Message({ model }: { model: IslandModel }) {
             className="island-field"
             onSubmit={(e) => {
               e.preventDefault()
-              model.send(text)
-              setText('')
+              model.send()
             }}
           >
             <input
               autoFocus
               aria-label={`Message ${bot.name}`}
               placeholder={`Message ${bot.name}…`}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
+              value={model.draft}
+              onChange={(e) => model.setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') model.close()
               }}
             />
-            <button type="submit" className="island-send" aria-label="Send" title="Send" disabled={!text.trim()}>
+            {dictation.listening ? (
+              <RecordingPill startedAt={dictation.startedAt} sample={() => dictation} onStop={() => dictation.finish()} color="#ffffff" />
+            ) : dictation.available ? (
+              <button type="button" className="island-mic" aria-label="Dictate" title="Dictate" onClick={() => dictation.start(model.draft)}>
+                <Icon name="mic" size={12} weight="medium" scaled={false} />
+              </button>
+            ) : null}
+            <button type="submit" className="island-send" aria-label="Send" title="Send" disabled={!model.draft.trim()}>
               <Icon name="arrow.up" size={12} weight="bold" scaled={false} />
             </button>
           </form>
+          {hint ? <span className="island-hint">{tr(hint)}</span> : null}
         </div>
       </div>
       <MiniColumn bots={model.others(3).filter((b) => b.ref !== bot.ref)} onOpen={(ref) => model.openBot(ref)} />

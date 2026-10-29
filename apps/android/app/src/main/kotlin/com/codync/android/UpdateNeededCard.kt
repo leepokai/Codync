@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -16,6 +21,7 @@ import com.codync.android.core.AppVersion
 import com.codync.android.core.VersionMismatch
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
+import kotlinx.coroutines.delay
 
 /** Which side must update before this app and the computer can work together (iOS `BotStore.mismatch`), from the host's `hello`. */
 internal val AppState.mismatch: VersionMismatch? get() {
@@ -25,9 +31,21 @@ internal val AppState.mismatch: VersionMismatch? get() {
         ?: if (unreadable && host != null && AppVersion.isBelow(BuildConfig.VERSION_NAME, host)) VersionMismatch.UpdateApp(host) else null
 }
 
+/** The time to judge `update` by, read again when a requested update's wait is over, so one that never finished is offered again. */
+@Composable internal fun rememberHostUpdateNow(update: HostUpdate?): Long {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(update) {
+        val requested = update as? HostUpdate.Requested ?: return@LaunchedEffect
+        delay(requested.at + HOST_UPDATE_WAIT_MS - System.currentTimeMillis())
+        now = System.currentTimeMillis()
+    }
+    return maxOf(now, System.currentTimeMillis())
+}
+
 /** Says which side has to update, shown instead of the composer and above the computer's bots. */
-@Composable internal fun UpdateNeededCard(state: AppState, mismatch: VersionMismatch, modifier: Modifier = Modifier) {
+@Composable internal fun UpdateNeededCard(state: AppState, mismatch: VersionMismatch, requestUpdate: () -> Unit, modifier: Modifier = Modifier) {
     val host = state.hello?.text("name") ?: state.computers.firstOrNull()?.name ?: "your computer"
+    val now = rememberHostUpdateNow(state.hostUpdate)
     Row(modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface).padding(14.dp),
         verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Symbol("arrow.down.circle", size = 22.dp, tint = Palette.warning)
@@ -36,15 +54,15 @@ internal val AppState.mismatch: VersionMismatch? get() {
                 is VersionMismatch.UpdateApp -> "Update this app"
                 is VersionMismatch.UpdateHost -> "Update Codync on $host"
             }, style = Type.subheadline.semibold, color = Palette.text)
-            Text(when (mismatch) {
-                is VersionMismatch.UpdateApp -> "${state.hello?.text("version")?.let { "$host runs Codync $it and" } ?: host} needs this app to be " +
-                    "${mismatch.minimum} or newer. Your chats are safe on the computer."
-                is VersionMismatch.UpdateHost -> "$host runs Codync ${mismatch.version}; this app needs ${mismatch.minimum} or newer. " + when (state.hello?.text("os")) {
-                    "macos" -> "Open Codync on that Mac and choose Check for Updates."
-                    "linux" -> "Run codync-host update there."
-                    else -> "Update Codync on that computer."
+            when (mismatch) {
+                is VersionMismatch.UpdateApp -> Text("${state.hello?.text("version")?.let { "$host runs Codync $it and" } ?: host} needs this app to be " +
+                    "${mismatch.minimum} or newer. Your chats are safe on the computer.", style = Type.footnote, color = Palette.secondary)
+                is VersionMismatch.UpdateHost -> {
+                    val notice = hostUpdateNotice(host, mismatch, state.hello?.text("os"), state.canUpdateHost, state.hostUpdate, now)
+                    Text(notice.detail, style = Type.footnote, color = Palette.secondary)
+                    if (notice.offersUpdate) PrimaryButton("Update now", Modifier.padding(top = 4.dp), action = requestUpdate)
                 }
-            }, style = Type.footnote, color = Palette.secondary)
+            }
         }
     }
 }

@@ -7,8 +7,9 @@ import Testing
     let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
     let events = lines.compactMap { HostClient.parseEvent(Data($0.dropFirst(5).utf8)) }
     #expect(events.count == 6)
-    guard case let .hello(hostId, rev, usage, _) = events[0] else { Issue.record("hello"); return }
+    guard case let .hello(hostId, rev, usage, _, network) = events[0] else { Issue.record("hello"); return }
     #expect(hostId == "h1" && rev == 42 && usage.providers.first?.windows.first?.percent == 8)
+    #expect(network == nil, "a host before the network view")
     guard case let .bot(bot) = events[1] else { Issue.record("bot"); return }
     #expect(bot.name == "Rex" && bot.command == nil && !bot.isWorking)
     guard case let .entry(perm) = events[2] else { Issue.record("perm"); return }

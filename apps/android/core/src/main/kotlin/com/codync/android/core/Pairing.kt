@@ -3,17 +3,27 @@ package com.codync.android.core
 import java.net.URI
 import java.net.URLDecoder
 
+/** Why a pairing link can't be used (iOS `Pairing.Problem`). */
+class PairingProblem(val kind: Kind, cause: Throwable? = null) : IllegalArgumentException(kind.message, cause) {
+    enum class Kind(val message: String) {
+        NotPairingLink("That isn't a Codync pairing code."),
+        /** The computer runs a Codync that speaks another protocol version. */
+        OutdatedHost("Update Codync on your computer, then show a new pairing code."),
+        Invalid("This pairing code is damaged. Show a new one on your computer."),
+    }
+}
+
 /** A short-lived pairing URL. Only the resulting Computer may be persisted. */
 data class Pairing(val computer: Computer, val code: String) {
     internal val offerId: String get() = RelayCrypto.offerId(code.decodeBase64Url(16))
 
     companion object {
         fun parse(text: String, scheme: String): Pairing {
-            require(text.length <= 16 * 1024) { "This pairing code is damaged. Show a new one on your computer." }
+            if (text.length > 16 * 1024) throw PairingProblem(PairingProblem.Kind.Invalid)
             val url = try { URI(text.trim()) } catch (error: Exception) {
-                throw IllegalArgumentException("That isn't a Codync pairing code.", error)
+                throw PairingProblem(PairingProblem.Kind.NotPairingLink, error)
             }
-            require(url.scheme == scheme && url.host == "pair" && url.rawQuery != null) { "That isn't a Codync pairing code." }
+            if (url.scheme != scheme || url.host != "pair" || url.rawQuery == null) throw PairingProblem(PairingProblem.Kind.NotPairingLink)
             val params = linkedMapOf<String, String>()
             try {
                 url.rawQuery.split('&').forEach { part ->
@@ -36,8 +46,7 @@ data class Pairing(val computer: Computer, val code: String) {
                 require(computer.urls.isNotEmpty() || computer.cloud != null) { "No valid computer address" }
                 return Pairing(computer, code)
             } catch (error: IllegalArgumentException) {
-                if (params["v"] != "3") throw IllegalArgumentException("Update Codync on your computer, then show a new pairing code.", error)
-                throw IllegalArgumentException("This pairing code is damaged. Show a new one on your computer.", error)
+                throw PairingProblem(if (params["v"] != "3") PairingProblem.Kind.OutdatedHost else PairingProblem.Kind.Invalid, error)
             }
         }
     }

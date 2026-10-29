@@ -1,0 +1,127 @@
+A routine is a task a bot does on its own: on a schedule, at a set time, or whenever another service sends it a webhook. Use one for a morning summary, a nightly check of a repository, or a review each time a pull request opens.
+
+Each routine belongs to one bot and runs on your computer, with that bot's agent, folder, tools and approval setting. Its results show up in the bot's chat.
+
+Your lead bot comes with one routine, **Check in**, twice a day; it's an ordinary routine you can change, pause or delete. See [Your lead bot](/docs/bots#your-lead-bot).
+
+## Find a bot's routines
+
+- **iPhone:** tap the bot's name at the top of the chat. Routines are on the **Details** tab.
+- **Desktop:** click the bot's name at the top of the chat to open its details. Routines are on the **Details** tab.
+- **Terminal UI:** select the bot and press `R`.
+
+Each routine shows its name, when it runs (or what it's doing right now), and an on/off switch.
+
+## Create a routine
+
+### By asking the bot
+
+Tell the bot what you want, in its chat:
+
+> I want a routine that summarizes yesterday's commits in ~/code/shop every weekday at 9:00.
+
+The speech-bubble button in the routine list (**Ask the bot for a routine**) puts "I want a routine that " in the message box for you. In the terminal UI, press `c` in the routine list.
+
+The bot saves it with Codync's built-in routine tools; your system's cron isn't involved. It asks only about what's missing or unclear, such as the time zone. It checks that the tools, sign-ins and files the task needs are there, looks at its existing routines so it doesn't make a duplicate, then saves and tells you what it saved: the schedule, time zone, next run and whether it's on. A "Created routine" line appears in the chat; tap it to open the routine.
+
+Ask the bot for what the iPhone and desktop editors don't offer: a one-time run, an interval, events from GitHub, or several triggers on one routine.
+
+### In the routine editor
+
+Choose **+** (**Set up a routine**) in the routine list, or press `n` in the terminal UI.
+
+- **Name** and **Instruction**: what the bot should do each time it runs.
+- **When to run**: **Schedule** or **Webhook**.
+- **Run settings**: the **Timeout**.
+
+Choose **Create routine** to save it (desktop: ⌘S or Ctrl+S; terminal UI: Ctrl+S). Open a routine from the list to change it, then choose **Save changes**.
+
+For a schedule, pick how often it repeats (**Hourly**, **Daily**, **Weekdays**, **Weekly**, or **Custom** for a five-field cron expression), the time and day, and a **Time zone**. New schedules start as Daily at 09:00 in your device's time zone. Under the fields, the host shows how it read the schedule and the next run.
+
+In the terminal UI you type when it runs: `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00`, `hourly :30`, `every 2h`, a date and time like `2026-11-02 14:30`, a cron expression, or `webhook`. Add a time zone at the end; Tab completes it.
+
+If the bot set up triggers the editor doesn't offer, the editor shows them as **Set by bot** and keeps them until you pick Schedule or Webhook instead.
+
+## Triggers
+
+| Trigger | When it runs | Set up |
+|---|---|---|
+| Schedule | On a calendar schedule in a time zone you choose, daylight saving included. | Editor or bot |
+| Webhook | Each time an authenticated delivery arrives at its URL. | Editor or bot |
+| Once | One time, at a date and time in the future. | Bot (or terminal UI) |
+| Interval | Every so many seconds, minutes, hours or days, from 1 second to 365 days. | Bot (or terminal UI) |
+| Event | When a webhook delivery matches a source and event, such as a pull request opening on GitHub. | Bot |
+
+A routine can have several triggers; it runs when any of them fires.
+
+## Test, pause, delete
+
+- **Test run** (the play button in the editor; `r` in the terminal UI's list) runs the routine now. It does the real task, side effects included, and works on a paused routine. If a retry is waiting, Test run runs it now. The bot doesn't test a routine it just created unless you ask it to.
+- **Pause** with the routine's switch (space in the terminal UI). A paused routine has no next run and refuses webhook deliveries. Pausing cancels runs that haven't started; a run already under way can finish.
+- **Delete** with the trash button (`x` in the terminal UI). It cancels pending runs. What the routine already posted stays in the chat.
+
+## Where results appear
+
+A run posts in the bot's chat: a line with the routine's name, such as "Routine · Morning summary", then the bot's reply, which is the result. The run's steps are in **Full conversation**. Tap the routine line to open the routine.
+
+- A successful run sends you a notification with its reply.
+- If there's nothing to report and the instruction allows silence, the run finishes without a message.
+- A run that fails leaves a "Routine could not finish" line and notifies you.
+- Replying to a result continues your normal conversation with the bot, with the result quoted.
+
+The routine list also shows what each routine is doing, such as Queued, Running, Resuming after restart, Failed, Interrupted or Retrying at a time.
+
+### How a run works
+
+- **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own.
+- **One thing at a time.** A bot runs one routine at a time, and routine runs take turns with your conversation. A message you send during a run waits until the run ends.
+- **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
+- **Approvals.** If the bot's **Permissions** are **Ask me**, a run that needs approval waits for you on a card in the chat, within its timeout.
+
+## Failed runs and retries
+
+Codync retries a failed run only when retrying can't repeat work:
+
+- **Nothing changed yet.** If the run failed before using any tool that changes things (for example, the agent was rate limited or didn't start), Codync tries again after 1, 5 and 15 minutes. The chat shows an info line like "Trying again in 5 minutes." without a notification.
+- **It already acted, ran out of time, or the retries failed.** The failure line notifies you and has a **Try again** button (`F` in the terminal UI) that runs the same work again. Only a routine's latest failure keeps the button.
+
+Pausing or deleting the routine cancels a waiting retry; stopping the bot doesn't. A paused routine isn't retried automatically, and Try again doesn't work on it until you resume it.
+
+If the host stops in the middle of a run (an update, a crash, a restart), the run resumes in its session when it's back, if the agent can reload it. If not, the run is marked interrupted. Either way, check what it already did before retrying anything with side effects.
+
+## Timeouts
+
+Each run has a time limit: one hour unless you change it under **Run settings → Timeout**, from 1 second to 24 hours. A run that goes over is stopped so the bot can get on with other work. A run that hits its limit isn't retried automatically.
+
+## Webhooks
+
+Choose **Webhook** under **When to run** and save. The editor then shows the routine's URL and key, with buttons to copy them, show the key, and **Replace key**. In the terminal UI, `w` copies a ready-made curl command and `W` replaces the key.
+
+Codync doesn't register the webhook with the other service. You (or the bot, with you) paste the URL and key into it. Until a real delivery has arrived, the bot reports the webhook as waiting to be connected.
+
+- **Any sender:** send a POST with the header `Authorization: Bearer <key>`. A JSON body reaches the routine as it is; any other body arrives as text.
+- **GitHub:** set the Payload URL to the routine's URL, the content type to `application/json`, and the secret to the key. GitHub's test ping succeeds without running the routine. Each delivery reaches the routine with its event (such as `pull_request.opened`), repository and sender, so the bot can set up an event trigger for just the events you want.
+- **Other services:** an event trigger can also match a JSON delivery by its `source` and `event` fields. Codync recognizes GitHub's deliveries by itself; for other senders, the JSON they post has to carry those fields.
+- A delivery that arrives twice with the same delivery ID runs once. Bodies can be up to 64 KB.
+- Replacing the key stops the old one at once. Senders using it stop working until they get the new key.
+
+The run's prompt tells the bot that the delivery's contents are untrusted data to read, and that it shouldn't follow them as instructions. Still, keep secrets out of routine instructions and payloads.
+
+### What the Codync cloud sees
+
+A routine's public URL goes through the Codync cloud, so services can reach your computer without an open port or fixed address. A computer that uses [your own relay](/docs/remote-access#your-own-relay) has no public URL: only the local one works.
+
+- Deliveries to the public URL are **not end-to-end encrypted**. The cloud handles the HTTPS connection, can read each delivery, and stores the key to check it. Your computer checks the key again before anything runs.
+- If your computer is off or offline, the cloud keeps deliveries for up to 72 hours and hands them over once the host is back.
+
+If **Reach from anywhere** is off for your computer, the routine has only a local URL starting with `http://127.0.0.1`, which only senders on the same computer can use. A public URL you gave a sender earlier still takes deliveries in the cloud: they wait there, readable, for up to 72 hours and run if you turn **Reach from anywhere** back on within that time. To stop them, remove the URL from the sender, or delete the routine or replace its key while **Reach from anywhere** is on. See [Remote access](/docs/remote-access) and [Privacy](/docs/privacy).
+
+## Keep the host running and awake
+
+Routines run only on your computer. The host checks for due work every second, whether or not an app is open, but it has to be running and the computer awake.
+
+While a scheduled routine is on, Codync keeps the computer from going to sleep when idle. Putting it to sleep yourself, closing the lid or shutting it down still stops routines until it's back.
+
+## Routines and other bots
+
+A bot works only with its own routines. A bot that [manages the team](/docs/teamwork) can create or replace other bots' routines, but each bot runs its own: to test a teammate's routine, the manager asks that bot to run it, and the result appears in that bot's chat.

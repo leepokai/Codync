@@ -27,7 +27,7 @@ public struct ProviderWidgetCard: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if layout != .small {
-                    Text("Usage")
+                    Text(L10n.tr("Usage"))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.secondary)
                 }
@@ -35,42 +35,42 @@ public struct ProviderWidgetCard: View {
             if layout == .small, let window = provider.tightest {
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(window.title).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
+                    Text(L10n.tr(window.title)).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
                     HStack(alignment: .firstTextBaseline, spacing: 1) {
-                        Text("\(Int(window.percent.rounded()))")
+                        Text(L10n.tr("\(Int(window.percent.rounded()))"))
                             .font(.system(size: 32, weight: .semibold, design: .rounded))
                             .contentTransition(.numericText(value: window.percent))
-                        Text("%").font(.system(size: 17, weight: .medium))
+                        Text(L10n.tr("%")).font(.system(size: 17, weight: .medium))
                     }
                     .monospacedDigit()
                     .foregroundStyle(window.percent >= 90 ? Palette.danger : Palette.text)
                     .minimumScaleFactor(0.7)
                 }
                 UsageTicks(percent: window.percent, tint: provider.widgetTint, height: 13)
-                Text(window.resetsShort(now: date) ?? "Usage reported by your computer")
+                Text(window.resetsShort(now: date).map(L10n.resetLine) ?? L10n.tr("Usage reported by your computer"))
                     .font(.system(size: 9)).foregroundStyle(Palette.secondary)
                     .lineLimit(1)
             } else {
                 if layout == .large, let top = provider.tightest {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\(Int(top.percent.rounded()))%")
+                        Text(L10n.tr("\(Int(top.percent.rounded()))%"))
                             .font(.system(size: 36, weight: .semibold, design: .rounded)).monospacedDigit()
                             .contentTransition(.numericText(value: top.percent))
                             .foregroundStyle(top.percent >= 90 ? Palette.danger : Palette.text)
-                        Text("\(top.title) · highest usage").font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                        Text("\(L10n.tr(top.title)) · \(L10n.tr("highest usage"))").font(.system(size: 11)).foregroundStyle(Palette.secondary)
                             .lineLimit(2)
                     }
                     .padding(.vertical, 4)
                 }
-                ForEach(provider.windows.prefix(layout == .large ? 4 : 2)) { window in
+                ForEach(provider.limits.prefix(layout == .large ? 4 : 2)) { window in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline) {
-                            Text(window.title)
+                            Text(L10n.tr(window.title))
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(Palette.secondary)
                                 .lineLimit(1)
                             Spacer(minLength: 4)
-                            Text("\(Int(window.percent.rounded()))%")
+                            Text(L10n.tr("\(Int(window.percent.rounded()))%"))
                                 .font(.system(size: 13, weight: .semibold))
                                 .monospacedDigit()
                                 .contentTransition(.numericText(value: window.percent))
@@ -78,7 +78,7 @@ public struct ProviderWidgetCard: View {
                         }
                         UsageTicks(percent: window.percent, tint: provider.widgetTint, height: 12)
                         if let reset = window.resetsShort(now: date) {
-                            Text(reset).font(.system(size: 9)).foregroundStyle(Palette.secondary)
+                            Text(L10n.resetLine(reset)).font(.system(size: 9)).foregroundStyle(Palette.secondary)
                                 .lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
@@ -95,7 +95,7 @@ public struct ProviderWidgetCard: View {
     }
 
     private var accessibleUsage: String {
-        let windows = layout == .small ? provider.tightest.map { [$0] } ?? [] : Array(provider.windows.prefix(layout == .large ? 4 : 2))
+        let windows = layout == .small ? provider.tightest.map { [$0] } ?? [] : Array(provider.limits.prefix(layout == .large ? 4 : 2))
         return windows.map { window in
             "\(window.title), \(Int(window.percent.rounded())) percent" +
                 (window.resetsShort(now: date).map { ", \($0)" } ?? "")
@@ -178,7 +178,7 @@ public struct BotsWidgetCard: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Bots").font(.system(size: 13, weight: .semibold))
+                Text(L10n.tr("Bots")).font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Image(systemName: "bubble.left.and.bubble.right")
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary)
@@ -187,7 +187,7 @@ public struct BotsWidgetCard: View {
                 HStack {
                     summary
                     Spacer()
-                    Text("\(bots.count) total · \(working) working")
+                    Text(L10n.tr("\(bots.count) total · \(working) working"))
                         .font(.system(size: 11)).foregroundStyle(Palette.secondary)
                 }
                 Divider()
@@ -208,7 +208,7 @@ public struct BotsWidgetCard: View {
                     }
                     Spacer(minLength: 0)
                     if working > 0 && needs > 0 {
-                        Text("\(working) working").font(.system(size: 9)).foregroundStyle(Palette.secondary)
+                        Text(L10n.tr("\(working) working")).font(.system(size: 9)).foregroundStyle(Palette.secondary)
                     }
                 }
             }
@@ -230,7 +230,7 @@ public struct BotsWidgetCard: View {
                 .transition(.activityRow)
             }
             if bots.isEmpty {
-                Text("Create your first bot in Codync.")
+                Text(L10n.tr("Create your first bot in Codync."))
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary)
             }
         }
@@ -239,10 +239,10 @@ public struct BotsWidgetCard: View {
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text("\(count)").font(.system(size: 36, weight: .semibold, design: .rounded))
+            Text(L10n.tr("\(count)")).font(.system(size: 36, weight: .semibold, design: .rounded))
                 .monospacedDigit().foregroundStyle(needs > 0 ? Palette.attention : Palette.text)
                 .contentTransition(.numericText(value: Double(count)))
-            Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.secondary)
+            Text(L10n.tr(label)).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.secondary)
                 .contentTransition(.interpolate)
         }
         .accessibilityElement(children: .combine)
@@ -254,15 +254,15 @@ public struct BotsWidgetCard: View {
         return HStack(spacing: 7) {
             CharacterAvatar(bot: bot, size: 24, still: true)
             VStack(alignment: .leading, spacing: 1) {
-                Text(bot.name).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.text)
+                Text(widgetName(bot)).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.text)
                 if bot.isWorking, !bot.activity.isEmpty {
-                    Text(bot.activity).font(.system(size: 10)).foregroundStyle(Palette.secondary)
+                    Text(L10n.tr(bot.activity)).font(.system(size: 10)).foregroundStyle(Palette.secondary)
                         .contentTransition(.interpolate)
                 }
             }
             .lineLimit(1)
             Spacer(minLength: 4)
-            Text(state.label)
+            Text(L10n.tr(state.label))
                 .font(.system(size: 10, weight: bot.needsInput ? .semibold : .regular))
                 .foregroundStyle(state.tint)
                 .lineLimit(1)
@@ -270,6 +270,11 @@ public struct BotsWidgetCard: View {
         }
         .accessibilityElement(children: .combine)
     }
+}
+
+/// Sample bots in the gallery have translated names. A bot the user named stays as they wrote it.
+func widgetName(_ bot: Bot) -> String {
+    bot.id.hasPrefix("preview-") ? L10n.tr(bot.name) : bot.name
 }
 
 public extension Bot {
@@ -337,7 +342,7 @@ public struct BotsTeamCard: View {
     private func botTile(_ bot: Bot) -> some View {
         VStack(spacing: 4) {
             CharacterAvatar(bot: bot, size: 30, still: true)
-            Text(bot.name)
+            Text(widgetName(bot))
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Palette.text)
                 .lineLimit(1)
@@ -352,7 +357,7 @@ public struct BotsTeamCard: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(bot.name), \(bot.widgetState.label)")
+        .accessibilityLabel("\(widgetName(bot)), \(L10n.tr(bot.widgetState.label))")
     }
 }
 

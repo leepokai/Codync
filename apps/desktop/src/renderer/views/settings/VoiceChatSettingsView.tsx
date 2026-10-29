@@ -1,15 +1,19 @@
-import { onDeviceUnavailableReason } from '../call/voice'
+import { onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { HostClient } from '../../client/host-client'
-import { Button, CardForm, CardSection, ChoicePicker, IconButton, Spinner, ValueRow } from '../../components/Controls'
+import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { ModalHeader } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { ModalHeader, SheetPage } from '../../components/Overlay'
+import { HStack, Spacer, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { usePref } from '../../lib/prefs'
 import { useStore } from '../../store/context'
-import { errorText, liveClient, Reveal } from './parts'
+import { useScreenViewed } from '../../store/analytics'
+import { errorText, liveClient } from './parts'
 import * as voice from './voice-settings'
 import type { VoiceModels, VoiceProvider } from './voice-settings'
+import { useTr } from '../../lib/use-language'
+
 
 /**
  * Voice chat settings: which voice carries calls (on-device speech, or OpenAI / Gemini on the
@@ -17,21 +21,28 @@ import type { VoiceModels, VoiceProvider } from './voice-settings'
  * in `StoreContext`. `showsHeader` is false inside Settings, which titles the page itself.
  */
 export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: boolean }) {
+  const tr = useTr()
+  useScreenViewed('voice_settings')
   const [engine, setEngine] = usePref(voice.engine)
   const [rate, setRate] = usePref(voice.rate)
   const [language, setLanguage] = usePref(voice.language)
   const languages = useMemo(() => voice.languageOptions(window.codync.speech.locales()), [])
   const provider = voice.isVoiceProvider(engine) ? engine : null
+  const [dictationEngine] = usePref(voice.dictationEngine)
+  /** Dictation on another provider than calls still needs that provider's key and speech-to-text model. */
+  const dictationProvider = voice.isVoiceProvider(dictationEngine) && dictationEngine !== provider ? dictationEngine : null
   const [mode, setMode] = usePref(voice.mode(provider ?? 'openai'))
+  // Closing hands a running call to a different engine picked here.
+  useEffect(() => () => voiceSettingsClosed.ring(), [])
   const footer = provider
-    ? `Your own ${voice.voiceInfo[provider].name} key, billed by ${voice.voiceInfo[provider].name}. Applies from the next call.`
+    ? `Your own ${voice.voiceInfo[provider].name} key, billed by ${voice.voiceInfo[provider].name}. During a call, applies when you close settings.`
     : window.codync.speech.available
-      ? 'On-device speech, on this computer. Applies from the next call.'
+      ? 'On-device speech, on this computer. During a call, applies when you close settings.'
       : onDeviceUnavailableReason()
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--background)', width: showsHeader ? 440 : undefined, height: showsHeader ? 600 : '100%' }}>
-      {showsHeader ? <ModalHeader title="Voice chat" /> : null}
-      <div style={{ flex: 1, minHeight: 0 }}>
+    <SheetPage className={showsHeader ? 'settings-voice-sheet' : undefined}>
+      {showsHeader ? <ModalHeader icon="waveform" title={tr(`Voice chat`)} /> : null}
+      <div className="settings-voice-body">
         <CardForm>
           <CardSection title="Voice" footer={footer}>
             {[
@@ -65,9 +76,10 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
             ]}
           </CardSection>
           {provider ? <ProviderVoiceSettings key={provider} provider={provider} /> : null}
+          {dictationProvider ? <ProviderVoiceSettings key={`dictation-${dictationProvider}`} provider={dictationProvider} dictationOnly /> : null}
         </CardForm>
       </div>
-    </div>
+    </SheetPage>
   )
 }
 
@@ -83,11 +95,13 @@ function PauseRow() {
   )
 }
 
-/** One provider: the key the computer keeps, models, voice and this month's minutes. */
-function ProviderVoiceSettings({ provider }: { provider: VoiceProvider }) {
+/** One provider: the key the computer keeps, models, voice and this month's minutes. `dictationOnly` keeps the key and speech-to-text model. */
+function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: VoiceProvider; dictationOnly?: boolean }) {
+  const tr = useTr()
   const store = useStore()
   const info = voice.voiceInfo[provider]
   const [mode] = usePref(voice.mode(provider))
+  const [dictationEngine] = usePref(voice.dictationEngine)
   /** null while the computer hasn't answered yet. */
   const [saved, setSaved] = useState<boolean | null>(null)
   const [replacing, setReplacing] = useState(false)
@@ -101,6 +115,8 @@ function ProviderVoiceSettings({ provider }: { provider: VoiceProvider }) {
   const [models, setModels] = useState<VoiceModels>(() => voice.modelsCache(provider).get() ?? { models: [], transcribe: [], speech: [] })
   const busyRef = useRef(false)
   const speechMode = mode === 'speech'
+  /** Speech mode and dictation with this provider both use its speech-to-text model. */
+  const transcribes = dictationOnly || speechMode || dictationEngine === provider
   const hasKey = saved === true
   const notConnected = { ok: false, text: `Not connected to ${store.hostName}.` }
 
@@ -130,9 +146,7 @@ function ProviderVoiceSettings({ provider }: { provider: VoiceProvider }) {
       }
       let configured: boolean
       try {
-        const status = await voice.voiceStatus(client)
-        voice.rememberStatus(status)
-        configured = voice.configured(status, provider)
+        configured = voice.configured(await voice.voiceStatus(client), provider)
       } catch (e) {
         if (cancelled) return
         setSaved(false)
@@ -165,13 +179,17 @@ function ProviderVoiceSettings({ provider }: { provider: VoiceProvider }) {
       })
   }
 
-  /** A pasted key is checked with the provider by the computer before it's kept. With a key saved, Test starts a call credential with the chosen model and voice. */
+  /**
+   * A pasted key is checked with the provider by the computer before it's kept. With a key saved, Test starts a call
+   * credential with the chosen model and voice; for dictation only, it lists the key's models.
+   */
   const test = () => {
     const typed = key.trim()
     if (!typed && !hasKey) return
     run(async (client) => {
       if (!typed || (!replacing && hasKey)) {
-        if (speechMode) await voice.voiceSpeak(client, provider, speechModel, chosenVoice, 'OK')
+        if (dictationOnly) await voice.voiceModels(client, provider)
+        else if (speechMode) await voice.voiceSpeak(client, provider, speechModel, chosenVoice, 'OK')
         else await voice.voiceSession(client, provider, model, chosenVoice)
         setResult({ ok: true, text: 'Key works' })
       } else {
@@ -196,17 +214,20 @@ function ProviderVoiceSettings({ provider }: { provider: VoiceProvider }) {
     return <ChoicePicker selection={selection} options={options.map((m) => ({ id: m, label: m }))} onChange={onChange} />
   }
 
-  const dimmed = { opacity: hasKey ? 1 : 0.55, pointerEvents: hasKey ? undefined : ('none' as const), transition: 'opacity var(--layout)' }
+  const dimmed = hasKey ? 'settings-dimmable' : 'settings-dimmable dimmed'
+  let footer: string | null = null
+  if (!hasKey) footer = `Add a key to choose from ${info.name}'s models.`
+  else if (dictationOnly) footer = 'For dictation in the message box.'
   const keyArea = (
-    <div key="key" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <VStack key="key" gap={8}>
       {hasKey && !replacing ? (
         // The key is on the computer: say so, and offer test / replace / remove.
         <div className="settings-row">
           <Icon name="key.fill" size={13} color="var(--secondary)" />
-          <div className="settings-stack" style={{ flex: 1 }}>
-            <span style={{ color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Key saved</span>
-            <span style={{ ...font('caption'), color: 'var(--tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Stays on {store.hostName}</span>
-          </div>
+          <VStack grow className="settings-stack">
+            <Text tone="text" truncate>{tr(`Key saved`)}</Text>
+            <Text size="caption" tone="tertiary" truncate>Stays on {store.hostName}</Text>
+          </VStack>
           {busy ? (
             <Spinner />
           ) : (
@@ -219,8 +240,8 @@ function ProviderVoiceSettings({ provider }: { provider: VoiceProvider }) {
         </div>
       ) : (
         // Paste a key; the computer checks it with the provider before keeping it.
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="settings-row" style={{ gap: 8 }}>
+        <VStack gap={10}>
+          <HStack gap={8} className="settings-row">
             <input
               type="password"
               aria-label="API key"
@@ -228,7 +249,7 @@ function ProviderVoiceSettings({ provider }: { provider: VoiceProvider }) {
               value={key}
               spellCheck={false}
               autoComplete="off"
-              style={{ flex: 1, minWidth: 0 }}
+              className="settings-key-input"
               onChange={(e) => setKey(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && test()}
             />
@@ -239,56 +260,60 @@ function ProviderVoiceSettings({ provider }: { provider: VoiceProvider }) {
                 Save
               </Button>
             )}
-          </div>
-          <div className="settings-row" style={font('footnote')}>
-            <button style={{ color: 'var(--text)', textDecoration: 'underline' }} onClick={() => window.codync.app.openExternal(info.keyPage)}>
+          </HStack>
+          <Text as="div" size="footnote" className="settings-row">
+            <button className="settings-link" onClick={() => window.codync.app.openExternal(info.keyPage)}>
               Get a key from {info.name}
             </button>
-            <span style={{ flex: 1 }} />
+            <Spacer />
             {replacing ? (
-              <button style={{ color: 'var(--secondary)' }} onClick={() => { setReplacing(false); setKey(''); setResult(null) }}>
+              <button className="settings-quiet-button" onClick={() => { setReplacing(false); setKey(''); setResult(null) }}>
                 Cancel
               </button>
             ) : null}
-          </div>
-        </div>
+          </Text>
+        </VStack>
       )}
       <Reveal show={result !== null}>
         {result ? (
-          <span style={{ ...font('footnote'), display: 'flex', alignItems: 'center', gap: 5, color: result.ok ? 'var(--secondary)' : 'var(--danger)' }}>
+          <HStack as="span" gap={5} className={`settings-key-result ${result.ok ? '' : 'failed'}`}>
             <Icon name={result.ok ? 'checkmark.circle.fill' : 'exclamationmark.circle.fill'} size={10} />
             {result.text}
-          </span>
+          </HStack>
         ) : null}
       </Reveal>
-    </div>
+    </VStack>
   )
 
   return (
-    <CardSection title={info.name} footer={hasKey ? null : `Add a key to choose from ${info.name}'s models.`}>
+    <CardSection title={info.name} footer={footer}>
       {[
         keyArea,
-        ...(speechMode
-          ? [
-              <div key="stt" style={dimmed}><ValueRow label="Speech to text">{picker(transcribeModel, models.transcribe, pick('transcribe', setTranscribeModel))}</ValueRow></div>,
-              <div key="tts" style={dimmed}><ValueRow label="Text to speech">{picker(speechModel, models.speech, pick('speech', setSpeechModel))}</ValueRow></div>,
-            ]
-          : [<div key="model" style={dimmed}><ValueRow label="Model">{picker(model, models.models, pick('realtime', setModel))}</ValueRow></div>]),
-        <div key="voice" style={dimmed}>
-          <ValueRow label="Voice">
-            <ChoicePicker
-              selection={chosenVoice}
-              options={info.voices.map((v) => ({ id: v, label: v }))}
-              onChange={(v) => {
-                setChosenVoice(v)
-                voice.saveVoice(provider, v)
-              }}
-            />
-          </ValueRow>
-        </div>,
-        <div key="minutes" style={dimmed}>
-          <ValueRow label="This month">≈ {voice.voiceMinutes(provider)} min</ValueRow>
-        </div>,
+        ...(transcribes
+          ? [<div key="stt" className={dimmed}><ValueRow label="Speech to text">{picker(transcribeModel, models.transcribe, pick('transcribe', setTranscribeModel))}</ValueRow></div>]
+          : []),
+        ...(dictationOnly
+          ? []
+          : [
+              speechMode
+                ? <div key="tts" className={dimmed}><ValueRow label="Text to speech">{picker(speechModel, models.speech, pick('speech', setSpeechModel))}</ValueRow></div>
+                : <div key="model" className={dimmed}><ValueRow label="Model">{picker(model, models.models, pick('realtime', setModel))}</ValueRow></div>,
+              <div key="voice" className={dimmed}>
+                <ValueRow label="Voice">
+                  <ChoicePicker
+                    selection={chosenVoice}
+                    options={info.voices.map((v) => ({ id: v, label: v }))}
+                    onChange={(v) => {
+                      setChosenVoice(v)
+                      voice.saveVoice(provider, v)
+                    }}
+                  />
+                </ValueRow>
+              </div>,
+              <div key="minutes" className={dimmed}>
+                <ValueRow label="This month">≈ {voice.voiceMinutes(provider)} min</ValueRow>
+              </div>,
+            ]),
       ]}
     </CardSection>
   )

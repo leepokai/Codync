@@ -1,15 +1,18 @@
+import type { HostClient } from '../../client/host-client'
+import type { VoiceFailure } from '@shared/analytics'
+import type { CallCue } from '@shared/calls'
 import { Observable } from '../../lib/observable'
 import {
   addVoiceUsage,
   chosenModel,
   chosenVoice,
+  dictationEngine,
   engine,
   isVoiceProvider,
   language,
   mode,
   pause,
   rate,
-  rememberStatus,
   voiceInfo,
   type VoiceProvider,
 } from '../settings/voice-settings'
@@ -36,26 +39,62 @@ export const VoiceSettings = {
     const value = engine.get()
     return isVoiceProvider(value) ? value : null
   },
+  /** The provider picked for dictation; null for on-device. */
+  dictationProvider: (): VoiceProvider | null => {
+    const value = dictationEngine.get()
+    return isVoiceProvider(value) ? value : null
+  },
   model: (p: VoiceProvider) => chosenModel(p, 'realtime'),
   transcribeModel: (p: VoiceProvider) => chosenModel(p, 'transcribe'),
   speechModel: (p: VoiceProvider) => chosenModel(p, 'speech'),
   voice: chosenVoice,
   isSpeechMode: (p: VoiceProvider) => mode(p).get() === 'speech',
-  remember: rememberStatus,
   /** A pause this long (seconds) ends what you're saying and sends it. */
   pause: () => (pause.get() > 0 ? pause.get() : 1.5),
   /** AVSpeechUtterance's rate (0…1, 0.5 normal), as the Mac stores it. */
   rate: () => rate.get(),
   /** The on-device recognizer's language; '' is the computer's. */
   language: () => language.get(),
+  /** What a call's engine is built from (`CallView`'s `begin`): a different one picked mid-call takes over the call. */
+  engineChoice: (p: VoiceProvider | null): string =>
+    !p
+      ? `device ${VoiceSettings.language()}`
+      : VoiceSettings.isSpeechMode(p)
+        ? `${p} speech ${VoiceSettings.transcribeModel(p)} ${VoiceSettings.speechModel(p)} ${VoiceSettings.voice(p)}`
+        : `${p} ${VoiceSettings.model(p)} ${VoiceSettings.voice(p)}`,
 }
+
+/** Rings when voice chat settings close, so a running call takes up a different engine picked there. */
+class SettingsClosed extends Observable {
+  ring() {
+    this.changed()
+  }
+}
+export const voiceSettingsClosed = new SettingsClosed()
 
 /** This month's realtime minutes, counted on this device. */
 export const countVoiceUsage = (seconds: number, p: VoiceProvider) => addVoiceUsage(Math.floor(seconds), p)
 
 // MARK: engines
 
-export type VoicePhase = 'starting' | 'listening' | 'speaking' | 'failed'
+/**
+ * A call's audio, the same on every engine (and on the iPhone and Android): connecting until the provider confirmed
+ * the session and the microphone delivers, then listening or speaking; reconnecting after a drop or a device change;
+ * failed when it can't go on.
+ */
+export type VoicePhase = 'starting' | 'listening' | 'speaking' | 'reconnecting' | 'failed'
+
+/** Why a call's engine gave up, for analytics (`voice_call_quality`). */
+export type VoiceFailureKind = Exclude<VoiceFailure, 'none'>
+
+/** How the voice's instructions name what the bot is doing. */
+export const PROGRESS_TAG = '[Progress]'
+
+/**
+ * How often a dropped provider connection is tried again before the call falls back to on-device voice: after these
+ * waits (ms). Tests shorten them.
+ */
+export const reconnect = { delays: [1000, 2000, 4000] }
 
 /**
  * What carries a call's audio: on-device speech or a realtime model on the user's own key.
@@ -64,6 +103,7 @@ export type VoicePhase = 'starting' | 'listening' | 'speaking' | 'failed'
 export abstract class VoiceEngine extends Observable {
   phase: VoicePhase = 'starting'
   failure: string | null = null
+  failureKind: VoiceFailureKind | null = null
   /** Microphone loudness, 0…1, while listening. Read every frame; not observed. */
   level = 0
   abstract readonly provider: VoiceProvider | null
@@ -74,6 +114,16 @@ export abstract class VoiceEngine extends Observable {
 
   get isActive() {
     return this.phase === 'listening' || this.phase === 'speaking'
+  }
+
+  /** The connecting line shows: not ready yet, or ready again soon. */
+  get isConnecting() {
+    return this.phase === 'starting' || this.phase === 'reconnecting'
+  }
+
+  /** The call still holds its transport and hears the computer (a reconnect doesn't end it). */
+  get holdsCall() {
+    return this.isActive || this.phase === 'reconnecting'
   }
 
   get muted() {
@@ -90,12 +140,13 @@ export abstract class VoiceEngine extends Observable {
   protected setPhase(phase: VoicePhase) {
     this.phase = phase
     this.changed()
-    this.onActivityChanged?.(!this.ended && this.isActive)
+    this.onActivityChanged?.(!this.ended && this.holdsCall)
   }
 
-  protected fail(message: string) {
+  protected fail(message: string, kind: VoiceFailureKind = 'connection') {
     this.end()
     this.failure = message
+    this.failureKind = kind
     this.setPhase('failed')
   }
 
@@ -108,10 +159,39 @@ export abstract class VoiceEngine extends Observable {
   abstract speak(reply: string): void
   /** A notice from the computer (an approval is waiting) to say. */
   abstract announce(notice: string): void
+  /** What the bot is doing while it works, from the computer: for a realtime voice to mention (engines that read
+   * replies aloud have nothing to say about it). */
+  progress(_text: string) {}
+
+  /** What the computer tells the call's voice, handed to the method that says it. */
+  hear(cue: CallCue) {
+    if (cue.kind === 'reply') this.speak(cue.text)
+    else if (cue.kind === 'notice') this.announce(cue.text)
+    else this.progress(cue.text)
+  }
 }
 
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
 export const MIC_DENIED = 'Allow the microphone for Codync in Settings to talk to your bots.'
+
+/**
+ * Runs `changed` when the computer's audio devices change (a headset plugged in or out), a moment after the system
+ * settles; returns the function that stops listening.
+ */
+export function onDevicesChanged(changed: () => void): () => void {
+  const devices = globalThis.navigator?.mediaDevices
+  if (!devices) return () => {}
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const listener = () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(changed, 500)
+  }
+  devices.addEventListener('devicechange', listener)
+  return () => {
+    if (timer) clearTimeout(timer)
+    devices.removeEventListener('devicechange', listener)
+  }
+}
 
 // MARK: audio helpers
 
@@ -185,6 +265,11 @@ export function wav(chunks: Int16Array[]): Uint8Array {
   let at = 44
   for (const c of chunks) for (let i = 0; i < c.length; i++, at += 2) v.setInt16(at, c[i]!, true)
   return out
+}
+
+/** Speech to text for one recording (a 16 kHz WAV) on the host, which holds the provider's key. */
+export async function transcribeOnHost(client: HostClient, provider: VoiceProvider, model: string, audio: Uint8Array) {
+  return (await client.call<{ text: string }>('voiceTranscribe', { provider, model, audio: toBase64(audio) }, 60_000)).text
 }
 
 export function toBase64(bytes: Uint8Array) {

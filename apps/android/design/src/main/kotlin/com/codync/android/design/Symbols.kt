@@ -21,6 +21,7 @@ import androidx.annotation.DrawableRes
     "arrow.right.to.line" -> R.drawable.sf_arrow_right_to_line
     "arrow.triangle.2.circlepath" -> R.drawable.sf_arrow_triangle_2_circlepath
     "arrow.triangle.branch" -> R.drawable.sf_arrow_triangle_branch
+    "arrow.turn.down.right" -> R.drawable.sf_arrow_turn_down_right
     "arrow.up" -> R.drawable.sf_arrow_up
     "arrow.up.doc.on.clipboard" -> R.drawable.sf_arrow_up_doc_on_clipboard
     "arrow.up.right" -> R.drawable.sf_arrow_up_right
@@ -31,12 +32,14 @@ import androidx.annotation.DrawableRes
     "bolt" -> R.drawable.sf_bolt
     "book.fill" -> R.drawable.sf_book_fill
     "book.pages" -> R.drawable.sf_book_pages
+    "books.vertical" -> R.drawable.sf_books_vertical
     "brain" -> R.drawable.sf_brain
     "bubble.left.and.bubble.right" -> R.drawable.sf_bubble_left_and_bubble_right
     "bubble.left.and.bubble.right.fill" -> R.drawable.sf_bubble_left_and_bubble_right_fill
     "calendar" -> R.drawable.sf_calendar
     "camera.fill" -> R.drawable.sf_camera_fill
     "chart.bar" -> R.drawable.sf_chart_bar
+    "chart.bar.doc.horizontal" -> R.drawable.sf_chart_bar_doc_horizontal
     "checklist" -> R.drawable.sf_checklist
     "checkmark" -> R.drawable.sf_checkmark
     "checkmark.circle" -> R.drawable.sf_checkmark_circle
@@ -160,6 +163,7 @@ import androidx.annotation.DrawableRes
     "square.grid.2x2" -> R.drawable.sf_square_grid_2x2
     "square.grid.3x3" -> R.drawable.sf_square_grid_3x3
     "square.on.square" -> R.drawable.sf_square_on_square
+    "star.fill" -> R.drawable.sf_star_fill
     "stop.fill" -> R.drawable.sf_stop_fill
     "tab" -> R.drawable.sf_tab
     "terminal" -> R.drawable.sf_terminal

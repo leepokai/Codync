@@ -1,31 +1,113 @@
+/* The box, its mentions row and its attachments. */
+.mentions {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px 6px;
+  overflow-x: auto;
+}
+.mention,
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  flex: none;
+}
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 14px 14px;
+  max-width: var(--column);
+  margin: 0 auto;
+  width: 100%;
+}
+/* The message being replied to, above the field. */
+.composer-reply {
+  padding: 8px 8px 0 14px;
+}
+.composer-reply-quote {
+  flex: 1;
+  min-width: 0;
+}
+.file-chips {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 0;
+  overflow-x: auto;
+}
+.file-chips:has(.attachment-tile) {
+  align-items: flex-start;
+}
+.attachment-tile {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  flex: none;
+  border-radius: var(--radius-l);
+  overflow: hidden;
+  background: var(--surface);
+}
+.attachment-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.75);
+}
+.file-chip-name {
+  max-width: 160px;
+}
+/* The remove glyph is small; its target is 24 pt. */
+.file-chip-remove {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -6px -8px -6px -4px;
+}
+
 .composer-add {
   width: 25px;
   height: 25px;
   border-radius: 50%;
   background: color-mix(in srgb, var(--text) 9%, var(--composer-fill));
-  border: 1px solid var(--chrome-stroke);
-  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-s);
   display: grid;
   place-items: center;
   flex: none;
-  margin-bottom: calc(max(0px, (round(up, calc(var(--conversation) * 1.25), 1px) + 10px - 25px) / 2));
+  margin-bottom: var(--first-line-inset);
 }
 .composer-surface {
   position: relative;
   flex: 1;
   min-width: 0;
   background: var(--composer-fill);
-  border-radius: 22px;
-  border: 1px solid var(--composer-stroke);
-  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.06);
+  border-radius: var(--radius-xl);
+  /* Inset, so the outline sits on the fill like the sheets' and menus' border, not on the page. */
+  box-shadow: inset 0 0 0 1px var(--outline), var(--shadow-s);
   display: flex;
   flex-direction: column;
 }
 .composer-box {
+  /* Centers a 25 px control on the field's first line. */
+  --first-line-inset: calc(max(0px, (round(up, calc(var(--conversation) * 1.25), 1px) + 10px - 25px) / 2));
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 6px 7px;
+  padding: 7px 8px;
 }
 .composer-field {
   flex: 1;
@@ -74,15 +156,65 @@
   transition: opacity var(--morph), transform var(--morph);
 }
 .composer-symbol.active { opacity: 1; transform: scale(1) rotate(0); }
-.composer-send {
+/* Dictation, beside send / call (Grok Bot's): a light circle; a recording pill while it listens. */
+/* The mic and its engine menu share one light capsule. */
+.composer-mic-group {
+  flex: none;
+  height: 25px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text) 7%, var(--composer-fill));
+  margin-bottom: var(--first-line-inset);
+}
+.composer-mic {
   width: 25px;
   height: 25px;
-  border-radius: 999px;
   display: grid;
   place-items: center;
   flex: none;
-  margin-bottom: calc(max(0px, (round(up, calc(var(--conversation) * 1.25), 1px) + 10px - 25px) / 2));
+  color: var(--secondary);
+  transition: color var(--morph), transform var(--press);
+}
+.composer-mic:hover {
+  color: var(--text);
+}
+.composer-engine {
+  width: 18px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding-right: 4px;
+  color: var(--secondary);
+  transition: color var(--hover);
+}
+.composer-engine:hover {
+  color: var(--text);
+}
+/* Centered on the first line, like the mic it replaces. */
+.composer-recording {
+  height: 25px;
+  margin-bottom: var(--first-line-inset);
+}
+.composer-send {
+  width: 25px;
+  height: 25px;
+  border-radius: var(--radius-pill);
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-bottom: var(--first-line-inset);
+  background: var(--accent-fill);
+  color: var(--on-accent);
   transition: background-color var(--morph), color var(--morph), transform var(--press);
+}
+.composer-send.interrupt {
+  background: var(--danger-fill);
+  color: var(--on-danger);
+}
+/* Disabled only as Send with nothing sendable. */
+.composer-send:disabled {
+  background: var(--accent-dim);
+  color: var(--tertiary);
 }
 
 /* The `/` command list, floating over the transcript above the box. */
@@ -93,8 +225,8 @@
   bottom: calc(100% + 8px);
   z-index: 20;
   background: var(--bubble-agent);
-  border-radius: 14px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-m);
   overflow: hidden;
   opacity: 0;
   transform: translateY(4px);
@@ -120,5 +252,5 @@
   color: var(--secondary);
 }
 .command-detail.warning {
-  color: var(--warning);
+  color: var(--attention);
 }

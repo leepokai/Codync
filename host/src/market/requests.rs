@@ -2,7 +2,6 @@
 //! tools receive status, never credential values.
 use super::connectors;
 use crate::{
-    LockExt,
     agent::bot::Cmd,
     hub::Hub,
     store::{Entry, EntryKind, Lane, now_ms},
@@ -15,7 +14,7 @@ use std::sync::Arc;
 pub const INSTRUCTIONS: &str = "Connect external services with search_connectors, list_connectors and request_connection. To update an installed connector's key use request_secret. To sign in to a website or app on the screen, check list_logins, ask with request_login if it's missing, then type it with the computer tool type_login. Requests appear as secure cards in the user's conversation. Never ask for passwords or keys in ordinary chat or tool arguments. After requesting, finish your turn and wait; Codync resumes you after the user completes setup.";
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-enum RequestKind {
+pub(super) enum RequestKind {
     Connection,
     Secret,
     App,
@@ -26,7 +25,7 @@ enum RequestKind {
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-enum RequestStatus {
+pub(super) enum RequestStatus {
     Pending,
     Ready,
     Cancelled,
@@ -36,74 +35,8 @@ fn has_status(request: &Value, status: RequestStatus) -> bool {
     serde_json::from_value::<RequestStatus>(request["status"].clone()).ok() == Some(status)
 }
 
-const MAX_AGE: i64 = 24 * 60 * 60 * 1000;
+pub(super) const MAX_AGE: i64 = 24 * 60 * 60 * 1000;
 static MUTATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-/// Agent sign-in cards change from bot actors and API calls alike (no `.await` while held).
-static SIGN_IN: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// `bot`'s turn failed because agent `backend` (`name`) needs signing in: a card in `lane`
-/// asks the user to, and `entries` (the user messages it couldn't answer) go out again once
-/// they have. A bot keeps one such card; messages that fail later join it.
-pub fn invite_agent_sign_in(
-    hub: &Hub,
-    bot: &str,
-    lane: &Lane,
-    backend: &str,
-    name: &str,
-    entries: &[String],
-) -> Result<()> {
-    let _guard = SIGN_IN.locked();
-    if let Some(card) = hub.store.pending_sign_ins(backend)?.into_iter().find(|card| card.bot_id == bot) {
-        let mut data = card.data;
-        let mut ids = data["connectionRequest"]["entryIds"].as_array().cloned().unwrap_or_default();
-        for id in entries {
-            if !ids.iter().any(|v| v == id.as_str()) {
-                ids.push(json!(id));
-            }
-        }
-        data["connectionRequest"]["entryIds"] = Value::Array(ids);
-        hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not update the sign-in request"))?;
-        return Ok(());
-    }
-    let request = json!({"kind": RequestKind::Agent, "status": RequestStatus::Pending, "title": name, "botId": bot,
-        "backend": backend, "entryIds": entries});
-    // The card's title names the agent.
-    let text = "Needs you to sign in. Your message goes out again once you're signed in.";
-    hub.add_entry(
-        lane,
-        EntryKind::Notice,
-        hub.store.max_turn(bot),
-        &json!({"text": text, "connectionRequest": request}),
-    )
-    .ok_or_else(|| anyhow!("Could not save the sign-in request"))?;
-    Ok(())
-}
-
-/// Agent `backend` is signed in now: its sign-in cards complete, and the messages they hold go
-/// out again (a card older than a day only completes).
-pub fn agent_signed_in(hub: &Hub, backend: &str) -> Result<()> {
-    let _guard = SIGN_IN.locked();
-    for card in hub.store.pending_sign_ins(backend)? {
-        let mut data = card.data.clone();
-        data["connectionRequest"]["status"] = serde_json::to_value(RequestStatus::Ready)?;
-        hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not complete the sign-in request"))?;
-        let Some(bot) = hub.store.bot(&card.bot_id)?.filter(|b| !b.deleted) else { continue };
-        if now_ms() - card.created_at > MAX_AGE {
-            continue;
-        }
-        let ids = data["connectionRequest"]["entryIds"].as_array().cloned().unwrap_or_default();
-        for mut entry in ids.iter().filter_map(Value::as_str).filter_map(|id| hub.store.entry(id)) {
-            let attachments = entry.data["attachments"].as_array().cloned().unwrap_or_default();
-            let text = entry.data["text"].as_str().unwrap_or_default();
-            let prompt = crate::chat::prompt::of_message(&hub.store, &bot.config, text, &attachments);
-            entry.data["status"] = "queued".into();
-            hub.set_entry(&entry.id, &entry.data);
-            let lane = Lane { chat: entry.bot_id.clone(), thread: entry.thread_id.clone() };
-            hub.send_cmd(&card.bot_id, Cmd::Send { lane, entry_id: entry.id, text: prompt })?;
-        }
-    }
-    Ok(())
-}
 
 pub fn tools() -> Value {
     json!([
@@ -214,7 +147,9 @@ fn pending(hub: &Hub, id: &str, cancelling: bool) -> Result<Entry> {
     if !has_status(&e.data["connectionRequest"], RequestStatus::Pending) {
         bail!("This request is already completed or cancelled");
     }
-    if !cancelling && now_ms() - e.created_at > MAX_AGE {
+    // An agent sign-in card doesn't expire; each message it holds does (`agent_sign_in`).
+    let agent = serde_json::from_value(e.data["connectionRequest"]["kind"].clone()).ok() == Some(RequestKind::Agent);
+    if !cancelling && !agent && now_ms() - e.created_at > MAX_AGE {
         bail!("This request expired. Ask the bot for a new request.");
     }
     let bot = text(&e.data["connectionRequest"], "botId")?;
@@ -243,7 +178,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
         if crate::agent::auth::check(&hub.store, backend).await?["signedIn"] != true {
             bail!("{} isn't signed in yet.", request["title"].as_str().unwrap_or("The agent"));
         }
-        agent_signed_in(hub, backend)?;
+        super::agent_sign_in::agent_signed_in(hub, backend)?;
         return Ok(json!({"entry": hub.store.entry(id)}));
     }
     if kind == RequestKind::Login {
@@ -312,12 +247,14 @@ fn complete(hub: &Arc<Hub>, e: &Entry, id: &str, note: String) -> Result<Value> 
     let mut data = e.data.clone();
     data["connectionRequest"]["status"] = serde_json::to_value(RequestStatus::Ready)?;
     let entry = hub.set_entry(id, &data).ok_or_else(|| anyhow!("Could not complete request"))?;
-    let lane = Lane { chat: e.bot_id.clone(), thread: e.thread_id.clone() };
+    let lane = Lane::main(&e.bot_id);
     let (ack, added) = hub.add_entry_once(
         &format!("connection-ack-{id}"),
         &lane,
         EntryKind::User,
-        &json!({"text":note,"status":"queued"}),
+        0,
+        // Written for the user, not by them: memory doesn't take it as their words.
+        &json!({"text":note,"status":"queued","from":"host"}),
     )?;
     if added {
         hub.send_cmd(&bot, Cmd::Send { lane, entry_id: ack.id, text: note })?;
@@ -326,12 +263,12 @@ fn complete(hub: &Arc<Hub>, e: &Entry, id: &str, note: String) -> Result<Value> 
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::store::{BotConfig, Store};
     use std::path::{Path, PathBuf};
 
-    fn fixture() -> (Arc<Hub>, PathBuf) {
+    pub(in crate::market) fn fixture() -> (Arc<Hub>, PathBuf) {
         let dir = std::env::temp_dir().join(format!("codync-credentials-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(Path::new(":memory:")).unwrap();
@@ -410,31 +347,6 @@ mod tests {
         let history = hub.store.history("bot", i64::MAX, 100).unwrap();
         let history = serde_json::to_string(&history).unwrap();
         assert!(history.contains("type_login") && !history.contains("hunter2-private"));
-        hub.shutdown().await;
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[tokio::test]
-    async fn signing_in_completes_the_card_and_sends_its_messages_again() {
-        let (hub, dir) = fixture();
-        let lane = Lane::main("bot");
-        let user =
-            |text: &str| hub.add_entry(&lane, EntryKind::User, 1, &json!({"text":text,"status":"sent"})).unwrap().id;
-        let (first, second) = (user("alpha-7"), user("bravo-9"));
-        invite_agent_sign_in(&hub, "bot", &lane, "fixture", "Fixture", std::slice::from_ref(&first)).unwrap();
-        invite_agent_sign_in(&hub, "bot", &lane, "fixture", "Fixture", &[second.clone(), first.clone()]).unwrap();
-        let cards = hub.store.pending_sign_ins("fixture").unwrap();
-        assert_eq!(cards.len(), 1, "a bot keeps one sign-in card");
-        assert_eq!(cards[0].data["connectionRequest"]["entryIds"], json!([first, second]));
-        agent_signed_in(&hub, "fixture").unwrap();
-        assert_eq!(hub.store.entry(&cards[0].id).unwrap().data["connectionRequest"]["status"], "ready");
-        let prompts = dir.join("prompts.jsonl");
-        let sent = tokio::time::timeout(std::time::Duration::from_secs(20), async {
-            while !std::fs::read_to_string(&prompts).is_ok_and(|p| p.contains("alpha-7") && p.contains("bravo-9")) {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            }
-        });
-        sent.await.expect("both messages go out again");
         hub.shutdown().await;
         let _ = std::fs::remove_dir_all(dir);
     }

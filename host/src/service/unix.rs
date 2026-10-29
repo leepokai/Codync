@@ -30,6 +30,18 @@ pub fn start() -> Result<()> {
     }
 }
 
+/// Whether launchd or systemd started this process as the installed service, not a terminal or
+/// the desktop app's development run.
+pub fn started_by_service() -> bool {
+    if cfg!(target_os = "macos") {
+        // launchd names the job; a process started from a terminal or an app has another name.
+        std::env::var("XPC_SERVICE_NAME").is_ok_and(|name| name == LABEL)
+    } else {
+        // systemd (248+) names the service's main process; a shell inherits its terminal's.
+        std::env::var("SYSTEMD_EXEC_PID").is_ok_and(|pid| pid == std::process::id().to_string())
+    }
+}
+
 /// Refuse to replace one installation while restarting a service owned by another.
 pub fn require_executable(expected: &Path) -> Result<()> {
     let configured = if cfg!(target_os = "macos") {

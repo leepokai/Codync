@@ -1,0 +1,119 @@
+Every bot keeps a long-term memory about you that lasts across sessions: your name, time zone, the people you mention, your lasting preferences. Memory is about you as a person. What a bot learns about a project goes in a note of its own, and into the project's `CLAUDE.md` or `AGENTS.md` only when you ask.
+
+Memory is plain Markdown files on your computer. The bot keeps them up to date itself; you change them by telling the bot.
+
+## Two layers
+
+| Layer | What it holds | Who sees it |
+|---|---|---|
+| **About you** | Facts every bot should know: your name, time zone, people. | Every bot that uses what your bots share. |
+| **This bot** | What this bot learned about you. | Only this bot. |
+
+A bot in its own personal workspace uses **About you** by default; a bot working in a project folder doesn't. Change it with **Use what your bots share** on the bot's **About you** tab (`s` in the terminal UI).
+
+Each layer has two kinds of file:
+
+- **MEMORY.md**: the short version, one fact per line. Every session starts with it in full. It has a size limit, and the app shows how much is in use.
+- **Notes**: the detail, one topic per note, in topic folders such as `health/allergies.md`. The bot sees the list of its notes and reads one when its topic comes up.
+
+The files are in `~/.codync/shared-memory/` (About you) and `~/.codync/bots/<bot id>/bot-memory/` (each bot), in your user folder.
+
+## How the bot updates memory
+
+The bot edits its memory files itself, with Codync's built-in memory tools, which work the same with every agent. Claude Code and Codex can also use their own file tools on those folders. Changes go in right away, whatever the bot's approval setting, and nothing about memory shows in the chat.
+
+To change what a bot remembers, tell it in its chat: "Remember that I'm vegetarian", "Forget my old address."
+
+What a bot may change depends on where it's working:
+
+- **In its own chat, answering you:** it can add, change or remove anything. Its MEMORY.md may grow to twice its limit there, so what you ask it to remember is never turned away for lack of room.
+- **Everywhere else** (routines, [group chats](/docs/groups), requests from [other bots](/docs/teamwork) and the turns where their answers come back): it can only add lines, within the limit. When MEMORY.md is full, it writes a note instead.
+
+Every change is checked first. Memory can't take in hidden characters, links that carry instructions, planted instructions, passwords, keys, or ID or card numbers. A change that breaks a rule is put back, and the bot is told why.
+
+A bot can also search its memory and its chat history. History search covers only the bot's own chat; group chats it took part in aren't included.
+
+### Forgetting
+
+When a bot removes a fact because you asked it to in its own chat, Codync remembers that you had it forgotten. No bot outside your own chat, and no dreaming, writes it back or learns it again from the same message. If you tell a bot again in its own chat, it can come back.
+
+Earlier versions of the files are kept for 30 days. After that, what you had forgotten is gone from the history too.
+
+### Editing the files yourself
+
+You can also edit the files on the computer with any editor. Codync records the change as yours ("You wrote it"). A line that would fail the checks is kept out of what the bots see.
+
+## What the apps show
+
+Memory is on the bot's **Memory** tab, read-only. To change something, tell the bot.
+
+- **iPhone:** tap the bot's name at the top of the chat, then the **Memory** tab.
+- **Desktop:** click the bot's name at the top of the chat, then the **Memory** tab.
+- **Terminal UI:** select the bot and press `M`.
+
+The tab has these sections:
+
+- **About you** and **This bot**: each fact with who wrote it ("You wrote it", "Scout remembered it", "Dreaming") and when, then the layer's **Notes** with their description, size and date. Open a note to read it.
+- **Dreams**: what dreaming did, run by run.
+- **Claude Code**: Claude Code's own notes, read-only, when you keep its own memory on (see below).
+
+## Dreaming
+
+Between chats, the bot tidies its memory from your own words. This is called dreaming.
+
+- **When:** after five quiet minutes or eight of your messages (each thing you say on a call counts as one), sooner after a new session and before Codync compacts a conversation, and once a day to update lines whose date has passed (putting them in the past tense).
+- **What:** it reads what you said since its last run, then adds lines to MEMORY.md, takes out lines that went out of date, and adds lines to notes.
+- **Only your words:** every change has to quote something you typed yourself, or said on a call (from the call's transcript). Pasted text, code blocks, quoted or forwarded messages, the voice's wording of what it passed on, the bot's replies and other bots don't count. Group chats and bot requests never feed it.
+- **Small steps:** at most 10 changes a run, never taking out more than a quarter of the lines. It never removes or rewrites a line you wrote, never brings back something you had a bot forget, and never rewrites a note.
+- **Tidying:** when a MEMORY.md is nearly full, dreaming moves detail word for word into notes by topic, your lines too, and leaves one line per topic that points to its note, such as "Allergic to peanuts → health/allergies.md". That way memory doesn't fill up.
+
+Dreaming runs in a session of its own, away from the chat, on the bot's own agent (with Claude Code, on Haiku with no tools), so it counts toward that agent's usage. It waits while your plan's usage is above 75%.
+
+The **Dreams** tab shows each run: added lines in green, taken-out lines in red, and the notes it added to.
+
+## The agent's own memory
+
+Some agents keep a memory of their own, such as Claude Code's auto memory. Codync turns it off for every bot by default, so each bot has one memory and you see all of it here.
+
+Where Codync can switch it, the **This bot** section has a switch named after the agent, such as **Claude Code's own memory** (`m` in the terminal UI). That's available for Claude Code, GitHub Copilot, CodeBuddy Code, WorkBuddy, and Qwen Code in a bot's personal workspace. Gemini CLI, Hermes Agent, Kilo Code and Kiro have no switch Codync can use.
+
+If you turn it on:
+
+- The bot may remember the same thing twice, and the two memories can disagree after something changes.
+- What the bot forgets in Codync stays in the agent's own notes. Codync can't change them.
+- Claude Code's notes show read-only in a **Claude Code** section.
+
+Changing the switch restarts the agent, which resumes its session where it can. Switching the bot to another agent turns it off.
+
+### Agents with a memory of their own
+
+Hermes Agent and Gemini CLI keep one memory for all their sessions, and Codync can't turn it off for one bot. For a bot on either, the **This bot** section shows **Hermes Agent's own memory** (or Gemini CLI's) marked **Shared** in place of the switch, and its info button explains what that means:
+
+- **Every bot that runs the agent shares it**, and so does the agent when you use it outside Codync. What one Hermes bot saves there, every other Hermes bot can read.
+- **Remembered twice:** a bot may save the same thing in both memories, and the two can disagree.
+- **Forgetting** in Codync doesn't remove anything from the agent's memory, and Codync can't show it to you.
+- **Turning it off** is only possible in the agent's own settings, where it has one, and then for every session at once. Codync doesn't read those settings, so the row says **Shared** either way.
+
+Where each keeps it:
+
+| Agent | Memory | How to turn it off |
+| --- | --- | --- |
+| Hermes Agent | `MEMORY.md` and `USER.md` in `~/.hermes/memories` | set `memory.memory_enabled` and `memory.user_profile_enabled` to `false` in `~/.hermes/config.yaml` |
+| Gemini CLI | `~/.gemini/GEMINI.md`, which Gemini CLI's own instructions have the model edit | Gemini CLI has no setting for it |
+
+The terminal UI says the same in the memory sheet's note.
+
+## Memory, new sessions and compaction
+
+The bot's chat, its memory and the agent's session are separate things.
+
+- **New session** gives the agent a fresh context. The chat stays in the app, and memory carries over: every new session starts with MEMORY.md in full and the list of notes.
+- **During a session,** when memory changes (by this bot, another bot sharing About you, dreaming, or your own edit), the bot gets the new memory with its next message.
+- **Compaction:** when a conversation in the bot's own chat gets long, Codync has the agent summarize it to make room. Dreaming runs first, so what you said reaches memory before it's summarized. Afterwards the bot's instructions and memory are applied again. Sometimes Codync starts a fresh conversation with a summary card instead. See [Fresh conversations](/docs/conversations#fresh-conversations).
+- If the agent has deleted an old session, the bot starts fresh, and its memory is still there.
+
+## Limits
+
+- Memory search looks for the words you give it, so a fact worded differently won't match.
+- What you say on a call reaches dreaming as speech recognition heard it, so a misheard word counts as said.
+- In your own chat, a bot can still change memory because of something it read along the way, such as a web page or a file. Outside your own chat, it can only add.

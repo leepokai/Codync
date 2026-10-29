@@ -1,0 +1,21 @@
+.refresh-indicator {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  z-index: 1500;
+  pointer-events: none;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-m);
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition: opacity var(--fade), transform var(--fade);
+}
+.refresh-indicator.shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .refresh-indicator { transition: none; }
+}

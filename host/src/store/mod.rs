@@ -8,11 +8,15 @@
 mod bots;
 mod devices;
 mod entries;
+mod memory;
 mod model;
 mod schema;
 
 pub use devices::{Device, DeviceSource, Scope};
-pub use model::{BotConfig, BotKind, BotRow, Entry, EntryKind, Lane, Permission, ReadScope, lane_key};
+pub use model::{
+    AVATAR_COLORS, AVATAR_SHAPES, BotConfig, BotKind, BotRow, Entry, EntryKind, Fallback, Lane, Permission,
+    message_text, run_session_key,
+};
 
 use crate::LockExt;
 use anyhow::Result;
@@ -62,6 +66,11 @@ impl Store {
         Ok(())
     }
 
+    pub fn kv_delete(&self, k: &str) -> Result<()> {
+        self.db.locked().execute("DELETE FROM kv WHERE k = ?1", [k])?;
+        Ok(())
+    }
+
     /// Keys starting with `prefix`.
     pub fn kv_prefix(&self, prefix: &str) -> Vec<String> {
         let c = self.db.locked();
@@ -73,6 +82,16 @@ impl Store {
 
     pub fn current_rev(&self) -> i64 {
         self.kv_get("rev").and_then(|v| v.parse().ok()).unwrap_or(0)
+    }
+
+    /// Saves a row stamped with the next rev, in one transaction: `value` gets the rev and returns what to save.
+    pub fn kv_set_stamped(&self, k: &str, value: impl FnOnce(i64) -> Result<String>) -> Result<()> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        let rev = next_rev(&tx)?;
+        tx.execute("INSERT INTO kv(k, v) VALUES(?1, ?2) ON CONFLICT(k) DO UPDATE SET v = ?2", params![k, value(rev)?])?;
+        tx.commit()?;
+        Ok(())
     }
 }
 

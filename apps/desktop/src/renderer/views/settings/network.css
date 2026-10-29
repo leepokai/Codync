@@ -1,0 +1,29 @@
+/* Network: the computers in this computer's network, and the sheets that set it up. */
+.network-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--tertiary);
+}
+.network-dot.online {
+  background: var(--added);
+}
+.network-sheet {
+  width: 440px;
+}
+.network-sheet-body {
+  padding: 4px 20px 20px;
+}
+/* An invite or recovery code: long, and copied whole. */
+.network-code {
+  word-break: break-all;
+  user-select: all;
+}
+/* The network is a beta feature: a quiet tag beside its title. */
+.beta-tag {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--field);
+  color: var(--secondary);
+}

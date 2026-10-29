@@ -27,9 +27,12 @@ they return. Computer names and bots never become ordering keys, and an ordering
 entry never grants access to a computer or imports another device's SSH connection.
 
 On iOS, touch and hold a computer heading, then drag up or down and release to save
-the order; its bots follow when it's dropped. Cancelling a drag leaves the saved order unchanged. A tap folds or expands
+the order. The computer moves with its bots: while the heading is lifted, every computer's
+bots fold into their headings (rows kept at no height, so the system's drag keeps its place),
+and they unfold under their computers when it's dropped. Cancelling a drag leaves the saved order unchanged. A tap folds or expands
 the section; Move up/down accessibility actions are also available. The desktop
-app supports heading drags and Alt+Up/Down on macOS, Linux and Windows.
+app drags headings the same way (the sections fold while one is lifted, and the others make
+room as it passes them) and supports Alt+Up/Down, on macOS, Linux and Windows.
 The terminal UI connects to one host, so it has no cross-computer ordering.
 
 The order never leaves the device: the cloud stores no computer order.
@@ -38,16 +41,18 @@ The order never leaves the device: the cloud stores no computer order.
 
 A computer's bots (and group chats) keep the order the user drags them into, on every
 device: the host stores it as each bot's `position` (`reorderBots`, `host/src/hub/order.rs`)
-and syncs it like any bot change. Pinned bots stay above the rest, and a bot moves only
-among bots with the same pin state. Until a computer's bots are first arranged, every
+and syncs it like any bot change. Every client sorts in bands: the [lead bot](lead-bot.md)
+first (it can't be dragged, and nothing drops above it), then pinned bots, then the rest;
+a bot moves only within its band. Until a computer's bots are first arranged, every
 position is 0 and they sort by recent activity; after that they stay put and a new bot
-appears on top. Hidden bots keep their position for when they return.
+appears at the top of its band. Hidden bots keep their position for when they return.
 
 - **iPhone:** touch and hold a row, then drag it. The roster is a `List` with its styling
   removed, so the system does the reordering: holding still opens the row's menu, and dragging
   the lifted row moves it, also once the menu shows, unless the finger goes into the menu. Lifted,
   the row is a rounded card: it fills while the system holds its drag item (`BotListView.lift`). A bot
-  dropped among another computer's bots goes back. The drop saves the order (`BotListView.moveLines`,
+  moves only among its own computer's bots: dropped above or below them, among another computer's,
+  it goes first or last. The drop saves the order (`BotListView.moveLines`,
   `BotStore.reorder`). VoiceOver: Move up / Move down. SwiftUI's own drag and drop can't do this:
   with a context menu on the row, a drag never starts on iPhone.
 - **Desktop:** drag a row, or Alt+Up/Down on the selected bot (macOS, Linux, Windows).

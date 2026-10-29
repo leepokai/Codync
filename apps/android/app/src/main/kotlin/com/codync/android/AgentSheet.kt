@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.AgentAuth
 import com.codync.android.core.AgentAuthMethod
 import com.codync.android.core.AgentBackend
+import com.codync.android.core.LinkState
 import com.codync.android.core.WireJson
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -49,6 +50,9 @@ private data class SetupRoute(val step: String, val method: AgentAuthMethod? = n
 /** The computer's agents, live: an install or sign-in updates the host's list. */
 internal fun agentBackends(state: AppState): List<AgentBackend> =
     state.hello?.get("backends")?.let { runCatching { WireJson.decodeFromJsonElement<List<AgentBackend>>(it) }.getOrNull() }.orEmpty()
+
+/** The ACP registry id an agent's logo is under (`AgentIcon`). */
+internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state).firstOrNull { it.id == agent }?.registry ?: agent
 
 /**
  * Getting an agent ready on the computer (iOS `AgentSheet`): install it, add Node.js when it runs
@@ -73,8 +77,9 @@ internal fun agentBackends(state: AppState): List<AgentBackend> =
             finally { checking = false }
         }
     }
-    // A known "signed in" needs no agent start; everything else asks the agent (which can't start without its Node.js).
-    LaunchedEffect(Unit) { if ((recheck || backend.signedIn != true) && !backend.needsNode) check() }
+    // A known "signed in" needs no agent start; one set up asks the agent (which can't start without its Node.js).
+    // Opening never downloads one: that waits for Set up.
+    LaunchedEffect(Unit) { if ((recheck || (setUp(backend, auth) && backend.signedIn != true)) && !backend.needsNode) check() }
     val back = { route = null; check() }
     AnimatedContent(route, transitionSpec = {
         val forward = targetState != null
@@ -84,7 +89,7 @@ internal fun agentBackends(state: AppState): List<AgentBackend> =
         when {
             shown == null -> Column(Modifier.fillMaxSize().background(Palette.background)) {
                 ModalHeader(backend.name)
-                Overview(backend, auth, checking, authenticating, error, state, { route = it }, ::check) { method ->
+                Overview(backend, auth, checking, authenticating, error, state, store, { route = it }, ::check) { method ->
                     authenticating = method.id
                     scope.launch {
                         try { auth = store.agentAuthenticate(backend.id, method.id); error = null }
@@ -101,10 +106,11 @@ internal fun agentBackends(state: AppState): List<AgentBackend> =
 }
 
 @Composable private fun Overview(backend: AgentBackend, auth: AgentAuth?, checking: Boolean, authenticating: String?, error: String?, state: AppState,
-    go: (SetupRoute) -> Unit, check: () -> Unit, authenticate: (AgentAuthMethod) -> Unit) {
+    store: AppStore, go: (SetupRoute) -> Unit, check: () -> Unit, authenticate: (AgentAuthMethod) -> Unit) {
     val host = state.hostName
     val signedIn = auth?.signedIn ?: backend.signedIn
     val curated = backend.curated
+    val setUp = setUp(backend, auth)
     CardForm {
         CardSection {
             row {
@@ -115,7 +121,7 @@ internal fun agentBackends(state: AppState): List<AgentBackend> =
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(backend.name, style = Type.title3.semibold, color = Palette.text)
                         backend.description?.takeIf(String::isNotEmpty)?.let {
-                            Text(it, style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Text(tr(it), style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -139,13 +145,18 @@ internal fun agentBackends(state: AppState): List<AgentBackend> =
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) {
                         SetupStepRow(1 + (if (curated) 1 else 0) + (if (backend.node != null) 1 else 0), "Sign in",
-                            statusText(backend, auth, signedIn, checking, host), signedIn == true, null)
+                            statusText(backend, setUp, auth, signedIn, checking, host), signedIn == true, null)
                     }
                     if (checking) ThinkingOrb(ThinkingOrbState.Connecting, 16.dp, Palette.secondary) else IconButton("Check again", "arrow.clockwise", action = check)
                 }
             }
             val detail = auth?.detail
             if (signedIn != true && !detail.isNullOrEmpty()) row { SelectionContainer { Text(detail, style = Type.footnote, color = Palette.secondary) } }
+            // A registry agent downloads on its first start; an app's own CLI comes from Install above.
+            if (!setUp && !curated && !checking && !backend.needsNode) row {
+                OptionRow("Set up", "Downloads ${backend.name} on $host if it needs to, then checks its sign-in.", "arrow.down.circle",
+                    enabled = authenticating == null, action = check)
+            }
             // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
             if (signedIn != true && !checking) {
                 if (auth?.login == true) row {
@@ -166,14 +177,19 @@ internal fun agentBackends(state: AppState): List<AgentBackend> =
                 }
             }
         }
+        AgentBrings(backend.id, store, state.connection is LinkState.Ready)
         error?.let { CardSection { row { SelectionContainer { ErrorRow(it) } } } }
     }
 }
 
-private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolean?, checking: Boolean, host: String) = when {
+/** It has run on this computer: its CLI is there, or an earlier check started it. Until then, a check can download it. */
+private fun setUp(backend: AgentBackend, auth: AgentAuth?) = backend.installed || backend.signedIn != null || auth != null
+
+private fun statusText(backend: AgentBackend, setUp: Boolean, auth: AgentAuth?, signedIn: Boolean?, checking: Boolean, host: String) = when {
     checking -> if (auth == null) "Checking with ${backend.name}… The first check can download it." else "Checking…"
     signedIn == true -> "Signed in."
     backend.needsNode -> "Add Node.js first."
+    !setUp -> if (backend.curated) "Install it first." else "Not set up on $host yet."
     signedIn == false -> "Not signed in yet."
     else -> "Couldn't tell. Skip this if you've already signed in on $host."
 }
@@ -183,8 +199,8 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) { Symbol(icon, size = 20.dp, tint = Palette.secondary) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = Type.body.medium, color = Palette.text)
-            Text(detail, style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(tr(title), style = Type.body.medium, color = Palette.text)
+            Text(tr(detail), style = Type.subheadline, color = Palette.secondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
         if (busy) ThinkingOrb(size = 16.dp, color = Palette.secondary) else Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
     }
@@ -192,18 +208,19 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
 
 /** A numbered setup step: done shows a check; an action sits on the right. */
 @Composable private fun SetupStepRow(number: Int, title: String, detail: String, done: Boolean, action: Pair<String, () -> Unit>?) {
-    Row(Modifier.padding(vertical = 4.dp).semantics(mergeDescendants = true) { stateDescription = if (done) "Done" else "" },
+    val doneLabel = tr("Done")
+    Row(Modifier.padding(vertical = 4.dp).semantics(mergeDescendants = true) { stateDescription = if (done) doneLabel else "" },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(26.dp).clip(Capsule()).background(if (done) Palette.accentFill else Palette.bubbleAgent), contentAlignment = Alignment.Center) {
             if (done) Symbol("checkmark", size = 13.dp, tint = Palette.onAccent)
             else Text("$number", style = Type.caption.semibold, color = Palette.secondary)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = Type.body.medium, color = Palette.text)
-            Text(detail, style = Type.subheadline, color = Palette.secondary)
+            Text(tr(title), style = Type.body.medium, color = Palette.text)
+            Text(tr(detail), style = Type.subheadline, color = Palette.secondary)
         }
         action?.let { (label, run) ->
-            Text(label, Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = run).padding(horizontal = 14.dp, vertical = 7.dp),
+            Text(tr(label), Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = run).padding(horizontal = 14.dp, vertical = 7.dp),
                 style = Type.subheadline.semibold, color = Palette.text)
         }
     }
@@ -227,7 +244,7 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
     }
     val savedHere = method.vars.any { it.name in saved }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
-        ScreenHeader({ BackButton(back) }, { Text(method.name, style = Type.body.semibold, color = Palette.text, maxLines = 1) }) {
+        ScreenHeader({ BackButton(back) }, { Text(tr(method.name), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis) }) {
             if (saving) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
             else IconButton("Save", "checkmark", enabled = method.complete(values, saved)) { save(values.filterValues(String::isNotEmpty)) }
         }
@@ -236,11 +253,11 @@ private fun statusText(backend: AgentBackend, auth: AgentAuth?, signedIn: Boolea
                 CardSection(method.name) {
                     for (v in method.vars) row {
                         NotedInput(values[v.name].orEmpty(), { values = values + (v.name to it) }, if (v.name in saved) "Saved (type to replace)" else v.name,
-                            v.label + if (v.optional) " (optional)" else "", secret = v.secret)
+                            tr(v.label) + if (v.optional) tr(" (optional)") else "", secret = v.secret)
                     }
                 }
                 Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    method.description?.let { Text(it, style = Type.caption, color = Palette.tertiary) }
+                    method.description?.let { Text(tr(it), style = Type.caption, color = Palette.tertiary) }
                     Text("Saved on ${state.hostName} only and given to ${backend.name} when it starts.", style = Type.caption, color = Palette.tertiary)
                     method.link?.let { WebLink("Get a key", it, Type.caption) }
                 }

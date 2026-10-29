@@ -1,0 +1,102 @@
+Codync can do two things with your computer's screen:
+
+- **Remote screen:** you see the screen on your iPhone and control it with touch and the keyboard.
+- **Use the computer:** a bot opens apps, reads windows, clicks and types, the way you would.
+
+Both run through **Codync Screen**, a small helper on the computer that the desktop app sets up. You can watch a bot work from your phone and take over at any time.
+
+## Set up computer access
+
+Permissions are granted on the computer itself. In the desktop app, open **Settings → Computer access**. It's also a step of the first setup (you can choose **Set up later**), and in the menu bar or tray menu under **Remote screen → Set up computer access…**.
+
+- **macOS:** press **Enable Codync Screen**. If macOS asks, allow Codync to run in the background in Login Items. Then allow **Screen recording** and **Control apps**. In System Settings, look for **Codync Screen**; depending on your macOS version, control is listed under **Accessibility** or **Device Control and Data Access**. Come back to Codync after granting, and let the helper restart if asked.
+- **Linux:** press **Choose screen and allow control**. The system's screen-sharing dialog asks you to pick a screen and allow mouse and keyboard access. If Codync Screen restarts, open Computer access again to share the screen once more.
+- **Windows:** bots can use apps without extra permissions. Viewing the screen from your phone isn't available on Windows yet.
+
+The iPhone app and the terminal UI show whether access is set up and point you to Computer access on the computer; they can't grant it.
+
+### Turn remote screen on or off
+
+Remote screen is on by default on macOS, and on Linux when a graphical session (Wayland or X11) is running. On a headless Linux server it stays off.
+
+To change it, use the menu bar or tray menu on the computer: **Remote screen → Enable remote screen**. Only the computer itself can switch it on; a phone can't. Codync remembers your choice.
+
+## View and control your screen from the iPhone
+
+Open the screen in either of two ways:
+
+- In a chat, tap the **Computer** button at the top right.
+- Tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap **Screen** on the computer.
+
+You have control right away, unless that chat's bot is using the computer at that moment (then you watch first, as described under "Watch a bot work" below). While you have control, bots can still look at the screen, but they can't act until you hand it back.
+
+The buttons along the top:
+
+| Button | What it does |
+| --- | --- |
+| **Close** | Ends the session and hands control back to the bots |
+| **Rotate** | Turns the view, even with rotation lock on (it otherwise follows how you hold the phone) |
+| **Keyboard** | Shows the keyboard, with a row of modifier keys |
+| **Touch mode** | Switches between trackpad (drag to move the pointer) and direct (tap where you want to click) |
+| **Clipboard** | **Send my clipboard** to the computer, or **Copy from computer** |
+| **Fit screen** | Appears after you zoom in; zooms back out |
+| **Displays** | Appears with more than one display; picks which one you see |
+| **Take over** / **Hand back to bots** | Takes control from the bots, or gives it back |
+
+If the computer allows viewing but not control, the screen says "View only" and points you to Computer access on the computer.
+
+### How the screen travels
+
+- Video and input go over WebRTC and stay encrypted between your phone and Codync Screen. The setup messages travel over the same end-to-end encrypted connection as your chats.
+- On a direct connection (same Wi-Fi, or Tailscale), Codync uses no STUN or TURN server. On a Mac, the picture is encoded at up to 16 Mbps and 60 fps.
+- Through the Codync relay, the stream may be forwarded by Cloudflare's TURN service, which passes along encrypted packets and never sees your screen's content. This needs the computer linked to a signed-in account; otherwise the phone asks you to sign in on the computer. Relayed sessions are encoded at up to 4 Mbps and 30 fps, even if a direct path turns up later.
+- Revoking the phone's access or turning off remote screen stops the picture and input.
+
+## Let a bot use the computer
+
+Turn on **Use the computer** for the bot. It's off by default.
+
+- **Desktop app and iPhone:** open the bot's details (click or tap the bot's name at the top of the chat) and find **Use the computer** under **Computer** on the **Details** tab.
+- **Terminal UI:** press `e` on the bot and toggle **Use computer**. The form also shows whether computer access is ready.
+
+On macOS and Linux, remote screen must be on for bots to use the computer. On Windows it's always available.
+
+### What a bot can do
+
+With Use the computer on, the bot gets tools to:
+
+- list apps and windows, read what's in a window, and zoom into part of the screen
+- open apps
+- click, double-click, right-click, drag and scroll
+- type text, press keys and shortcuts, set values in fields, and pick menu items
+- type one of your saved sign-ins (see below)
+
+On macOS, Windows, and Linux with X11 or Sway, the bot works on apps in the background: your pointer and the app in front stay yours. On macOS, windows on another Space can't be worked on in the background; the bot is told so and can act in the foreground instead.
+
+Bots don't get tools to bring an app to the front, quit apps, read your clipboard, or drive a browser through its automation interface.
+
+### The rules
+
+- **One bot at a time.** Another bot that tries is told the computer is in use.
+- **You come first.** While you've taken over from your phone, bots can only look until you hand back control.
+- **Approvals still apply.** The bot's Permissions setting and your agent's own approval rules cover each action.
+
+### Watch a bot work
+
+While a bot uses the computer, the **Computer** button in its chat pulses. Tap it to watch: the screen shows "*Bot* is using the computer". Tap **Take over** to take control; from then on the bot can only look. Tap **Hand back to bots** when you're done.
+
+### Platform notes
+
+- **macOS:** bots use Codync Screen's Screen recording and control permissions, so macOS asks for nothing new.
+- **Windows:** windows of apps running as administrator are out of reach. Typing saved sign-ins isn't available on Windows yet.
+- **Linux with X11 or Sway:** the computer-use tools need libX11, libXi and libxkbcommon.
+- **Linux with GNOME, KDE or another Wayland desktop:** bots get a simpler set of tools that take screenshots and click and type on screen positions, using the screen you shared in Computer access.
+- **Linux remote screen:** Codync Screen needs glibc 2.39 or later, GStreamer 1.22 or later with the base, good and bad plugins, PipeWire, and xdg-desktop-portal. The install script, Homebrew and `codync-host update` put it next to the host.
+
+## Saved sign-ins
+
+When a bot needs to sign in to a website or app, it can ask you with a card in the chat. Enter **Username or email** and **Password or op:// reference**, then **Save**. You can also add them under **Extensions → Credentials → Sign-ins**.
+
+The bot then types the sign-in into the page itself and never sees the password. Codync types only when the focused page belongs to that site (or one of its subdomains), or the front app has that name, and it types a password only into a password field. Sign-ins are encrypted on the computer like [connector credentials](/docs/connectors-and-skills).
+
+Password prompts in a terminal (such as `sudo` or `ssh`) aren't covered.

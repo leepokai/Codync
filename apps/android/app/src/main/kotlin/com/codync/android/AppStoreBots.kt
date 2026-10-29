@@ -30,6 +30,9 @@ fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
     onSaved()
 }
 
+/** A saved bot's settings from its details, saved as they're edited: the chat stays where it is. */
+fun AppStore.saveSettings(draft: BotDraft) = command("updateBot", draft.body(), "settings:" + draft.id)
+
 fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor") {
     val payload = draft.body(state.value.bots)
     val active = ready()
@@ -41,11 +44,25 @@ fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor"
     onSaved()
 }
 
+/** `/fast`: a bot's own Fast mode, or a group's members' together (each member's own setting, so it holds in their chats too). */
+fun AppStore.toggleFastMode(bot: Bot) {
+    if (bot.kind != "group") return setFastMode(bot, !bot.fastMode)
+    val group = GroupFastMode(bot.memberBots(state.value.bots))
+    for (member in group.members) setFastMode(member, group.state == FastModeState.Off)
+}
+private fun AppStore.setFastMode(bot: Bot, on: Boolean) {
+    command("updateBot", buildJsonObject { put("id", bot.id); put("fastMode", on) }, "roster:" + bot.id)
+}
+
+/** The bot's own agent again while it runs on a fallback: now if idle, else from its next turn. The host posts the chat line. */
+fun AppStore.switchBack(bot: Bot) = command("switchBack", body("botId" to bot.id), "switchBack:" + bot.id)
+
 fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot.id) {
     val active = ready()
     active.call("deleteBot", body("botId" to bot.id))
     mutableState.update { it.copy(selectedBot = it.selectedBot.takeUnless { id -> id == bot.id },
-        drafts = it.drafts.filterValues { draft -> draft.botId != bot.id }) }
+        // Its chat's draft and its artifacts' (`artifactDraftKey`).
+        drafts = it.drafts.filterKeys { key -> key != bot.id && !key.startsWith("${bot.id}/") }) }
     persistDrafts()
     onDeleted()
 }
@@ -74,6 +91,11 @@ fun AppStore.routineAction(botId: String, id: String, method: String, enabled: B
     active.call(method, buildJsonObject { put("botId", botId); put("id", id); enabled?.let { put("enabled", it) } })
     receiveRoutines(botId)
     done()
+}
+/** Runs a failed routine run's work again, from its notice; the notice's update drops the button. */
+fun AppStore.retryRoutineRun(entry: Entry) = action("retry:" + entry.id) {
+    val runId = requireNotNull(entry.data.text("runId")) { "This run can't be retried." }
+    ready().call("retryRoutineRun", body("botId" to entry.botId, "runId" to runId))
 }
 /** Queries belong to the account runtime as well as their screen; retiring either cancels them. */
 internal suspend fun AppStore.hostQuery(method: String, payload: JsonObject, timeoutMillis: Long = 20_000,

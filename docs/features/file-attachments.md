@@ -8,8 +8,8 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
   (`apps/desktop/src/renderer/views/thread/Composer.tsx`); on the iPhone through Paste in the
   + menu.
   HEIC/TIFF/BMP become JPEG (`OutgoingFile.prepared`, `Thread/Attachments.swift`). Picked files show as chips above
-  the text and can be removed; a message can be files only. Not in group chats (a group has no
-  folder of its own). Up to 100 MB per file.
+  the text and can be removed; a message can be files only. Group chats take files too: they're
+  kept in the group's uploads folder and listed to each member under the message. Up to 100 MB per file.
 - Upload: `upload {botId, uploadId, name, offset, data (base64), done}`, 384 KiB per call so each
   stays under the channel's 1 MiB message limit. A repeated chunk is accepted (retry); anything out
   of order is refused. Then `send {…, attachments: [uploadId]}`; the text may be empty.
@@ -32,7 +32,7 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 
 ## Files from a bot
 
-In its own chat or a reply thread, a bot calls the built-in chat MCP tool
+In its own chat, a bot calls the built-in chat MCP tool
 `send_file {path, name?}`. Paths may be absolute or relative to its working directory.
 The optional name is a display filename without folders. Any regular file type is
 accepted, including binary, hidden, extensionless and empty files, up to 100 MiB.
@@ -54,7 +54,7 @@ the entry's filename/size text fallback. No version or compatibility floor chang
 
 The authenticated `readFile {entryId, fileId, offset}` API requires a nonnegative
 integer offset within the saved size and a file belonging to that final agent entry
-in an undeleted bot's own chat or thread. Existing caller permissions apply: paired
+in an undeleted bot's own chat. Existing caller permissions apply: paired
 clients need Control access. It returns `{data: <base64>, size}` in chunks of at most
 384 KiB over loopback, SSH, direct encrypted and relay transports.
 
@@ -67,6 +67,12 @@ the action; cancel stops further reads, discards late responses and removes part
 files. Retry starts from zero. Account/computer retirement cancels its transfers.
 Downloads use bounded memory and check size and SHA-256 before save/export.
 
-This feature adds no previews, inline viewers, folder packaging, background transfers,
-persistent resume, Android or Watch UI. Existing bots do not publish workspace files
+An image file (by extension) up to 20 MB also shows inline above its card on iPhone,
+Android and desktop, tap/click for full size. For it the client reads the whole file
+into memory through the same `readFile` chunks, checks size and SHA-256, and keeps it
+in the sent-attachment cache under its file id; a failed read leaves the placeholder.
+The terminal UI shows only the card.
+
+This feature adds no previews of other file types, folder packaging, background
+transfers, persistent resume or Watch UI. Existing bots do not publish workspace files
 automatically: they must call `send_file`.

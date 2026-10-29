@@ -3,33 +3,43 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The message box under a chat or a thread: send, or stop while the bot (or the
-/// group) is working there. In a group, typing `@` suggests its bots; with one bot, a
-/// leading `/` lists its commands.
+/// The message box under a chat: send, or stop while the bot (or the group) is working
+/// there. A leading `/` lists commands (a group's act on its bots); in a group, typing `@`
+/// suggests its bots.
 struct Composer: View {
     let botId: String
-    /// Replies go to the thread on this message.
-    var thread: String?
+    /// The message the next send quotes, shown above the field until sent or cancelled.
+    @Binding var replyingTo: Entry?
     /// Starts a voice call; while the box is empty it takes the send button's place.
     var onCall: (() -> Void)?
     /// Interrupts the bot while it is speaking in a voice call.
     var onInterrupt: (() -> Void)?
+    /// An artifact's viewer: every message is about the artifact (a reply to its card), from a draft of its own.
+    var artifact: Artifact?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The field owns its text; the store only keeps a copy. A field bound straight to the
     /// store loses a hardware keyboard's IME composition (Zhuyin, Pinyin, Kana) on iPad.
-    @State private var draft = ""
+    @State private var input = ComposerText()
+    /// Programmatic edits must discard indices into the previous string. Keyboard edits
+    /// bind directly to `input.text` so SwiftUI can maintain selection and IME composition.
+    private var draft: String {
+        get { input.text }
+        nonmutating set { input.replace(with: newValue) }
+    }
     /// Files going out with the next message.
     @State private var files: [OutgoingFile] = []
     @State private var pickingFiles = false
     @State private var pickingPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
     @FocusState private var focused: Bool
+    @State private var dictation = Dictation()
     /// One line of the field's text, following Dynamic Type: the send button centers on the last line.
     @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 22
 
     private var bot: Bot? { model.bots[botId] }
-    private var working: Bool { bot?.isWorking(in: botId, thread: thread) == true }
+    private var draftKey: String { artifact.map(BotStore.artifactDraftKey) ?? botId }
+    private var working: Bool { bot?.isWorking(in: botId) == true }
 
     private var isEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
 
@@ -42,9 +52,11 @@ struct Composer: View {
 
     private var placeholder: String {
         let name = bot?.name ?? ""
-        if thread != nil { return "Reply…" }
-        if bot?.isGroup == true { return "Message everyone · @ to ask one bot" }
-        return working ? "Queue a message for \(name)" : "Ask \(name)"
+        if let artifact { return L10n.tr("Message about “{title}”").replacingOccurrences(of: "{title}", with: artifact.title) }
+        if replyingTo != nil { return L10n.tr("Reply…") }
+        if bot?.isGroup == true { return L10n.tr("Ask everyone · @ to ask one bot") }
+        let key = working ? "Queue a message for {name}" : "Ask {name}"
+        return L10n.tr(key).replacingOccurrences(of: "{name}", with: name)
     }
 
     /// The `@partial` being typed at the end, if any.
@@ -56,17 +68,19 @@ struct Composer: View {
     }
 
     private var suggestions: [Bot] {
-        guard let query = mentionQuery, let bot else { return [] }
-        return model.members(of: bot).filter {
+        guard let query = mentionQuery else { return [] }
+        return members.filter {
             query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
         }
     }
 
-    /// The bot's `/` commands while the draft is `/partial`; skills only from hosts that run them.
+    /// A group's bots, which its commands act on.
+    private var members: [Bot] { bot.map(model.members(of:)) ?? [] }
+
+    /// The bot's `/` commands while the draft is `/partial`.
     private var commands: [SlashCommand] {
         guard let query = SlashCommands.query(draft) else { return [] }
-        let skillsShown = !AppVersion.isBelow(model.hello?.version ?? "", SlashCommands.minSkillsHost)
-        return SlashCommands.list(for: bot, query: query, skills: skillsShown ? model.installedSkills : [])
+        return SlashCommands.list(for: bot, members: members, query: query, skills: model.installedSkills)
     }
 
     var body: some View {
@@ -110,6 +124,9 @@ struct Composer: View {
         HStack(alignment: .bottom, spacing: 8) {
             if canAttach { addButton }
             VStack(alignment: .leading, spacing: 0) {
+                if let replyingTo {
+                    quoteBar(replyingTo).transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 if !files.isEmpty {
                     fileChips.transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -120,11 +137,14 @@ struct Composer: View {
             .animation(Motion.layout, value: draft.count(where: \.isNewline))
         }
         .animation(Motion.layout, value: files.map(\.id))
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: replyingTo?.id)
         .dropDestination(for: PickedFile.self) { picked, _ in
             guard canAttach else { return false }
             append(picked.map(\.file))
             return true
         }
+        .reviewInterruption(active: focused || pickingFiles || pickingPhotos || !files.isEmpty
+                            || dictation.listening || dictation.transcribing)
         .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { add(urls) }
         }
@@ -175,7 +195,10 @@ struct Composer: View {
             switch state {
             case .interrupt: onInterrupt?()
             case .stop: model.stop(botId)
-            case .call: onCall?()
+            case .call:
+                // The call takes the microphone.
+                dictation.stop()
+                onCall?()
             case .send: submit()
             }
         } label: {
@@ -189,20 +212,60 @@ struct Composer: View {
         }
         .buttonStyle(PressScale())
         .disabled(!enabled)
+        .keyboardShortcut(state == .send ? KeyboardShortcut(.return, modifiers: .command) : nil)
         .accessibilityLabel(label)
         .help(label)
         .animation(Motion.reduced(Motion.morph, reduceMotion), value: state)
         .animation(Motion.reduced(Motion.morph, reduceMotion), value: canSend)
     }
 
+    /// Dictation, beside send / call (Grok Bot's): a light circle with its engine menu; while it
+    /// listens or transcribes, the recording pill.
+    private var micButton: some View {
+        Group {
+            if dictation.listening || dictation.transcribing {
+                RecordingPill(dictation: dictation, height: buttonSize)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
+            } else {
+                HStack(spacing: 0) {
+                    Button {
+                        Task {
+                            await dictation.start(after: draft, model: model) { change in draft = change(draft) }
+                        }
+                    } label: {
+                        Image(systemName: "mic")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Palette.secondary)
+                            .frame(width: buttonSize, height: buttonSize)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(PressScale())
+                    .accessibilityLabel("Dictate")
+                    .help("Dictate")
+                    DictationEngineMenu(height: buttonSize)
+                }
+                // The mic and its engine menu share one light capsule.
+                .background(Palette.bubbleAgent, in: Capsule())
+                .transition(.opacity)
+            }
+        }
+        .animation(Motion.reduced(Motion.morph, reduceMotion), value: dictation.listening || dictation.transcribing)
+        .codyncDialog("Couldn't dictate", isPresented: Binding(get: { dictation.failure != nil }, set: { if !$0 { dictation.failure = nil } }),
+                      message: dictation.failure, cancel: "OK") { [] }
+    }
+
     private var box: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(placeholder, text: $draft, axis: .vertical)
+            TextField(placeholder, text: $input.text, selection: $input.selection, axis: .vertical)
                 .lineLimit(1...8)
                 .font(.body)
                 .textFieldStyle(.plain)
                 .focused($focused)
+                // A hardware keyboard's Return (⌘↩ too) submits the field and ends editing.
+                .onSubmit(newline)
                 .padding(.vertical, fieldPadding)
+            micButton
+                .padding(.bottom, max(0, (textLineHeight + 2 * fieldPadding - buttonSize) / 2))
             trailingButton
                 .padding(.bottom, max(0, (textLineHeight + 2 * fieldPadding - buttonSize) / 2))
                 .animation(Motion.layout, value: isEmpty)
@@ -210,20 +273,38 @@ struct Composer: View {
         .padding(.leading, 18)
         .padding(.trailing, 6)
         .padding(.vertical, boxPadding)
-        .onChange(of: [botId, thread], initial: true) {
-            draft = model.composerDraft(for: botId, thread: thread)
+        .onChange(of: draftKey, initial: true) {
+            dictation.stop()
+            draft = model.composerDraft(for: draftKey)
         }
+        // Another chat in the same view never inherits the reply.
+        .onChange(of: botId) { replyingTo = nil }
+        .onChange(of: replyingTo?.id) { if replyingTo != nil { focused = true } }
+        .onDisappear { dictation.stop() }
         .onChange(of: draft) { _, value in
-            model.setComposerDraft(value, for: botId, thread: thread)
+            model.setComposerDraft(value, for: draftKey)
             // Starting a command: list the computer's skills again.
-            if value == "/", bot?.isGroup == false { Task { await model.refreshPlugins() } }
+            if value == "/" { Task { await model.refreshPlugins() } }
         }
         .onChange(of: model.routineDrafts[botId]) { _, value in
-            guard thread == nil, let value else { return }
+            // A request for a routine belongs in the chat.
+            guard let value, artifact == nil else { return }
             draft = draft.isEmpty ? value : draft + "\n" + value
             model.routineDrafts.removeValue(forKey: botId)
             focused = true
         }
+    }
+
+    /// The quoted message, one line, with a way to drop the reply.
+    private func quoteBar(_ target: Entry) -> some View {
+        HStack(spacing: 4) {
+            QuoteLine(text: target.replyQuote.text)
+            Spacer(minLength: 0)
+            IconButton("Cancel reply", systemImage: "xmark") { replyingTo = nil }
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 6)
+        .padding(.top, 6)
     }
 
     /// Photos, files or the clipboard, from a system menu; dropping files on the box works too.
@@ -311,10 +392,7 @@ struct Composer: View {
         guard let bot else { return }
         switch command.action {
         case .fast:
-            model.setFastMode(bot, !bot.fastMode)
-            draft = ""
-        case .newSession:
-            model.newSession(bot.id)
+            model.toggleFastMode(bot)
             draft = ""
         case .skill(let id):
             draft = "/\(id) "
@@ -322,13 +400,24 @@ struct Composer: View {
         focused = true
     }
 
+    /// Return on a hardware keyboard: a new line at the cursor, and the field keeps the keyboard.
+    /// An empty box gets none, also right after ⌘↩ sent it (the field submits after the shortcut).
+    private func newline() {
+        focused = true
+        input.insertNewline()
+    }
+
     private func submit() {
-        if files.isEmpty, let command = SlashCommands.builtIn(for: bot, draft: draft) { return run(command) }
+        // Words still on their way would land in the emptied box.
+        dictation.stop()
+        if files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
         guard canSend else { return }
         withAnimation(Motion.reduced(Motion.conversation, reduceMotion)) {
-            guard model.sendComposerDraft(to: botId, thread: thread, files: files) else { return }
+            guard model.sendComposerDraft(to: botId, draft: draftKey, replyTo: artifact?.replyQuote ?? replyingTo?.replyQuote,
+                                          files: files) else { return }
             draft = ""
             files = []
+            replyingTo = nil
         }
     }
 }

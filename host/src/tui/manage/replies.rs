@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle};
-use super::{MemoryMode, Reply, Shell, open_browser, s};
+use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
     pub(in crate::tui) fn on_sheet_reply(&mut self, r: Reply, res: Result<Value, String>) {
@@ -20,17 +20,7 @@ impl App {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
                     {
-                        if v["query"].as_str() != Some(m.query.trim())
-                            || v["filter"].as_str() != Some(super::memory::FILTERS[m.filter])
-                            || v["offset"].as_u64() != Some(m.offset as u64)
-                        {
-                            continue;
-                        }
-                        let facts = v["facts"].as_array().cloned().unwrap_or_default();
-                        m.cursor = m.cursor.min(facts.len().saturating_sub(1));
-                        m.facts = Some(facts);
-                        m.total = v["total"].as_u64().and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
-                        m.next_offset = v["nextOffset"].as_u64().and_then(|n| usize::try_from(n).ok());
+                        m.show(v.clone());
                         m.busy = false;
                         m.error = None;
                     }
@@ -41,36 +31,19 @@ impl App {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
                     {
-                        m.mode = MemoryMode::Browse;
                         m.busy = false;
                     }
                 }
                 self.refresh_sheets();
             }
-            Reply::MemoryDetail(bot) => {
+            Reply::MemoryFile(bot) => {
                 for o in &mut self.overlays {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
+                        && let MemoryMode::File { detail, .. } = &mut m.mode
                     {
-                        m.mode = MemoryMode::Detail {
-                            text: format!(
-                                "{}\n\nSession timeline\n{}",
-                                s(&v["history"], "result"),
-                                s(&v["timeline"], "result")
-                            ),
-                            scroll: 0,
-                            id: s(&v["fact"], "id"),
-                            history_cursor: v["history"]["history_cursor"].as_i64(),
-                        };
-                    }
-                }
-            }
-            Reply::MemoryExport(bot) => {
-                for o in &mut self.overlays {
-                    if let Overlay::Memory(m) = o
-                        && m.bot == bot
-                    {
-                        m.mode = MemoryMode::Export { text: s(&v, "json"), scroll: 0 };
+                        *detail = Some(v.clone());
+                        m.busy = false;
                     }
                 }
             }
@@ -83,9 +56,11 @@ impl App {
                     }
                 }
             }
+            Reply::CallEntries(call) => {
+                self.call_entries.insert(call, entries_of(&v));
+            }
             Reply::BotChat { bot, peer } => {
-                let entries: Vec<Entry> =
-                    v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect();
+                let entries = entries_of(&v);
                 for o in &mut self.overlays {
                     if let Overlay::BotChat(c) = o
                         && c.bot == bot
@@ -104,11 +79,29 @@ impl App {
                             let items = v["routines"].as_array().cloned().unwrap_or_default();
                             l.cursor = l.cursor.min(items.len().saturating_sub(1));
                             l.items = Some(items);
+                            l.runs = v["runs"].as_array().cloned().unwrap_or_default();
                         }
                     }
                 } else {
                     // A change: the list comes again.
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
+                }
+            }
+            Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
+            Reply::Gear(backend) => {
+                let lists = super::gear::GearLists {
+                    skills: super::gear::items(&v["skills"]),
+                    connectors: super::gear::items(&v["connectors"]),
+                    rules: super::gear::items(&v["rules"]),
+                    plugins: super::gear::items(&v["plugins"]),
+                };
+                for overlay in &mut self.overlays {
+                    if let Overlay::Gear(gear) = overlay
+                        && gear.backend == backend
+                    {
+                        gear.lists = Some(lists.clone());
+                        gear.failed = false;
+                    }
                 }
             }
             Reply::RoutineSaved => {
@@ -130,22 +123,22 @@ impl App {
                     "Copied a curl command (the cloud is off: this computer only)"
                 });
             }
-            Reply::Registry { more } => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
-                    let items = v["items"].as_array().cloned().unwrap_or_default();
-                    if more {
-                        m.registry.extend(items);
-                    } else {
-                        m.registry = items;
-                    }
-                    m.next = v["nextCursor"].as_str().filter(|c| !c.is_empty()).map(str::to_owned);
-                    m.searched.get_or_insert_with(String::new);
-                    m.loading = false;
-                    m.error = None;
+            Reply::Registry { search, cursor } => self.with_market(|app, m| {
+                if !m.awaits(&search, cursor.as_deref()) {
+                    return;
                 }
-            }
+                let items = v["items"].as_array().cloned().unwrap_or_default();
+                if cursor.is_some() {
+                    m.registry.extend(items);
+                } else {
+                    m.registry = items;
+                }
+                m.next = v["nextCursor"].as_str().filter(|c| !c.is_empty()).map(str::to_owned);
+                m.searched.get_or_insert_with(String::new);
+                m.loading = false;
+                m.error = None;
+                app.load_near_end(m);
+            }),
             Reply::Skills => {
                 if let Some(Overlay::Market(m)) =
                     self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
@@ -198,7 +191,26 @@ impl App {
                 }
             }
             Reply::Models(backend) => {
-                let list = v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
+                let mut list: Vec<_> =
+                    v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
+                if v["defaultModelOptions"] == true
+                    && let Some(default) = v["models"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .find(|m| m["id"] == v["currentModelId"])
+                        .and_then(AgentModel::parse)
+                {
+                    list.insert(
+                        0,
+                        AgentModel {
+                            id: String::new(),
+                            name: "Default".into(),
+                            options: default.options,
+                            options_error: default.options_error,
+                        },
+                    );
+                }
                 if v["fastMode"] == true {
                     self.fast_mode.insert(backend.clone());
                 }
@@ -246,14 +258,27 @@ impl App {
                     }
                 }
             }
-            Reply::Registry { .. } | Reply::Skills => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
+            Reply::Registry { search, cursor } => self.with_market(|_, m| {
+                if m.awaits(search, cursor.as_deref()) {
                     m.loading = false;
-                    m.skills.get_or_insert_with(Vec::new);
                     m.error = Some(e);
                 }
+            }),
+            Reply::Skills => self.with_market(|_, m| {
+                m.skills.get_or_insert_with(Vec::new);
+                m.error = Some(e);
+            }),
+            Reply::CallEntries(call) => {
+                // The call's line folds again with nothing kept, so the next `o` asks again.
+                let lines: Vec<String> = self
+                    .entries
+                    .values()
+                    .flat_map(|m| m.values())
+                    .filter(|l| l.unfolds() && l.call() == Some(call.as_str()))
+                    .map(|l| l.id.clone())
+                    .collect();
+                self.unfolded.retain(|id| !lines.contains(id));
+                self.flash(&e);
             }
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {
@@ -275,11 +300,33 @@ impl App {
                     }
                 }
             }
-            Reply::Memory(_)
-            | Reply::MemorySaved(_)
-            | Reply::MemoryDetail(_)
-            | Reply::MemoryExport(_)
-            | Reply::Routines(_) => {
+            Reply::Library(bot) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Library(l) = o
+                        && l.bot == *bot
+                    {
+                        l.items.get_or_insert_with(Vec::new);
+                    }
+                }
+                self.flash(&e);
+            }
+            Reply::Gear(backend) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Gear(gear) = o
+                        && gear.backend == *backend
+                    {
+                        gear.lists.get_or_insert_with(|| super::gear::GearLists {
+                            skills: Vec::new(),
+                            connectors: Vec::new(),
+                            rules: Vec::new(),
+                            plugins: Vec::new(),
+                        });
+                        gear.failed = true;
+                    }
+                }
+                self.flash(&e);
+            }
+            Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {
                         Overlay::Memory(m) => {
@@ -298,23 +345,47 @@ impl App {
         }
     }
 
+    /// Runs `f` on the open marketplace, with the rest of the app readable beside it.
+    fn with_market(&mut self, f: impl FnOnce(&Self, &mut Market)) {
+        let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Market(_))) else { return };
+        let overlay = match self.overlays.remove(i) {
+            Overlay::Market(mut m) => {
+                f(self, &mut m);
+                Overlay::Market(m)
+            }
+            other => other,
+        };
+        self.overlays.insert(i, overlay);
+    }
+
     /// Loads what every open sheet shows again, after a change.
     pub(in crate::tui) fn refresh_sheets(&mut self) {
         let mut calls: Vec<(&'static str, Value, After)> = vec![];
+        let mut gear_ids = Vec::new();
         for o in &self.overlays {
             match o {
                 Overlay::Memory(m) => {
                     calls.push(("memory", m.body(), After::Sheet(Reply::Memory(m.bot.clone()))));
+                    if let Some(body) = m.file_body() {
+                        calls.push(("memoryFile", body, After::Sheet(Reply::MemoryFile(m.bot.clone()))));
+                    }
                 }
                 Overlay::Routines(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));
                 }
+                Overlay::Library(l) => {
+                    calls.push(("library", json!({"botId": l.bot}), After::Sheet(Reply::Library(l.bot.clone()))));
+                }
+                Overlay::Gear(gear) => gear_ids.push(gear.backend.clone()),
                 Overlay::Market(_) | Overlay::Form(_) => {
                     calls.push(("connectors", json!({}), After::Connectors));
                     calls.push(("skills", json!({}), After::Skills));
                 }
                 _ => {}
             }
+        }
+        for backend in gear_ids {
+            calls.push(("agentGear", json!({"backend": backend}), After::Sheet(Reply::Gear(backend))));
         }
         calls.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
         for (m, body, after) in calls {
@@ -339,4 +410,9 @@ impl App {
         }
         list
     }
+}
+
+/// The entries in a host reply (`callEntries`, `botConversation`).
+fn entries_of(v: &Value) -> Vec<Entry> {
+    v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect()
 }

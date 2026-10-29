@@ -33,7 +33,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -47,14 +46,7 @@ import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
-// The Extensions page's building blocks (iOS `MarketRows`): sections, rows, agent cards and logos.
-
-@Composable internal fun MarketSection(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(title, Modifier.padding(start = 4.dp).semantics { heading() }, style = Type.headline, color = Palette.text)
-        content()
-    }
-}
+// The Extensions page's building blocks (iOS `MarketRows`): rows, agent cards and logos.
 
 /** One catalog item: its icon, name and line, then Add (or a check once added). */
 @Composable internal fun MarketRow(title: String, subtitle: String, added: Boolean, busy: Boolean = false, addLabel: String = "Add",
@@ -65,22 +57,22 @@ import com.kyant.shapes.RoundedRectangle
         .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) { icon() }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = Type.body.medium, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(title), style = Type.body.medium, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(subtitle), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         when {
             busy -> Box(Modifier.width(60.dp), contentAlignment = Alignment.Center) { ThinkingOrb(size = 18.dp, color = Palette.secondary) }
             added -> Box(Modifier.width(60.dp), contentAlignment = Alignment.Center) {
-                Symbol("checkmark", size = 16.dp, tint = Palette.secondary, contentDescription = "Added")
+                Symbol("checkmark", size = 16.dp, tint = Palette.secondary, contentDescription = tr("Added"))
             }
-            else -> Text(addLabel, Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = add)
+            else -> Text(tr(addLabel), Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = add)
                 .padding(horizontal = 16.dp, vertical = 7.dp), style = Type.subheadline.semibold, color = Palette.text)
         }
     }
 }
 
-/** An agent in the Agents row: its logo on a tile, its name and where it stands. */
-@Composable internal fun AgentCard(backend: AgentBackend, action: () -> Unit) {
+/** An agent in the Agents grid: its logo on a tile, its name and where it stands. */
+@Composable internal fun AgentCard(backend: AgentBackend, modifier: Modifier, action: () -> Unit) {
     val status = when {
         !backend.installed && backend.curated -> "Not installed"
         backend.needsNode -> "Needs Node.js"
@@ -88,7 +80,7 @@ import com.kyant.shapes.RoundedRectangle
         backend.signedIn == false -> "Not signed in"
         else -> "Installed"
     }
-    Column(Modifier.width(128.dp).clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent.copy(alpha = 0.45f)).plainButton(action = action)
+    Column(modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent.copy(alpha = 0.45f)).plainButton(action = action)
         .semantics(mergeDescendants = true) {}.padding(horizontal = 10.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(64.dp).clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent), contentAlignment = Alignment.Center) {
@@ -96,7 +88,7 @@ import com.kyant.shapes.RoundedRectangle
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(backend.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(status, style = Type.caption, color = Palette.secondary, maxLines = 1)
+            Text(tr(status), style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -112,19 +104,23 @@ import com.kyant.shapes.RoundedRectangle
 // Registry logos are one color; these carry their brand's (a gradient's middle for Gemini and omp).
 private val AGENT_TINTS = mapOf("claude-acp" to 0xFFD97857, "gemini" to 0xFF9178C7, "antigravity-acp" to 0xFF4285F5,
     "mistral-vibe" to 0xFFFA520F, "qwen-code" to 0xFF615CED, "amp-acp" to 0xFFF24F40, "kiro" to 0xFF8F45FF,
-    "cortex-code" to 0xFF29B5E8, "omp" to 0xFF9C4DFF)
+    "cortex-code" to 0xFF29B5E8, "omp" to 0xFF9C4DFF, "dsh" to 0xFF4D6BFE)
 
 /** Placeholder rows while a list loads, shaped like the real ones. */
 @Composable internal fun SkeletonRows() {
     val dim by rememberInfiniteTransition(label = "Skeleton").animateFloat(1f, 0.5f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "Dim")
-    Column(Modifier.graphicsLayer { alpha = dim }.clearAndSetSemantics { contentDescription = "Loading" }) {
-        repeat(4) {
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.size(46.dp).clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.size(120.dp, 12.dp).clip(Capsule()).background(Palette.bubbleAgent))
-                    Box(Modifier.size(190.dp, 10.dp).clip(Capsule()).background(Palette.bubbleAgent))
+    val loading = tr("Loading…")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(loading, style = Type.footnote, color = Palette.secondary)
+        Column(Modifier.graphicsLayer { alpha = dim }.clearAndSetSemantics { contentDescription = loading }) {
+            repeat(4) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(46.dp).clip(RoundedRectangle(12.dp)).background(Palette.bubbleAgent))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(120.dp, 12.dp).clip(Capsule()).background(Palette.bubbleAgent))
+                        Box(Modifier.size(190.dp, 10.dp).clip(Capsule()).background(Palette.bubbleAgent))
+                    }
                 }
             }
         }
@@ -175,7 +171,8 @@ internal fun serviceDomain(website: String?, name: String, registryName: String?
 @Composable internal fun WebLink(title: String, url: String, style: androidx.compose.ui.text.TextStyle = Type.body) {
     val uri = LocalUriHandler.current
     var failed by remember { mutableStateOf(false) }
-    Text(if (failed) "$title (couldn't open the browser)" else title,
+    val label = tr(title)
+    Text(if (failed) "$label (couldn't open the browser)" else label,
         Modifier.plainButton { failed = runCatching { uri.openUri(url) }.isFailure }, style = style.copy(textDecoration = TextDecoration.Underline),
         color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
@@ -185,7 +182,7 @@ internal fun serviceDomain(website: String?, name: String, registryName: String?
     Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Symbol(icon, size = 30.dp, tint = Palette.tertiary)
-        Text(title, style = Type.body.semibold, color = Palette.text)
-        Text(detail, style = Type.subheadline, color = Palette.secondary)
+        Text(tr(title), style = Type.body.semibold, color = Palette.text)
+        Text(tr(detail), style = Type.subheadline, color = Palette.secondary)
     }
 }

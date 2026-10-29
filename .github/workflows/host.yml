@@ -4,7 +4,7 @@ on:
   push:
     tags: ["v*"]  # one version tag ships the host and the desktop app (release-desktop.yml)
   pull_request:
-    paths: ["host/**", "packaging/updates/**", "packaging/engram/**", "docs/reference/fixtures/remote-relay-vectors.json", ".github/workflows/host.yml"]
+    paths: ["host/**", "packaging/updates/**", "docs/reference/fixtures/remote-relay-vectors.json", ".github/workflows/host.yml"]
 
 # A newer push to the same PR supersedes the run in progress; tag runs always finish.
 concurrency:
@@ -30,13 +30,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - name: Fetch pinned memory runtime for integration tests
-        run: python ../packaging/engram/test-runtime.py
-      - run: cargo test
-      - run: cargo test --test memory_e2e -- --ignored
-      - run: cargo test --bin codync-host native_memory_survives_restart -- --ignored
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Each test in its own process (`host/.config/nextest.toml`): fixture hosts share no
+      # process-global locks, so Windows runs them side by side too, and a test that only passes
+      # on a retry shows as FLAKY instead of failing the run. The host has no doctests.
+      - run: cargo nextest run --workspace --profile ci
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -55,9 +57,12 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust (rust-toolchain.toml)
-        run: rustup toolchain install
-      - run: rustup target add ${{ matrix.target }}
+      # rustup reads the pin from the folder it runs in (host/rust-toolchain.toml).
+      - name: Install Rust (host/rust-toolchain.toml)
+        working-directory: host
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -74,7 +79,10 @@ jobs:
           cargo build --release --target ${{ matrix.target }}
       - name: Build codync-screen
         if: runner.os == 'Linux'
-        run: cargo build --release --manifest-path apps/screen-linux/Cargo.toml
+        working-directory: apps/screen-linux
+        run: |
+          rustup toolchain install
+          cargo build --release
       - name: Package
         run: |
           NAME=codync-host-${{ matrix.name }}
@@ -99,43 +107,14 @@ jobs:
             --version "$GITHUB_REF_NAME" --platform "${{ matrix.name }}"
       - uses: softprops/action-gh-release@v2
         with:
+          make_latest: false
           files: |
             codync-host-*.tar.gz
             codync-host-*.tar.gz.sha256
-            codync-host-*.compat.json
-            codync-host-*.compat.json.sig
-      # The update manifest last: hosts offer the release once they see it, so the archive
-      # it points at must already be downloadable.
+      # The update manifest last: the release gate takes a release with all its feeds as fully uploaded.
       - uses: softprops/action-gh-release@v2
         with:
+          make_latest: false
           files: |
             codync-host-*.update.json
             codync-host-*.update.json.sig
-
-  homebrew:
-    # Keeps `brew install leepokai/codync/codync-host` (Linux, headless Macs) in step with releases.
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Update the tap's formula
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          gh release download "$GITHUB_REF_NAME" --pattern 'codync-host-*.sha256' --dir sums
-          sha() { cut -d' ' -f1 "sums/codync-host-$1.tar.gz.sha256"; }
-          sed -e "s/^  version .*/  version \"$VERSION\"/" \
-              -e "0,/REPLACE_WITH_SHA256/s//$(sha macos-arm64)/" \
-              -e "0,/REPLACE_WITH_SHA256/s//$(sha macos-x86_64)/" \
-              -e "0,/REPLACE_WITH_SHA256/s//$(sha linux-arm64)/" \
-              -e "0,/REPLACE_WITH_SHA256/s//$(sha linux-x86_64)/" \
-              packaging/homebrew/codync-host.rb > codync-host.rb
-          git clone https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/leepokai/homebrew-codync.git tap
-          mkdir -p tap/Formula && cp codync-host.rb tap/Formula/ && cp packaging/homebrew/README.md tap/
-          cd tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "codync-host $VERSION" || exit 0
-          git push

@@ -1,0 +1,139 @@
+/* The inspector beside a conversation, laid out like Grok Bot's: actions in the corner, the bot
+   centered on top, page tabs under it, and one scroll for all of it. */
+.details-panel {
+  position: relative;
+  height: 100%;
+  background: var(--background);
+  /* Its size sets how much of a long memory shows (memory.css). */
+  container: details / size;
+}
+
+/* The top band moves the window, like the chat's top chrome; the corner buttons stay clickable. */
+.details-drag {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 54px;
+  z-index: 1;
+  /* What scrolls under it fades out, like the chat's top edge. */
+  background: linear-gradient(var(--background) 70%, transparent);
+  -webkit-app-region: drag;
+}
+.details-actions {
+  position: absolute;
+  top: 11px;
+  right: 11px;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.details-scroll {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 24px;
+}
+
+.details-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 58px 20px 16px;
+  text-align: center;
+}
+.details-name {
+  margin-top: 10px;
+  font-size: calc(16px * var(--scale));
+  font-weight: 600;
+  color: var(--text);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.details-subtitle {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-callout);
+  color: var(--secondary);
+}
+
+.details-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 20px 16px 0;
+}
+.details-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.details-section-title {
+  padding-left: 2px;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text);
+}
+.details-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  font-size: var(--text-body);
+  color: var(--text);
+}
+.details-switch-control {
+  flex: none;
+}
+
+/* Every group in the inspector is an outlined card, like the routines; inputs take the fill. */
+.details-tab .card-section-rows {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+}
+.details-tab .field-box {
+  background: var(--surface);
+}
+/* Settings explanations remain readable at every inspector width. */
+.details-tab .detail-note,
+.details-tab .memory-content > .memory-muted {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.details-tab .routine-row > span {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.details-subtitle { flex-wrap: wrap; justify-content: center; overflow-wrap: anywhere; }
+.details-tab, .details-section, .details-tab .value-row > * { min-width: 0; }
+.details-tab .value-row { gap: 12px; }
+.details-tab .value-row > :first-child { min-width: 0; }
+.details-tab .value-row-value { overflow-wrap: anywhere; }
+
+/* The panel is narrow: a row with a note puts its control under the label and note. */
+.details-tab .value-row:has(.detail-note) {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.details-tab .value-row:has(.detail-note) > :first-child {
+  flex: 1 1 100%;
+}
+
+/* The settings form scrolls with the panel, not on its own. */
+.details-tab .bot-form {
+  height: auto;
+  overflow: visible;
+  background: none;
+}
+.details-tab .bot-form-content {
+  padding: 0;
+}
+
+.details-members {
+  padding: 0 20px;
+}

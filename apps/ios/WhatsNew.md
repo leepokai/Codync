@@ -1,28 +1,19 @@
 <!--
 App Store "What's New" for the iPhone app. Write it in the change that bumps the version:
 a `## <version>` section with one `### <locale>` per App Store language (zh-Hant, en-US),
-listing what iPhone users notice. tools/asc-submit.py reads the released version's section;
+listing what iPhone users notice, without emoji (the App Store rejects them; asc-submit.py drops
+any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.17.5
+## 2.31.2
 
 ### zh-Hant
-
-- 對話中的連結加上底線，在淺色與深色模式下都更容易辨識與點選。
-
-### en-US
-
-- Links in conversations are now underlined, making them easier to recognize and tap in both light and dark mode.
-
-## 2.17.2
-
-### zh-Hant
-
-- 在輸入框打 / 就會列出所有指令：快速模式、開新工作階段，以及 bot 的 skills，每一項都附上說明。快速模式改從這裡開關，不再放在 + 選單。
-- Claude Code 等 agent 需要重新登入時，對話裡會出現登入卡片，點「Sign in」就能直接登入；登入後，剛才沒回覆的訊息會自動重送。
+- 從手機更新電腦時，電腦重新啟動的期間會顯示「正在更新…」，不會再要你申請訪問。
+- Codex bot 現在拿得到和你 Codex 設定裡同名的聯結器（例如 Notion），不會再看不到它的工具。
+- Codex bot 傳訊息和整理記憶的動作，不會再出現在工作步驟裡。
 
 ### en-US
-
-- Type / in the composer to see every command with what it does: Fast mode, New session and the bot's skills. Fast mode now switches from here instead of the + menu.
-- When Claude Code or another agent needs you to sign in again, a card in the chat lets you sign in right there, and the messages it couldn't answer go out again once you're signed in.
+- While a computer restarts for an update you started from your phone, it shows Updating… instead of asking you for access.
+- Codex bots now get a connector that shares its name with a server in your Codex config, such as Notion, instead of missing its tools.
+- A Codex bot's own messages and memory upkeep no longer show among its working steps.

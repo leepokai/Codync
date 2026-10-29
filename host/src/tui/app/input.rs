@@ -6,8 +6,8 @@ use serde_json::json;
 
 use super::editor::move_line;
 use super::{
-    After, App, Click, Confirm, ConfirmAct, Editor, Field, Focus, Goto, GroupField, Kind, Mark, Overlay, PendingSend,
-    Status, TraceMode, Width, mismatch_text, page, tilde,
+    After, App, Click, Confirm, ConfirmAct, Editor, Field, Focus, Goto, GroupField, Kind, Mark, NewBotField, Overlay,
+    PendingSend, Status, TraceMode, Width, mismatch_text, page, tilde,
 };
 
 impl App {
@@ -19,13 +19,15 @@ impl App {
         let s = s.replace("\r\n", "\n").replace('\r', "\n");
         if let Some(ed) = self.top_editor() {
             ed.insert(&s);
-        } else if let Some(key) = self.draft_key() {
+        } else if let Some(key) = self.selected.clone() {
             self.typing = true;
             self.focus = Focus::Chat;
             // A file dragged onto the terminal pastes its path: attach it.
-            match dropped_files(&s) {
-                Some(paths) => self.files.entry(key).or_default().extend(paths),
-                None => self.drafts.entry(key).or_default().insert(&s),
+            if let Some(paths) = dropped_files(&s) {
+                self.files.entry(key).or_default().extend(paths);
+            } else {
+                self.drafts.entry(key.clone()).or_default().insert(&s);
+                self.pasted.entry(key).or_default().push(s);
             }
         }
     }
@@ -34,7 +36,7 @@ impl App {
         match self.overlays.last_mut()? {
             Overlay::Goto(g) => Some(&mut g.query),
             Overlay::Help(e) => Some(e),
-            Overlay::Agents(a) => Some(&mut a.query),
+            Overlay::NewBot(n) => (n.field == NewBotField::Name).then_some(&mut n.name),
             Overlay::Folder(p) => Some(&mut p.query),
             Overlay::Group(g) => match g.field {
                 GroupField::Name => Some(&mut g.name),
@@ -49,7 +51,6 @@ impl App {
             },
             Overlay::Market(m) => Some(&mut m.query),
             Overlay::Fields(f) => f.current().map(|i| &mut i.ed),
-            Overlay::Memory(m) => m.editor(),
             Overlay::Routine(f) => Some(match f.field {
                 super::super::manage::RoutineField::Name => &mut f.name,
                 super::super::manage::RoutineField::Instruction => &mut f.instruction,
@@ -85,7 +86,7 @@ impl App {
     }
 
     fn composer_key(&mut self, k: KeyEvent) {
-        let (Some(id), Some(key)) = (self.selected.clone(), self.draft_key()) else {
+        let Some(key) = self.selected.clone() else {
             self.typing = false;
             return;
         };
@@ -94,7 +95,7 @@ impl App {
         }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let newline = k.modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::ALT);
-        let thread = self.thread.clone();
+        let reply = self.reply.clone();
         let draft = self.drafts.entry(key.clone()).or_default();
         match k.code {
             KeyCode::Esc => self.typing = false,
@@ -129,9 +130,12 @@ impl App {
                     PendingSend { text: text.clone(), files: files.clone(), nonce: nonce.clone(), busy: true },
                 );
                 self.chat_scroll = 0;
-                let mut body = json!({"botId": id, "text": text, "clientNonce": nonce});
-                if let Some(root) = thread {
-                    body["threadId"] = root.into();
+                let mut body = json!({"botId": key, "text": text, "clientNonce": nonce});
+                if let Some(reply) = reply {
+                    body["replyTo"] = reply.into();
+                }
+                if let Some(pasted) = self.pasted.get(&key).filter(|p| !p.is_empty()) {
+                    body["pasted"] = json!(pasted);
                 }
                 let after = After::Sent(key);
                 if files.is_empty() {
@@ -188,7 +192,9 @@ impl App {
             KeyCode::Char('u') if ctrl => self.scroll_focused(half),
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('C') => self.open_connection(),
+            KeyCode::Char('F') => self.retry_failed_run(),
             KeyCode::Char('I') if self.error.is_some() && self.bots.is_empty() => self.install_host(),
+            KeyCode::Char('I') if self.bot().is_some_and(|b| b.lead) => self.overlays.push(Overlay::LeadAgent(0)),
             KeyCode::Char('?') => self.overlays.push(Overlay::Help(Editor::default())),
             KeyCode::Char('!') => self.jump(Mark::Need),
             KeyCode::Char('u') => self.jump(Mark::Unread),
@@ -218,15 +224,6 @@ impl App {
             KeyCode::Char('n') => self.new_bot(),
             KeyCode::Char('m') => self.new_group(),
             KeyCode::Char('i') if !roster_page => self.start_typing(),
-            KeyCode::Char('r') if !roster_page && self.selected.is_some() => {
-                if self.thread.is_some() {
-                    self.start_typing();
-                } else {
-                    self.chat_page = true;
-                    self.focus = Focus::Chat;
-                    self.step_pick(0);
-                }
-            }
             KeyCode::Enter => {
                 if roster_page || self.focus == Focus::Roster {
                     if self.selected.is_some() {
@@ -242,11 +239,8 @@ impl App {
                 if self.trace == TraceMode::Full {
                     self.trace = TraceMode::Off;
                     self.focus = Focus::Chat;
-                } else if self.thread.is_some() {
-                    self.thread = None;
-                    self.chat_scroll = 0;
-                    self.trace_turn = None;
-                    self.trace_scroll = 0;
+                } else if self.reply.is_some() {
+                    self.reply = None;
                 } else if narrow && self.chat_page {
                     self.chat_page = false;
                     self.focus = Focus::Roster;
@@ -277,6 +271,7 @@ impl App {
             }
             KeyCode::Char('{') => self.step_turn(-1),
             KeyCode::Char('}') => self.step_turn(1),
+            KeyCode::Char('>') => self.toggle_steps(),
             KeyCode::Char('t') => {
                 self.trace = if self.trace == TraceMode::Pane { TraceMode::Off } else { TraceMode::Pane };
                 if self.trace == TraceMode::Off && self.focus == Focus::Trace {
@@ -310,16 +305,18 @@ impl App {
                 self.focus = Focus::Trace;
             }
             KeyCode::Char('b') => self.compact = !self.compact,
-            KeyCode::Char('U') => self.overlays.push(Overlay::Usage),
+            KeyCode::Char('U') => self.overlays.push(Overlay::Usage(0)),
             KeyCode::Char('M') => self.open_memory(),
             KeyCode::Char('R') => self.open_routines(),
+            KeyCode::Char('L') => self.open_library(),
             KeyCode::Char('A') => self.open_market(),
-            KeyCode::Char('v') if !roster_page && self.selected.is_some() => {
+            KeyCode::Char('r' | 'v') if !roster_page && self.selected.is_some() => {
                 self.chat_page = true;
                 self.focus = Focus::Chat;
                 self.step_pick(0);
             }
             KeyCode::Char('P') => self.open_pair(),
+            KeyCode::Char('N') => self.open_network(),
             KeyCode::Char('s') => {
                 if let Some(b) = self.bot() {
                     if matches!(b.status, Status::Working | Status::NeedsInput) {
@@ -346,7 +343,9 @@ impl App {
                 }
             }
             KeyCode::Char('x') => {
-                if let Some(b) = self.bot() {
+                if self.bot().is_some_and(|b| b.lead) {
+                    self.flash("The lead bot can't be deleted");
+                } else if let Some(b) = self.bot() {
                     let (detail, note) = if b.group {
                         ("Its conversation goes away.".into(), "Its bots stay.".into())
                     } else {
@@ -367,7 +366,9 @@ impl App {
             }
             KeyCode::Char('e') => self.edit_bot(),
             KeyCode::Char('p') => {
-                if let Some(b) = self.bot() {
+                if self.bot().is_some_and(|b| b.lead) {
+                    self.flash("The lead bot always stays on top");
+                } else if let Some(b) = self.bot() {
                     let (id, pinned) = (b.id.clone(), !b.pinned);
                     self.call("updateBot", json!({"id": id, "pinned": pinned}), After::Nothing);
                 }
@@ -395,6 +396,7 @@ impl App {
             MouseEventKind::Down(MouseButton::Left) => {
                 let hit = self.hits.clicks.iter().rev().find(|(r, _)| r.contains(at)).map(|(_, c)| c.clone());
                 match hit {
+                    Some(Click::LeadAgent) => self.overlays.push(Overlay::LeadAgent(0)),
                     Some(Click::Bot(id)) => {
                         self.overlays.clear();
                         self.select(&id);
@@ -414,7 +416,7 @@ impl App {
                         }
                     }
                     Some(Click::Composer) => self.start_typing(),
-                    Some(Click::Thread(root)) => self.open_thread(root),
+                    Some(Click::Steps) => self.toggle_steps(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
                     None => {
                         if self.overlays.is_empty() {

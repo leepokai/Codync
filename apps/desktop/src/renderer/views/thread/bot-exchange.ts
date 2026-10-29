@@ -73,7 +73,12 @@ export function groupExchanges(entries: Entry[]): ChatSlot[] {
 
 /** What a group row shows: the peer, how many messages, and whether any failed. */
 export function groupSummary(xs: BotExchange[]) {
-  return { peerId: peerOf(xs[0]!), count: xs.length, failed: xs.some((x) => x.outcome.kind === 'failed') }
+  return { peerId: peerOf(xs[0]!), peerName: peerNameIn(xs), count: xs.length, failed: xs.some((x) => x.outcome.kind === 'failed') }
+}
+
+/** The name a peer on another computer goes by: it isn't one of this computer's bots, so the exchange carries it. */
+export function peerNameIn(xs: BotExchange[]): string | undefined {
+  return xs.find((x) => x.message.peerName)?.message.peerName
 }
 
 /**

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { sandboxLabel } from '../shared/dev-sandbox'
 import { environmentProfile } from '../shared/environment'
 
 interface BuildConfig {
@@ -17,7 +18,10 @@ if (buildConfig.environment !== 'main' && buildConfig.environment !== 'dev') thr
 export const identity = environmentProfile(buildConfig.environment)
 
 // Before the single-instance lock, preferences, account restore or Chromium session is created.
+// A development run against its own host data (`CODYNC_HOME`, a worktree's sandbox) keeps all of
+// that there too, under its own name, so it runs beside the main checkout's Codync Dev.
 if (identity.environment === 'dev') {
-  app.setName(identity.name)
-  app.setPath('userData', join(app.getPath('appData'), identity.name))
+  const sandbox = app.isPackaged ? undefined : process.env.CODYNC_HOME
+  app.setName(sandbox ? sandboxLabel(identity.name, sandbox) : identity.name)
+  app.setPath('userData', sandbox ? join(sandbox, 'desktop') : join(app.getPath('appData'), identity.name))
 }

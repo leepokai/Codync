@@ -1,8 +1,9 @@
 .styled-button {
-  font-size: calc(12px * var(--scale));
-  font-weight: 500;
-  padding: 6px 12px;
-  border-radius: 999px;
+  font-size: var(--text-body);
+  font-weight: 600;
+  min-height: calc(30px * var(--scale));
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -24,6 +25,12 @@
 .styled-button:disabled {
   opacity: 0.4;
 }
+/* The keyboard shortcut a button answers to, quiet inside its label. */
+.button-shortcut {
+  font-size: var(--text-caption);
+  font-weight: 500;
+  opacity: 0.55;
+}
 
 .spinner {
   animation: spin 0.8s linear infinite;
@@ -34,9 +41,28 @@
     transform: rotate(360deg);
   }
 }
+
+.progress-ring {
+  flex: none;
+}
+.progress-ring circle {
+  fill: none;
+  stroke: currentColor;
+}
+.progress-ring-track {
+  opacity: 0.3;
+}
+.progress-ring-fill {
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--hover);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation: none;
+  }
+  .progress-ring-fill {
+    transition: none;
   }
 }
 
@@ -57,7 +83,7 @@
   position: relative;
   width: 34px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bubble-user);
   flex: none;
   transition: background-color var(--hover);
@@ -84,14 +110,17 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: calc(12px * var(--scale));
+  font-size: var(--text-callout);
   color: var(--text);
   padding: 5px 9px;
-  border-radius: 10px;
+  border-radius: var(--radius-s);
   max-width: 100%;
 }
 .choice-picker.outlined {
   box-shadow: inset 0 0 0 1px var(--border);
+}
+.choice-picker.fits {
+  width: 100%;
 }
 .choice-label {
   white-space: nowrap;
@@ -107,28 +136,83 @@
   gap: 2px;
   padding: 3px;
   background: var(--bubble-user);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .segmented-thumb {
   position: absolute;
   top: 3px;
   bottom: 3px;
   left: 3px;
-  border-radius: 999px;
-  background: var(--background);
+  border-radius: var(--radius-pill);
+  background: var(--chip-on);
+  box-shadow: var(--chip-shadow);
   transition: transform var(--morph);
 }
 .segmented-option {
   position: relative;
   flex: 1;
   text-align: center;
-  font-size: calc(11px * var(--scale));
+  font-size: var(--text-callout);
   font-weight: 500;
   color: var(--secondary);
-  padding: 5px 0;
+  padding: 5px 14px;
   white-space: nowrap;
+  transition: color var(--hover);
+}
+.segmented-option:hover {
+  color: var(--text);
 }
 .segmented-option.on {
+  color: var(--text);
+}
+
+/* Grok Bot's list cards (routines, the computer switch): an outline on the page, no fill. */
+.outlined-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+}
+
+.tab-choice {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+}
+.tab-choice-option {
+  height: calc(24px * var(--scale));
+  padding: 0 calc(10px * var(--scale));
+  border-radius: var(--radius-pill);
+  font-size: var(--text-body);
+  color: var(--secondary);
+  white-space: nowrap;
+  transition: background-color var(--hover), color var(--hover);
+}
+.tab-choice-option:hover {
+  color: var(--text);
+}
+.tab-choice-option.on {
+  background: var(--chat-button);
+  color: var(--text);
+}
+
+/* ChipChoice: plain labels, the chosen one on a light capsule. */
+.chip-choice {
+  font-size: var(--text-callout);
+  font-weight: 500;
+  color: var(--secondary);
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  transition: background-color var(--hover), color var(--hover), transform var(--press);
+}
+.chip-choice:hover {
+  color: var(--text);
+}
+.chip-choice:active {
+  transform: scale(0.96);
+}
+.chip-choice.on {
+  background: var(--chip-on);
+  box-shadow: var(--chip-shadow);
   color: var(--text);
 }
 
@@ -137,6 +221,17 @@
   align-items: center;
   gap: 10px;
   width: 100%;
+}
+.choice-row-label {
+  flex: 1;
+}
+/* The checkmark beside a choice: its space is kept when it's off. */
+.check-slot {
+  display: flex;
+  opacity: 0;
+}
+.check-slot.on {
+  opacity: 1;
 }
 
 .card-form {
@@ -149,7 +244,7 @@
   flex-direction: column;
   gap: 28px;
   padding: 14px;
-  font-size: calc(12px * var(--scale));
+  font-size: var(--text-callout);
 }
 
 .card-section {
@@ -166,7 +261,7 @@
 }
 .card-section-rows {
   background: var(--surface);
-  border-radius: 16px;
+  border-radius: var(--radius-l);
   display: flex;
   flex-direction: column;
 }
@@ -182,7 +277,7 @@
   min-width: 0;
 }
 .card-section-footer {
-  font-size: calc(10px * var(--scale));
+  font-size: var(--text-caption);
   color: var(--secondary);
   line-height: 1.4;
   padding: 0 2px;
@@ -207,6 +302,15 @@
   align-items: center;
   width: 100%;
 }
+.value-row-value {
+  color: var(--secondary);
+}
+/* A row's note under its title (RowLabel). */
+.detail-note {
+  font-size: var(--text-caption);
+  color: var(--secondary);
+  line-height: 1.35;
+}
 
 .search-field {
   display: flex;
@@ -214,12 +318,43 @@
   gap: 8px;
   padding: 7px 10px;
   background: var(--bubble-agent);
-  border-radius: 999px;
-  font-size: calc(12px * var(--scale));
+  border-radius: var(--radius-pill);
+  font-size: var(--text-callout);
 }
 .search-field input {
   flex: 1;
   min-width: 0;
+}
+/* A panel's resizable edge: a hairline with a wider grab area (ResizeHandle). */
+.resize-handle {
+  width: 1px;
+  flex: none;
+  background: var(--border);
+  position: relative;
+  z-index: 7;
+  touch-action: none;
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 9px;
+  cursor: col-resize;
+}
+
+.search-field:focus-within {
+  outline: 2px solid var(--secondary);
+}
+/* The clear button gets a 24 pt target around its small glyph. */
+.search-clear {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -6px -6px -6px 0;
+  color: var(--tertiary);
 }
 
 .disclosure-label {
@@ -228,18 +363,47 @@
   gap: 6px;
   width: 100%;
 }
+.disclosure-chevron {
+  display: flex;
+  color: var(--secondary);
+  transition: transform var(--layout);
+}
+.disclosure-chevron.open {
+  transform: rotate(90deg);
+}
+
+/* Show/hide: fade with a short drop from the top (`.opacity.combined(with: .move(edge: .top))`). */
+.reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: grid-template-rows var(--layout), opacity var(--layout), transform var(--layout);
+}
+.reveal.shown {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: none;
+}
+.reveal > div {
+  min-height: 0;
+  overflow: hidden;
+}
 
 .pill {
   display: inline-flex;
   align-items: center;
   padding: 5px 9px;
-  border-radius: 10px;
+  border-radius: var(--radius-s);
+}
+.pill.outlined {
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .progress-track {
   width: 100%;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bubble-user);
   overflow: hidden;
 }

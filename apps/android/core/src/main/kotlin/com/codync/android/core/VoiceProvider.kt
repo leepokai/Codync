@@ -70,6 +70,13 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
     fun voice(provider: VoiceProvider): String = read("callVoice.${provider.id}")?.takeIf { it in provider.voices } ?: provider.voices[0]
     fun voice(provider: VoiceProvider, voice: String) = write("callVoice.${provider.id}", voice)
 
+    /** What a call's engine is built from (`language`: on device): a different one picked mid-call takes over the call. */
+    fun engineChoice(provider: VoiceProvider?, language: String): String = when {
+        provider == null -> "device $language"
+        speechMode(provider) -> "${provider.id} speech ${model(provider, Model.Transcribe)} ${model(provider, Model.Speech)} ${voice(provider)}"
+        else -> "${provider.id} ${model(provider, Model.Realtime)} ${voice(provider)}"
+    }
+
     /** The provider's model list as last fetched with the user's key. */
     fun cachedModels(provider: VoiceProvider): VoiceModels? = read("callModels.${provider.id}")
         ?.let { runCatching { WireJson.decodeFromString(VoiceModels.serializer(), it) }.getOrNull() }

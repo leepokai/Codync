@@ -134,7 +134,7 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 | `id` | 是 | 必須等於 `computerId(sk)`，否則拒絕 |
 | `sk`, `bk` | 是 | host 公鑰 |
 | `code` | 是 | 16 random bytes，b64url；一次性、10 分鐘；host 最多同時 5 組（新的擠掉最舊的） |
-| `urls` | 否 | 直連候選（既有 `service::addresses`，`http://ip:port` 形式），可為空 |
+| `urls` | 否 | 直連候選（`service::addresses`）：先 `CODYNC_EXTERNAL_URL` 設的網址（`https://host` 等，只能是 host 根路徑），再 Tailscale，再 LAN（`http://ip:port`）；可為空 |
 | `cloud` | 否 | host 使用的 cloud base URL（`https://…`；DEBUG build 另允許 `http://127.0.0.1:*`／`http://localhost:*`）；缺 = host 關閉雲端 |
 | `name` | 否 | 顯示名稱 |
 
@@ -168,7 +168,7 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 
 **B. 手機取得存取權**（commit-then-reveal SAS，ZRTP／BLE numeric comparison 同型）：
 1. 手機登入後 `POST /v1/devices`（Clerk + 該 device key 的 `Codync-Sig`）。
-2. `GET /v1/computers`（帶 `Codync-Sig` 則回傳每台的 `access`）。 iPhone 的 Bots 首頁直接列出尚未連線的帳號電腦，點 **Connect** 進入存取申請，不需掃 QR Code；核准後顯示該電腦的 bots。首次裝置授權仍由電腦上的使用者確認。
+2. `GET /v1/computers`（帶 `Codync-Sig` 則回傳每台的 `access`）。 手機在「電腦與設定」（Computers）列出帳號裡的電腦，不需掃 QR Code；存取申請只在使用者點該電腦的 **Ask for access** 後才開始（登入或重新整理都不會自動申請），點下後才顯示 6 位數代碼；關閉申請畫面後，等待中的申請仍以橫幅顯示代碼，直到電腦回應。核准後顯示該電腦的 bots。首次裝置授權仍由電腦上的使用者確認。
 3. 對 `access == "none"` 的電腦：手機產生 32 random bytes `nD`（只存記憶體），`POST /v1/computers/{id}/access-requests {"commit": b64url(SHA-256("codync/sascommit/v1" ‖ dk ‖ nD))}` → `{requestId, expiresAt}`。
 4. Worker 通知 DO → host 拉 state → 看到新申請（含 `commit`）→ host 產生 32 random bytes `nH`（存本機記憶體，每個 requestId 只產生一次）→ `POST /v1/host/access-requests/{id}/nonce {"nonce": nH}`（已有 host nonce → `409 conflict`，host 不得換）。
 5. 手機輪詢 `GET /v1/access-requests/{id}`（每 2 秒）→ 出現 `hostNonce` 後才 `POST /v1/access-requests/{id}/reveal {"nonce": nD}` → Worker 存入並通知 DO `cloud.changed`。手機此時計算 SAS 顯示「在電腦上確認代碼 123456」。
@@ -189,6 +189,7 @@ host 的授權裝置表（`host/src/api/devices.rs`）每一列：`key, name, pl
 - 狀態拉取成功時才延長 lease；連不到雲端就讓 lease 自然到期。
 - `lease_until` 過期的列視同不存在（不必立即刪；下次拉取時清）。
 - 每次連上 relay（含重連）：先完成一次 state 拉取（最多等 10 秒）才送 `acl`／`ready`；拉取成功之前，`source=account` 的列在直連與中繼上都不接受握手。
+- 連線期間每 5 分鐘再拉一次，有沒有 owner 都拉：漏接的 `cloud.changed`（例如剛被 claim）由此補上；成功的拉取也清掉 `lastError`。
 - 表有任何變動 → `acl_ver` 前進（§7.3 規則）→ 發佈 ACL。
 
 ACL（host 簽章，DO 驗證；逐位元組簽章，不做 JSON 正規化；向量 `acl`）：
@@ -311,7 +312,7 @@ blob = epk(32) ‖ sig(64) ‖ ct
 
 | 類別 | 方法 | 允許的 caller |
 |---|---|---|
-| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `teamCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud` | `Caller::Local`（loopback + token） |
+| loopback 專用 | `setScreenEnabled`, `pairing`, `computerCall`, `computerTools`, `chatCall`, `teamCall`, `manageCall`, `memoryCall`, `routineCall`, `composioCall`, `claimSign`, `unclaim`, `devices`, `revokeDevice`, `accessRequests`, `decideAccessRequest`, `cloudStatus`, `setCloud`, `setCloudUrl` | `Caller::Local`（loopback + token） |
 | 配對中 | `pair` | 只在 pairing 狀態的 channel；配對完成後不可再呼叫 |
 | screen scope | `screenPrepare`, `screenOffer`, `screenClose`, `screenTakeover` | Local，或 scopes 含 `screen` 的裝置 |
 | control scope | 其餘所有既有方法（`hello`, `history`, `createBot`, `updateBot`, `deleteBot`, `markRead`, `send`, `stop`, `newSession`, `respondPermission`, `registerDevice`, `unregisterDevice`, `registerActivity`, `refreshBackends`, `usage`, `listDirs`, market／skills／connectors、`agentSetup`, `agentAuth`, `agentAuthenticate`, `setAgentEnv`, `termInput`, `termResize`, `termClose`, `screenStatus`） | Local，或 scopes 含 `control` 的裝置 |
@@ -376,6 +377,7 @@ Host → DO：
 | `mbox.ack` | `seq`, `ok`（bool）, `code`（`ok:false` 時：`unauthorized`/`unknownBot`/`invalid`） | 刪除 mailbox 項目，通知發送裝置 `mbox.delivered` 或 `mbox.failed` |
 | `hooks` | `hooks`：`[{"id","key","enabled"}]`（完整集合，≤ 1000） | 取代 DO 存的 webhook 集合（§7.8）；格式錯誤 → `{"t":"error","code":"badHooks"}` 且保留舊集合。成功 → `{"t":"hooks.ok","n"}` |
 | `hook.ack` | `seq`, `ok`（bool）, `retry`（bool）, `code` | `ok` 或 `retry:false` → 刪除；`retry:true` → 退回 queued，`not_before = now + min(30 s·2^attempts, 15 min)` |
+| `assistant.result` | `id`, `ok`（bool）, `result` 或 `error` | 回答同 `id` 的 `assistant.call`（§7.9）；沒有等待中的 `id` 就忽略 |
 | `ping` | — | auto-response |
 
 DO → Host：
@@ -387,6 +389,7 @@ DO → Host：
 | `close` | `link`（device 斷線） |
 | `mbox.item` | `seq`, `from`（dk）, `nonce`（clientNonce）, `d`（blob b64url）, `exp` |
 | `hook.item` | `seq`, `hook`（routine id）, `delivery`, `headers`（白名單，小寫名）, `body`（b64url）, `at` |
+| `assistant.call` | `id`, `user`（Clerk user id）, `tool`（`list_bots`／`message_bot`／`read_replies`）, `args`（§7.9） |
 | `hooks.ok` | `n` |
 | `cloud.changed` | —（Worker 通知：請立刻拉 `/v1/host/state`） |
 | `acl.ok` / `error` | 見上 |
@@ -416,7 +419,7 @@ Channel 訊息與 DO 訊息的 `t` 值不重疊：channel 只有 `hello`/`welcom
 
 ### 7.5 Client 連線策略（Apple 與整合測試共通）
 
-1. 平行對所有 `urls`（`http://h:p` → `ws://h:p/channel?v=1`）開 WebSocket 並握手；**1.5 秒**內第一個完成握手的勝出。
+1. 平行對所有 `urls`（`http://h:p` → `ws://h:p/channel?v=1`，`https://h` → `wss://h/channel?v=1`）開 WebSocket 並握手；**1.5 秒**內第一個完成握手的勝出。
 2. 都失敗且有 `cloud` → 連 `{cloud}/v1/relay/device/{computerId}`。每次收到 `presence online:true` 就（重新）送 `hello`；`online:false` → 狀態 `computerOffline(lastSeen)`，保持 socket（可用 mailbox），等下一個 `online:true`。
 3. 兩者都不可用 → `offline("Can't reach …")`，退避重試。
 4. App 回前景、網路路徑改變（`NWPathMonitor`）→ 重新跑 1–3（可能從中繼換回直連）；events 以當前 `rev` 重新訂閱。
@@ -456,6 +459,17 @@ Close code 總表：`1000` 正常、`1011` 內部錯誤／逾時、`4001 unautho
 - **Host 處理**（`routines::hooks`）：驗證 → GitHub `ping` 回 ok 不執行 → 暫停回 `paused` → 轉成 event（JSON 物件原樣；GitHub → `{source:"github", event:"<event>.<action>", repo, sender, text, url, payload}`；其他 → `{text}`）→ trigger 不符回 ok（忽略）→ 排入 run。routine 正在執行 → `retry:true`。
 - **信任邊界**：webhook 內容在 Cloudflare 以 HTTPS 解開，雲端看得到明文，也存著 key（用來驗 HMAC）。這不是 §6 的端對端加密；App 與文件都需明講。
 
+### 7.9 Cloud assistant（MCP connector）
+
+讓使用者已在用的雲端助理（ChatGPT、Claude 等 MCP client）以 Codync 帳號登入後，列出、指派並讀回使用者的 bot。設計與設定：[cloud assistants](../features/cloud-assistants.md)。
+
+- **網址**：`https://mcp.codync.dev/mcp`（dev：`dev-mcp.codync.dev`），同一個 Worker 的 custom domain（`cloud/src/routes/assistant.ts`）。Streamable HTTP，只用 POST 與 JSON 回應，無 session、無 server stream（`GET /mcp`：未登入 `401`，登入 `405`）。同時服務 2026-07-28 無狀態 client（`_meta` 帶版本、`server/discover`、不支援的版本 → `-32022`）與 `initialize` client（2025-03-26～2025-11-25）。
+- **登入**：Clerk 是 authorization server，Worker 只是 protected resource。未帶有效 token → `401`，`WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp", scope="profile email"`；metadata 指向 Clerk issuer（`/.well-known/oauth-authorization-server` 也代轉 Clerk 的，給舊 client）。Client 以 CIMD 註冊（DCR 關閉）。Token 必須是 Clerk 發的 OAuth access token（`at+jwt`，或 opaque 時向 Clerk 驗），`aud` 必須等於 `<origin>/mcp`；App 的 session token 不算。`ASSISTANT_LIMITER`：每帳號每分鐘 120 次。
+- **路由**：Worker 只把呼叫送到 token 帳號擁有、`active` 的 computer。`list_computers` 由 Worker 從 D1 回答；其餘工具：指定 `computer`（名稱或 id）→ 該台；未指定時帳號只有一台、或只有一台在線 → 該台；`list_bots`／`read_replies` 在多台在線時每台都問並合併成 `{computers:[{computer, …}]}`；`message_bot` 則要求指定。
+- **DO**：`POST /internal/assistant {user, tool, args}` → host 不在線 `503 {"ok":false,"code":"offline"}`；否則送 `assistant.call`，在 request 存活期間等同 `id` 的 `assistant.result`，最多 10 秒（逾時 `{"ok":false,"code":"timeout"}`，舊 host 會忽略這個訊息）。host 斷線時等待中的呼叫一律 `offline`。只在 request 存活時佔用 DO，不排隊、不存任何內容。
+- **Host**（`chat::team::assistant`）：預設關閉，`setAssistants`（loopback only：桌面 app 與 TUI 的 Cloud assistants 開關，或 `codync-host cloud --assistants on|off`）才開；`user` 必須等於 host 的 owner（`/v1/host/state`）；private relay 上不處理。`message_bot` 走一般 bot request（`Back::Assistant`），回覆留在 host 記憶體給 `read_replies`（最新 50 則，同時最多 16 則執行中，重啟即忘）。`reachableByAssistants` 關掉的 bot 不列出、不收。`list_bots` 也列同一 network 裡其他電腦提供的 bot（`reviewer@laptop`）；對它們的 `message_bot` 是一封由 `cloud-assistant@<這台>` 寄出的 codync-network 信，結果回到同一份 replies。收信的電腦自己再檢查：它的 Cloud assistants 開關、該 bot 的 `reachableByAssistants` 與 network rules。Host 在 relay session 外另起 task 回答 `assistant.call`（第一次列出時可能要等其他電腦最多 5 秒），不會卡住同一條連線上的裝置訊息。
+- **信任邊界**：和 §7.8 一樣，雲端以 HTTPS 解開並看得到這些呼叫與回覆的明文，不是 §6 的端對端加密。因此要電腦本機同意（開關）才放行，雲端無法自行替電腦打開；App 與文件都需明講。
+
 ---
 
 ## 8. Cloud HTTP API
@@ -488,7 +502,7 @@ The route table below summarizes the contract. Executable schema and validation 
 - `DELETE /v1/computers/{id}/grants/{grantId}` → `{}`（`owner`）+ DO block + changed
 
 **Sig(host)（不需要帳號）**
-- `POST /v1/host/register` `{"boxKey","name","platform":"macos"|"linux"|"windows","device","version"}` → `{"computerId","owned":bool}`。以 kid 推導 id；upsert（`name`/`device`/`version`/`box_pub`/`updated_at`）。同 IP 每分鐘最多 10 次新建（Workers Rate Limiting binding；平台不支援時先略過並在 README 註記）。
+- `POST /v1/host/register` `{"boxKey","name","platform":"macos"|"linux"|"windows","device","version"}` → `{"computerId","owned":bool}`。以 kid 推導 id；upsert（`name`/`device`/`version`/`box_pub`/`updated_at`）。同 IP 每分鐘最多 10 次新建（Workers Rate Limiting binding；平台不支援時先略過並在 README 註記）。Host 指向 [private relay](../../private-relay/README.md) 時只在這個請求帶 `Codync-Relay-Token`（官方 cloud 忽略它）：私人中繼收新電腦必須 token 相符，不符回 `403 forbidden`（"This relay needs its relay token to add a new computer."），最多 32 台；已註冊的 key 不需要 token 就能 refresh。私人中繼的 `GET /v1/host/state` 永遠是空的，host 不拉它（不套用 grants、不處理 requests）。
 - `GET /v1/host/state` →
   ```json
   {"owner":{"userId":"user_…","email":"a@b.c"} | null,
@@ -502,6 +516,8 @@ The route table below summarizes the contract. Executable schema and validation 
 - `POST /v1/host/unclaim` `{}` → `{}`（在電腦上移出帳號；同 `DELETE /v1/computers/{id}` 的效果）
 
 **Routine webhook（公開）**：`POST /v1/hooks/{computerId}/{routineId}`，§7.8。
+
+**Cloud assistant（MCP connector）**：`POST /mcp`、`GET /.well-known/oauth-protected-resource[/mcp]`、`GET /.well-known/oauth-authorization-server`，§7.9。
 
 **Relay**：§7.1。**Webhook**：`user.deleted` → accounts `status='deleted'`、devices 撤銷、grants 撤銷（`accountDeleted`）、computers owner=NULL、DO block + changed。
 

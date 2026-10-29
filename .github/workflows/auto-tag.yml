@@ -39,9 +39,10 @@ jobs:
             echo "Creating tag $TAG"
             git tag "$TAG"
             git push origin "$TAG"
-            # Created here, before the build jobs upload to it, so it carries a description.
+            # Created here, before the build jobs upload to it, so it carries a description. Not
+            # latest: release-gate.yml marks it once it's uploaded and the App Store has its iPhone app.
             tools/release-notes.sh "$TAG" > notes.md
-            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md --generate-notes
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file notes.md --generate-notes --latest=false
             # Announce it in the Discord server's #releases channel. A release created with
             # GITHUB_TOKEN triggers no `release` workflow, so this happens here. The Discord Worker turns
             # each @login linked to a member into a mention, which the message pings (discord/README.md).

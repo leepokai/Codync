@@ -1,65 +1,236 @@
-/* A routine form's text field: plain, filled, rounded (kit `routineInput`). */
-.routine-input {
-  width: 100%;
-  padding: 12px;
+/* A routine form's text fields: plain, filled, rounded (kit `routineInput`); the schedule's
+   fields are the same, smaller, inside their rows. */
+.routine-input,
+.schedule-input {
+  padding: 9px 12px;
   border: none;
   outline: none;
-  border-radius: 12px;
+  border-radius: var(--radius-s);
   background: var(--bubble-user);
   color: var(--text);
   font: inherit;
   user-select: text;
   resize: none;
 }
-.routine-input::placeholder {
+.routine-input {
+  width: 100%;
+}
+.schedule-input {
+  padding: 5px 10px;
+  border-radius: var(--radius-xs);
+}
+.routine-input:focus,
+.schedule-input:focus {
+  outline: 2px solid rgba(var(--text-rgb), 0.3);
+}
+.routine-input::placeholder,
+.schedule-input::placeholder {
   color: var(--secondary);
 }
 textarea.routine-input {
   field-sizing: content;
-  min-height: calc(3lh + 24px);
-  max-height: calc(8lh + 24px);
+  line-height: 1.4;
+  min-height: calc(3lh + 18px);
+  max-height: calc(8lh + 18px);
+}
+.routine-cron-input {
+  width: 100%;
+  font-size: var(--text-body);
+  font-weight: 400;
+  font-family: var(--mono);
+  word-spacing: 0.3em;
 }
 
+/* A routine's editor (RoutineEditorView): the card fits the form. */
+.routine-editor {
+  max-height: 700px;
+  min-height: 0;
+  background: var(--background);
+  color: var(--text);
+  font-size: var(--text-body);
+  font-weight: 400;
+}
 .routine-form {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   border: none;
   margin: 0;
   padding: 0;
   min-width: 0;
 }
+.routine-form-body {
+  padding: 12px 20px 8px;
+}
+.routine-editor-footer {
+  flex: none;
+  padding: 16px 20px 20px;
+}
+.routine-caption {
+  padding-left: 4px;
+  line-height: 1.4;
+}
+.routine-loading {
+  color: var(--secondary);
+}
+.routine-advanced {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding-left: 4px;
+  font-size: var(--text-callout);
+  font-weight: 500;
+  color: var(--secondary);
+  transition: color var(--hover);
+}
+.routine-advanced:hover {
+  color: var(--text);
+}
+.routine-chevron {
+  display: flex;
+  transition: transform var(--layout);
+}
+.routine-chevron.open {
+  transform: rotate(180deg);
+}
+.routine-retry {
+  align-self: flex-start;
+}
+.routine-error {
+  font-size: var(--text-callout);
+  font-weight: 400;
+  color: var(--danger);
+  user-select: text;
+}
+.routine-error-icon {
+  margin-top: 1px;
+}
+.routine-offline {
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--danger);
+}
 .routine-form:disabled {
   opacity: 0.6;
 }
 
-/* Cron and time zone side by side, stacked when the card is narrow. */
-.routine-cron {
-  container-type: inline-size;
+/* The editor's groups (CardSection, LabeledRow): denser rows, labels in one column. */
+.routine-form .card-row {
+  min-height: 48px;
+  padding: 6px 16px;
 }
-.routine-cron-fields {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+.labeled-row {
+  gap: 12px;
 }
-.routine-cron-fields > :first-child {
-  flex: 1;
-  min-width: 220px;
+.labeled-row.top {
+  padding: 4px 0;
 }
-.routine-cron-fields > :last-child {
-  width: 170px;
+.labeled-row.top > .labeled-row-label {
+  padding-top: 5px;
+}
+.labeled-row-label {
+  width: 76px;
   flex: none;
 }
-@container (max-width: 400px) {
-  .routine-cron-fields {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
-  }
-  .routine-cron-fields > :first-child,
-  .routine-cron-fields > :last-child {
-    width: auto;
-    min-width: 0;
-  }
+.schedule-time {
+  font-variant-numeric: tabular-nums;
+}
+.schedule-time::-webkit-calendar-picker-indicator {
+  display: none;
+}
+/* The time zone: a button with the zone and its offset, opening a searchable list. */
+.zone-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 240px;
+  max-width: 100%;
+  text-align: left;
+  transition: background-color var(--hover);
+}
+.zone-button:hover {
+  background: rgba(var(--text-rgb), 0.11);
+}
+.zone-picker {
+  width: 300px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-callout);
+}
+.zone-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.zone-empty {
+  padding: 10px;
+}
+/* A menu's panel shares the search box's fill, so the box takes the field's. */
+.zone-picker .search-field {
+  background: var(--field);
+}
+.zone-picker .search-field:focus-within {
+  outline: none;
+}
+.routine-timeout {
+  width: 80px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.routine-cron-hint {
+  white-space: pre;
+  padding-left: 10px;
+}
+/* What the host read from the schedule, under the group. */
+.schedule-preview {
+  min-height: 1.3em;
+}
+/* A trigger with no fields here (a new webhook, one the bot set up). */
+.routine-note {
+  padding: 8px 0;
+  line-height: 1.4;
+}
+.routine-note-icon {
+  margin-top: 2px;
 }
 
+/* A webhook's URL or key with its actions (RoutineWebhookPanel): the buttons sit closer to the edge. */
+.webhook-row {
+  gap: 6px;
+  margin-right: -8px;
+}
+.webhook-row > .labeled-row-label {
+  width: 70px;
+}
+.routine-webhook-text {
+  user-select: text;
+  word-break: break-all;
+}
+
+/* The routine list (RoutinesView). */
+.routines {
+  color: var(--text);
+  font-size: var(--text-body);
+  font-weight: 400;
+}
+.routines-title {
+  padding-left: 2px;
+}
+.routines-error {
+  user-select: text;
+}
+.routines-empty {
+  padding: 14px;
+  line-height: 1.45;
+}
+.routines-card {
+  padding: 0 14px;
+}
 .routine-row {
   display: flex;
   flex-direction: column;
@@ -71,10 +242,5 @@ textarea.routine-input {
 }
 
 .routine-fade {
-  animation: routine-fade var(--hover) both;
-}
-@keyframes routine-fade {
-  from {
-    opacity: 0;
-  }
+  animation: fade-in var(--hover) both;
 }

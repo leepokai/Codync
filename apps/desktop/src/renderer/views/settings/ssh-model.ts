@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { Computer } from '@shared/models'
-import type { SSHState } from '@shared/ssh'
+import type { SSHConfigHosts, SSHState } from '@shared/ssh'
 import { LoopbackTransport } from '../../client/host-client'
 import { Observable, useModel } from '../../lib/observable'
 import type { AppModel } from '../../store/app-model'
@@ -9,6 +9,8 @@ import { BotStore } from '../../store/bot-store'
 /** The main process's SSH computers, mirrored for views. */
 class SSHModel extends Observable {
   state: SSHState = { profiles: [], status: {}, attachments: [] }
+  /** `~/.ssh/config`'s hosts and whether the user allowed reading it; null until known. */
+  config: SSHConfigHosts | null = null
   private started = false
 
   start() {
@@ -21,6 +23,26 @@ class SSHModel extends Observable {
   private apply(s: SSHState) {
     this.state = s
     this.changed()
+  }
+
+  /** Re-reads the hosts on each visit to Computers, so ones added to the config since show up. */
+  async loadConfig() {
+    this.applyConfig(await window.codync.ssh.configHosts())
+  }
+
+  async answerConfig(access: 'allowed' | 'denied') {
+    this.applyConfig(await window.codync.ssh.setConfigAccess(access))
+  }
+
+  private applyConfig(c: SSHConfigHosts) {
+    this.config = c
+    this.changed()
+  }
+
+  /** Config hosts that aren't SSH computers yet. */
+  get newConfigHosts() {
+    const added = new Set(this.state.profiles.map((p) => p.host))
+    return (this.config?.hosts ?? []).filter((h) => !added.has(h.alias))
   }
 
   status(id: string) {

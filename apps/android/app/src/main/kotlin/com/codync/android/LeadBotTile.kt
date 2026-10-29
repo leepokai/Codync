@@ -7,29 +7,30 @@ import android.net.Uri
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import com.codync.android.core.leadBot
+import com.codync.android.core.mostUrgentBot
 import com.codync.android.design.symbolRes
 
 /**
  * The Bots tile in Quick Settings (the iOS Control Center control): the bot that needs you most
- * and its state, from the widgets' report; a tap opens it, or Computers & settings when no bot is at work.
+ * and its state, from the widgets' report; a tap opens it, or Computer management when no bot is at work.
+ * (Its class keeps its first name, the manifest's component: tiles already placed stay.)
  */
 class LeadBotTile : TileService() {
     override fun onStartListening() {
         val tile = qsTile ?: return
         val feed = WidgetStore.feed(this)
-        val lead = leadBot(feed.bots)
+        val urgent = mostUrgentBot(feed.bots)
         val (label, state, symbol) = when {
             feed.computerId == null -> Triple("Bots", "Connect a computer", "desktopcomputer")
-            lead == null -> Triple("Bots", "All quiet", "moon.zzz.fill")
-            lead.status == "needsInput" -> Triple(lead.name, "Needs you", "hand.raised.fill")
-            else -> Triple(lead.name, "Working", "ellipsis.bubble.fill")
+            urgent == null -> Triple("Bots", "All quiet", "moon.zzz.fill")
+            urgent.status == "needsInput" -> Triple(urgent.name, "Needs you", "hand.raised.fill")
+            else -> Triple(urgent.name, "Working", "ellipsis.bubble.fill")
         }
         tile.label = label
         tile.subtitle = state
         tile.contentDescription = "$label, $state"
         tile.icon = Icon.createWithResource(this, requireNotNull(symbolRes(symbol)))
-        tile.state = if (lead != null) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        tile.state = if (urgent != null) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.updateTile()
     }
 
@@ -37,8 +38,8 @@ class LeadBotTile : TileService() {
     @SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         val feed = WidgetStore.feed(this)
-        // No bot at work: Computers & settings, as the iPhone's control does.
-        val intent = leadBot(feed.bots)?.let { widgetIntent(this, feed, it.id) }
+        // No bot at work: Computer management, as the iPhone's control does.
+        val intent = mostUrgentBot(feed.bots)?.let { widgetIntent(this, feed, it.id) }
             ?: widgetIntent(this, feed).setData(Uri.parse("${BuildConfig.URL_SCHEME}://computers"))
         // A bot's chat is private: the phone unlocks first.
         unlockAndRun {

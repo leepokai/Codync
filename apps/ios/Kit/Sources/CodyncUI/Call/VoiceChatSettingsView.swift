@@ -7,6 +7,7 @@ import SwiftUI
 /// from the computer's row in settings; the computer is the `BotStore` in the environment.
 public struct VoiceChatSettingsView: View {
     @AppStorage(VoiceSettings.engineKey) private var engine = "device"
+    @AppStorage(VoiceSettings.dictationEngineKey) private var dictationEngine = "device"
     @AppStorage(OnDeviceEngine.rateKey) private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
     @AppStorage(OnDeviceEngine.languageKey) private var language = ""
     @State private var languages = OnDeviceEngine.languageOptions
@@ -16,7 +17,12 @@ public struct VoiceChatSettingsView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            ModalHeader("Voice chat")
+            ModalHeader {
+                HStack(spacing: 8) {
+                    Image(systemName: "waveform").font(.title2).accessibilityHidden(true)
+                    Text(L10n.tr("Voice chat"))
+                }
+            }
             CardForm {
                 CardSection("Voice", footer: engineFooter) {
                     ValueRow("Engine") {
@@ -40,16 +46,25 @@ public struct VoiceChatSettingsView: View {
                 if let provider = VoiceProvider(rawValue: engine) {
                     ProviderVoiceSettings(provider: provider).id(provider)
                 }
+                if let provider = dictationProvider {
+                    ProviderVoiceSettings(provider: provider, dictationOnly: true).id("dictation-\(provider.rawValue)")
+                }
             }
         }
         .background(Palette.background)
+        .tracked(.screenViewed(.voiceSettings))
+    }
+
+    /// Dictation on another provider than calls still needs that provider's key and speech-to-text model.
+    private var dictationProvider: VoiceProvider? {
+        dictationEngine == engine ? nil : VoiceProvider(rawValue: dictationEngine)
     }
 
     private var engineFooter: String {
         guard let provider = VoiceProvider(rawValue: engine) else {
-            return "Apple speech, on this device. Applies from the next call."
+            return "Apple speech, on this device. During a call, applies when you close settings."
         }
-        return "Your own \(provider.name) key, billed by \(provider.name). Applies from the next call."
+        return "Your own \(provider.name) key, billed by \(provider.name). During a call, applies when you close settings."
     }
 }
 
@@ -83,11 +98,14 @@ private struct PauseRow: View {
 }
 
 /// One provider: mode, the key the computer keeps, models, voice and this month's minutes.
+/// `dictationOnly` keeps the key and speech-to-text model.
 private struct ProviderVoiceSettings: View {
     let provider: VoiceProvider
+    let dictationOnly: Bool
     @Environment(BotStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage private var mode: String
+    @AppStorage(VoiceSettings.dictationEngineKey) private var dictationEngine = "device"
     /// nil while the computer hasn't answered yet.
     @State private var saved: Bool?
     @State private var replacing = false
@@ -100,16 +118,19 @@ private struct ProviderVoiceSettings: View {
     @State private var speechModel = ""
     @State private var models = VoiceModels(models: [], transcribe: [], speech: [])
 
-    init(provider: VoiceProvider) {
+    init(provider: VoiceProvider, dictationOnly: Bool = false) {
         self.provider = provider
+        self.dictationOnly = dictationOnly
         _mode = AppStorage(wrappedValue: "realtime", VoiceSettings.modeKey(provider))
     }
 
     private var speechMode: Bool { mode == "speech" }
+    /// Speech mode and dictation with this provider both use its speech-to-text model.
+    private var transcribes: Bool { dictationOnly || speechMode || dictationEngine == provider.rawValue }
     private var hasKey: Bool { saved == true }
 
     var body: some View {
-        CardSection(provider.name, footer: hasKey ? nil : "Add a key to choose from \(provider.name)'s models.") {
+        CardSection(provider.name, footer: footer) {
             VStack(alignment: .leading, spacing: 8) {
                 if hasKey && !replacing {
                     savedKeyRow
@@ -126,14 +147,18 @@ private struct ProviderVoiceSettings: View {
                 }
             }
             Group {
-                if speechMode {
+                if transcribes {
                     ValueRow("Speech to text") { picker($transcribeModel, models.transcribe) }
-                    ValueRow("Text to speech") { picker($speechModel, models.speech) }
-                } else {
-                    ValueRow("Model") { picker($model, models.models) }
                 }
-                ValueRow("Voice") { ChoicePicker(selection: $voice, options: provider.voices.map { ($0, $0) }) }
-                ValueRow("This month", value: "≈ \(VoiceUsage.minutes(for: provider)) min")
+                if !dictationOnly {
+                    if speechMode {
+                        ValueRow("Text to speech") { picker($speechModel, models.speech) }
+                    } else {
+                        ValueRow("Model") { picker($model, models.models) }
+                    }
+                    ValueRow("Voice") { ChoicePicker(selection: $voice, options: provider.voices.map { ($0, $0) }) }
+                    ValueRow("This month", value: "≈ \(VoiceUsage.minutes(for: provider)) min")
+                }
             }
             .disabled(!hasKey)
             .opacity(hasKey ? 1 : 0.55)
@@ -153,6 +178,11 @@ private struct ProviderVoiceSettings: View {
             }
     }
 
+    private var footer: String? {
+        guard hasKey else { return "Add a key to choose from \(provider.name)'s models." }
+        return dictationOnly ? "For dictation in the message box." : nil
+    }
+
     /// The key is on the computer: say so, and offer test / replace / remove.
     private var savedKeyRow: some View {
         HStack(spacing: 10) {
@@ -160,8 +190,8 @@ private struct ProviderVoiceSettings: View {
                 .foregroundStyle(Palette.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Key saved").foregroundStyle(Palette.text).lineLimit(1)
-                Text("Stays on \(store.hostName)").font(.caption).foregroundStyle(Palette.tertiary).lineLimit(1)
+                Text(L10n.tr("Key saved")).foregroundStyle(Palette.text).lineLimit(1)
+                Text(L10n.tr("Stays on \(store.hostName)")).font(.caption).foregroundStyle(Palette.tertiary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if busy {
@@ -186,8 +216,8 @@ private struct ProviderVoiceSettings: View {
                 .foregroundStyle(Palette.tertiary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("No \(provider.name) key on \(store.hostName)").foregroundStyle(Palette.text)
-                Text("Add it in Codync on that computer: Computers & devices, then Voice chat.")
+                Text(L10n.tr("No \(provider.name) key on \(store.hostName)")).foregroundStyle(Palette.text)
+                Text(L10n.tr("Add it in Codync on that computer: Computers & devices, then Voice chat."))
                     .font(.caption)
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -206,7 +236,7 @@ private struct ProviderVoiceSettings: View {
                 if busy {
                     Spinner()
                 } else {
-                    Button("Save", action: test)
+                    Button(L10n.tr("Save"), action: test)
                         .buttonStyle(.primary)
                         .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
@@ -215,7 +245,7 @@ private struct ProviderVoiceSettings: View {
                 WebLink("Get a key from \(provider.name)", url: provider.keyPage).font(.footnote)
                 Spacer()
                 if replacing {
-                    Button("Cancel") { replacing = false; key = ""; result = nil }
+                    Button(L10n.tr("Cancel")) { replacing = false; key = ""; result = nil }
                         .buttonStyle(.plain)
                         .font(.footnote)
                         .foregroundStyle(Palette.secondary)
@@ -268,13 +298,16 @@ private struct ProviderVoiceSettings: View {
     }
 
     /// A pasted key is checked with the provider by the computer before it's kept. With a key
-    /// saved, Test starts a call credential with the chosen model and voice.
+    /// saved, Test starts a call credential with the chosen model and voice; for dictation only, it
+    /// lists the key's models.
     private func test() {
         let typed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typed.isEmpty || hasKey else { return }
         run { client in
             if typed.isEmpty || !replacing && hasKey {
-                if speechMode {
+                if dictationOnly {
+                    _ = try await client.voiceModels(provider)
+                } else if speechMode {
                     _ = try await client.voiceSpeak(provider, model: speechModel, voice: voice, text: "OK")
                 } else {
                     _ = try await client.voiceSession(provider, model: model, voice: voice)

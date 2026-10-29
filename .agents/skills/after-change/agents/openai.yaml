@@ -1,0 +1,4 @@
+interface:
+  display_name: "After Change"
+  short_description: "Review, fix, and verify Codync changes"
+  default_prompt: "Use $after-change to review, fix, and end-to-end test the current Codync change."

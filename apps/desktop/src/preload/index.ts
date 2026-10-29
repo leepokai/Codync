@@ -18,6 +18,24 @@ function listen<T>(channel: string, cb: (value: T) => void) {
   return () => void ipcRenderer.removeListener(channel, handler)
 }
 
+// A dev sandbox starts past onboarding (`skip`: only a window that never chose is seeded) or back at
+// its welcome flow (`reset`); see tools/dev.mjs.
+const devOnboarding = ipcRenderer.sendSync('app:devOnboarding') as 'skip' | 'reset' | null
+if (devOnboarding) {
+  try {
+    if (devOnboarding === 'reset') {
+      localStorage.removeItem('macAccountOnboardingCompleted')
+      localStorage.removeItem('computerAccessSetup')
+    } else {
+      if (localStorage.getItem('macAccountOnboardingCompleted') === null) localStorage.setItem('macAccountOnboardingCompleted', 'true')
+      if (localStorage.getItem('computerAccessSetup') === null) localStorage.setItem('computerAccessSetup', '"later"')
+    }
+  } catch (error) {
+    // Storage unavailable: the window just shows onboarding, which only costs a dev run a click.
+    console.warn('Dev onboarding preset skipped:', error)
+  }
+}
+
 const bridge: CodyncBridge = {
   platform: process.platform as CodyncBridge['platform'],
   appName: ipcRenderer.sendSync('app:name') as string,
@@ -25,6 +43,7 @@ const bridge: CodyncBridge = {
   hostPort: ipcRenderer.sendSync('app:hostPort') as number,
   appVersion: ipcRenderer.sendSync('app:version') as string,
   computerName: ipcRenderer.sendSync('app:computerName') as string,
+  openedAtLogin: ipcRenderer.sendSync('app:openedAtLogin') as boolean,
   debugOpen: ipcRenderer.sendSync('app:debugOpen') as string | null,
   host: {
     snapshot: () => ipcRenderer.invoke('host:snapshot') as Promise<HostSnapshot>,
@@ -61,6 +80,9 @@ const bridge: CodyncBridge = {
     start: (locale) => ipcRenderer.send('speech:start', locale),
     stop: () => ipcRenderer.send('speech:stop'),
     onEvent: (cb) => listen('speech:event', cb),
+    shortcut: () => ipcRenderer.invoke('voice:shortcut'),
+    setShortcut: (shortcut) => ipcRenderer.invoke('voice:setShortcut', shortcut),
+    setCalling: (on) => ipcRenderer.send('voice:calling', on),
   },
   ssh: sshBridge,
   island: {
@@ -76,6 +98,7 @@ const bridge: CodyncBridge = {
     setFocusable: (on) => ipcRenderer.send('island:focusable', on),
     setKeys: (on) => ipcRenderer.send('island:keys', on),
     onKey: (cb) => listen('island:key', cb),
+    onVoiceKey: (cb) => listen('island:voiceKey', cb),
     respond: (ref, entryId, optionId) => ipcRenderer.send('island:respond', ref, entryId, optionId),
     send: (ref, text) => ipcRenderer.send('island:send', ref, text),
     openBot: (ref) => ipcRenderer.send('island:openBot', ref),
@@ -93,6 +116,10 @@ const bridge: CodyncBridge = {
     setAutoCheck: (on) => ipcRenderer.send('updates:autoCheck', on),
     setAutoDownload: (on) => ipcRenderer.send('updates:autoDownload', on),
   },
+  artifacts: {
+    show: (id, html) => ipcRenderer.invoke('artifacts:show', id, html),
+    openInBrowser: (id, html) => ipcRenderer.invoke('artifacts:openInBrowser', id, html),
+  },
   files: {
     begin: (file) => ipcRenderer.invoke('files:begin', file),
     write: (id, offset, data) => ipcRenderer.invoke('files:write', id, offset, data),
@@ -109,6 +136,8 @@ const bridge: CodyncBridge = {
     onCommand: (cb: (c: WindowCommand) => void) => listen('app:command', cb),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
     setLaunchAtLogin: (on) => ipcRenderer.invoke('app:setLaunchAtLogin', on),
+    appearance: () => ipcRenderer.invoke('app:appearance'),
+    setAppearance: (value) => ipcRenderer.invoke('app:setAppearance', value),
     showInDock: () => ipcRenderer.invoke('app:showInDock'),
     setShowInDock: (on) => ipcRenderer.invoke('app:setShowInDock', on),
     launchAtLogin: () => ipcRenderer.invoke('app:launchAtLogin'),

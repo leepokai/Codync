@@ -1,7 +1,8 @@
-//! Idle agents give their resources back. A session unused for [`IDLE`] is closed; once every
-//! session is idle, the agent stops with its process group. The next message starts the agent
-//! again and loads the session, so the conversation carries on. Agents that can't load a
-//! session keep everything: stopping them would lose the conversation.
+//! Idle agents give their resources back. A session unused for [`IDLE`] is closed (a routine run's
+//! as soon as the run ends); once every session is idle, or a routine run ends with none other open,
+//! the agent stops with its process group.
+//! The next message starts the agent again and loads the session, so the conversation carries on.
+//! Agents that can't load a session keep everything: stopping them would lose the conversation.
 
 use super::Actor;
 use serde_json::json;
@@ -10,9 +11,9 @@ use std::time::{Duration, Instant};
 
 /// Coming back costs a relaunch plus `session/load` (seconds), so ordinary pauses in a chat
 /// stay warm.
-const IDLE: Duration = Duration::from_secs(30 * 60);
+const IDLE: Duration = Duration::from_mins(30);
 /// How often an idle bot looks for something to give back.
-const CHECK_EVERY: Duration = Duration::from_secs(60);
+const CHECK_EVERY: Duration = Duration::from_mins(1);
 
 #[derive(Debug, PartialEq)]
 enum Release {
@@ -40,12 +41,16 @@ fn plan(used: &HashMap<String, Instant>, started: Instant, can_close: bool, now:
 
 impl Actor {
     /// Runs on the actor's tick: at most every [`CHECK_EVERY`], and only while the bot has nothing
-    /// running, queued or waiting on the user.
+    /// running, queued or waiting on the user. A compaction due while idle goes first.
     pub(super) async fn release_idle(&mut self) {
         if self.idle_checked.elapsed() < CHECK_EVERY || !self.at_rest() {
             return;
         }
         self.idle_checked = Instant::now();
+        self.tend_idle();
+        if !self.queue.is_empty() {
+            return;
+        }
         let Some(conn) = &self.conn else { return };
         if !conn.sessions.load {
             return;
@@ -82,17 +87,47 @@ impl Actor {
             && self.cancel_deadline.is_none()
     }
 
+    /// A routine run's session is spent once the run is. When it was the only session open and nothing waits, the
+    /// agent ran just for the run and stops with it, with everything it started; otherwise the session alone closes,
+    /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`].
+    pub(super) async fn release_spent(&mut self, sid: &str) {
+        let Some(conn) = &self.conn else { return };
+        if !conn.sessions.load {
+            return;
+        }
+        let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
+        if alone && !background_work(conn.acp.pid()).await {
+            tracing::info!(bot = %self.cfg.id, "stopping the agent after its routine run");
+            if let Some(conn) = self.conn.take() {
+                conn.acp.kill().await;
+            }
+        } else {
+            self.close_reloadable(sid).await;
+        }
+    }
+
+    /// Closes a session the agent can load again when it's next needed, like one a turn failed in (see
+    /// `acp::may_end_session`): the next turn loads it afresh instead of finding it dead.
+    pub(super) async fn close_reloadable(&mut self, sid: &str) {
+        if self.conn.as_ref().is_some_and(|c| c.sessions.close && c.sessions.load && c.loaded.contains_key(sid)) {
+            self.close_session(sid).await;
+        }
+    }
+
     async fn close_session(&mut self, sid: &str) {
         let closed = self.session_request("session/close", json!({ "sessionId": sid })).await;
         let Some(conn) = self.conn.as_mut() else { return };
         match closed {
             Ok(_) => {
-                tracing::info!(bot = %self.cfg.id, session = sid, "closed an idle session");
+                tracing::info!(bot = %self.cfg.id, session = sid, "closed a session");
                 conn.loaded.remove(sid);
                 conn.fast_options.remove(sid);
+                conn.usage.remove(sid);
+                conn.renamed.remove(sid);
+                self.applied_system.remove(sid);
             }
             Err(error) => {
-                tracing::warn!(bot = %self.cfg.id, session = sid, error = format!("{error:#}"), "couldn't close an idle session");
+                tracing::warn!(bot = %self.cfg.id, session = sid, error = format!("{error:#}"), "couldn't close a session");
                 // Try again after another idle period rather than every check.
                 conn.loaded.insert(sid.to_owned(), Instant::now());
             }
@@ -217,10 +252,15 @@ mod tests {
         // How Codex starts an MCP server.
         let grouped = spawn("my $pid = fork; if (!$pid) { setpgrp; sleep 30; exit } sleep 30");
         let detached = spawn("use POSIX (); my $pid = fork; if (!$pid) { POSIX::setsid(); sleep 30; exit } sleep 30");
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // The children exist once perl has forked them: wait for that instead of a fixed pause,
+        // which a busy CI runner can outlast.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while !background_work(detached.id()).await {
+            assert!(tokio::time::Instant::now() < deadline, "the detached child never showed up");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         assert!(!background_work(plain.id()).await);
         assert!(!background_work(grouped.id()).await);
-        assert!(background_work(detached.id()).await);
         for child in [plain, grouped, detached] {
             if let Some(pid) = child.id() {
                 let _ = std::process::Command::new("/bin/kill").args(["-KILL", "--", &format!("-{pid}")]).status();

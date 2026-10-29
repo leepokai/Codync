@@ -100,6 +100,8 @@ final class AccountSession {
             errorMessage = "Sign-in setup isn't finished yet. You can continue using local pairing."
             return
         }
+        let tracked: AnalyticsEvent.SignInProvider = provider == .apple ? .apple : .google
+        Analytics.shared.capture(.signInStarted(tracked))
         isBusy = true
         errorMessage = nil
         defer { isBusy = false }
@@ -122,15 +124,21 @@ final class AccountSession {
                     errorMessage = "\(provider.rawValue) sign-up needs additional account information. Your account is not signed in yet."
                 }
             }
-            if errorMessage == nil { Analytics.shared.capture(.signedIn) }
-        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
-            return
-        } catch let error as ASAuthorizationError where error.code == .canceled {
-            return
-        } catch is CancellationError {
-            return
+            Analytics.shared.capture(errorMessage == nil ? .signedIn(tracked) : .signInFailed(tracked, reason: .verification))
+        } catch where Self.isCancellation(error) {
+            Analytics.shared.capture(.signInFailed(tracked, reason: .cancelled))
         } catch {
             errorMessage = "Couldn't sign in. Check your connection and try again."
+            Analytics.shared.capture(.signInFailed(tracked, reason: .error))
+        }
+    }
+
+    /// The user closed the sign-in sheet.
+    private static func isCancellation(_ error: any Error) -> Bool {
+        switch error {
+        case let error as ASWebAuthenticationSessionError: error.code == .canceledLogin
+        case let error as ASAuthorizationError: error.code == .canceled
+        default: error is CancellationError
         }
     }
 

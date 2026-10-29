@@ -31,7 +31,7 @@ export default function Install() {
                 Open Codync and it starts the host itself. Or install with Homebrew:
               </p>
               <div className="mt-5">
-                <CopyCommand command="brew install --cask leepokai/codync/codync" />
+                <CopyCommand command="brew install --cask leepokai/codync/codync" platform="mac" />
               </div>
               <a href={DMG} className="mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-neutral-50 px-5 font-medium text-neutral-950 transition hover:bg-white active:scale-[0.98]">
                 <AppleLogo size={16} weight="fill" />
@@ -64,7 +64,7 @@ export default function Install() {
                 <code className="font-mono text-neutral-200">codync-host install</code>.
               </p>
               <div className="mt-5">
-                <CopyCommand command={INSTALL_SH} />
+                <CopyCommand command={INSTALL_SH} platform="linux" />
               </div>
             </div>
           </Reveal>

@@ -1,17 +1,16 @@
-//! Bot and chat methods: roster, messages, uploads, memory, routines and the bots' own MCP calls.
+//! Bot and chat methods: roster, messages, uploads, memory, artifacts, routines and the bots' own MCP calls.
 
-use super::marketplace::connector_ids;
+use super::devices::Caller;
 use super::str_arg;
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
-use crate::market;
-use crate::store::{BotConfig, EntryKind, Lane, ReadScope};
+use crate::store::{EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
-pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
+pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?),
@@ -22,7 +21,7 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             str_arg(&b, "id")?,
             b["enabled"].as_bool().context("enabled is required")?,
         )?,
-        "deleteRoutine" => hub.routines.remove(&hub.store, str_arg(&b, "botId")?, str_arg(&b, "id")?)?,
+        "deleteRoutine" => hub.routines.remove(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?)?,
         "runRoutine" => hub.routines.enqueue(
             &hub.store,
             str_arg(&b, "botId")?,
@@ -31,6 +30,7 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             None,
             true,
         )?,
+        "retryRoutineRun" => hub.routines.retry(hub, str_arg(&b, "botId")?, str_arg(&b, "runId")?)?,
         "routineWebhook" => hub.routines.credentials(
             hub,
             str_arg(&b, "botId")?,
@@ -39,22 +39,32 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
         )?,
         "routineCall" => crate::routines::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])?,
         "memoryCall" => {
-            let bot = str_arg(&b, "botId")?;
-            let name = str_arg(&b, "name")?;
-            let args = if name.starts_with("mem_") {
-                crate::chat::memory::lifecycle::bound_args(hub, bot, b["memoryLane"].as_str(), name, &b["arguments"])
-                    .await?
-            } else {
-                b["arguments"].clone()
-            };
-            crate::chat::memory::call(hub, bot, name, &args).await?
+            crate::chat::memory::tool_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }
-        "memoryTools" => crate::chat::memory::available_tools(hub, str_arg(&b, "botId")?).await?,
         "chatCall" => {
-            crate::chat::outbox::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
+            let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
+            if crate::chat::profile::TOOLS.contains(&name) {
+                crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
+            } else if name == crate::chat::skills::TOOL {
+                crate::chat::skills::call(hub, bot, &b["arguments"]).await?
+            } else if crate::chat::fallbacks::TOOLS.contains(&name) {
+                crate::chat::fallbacks::call(hub, bot, name, &b["arguments"]).await?
+            } else if crate::chat::artifacts::TOOLS.contains(&name) {
+                crate::chat::artifacts::call(hub, bot, name, &b["arguments"]).await?
+            } else {
+                crate::chat::outbox::call(hub, bot, name, &b["arguments"]).await?
+            }
+        }
+        // An agent on this computer that isn't a bot (`codync-host mcp network`).
+        "agentCall" => {
+            crate::chat::team::assistant::local_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])
+                .await?
         }
         "teamCall" => {
-            crate::chat::team::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
+            crate::chat::team::call_async(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
+        }
+        "manageCall" => {
+            crate::chat::manage::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }
         "history" => {
             let bot = str_arg(&b, "botId")?;
@@ -62,34 +72,15 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             let limit = b["limit"].as_i64().unwrap_or(100).clamp(1, 500);
             json!({"entries": hub.store.history(bot, before, limit)?})
         }
-        // A thread's replies (its newest 500); the root is in the main chat.
-        "thread" => json!({"entries": hub.store.thread(str_arg(&b, "botId")?, str_arg(&b, "rootId")?, 500)?}),
         // Notices between a bot and one peer (the newest 200), for the read-only bot conversation sheet.
         "botConversation" => {
             json!({"entries": hub.store.bot_conversation(str_arg(&b, "botId")?, str_arg(&b, "peerId")?, 200)?})
         }
         "createBot" => {
             let mut b = b;
-            b["id"] = "".into();
-            // Connectors are on for a new bot unless the client picked them.
-            // Without a credential store (headless Linux) no connector can run, so the bot starts with none.
-            if b["connectors"].is_null() && b["kind"] != "group" {
-                b["connectors"] = match market::vault::unlock(hub.clone()).await {
-                    Ok(()) => json!(connector_ids(&hub.store)?),
-                    Err(e) => {
-                        tracing::warn!(
-                            error = format!("{e:#}"),
-                            "credential store unavailable; new bot starts without connectors"
-                        );
-                        json!([])
-                    }
-                };
-            }
-            // Skills too: every installed one is on unless the client picked them.
-            if b["skills"].is_null() && b["kind"] != "group" {
-                b["skills"] = json!(market::skills(&hub.store).into_iter().map(|s| s.id).collect::<Vec<_>>());
-            }
-            let cfg: BotConfig = serde_json::from_value(b).context("invalid bot")?;
+            // Only a bot's `create_bot` records who made one.
+            b["createdBy"] = Value::Null;
+            let cfg = crate::agent::new_bot::with_defaults(hub, b).await?;
             let hub = hub.clone();
             json!({"bot": tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??})
         }
@@ -108,14 +99,8 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             hub.delete_bot(str_arg(&b, "botId")?)?;
             json!({})
         }
-        // The main chat, one thread (`threadId`), or everything (`all`, the roster's "Mark as read").
         "markRead" => {
-            let scope = match b["threadId"].as_str().filter(|t| !t.is_empty()) {
-                Some(root) => ReadScope::Thread(root),
-                None if b["all"] == true => ReadScope::All,
-                None => ReadScope::Chat,
-            };
-            hub.mark_read(str_arg(&b, "botId")?, scope)?;
+            hub.mark_read(str_arg(&b, "botId")?)?;
             json!({})
         }
         // One chunk of a file for a later `send` (`attachments`); base64 `data` at `offset`.
@@ -160,18 +145,11 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
                 return Ok(ControlFlow::Break(json!({"entry": e})));
             }
             let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
-            // `threadId`: reply in the thread on that message of the main chat (threads are flat).
-            let thread = match b["threadId"].as_str().filter(|t| !t.is_empty()) {
-                Some(root) => {
-                    let r = hub.store.entry(root).ok_or_else(|| anyhow!("unknown message"))?;
-                    if r.bot_id != bot || r.thread_id.is_some() {
-                        bail!("threads start from a message in the main chat");
-                    }
-                    Some(root.to_owned())
-                }
+            // `replyTo`: the message of this chat it answers (`chat::replies`).
+            let reply = match b["replyTo"].as_str().filter(|id| !id.is_empty()) {
+                Some(id) => Some(crate::chat::replies::quote(&hub.store, bot, id)?),
                 None => None,
             };
-            let lane = Lane { chat: bot.to_owned(), thread };
             let mut attachments = Vec::new();
             if !uploads.is_empty() {
                 let root = crate::chat::uploads::root(&row.config);
@@ -179,39 +157,67 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
                     attachments.push(crate::chat::uploads::resolve(&root, id)?.1);
                 }
             }
-            // `/skill …` reaches the agent as "read this skill first"; the chat keeps what was typed.
-            let prompt = crate::chat::prompt::of_message(&hub.store, &row.config, text, &attachments);
-            let turn = hub.store.max_turn(bot) + 1;
-            // A group has no agent of its own to queue behind: its message is simply sent.
-            let status = if row.config.is_group() { "sent" } else { "queued" };
-            let e = hub
-                .add_entry(
-                    &lane,
-                    EntryKind::User,
-                    turn,
-                    &json!({"text": text, "clientNonce": nonce, "status": status, "attachments": attachments}),
-                )
-                .ok_or_else(|| anyhow!("couldn't save the message"))?;
-            // Before the turn starts, so its reply lands unread.
-            let scope = lane.thread.as_deref().map_or(ReadScope::Chat, ReadScope::Thread);
-            if let Err(error) = hub.mark_read(bot, scope) {
-                tracing::warn!(%error, bot, "couldn't mark bot read after send");
+            let mut data = json!({"text": text, "clientNonce": nonce, "attachments": attachments});
+            // What the user pasted rather than typed: memory never takes it as the user's own words.
+            let pasted: Vec<&str> = b["pasted"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|p| !p.is_empty() && text.contains(p))
+                .collect();
+            if !pasted.is_empty() {
+                data["pasted"] = json!(pasted);
             }
-            if row.config.is_group() {
-                crate::chat::group::start(hub, &row.config, lane);
-            } else {
-                hub.send_cmd(bot, Cmd::Send { lane, entry_id: e.id.clone(), text: prompt })?;
+            if let Some(reply) = reply {
+                data["replyTo"] = reply;
             }
-            json!({"entry": e})
+            // Said on a voice call (on-device or speech to text): the apps show it in the call's conversation.
+            if let Some(call) = b["call"].as_str() {
+                data["call"] = crate::chat::calls::checked(call)?.into();
+                crate::chat::calls::heard(hub, bot, call, caller.device_key())?;
+            }
+            json!({"entry": crate::chat::messages::post(hub, &row.config, data)?})
         }
-        // A finished voice call, as a line in the chat ("Voice chat · 0:16").
+        // A voice call is on (its audio flows): the lead speaks first.
+        "callStarted" => {
+            let call = b["callId"].as_str().map(crate::chat::calls::checked).transpose()?;
+            crate::chat::lead::call_started(hub, str_arg(&b, "botId")?, call)?;
+            json!({})
+        }
+        // A finished voice call from an app older than `endCall`, as a line in the chat ("Voice chat · 0:16").
         "logCall" => {
             let bot = str_arg(&b, "botId")?;
             hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
             let seconds = b["seconds"].as_u64().unwrap_or(0);
-            let data = json!({"text": "Voice chat", "callSeconds": seconds});
+            let data = json!({"text": crate::chat::calls::UNTITLED, "callSeconds": seconds});
             let e = hub.add_entry(&Lane::main(bot), EntryKind::Notice, hub.store.max_turn(bot), &data);
             json!({"entry": e})
+        }
+        // A voice call, owned by the host (`chat::calls`); only the device that starts it hears what its voice should
+        // say.
+        "startCall" => crate::chat::calls::start(hub, &b, caller.device_key()).await?,
+        // `lines`: what was said on the call that the app hadn't sent yet, which the tool may hand on.
+        "callTool" => {
+            let call = crate::chat::calls::checked(str_arg(&b, "callId")?)?;
+            let result = crate::chat::calls::tools::call(hub, call, str_arg(&b, "name")?, &b["arguments"], &b["lines"]);
+            json!({"result": result.await})
+        }
+        "callLines" => {
+            crate::chat::calls::add_lines(hub, crate::chat::calls::checked(str_arg(&b, "callId")?)?, &b["lines"])?;
+            json!({})
+        }
+        // What a call carried, for its conversation: the chat an app holds may not reach back that far.
+        "callEntries" => {
+            let bot = str_arg(&b, "botId")?;
+            let call = crate::chat::calls::checked(str_arg(&b, "callId")?)?;
+            json!({"entries": hub.store.call_entries(bot, call, crate::chat::calls::CALL_ENTRIES)?})
+        }
+        "endCall" => {
+            let call = crate::chat::calls::checked(str_arg(&b, "callId")?)?;
+            let seconds = b["seconds"].as_u64().unwrap_or(0);
+            json!({"entry": crate::chat::calls::end(hub, str_arg(&b, "botId")?, call, seconds, &b["lines"])?})
         }
         "stop" => {
             let bot = str_arg(&b, "botId")?;
@@ -221,12 +227,18 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             }
             json!({})
         }
+        "switchBack" => {
+            hub.send_cmd(str_arg(&b, "botId")?, Cmd::SwitchBack)?;
+            json!({})
+        }
         "newSession" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::NewSession)?;
             json!({})
         }
-        "memory" | "saveMemory" | "memoryDetail" | "pinMemory" | "reviewMemory" | "forgetMemory" | "clearMemory"
-        | "exportMemory" | "importMemory" => crate::chat::memory::manage::call(hub, method, &b).await?,
+        "memory" | "memoryFile" => crate::chat::memory::call(hub, method, &b).await?,
+        "library" => crate::chat::library::list(hub, str_arg(&b, "botId")?)?,
+        "readArtifact" | "renameArtifact" => crate::chat::artifacts::api(hub, method, &b).await?,
+        "editHandoff" | "keepConversation" => crate::chat::handoff::call(hub, method, &b)?,
         "react" => {
             let e = hub.react(str_arg(&b, "entryId")?, str_arg(&b, "emoji")?)?;
             json!({"entry": e})

@@ -105,6 +105,12 @@ private enum class Surface { Widget, LiveUpdate, StatusBar }
 
 internal fun notificationsAllowed(context: Context) = context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
 
+/** Android's notification prompt was answered: never asked on its own again, and reported. */
+internal fun notificationsAnswered(context: Context, granted: Boolean, source: PromptSource) {
+    PushPreferences.markAsked(context)
+    Analytics.capture(AnalyticsEvent.NotificationsAnswered(granted, source))
+}
+
 internal fun openNotificationSettings(context: Context) = context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
     .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 
@@ -114,7 +120,9 @@ internal fun openNotificationSettings(context: Context) = context.startActivity(
     val installed = rememberOnResume { runCatching { CodyncWidgets.installed(context) }.getOrNull() }
     var asked by remember { mutableIntStateOf(0) }
     val allowed = rememberOnResume { notificationsAllowed(context) } || asked > 0 && notificationsAllowed(context)
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { asked++; store?.syncPush() }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationsAnswered(context, granted, PromptSource.Widgets); asked++; store?.syncPush()
+    }
     var kind by rememberSaveable { mutableStateOf("usage") }
     var provider by rememberSaveable { mutableStateOf("claude") }
     var sizeChoice by rememberSaveable { mutableStateOf("medium") }

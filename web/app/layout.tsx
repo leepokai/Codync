@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Analytics from "./analytics";
 import JsonLd from "./json-ld";
 import { APP_STORE } from "./links";
 import { DESCRIPTION, SITE } from "./site";
@@ -17,12 +18,21 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Codync: the open-source Grok Bot alternative, a free AI agent app",
+    default: "Codync: Claude Code, Codex and any AI agent on your phone, free",
     template: "%s | Codync",
   },
   description: DESCRIPTION,
   applicationName: "Codync",
   keywords: [
+    "bring your own subscription",
+    "agent-agnostic",
+    "Claude Code mobile",
+    "Claude Code remote",
+    "Codex remote",
+    "Gemini CLI on iPhone",
+    "Cursor agent on iPhone",
+    "Copilot CLI on iPhone",
+    "OpenCode on iPhone",
     "Grok Bot alternative",
     "Muse alternative",
     "Dots alternative",
@@ -67,6 +77,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-black text-neutral-200">
         <JsonLd />
+        <Analytics />
         {children}
       </body>
     </html>

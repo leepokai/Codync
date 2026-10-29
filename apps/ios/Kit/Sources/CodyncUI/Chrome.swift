@@ -22,10 +22,10 @@ public struct IconButton: View {
     }
 
     public var body: some View {
-        Button(title, systemImage: systemImage, action: action)
+        Button(L10n.tr(title), systemImage: systemImage, action: action)
             .labelStyle(.iconOnly)
             .buttonStyle(IconButtonStyle())
-            .help(title)
+            .help(L10n.tr(title))
     }
 }
 
@@ -96,7 +96,7 @@ public struct ModalHeader<Title: View, Trailing: View>: View {
 
 public extension ModalHeader where Title == Text {
     init(_ title: String, @ViewBuilder trailing: () -> Trailing) {
-        self.init(title: { Text(title) }, trailing: trailing)
+        self.init(title: { Text(L10n.tr(title)) }, trailing: trailing)
     }
 }
 
@@ -166,16 +166,19 @@ public extension View {
     /// Content titles itself with `ModalHeader` and closes with `\.dismissModal`.
     func codyncSheet<Sheet: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Sheet) -> some View {
         modifier(CodyncSheet(isPresented: isPresented, sheet: content))
+            .reviewInterruption(active: isPresented.wrappedValue)
     }
 
     func codyncSheet<Item: Identifiable, Sheet: View>(item: Binding<Item?>, @ViewBuilder content: @escaping (Item) -> Sheet) -> some View {
         modifier(CodyncItemSheet(item: item, sheet: content))
+            .reviewInterruption(active: item.wrappedValue != nil)
     }
 
     /// Presents a full-window layer the content draws itself (dialogs, the remote screen), fading in and out.
     /// `close` animates it away.
     func codyncOverlay<Layer: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping (_ close: @escaping () -> Void) -> Layer) -> some View {
         modifier(CodyncOverlay(isPresented: isPresented, layer: content))
+            .reviewInterruption(active: isPresented.wrappedValue)
     }
 
 }

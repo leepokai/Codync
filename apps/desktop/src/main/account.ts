@@ -2,8 +2,9 @@ import { EventEmitter } from 'node:events'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage, type BrowserWindow } from 'electron'
+import type { SignInFailure, SignInProvider } from '../shared/analytics'
 import type { AccountState } from '../shared/ipc'
-import { authenticate } from './auth'
+import { authenticate, AuthenticationEnded } from './auth'
 import { buildConfig, identity } from './environment'
 
 /**
@@ -103,7 +104,7 @@ export class AccountService extends EventEmitter {
 
   register(windows: () => BrowserWindow[]) {
     ipcMain.handle('account:state', () => this.state)
-    ipcMain.handle('account:signIn', (_e, provider: 'apple' | 'google') => this.signIn(provider))
+    ipcMain.handle('account:signIn', (_e, provider: SignInProvider) => this.signIn(provider))
     ipcMain.handle('account:signOut', () => this.signOut())
     ipcMain.handle('account:token', () => this.sessionToken())
     this.on('change', () => {
@@ -129,7 +130,20 @@ export class AccountService extends EventEmitter {
     } catch {
       // Offline at launch: the saved session still counts; the next call refreshes it.
     }
+    await this.signInWithDevTicket()
     this.set({ ready: true })
+  }
+
+  /** An unpackaged Codync Dev run with a test account's one-time sign-in token (tools/dev-account.mjs): signs in without a browser. */
+  private async signInWithDevTicket() {
+    const ticket = process.env.CODYNC_DEV_SIGN_IN_TICKET
+    if (!ticket || app.isPackaged || identity.environment !== 'dev' || !this.config.clerkPublishableKey?.startsWith('pk_test_') || this.activeSession) return
+    try {
+      await this.request<SignInResource>('POST', '/v1/client/sign_ins', { strategy: 'ticket', ticket })
+      await this.refreshClient()
+    } catch (error) {
+      this.set({ error: `Test account sign-in failed: ${error instanceof Error ? error.message : String(error)}` })
+    }
   }
 
   private async persist() {
@@ -186,10 +200,15 @@ export class AccountService extends EventEmitter {
     this.applyClient(client)
   }
 
-  async signIn(provider: 'apple' | 'google') {
-    if (this.state.busy) return
-    if (!this.base) return this.set({ error: "Sign-in setup isn't finished yet. You can continue using local pairing." })
+  /** Why it ended without an account (`sign_in_failed`); null once signed in. */
+  async signIn(provider: SignInProvider): Promise<SignInFailure | null> {
+    if (this.state.busy) return null
+    if (!this.base) {
+      this.set({ error: "Sign-in setup isn't finished yet. You can continue using local pairing." })
+      return 'error'
+    }
     const name = provider === 'apple' ? 'Apple' : 'Google'
+    let failure: SignInFailure | null = null
     this.set({ busy: true, error: null })
     try {
       const strategy = `oauth_${provider}`
@@ -204,19 +223,27 @@ export class AccountService extends EventEmitter {
       if (!nonce && transferable) {
         // A new account: Clerk's transfer flow turns the sign-in into a sign-up.
         const signUp = await this.request<{ status: string }>('POST', '/v1/client/sign_ups', { transfer: true })
-        if (signUp.status !== 'complete') this.set({ error: `${name} sign-up needs additional account information. Your account is not signed in yet.` })
+        if (signUp.status !== 'complete') {
+          failure = 'verification'
+          this.set({ error: `${name} sign-up needs additional account information. Your account is not signed in yet.` })
+        }
       } else if (signIn.status !== 'complete') {
         const error = signIn.first_factor_verification?.error
         if (error) throw new ClerkError(0, error.long_message ?? error.message ?? 'Sign-in failed.')
+        failure = 'verification'
         this.set({ error: `${name} sign-in needs additional verification. Your account is not signed in yet.` })
       }
       await this.refreshClient()
     } catch (error) {
-      const message = error instanceof Error ? error.message : ''
-      if (!/timed out|Another sign-in/.test(message)) this.set({ error: "Couldn't sign in. Check your connection and try again." })
+      if (error instanceof AuthenticationEnded) failure = error.reason
+      else {
+        failure = 'error'
+        this.set({ error: "Couldn't sign in. Check your connection and try again." })
+      }
     } finally {
       this.set({ busy: false })
     }
+    return failure
   }
 
   async signOut() {

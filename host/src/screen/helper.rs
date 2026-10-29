@@ -39,7 +39,7 @@ impl Link {
             bail!("the screen helper disconnected");
         }
         // Permission dialogs wait for a person; normal helper calls should still fail quickly.
-        let timeout = if method == "requestPermission" { Duration::from_secs(120) } else { HELPER_TIMEOUT };
+        let timeout = if method == "requestPermission" { Duration::from_mins(2) } else { HELPER_TIMEOUT };
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(Ok(v))) => Ok(v),
             Ok(Ok(Err(message))) => Err(anyhow!(message)),

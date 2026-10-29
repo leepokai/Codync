@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { BotStatus } from './models.ts'
 import {
-  focusOf, hitRect, hits, islandFrame, islandMode, islandRect, notchOf, othersOf, transitions,
+  focusOf, hitRect, hits, islandFrame, islandMode, islandRect, notchOf, othersOf, stopsDictation, transitions,
   type IslandBot, type IslandNotice, type IslandPermission, type IslandSummary, type IslandTab,
 } from './island.ts'
 
@@ -83,4 +83,12 @@ test('shapes follow the notch, and a plain top edge keeps a thin strip that wake
   // Linux shapes the window to this: the strip under the top edge, never above the window.
   assert.deepEqual(hitRect(edge), { x: 272, y: 0, width: 176, height: 8 })
   assert.deepEqual(hitRect({ x: 0, y: 0, width: 0, height: 0 }), { x: 0, y: 0, width: 0, height: 0 })
+})
+
+test('leaving the message tab while dictating stops it there; other tab changes leave it be', () => {
+  assert.equal(stopsDictation('message', 'usage', true), true)
+  assert.equal(stopsDictation('message', 'auto', true), true)
+  assert.equal(stopsDictation('message', 'message', true), false)
+  assert.equal(stopsDictation('message', 'bots', false), false)
+  assert.equal(stopsDictation('usage', 'bots', true), false)
 })

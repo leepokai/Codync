@@ -27,6 +27,7 @@ public extension View {
                       actions: @escaping () -> [DialogAction]) -> some View {
         modifier(CodyncDialog(title: title, message: message, cancel: cancel, inPlace: inPlace,
                               isPresented: isPresented, actions: actions))
+            .reviewInterruption(active: isPresented.wrappedValue)
     }
 }
 
@@ -80,9 +81,9 @@ private struct DialogCard: View {
                 .onTapGesture { if cancel != nil { dismiss() } }
             VStack(spacing: 14) {
                 VStack(spacing: 6) {
-                    Text(title).font(.headline).foregroundStyle(Palette.text)
+                    Text(L10n.tr(title)).font(.headline).foregroundStyle(Palette.text)
                     if let message, !message.isEmpty {
-                        Text(message).font(.subheadline).foregroundStyle(Palette.secondary)
+                        Text(L10n.tr(message)).font(.subheadline).foregroundStyle(Palette.secondary)
                     }
                 }
                 .multilineTextAlignment(.center)
@@ -92,12 +93,12 @@ private struct DialogCard: View {
                             dismiss()
                             action.action()
                         } label: {
-                            Text(action.title).frame(maxWidth: .infinity)
+                            Text(L10n.tr(action.title)).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(DialogButtonStyle(destructive: action.destructive, prominent: true))
                     }
                     if let cancel {
-                        Button(action: dismiss) { Text(cancel).frame(maxWidth: .infinity) }
+                        Button(action: dismiss) { Text(L10n.tr(cancel)).frame(maxWidth: .infinity) }
                             .buttonStyle(DialogButtonStyle(destructive: false, prominent: false))
                             .keyboardShortcut(.cancelAction)
                     }

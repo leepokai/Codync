@@ -6,8 +6,9 @@ import { createServer } from 'node:net'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
-import type { SSHAttachment, SSHProfile, SSHState, SSHStatus } from '../shared/ssh'
-import { infoArguments, knownHostsFiles, resolveArguments, tunnelArguments } from './ssh-command'
+import { isSSHHost, type SSHAttachment, type SSHProfile, type SSHState, type SSHStatus } from '../shared/ssh'
+import { dataDir } from './host-controller'
+import { infoArguments, knownHostsFiles, orphanTunnelPattern, resolveArguments, tunnelArguments } from './ssh-command'
 
 // SSH computers: profiles, host key checks and one
 // OpenSSH tunnel per connected profile. Arguments are always an argv array, never a shell string.
@@ -22,7 +23,7 @@ const home = homedir()
 
 /** A reason the profile can't be used, or null. */
 export function validate(p: SSHProfile): string | null {
-  if (p.host.startsWith('-') || !/^[A-Za-z0-9._-]+$/.test(p.host)) {
+  if (!isSSHHost(p.host)) {
     return 'Use an SSH alias or a hostname: letters, digits, dots, dashes and underscores.'
   }
   if (p.user !== null && !/^[A-Za-z_][A-Za-z0-9._-]*$/.test(p.user)) return "That user name isn't valid."
@@ -134,7 +135,7 @@ function run(bin: string, args: string[], input?: string): Promise<Result> {
 }
 
 /** Tunnels a crashed or force-quit Codync left running: only Codync's tunnels carry this known_hosts file. */
-const killOrphanTunnels = () => run('/usr/bin/pkill', ['-f', '--', `^/usr/bin/ssh -N .*\\${identity.dataFolder}/ssh_known_hosts`])
+const killOrphanTunnels = () => run('/usr/bin/pkill', ['-f', '--', orphanTunnelPattern(dataDir)])
 
 /** Binds port 0 on loopback to learn a free port. */
 function freeLocalPort(): Promise<number | null> {
@@ -302,9 +303,8 @@ class SSHComputers {
     const lines = this.pendingKeys.get(id)
     if (this.status.get(id)?.kind !== 'confirmHostKey' || !lines) return
     try {
-      const dir = join(home, identity.dataFolder)
-      await fs.mkdir(dir, { recursive: true, mode: 0o700 })
-      await fs.appendFile(join(dir, 'ssh_known_hosts'), lines.join('\n') + '\n', { mode: 0o600 })
+      await fs.mkdir(dataDir, { recursive: true, mode: 0o700 })
+      await fs.appendFile(join(dataDir, 'ssh_known_hosts'), lines.join('\n') + '\n', { mode: 0o600 })
     } catch (e) {
       return this.setStatus(id, { kind: 'failed', message: `Couldn't save the host key: ${e instanceof Error ? e.message : String(e)}` })
     }
@@ -370,7 +370,7 @@ class SSHComputers {
     }
 
     this.setStatus(id, { kind: 'connecting', step: 'Signing in…' })
-    const result = await run(SSH, infoArguments(profile, home, identity.dataFolder))
+    const result = await run(SSH, infoArguments(profile, home, identity.dataFolder, dataDir))
     if (token.cancelled) return idle
     if (result.status === 255) {
       if (authRefused(result.stderr)) return stop({ kind: 'failed', message: signInRefused(profile) })
@@ -459,7 +459,7 @@ class SSHComputers {
 
   private async recordedKeys(name: string, certAuthorities = true) {
     const keys = new Set<string>()
-    for (const file of knownHostsFiles(home, identity.dataFolder)) {
+    for (const file of knownHostsFiles(home, dataDir)) {
       if (!existsSync(file)) continue
       const found = await run(KEYGEN, ['-F', name, '-f', file])
       if (found.status === 0) for (const k of hostKeys(found.stdout, certAuthorities)) keys.add(k)
@@ -473,7 +473,7 @@ class SSHComputers {
     let done = false
     let child: ChildProcess
     try {
-      child = spawn(SSH, tunnelArguments(profile, localPort, home, identity.dataFolder), { stdio: ['ignore', 'ignore', 'pipe'] })
+      child = spawn(SSH, tunnelArguments(profile, localPort, home, dataDir), { stdio: ['ignore', 'ignore', 'pipe'] })
     } catch {
       return null
     }

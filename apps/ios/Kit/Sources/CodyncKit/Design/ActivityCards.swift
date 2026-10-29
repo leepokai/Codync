@@ -5,7 +5,7 @@ public extension BotActivityPresentation {
         switch phase {
         case .working: .working
         case .needsInput: .listening
-        case .sending, .waiting, .stale: .connecting
+        case .sending, .waiting, .stale, .onCall: .connecting
         case .queued, .completed, .failed: nil
         }
     }
@@ -15,7 +15,7 @@ public extension BotActivityPresentation {
         case .needsInput: Palette.attention
         case .failed: Palette.danger
         case .completed: Palette.added
-        case .sending, .queued, .stale, .waiting: Palette.secondary
+        case .sending, .queued, .stale, .waiting, .onCall: Palette.secondary
         case .working: Palette.text
         }
     }
@@ -23,17 +23,27 @@ public extension BotActivityPresentation {
     /// The caption stays quiet while the bot works and takes the state's color otherwise.
     var captionTint: Color { phase == .working ? Palette.secondary : tint }
 
+    /// How many of the progress line's four segments are filled, as on Android's Live update.
+    var progressStep: Int {
+        switch phase {
+        case .sending, .queued: 1
+        case .working, .stale, .waiting, .onCall: 2
+        case .needsInput: 3
+        case .completed, .failed: 4
+        }
+    }
+
     var mood: CharacterAvatar.Mood {
         switch phase {
         case .working: .working
         case .needsInput: .needsInput
-        case .sending, .queued, .completed, .failed, .stale, .waiting: .idle
+        case .sending, .queued, .completed, .failed, .stale, .waiting, .onCall: .idle
         }
     }
 
     /// The elapsed time counts up on its own (no push) while the task is live.
     func elapsedStart(_ startedAt: Date?) -> Date? {
-        phase == .working || phase == .needsInput ? startedAt : nil
+        phase == .working || phase == .needsInput || call != nil ? startedAt : nil
     }
 }
 
@@ -73,19 +83,35 @@ public struct ActivityCaption: View {
 
     public var body: some View {
         HStack(spacing: 4) {
-            Text(state.caption)
+            Text(L10n.tr(state.caption))
                 .foregroundStyle(state.captionTint)
                 .contentTransition(.interpolate)
                 .layoutPriority(1)
             // No fixedSize on a timer Text: a Live Activity can't lay one out at its ideal width
             // and draws the whole card black. Unconstrained, it takes the width left over.
             if let since = state.elapsedStart(startedAt) {
-                Text("·").foregroundStyle(Palette.tertiary)
+                Text(L10n.tr("·")).foregroundStyle(Palette.tertiary)
                 Text(since, style: .timer).monospacedDigit().foregroundStyle(Palette.secondary)
             }
         }
         .font(.system(size: 12))
         .lineLimit(1)
+    }
+}
+
+/// The task's progress: four segments that fill as it moves, in the state's color.
+public struct ActivityProgress: View {
+    let state: BotActivityPresentation
+
+    public init(state: BotActivityPresentation) { self.state = state }
+
+    public var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<4, id: \.self) { index in
+                Capsule().fill(index < state.progressStep ? state.tint : state.tint.opacity(0.16))
+            }
+        }
+        .frame(height: 6)
     }
 }
 
@@ -103,7 +129,7 @@ public struct ActivityReviewButton: View {
     }
 
     private var label: some View {
-        Label("Review", systemImage: "hand.raised.fill")
+        Label(L10n.tr("Review"), systemImage: "hand.raised.fill")
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(Palette.onAccent)
             .frame(maxWidth: .infinity, minHeight: 34)
@@ -142,6 +168,7 @@ public struct BotActivityCard<Face: View, Mark: View>: View {
                 Spacer(minLength: 8)
                 mark
             }
+            ActivityProgress(state: state)
             if state.phase == .needsInput {
                 ActivityReviewButton(state: state, link: link).transition(.activityRow)
             }
@@ -149,13 +176,13 @@ public struct BotActivityCard<Face: View, Mark: View>: View {
         .padding(16)
         .animation(Motion.activityPhase, value: state)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(name), \(state.title). \(state.caption)")
+        .accessibilityLabel("\(name), \(state.title). \(state.caption). \(L10n.tr("Progress, step \(state.progressStep) of 4"))")
     }
 }
 
 public extension BotActivityCard where Face == ActivityAvatar, Mark == BotActivityIndicator {
     init(bot: Bot, state: BotActivityPresentation, startedAt: Date? = nil) {
-        self.init(name: bot.name, state: state, startedAt: startedAt) {
+        self.init(name: widgetName(bot), state: state, startedAt: startedAt) {
             ActivityAvatar(shape: bot.avatarShape, color: bot.avatarColor, state: state, size: 32)
         } mark: {
             BotActivityIndicator(state: state, size: 28)
@@ -271,8 +298,8 @@ public struct BotActivityPreview: View {
                 HStack(spacing: 10) {
                     islandFace(26)
                     VStack(spacing: 2) {
-                        Text(bot.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                        Text(state.caption).font(.system(size: 12)).foregroundStyle(state.captionTint)
+                        Text(widgetName(bot)).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        Text(L10n.tr(state.caption)).font(.system(size: 12)).foregroundStyle(state.captionTint)
                     }
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)

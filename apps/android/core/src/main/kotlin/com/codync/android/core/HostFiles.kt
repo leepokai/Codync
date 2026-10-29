@@ -103,6 +103,34 @@ class HostFiles(private val call: suspend (String, JsonObject, Long) -> JsonElem
         } finally { if (!saved) folder.deleteRecursively() }
     }
 
+    /**
+     * An artifact's newest HTML (`readArtifact`), chunk by chunk and checked against its SHA-256. An artifact published again while
+     * it was read is read again, a few times at most.
+     */
+    suspend fun readArtifact(botId: String, artifactId: String): Pair<Artifact, String> {
+        repeat(ARTIFACT_ATTEMPTS) { readArtifactOnce(botId, artifactId)?.let { return it } }
+        throw IOException("The artifact kept changing while it was read. Try again.")
+    }
+
+    /** Null when the artifact changed between chunks. */
+    private suspend fun readArtifactOnce(botId: String, artifactId: String): Pair<Artifact, String>? {
+        val bytes = java.io.ByteArrayOutputStream()
+        var first: Artifact? = null
+        do {
+            val chunk = call("readArtifact", buildJsonObject { put("botId", botId); put("artifactId", artifactId); put("offset", bytes.size()) }, 60_000).jsonObject
+            val artifact = Artifact.decode(chunk.getValue("artifact"))
+            if (first != null && artifact.updatedAt != first.updatedAt) return null
+            first = artifact
+            val data = chunk["data"]?.jsonPrimitive?.contentOrNull?.let { try { Base64.getDecoder().decode(it) } catch (_: IllegalArgumentException) { null } }
+            require(data != null && chunk["size"]?.jsonPrimitive?.longOrNull == artifact.size && data.size <= CHUNK_BYTES &&
+                bytes.size() + data.size <= artifact.size && (data.isNotEmpty() || artifact.size == 0L)) { "The computer returned an invalid artifact chunk." }
+            bytes.write(data)
+        } while (bytes.size() < artifact.size)
+        val artifact = checkNotNull(first)
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray()).joinToString("") { "%02x".format(it) }
+        return if (digest == artifact.sha256) artifact to bytes.toString(Charsets.UTF_8) else null
+    }
+
     /** A small text file the host prepared (a memory export), read chunk by chunk. */
     suspend fun readText(botId: String, id: String): String {
         val bytes = java.io.ByteArrayOutputStream()
@@ -135,5 +163,8 @@ class HostFiles(private val call: suspend (String, JsonObject, Long) -> JsonElem
         } while (offset < data.size)
     }
 
-    companion object { const val CHUNK_BYTES = 384 * 1024 }
+    companion object {
+        const val CHUNK_BYTES = 384 * 1024
+        private const val ARTIFACT_ATTEMPTS = 3
+    }
 }

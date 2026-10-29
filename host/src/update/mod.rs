@@ -1,15 +1,23 @@
 //! Standalone host updates. App bundles and package managers retain ownership
-//! of their binaries. A signed manifest is required before executing new code.
+//! of their binaries; a host the desktop app bundles hands an update request to
+//! the app. A signed manifest is required before executing new code.
 mod install;
 mod release;
 #[cfg(test)]
 mod tests;
 
-use crate::{hub::Hub, service};
+use crate::{LockExt as _, hub::Hub, service};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{
+    path::Path,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicI64, Ordering},
+    },
+    time::Duration,
+};
 
 #[derive(Deserialize, Serialize)]
 struct Config {
@@ -30,11 +38,125 @@ const fn on() -> bool {
 
 /// A release build of a standalone binary that the installed service runs: the hosts that
 /// update themselves (app bundles and Homebrew own their binaries).
-fn self_updating(executable: &Path) -> bool {
-    crate::environment::Environment::current().require_release_updates().is_ok()
-        && install::require_standalone(executable).is_ok()
-        && service::installed()
-        && service::require_executable(executable).is_ok()
+fn require_self_updating(executable: &Path) -> Result<()> {
+    crate::environment::Environment::current().require_release_updates()?;
+    install::require_standalone(executable)?;
+    ensure!(
+        service::installed(),
+        "background updates require an installed host service; run `codync-host update` in a terminal"
+    );
+    service::require_executable(executable)
+}
+
+/// When the desktop app that bundles this host last polled `/health` (ms; 0: never).
+static APP_POLLED: AtomicI64 = AtomicI64::new(0);
+
+/// The app polls every 5 s: quiet for longer, it isn't open to carry out a request.
+const APP_POLL_TTL_MS: i64 = 15_000;
+
+/// When an update was last asked of that app (ms; 0: never). Its main process sees it in
+/// `/health` and runs its own updater.
+static APP_REQUESTED: AtomicI64 = AtomicI64::new(0);
+
+/// How long a request waits for the app: one it never saw doesn't update the app days later.
+const APP_REQUEST_TTL_MS: i64 = 10 * 60 * 1000;
+
+/// `at` (ms; 0: never) when it was less than `ttl` ms before `now`.
+fn recent(at: i64, now: i64, ttl: i64) -> Option<i64> {
+    (at > 0 && now - at < ttl).then_some(at)
+}
+
+/// The desktop app polled `/health`: it's open to carry out an update request.
+pub fn note_app_poll() {
+    APP_POLLED.store(crate::store::now_ms(), Ordering::Release);
+}
+
+/// Who carries out `installHostUpdate` on this computer.
+enum Route {
+    /// The desktop app that bundles this host, through `/health`.
+    App,
+    /// The independent updater (`spawn_worker`).
+    Worker,
+}
+
+/// How `installHostUpdate` updates this computer, or why it can't: both what `hello.canUpdate`
+/// promises and what the call does. Homebrew and development builds update through their owners.
+fn route(executable: &Path) -> Result<Route> {
+    if install::method(executable) != install::Method::AppBundle {
+        require_self_updating(executable)?;
+        release::platform()?;
+        return Ok(Route::Worker);
+    }
+    crate::environment::Environment::current().require_release_updates()?;
+    ensure!(
+        recent(APP_POLLED.load(Ordering::Acquire), crate::store::now_ms(), APP_POLL_TTL_MS).is_some(),
+        "Codync isn't open on this computer. Open it, then try again."
+    );
+    Ok(Route::App)
+}
+
+/// The latest release a lookup found, whatever installed this host (`latest_version`).
+static LATEST: Mutex<Option<String>> = Mutex::new(None);
+
+fn note_latest(version: &str) {
+    *LATEST.locked() = Some(version.to_owned());
+}
+
+/// The latest release for this platform (`hello.latestVersion`), so a phone can say whether this computer is
+/// current and offer the update. None until a lookup succeeds and on development builds; also on a host
+/// Homebrew owns, which `brew` updates.
+pub fn latest_version() -> Option<String> {
+    let homebrew = service::current_exe().is_ok_and(|exe| install::method(&exe) == install::Method::Homebrew);
+    LATEST.locked().clone().filter(|_| !homebrew)
+}
+
+/// Looks up the latest release at start and every 6 hours, for `latest_version`; a failed lookup (offline
+/// at login, GitHub unreachable) is tried again sooner, from a minute up to every 30 minutes. Release builds
+/// on platforms with releases only: a development host never offers one.
+pub async fn release_watch() {
+    if crate::environment::Environment::current() != crate::environment::Environment::Main
+        || release::platform().is_err()
+    {
+        return;
+    }
+    let mut retry = Duration::from_mins(1);
+    loop {
+        let wait = match release::latest().await {
+            Ok(release) => {
+                note_latest(&release.version);
+                retry = Duration::from_mins(1);
+                Duration::from_hours(6)
+            }
+            Err(error) => {
+                tracing::debug!(error = format!("{error:#}"), "latest release lookup failed");
+                let wait = retry;
+                retry = (retry * 5).min(Duration::from_mins(30));
+                wait
+            }
+        };
+        tokio::time::sleep(wait).await;
+    }
+}
+
+/// Whether `installHostUpdate` can update this computer (`hello.canUpdate`).
+pub fn installable() -> bool {
+    service::current_exe().is_ok_and(|executable| route(&executable).is_ok())
+}
+
+/// Installs the latest release now (`installHostUpdate`).
+pub fn request_install(port: u16, force: bool) -> Result<()> {
+    match route(&service::current_exe()?)? {
+        Route::App => {
+            APP_REQUESTED.store(crate::store::now_ms(), Ordering::Release);
+            Ok(())
+        }
+        Route::Worker => spawn_worker(port, force),
+    }
+}
+
+/// The update asked of the app that bundles this host and not yet expired (when, in ms).
+pub fn app_requested() -> Option<i64> {
+    recent(APP_REQUESTED.load(Ordering::Acquire), crate::store::now_ms(), APP_REQUEST_TTL_MS)
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -44,10 +166,6 @@ struct State {
     available_version: Option<String>,
     checked_at: Option<i64>,
     error: Option<String>,
-    /// `waitingForApp`: the iPhone app the available release needs.
-    required_app: Option<String>,
-    /// `waitingForApp`: what the App Store has (`None`: couldn't ask it).
-    app_store_version: Option<String>,
 }
 
 fn read<T: serde::de::DeserializeOwned + Default>(name: &str) -> Result<T> {
@@ -89,7 +207,7 @@ fn status_at(executable: &Path) -> Result<Value> {
     let config: Config = read("update-config.json")?;
     Ok(json!({
         "currentVersion": env!("CARGO_PKG_VERSION"), "method": install::method(executable),
-        "automatic": config.automatic && self_updating(executable), "state": state,
+        "automatic": config.automatic && require_self_updating(executable).is_ok(), "state": state,
     }))
 }
 
@@ -113,16 +231,11 @@ pub async fn check() -> Result<Value> {
     state.checked_at = Some(crate::store::now_ms());
     match release::latest().await {
         Ok(release) => {
+            note_latest(&release.version);
             let available = (semver::Version::parse(&release.version)?
                 > semver::Version::parse(env!("CARGO_PKG_VERSION"))?)
             .then_some(release.version);
-            // Still the release that waits for the iPhone app: keep saying why.
-            let waiting = state.phase == "waitingForApp" && available.is_some() && available == state.available_version;
-            if !waiting {
-                state.phase = if available.is_some() { "available" } else { "upToDate" }.into();
-                state.required_app = None;
-                state.app_store_version = None;
-            }
+            state.phase = if available.is_some() { "available" } else { "upToDate" }.into();
             state.available_version = available;
             state.error = None;
         }
@@ -137,7 +250,7 @@ pub async fn check() -> Result<Value> {
     status()
 }
 
-pub async fn apply(port: u16, force: bool, skip_app_check: bool, worker: bool) -> Result<Value> {
+pub async fn apply(port: u16, force: bool, worker: bool) -> Result<Value> {
     crate::environment::Environment::current().require_release_updates()?;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     let _lock = loop {
@@ -162,15 +275,8 @@ pub async fn apply(port: u16, force: bool, skip_app_check: bool, worker: bool) -
         state.available_version = Some(release.version.clone());
         state.phase = "installing".into();
         write("update-state.json", &state)?;
-        match install::apply(&release, &target, port, force, skip_app_check).await? {
-            crate::compat::Gate::Proceed => state.phase = "complete".into(),
-            // Not a failure: the next check installs it once the App Store has that app.
-            crate::compat::Gate::WaitForApp { required, store } => {
-                state.phase = "waitingForApp".into();
-                state.required_app = Some(required);
-                state.app_store_version = store;
-            }
-        }
+        install::apply(&release, &target, port, force).await?;
+        state.phase = "complete".into();
         Ok::<_, anyhow::Error>(())
     }
     .await;
@@ -191,29 +297,19 @@ pub async fn apply(port: u16, force: bool, skip_app_check: bool, worker: bool) -
 
 /// The updater must live outside the daemon's job/cgroup. Otherwise stopping
 /// the host would also kill the process responsible for starting its replacement.
-pub fn spawn_worker(port: u16, force: bool, skip_app_check: bool) -> Result<()> {
+pub fn spawn_worker(port: u16, force: bool) -> Result<()> {
     crate::environment::Environment::current().require_release_updates()?;
     let _lock = lock()?;
     let previous: State = read("update-state.json")?;
     ensure!(!awaiting_worker(&previous), "a host update is already starting");
     let executable = service::current_exe()?;
-    install::require_standalone(&executable)?;
-    ensure!(
-        service::installed(),
-        "background updates require an installed host service; run `codync-host update` in a terminal"
-    );
-    service::require_executable(&executable)?;
+    require_self_updating(&executable)?;
     let mut args = vec!["update".to_owned(), "--worker".to_owned(), "--port".to_owned(), port.to_string()];
     if force {
         args.push("--force".to_owned());
     }
-    if skip_app_check {
-        args.push("--skip-app-check".to_owned());
-    }
     let mut state = State { phase: "scheduled".into(), checked_at: Some(crate::store::now_ms()), ..previous };
     state.error = None;
-    state.required_app = None;
-    state.app_store_version = None;
     write("update-state.json", &state)?;
     if let Err(error) = spawn_job(&executable, &args) {
         state.phase = "failed".into();
@@ -263,38 +359,23 @@ pub async fn automatic_loop(hub: Arc<Hub>) {
         return;
     }
     let mut last_check = None;
-    let mut last_store_probe = None;
     loop {
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(Duration::from_mins(1)).await;
         let enabled = read::<Config>("update-config.json").is_ok_and(|c| c.automatic);
         if !enabled || hub.busy() {
             continue;
         }
-        // Waiting for the iPhone app: look at the App Store hourly and update as soon as it's
-        // there, instead of at the next daily check.
-        if let Ok(state) = read::<State>("update-state.json")
-            && state.phase == "waitingForApp"
-            && let Some(required) = state.required_app
-            && last_store_probe.is_none_or(|at: tokio::time::Instant| at.elapsed() >= Duration::from_secs(60 * 60))
-        {
-            last_store_probe = Some(tokio::time::Instant::now());
-            if let Ok(Some(store)) = crate::compat::app_store_version().await
-                && !crate::compat::below(&store, &required)
-            {
-                last_check = None;
-            }
-        }
-        if last_check.is_some_and(|at: tokio::time::Instant| at.elapsed() < Duration::from_secs(24 * 60 * 60)) {
+        if last_check.is_some_and(|at: tokio::time::Instant| at.elapsed() < Duration::from_hours(24)) {
             continue;
         }
         last_check = Some(tokio::time::Instant::now());
-        if !service::current_exe().is_ok_and(|exe| self_updating(&exe)) {
+        if !service::current_exe().is_ok_and(|exe| require_self_updating(&exe).is_ok()) {
             continue;
         }
         match check().await {
             Ok(status) if status["state"]["availableVersion"].is_string() => {
                 let port = hub.port;
-                match tokio::task::spawn_blocking(move || spawn_worker(port, false, false)).await {
+                match tokio::task::spawn_blocking(move || spawn_worker(port, false)).await {
                     Ok(Ok(())) => {}
                     result => tracing::warn!(?result, "could not start automatic host update"),
                 }

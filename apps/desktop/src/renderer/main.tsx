@@ -12,7 +12,8 @@ import { errorReport } from '@shared/error-report'
 
 // Error tracking: this window's uncaught errors go to the host (shared/error-report.ts).
 const report = (error: unknown, mechanism: string) => window.codync.app.reportError(errorReport(error, 'desktop-renderer', mechanism))
-window.addEventListener('error', (e) => report(e.error, 'onerror'))
+// An error event without an error (the ResizeObserver loop notice) has nothing to report.
+window.addEventListener('error', (e) => { if (e.error != null) report(e.error, 'onerror') })
 window.addEventListener('unhandledrejection', (e) => report(e.reason, 'unhandledrejection'))
 
 const page = new URLSearchParams(location.search).get('window') ?? 'chat'

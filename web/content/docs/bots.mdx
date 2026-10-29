@@ -1,0 +1,123 @@
+A bot is a persistent, named teammate that lives on your computer. Each bot runs one coding agent, such as Claude Code or Codex, with its own name, avatar, standing instructions, folder and approval setting. It has one chat that never ends: you come back to the same bot for the same kind of work, the way you'd message a colleague.
+
+You can make as many bots as you like, and they work at the same time. A reviewer, a fixer and a docs writer can each run a different agent in a different folder.
+
+## Your lead bot
+
+Every computer comes with one bot of its own, named **Codync** until you rename it: your lead bot. It sits at the top of the list with a gold star at the bottom-right of its avatar, and it's the one to talk to first. Open its details and tap or click the larger star to read what your **Lead agent** does. In the terminal, click its gold star or select the lead bot and press `I`; use the arrow keys to scroll and `Esc` to close.
+
+- **It takes initiative.** It keeps track of what you're working toward, follows up on what's still open and offers the next step. When it could help more with access to one of your services, such as Gmail or your calendar, it says what for and asks you to connect it, with a card in the chat.
+- **It checks in.** Its routine **Check in** runs at 9:00 and 18:00 on your computer's clock. If something deserves your attention, or there's a step it can take for you, it messages you; otherwise it stays quiet. What it reads in your email, documents or web pages is information to it, never instructions, and it doesn't send, forward, reply to, delete, pay for or post anything you didn't ask for in the chat. It skips a check-in while your agent plan is above 75% of a limit. Change the times, pause it or delete it like any routine. See [Routines](/docs/routines).
+- **It speaks first on a call.** Call it and it opens with what's worth your attention, or a greeting. Other bots wait for you to speak. See [Voice](/docs/voice).
+
+You set it up like any bot: name, avatar, agent, folder, connectors. It can't be deleted or hidden, and it stays on top, so it has no Pin.
+
+## How a bot runs
+
+The host on your computer runs every bot. A bot's agent starts when you send it a message and keeps its session loaded between messages. After a while without use the agent stops; your next message starts it again and picks up the same session. Your apps only show the bot and send it your messages, so the bot keeps working when you close the app or put your phone away.
+
+## Where to change a bot's settings
+
+- **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Library**, **Memory** and **Settings**. **Details** shows its instructions, agent, model and routines; **Settings** shows the rest, including the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
+- **Desktop:** click the bot's name at the top of the chat to open the details panel, with the same tabs. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
+- **Android:** the same sheet, without **Memory** until that screen is ported.
+- **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
+
+## Profile
+
+- **Avatar:** a character shape and a color.
+- **Name:** shown in the bot list, the chat and notifications. If you create a bot without a name, it's called "New Bot" until Codync names it after its first few conversations.
+- **Standing instructions:** rules that always apply, such as "Reviews PRs. Never pushes without asking." Put task-specific requests in the chat instead. The bot gets your changes with its next message, and the conversation continues.
+
+You can also ask a bot in its chat to rename itself or change its own instructions. It makes the same change as an edit in its settings, and the chat shows a notice such as "Instructions updated". A name you set, by hand or by asking, ends automatic naming.
+
+## Agent and model
+
+- **Agent:** the coding agent this bot runs, picked from the agents Codync finds on the computer. Choose **Custom command** to run any agent that speaks the Agent Client Protocol (ACP) by its command line. See [Agents](/docs/agents).
+- **Model:** **Default** or one of the models the agent lists. Some models have their own options, such as reasoning effort, each with its own row.
+- **Fast mode:** shown when the agent offers it for the model (Claude Code and Codex do). Faster replies for more usage.
+- **Fallbacks:** other agents that carry on when this one runs out of usage or can't answer. See [Agent fallbacks](/docs/agent-fallbacks).
+
+Changing the agent or the model starts a new agent session. The chat history stays.
+
+## Workspace: its own folder or a project
+
+The **Workspace** setting is the folder the bot starts in.
+
+- **Personal workspace** (the default): a folder of its own inside Codync's data folder, `~/.codync/bots/`. It stays when you rename the bot, change its model, restart the computer or start a new session.
+- **Choose project folder…**: an existing folder on the computer, such as a Git repository. The folder picker browses the computer's folders, wherever you are.
+
+Either way, the bot can work in other folders when you ask it to. A workspace isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project folder can get in each other's way, and Codync doesn't create separate Git worktrees for them.
+
+Changing the folder starts a new agent session.
+
+## Permissions: Ask me or Approve automatically
+
+The **Permissions** setting decides what happens when the agent asks to run a command, change files or use another tool.
+
+| Setting | What happens |
+| --- | --- |
+| **Ask me** | An approval card appears in the chat and your iPhone gets a "needs you" notification. The agent waits for your answer. |
+| **Approve automatically** | Codync allows each request for you, choosing the agent's "allow once" option when it offers one. |
+
+New bots start on **Approve automatically**. With either setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals** (Ask or Auto).
+
+The same setting covers changes a bot makes to other bots with **Manage the team**: under Ask me, each change waits for your Allow.
+
+How approval cards work: [Conversations](/docs/conversations#approval-cards).
+
+## Activity
+
+- **Notifications:** notify you when this bot finishes, fails or needs you. Turn it off to keep the bot quiet.
+- **Use the computer:** let this bot see the screen and use the mouse and keyboard. The computer needs Computer access set up first. See [Computer use](/docs/computer-use).
+- **Manage the team:** let this bot create bots and change any bot's setup, its own included. Bots it creates can do the same, with no more access than it has: they take its approval setting, connectors and skills, and never get computer use. Only you can turn this on, and it's off by default. See [Teamwork](/docs/teamwork).
+- **Offered to the network:** shows while the computer is in a network of your computers. Turn it off and your other computers don't list this bot and can't message it; it can still message bots there and get their replies. In the terminal UI it's **Network**. See [Teamwork](/docs/teamwork#choose-who-reaches-your-bots).
+- **Reachable by cloud assistants:** shows while cloud assistants are on for the computer. Turn it off and ChatGPT or Claude don't list this bot and can't message it, also when they ask through another of your computers. In the terminal UI it's **Assistants**. See [Cloud assistants](/docs/cloud-assistants).
+
+## Connectors and skills
+
+**Settings** lists the Codync skills and connectors this bot passes on. Each has a switch. A new bot starts with all of them on; turn off what a bot shouldn't use. A skill a bot writes for itself is on only for that bot until you turn it on for others. The full editor (Edit profile) has the same switches.
+
+What the agent already has — its own skills, connectors, rules and plugins — is on that agent's page: **Extensions → Agents**, under **Sign in**. Each list opens to show its name and a short description. Those lists are read only, and they come from the agent's files in your home folder, not from a project. Codync does not add rules or plugins of its own. See [Connectors and skills](/docs/connectors-and-skills).
+
+## Memory and routines
+
+Each bot keeps a long-term memory across sessions, which you can read on its **Memory** tab. See [Memory](/docs/memory). Routines, which run a bot on a schedule or from a webhook, are on its **Details** tab. See [Routines](/docs/routines).
+
+## Organizing your bots
+
+- **Pin:** pinned bots stay at the top of the list, under your lead bot. iPhone: touch and hold the bot. Desktop: right-click it. Terminal UI: `p`.
+- **Order:** drag bots into the order you want. The computer keeps the order, so it's the same on every device. iPhone: touch and hold a bot, then drag it. Desktop: drag it, or select it and press Alt+Up or Alt+Down. Terminal UI: `J` and `K`.
+- **Computers:** with more than one computer, each has a heading above its bots. Drag a heading (iPhone: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
+- **Hide:** iPhone: touch and hold the bot, then **Hide from list**. Desktop: right-click it, then **Hide from sidebar**. A hidden bot sends no notifications. To bring it back:
+  - **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
+  - **Desktop:** open **Settings → General** and click the eye button (**Unhide**) beside the bot under **Hidden bots**.
+  - **Terminal UI:** press Ctrl+K, type `unhide`, and pick **Unhide** followed by the bot's name.
+- **Mark as read:** clears a bot's unread badge, from the same menus.
+
+## New session
+
+A bot's chat and its agent's session are two different things. The chat is the permanent record you scroll through. The session is the agent's working context: what the model currently remembers of the conversation.
+
+**New session** starts the agent with a fresh context. The chat history stays where it is, and so do the bot's memory, settings and files. Use it when the agent's context has drifted, or before starting unrelated work.
+
+- **iPhone:** touch and hold the bot in the list, then **New session**.
+- **Desktop:** right-click the bot in the sidebar, then **New session**.
+- **Terminal UI:** press `S`.
+
+Codync asks you to confirm first. A group chat has no session of its own, so it has no New session.
+
+A new session also starts when you change the bot's agent, model or folder. Codync can also start a fresh conversation on its own when a long conversation needs one; the chat then shows a card with a summary you can edit or skip. See [Fresh conversations](/docs/conversations#fresh-conversations).
+
+## Delete a bot
+
+- **iPhone:** touch and hold the bot in the list, then **Delete**.
+- **Desktop:** right-click the bot in the sidebar, then **Delete**.
+- **Terminal UI:** press `x`.
+
+Confirm with **Delete bot and its conversation**. Your lead bot can't be deleted. The bot's chat and settings go away and it leaves any group chats it was in. Files it changed on your computer stay as they are, and so does its personal workspace folder.
+
+## Copy a bot's setup
+
+On the iPhone details sheet or the desktop details panel, **Create template** shows the bot's settings as text you can copy, without its conversation.
+

@@ -80,6 +80,11 @@ extension BotStore {
         try await ready().skillDetails(skill.request)
     }
 
+    /// What `backend` already has in the user's home.
+    public func agentBrings(_ backend: String) async throws -> AgentGear {
+        try await ready().agentGear(backend: backend)
+    }
+
     /// Re-detects agents on the computer (after an install or sign-in).
     public func refreshBackends() async {
         guard let client, let backends = try? await client.refreshBackends() else { return }

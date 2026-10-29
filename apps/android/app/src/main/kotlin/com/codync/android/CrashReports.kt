@@ -13,8 +13,8 @@ import kotlinx.serialization.json.put
 
 /**
  * Crashes as `$exception` events for PostHog Error Tracking (iOS `CrashReports`): an uncaught
- * exception is written down as it happens and sent on the next launch, with the exception's type
- * and frames but never its message.
+ * exception is written down as it happens, with its session, and sent on the next launch, with the
+ * exception's type and frames but never its message.
  */
 internal object CrashReports {
     private const val MAX_FRAMES = 50
@@ -29,7 +29,12 @@ internal object CrashReports {
         }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching { if (Analytics.enabled) file.writeText(JsonObject(properties(error)).toString()) }
+            runCatching {
+                if (Analytics.enabled) {
+                    val session = "\$session_id" to JsonPrimitive(Analytics.sessionId())
+                    file.writeText(JsonObject(properties(error) + session).toString())
+                }
+            }
             previous?.uncaughtException(thread, error)
         }
     }

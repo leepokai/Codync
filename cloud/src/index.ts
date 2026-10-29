@@ -5,6 +5,7 @@
 import * as api from "./api";
 import { ApiError, type Ctx } from "./api";
 import type { ComputerRelay } from "./relay";
+import { nudgeReleaseGate } from "./release-gate";
 
 export { ComputerRelay } from "./relay";
 
@@ -19,18 +20,26 @@ export interface Env {
   TURN_LIMITER?: RateLimit;
   /** Public routine webhook deliveries per sender IP and hook. */
   HOOK_LIMITER?: RateLimit;
+  /** Cloud assistant (MCP connector) requests per account. */
+  ASSISTANT_LIMITER?: RateLimit;
   CLERK_ISSUER: string;
   CLERK_SECRET_KEY?: string;
   /** dev / e2e only: networkless verification with this public key. */
   CLERK_JWT_KEY?: string;
   CLERK_AUTHORIZED_PARTIES?: string;
   CLERK_WEBHOOK_SECRET?: string;
+  /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
+  RELEASE_GATE_TOKEN?: string;
 }
 
 type Handler = (c: Ctx, params: string[]) => Promise<unknown>;
 
 /** Above every route's own limit (64 KB bodies); the routes check theirs. */
 const MAX_REQUEST = 128 * 1024;
+
+/** wrangler.toml's crons, matched exactly: one that matches neither throws. */
+const SWEEP_CRON = "*/15 * * * *";
+const RELEASE_GATE_CRON = "*/5 * * * *";
 
 const ID = "([A-Za-z0-9_-]{1,64})";
 const routes: [string, RegExp, Handler][] = [
@@ -64,6 +73,12 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/v1\/relay\/device\/([^/]+)$/, api.relayDevice],
   ["POST", /^\/v1\/webhooks\/clerk$/, api.clerkWebhook],
   ["POST", new RegExp(`^/v1/hooks/${ID}/${ID}$`), api.routineHook],
+  // The cloud assistant's MCP connector (mcp.codync.dev, §7.9).
+  ["POST", /^\/mcp$/, api.mcp],
+  ["GET", /^\/mcp$/, api.mcpStream],
+  ["GET", /^\/\.well-known\/oauth-protected-resource(?:\/mcp)?$/, api.resourceMetadata],
+  ["GET", /^\/\.well-known\/oauth-authorization-server$/, api.authServerMetadata],
+  ["OPTIONS", /^\/(?:mcp|\.well-known\/oauth-[a-z-]+(?:\/mcp)?)$/, api.assistantPreflight],
 ];
 
 export default {
@@ -89,7 +104,9 @@ export default {
     }
   },
 
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await api.sweep(env, Date.now());
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    if (controller.cron === RELEASE_GATE_CRON) await nudgeReleaseGate(env);
+    else if (controller.cron === SWEEP_CRON) await api.sweep(env, Date.now());
+    else throw new Error(`unknown cron ${controller.cron}`);
   },
 } satisfies ExportedHandler<Env>;

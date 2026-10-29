@@ -2,15 +2,43 @@ import UIKit
 
 /// Only one owner moves the list: the reader, a jump animation, or passive end-following.
 class ConversationCollectionView: UICollectionView {
+    let keyboardDismissTapDelegate = ConversationBackgroundTapDelegate()
     static let nearEnd: CGFloat = 32
-    var following = true
+    var following = true {
+        didSet { if !following { needsViewportFollow = false } }
+    }
+    private(set) var updatingViewport = false
+    private var needsViewportFollow = false
     private(set) var scrollingToEnd = false
     private var displayLink: CADisplayLink?
     private var lastFrame: TimeInterval?
     private var motion = ConversationScrollMotion()
 
+    @objc func dismissComposerKeyboard() {
+        // The composer is a sibling of the collection, not one of its descendants.
+        window?.endEditing(true)
+    }
+
     var endOffset: CGFloat {
         max(contentSize.height + adjustedContentInset.bottom - bounds.height, -adjustedContentInset.top)
+    }
+
+    /// Keyboard/composer layout is one change: intermediate offsets aren't reader scrolling.
+    func updateViewport(frame: CGRect, insets: UIEdgeInsets, indicators: UIEdgeInsets) {
+        guard self.frame != frame || contentInset != insets else { return }
+        updatingViewport = true
+        defer { updatingViewport = false }
+        if following { needsViewportFollow = true }
+        self.frame = frame
+        contentInset = insets
+        verticalScrollIndicatorInsets = indicators
+        layoutIfNeeded()
+        if following { pinToEnd() }
+        if needsViewportFollow, window != nil { startFrames() }
+    }
+
+    func followingAfterInteraction() -> Bool {
+        (following && needsViewportFollow) || endOffset - contentOffset.y < Self.nearEnd
     }
 
     override func layoutSubviews() {
@@ -21,11 +49,13 @@ class ConversationCollectionView: UICollectionView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window == nil { cancelScrollingToEnd() }
+        else if needsViewportFollow { startFrames() }
     }
 
     func pinToEnd() {
         // Every caller must yield to UIKit until the drag and its rubber-band return finish.
         guard !scrollingToEnd, !isTracking, !isDragging, !isDecelerating else { return }
+        needsViewportFollow = false
         let end = endOffset
         if abs(contentOffset.y - end) > 0.5 { contentOffset.y = end }
     }
@@ -57,6 +87,10 @@ class ConversationCollectionView: UICollectionView {
             return pinToEnd()
         }
         scrollingToEnd = true
+        startFrames()
+    }
+
+    private func startFrames() {
         // Repeated requests retarget the existing motion; they never rewind or restart it.
         guard displayLink == nil else { return }
         motion = ConversationScrollMotion()
@@ -74,6 +108,14 @@ class ConversationCollectionView: UICollectionView {
     }
 
     fileprivate func advance(_ link: CADisplayLink) {
+        // A stationary touch has no drag-end callback. Resume viewport following once UIKit
+        // releases it, without moving the content while a touch or deceleration owns it.
+        if !scrollingToEnd {
+            guard following, needsViewportFollow else { return cancelScrollingToEnd() }
+            pinToEnd()
+            if !needsViewportFollow { cancelScrollingToEnd() }
+            return
+        }
         guard following, !isTracking, !isDecelerating else { return cancelScrollingToEnd() }
         // Measure only the current viewport. Do not jump offscreen to pre-size estimated rows.
         layoutIfNeeded()
@@ -98,5 +140,12 @@ class ConversationCollectionView: UICollectionView {
     @objc func tick(_ link: CADisplayLink) {
         guard let view else { return link.invalidate() }
         view.advance(link)
+    }
+}
+
+/// Keep tap filtering off the scroll view, which also delegates its own pan gesture.
+final class ConversationBackgroundTapDelegate: NSObject, UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        touch.view === gestureRecognizer.view
     }
 }

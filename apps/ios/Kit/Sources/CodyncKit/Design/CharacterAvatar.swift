@@ -293,7 +293,7 @@ public struct GroupAvatar: View {
                 if members.count == 4 {
                     place(members[3], size * 0.5, .bottomTrailing)
                 } else {
-                    Text("+\(members.count - 3)")
+                    Text(L10n.tr("+\(members.count - 3)"))
                         .font(.system(size: size * 0.24, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
                         .frame(width: size * 0.5, height: size * 0.5)
@@ -328,7 +328,7 @@ public struct AvatarWithStatus: View {
         Group {
             if bot.isGroup { GroupAvatar(members: members, size: size) } else { CharacterAvatar(bot: bot, size: size) }
         }
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: bot.lead ? .topTrailing : .bottomTrailing) {
                 if bot.needsInput {
                     Image(systemName: "exclamationmark")
                         .font(.system(size: size * 0.2, weight: .black))
@@ -342,6 +342,9 @@ public struct AvatarWithStatus: View {
                         .frame(width: size * 0.28, height: size * 0.28)
                         .overlay(Circle().stroke(Palette.background, lineWidth: 2))
                 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if bot.lead { LeadAgentBadge(size: max(12, size * 0.34)) }
             }
     }
 }

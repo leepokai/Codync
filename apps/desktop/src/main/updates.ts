@@ -1,11 +1,10 @@
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, powerMonitor, shell } from 'electron'
 import electronUpdater, { type UpdateInfo } from 'electron-updater'
-import { isBelow, parseVersion } from '../shared/compat'
 import type { UpdateState } from '../shared/ipc'
 import { isMainEnvironment } from './account'
 import { identity } from './environment'
@@ -20,8 +19,35 @@ const { autoUpdater } = electronUpdater
  * stopped first, and a restart marker makes the next launch reinstall it from the new bundle.
  */
 const enabled = app.isPackaged && isMainEnvironment()
+const shipIt = `${identity.appId}.ShipIt`
 
-export class Updates extends EventEmitter {
+const bundlePath = () => join(app.getPath('exe'), '../../..')
+
+/** How long another device's update request lasts: as long as that device shows it updating. */
+const REQUEST_WAIT = 10 * 60_000
+
+/**
+ * macOS's installer (ShipIt) cancels when the old app runs again while it swaps the bundle
+ * ("App Still Running"), and someone who sees no window for those seconds opens it. An old copy
+ * launched during an install quits at once and opens the app again once the installer stops:
+ * the new release after an install, this one after a failed attempt.
+ */
+export function yieldsToInstall(): boolean {
+  const pending = prefs.get('updateInstalling') as { version: string; at: number } | undefined
+  if (!pending) return false
+  const installing = pending.version !== app.getVersion() && Date.now() - pending.at < 120_000 && shipItRunning()
+  if (installing) reopenAfterInstall()
+  else prefs.set('updateInstalling', undefined)
+  return installing
+}
+
+/** A detached wait (two minutes at most) for the installer job to stop, then `open`. */
+function reopenAfterInstall() {
+  const script = 'for _ in $(seq 120); do /bin/launchctl list "$0" 2>/dev/null | grep -q \'"PID" =\' || break; sleep 1; done; exec /usr/bin/open "$1"'
+  spawn('/bin/sh', ['-c', script, shipIt, bundlePath()], { detached: true, stdio: 'ignore' }).unref()
+}
+
+export class Updates extends EventEmitter<{ change: []; upToDate: []; setAutoCheck: [on: boolean]; setAutoDownload: [on: boolean] }> {
   state: UpdateState = {
     supported: enabled,
     checking: false,
@@ -34,15 +60,18 @@ export class Updates extends EventEmitter {
     autoDownload: prefs.get('updatesAutoDownload') !== false,
     lastCheck: (prefs.get('updatesLastCheck') as number | undefined) ?? null,
     error: null,
-    waitingForApp: null,
   }
   private userInitiated = false
   /** The person chose Update: restart into the release as soon as it's downloaded. */
   private installWhenDownloaded = false
+  /**
+   * Until when another device's request to update this computer (`installHostUpdate`) lasts: the
+   * release downloads, and installs once no bot is working without waiting for the person.
+   */
+  private requestedUntil = 0
   private preparing: Promise<boolean> | null = null
   private prepared = false
   private updateGeneration = 0
-  private appStoreVersion: string | null = null
 
   constructor(private host: HostController) {
     super()
@@ -65,14 +94,15 @@ export class Updates extends EventEmitter {
     // `app.focus` there (cooperative activation); opening its own bundle brings it forward.
     if (prefs.get('updateRelaunchInFront') === true) {
       prefs.set('updateRelaunchInFront', false)
-      if (process.platform === 'darwin') void shell.openPath(join(app.getPath('exe'), '../../..'))
+      if (process.platform === 'darwin') void shell.openPath(bundlePath())
     }
 
+    this.host.on('updateRequested', () => this.installRequested())
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.on('checking-for-update', () => this.set({ checking: true, error: null }))
     autoUpdater.on('update-not-available', () => this.upToDate())
-    autoUpdater.on('update-available', (info) => void this.available(info))
+    autoUpdater.on('update-available', (info) => this.available(info))
     autoUpdater.on('download-progress', ({ percent }) => {
       const rounded = Math.floor(percent)
       if (this.state.downloadPercent !== null && rounded !== this.state.downloadPercent) this.set({ downloadPercent: rounded })
@@ -124,16 +154,22 @@ export class Updates extends EventEmitter {
     this.set({ checking: false, lastCheck: now, ...change })
   }
 
+  /** A check the person asked for answers even when there's nothing new (`upToDate`). */
   private upToDate() {
     this.installWhenDownloaded = false
+    this.requestedUntil = 0
+    const asked = this.userInitiated
     this.userInitiated = false
     this.checked({ availableVersion: null })
+    if (asked) this.emit('upToDate')
   }
 
   private failed(error: unknown) {
     this.updateGeneration++
     this.installWhenDownloaded = false
+    this.requestedUntil = 0
     prefs.set('updateRelaunchInFront', false)
+    prefs.set('updateInstalling', undefined)
     // A preparation still stopping the host restores it after stop completes.
     if (this.prepared) {
       this.prepared = false
@@ -144,11 +180,10 @@ export class Updates extends EventEmitter {
     this.userInitiated = false
   }
 
-  /** Daily, or hourly while a release waits for the iPhone app to pass review. */
+  /** Checks daily; the minute of slack keeps the hourly timer from skipping a day. */
   private scheduled() {
     if (!this.state.autoCheck || this.state.checking || this.state.staged) return
-    const interval = this.state.waitingForApp ? 3600_000 : 24 * 3600_000
-    if (this.state.lastCheck && Date.now() - this.state.lastCheck < interval - 60_000) return
+    if (this.state.lastCheck && Date.now() - this.state.lastCheck < 24 * 3600_000 - 60_000) return
     this.userInitiated = false
     void autoUpdater.checkForUpdates().catch(() => {})
   }
@@ -165,59 +200,44 @@ export class Updates extends EventEmitter {
 
   /** The sidebar's Update badge: restarts into the available release, downloading it first. */
   installNow() {
-    if (!enabled || !this.state.availableVersion || this.state.waitingForApp) return
+    if (!enabled || !this.state.availableVersion) return
     if (this.state.staged) return void this.install(true)
     this.installWhenDownloaded = true
     this.check()
   }
 
+  /** Another device asked this computer to update: download the release and restart into it in the background. */
+  private installRequested() {
+    this.requestedUntil = Date.now() + REQUEST_WAIT
+    if (this.state.staged) return this.installWhenIdle()
+    if (this.state.checking || this.state.downloadPercent !== null) return
+    void autoUpdater.checkForUpdates().catch(() => {})
+  }
+
+  private get requested() {
+    return Date.now() < this.requestedUntil
+  }
+
   /**
-   * A release that needs a newer iPhone app than the App Store has (still in review) waits,
-   * so paired iPhones aren't asked for an update they can't get yet. Without an answer from
-   * the App Store, background checks wait and a check the person started goes ahead.
+   * The release GitHub marks latest, which the release gate gives only to one the App Store's
+   * iPhone app works with (docs/reference/compatibility.md).
    */
-  private async available(info: UpdateInfo) {
-    const required = (info as UpdateInfo & { minApp?: string }).minApp
-    let waiting: string | null = null
-    if (required) {
-      const [hostMinApp, iphones] = await this.localHostFacts()
-      this.appStoreVersion = (await appStoreVersion()) ?? this.appStoreVersion
-      const storeHas = this.appStoreVersion && parseVersion(this.appStoreVersion) && !isBelow(this.appStoreVersion, required)
-      if (isBelow(hostMinApp ?? '0', required) && iphones !== false && !storeHas && !(this.appStoreVersion === null && this.userInitiated)) {
-        waiting = required
-      }
-    }
-    this.checked({ availableVersion: info.version, waitingForApp: waiting })
-    if (waiting) {
-      this.installWhenDownloaded = false
-      if (this.userInitiated) this.set({ error: `Codync ${info.version} needs the iPhone app ${waiting}, which isn't in the App Store yet. It installs once that version passes review.` })
-      this.userInitiated = false
-      return
-    }
-    if (this.userInitiated || this.state.autoDownload) {
+  private available(info: UpdateInfo) {
+    this.checked({ availableVersion: info.version })
+    if (this.userInitiated || this.state.autoDownload || this.requested) {
       this.set({ downloadPercent: 0 })
       void autoUpdater.downloadUpdate().catch(() => {})
     }
   }
 
-  /** The local host's `minApp` and whether an iPhone is paired with it. */
-  private async localHostFacts(): Promise<[string | null, boolean | null]> {
-    try {
-      const [hello, devices] = await Promise.all([
-        this.host.call<{ minApp?: string }>('hello'),
-        this.host.call<{ devices: { platform?: string }[] }>('devices'),
-      ])
-      return [hello.minApp ?? null, devices.devices.some((d) => d.platform === 'ios')]
-    } catch {
-      return [null, null]
-    }
-  }
-
-  /** Waits until the app is in the background, nobody has typed for ten minutes and no bot is working. */
+  /**
+   * Waits until no bot is working and, unless another device asked for the update, the app is in
+   * the background and nobody has typed for ten minutes.
+   */
   private installWhenIdle() {
     const timer = setInterval(async () => {
       if (!this.state.staged) return clearInterval(timer)
-      if (!this.state.autoDownload || BrowserWindow.getFocusedWindow() || powerMonitor.getSystemIdleTime() < 600) return
+      if (!this.requested && (!this.state.autoDownload || BrowserWindow.getFocusedWindow() || powerMonitor.getSystemIdleTime() < 600)) return
       if (!(await this.host.isIdleForUpdate())) return
       clearInterval(timer)
       void this.install(false)
@@ -235,6 +255,8 @@ export class Updates extends EventEmitter {
           return false
         }
         this.prepared = true
+        // Both installer paths (Restart, and Quit with a staged update) pass here right before quitting.
+        prefs.set('updateInstalling', { version: this.state.availableVersion, at: Date.now() })
         this.set({ error: null })
         return true
       } catch (error) {
@@ -269,22 +291,20 @@ export class Updates extends EventEmitter {
  */
 function removeStuckShipIt() {
   if (process.platform !== 'darwin') return
-  const label = `${identity.appId}.ShipIt`
-  if (existsSync(join(homedir(), 'Library/Caches', label, 'ShipItState.plist'))) return
-  execFile('/bin/launchctl', ['list', label], (error, stdout) => {
+  if (existsSync(join(homedir(), 'Library/Caches', shipIt, 'ShipItState.plist'))) return
+  execFile('/bin/launchctl', ['list', shipIt], (error, stdout) => {
     // Not submitted, or running right now (the next check finds it idle).
     if (error || stdout.includes('"PID" =')) return
-    execFile('/bin/launchctl', ['remove', label], () => {})
+    execFile('/bin/launchctl', ['remove', shipIt], () => {})
   })
 }
 
-/** The iPhone app's version live in the App Store (iTunes lookup); null when unknown. */
-async function appStoreVersion(): Promise<string | null> {
+function shipItRunning() {
+  if (process.platform !== 'darwin') return false
   try {
-    const res = await fetch('https://itunes.apple.com/lookup?id=6760984418', { signal: AbortSignal.timeout(10_000), cache: 'no-store' })
-    const json = (await res.json()) as { results?: { version?: string }[] }
-    return json.results?.[0]?.version ?? null
+    return execFileSync('/bin/launchctl', ['list', shipIt], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).includes('"PID" =')
   } catch {
-    return null
+    // Not submitted.
+    return false
   }
 }

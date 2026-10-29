@@ -68,8 +68,14 @@ extension BotStore {
     }
 
     public func stop(_ botId: String) { perform(replay: true) { try await $0.stop(botId) } }
-    public func logCall(_ botId: String, seconds: Int) { perform { try await $0.logCall(botId, seconds: seconds) } }
+    /// A call's audio is on: the lead speaks first, on the call (an older host, which has no lead, never gets this).
+    public func callStarted(_ botId: String, call: String) {
+        guard bots[botId]?.lead == true else { return }
+        perform { try await $0.callStarted(botId, call: call) }
+    }
     public func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
+    /// The bot's own agent again, off the fallback it runs on.
+    public func switchBack(_ botId: String) { perform(replay: true) { try await $0.switchBack(botId) } }
 
     // MARK: remote screen
 
@@ -93,14 +99,13 @@ extension BotStore {
         }
     }
 
-    public func respond(_ entry: Entry, option: String?) {
+    /// A card's button: `entry` shows `choice` as answering (its spinner) while `op` runs.
+    private func answer(_ entry: Entry, _ choice: String, _ op: @escaping @MainActor (HostClient) async throws -> Void) {
         guard answering[entry.id] == nil else { return }
-        Motion.animate { answering[entry.id] = option ?? "" }
+        Motion.animate { answering[entry.id] = choice }
         Task {
             do {
-                try await withLink(replay: true) { try await $0.respondPermission(entryId: entry.id, optionId: option) }
-                // The card's own update follows on the events stream; hold the spinner until then.
-                try? await Task.sleep(for: .seconds(2))
+                try await withLink(replay: true, op)
             } catch {
                 lastError = error.localizedDescription
             }
@@ -108,18 +113,20 @@ extension BotStore {
         }
     }
 
-    struct ReadingScope: Hashable {
-        let botId: String
-        let thread: String?
+    public func respond(_ entry: Entry, option: String?) {
+        answer(entry, option ?? "") {
+            try await $0.respondPermission(entryId: entry.id, optionId: option)
+            // The card's own update follows on the events stream; hold the spinner until then.
+            try? await Task.sleep(for: .seconds(2))
+        }
     }
 
     /// Views register only while visible in an active scene. Multiple windows may
     /// read the same conversation without unregistering each other.
-    func setReading(_ token: UUID, botId: String, thread: String?, active: Bool) {
+    func setReading(_ token: UUID, botId: String, active: Bool) {
         if active {
-            let scope = ReadingScope(botId: botId, thread: thread)
-            readingViews[token] = scope
-            if connection == .online { markRead(botId, thread: thread) }
+            readingViews[token] = botId
+            if connection == .online { markRead(botId) }
         } else {
             readingViews[token] = nil
         }
@@ -127,15 +134,12 @@ extension BotStore {
 
     func acknowledgeVisibleConversations(_ botId: String, entry: Entry? = nil) {
         guard connection == .online else { return }
-        for scope in Set(readingViews.values) where scope.botId == botId {
-            if let entry, (!entry.isChat || entry.threadId != scope.thread) { continue }
-            markRead(botId, thread: scope.thread)
-        }
+        guard readingViews.values.contains(botId), entry?.isChat != false else { return }
+        markRead(botId)
     }
 
-    /// The main chat on screen (or the thread on `thread`) is read; the host ignores it
-    /// when nothing there is unread.
-    public func markRead(_ botId: String, thread: String? = nil) {
+    /// The chat on screen is read; the host ignores it when nothing there is unread.
+    public func markRead(_ botId: String) {
         // Entry events may arrive before the roster's unread count. The host is
         // authoritative and treats a redundant scoped acknowledgement as a no-op.
         Task {
@@ -146,7 +150,7 @@ extension BotStore {
             }
             guard !Task.isCancelled, isActive, let client = live else { return }
             do {
-                try await client.markRead(botId, threadId: thread)
+                try await client.markRead(botId)
             } catch {
                 // The visible scope is acknowledged again when the link recovers.
                 log.debug("read acknowledgement deferred: \(error.localizedDescription)")
@@ -154,11 +158,11 @@ extension BotStore {
         }
     }
 
-    /// The roster's "Mark as read": the chat and all its threads.
+    /// The roster's "Mark as read": everything in the chat.
     public func markAllRead(_ botId: String) {
         guard (bots[botId]?.unread ?? 0) > 0 else { return }
         bots[botId]?.unread = 0
-        perform(replay: true) { try await $0.markRead(botId, all: true) }
+        perform(replay: true) { try await $0.markRead(botId) }
     }
 
     public func setPinned(_ bot: Bot, _ pinned: Bool) {
@@ -175,6 +179,52 @@ extension BotStore {
         perform(replay: true) { _ = try await $0.updateBot(d) }
     }
 
+    /// Whether the bot may see and use the computer's screen.
+    public func setComputer(_ bot: Bot, _ computer: Bool) {
+        var d = BotDraft(bot)
+        d.computer = computer
+        bots[bot.id]?.computer = computer
+        perform(replay: true) { _ = try await $0.updateBot(d) }
+    }
+
+    /// Whether the bot uses the memory all bots share.
+    public func setSharedMemory(_ bot: Bot, _ shared: Bool) {
+        var d = BotDraft(bot)
+        d.sharedMemory = shared
+        bots[bot.id]?.sharedMemory = shared
+        perform(replay: true) { _ = try await $0.updateBot(d) }
+    }
+
+    /// Whether the bot's harness keeps its own memory on beside Codync's.
+    public func setHarnessMemory(_ bot: Bot, _ on: Bool) {
+        var d = BotDraft(bot)
+        d.harnessMemory = on
+        bots[bot.id]?.harnessMemory = on
+        perform(replay: true) { _ = try await $0.updateBot(d) }
+    }
+
+    /// Saves the user's version of a handoff that hasn't been sent. Whether it did.
+    public func editHandoff(_ entry: Entry, text: String) async -> Bool {
+        do {
+            try await withLink(replay: true) { try await $0.editHandoff(entryId: entry.id, text: text) }
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Carries on with the bot's current conversation instead of the handoff.
+    public func keepConversation(_ entry: Entry) {
+        answer(entry, "handoff") { try await $0.keepConversation(entryId: entry.id) }
+    }
+
+    /// Runs a failed routine run's work again, from its notice; the notice's update drops the button.
+    public func retryRoutineRun(_ entry: Entry) {
+        guard let runId = entry.data.runId else { return }
+        answer(entry, "retry") { try await $0.retryRoutineRun(botId: entry.botId, runId: runId) }
+    }
+
     public func setFastMode(_ bot: Bot, _ fastMode: Bool) {
         var d = BotDraft(bot)
         d.fastMode = fastMode
@@ -182,20 +232,29 @@ extension BotStore {
         perform(replay: true) { _ = try await $0.updateBot(d) }
     }
 
+    /// The composer's `/fast`: the bot's Fast mode flips; in a group, every member that shows it
+    /// goes to the opposite of the group's state.
+    public func toggleFastMode(_ bot: Bot) {
+        guard bot.isGroup else { return setFastMode(bot, !bot.fastMode) }
+        let group = GroupFastMode(members(of: bot))
+        for member in group.members { setFastMode(member, group.state == .off) }
+    }
+
     // MARK: roster order
 
-    /// Puts the roster in `ids` order (pinned bots still sort first) and sends it; the host
-    /// syncs it to every device.
+    /// Puts the roster in `ids` order (the lead and pinned bots still sort first) and sends it; the host
+    /// syncs it to every device. The order it already has sends nothing.
     public func reorder(_ ids: [String]) {
+        guard ids != roster.map(\.id) else { return }
         for (position, id) in ids.enumerated() { bots[id]?.position = position }
         perform(replay: true) { try await $0.reorderBots(ids) }
     }
 
-    /// One place up (-1) or down (+1) among bots with the same pin state (VoiceOver).
+    /// One place up (-1) or down (+1) among bots of the same band (VoiceOver).
     public func move(_ botId: String, by offset: Int) {
         var ids = roster.map(\.id)
         guard let i = ids.firstIndex(of: botId), ids.indices.contains(i + offset),
-              bots[ids[i + offset]]?.pinned == bots[botId]?.pinned else { return }
+              bots[ids[i + offset]]?.band == bots[botId]?.band else { return }
         ids.swapAt(i, i + offset)
         reorder(ids)
     }
@@ -220,10 +279,9 @@ extension BotStore {
         bots[group.id] = group
     }
 
-    /// Pages in a thread's replies (the stream only carries recent entries).
-    public func loadThread(_ botId: String, root: String) async {
-        guard let client, let replies = try? await client.thread(botId: botId, rootId: root) else { return }
-        for e in replies { upsert(e) }
+    /// What a voice call carried, for its conversation. Never `upsert`ed, like `botConversation`.
+    public func callEntries(_ botId: String, call: String) async throws -> [Entry] {
+        try await ready().callEntries(botId: botId, call: call)
     }
 
     /// The bot-to-bot notices between a chat and a peer. Never `upsert`ed: old notices in the
@@ -246,6 +304,13 @@ extension BotStore {
     public func refreshUsage() async {
         guard !retired, let client else { return }
         if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }
+    }
+
+    /// Reads the network again; the host asks the other computers when what it heard is stale, and
+    /// the `network` event brings what they answer.
+    public func refreshNetwork() async {
+        guard !retired, let client else { return }
+        if let view = try? await client.networkView(), !Task.isCancelled { network = view }
     }
 
     public func loadOlder(_ botId: String) async {

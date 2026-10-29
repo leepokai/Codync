@@ -7,9 +7,11 @@ import Testing
     #expect(error.phase == .failed)
     #expect(error.title == "Failed")
     #expect(error.symbol != "checkmark")
+    #expect(error.progressStep == 4)
     let unknown = BotActivityPresentation(status: "new-host-status", activity: "")
     #expect(unknown.phase == .waiting)
     #expect(unknown.symbol != "checkmark")
+    #expect(unknown.progressStep < 4)
 }
 
 @Test func staleActivityStopsPresentingLiveProgress() {
@@ -36,4 +38,22 @@ import Testing
     #expect(picked == ["preview-review", "preview-docs", "preview-build", nil])
     // A deleted pick falls back to automatic.
     #expect(BotsTeamCard.slots(bots: bots, picks: ["gone"]).first??.id == "preview-review")
+}
+
+@Test func aCallShowsOnTheActivityInsteadOfDone() throws {
+    let idle = BotActivityPresentation(status: "idle", activity: "Old step", call: .listening)
+    #expect(idle.phase == .onCall(.listening))
+    #expect(idle.caption == "On a call · Listening")
+    #expect(idle.symbol == "waveform")
+    #expect(BotActivityPresentation(status: "idle", activity: "", call: .connecting).caption == "Connecting the call")
+    #expect(BotActivityPresentation(status: "working", activity: "", isStale: true, call: .paused).title == "Call paused")
+    // While the bot works, its progress is the line; a waiting approval and a failure stay visible.
+    #expect(BotActivityPresentation(status: "working", activity: "Running the tests", call: .speaking).caption == "Running the tests")
+    #expect(BotActivityPresentation(status: "needsInput", activity: "Choose", call: .listening).phase == .needsInput)
+    #expect(BotActivityPresentation(status: "error", activity: "", call: .listening).phase == .failed)
+    #expect(BotActivityPresentation(status: "idle", activity: "").title == "Done")
+    // The app writes the call as its raw value (the widget decodes it).
+    let state = BotActivityAttributes.ContentState(status: "idle", activity: "", startedAt: nil, call: .speaking)
+    let json = try #require(String(data: try JSONEncoder().encode(state), encoding: .utf8))
+    #expect(json.contains(#""call":"speaking""#))
 }

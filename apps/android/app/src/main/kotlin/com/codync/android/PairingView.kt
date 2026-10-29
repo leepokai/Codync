@@ -80,6 +80,8 @@ private enum class ComputerOS { Mac, Linux }
     var step by rememberSaveable { mutableStateOf(Step.Install) }
     var os by rememberSaveable { mutableStateOf(ComputerOS.Mac) }
     val dismiss = LocalDismissModal.current
+    // In a sheet it's the Pairing screen (reported where it opens); otherwise first-run steps.
+    if (!inModal) AnalyticsOnAppear(AnalyticsEvent.OnboardingStepViewed(if (step == Step.Install) OnboardingStep.Install else OnboardingStep.Scan))
     BackHandler(step == Step.Scan) { step = Step.Install }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ScreenHeader({ if (step == Step.Scan) BackButton { step = Step.Install } else leading() }, {
@@ -119,8 +121,8 @@ private enum class ComputerOS { Mac, Linux }
                 Box(Modifier.offset(y = (-8).dp)) { CharacterAvatar("blob", "blue", 52.dp, "working") }
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Install Codync\non your computer", style = PAGE_TITLE, color = Palette.text)
-                Text("Your bots run there. This phone is how you talk to them.", style = Type.body, color = Palette.secondary)
+                Text(tr("Install Codync\non your computer"), style = PAGE_TITLE, color = Palette.text)
+                Text(tr("Your bots run there. This phone is how you talk to them."), style = Type.body, color = Palette.secondary)
             }
             SegmentedChoice(os, listOf(ComputerOS.Mac to "Mac", ComputerOS.Linux to "Linux"), choose)
             // Copied here, pasted on the computer (a message to yourself, a shared clipboard).
@@ -128,19 +130,19 @@ private enum class ComputerOS { Mac, Linux }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (shown == ComputerOS.Mac) {
                         Hint("Install with Homebrew")
-                        CommandBlock("brew install --cask leepokai/codync/codync")
+                        CommandBlock("brew install --cask leepokai/codync/codync", records = OutboundLink.InstallCommand)
                         Hint("or download the Mac app")
-                        CommandBlock("https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg")
+                        CommandBlock("https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg", records = OutboundLink.InstallCommand)
                     } else {
                         Hint("Run the installer")
-                        CommandBlock("curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh\ncodync-host install")
+                        CommandBlock("curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh\ncodync-host install", records = OutboundLink.InstallCommand)
                         Hint("or install with Homebrew")
-                        CommandBlock("brew install leepokai/codync/codync-host\ncodync-host install")
+                        CommandBlock("brew install leepokai/codync/codync-host\ncodync-host install", records = OutboundLink.InstallCommand)
                     }
-                    Text(if (shown == ComputerOS.Mac) "Open Codync and it sets up the host on its own."
-                        else "codync-host install keeps it running in the background.", style = Type.subheadline, color = Palette.secondary)
+                    Text(tr(if (shown == ComputerOS.Mac) "Open Codync and it sets up the host on its own."
+                        else "codync-host install keeps it running in the background."), style = Type.subheadline, color = Palette.secondary)
                     Hint("Every install option")
-                    CommandBlock("https://www.codync.dev/#install")
+                    CommandBlock("https://www.codync.dev/#install", records = OutboundLink.InstallCommand)
                 }
             }
             DemoButton()
@@ -164,10 +166,10 @@ private enum class ComputerOS { Mac, Linux }
 }
 
 /** A small label above a `CommandBlock`. */
-@Composable private fun Hint(text: String) = Text(text, style = Type.footnote, color = Palette.secondary)
+@Composable private fun Hint(text: String) = Text(tr(text), style = Type.footnote, color = Palette.secondary)
 
-/** A terminal command with a copy button. */
-@Composable private fun CommandBlock(command: String) {
+/** A terminal command with a copy button; copying it counts as opening `records`. */
+@Composable private fun CommandBlock(command: String, records: OutboundLink? = null) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var copied by remember { mutableStateOf(false) }
@@ -180,6 +182,7 @@ private enum class ComputerOS { Mac, Linux }
             IconButton(if (done) "Copied" else "Copy", if (done) "checkmark" else "doc.on.doc") {
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Command", command)))
+                    records?.let { Analytics.capture(AnalyticsEvent.LinkOpened(it)) }
                     copied = true; delay(1500); copied = false
                 }
             }
@@ -200,25 +203,22 @@ private enum class ComputerOS { Mac, Linux }
     fun pair(text: String) {
         if (state.pairing || text.isBlank()) return
         error = null; started = true
-        store.pair(text.trim())
+        store.pair(text.trim(), PairedVia.Qr)
     }
     // The store pairs in the background: its finish (and its error) belong to this page.
     LaunchedEffect(state.pairing, state.error) {
         if (!started || state.pairing) return@LaunchedEffect
         started = false
         val failure = state.error
-        if (failure == null) {
-            state.computers.firstOrNull()?.let { Analytics.capture(AnalyticsEvent.ComputerPaired, mapOf("via" to "qr", "computer" to Analytics.computerTag(it.id))) }
-            pasted = ""; paired()
-        }
+        if (failure == null) { pasted = ""; paired() }
         else { error = failure; attempt++; store.clearError() }
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Scan the pairing code", style = PAGE_TITLE, color = Palette.text)
-            Text(if (os == ComputerOS.Mac) "On your Mac, click Codync in the menu bar, then Pair iPhone. The same code pairs this phone."
-                else "On your computer, run this in a terminal:", style = Type.body, color = Palette.secondary)
+            Text(tr("Scan the pairing code"), style = PAGE_TITLE, color = Palette.text)
+            Text(tr(if (os == ComputerOS.Mac) "On your Mac, click Codync in the menu bar, then Pair iPhone. The same code pairs this phone."
+                else "On your computer, run this in a terminal:"), style = Type.body, color = Palette.secondary)
             if (os == ComputerOS.Linux) CommandBlock("codync-host pair")
         }
         // The camera, right on the page: no extra sheet between the instruction and the scan.
@@ -230,27 +230,27 @@ private enum class ComputerOS { Mac, Linux }
         }
         Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.surface).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            PlainTextField(pasted, { pasted = it }, Modifier.weight(1f), "Or paste a ${BuildConfig.URL_SCHEME}://pair link", singleLine = true,
+            PlainTextField(pasted, { pasted = it }, Modifier.weight(1f), tr("Or paste a {scheme}://pair link").replace("{scheme}", BuildConfig.URL_SCHEME), singleLine = true,
                 style = Type.callout.monospaced, keyboard = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
                     imeAction = ImeAction.Go), actions = KeyboardActions(onGo = { pair(pasted) }))
             IconButton("Pair", "arrow.right", enabled = pasted.isNotEmpty() && !state.pairing) { pair(pasted) }
         }
         AnimatedVisibility(error != null, enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(error.orEmpty(), style = Type.footnote, color = Palette.danger)
+                Text(tr(error.orEmpty()), style = Type.footnote, color = Palette.danger)
                 // The usual cause: the phone has no road to the computer yet.
                 IconLabel("Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
                     "wifi.exclamationmark", Palette.secondary)
             }
         }
-        // Signed in, account computers show up and ask for access themselves.
+        // Signed in, account computers show up in Computers, where a tap asks one for access.
         if (state.account.configured && state.account.userId == null) SignInButtons(state, store)
         // How it connects is never a choice here: every paired computer gets every route.
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            IconLabel("Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted.", "lock.fill")
+            IconLabel(pairingLine(pasted, BuildConfig.URL_SCHEME), "lock.fill")
             if (tailscale) IconLabel("Tailscale is on: Codync connects over it directly.", "checkmark.circle.fill")
             else IconLabel("Use Tailscale? Direct and faster away from home.", "arrow.up.right",
-                modifier = Modifier.plainButton { uri.openUri("https://tailscale.com/download") })
+                modifier = Modifier.plainButton { uri.open("https://tailscale.com/download", OutboundLink.Tailscale) })
         }
     }
 }
@@ -260,7 +260,7 @@ private enum class ComputerOS { Mac, Linux }
     style: TextStyle = Type.footnote) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Symbol(systemImage, Modifier.padding(top = 1.dp), size = 16.dp, tint = color)
-        Text(text, style = style, color = color)
+        Text(tr(text), style = style, color = color)
     }
 }
 

@@ -29,7 +29,7 @@
 | Bots | 待回應／工作中的數量與角色圖示 | 狀態摘要與最多三個 bot，待回應優先；每列右側是上色的狀態（Needs you 琥珀、Failed 紅、Working 主色、Ready 灰） | 數量摘要與最多六個 bot |
 | Team | 2×2 角色格：最多四個 bot；「編輯 Widget」可為四個位置各選一個 bot（`TeamIntent`，選項來自目前帳號的 bot），沒選的位置自動補上待回應優先的 bot，被刪掉的 bot 退回自動，頭像顯示當下 mood、工作中的角落有狀態點；空位是淡化的角色；點擊開最需要你的 bot | — | — |
 
-Widget 與 Live Activity 的頭像用 `CharacterAvatar(… still: true)`：畫出 mood（工作中、待回應的漣漪）但不動畫，因為 WidgetKit 只渲染一幀。Control Center 另有一個「Bots」控制項（`LeadBotControl`）：顯示最需要你的 bot 與狀態，點擊開啟它；App 在 bot 狀態改變時重新載入 Bots、Team 與這個控制項。
+Widget 與 Live Activity 的頭像用 `CharacterAvatar(… still: true)`：畫出 mood（工作中、待回應的漣漪）但不動畫，因為 WidgetKit 只渲染一幀。Control Center 另有一個「Bots」控制項（`UrgentBotControl`，kind 仍是 `CodyncLeadBot`，已放好的控制項才不會消失）：顯示最需要你的 bot 與狀態，點擊開啟它；App 在 bot 狀態改變時重新載入 Bots、Team 與這個控制項。
 
 既有 Usage limits 保留 Small／Medium 的跨 provider 用量摘要。Bots 與 Usage limits 另支援 Lock Screen 的圓形、矩形與行內形式；行內放在時鐘上方日期列。
 
@@ -37,7 +37,7 @@ Widget 與 Live Activity 的頭像用 `CharacterAvatar(… still: true)`：畫�
 - Claude 使用既有暖色；Codex 使用藍色；其他 provider 用 accent 墨色；90% 以上顯示警示色。
 - 採平面深淺色表面、小型圖示、11–13 pt 標籤；大字只用於主要數值。
 - App 的 Usage 卡片同步縮小字級、圖示、內距，並使用同一款刻度條。
-- 底部的 State 分頁以頂部切換呈現 Widget／Live Activity／Dynamic Island 三頁；用量上限從右上角圖示開成 sheet。Computers & settings 不再放這些入口。
+- 底部的 State 分頁以頂部切換呈現 Widget／Live Activity／Dynamic Island 三頁；用量上限從右上角圖示開成 sheet。設定分頁與電腦管理都不放這些入口。
 - Widget 頁提供類型／provider／大小切換、三種主畫面尺寸預覽與設定教學。加入 widget 的教學（`WidgetSetupDemo.swift`）用 SwiftUI 畫出一支 iPhone，手指實際演出長按、Edit、Add Widget、找到 Codync、Add Widget、Done；整段由單一時鐘驅動，會循環，可暫停／播放，也可以拖曳進度條。
 - 「Lock Screen widgets」頁可切換 Bots／Usage limits，預覽圓形、矩形與行內形式。正式 widget 與預覽共用 `AccessoryWidgetCard`。
 - 設定清單讀取實際電腦配對狀態與 `WidgetCenter` 的已安裝配置；不以點過教學當作完成。
@@ -104,7 +104,7 @@ Dynamic Island 固定黑底，文字採淺色；Lock Screen 卡片配合系統�
 
 ## Halftone 與 Thinking Orbs（2026-09-26）
 
-Bot 的角色頭像使用 `CharacterAvatar` 點陣；provider 圖示由 `ProviderMascot` 選擇，小尺寸可使用隨 app 打包的官方 provider 圖示。15 pt 用 7 × 7、20–26 pt 用 9 × 9、28 pt 以上用 13 × 13 網格，保留鏤空眼睛並提高小尺寸墨色。iOS App 與 widgets 共用 provider 呈現邏輯；桌面 App 的對應實作在 `apps/desktop/src/renderer/views/usage/ProviderMascot.tsx`。
+Bot 的角色頭像使用 `CharacterAvatar` 點陣；provider 圖示由 `ProviderMascot` 選擇，小尺寸可使用隨 app 打包的官方 provider 圖示。15 pt 用 7 × 7、20–26 pt 用 9 × 9、28 pt 以上用 13 × 13 網格，保留鏤空眼睛並提高小尺寸墨色。桌面另依裝置像素限制密度（13 格至少 52 px、9 格至少 27 px），1x 螢幕因此用較疏的網格；2x 以下還把點距對齊整數像素，讓點間距一致，點落在像素中心或角落以保持銳利（`apps/desktop/src/renderer/lib/dot-grid.ts`）。iPhone 螢幕至少 2x，維持原本網格；Android 目前仍只依 dp 選網格。iOS App 與 widgets 共用 provider 呈現邏輯；桌面 App 的對應實作在 `apps/desktop/src/renderer/views/usage/ProviderMascot.tsx`。
 
 狀態圖示以 [Jakub Antalik 的 thinking-orbs](https://github.com/Jakubantalik/thinking-orbs) 為來源，這次原生移植四種實際使用的造型：
 

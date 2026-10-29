@@ -34,7 +34,7 @@ class AlertNotificationTest {
     private fun show(bot: String, alert: String): Notification {
         val tag = "$scope/$computer/$bot"
         posted += tag
-        NotificationDisplay.alert(context, scope, computer, bot, PushAlert.decode(alert))
+        NotificationDisplay.alert(context, scope, computer, bot, PushAlert.decode(alert), "done")
         val deadline = SystemClock.elapsedRealtime() + 3000
         while (manager.activeNotifications.none { it.tag == tag } && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(10)
         return manager.activeNotifications.single { it.tag == tag }.notification

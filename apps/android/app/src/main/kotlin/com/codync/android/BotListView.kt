@@ -58,10 +58,14 @@ import kotlinx.serialization.json.putJsonArray
 @Composable internal fun BotListView(state: AppState, store: AppStore, account: () -> Unit, manage: () -> Unit,
     newBot: () -> Unit, newGroup: () -> Unit, edit: (Bot) -> Unit, bottomInset: androidx.compose.ui.unit.Dp) {
     var confirmDelete by remember { mutableStateOf<Bot?>(null) }
+    var confirmNewSession by remember { mutableStateOf<Bot?>(null) }
     val roster = roster(state.bots)
     val reorder = remember { RosterReorder() }
     reorder.roster = roster.map(Bot::id)
+    reorder.lead = roster.firstOrNull { it.lead }?.id
     val online = state.actualConnection is LinkState.Ready
+    // A computer that turned this phone away, or this computer's older identity, counts as none (iOS `availableStores`).
+    val usable = state.computers.isNotEmpty() && !state.isStale
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         ScrollEdge(Edge.Top, top + 64.dp)
@@ -69,27 +73,33 @@ import kotlinx.serialization.json.putJsonArray
             verticalAlignment = Alignment.CenterVertically) {
             AccountSwitcherButton(state, account)
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { ComputerFilterHeader(state, store, manage) }
-            NewMenuButton(enabled = state.computers.isNotEmpty(), groupEnabled = online, newBot, newGroup)
+            NewMenuButton(enabled = usable, groupEnabled = online, newBot, newGroup)
         }
     }) {
         // Pull to refresh reconnects and asks the account for its computers again (iOS `refreshable`).
         PullToRefresh({ store.reconnect(); store.refreshComputers() }, Modifier.fillMaxSize(), indicatorTop = top + 50.dp) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 56.dp, bottom = bottomInset)) {
             // A computer waiting for an update has its card instead; its bots may not be readable yet.
-            state.mismatch?.let { mismatch -> item("update") { UpdateNeededCard(state, mismatch, Modifier.padding(vertical = 8.dp)) } }
+            state.mismatch?.let { mismatch -> item("update") { UpdateNeededCard(state, mismatch, store::requestHostUpdate, Modifier.padding(vertical = 8.dp)) } }
             if (roster.isEmpty() && state.mismatch == null) item {
-                EmptyRoster(canCreate = state.computers.isNotEmpty(), hasComputer = state.computers.isNotEmpty(), create = newBot, showComputers = manage)
+                EmptyRoster(canCreate = usable, hasComputer = usable, create = newBot, showComputers = manage)
             }
             items(reorder.shown(roster), key = Bot::id) { bot ->
                 val lifted = reorder.dragged == bot.id
                 Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
                     .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
                         else Modifier.animateItem())) {
-                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, edit = { edit(bot) }, delete = { confirmDelete = bot })
+                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, edit = { edit(bot) },
+                        newSession = { confirmNewSession = bot }, delete = { confirmDelete = bot })
                 }
             }
         }
         }
+    }
+    val restarting = confirmNewSession
+    CodyncDialog("Start a new session?", restarting != null, { confirmNewSession = null },
+        message = "The conversation stays here, but the agent starts with a fresh context.") {
+        listOf(DialogAction("New session") { restarting?.let { store.command("newSession", body("botId" to it.id)) } })
     }
     val deleting = confirmDelete
     CodyncDialog("Delete ${deleting?.name ?: "bot"}?", deleting != null, { confirmDelete = null },
@@ -106,6 +116,8 @@ import kotlinx.serialization.json.putJsonArray
  */
 private class RosterReorder {
     var roster: List<String> = emptyList()
+    /** Stays on top: nothing takes its place. */
+    var lead: String? = null
     var order by mutableStateOf<List<String>?>(null)
     var dragged by mutableStateOf<String?>(null)
     var offset by mutableFloatStateOf(0f)
@@ -132,6 +144,7 @@ private class RosterReorder {
         val list = order ?: return
         val at = list.indexOf(id)
         val next = if (offset > 0) at + 1 else at - 1
+        if (list.getOrNull(next) == lead) return
         val height = list.getOrNull(next)?.let(heights::get) ?: return
         if (kotlin.math.abs(offset) < height / 2f) return
         order = list.toMutableList().apply { add(next, removeAt(at)) }
@@ -139,35 +152,39 @@ private class RosterReorder {
     }
 }
 
-/** Roster order: pinned first, then where the user dragged them, then most recent activity. */
+/** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */
 internal fun roster(bots: List<Bot>): List<Bot> = bots.filter { !it.deleted && !it.hidden }
-    .sortedWith(compareByDescending<Bot> { it.pinned }.thenBy { it.position }.thenByDescending { it.lastAt })
+    .sortedWith(compareBy<Bot> { it.band }.thenBy { it.position }.thenByDescending { it.lastAt })
 
-/** The roster order with a bot one place up (-1) or down (+1) among bots with its pin state, or null when it can't move. */
+/** The roster order with a bot one place up (-1) or down (+1) within its band (`Bot.band`), or null when it can't move. */
 internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
     val at = roster.indexOfFirst { it.id == id }
     val neighbor = roster.getOrNull(at + offset)
-    if (at < 0 || neighbor == null || neighbor.pinned != roster[at].pinned) return null
+    if (at < 0 || neighbor == null || neighbor.band != roster[at].band) return null
     return roster.map(Bot::id).toMutableList().apply { this[at] = neighbor.id; this[at + offset] = id }
 }
 
-@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, edit: () -> Unit, delete: () -> Unit) {
-    Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
+@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, edit: () -> Unit, newSession: () -> Unit,
+    delete: () -> Unit) {
+    // The lead stays on top and in the list: no drag, pin, hide or delete.
+    Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag.takeUnless { bot.lead }, preview = {
         Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state) }
     }) {
-        listOf(
+        listOfNotNull(
             MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = if (bot.pinned) "pin.slash" else "pin") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("pinned", !bot.pinned) }, "roster:" + bot.id)
-            },
+            }.takeUnless { bot.lead },
             if (bot.kind == "group") MenuItem("Edit group", icon = "person.2", action = edit)
             else MenuItem("Edit profile", icon = "pencil", action = edit),
             MenuItem("Mark as read", icon = "checkmark.message") {
-                store.command("markRead", buildJsonObject { put("botId", bot.id); put("all", true) }, "roster:" + bot.id)
+                store.command("markRead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)
             },
+            // A group has no agent session of its own.
+            MenuItem("New session", icon = "arrow.counterclockwise", action = newSession).takeIf { bot.kind != "group" },
             MenuItem("Hide from list", icon = "eye.slash") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("hidden", true) }, "roster:" + bot.id)
-            },
-            MenuItem("Delete", icon = "trash", destructive = true, divider = true, action = delete),
+            }.takeUnless { bot.lead },
+            MenuItem("Delete", icon = "trash", destructive = true, divider = true, action = delete).takeUnless { bot.lead },
         )
     }.semantics {
         contentDescription = bot.name
@@ -188,13 +205,13 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (bot.pinned) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
+                    if (bot.pinned && !bot.lead) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
                     Text(bot.name, Modifier.weight(1f, fill = false), style = Type.body.semibold, color = Palette.text, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
                 }
                 Spacer(Modifier.width(8.dp))
-                if (bot.lastAt > 0) Text(RelativeTime.day(bot.lastAt), style = Type.subheadline,
-                    color = if (bot.unread > 0) Palette.text else Palette.tertiary, maxLines = 1)
+                if (bot.lastAt > 0) Text(RelativeTime.day(bot.lastAt, yesterday = tr("Yesterday")), style = Type.subheadline,
+                    color = if (bot.unread > 0) Palette.text else Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) { Preview(bot, state) }
@@ -212,16 +229,16 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
     when {
         bot.status == "needsInput" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ThinkingOrb(ThinkingOrbState.Listening, 16.dp, Palette.warning)
-            Text(bot.activity.ifEmpty { "Needs your approval" }, style = Type.subheadline, color = Palette.warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(bot.activity.ifEmpty { "Needs your approval" }), style = Type.subheadline, color = Palette.warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         bot.status == "working" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ThinkingOrb(size = 13.dp, color = Palette.secondary)
-            Text(bot.activity.ifEmpty { "Working…" }, style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(bot.activity.ifEmpty { "Working…" }), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         bot.status == "error" -> Text(messagePreview(bot.lastMessage ?: "Something went wrong"), style = Type.subheadline, color = Palette.danger,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         else -> Text(messagePreview(bot.lastMessage ?: if (bot.kind == "group") "${bot.members.size} bots"
-            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) "Personal workspace" else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
+            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) tr("Personal workspace") else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
             style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -270,7 +287,7 @@ internal fun messagePreview(text: String): String {
         )
     }, label = "Computers, $summary. Filter conversations") {
         Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(summary, style = Type.system(12f).medium, color = Palette.secondary, maxLines = 1)
+            Text(summary, style = Type.system(12f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.down", size = 15.dp, tint = Palette.secondary)
         }
     }

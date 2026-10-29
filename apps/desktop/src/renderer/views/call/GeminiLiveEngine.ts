@@ -1,7 +1,9 @@
-import { OPERATOR_TOOLS, type CallOperator } from './call-operator'
-import { errorMessage, fromBase64, micPCM16k, toBase64, VoiceEngine } from './voice'
+import type { CallLink, CallSession } from './call-link'
+import { browserPorts, type CallOutput, type GeminiPorts, type LiveSocket } from './gemini-ports'
+import { errorMessage, fromBase64, onDevicesChanged, PROGRESS_TAG, reconnect, toBase64, VoiceEngine } from './voice'
 
 const URL_BASE = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained'
+const OPEN = 1
 
 /** Gemini's schema spells types in capitals (`OBJECT`, `STRING`). */
 function geminiSchema(schema: Record<string, unknown>): Record<string, unknown> {
@@ -17,36 +19,54 @@ function geminiSchema(schema: Record<string, unknown>): Record<string, unknown> 
 
 /**
  * Gemini Live over a WebSocket, this computer ↔ Google directly: 16 kHz PCM up, 24 kHz PCM down,
- * echo-cancelled so you can talk over it. The user's key stays with the host, which mints one-use
- * ephemeral tokens; a session the server ends (`goAway`) is resumed with a fresh one.
+ * echo-cancelled so you can talk over it. The computer runs the call (`CallLink`): it mints one-use ephemeral tokens
+ * on the user's key and writes the voice's instructions and tools, again for each session; a session the server ends
+ * (`goAway`) is resumed with a fresh one, and a dropped one is tried again.
  */
 export class GeminiLiveEngine extends VoiceEngine {
+  /** Without playback progress this long (ms) after the voice's turn, the call stops waiting for the speaker. */
+  static stallMs = 4000
   readonly provider = 'gemini' as const
-  private socket: WebSocket | null = null
+  /** Playback stopped reporting progress after the voice's turn, and the call went back to listening. */
+  onStall: (() => void) | null = null
+  private socket: LiveSocket | null = null
   /** Setup is done on the current socket. */
   private ready = false
+  /** A session was set up once: a drop after that is tried again instead of ending the call. */
+  private connected = false
+  /** The server said it ends this connection (`goAway`): carry on in a resumed one at once. */
+  private replacing = false
   private resumeHandle: string | null = null
   private reconnects = 0
   private stopMic: (() => void) | null = null
-  private output: AudioContext | null = null
-  private sources = new Set<AudioBufferSourceNode>()
-  private nextStart = 0
-  /** Buffers scheduled and not played yet; bumping the generation drops late callbacks. */
+  private stopDevices: (() => void) | null = null
+  private output: CallOutput | null = null
+  /** Pieces handed to the speaker and not played yet; bumping the generation drops late callbacks. */
   private queued = 0
   private playGeneration = 0
+  private lastPlayed = 0
+  private watchdog: ReturnType<typeof setInterval> | null = null
   /** The model finished its turn (nothing more is coming until we or the user speak). */
   private turnDone = true
   /** After a local interrupt, the rest of the turn's audio is dropped. */
   private dropping = false
   private pending: string[] = []
+  /** The current provider session's instructions and tools, from the computer. */
+  private session: CallSession | null = null
+  /** Tool calls still running on the computer: replies wait, so the model gets each answer first. */
+  private toolsRunning = 0
 
-  constructor(
-    private model: string,
-    private voice: string,
-    private credential: () => Promise<string>,
-    private op: CallOperator,
-  ) {
+  private model: string
+  private voice: string
+  private link: CallLink
+  private ports: GeminiPorts
+
+  constructor(model: string, voice: string, link: CallLink, ports: GeminiPorts = browserPorts) {
     super()
+    this.model = model
+    this.voice = voice
+    this.link = link
+    this.ports = ports
   }
 
   async start() {
@@ -55,10 +75,11 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   private async connect() {
     try {
-      const token = await this.credential()
+      const session = await this.link.start('realtime', 'gemini', this.model, this.voice)
       if (this.ended) return
-      const socket = new WebSocket(`${URL_BASE}?access_token=${encodeURIComponent(token)}`)
-      socket.binaryType = 'arraybuffer'
+      if (!session.credential) throw new Error('Gemini sent no session credential.')
+      this.session = session
+      const socket = this.ports.socket(`${URL_BASE}?access_token=${encodeURIComponent(session.credential)}`)
       this.socket = socket
       this.ready = false
       socket.onopen = () => this.sendSetup(socket)
@@ -66,17 +87,20 @@ export class GeminiLiveEngine extends VoiceEngine {
         if (this.socket !== socket) return
         this.received(typeof e.data === 'string' ? e.data : new TextDecoder().decode(e.data as ArrayBuffer))
       }
-      socket.onclose = (e) => this.closed(socket, e.reason)
+      socket.onclose = (e) => this.closed(socket, e.code, e.reason)
     } catch (e) {
-      if (!this.ended) this.fail(errorMessage(e))
+      if (this.ended) return
+      // Starting fails over; mid-call, the computer or Google may be back in a moment.
+      if (this.connected) this.dropped(errorMessage(e))
+      else this.fail(errorMessage(e), 'provider')
     }
   }
 
-  private sendSetup(socket: WebSocket) {
-    const tools = OPERATOR_TOOLS.map((t) => ({
+  private sendSetup(socket: LiveSocket) {
+    const tools = (this.session?.tools ?? []).map((t) => ({
       name: t.name,
       description: t.description,
-      ...(Object.keys(t.parameters.properties).length ? { parameters: geminiSchema(t.parameters) } : {}),
+      ...(Object.keys((t.parameters?.properties as object | undefined) ?? {}).length ? { parameters: geminiSchema(t.parameters!) } : {}),
     }))
     const setup = {
       model: `models/${this.model}`,
@@ -84,10 +108,13 @@ export class GeminiLiveEngine extends VoiceEngine {
         responseModalities: ['AUDIO'],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } } },
       },
-      systemInstruction: { parts: [{ text: this.op.instructions }] },
+      systemInstruction: { parts: [{ text: this.session?.instructions ?? '' }] },
       tools: [{ functionDeclarations: tools }],
       // Audio sessions are otherwise capped at 15 minutes.
       contextWindowCompression: { slidingWindow: {} },
+      // What both sides said, for the call's line in the chat.
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
       sessionResumption: this.resumeHandle ? { handle: this.resumeHandle } : {},
     }
     this.send({ setup }, socket)
@@ -100,9 +127,11 @@ export class GeminiLiveEngine extends VoiceEngine {
     this.socket = null
     socket?.close(1000)
     this.stopPlayback()
+    this.stopDevices?.()
+    this.stopDevices = null
     this.stopMic?.()
     this.stopMic = null
-    void this.output?.close()
+    this.output?.close()
     this.output = null
   }
 
@@ -120,28 +149,58 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   speak(reply: string) {
     if (this.ended || this.phase === 'failed') return
-    this.pending.push(this.op.reply(reply))
+    this.pending.push(this.link.reply(reply))
     this.flush()
   }
 
   announce(notice: string) {
     if (this.ended || this.phase === 'failed') return
-    this.pending.push(this.op.notice(notice))
+    this.pending.push(this.link.notice(notice))
+    this.flush()
+  }
+
+  /** Only the newest progress waits to be said. */
+  progress(text: string) {
+    if (this.ended || this.phase === 'failed') return
+    this.pending = this.pending.filter((p) => !p.startsWith(PROGRESS_TAG))
+    this.pending.push(this.link.progress(text))
     this.flush()
   }
 
   // MARK: socket
 
-  private closed(socket: WebSocket, reason: string) {
+  private closed(socket: LiveSocket, code: number, reason: string) {
     if (this.ended || this.socket !== socket) return
     this.socket = null
     this.ready = false
-    if (this.resumeHandle && this.reconnects < 3) {
-      this.reconnects++
+    if (!this.connected) return this.fail(reason || "Couldn't reach Gemini.", 'provider')
+    // Gemini refused the session (a key, a model, a request): trying again won't help.
+    if (code === 1007 || code === 1008) return this.fail(reason || 'Gemini ended the call.', 'provider')
+    if (this.replacing) {
+      this.replacing = false
+      // The turn under way ends with this connection: the resumed one won't complete it.
+      this.turnEnded()
       void this.connect()
     } else {
-      this.fail(reason || 'Lost the connection to Gemini.')
+      this.dropped(reason)
     }
+  }
+
+  /**
+   * The connection to Gemini dropped mid-call: tried again a few times (a resumed session when Gemini gave a handle,
+   * else a fresh one the computer primes with the call so far) before the call falls back.
+   */
+  private dropped(reason: string) {
+    if (this.reconnects >= reconnect.delays.length) return this.fail(reason || 'Lost the connection to Gemini.', 'connection')
+    const delay = reconnect.delays[this.reconnects]!
+    this.reconnects++
+    this.stopPlayback()
+    this.turnDone = true
+    this.dropping = false
+    this.setPhase('reconnecting')
+    setTimeout(() => {
+      if (!this.ended) void this.connect()
+    }, delay)
   }
 
   private received(data: string) {
@@ -154,13 +213,16 @@ export class GeminiLiveEngine extends VoiceEngine {
     }
     if (msg.setupComplete !== undefined) {
       this.ready = true
+      this.connected = true
       this.reconnects = 0
-      if (!this.stopMic) void this.startAudio()
-      if (this.phase === 'starting') this.setPhase('listening')
+      if (!this.output) void this.startAudio()
       this.flush()
     }
     const content = msg.serverContent
     if (content) {
+      if (typeof content.inputTranscription?.text === 'string') this.link.add('user', content.inputTranscription.text)
+      if (typeof content.outputTranscription?.text === 'string') this.link.add('voice', content.outputTranscription.text)
+      if (content.turnComplete === true || content.interrupted === true) this.link.endTurn()
       if (content.interrupted === true) {
         this.stopPlayback()
         this.dropping = false
@@ -174,37 +236,45 @@ export class GeminiLiveEngine extends VoiceEngine {
           if (typeof audio === 'string' && !this.dropping) this.play(audio)
         }
       }
-      if (content.turnComplete === true) {
-        this.turnDone = true
-        this.dropping = false
-        if (this.queued === 0 && this.phase === 'speaking') this.setPhase('listening')
-        this.flush()
-      }
+      if (content.turnComplete === true) this.turnEnded()
     }
     const calls = msg.toolCall?.functionCalls
     if (Array.isArray(calls)) {
-      const functionResponses = calls
-        .filter((c) => typeof c?.id === 'string' && typeof c?.name === 'string')
-        .map((c) => {
-          const output = this.op.call(c.name, (c.args as Record<string, unknown>) ?? {})
-          return { id: c.id, name: c.name, response: { result: JSON.parse(output) } }
+      // The tools run on the computer; their answers go back together.
+      const asked = calls.filter((c) => typeof c?.id === 'string' && typeof c?.name === 'string')
+      this.toolsRunning++
+      void Promise.all(asked.map(async (c) => ({ id: c.id, name: c.name, response: { result: await this.link.tool(c.name, c.args ?? {}) } })))
+        .then((functionResponses) => {
+          this.toolsRunning--
+          this.send({ toolResponse: { functionResponses } })
+          this.flush()
         })
-      this.send({ toolResponse: { functionResponses } })
     }
     const update = msg.sessionResumptionUpdate
     if (update?.resumable === true && typeof update.newHandle === 'string') this.resumeHandle = update.newHandle
-    // The server ends this connection soon; carry on in a resumed one.
-    if (msg.goAway !== undefined) this.socket?.close(1000)
+    if (msg.goAway !== undefined) {
+      // The server ends this connection soon; carry on in a resumed one.
+      this.replacing = true
+      this.socket?.close(1000)
+    }
   }
 
-  private send(message: unknown, socket?: WebSocket) {
+  /** The model's turn is over: listening once what's queued has played. */
+  private turnEnded() {
+    this.turnDone = true
+    this.dropping = false
+    if (this.queued === 0) this.finishSpeaking()
+    else this.watch()
+  }
+
+  private send(message: unknown, socket?: LiveSocket) {
     const target = socket ?? (this.ready ? this.socket : null)
-    if (target?.readyState === WebSocket.OPEN) target.send(JSON.stringify(message))
+    if (target?.readyState === OPEN) target.send(JSON.stringify(message))
   }
 
   /** Replies wait for the model to finish talking; `turnComplete` here would cut it off. */
   private flush() {
-    if (!this.ready || !this.turnDone || this.queued !== 0 || !this.pending.length) return
+    if (!this.ready || !this.turnDone || this.queued !== 0 || this.toolsRunning > 0 || !this.pending.length) return
     const text = this.pending.join('\n\n')
     this.pending = []
     this.turnDone = false
@@ -214,67 +284,91 @@ export class GeminiLiveEngine extends VoiceEngine {
   // MARK: audio
 
   private async startAudio() {
+    this.output = this.ports.output()
+    await this.openMic()
+    // A headset plugged in or out: the microphone starts again on what the system picks now.
+    if (!this.ended && this.stopMic) this.stopDevices ??= onDevicesChanged(() => void this.restartMic())
+  }
+
+  private async openMic() {
     try {
-      this.output = new AudioContext({ sampleRate: 24000 })
-      const stop = await micPCM16k((pcm, level) => this.captured(pcm, level))
+      const stop = await this.ports.mic((pcm, level) => this.captured(pcm, level))
       if (this.ended) return stop()
       this.stopMic = stop
     } catch (e) {
-      if (!this.ended) this.fail(errorMessage(e))
+      if (!this.ended) this.fail(errorMessage(e), 'microphone')
     }
   }
 
+  private async restartMic() {
+    if (this.ended || !this.stopMic) return
+    this.stopMic()
+    this.stopMic = null
+    if (this.isActive) this.setPhase('reconnecting')
+    await this.openMic()
+  }
+
   private captured(pcm: Int16Array, level: number) {
+    // Ready once the microphone delivers after setup (again, after a reconnect), not when the socket opens.
+    if (!this.ended && this.ready && this.isConnecting) {
+      this.setPhase('listening')
+      this.flush()
+    }
     if (this.ended || this.muted || !this.isActive) return
     this.level = this.phase === 'speaking' ? 0 : level
     this.send({ realtimeInput: { audio: { data: toBase64(new Uint8Array(pcm.buffer)), mimeType: 'audio/pcm;rate=16000' } } })
   }
 
   private play(base64: string) {
-    const ctx = this.output
-    if (!ctx) return
+    const output = this.output
+    if (!output) return
     const bytes = fromBase64(base64)
-    const frames = bytes.length >> 1
-    if (!frames) return
-    const view = new DataView(bytes.buffer)
-    const buffer = ctx.createBuffer(1, frames, 24000)
-    const out = buffer.getChannelData(0)
-    for (let i = 0; i < frames; i++) out[i] = view.getInt16(i * 2, true) / 32768
-    const source = ctx.createBufferSource()
-    source.buffer = buffer
-    source.connect(ctx.destination)
-    this.nextStart = Math.max(this.nextStart, ctx.currentTime)
-    source.start(this.nextStart)
-    this.nextStart += buffer.duration
-    this.sources.add(source)
+    if (bytes.length < 2) return
     this.queued++
     this.level = 0
     if (this.phase !== 'speaking') this.setPhase('speaking')
     const generation = this.playGeneration
-    source.onended = () => {
-      this.sources.delete(source)
-      this.played(generation)
-    }
+    output.play(bytes, () => this.played(generation))
   }
 
   private played(generation: number) {
     if (generation !== this.playGeneration || this.ended) return
+    this.lastPlayed = Date.now()
     this.queued = Math.max(0, this.queued - 1)
     if (this.queued !== 0 || !this.turnDone) return
+    this.finishSpeaking()
+  }
+
+  private finishSpeaking() {
+    this.stopWatch()
     if (this.phase === 'speaking') this.setPhase('listening')
     this.flush()
   }
 
+  /** After the voice's turn, playback that stops reporting progress doesn't hold the call (see `stallMs`). */
+  private watch() {
+    this.stopWatch()
+    this.lastPlayed = Date.now()
+    this.watchdog = setInterval(() => {
+      if (this.ended || this.queued === 0 || !this.turnDone) return this.stopWatch()
+      if (Date.now() - this.lastPlayed < GeminiLiveEngine.stallMs) return
+      console.error('gemini playback stalled; back to listening')
+      this.playGeneration++
+      this.queued = 0
+      this.onStall?.()
+      this.finishSpeaking()
+    }, GeminiLiveEngine.stallMs / 2)
+  }
+
+  private stopWatch() {
+    if (this.watchdog) clearInterval(this.watchdog)
+    this.watchdog = null
+  }
+
   private stopPlayback() {
+    this.stopWatch()
     this.playGeneration++
     this.queued = 0
-    this.nextStart = 0
-    for (const s of this.sources) {
-      s.onended = null
-      try {
-        s.stop()
-      } catch {}
-    }
-    this.sources.clear()
+    this.output?.stop()
   }
 }

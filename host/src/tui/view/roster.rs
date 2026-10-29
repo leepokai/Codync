@@ -6,6 +6,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use super::super::app::{App, Bot, Click, Focus, Mark, Status};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, restyle, rput, u};
 use super::style::{avatar, glyph, theme};
@@ -49,12 +50,12 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             y += 1;
         }
     }
-    // Rows: an optional section label, then 2 lines per bot and a gap.
+    // Rows: an optional section label, then 2 lines per bot and a gap. The lead, on top, has no label.
     let any_pinned = bots.iter().any(|b| b.pinned);
     let mut rows: Vec<(u16, Option<&'static str>, Option<usize>)> = vec![];
     let mut y = 0u16;
     for (i, b) in bots.iter().enumerate() {
-        if any_pinned && (i == 0 || (bots[i - 1].pinned && !b.pinned)) {
+        if any_pinned && !b.lead && (i == 0 || bots[i - 1].band() != b.band()) {
             rows.push((y, Some(if b.pinned { "PINNED" } else { "BOTS" }), None));
             y += 1;
         }
@@ -91,7 +92,13 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         let tx = rput(buf, r.right() - 1, yy, &time, if b.unread > 0 { t.bold } else { t.dim });
         let gx = tx.saturating_sub(2);
         put(buf, gx, yy, 1, g, gs);
-        put(buf, x0 + 5, yy, gx.saturating_sub(x0 + 6), &b.name, t.bold);
+        // The badge sits below the avatar, leaving activity and unread indicators visible.
+        if b.lead {
+            put(buf, x0 + 3, yy + 1, 1, "★", t.amber);
+            app.hits.clicks.push((Rect::new(x0 + 3, yy + 1, 1, 1), Click::LeadAgent));
+        }
+        let name_x = x0 + 5;
+        put(buf, name_x, yy, gx.saturating_sub(name_x + 1), &b.name, t.bold);
         let (pv, ps) = preview(b);
         let badge = if b.unread > 0 { format!(" {} ", b.unread) } else { String::new() };
         let room = usize::from(wd.saturating_sub(7)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
@@ -111,8 +118,8 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     }
 }
 
-/// A one-line preview without Markdown punctuation.
-fn plain(s: &str) -> String {
+/// A one-line preview without Markdown punctuation: its first line (also how a reply's quote shows).
+pub(super) fn plain(s: &str) -> String {
     let line = s.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default();
     line.trim_start_matches(['#', '>', '-', '*', ' ']).replace("**", "").replace('`', "")
 }
@@ -125,13 +132,20 @@ pub(super) fn preview(b: &Bot) -> (String, Style) {
 fn preview_raw(b: &Bot) -> (String, Style) {
     let t = theme();
     match b.mark() {
-        Mark::Need => (if b.activity.is_empty() { "Needs your approval".into() } else { b.activity.clone() }, t.amber),
-        Mark::Work => (if b.activity.is_empty() { "Working…".into() } else { b.activity.clone() }, t.secondary),
-        Mark::Error => {
-            (if b.last_message.is_empty() { "Something went wrong".into() } else { b.last_message.clone() }, t.red)
-        }
+        Mark::Need => (
+            if b.activity.is_empty() { tr("Needs your approval").into_owned() } else { tr(&b.activity).into_owned() },
+            t.amber,
+        ),
+        Mark::Work => (
+            if b.activity.is_empty() { tr("Working…").into_owned() } else { tr(&b.activity).into_owned() },
+            t.secondary,
+        ),
+        Mark::Error => (
+            if b.last_message.is_empty() { tr("Something went wrong").into_owned() } else { b.last_message.clone() },
+            t.red,
+        ),
         Mark::Unread => (b.last_message.clone(), t.text),
-        Mark::Idle if b.last_message.is_empty() => ("No messages yet".into(), t.dim),
+        Mark::Idle if b.last_message.is_empty() => (tr("No messages yet").into_owned(), t.dim),
         Mark::Idle => (b.last_message.clone(), t.secondary),
     }
 }
@@ -159,5 +173,9 @@ pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
         put_line(buf, r.x + 1, y, 2, &avatar(app, b));
         let (g, gs) = glyph(app, b.mark());
         put(buf, r.x + 3, y, 1, g, gs);
+        if b.lead && y + 1 < r.bottom() {
+            put(buf, r.x + 2, y + 1, 1, "★", t.amber);
+            app.hits.clicks.push((Rect::new(r.x + 2, y + 1, 1, 1), Click::LeadAgent));
+        }
     }
 }

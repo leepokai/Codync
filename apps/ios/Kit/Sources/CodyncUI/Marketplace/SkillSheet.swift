@@ -36,9 +36,6 @@ struct SkillSheet: View {
         return skill.installed || model.installedSkills.contains { $0.id == source.lowercased() }
     }
 
-    /// Older hosts list skills but can't show what's in them.
-    private var readable: Bool { !AppVersion.isBelow(model.hello?.version ?? "", SlashCommands.minSkillsHost) }
-
     var body: some View {
         VStack(spacing: 0) {
             ModalHeader(skill.name) {
@@ -60,29 +57,26 @@ struct SkillSheet: View {
                         Text(skill.description).font(.subheadline).foregroundStyle(Palette.secondary)
                     }
                 }
-                if readable {
-                    CardSection("Instructions", footer: added ? "Bots read these before using the skill." : "Add it to let bots use these instructions.") {
-                        if let markdown {
-                            if markdown.isEmpty {
-                                Text("No instructions.").foregroundStyle(Palette.secondary)
-                            } else {
-                                MarkdownText(markdown)
-                            }
-                        } else if error == nil {
-                            Spinner()
+                CardSection("Instructions", footer: added ? "Bots read these before using the skill." : "Add it to let bots use these instructions.") {
+                    if let markdown {
+                        if markdown.isEmpty {
+                            Text(L10n.tr("No instructions.")).foregroundStyle(Palette.secondary)
+                        } else {
+                            MarkdownText(markdown)
                         }
+                    } else if error == nil {
+                        Spinner()
                     }
                 }
                 if let error {
                     CardSection {
-                        Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                        Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                     }
                 }
             }
         }
         .background(Palette.background)
         .task {
-            guard readable else { return }
             do {
                 markdown = try await model.skillDetails(skill)
             } catch {

@@ -22,6 +22,12 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   user id. Otherwise a random install id (the host id on a computer, a UUID on the iPhone).
   The first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events join
   the account.
+- **Sessions.** Every event carries a `$session_id` (a UUIDv7) that changes after 30 minutes
+  without events or 24 hours in all, as in PostHog's own SDKs, and on each launch of an app or
+  start of the host (host `analytics/session.rs`, `AnalyticsSession` on the iPhone and Android),
+  so an error's page shows the events that led up to it. Nothing is recorded for it beyond the
+  events themselves. A crash reported on the next launch keeps the session it happened in, with
+  the time it was reported.
 - **Location, never the IP.** The project's GeoIP transformation turns the sender's IP into an
   approximate location (`$geoip_country_name`, `$geoip_city_name`, …), then the project's
   *Discard client IP data* drops the IP before storage.
@@ -30,72 +36,74 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
 
 ## Where events come from
 
-- **Host** (`host/src/analytics.rs`): `api::dispatch` maps successful API calls to events
-  (`analytics::observe_call`), so every client is covered once: `bot_created`, `bot_updated`,
-  `bots_reordered`, `bot_deleted`, `message_sent`, `turn_stopped`, `session_reset`, `permission_answered`,
-  `routine_saved`, `routine_deleted`, `routine_run`, `voice_call_finished`,
-  `remote_screen_opened`, `connector_installed`, `skill_installed`. A resent message (same
-  `clientNonce`, e.g. a phone replaying after a reconnect) is not counted again. Bot actors
-  report `turn_finished` when an agent's turn ends. `client` is `local` (desktop app, terminal UI)
-  or `remote` (phones). Each event carries its own `timestamp` and `uuid` (a resent batch counts
-  once) and the computer's key (`computer`, a hash of its id); batches go to `/batch/` every 30 s and once more when the
+- **Host** (`host/src/analytics.rs`, `analytics/`): `api::dispatch` maps successful API calls to
+  events (`analytics::observe_call`), so every client is covered once; a resent message (same
+  `clientNonce`) is not counted again. Bot actors report `turn_finished` and `agent_fell_back` (a turn moved on to the bot's next
+  agent: the agent and why, see [agent fallbacks](agent-fallback.md)), the phone channel
+  reports pairing and daily phone connections, and the host reports its own start. Each event
+  carries its own `timestamp` and `uuid` (a resent batch counts once) and the computer's key
+  (`computer`, a hash of its id); batches go to `/batch/` every 30 s and once more when the
   host stops.
-- **Desktop** reports app-level events through the loopback-only `track` method
-  (`app_opened`, `onboarding_completed` when the welcome screen is finished, `signed_in`,
-  `signed_out`) and turns sharing on or off with `setAnalytics`; `hello` carries `analytics: true | false`.
-  The **terminal UI** reports only `app_opened` (it has no welcome screen or sign-in).
-- **iPhone** (`CodyncKit` analytics client, no SDK) sends its own app-level events
-  (`app_opened`, `onboarding_completed`, `computer_paired`, `signed_in`, `signed_out`,
-  `voice_call_started`) straight to PostHog. Widgets and the notification extension never send.
-  **Android** (`apps/android/.../Analytics.kt`, its port, no SDK) sends the same events with
-  `$lib` `codync-android`; widgets never send.
+- **Desktop and terminal UI** report app-level events (opening, onboarding, sign-in, screens,
+  the star ask, links) through the loopback-only `track` method, which accepts only the
+  catalog's events and properties. The desktop app queues them until the host answers; when it
+  can't get a working host at all, its main process reports `host_setup_failed` straight to
+  PostHog, only while the host's last answer said sharing is on (or on a first install, before
+  the host stored any setting). It turns sharing on or off with `setAnalytics`; `hello` carries
+  `analytics: true | false`.
+- **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
+  send their own app-level events straight to PostHog. Widgets and the notification extension
+  never send.
+- **codync.dev** counts page views and clicks on download and outbound links without cookies.
 
-## Event properties
-
-Besides `env`, `app_version`, `$os`, `$lib`:
-
-| Event | Properties |
-|---|---|
-| `bot_created` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
-| `message_sent` | `kind`, `agent`, `in_thread`, `attachments` (count) |
-| `turn_finished` | `agent`, `outcome` (`done`/`stopped`/`failed`/`incomplete`), `stop_reason` (ACP's, else `other`), `source` (`user`/`routine`/`group`/`bot`), `seconds`; when failed, `error` (`not_installed`/`sign_in`/`timeout`/`exited`/`agent_error`/`io`/`other`) and, for `agent_error`, the agent's JSON-RPC `rpc_code` |
-| `voice_call_finished` | `seconds` |
-| `connector_installed` | `connector` (catalog name or `custom`) |
-| `skill_installed` | `custom` |
-| `computer_paired` | `via` (`qr`/`account`), `computer` |
-| every host event | `client` (`local`/`remote`), `computer`, `arch` |
+Every event, its sender and its properties: [analytics events](../reference/analytics-events.md).
 
 ## Error tracking
 
 Crashes and uncaught errors go to PostHog Error Tracking as `$exception` events with the same
 switch, identity and common properties as everything else, plus `process`. No SDK: each client
-builds PostHog's generic `custom` frames (oldest first, the failing one last).
+builds PostHog frames itself (oldest first, the failing one last): generic `custom` frames, or
+`apple` frames on the iPhone.
 
 - **Host** (`host/src/analytics/errors.rs`): its own panics (a panic hook queues them for the
   analytics task), and `reportError`, loopback only, for the computer's apps. Process `host`.
 - **Terminal UI**: its panics, through `reportError` from the panic hook. Process `tui`.
 - **Desktop** (`apps/desktop/src/main/error-reports.ts`, `shared/error-report.ts`): uncaught
   errors and rejections in the main process and every window, and windows or helpers that
-  crashed (`RendererGone`, `GPUGone`, … with Electron's reason), through `reportError`.
+  crashed (`RendererGone`, `GPUGone`, … with Electron's reason), through `reportError`. Not
+  reported: error events that carry no error (the ResizeObserver loop notice), and helpers that
+  exited normally or were ended from outside (`clean-exit`, `killed`: logout, shutdown, an update),
+  and a GPU process that couldn't launch (the app goes on with software rendering).
   Processes `desktop-main`, `desktop-renderer`. The renderer is built unminified so function
   names stay readable.
 - **iPhone** (`CodyncKit` `CrashReports`): MetricKit's crash diagnostics, delivered on the next
-  launch, straight to PostHog with the version that crashed. Frames are `binary + offset`
-  (unsymbolicated; Xcode Organizer has the symbolicated crash). Process `ios`.
+  launch, straight to PostHog with the version that crashed and the session it ended. Frames are
+  code addresses with the binaries they ran in (`$debug_images`: each binary's UUID and load
+  address). PostHog symbolicates them with the release's dSYMs, which the *iOS dSYMs* workflow
+  uploads from its Xcode Cloud archive after *Submit iOS* (`tools/upload-dsyms.py`, secret
+  `POSTHOG_CLI_API_KEY`: a personal API key with *error tracking write* on this project). A frame
+  it can't resolve, such as the system's, shows `binary + offset`. Process `ios`. Reading one,
+  older versions and fixes: [iPhone crash tracing](../guides/iphone-crash-tracing.md).
 - **Android** (`CrashReports.kt`): an uncaught exception is written down as it happens and sent
   on the next launch: its type and frames (class, method, file name, line), never the message.
   Process `android`.
 
 What leaves the device: the error's type (`Panic`, `TypeError`, `EXC_BAD_ACCESS`), how it was
-caught, function names, and file names and line numbers inside Codync's code; an absolute path
-keeps only its file name. Never the error's message: only a panic message written as a literal
-in the code, an Electron crash reason or a signal name. Release host builds are stripped, so a
+caught, function names, and file names and line numbers inside Codync's code (on the iPhone,
+code addresses and binary UUIDs instead); an absolute path keeps only its file name. Never the
+error's message: only a panic message written as a literal in the code, an Electron crash reason
+or a signal name. Release host builds are stripped, so a
 host panic is its location only.
 
 Alerts email the owner, from insights on the *Codync users* dashboard (production only): *Any
 crash or error in a day* (`$exception` > 0, checked daily) and *Failed agent turns over 15 in an
-hour* (`turn_finished` with `outcome = failed`, checked hourly; a normal hour has a few). Error
+hour* (`turn_finished` with `outcome = failed`, checked hourly; a normal hour has a few). A turn
+that only needs the user to sign in or install the agent reports `needs_setup` and isn't counted;
+older hosts still report it as `failed` with `error` `sign_in`/`not_installed`. Error
 tracking's own issue alerts (new, reopened, spiking) need a Slack or Discord destination.
+
+Errors traced to a root cause are written up in [investigations](../README.md#investigations);
+ways to record more detail are proposed in [error tracking detail](../plans/error-tracking-detail.md).
 
 ## Metrics
 
@@ -108,7 +116,10 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 | Metric | Definition |
 |---|---|
 | Active user (DAU/WAU/MAU) | Sent ≥1 `message_sent` in the period. Any event at all counts as *present*, not active (`app_opened` on the iPhone fires on every return to the foreground). |
-| New user | First event of any kind in the period. |
+| Present (frequency) | Days in the period with `app_opened`, `window_opened` or `phone_connected` (stickiness). A computer whose only events are `turn_finished`/`routine_run` ran unattended. |
+| New user | First event of any kind in the period. A new computer also sends `host_started` with `first_run`. |
+| Onboarded | Desktop: `onboarding_completed`. Phones: `computer_paired` (or `onboarding_completed` with `via = skipped`, which is not onboarded). Funnels: [analytics events](../reference/analytics-events.md#funnels). |
+| Star rate | `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`. |
 | Activated | Sent ≥1 message from a phone (`message_sent`, `client = remote`) within 7 days of first seen. In the first week of data, 4 of 5 such users came back after 24 h and none of the 6 computer-only ones did. |
 | Successful turn rate | `turn_finished` with `outcome = done` ÷ all `turn_finished` with `source = user`, per agent and per `$os`. |
 | Frustration rate | (`turn_stopped` + `session_reset`) ÷ `message_sent`, per `$os`. |

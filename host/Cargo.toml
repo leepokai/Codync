@@ -1,13 +1,17 @@
 [package]
 name = "codync-host"
-version = "2.17.5"
+version = "2.31.2"
 edition = "2024"
-# let-chains (`if let … && let …`) need 1.88.
-rust-version = "1.88"
+# iroh (codync-network) needs 1.91.
+rust-version = "1.91"
 default-run = "codync-host"
 description = "Runs your coding-agent bots and serves the Codync apps"
 license = "Apache-2.0"
 repository = "https://github.com/leepokai/Codync"
+
+# The memory and network crates build here; memory is mirrored to its own repository (docs/design/bot-memory.md#packaging).
+[workspace]
+members = ["crates/memory", "crates/network"]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -16,6 +20,10 @@ base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
+codync-mem = { path = "crates/memory" }
+# aws-lc-rs, like reqwest and tokio-tungstenite. With ring built in too (a `--workspace` build turns
+# on the crate's default), rustls has no default provider, so `main` installs one.
+codync-network = { path = "crates/network", default-features = false, features = ["tls-aws-lc-rs"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 croner = "3"
 crossterm = { version = "0.29", features = ["event-stream"] }
@@ -27,12 +35,14 @@ futures = "0.3.34"
 gethostname = "1.1.0"
 getrandom = "0.4"
 hkdf = "0.13.0"
+iana-time-zone = "0.1.65"
 if-addrs = "0.15.0"
 portable-pty = "0.9.0"
 qrcode = { version = "0.14.1", default-features = false }
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
@@ -43,10 +53,12 @@ tar = "0.4.46"
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+toml_edit = { version = "0.25.15", default-features = false, features = ["parse"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 unicode-width = "0.2"
-uuid = { version = "1.26.1", features = ["v4"] }
+url = "2.5.8"
+uuid = { version = "1.26.1", features = ["v4", "v7"] }
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 
 zeroize = "1"
@@ -59,6 +71,7 @@ keyring = { version = "3.6.3", features = ["sync-secret-service", "crypto-rust",
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security"] }
 
 # rust-skills lint-* rules: all default groups plus pedantic, with the
 # library-oriented pedantic lints turned off for this binary crate.
@@ -89,6 +102,11 @@ undocumented_unsafe_blocks = "warn"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# The host hashes its own binary before it listens (`service::capture_binary_identity`). Unoptimized,
+# SHA-256 over a debug build (500 MB on Linux) takes long enough that test hosts miss their 30 s start.
+[profile.dev.package.sha2]
+opt-level = 3
 
 # The host Codync Dev bundles (apps/desktop/tools/native-host.mjs): optimized like a release, but
 # a host change rebuilds in about 25 s instead of 80 s per architecture.

@@ -18,25 +18,27 @@ import kotlinx.serialization.json.jsonObject
 
 /** All entity writes, send reconciliation and the event cursor commit together. */
 class MirrorDatabase(context: Context, directory: File, computerId: String) :
-    SQLiteOpenHelper(context, File(directory, "mirror-$computerId.db").absolutePath, null, 2) {
+    SQLiteOpenHelper(context, File(directory, "mirror-$computerId.db").absolutePath, null, 3) {
     init { require(computerId.matches(Regex("[A-Za-z0-9_-]{22}"))) }
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
         db.execSQL("CREATE TABLE bots(id TEXT PRIMARY KEY, rev INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)")
-        db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
-        db.execSQL("CREATE INDEX entries_lane ON entries(bot_id, thread_id, seq)")
-        db.execSQL("CREATE INDEX entries_nonce ON entries(bot_id, nonce)")
+        createConversation(db)
         db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
-        db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
     }
+    /** The conversation is a cache of the computer's: an older schema's is dropped and fetched again; unsent messages stay. */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        require(oldVersion == 1 && newVersion == 2) { "Unsupported mirror schema" }
-        db.execSQL("ALTER TABLE entries ADD COLUMN nonce TEXT")
+        db.execSQL("DROP TABLE IF EXISTS entries")
+        db.execSQL("DROP TABLE IF EXISTS history")
+        createConversation(db)
+        setMeta(db, "rev", "0")
+    }
+    private fun createConversation(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
+        db.execSQL("CREATE INDEX entries_chat ON entries(bot_id, seq)")
         db.execSQL("CREATE INDEX entries_nonce ON entries(bot_id, nonce)")
-        rows(db, "SELECT payload FROM entries") { WireJson.decodeFromString<Entry>(it) }.forEach { entry ->
-            if (entry.kind == "user") db.update("entries", ContentValues().apply { put("nonce", entry.clientNonce) }, "id=?", arrayOf(entry.id))
-        }
+        db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
     }
 
     @Synchronized fun snapshot(): MirrorSnapshot {
@@ -53,11 +55,18 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
 
     @Synchronized fun revision(): Long = meta(readableDatabase, "rev")?.toLong() ?: 0
 
-    @Synchronized fun setStamp(hostId: String, stamp: String) = transaction { db ->
-        if (meta(db, "hostId")?.let { it != hostId } == true) reset(db)
-        if (meta(db, "stamp")?.let { it != stamp } == true) setMeta(db, "rev", "0")
+    /**
+     * Another computer database, app build or host version fetches the conversation again from rev 0, like iOS
+     * and desktop: the catch-up brings only each chat's newest entries and never says one is gone, so the held
+     * ones go too (unsent messages stay). Returns whether they went.
+     */
+    @Synchronized fun setStamp(hostId: String, stamp: String): Boolean = transaction { db ->
+        val otherHost = meta(db, "hostId")?.let { it != hostId } == true
+        val otherStamp = meta(db, "stamp")?.let { it != stamp } == true
+        if (otherHost) reset(db) else if (otherStamp) dropConversation(db)
         setMeta(db, "hostId", hostId)
         setMeta(db, "stamp", stamp)
+        otherHost || otherStamp
     }
 
     @Synchronized fun apply(event: MirrorEvent) = apply(listOf(event))
@@ -75,7 +84,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
-            MirrorEvent.Resync, MirrorEvent.Ignored -> Unit
+            // Artifacts and the network live in memory (`AppStore.receiveArtifacts`, `receiveNetwork`).
+            MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged, is MirrorEvent.Call, is MirrorEvent.Network -> Unit
         }
     }
 
@@ -128,16 +138,20 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         val revision = db.rawQuery("SELECT rev FROM entries WHERE id=?", arrayOf(entry.id)).use { if (it.moveToFirst()) it.getLong(0) else -1 }
         if (revision > entry.rev) return
         check(db.insertWithOnConflict("entries", null, ContentValues().apply {
-            put("id", entry.id); put("bot_id", entry.botId); put("thread_id", entry.threadId)
+            put("id", entry.id); put("bot_id", entry.botId)
             put("seq", entry.seq); put("rev", entry.rev); put("payload", WireJson.encodeToString(entry))
             put("nonce", entry.clientNonce?.takeIf { entry.kind == "user" })
         }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Couldn't save the conversation update." }
         entry.clientNonce?.takeIf { entry.kind == "user" && it.isNotEmpty() }?.let { db.delete("pending", "nonce=?", arrayOf(it)) }
     }
     private fun reset(db: SQLiteDatabase) {
-        listOf("bots", "entries", "history").forEach { db.delete(it, null, null) }
-        setMeta(db, "rev", "0")
+        db.delete("bots", null, null)
+        dropConversation(db)
         db.delete("meta", "k IN ('usage','screen')", null)
+    }
+    private fun dropConversation(db: SQLiteDatabase) {
+        listOf("entries", "history").forEach { db.delete(it, null, null) }
+        setMeta(db, "rev", "0")
     }
     private fun bump(db: SQLiteDatabase, rev: Long) = setMeta(db, "rev", maxOf(rev, meta(db, "rev")?.toLong() ?: 0).toString())
     private fun meta(db: SQLiteDatabase, key: String): String? = db.rawQuery("SELECT v FROM meta WHERE k=?", arrayOf(key)).use {
@@ -151,9 +165,9 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     private fun <T> rows(db: SQLiteDatabase, query: String, decode: (String) -> T): List<T> = db.rawQuery(query, null).use {
         buildList { while (it.moveToNext()) add(decode(it.getString(0))) }
     }
-    private fun transaction(block: (SQLiteDatabase) -> Unit) {
+    private fun <T> transaction(block: (SQLiteDatabase) -> T): T {
         val db = writableDatabase
         db.beginTransaction()
-        try { block(db); db.setTransactionSuccessful() } finally { db.endTransaction() }
+        try { return block(db).also { db.setTransactionSuccessful() } } finally { db.endTransaction() }
     }
 }

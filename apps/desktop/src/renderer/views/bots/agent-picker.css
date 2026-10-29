@@ -1,0 +1,78 @@
+.agent-picker { min-width: 0; }
+.agent-picker-summary, .agent-picker-choice, .agent-picker-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: var(--text);
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-xs);
+}
+.agent-picker-summary {
+  width: 100%;
+  min-height: 32px;
+  gap: 8px;
+  font-size: var(--text-callout);
+}
+.agent-picker-identity { display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 42%; }
+.agent-picker-identity > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-picker-model { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--secondary); }
+.agent-picker-effort { flex: 0 1 auto; max-width: 24%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-caption); color: var(--secondary); }
+.agent-picker-panel { padding: 4px 0 2px; }
+.agent-picker-selectors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.agent-picker-selectors > :only-child { grid-column: 1 / -1; }
+.agent-picker-choice { gap: 6px; padding: 9px 10px; background: var(--surface); font-size: var(--text-callout); }
+.agent-picker-choice > .truncate { flex: 1; }
+.agent-picker-choice[aria-expanded="true"] { background: var(--surface); }
+.agent-picker-search { padding: 3px 8px; min-height: 36px; }
+.agent-picker-search input { width: 0; flex: 1; min-width: 0; color: var(--text); background: transparent; border: 0; font: inherit; }
+.agent-picker-search input:focus-visible { outline: none; }
+.agent-picker-list { max-height: 196px; overflow-y: auto; overscroll-behavior: contain; }
+.agent-picker-item { width: 100%; gap: 8px; min-height: 34px; padding: 8px 10px; }
+.agent-picker-result-name { min-width: 0; overflow-wrap: anywhere; }
+.agent-picker-item[aria-pressed="true"], .agent-picker-item:hover { background: var(--surface); }
+.agent-picker-choice:hover { background: var(--surface); }
+.agent-picker-default { border: 0; background: transparent; color: var(--secondary); font-size: var(--text-caption); padding: 3px 0; }
+.agent-picker-default:hover { color: var(--text); }
+.agent-picker-setting { padding-top: 4px; }
+.agent-picker-options .segmented { width: 100%; }
+.agent-picker-options .segmented-option { min-width: 0; padding-inline: 5px; font-size: var(--text-caption); white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.agent-picker-note { line-height: 1.5; overflow-wrap: anywhere; }
+.agent-picker button { transition: background var(--hover), color var(--hover); }
+.agent-picker button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+.reasoning-control { padding-top: 4px; }
+.reasoning-heading { display: flex; align-items: center; gap: 8px; font-size: var(--text-caption); color: var(--secondary); }
+.reasoning-value { flex: 1; min-width: 0; text-align: center; overflow-wrap: anywhere; font-size: var(--text-callout); font-weight: 500; color: var(--text); }
+.reasoning-heading .agent-picker-default { display: flex; align-items: center; gap: 5px; }
+.reasoning-slider { position: relative; height: 36px; margin-top: 6px; }
+.reasoning-track { position: absolute; inset: 3px 0; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface); }
+.reasoning-fill { height: 100%; width: calc(15px + (100% - 30px) * var(--effort-position)); background: color-mix(in srgb, var(--text) 14%, var(--surface)); }
+.reasoning-stops { position: absolute; inset: 0 15px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+.reasoning-stops > span { width: 4px; height: 4px; border-radius: 50%; background: var(--secondary); }
+.reasoning-slider input { appearance: none; position: absolute; inset: 0; width: 100%; height: 36px; margin: 0; padding: 0; background: transparent; cursor: pointer; }
+.reasoning-slider input::-webkit-slider-runnable-track { height: 36px; background: transparent; }
+.reasoning-slider input::-webkit-slider-thumb { appearance: none; width: 30px; height: 30px; margin-top: 3px; border-radius: 50%; background: var(--text); box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
+.reasoning-slider input:focus-visible { outline: 2px solid var(--secondary); outline-offset: 3px; border-radius: var(--radius-pill); }
+.reasoning-slider.unknown input::-webkit-slider-thumb { opacity: 0; }
+.reasoning-slider.unknown .reasoning-fill { opacity: 0; }
+
+/* Brief feedback for discrete changes; the actual range remains keyboard accessible. */
+.agent-picker-text-change { display: inline-block; animation: agent-picker-text-in 120ms ease-out; }
+@keyframes agent-picker-text-in {
+  from { opacity: .35; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.reasoning-fill { transition: width var(--hover), opacity var(--hover); }
+.reasoning-thumb {
+  position: absolute; top: 3px; left: calc((100% - 30px) * var(--effort-position));
+  width: 30px; height: 30px; border-radius: 50%; background: var(--text);
+  box-shadow: 0 1px 4px rgb(0 0 0 / .15); pointer-events: none;
+  transition: left var(--hover), opacity var(--hover);
+}
+.reasoning-slider input::-webkit-slider-thumb { opacity: 0; }
+.reasoning-slider.unknown .reasoning-thumb { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .agent-picker-text-change { animation: none; }
+}

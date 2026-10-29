@@ -1,0 +1,122 @@
+Every bot runs one coding agent on your computer. Codync drives agents through the [Agent Client Protocol](https://agentclientprotocol.com) (ACP), so it can run any agent that speaks it: the ones it knows by name, everything in the official [ACP registry](https://agentclientprotocol.com/registry), and any command you give it. Each bot picks its own agent, and different bots can use different ones.
+
+Codync uses the agents with the accounts they're already signed in to on your computer, such as Claude Code with your Claude plan or Codex with your ChatGPT plan. It never calls a provider's API with your login.
+
+## Usage limits
+
+On desktop, open **Settings > Usage** to see the limits reported by your connected computers. The host refreshes usage every five minutes.
+
+Codex needs its CLI installed and signed in on the computer. The host reads current account limits without starting a conversation or using a model. If the login stops working or the current limits are unavailable, old session-file readings are not shown. Sign in again from **Extensions** or run `codex login --device-auth` on that computer.
+
+## Agents Codync knows by name
+
+For these agents, Codync knows the command it looks for, how to install it and how to sign in. The agent must be installed on the computer before a bot can use it.
+
+| Agent | Command Codync looks for | Sign in from a terminal |
+| --- | --- | --- |
+| Claude Code | `claude` | `claude auth login` |
+| Codex | `codex` | `codex login --device-auth` |
+| Cursor | `cursor-agent` or `agent` | `cursor-agent login` |
+| Pi | `pi` | run `pi`, then type `/login` |
+| oh-my-pi | `omp` | `omp login` |
+| OpenCode | `opencode` | `opencode auth login` |
+| Grok Build | `grok` | `grok login --device-auth` |
+| Gemini CLI | `gemini` | run `gemini` and sign in with Google |
+| GitHub Copilot | `copilot` | `copilot login` |
+| Qwen Code | `qwen` | run `qwen`, then type `/auth` |
+| Hermes Agent | `hermes` | `hermes acp --setup` to choose a provider and model |
+| goose | `goose` | `goose configure` |
+| Kimi Code | `kimi` | `kimi login` |
+| Factory Droid | `droid` | run `droid` |
+| Amp | `amp` | `amp login` |
+| Kilo | `kilo` | `kilo auth login` |
+| Cline | `cline` | `cline auth` |
+| Auggie | `auggie` | `auggie login` |
+| Mistral Vibe | `vibe-acp` or `vibe` | `vibe --setup` |
+| Kiro CLI | `kiro-cli` | `kiro-cli login` |
+| Devin | `devin` | `devin auth login` |
+| Qoder CLI | `qodercli` | `qodercli login` |
+| CodeBuddy Code | `codebuddy` or `cbc` | run `codebuddy` |
+| WorkBuddy | the CLI inside the WorkBuddy app | sign in from Codync |
+| MiniMax Code | `mcode` | `mcode login` |
+| Junie | `junie` | run `junie` |
+| Google Antigravity | `agy` | sign in from Codync with **Log in with Google** |
+| Cortex Code | `cortex` | run `cortex` and set up a connection |
+| Poolside | `pool` | `pool login` |
+| DeepSeek Harness | `dsh` | run `dsh web` and save your DeepSeek API key under **Settings → Models** |
+
+Signing in to Google Antigravity with `agy` in a terminal doesn't sign in the part Codync runs, so use the sign-in option in Codync's setup sheet for it.
+
+WorkBuddy is separate from CodeBuddy Code. Codync runs the CLI bundled in the WorkBuddy app: `WorkBuddy AI.app` (from workbuddy.ai) or `WorkBuddy.app` (from codebuddy.cn) on macOS, or its install folder on Windows (`%LOCALAPPDATA%\Programs\WorkBuddy AI` or `WorkBuddy`). That CLI only ships WorkBuddy's lite build, so Codync starts it the way the app does. It runs on Node.js: if the computer has none, Codync offers to add its own. Codync does not install WorkBuddy, and there is no Linux build, so Codync on Linux doesn't list it. Sign in from Codync: the WorkBuddy app's login stays in the app, so this CLI asks again and opens a browser. A `codebuddy` command on your `PATH` stays CodeBuddy Code.
+
+DeepSeek Harness runs its own `dsh --profile acp` mode. It has no sign-in command: it uses the DeepSeek API key saved in `dsh web`, or `DEEPSEEK_API_KEY` set in `~/.dsh/.env`. It can't reopen an earlier session, so after the host or the agent restarts, a DeepSeek Harness bot starts a new session; the chat in Codync stays.
+
+Hermes Agent runs its own `hermes acp` mode, with the provider and model you pick in `hermes acp --setup`. On Windows, Codync also finds it in its install folders (`%LOCALAPPDATA%\hermes\bin`) without a `PATH` change. Hermes and Gemini CLI keep a memory of their own that every bot on them shares; see [Memory](/docs/memory#agents-with-a-memory-of-their-own).
+
+## Other agents from the ACP registry
+
+Codync also lists every other agent in the ACP registry, about 40 more. These need no install: Codync fetches one the first time a bot uses it, through `npx`, `uvx` or a build for your platform, which it keeps in `~/.codync/agents`. Codync refreshes its copy of the registry once a day.
+
+Codync doesn't know these agents' own sign-in commands. If one needs an account, sign in to it on the computer first, or use a sign-in option the agent offers in its setup sheet.
+
+## A custom command
+
+To run an agent that isn't listed, open the bot's settings, set **Agent** to **Custom command** and type the command that starts it in ACP mode, such as `my-agent --acp`. Enter a model ID by hand if you need one.
+
+## How Codync finds installed agents
+
+The host looks for each agent's command on the same `PATH` your login shell uses, plus the usual install folders (Homebrew, `~/.local/bin`, nvm, bun, volta, asdf, mise, pnpm and others). When an installed agent has its own ACP mode, Codync runs it directly. Otherwise it runs the agent's ACP adapter from the registry.
+
+Opening **Extensions** checks again, so an agent you installed or signed in to outside Codync shows up without restarting anything.
+
+## Extensions: install and set up agents
+
+Agents are set up from **Extensions**, which belongs to one computer:
+
+- **Desktop:** **Extensions** at the bottom of the sidebar. With several computers, each computer's heading in the sidebar has its own Extensions button instead.
+- **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap **Extensions** on the computer.
+- **Terminal UI:** press `A`.
+
+The **Agents** section shows each agent's status: **Installed**, **Not installed**, **Not signed in**, **Needs Node.js**, or **Sets up on first use** (registry agents). Select an agent to open its setup sheet. It walks through up to three steps.
+
+### Install
+
+For an agent Codync knows by name, **Install** runs the agent's official installer on the computer. Agents published only on npm (such as Gemini CLI, Cline, Auggie and Kilo) install with npm. The install runs in a terminal on the computer, and you watch it from the device you're on. Where Codync has no installer for your platform, the sheet tells you how to install the agent yourself.
+
+### Node.js
+
+Some agents run through an adapter that needs Node.js, such as Claude Code, Codex and Pi. If the computer has no Node.js, Extensions shows **Add Node.js** and those agents read **Needs Node.js**. Adding it downloads an official Node.js into `~/.codync/node`, used only by Codync's agents. Nothing outside `~/.codync` changes, and a Node.js you install yourself always comes first. On Linux distributions that use musl, such as Alpine, install Node.js yourself.
+
+### Signing in
+
+The **Sign in** step shows whether the agent is signed in on that computer, with **Check again** to ask again. Opening the sheet never downloads an agent: a registry agent that hasn't run on the computer yet shows **Set up**, which downloads it if needed and then checks its sign-in. If it isn't signed in, the sheet lists the ways to sign in:
+
+- **Sign in** (agents Codync knows by name): runs the agent's own sign-in command in a terminal on the computer. You type into it from your device, and links open on your device.
+- **The agent's own options:** each agent advertises its methods. Some run in a terminal, some open a browser on the computer, and some ask for API keys.
+- **Browser sign-in:** opens on the computer itself. If you're away from it, use [Remote screen](/docs/computer-use) to finish there.
+- **API keys:** typed into a form and saved encrypted on that computer only. Codync gives them to the agent each time it starts, and the values never leave the computer. **Get a key** links to the provider's page, and **Remove saved keys** deletes them.
+
+You can always sign in yourself in a terminal on the computer instead, using the commands in the table above. Sign in as the same user the host runs as.
+
+For an agent Codync knows by name, the chat also tells you when it needs signing in: if the agent isn't signed in when you create the bot, or a turn fails because it signed out, the chat shows a card with **Sign in**. Once you've signed in, Codync sends your waiting message again. Other agents show their own error in the chat.
+
+## Models and options
+
+In the bot's settings, under **Agent**:
+
+- **Model:** **Default** uses the agent's own default. The list shows the models the agent reports for the computer's sign-in; use the refresh button to load it again. If an agent doesn't report a model list, leave Default or type a model ID.
+- **Reasoning effort:** expand the Agent row to see the selected model’s supported levels. **Default** shows the agent’s reported level; selecting it removes this bot’s override. Each bot keeps its own choice across sessions, including when its model is Default, without changing the shared CLI settings. Available levels come from the agent, so they can differ by model.
+- **Fast mode:** a switch shown when the agent offers it for the model. Claude Code and Codex do. You can also type `/fast` in the chat.
+
+On desktop and iPhone, the collapsed Agent row summarizes the harness, model, effort and Fast mode. Expand it to access all settings. Click the harness or model to search; selecting a model closes only the search list. The refresh control is beside the search field. In the terminal, use the Agent, Model and model-option fields with the keyboard.
+
+Changing the model or its options starts a new agent session; the chat history stays. Switching the bot to a different agent starts it on that agent's default model.
+
+## The agent for a new bot
+
+There's no separate default-agent setting. A new bot gets Claude Code when Claude Code can run on the computer. Otherwise it gets the first agent Codync knows by name that can. A registry agent is never picked on its own. Change the agent in the bot's settings after you create it.
+
+## When an agent runs out
+
+A bot can have fallback agents that carry on the same turn when its own agent is out of usage, rate limited, signed out or won't start. See [Agent fallbacks](/docs/agent-fallbacks).
+

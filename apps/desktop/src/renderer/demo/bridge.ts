@@ -19,7 +19,7 @@ const snapshot: HostSnapshot = {
 const account: AccountState = { ready: true, configured: false, busy: false, error: null, user: null, cloudURL: null }
 const updates: UpdateState = {
   supported: false, checking: false, availableVersion: null, downloadPercent: null, staged: false, installing: false,
-  autoCheck: false, autoDownload: false, lastCheck: null, error: null, waitingForApp: null,
+  autoCheck: false, autoDownload: false, lastCheck: null, error: null,
 }
 
 const bridge: CodyncBridge = {
@@ -29,6 +29,7 @@ const bridge: CodyncBridge = {
   hostPort: 19222,
   appVersion: version,
   computerName: HOST_NAME,
+  openedAtLogin: false,
   // Opens the group at launch, like the website's screenshot.
   debugOpen: 'Ship room',
   host: {
@@ -56,7 +57,7 @@ const bridge: CodyncBridge = {
     signOut: async () => {},
     token: unavailable,
   },
-  speech: { available: false, locales: () => [], start() {}, stop() {}, onEvent: none },
+  speech: { available: false, locales: () => [], start() {}, stop() {}, onEvent: none, shortcut: async () => 'off', setShortcut: async () => 'off', setCalling() {} },
   ssh: {
     state: async () => ({ profiles: [], status: {}, attachments: [] }),
     onChange: none,
@@ -66,6 +67,8 @@ const bridge: CodyncBridge = {
     disconnect() {},
     trustHostKey() {},
     chooseKey: async () => null,
+    configHosts: async () => ({ access: 'denied', hosts: [] }),
+    setConfigAccess: async () => ({ access: 'denied', hosts: [] }),
   },
   island: {
     supported: false,
@@ -80,6 +83,7 @@ const bridge: CodyncBridge = {
     setFocusable() {},
     setKeys() {},
     onKey: none,
+    onVoiceKey: none,
     respond() {},
     send() {},
     openBot() {},
@@ -88,6 +92,7 @@ const bridge: CodyncBridge = {
   },
   cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }) },
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
+  artifacts: { show: async () => {}, openInBrowser: unavailable },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
   app: {
     reportError() {},
@@ -99,6 +104,8 @@ const bridge: CodyncBridge = {
     onCommand: none,
     resetAllData: async () => {},
     setLaunchAtLogin: async () => false,
+    appearance: async () => 'system',
+    setAppearance: async (value) => value,
     showInDock: async () => true,
     setShowInDock: async () => true,
     launchAtLogin: async () => false,

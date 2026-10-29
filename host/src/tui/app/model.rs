@@ -1,10 +1,9 @@
-//! What the host sends: bots, transcript entries, and the messages that carry them.
+//! What the host sends: transcript entries and the messages that carry them, and the states a bot shows (the bot
+//! itself is in `bot`).
 
 use serde_json::Value;
-use std::collections::BTreeMap;
 
 use super::super::manage::Reply;
-use super::tilde;
 
 pub enum Msg {
     Online(bool),
@@ -38,7 +37,6 @@ pub enum After {
     Tracked,
     Analytics,
     History(String),
-    Thread,
     Dirs,
     Pairing,
     Backends,
@@ -49,6 +47,8 @@ pub enum After {
     Installed,
     /// Memory, routines, marketplace, sign-in (`manage`).
     Sheet(Reply),
+    /// The network sheet's calls.
+    Network(super::super::manage::NetReply),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -81,181 +81,6 @@ impl Mark {
     }
 }
 
-#[derive(Clone, Debug)]
-#[allow(clippy::struct_excessive_bools, reason = "mirrors the host's bot JSON")]
-pub struct Bot {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub color: String,
-    pub shape: String,
-    pub backend: String,
-    pub cwd: String,
-    pub managed_workspace: bool,
-    pub auto: bool,
-    pub model: Option<String>,
-    /// The model's own settings (effort, fast…): option id → value.
-    pub model_options: BTreeMap<String, String>,
-    pub fast_mode: bool,
-    /// What the agent says about Fast mode: `unknown`, `offered`, `unsupported` or `refused`.
-    pub fast_support: String,
-    /// Why the agent refused it.
-    pub fast_issue: Option<String>,
-    pub pinned: bool,
-    /// Where the user dragged it (see `App::roster`).
-    pub position: i64,
-    pub hidden: bool,
-    pub notify: bool,
-    pub computer: bool,
-    pub connectors: Vec<String>,
-    pub skills: Vec<String>,
-    pub status: Status,
-    pub activity: String,
-    pub started_at: Option<i64>,
-    pub unread: i64,
-    pub last_message: String,
-    pub last_at: i64,
-    /// A group chat: several bots and the user, no agent of its own.
-    pub group: bool,
-    pub members: Vec<String>,
-    /// Where the running turn talks: a chat (`None` = its own) and a thread in it.
-    pub working_chat: Option<String>,
-    pub working_thread: Option<String>,
-}
-
-fn strs(v: &Value) -> Vec<String> {
-    v.as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect()
-}
-
-/// A model an agent offers (`agentModels`), with its own settings.
-pub struct AgentModel {
-    pub id: String,
-    pub name: String,
-    pub options: Vec<ModelOption>,
-}
-
-/// A model setting (effort, fast…) and its values as `(id, name)`.
-pub struct ModelOption {
-    pub id: String,
-    pub name: String,
-    pub values: Vec<(String, String)>,
-}
-
-impl AgentModel {
-    pub fn parse(v: &Value) -> Option<Self> {
-        let pair = |v: &Value| {
-            let id = v["id"].as_str()?.to_owned();
-            Some((v["name"].as_str().unwrap_or(&id).to_owned(), id))
-        };
-        let (name, id) = pair(v)?;
-        let options = v["options"].as_array().into_iter().flatten().filter_map(|o| {
-            let (name, id) = pair(o)?;
-            let values = o["values"].as_array()?.iter().filter_map(|v| pair(v).map(|(n, i)| (i, n))).collect();
-            Some(ModelOption { id, name, values })
-        });
-        Some(Self { id, name, options: options.collect() })
-    }
-}
-
-impl Bot {
-    /// An agent bot unless its agent said it has no Fast mode (an unknown one may: its first
-    /// session settles it), or one that has it on (so it can be turned off).
-    pub fn fast_shown(&self) -> bool {
-        !self.group && (self.fast_mode || self.fast_support != "unsupported")
-    }
-
-    /// Why Fast mode isn't in effect, when the agent turned it off itself.
-    pub fn fast_refusal(&self) -> Option<String> {
-        (self.fast_mode && self.fast_support == "refused").then(|| {
-            format!(
-                "The agent turned it off: {}. Switch it off and on to try again.",
-                self.fast_issue.as_deref().unwrap_or("not available")
-            )
-        })
-    }
-
-    /// What picking `/fast` does, or why Fast mode isn't in effect.
-    pub fn fast_detail(&self) -> String {
-        match self.fast_refusal() {
-            Some(why) => why,
-            None if self.fast_mode => "Turn off and return to standard speed".to_owned(),
-            None => "Turn on for faster replies and more usage".to_owned(),
-        }
-    }
-
-    /// Where it works, as the header shows it.
-    pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
-    }
-
-    pub(super) fn parse(v: &Value) -> Option<Self> {
-        let s = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
-        Some(Self {
-            id: v["id"].as_str()?.to_owned(),
-            name: s("name"),
-            description: s("description"),
-            color: v["avatarColor"].as_str().unwrap_or("blue").to_owned(),
-            shape: v["avatarShape"].as_str().unwrap_or("blob").to_owned(),
-            backend: s("backend"),
-            cwd: s("cwd"),
-            managed_workspace: v["managedWorkspace"] == true,
-            auto: v["permission"] == "auto",
-            model: v["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
-            model_options: v["modelOptions"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
-                .collect(),
-            fast_mode: v["fastMode"].as_bool().unwrap_or(false),
-            fast_support: v["fastModeSupport"].as_str().unwrap_or("unknown").to_owned(),
-            fast_issue: v["fastModeIssue"].as_str().map(str::to_owned),
-            pinned: v["pinned"].as_bool().unwrap_or(false),
-            position: v["position"].as_i64().unwrap_or(0),
-            hidden: v["hidden"].as_bool().unwrap_or(false),
-            notify: v["notify"].as_bool().unwrap_or(true),
-            computer: v["computer"].as_bool().unwrap_or(false),
-            connectors: strs(&v["connectors"]),
-            skills: strs(&v["skills"]),
-            status: match v["status"].as_str() {
-                Some("working") => Status::Working,
-                Some("needsInput") => Status::NeedsInput,
-                Some("error") => Status::Error,
-                _ => Status::Idle,
-            },
-            activity: s("activity"),
-            started_at: v["startedAt"].as_i64(),
-            unread: v["unread"].as_i64().unwrap_or(0),
-            last_message: s("lastMessage"),
-            last_at: v["lastAt"].as_i64().unwrap_or(0),
-            group: v["kind"] == "group",
-            members: strs(&v["members"]),
-            working_chat: v["workingChat"].as_str().map(str::to_owned),
-            working_thread: v["workingThread"].as_str().map(str::to_owned),
-        })
-    }
-
-    /// Whether the running turn talks in this chat: its main lane (`None`) or that thread.
-    pub fn works_in(&self, thread: Option<&str>) -> bool {
-        self.away().is_none() && self.working_thread.as_deref() == thread
-    }
-
-    /// The other chat (a group) the running turn talks in, if it isn't this bot's own.
-    pub fn away(&self) -> Option<&str> {
-        self.working_chat.as_deref().filter(|c| *c != self.id)
-    }
-
-    pub fn mark(&self) -> Mark {
-        match self.status {
-            Status::NeedsInput => Mark::Need,
-            Status::Error => Mark::Error,
-            Status::Working => Mark::Work,
-            Status::Idle if self.unread > 0 => Mark::Unread,
-            Status::Idle => Mark::Idle,
-        }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     User,
@@ -276,8 +101,6 @@ pub struct Entry {
     pub kind: Kind,
     pub data: Value,
     pub created_at: i64,
-    /// The main-chat message whose thread this is in; `None` is the main chat.
-    pub thread_id: Option<String>,
 }
 
 impl Entry {
@@ -301,7 +124,6 @@ impl Entry {
                 kind,
                 data: v["data"].clone(),
                 created_at: v["createdAt"].as_i64().unwrap_or(0),
-                thread_id: v["threadId"].as_str().map(str::to_owned),
             },
         ))
     }
@@ -332,9 +154,56 @@ impl Entry {
         self.kind == Kind::Agent && self.data["final"].as_bool().unwrap_or(false)
     }
 
+    /// A step the working line unfolds: thinking, narration, a tool call or a plan, never the bot's bookkeeping
+    /// (nor a call an older host didn't flag either way).
+    pub fn is_working_step(&self) -> bool {
+        match self.kind {
+            Kind::Thought => !self.text().trim().is_empty(),
+            Kind::Agent => !self.is_final() && !crate::chat::group::is_pass(self.text()),
+            Kind::Tool => self.data["bookkeeping"] == false,
+            Kind::Plan => true,
+            _ => false,
+        }
+    }
+
+    /// A message the user can answer with a reply: theirs, or a final reply (the host checks too).
+    pub fn takes_reply(&self) -> bool {
+        self.kind == Kind::User || self.is_final()
+    }
+
+    /// The text a reply quotes: the message's, or its files' names.
+    pub fn quoted(&self) -> String {
+        crate::store::message_text(&self.data)
+    }
+
     /// What the chat shows as a message: the user's, and each turn's final reply.
     pub fn is_message(&self) -> bool {
         self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
+    }
+
+    /// An artifact card's artifact id (`docs/features/artifacts.md`): `o` opens it, `f` saves it.
+    pub fn artifact(&self) -> Option<&str> {
+        if self.is_final() { self.data["artifact"]["id"].as_str() } else { None }
+    }
+
+    /// A line that folds away a longer text: a handoff, or a voice call's conversation (`o` shows it).
+    pub fn unfolds(&self) -> bool {
+        crate::tui::view::unfoldable(self).is_some() || (self.kind == Kind::Notice && self.call().is_some())
+    }
+
+    /// The voice call this was said in, or that this line ends (`chat::calls`).
+    pub fn call(&self) -> Option<&str> {
+        self.data["call"].as_str()
+    }
+
+    /// A failure notice that offers adding a fallback agent (`A`).
+    pub fn adds_fallback(&self) -> bool {
+        self.kind == Kind::Notice && self.data["addFallback"] == true
+    }
+
+    /// A failed routine run's notice that offers running it again (`F`).
+    pub fn retries(&self) -> bool {
+        self.kind == Kind::Notice && self.data["retry"] == true && self.data["runId"].is_string()
     }
 
     /// A notice for a bot-to-bot message or request (`chat::team`).
@@ -388,7 +257,6 @@ mod tests {
                 {"optionId": "a", "name": "Allow", "kind": "allow_once"},
             ]}),
             created_at: 0,
-            thread_id: None,
         };
         assert!(e.pending());
         let kinds: Vec<String> = e.options().into_iter().map(|o| o.2).collect();

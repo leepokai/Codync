@@ -31,3 +31,25 @@ public extension Bot {
         }
     }
 }
+
+/// A group's `/fast`: the members that show Fast mode, switched together. Each member's own
+/// setting, so it holds in their own chats too.
+public struct GroupFastMode: Sendable {
+    public let members: [Bot]
+
+    public init(_ members: [Bot]) { self.members = members.filter(\.fastModeShown) }
+
+    /// On once every member that shows it has it on; refused when one of their agents turned it off.
+    public var state: Bot.FastModeState {
+        guard !members.isEmpty, members.allSatisfy(\.fastMode) else { return .off }
+        return members.contains { $0.fastModeState == .refused } ? .refused : .on
+    }
+
+    public var detail: String {
+        switch state {
+        case .off: "Turn on for every bot here: faster replies and more usage"
+        case .on: "Turn off for every bot here and return to standard speed"
+        case .refused: members.first { $0.fastModeState == .refused }.map { "\($0.name): \($0.fastModeRefusal ?? "")" } ?? ""
+        }
+    }
+}

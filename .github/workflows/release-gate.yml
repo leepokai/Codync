@@ -1,0 +1,39 @@
+name: Release gate
+
+# Marks the newest release the App Store's iPhone app works with as GitHub's latest and points the
+# Homebrew tap at it (tools/release-gate.py): website downloads, install.sh and every updater follow
+# that mark, so a release that needs a newer iPhone app waits for App Review. After each release,
+# and every 5 minutes while a newer release waits or the Homebrew tap trails the latest one: the cloud
+# Worker's cron (cloud/src/release-gate.ts) dispatches it, since GitHub runs schedules late or not at all.
+on:
+  workflow_run:
+    workflows: ["Release desktop", "codync-host"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      allow_back:
+        description: "Mark an older release than the latest (when the latest needs an iPhone app still in review)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  gate:
+    if: >-
+      github.repository == 'leepokai/Codync' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push')
+    # In the job, so a run skipped by `if` (a pull request's release build) never queues here.
+    concurrency:
+      group: release-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python3 tools/release-gate.py
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          ALLOW_BACK: ${{ inputs.allow_back && '1' || '' }}

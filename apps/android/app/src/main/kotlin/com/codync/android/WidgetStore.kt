@@ -84,6 +84,7 @@ internal object WidgetStore {
         check(context.getSharedPreferences("codync-widgets", Context.MODE_PRIVATE).edit().clear().commit())
         changed()
     }
+    @Synchronized fun refreshLanguage() { changed() }
     private fun changed() { changes.value++ }
     private inline fun <reified T> read(file: AtomicFile): T? = try {
         if (!file.baseFile.exists() || file.baseFile.length() > 512 * 1024) null

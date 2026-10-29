@@ -13,11 +13,10 @@ import androidx.compose.ui.graphics.Color
 
 /** Keep these pairs aligned with CodyncKit/Design/Theme.swift. */
 val botMessageBackground: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF15263E) else Color(0xFFEAF2FF)
+    @Composable get() = if (LocalDark.current) Color(0xFF15263E) else Color(0xFFEAF2FF)
 
 @Composable
-fun CodyncTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun CodyncTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (dark) darkColorScheme(
         primary = Color.White,
         onPrimary = Color.Black,

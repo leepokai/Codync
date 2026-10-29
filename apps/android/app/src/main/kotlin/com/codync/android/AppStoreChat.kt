@@ -8,51 +8,41 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
-// Conversations: opening a bot or thread, history, sending and its retries.
+// Conversations: opening a bot, history, sending and its retries.
 
-fun AppStore.openBot(id: String?, thread: String? = null) {
-    mutableState.update { it.copy(selectedBot = id, thread = thread, trace = false) }
-    if (id != null) {
-        acknowledgeVisible()
-        if (thread != null) action("thread:" + thread) {
-            val active = ready()
-            val response = active.call("thread", body("botId" to id, "rootId" to thread))
-            receiveEntries(response)
-        }
-    }
+fun AppStore.openBot(id: String?) {
+    mutableState.update { it.copy(selectedBot = id, trace = false) }
+    if (id != null) acknowledgeVisible()
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
-/** A conversation on screen: a bot's main chat (`thread` null) or one of its threads. */
-internal data class ReadingScope(val botId: String, val thread: String?)
+/** The chat being read (iOS `ReadingConversation`): the open one, still on screen under Full conversation. */
+internal val AppState.readingChats: List<String> get() = listOfNotNull(selectedBot)
 
-/**
- * What's being read (iOS `ReadingConversation`): the open chat, still on screen under its thread
- * or Full conversation, and the open thread.
- */
-internal val AppState.readingScopes: List<ReadingScope> get() {
-    val id = selectedBot ?: return emptyList()
-    return listOfNotNull(ReadingScope(id, null), thread?.let { ReadingScope(id, it) })
-}
-
-/** The scopes events make unread while they're on screen: a message in one, or its bot counting unread. */
-internal fun readAfter(events: List<MirrorEvent>, scopes: List<ReadingScope>): List<ReadingScope> = scopes.filter { scope ->
+/** The chats events make unread while they're on screen: a message in one, or its bot counting unread. */
+internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<String> = chats.filter { chat ->
     events.any { event ->
         when (event) {
-            is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == scope.botId && event.entry.threadId == scope.thread
-            is MirrorEvent.BotChanged -> event.bot.id == scope.botId && event.bot.unread > 0
+            is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == chat
+            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unread > 0
             else -> false
         }
     }
 }
 
-/** Marks the conversations on screen read (`scopes`: only these); the host ignores it when nothing there is unread. */
-internal fun AppStore.acknowledgeVisible(scopes: List<ReadingScope> = state.value.readingScopes) {
+/** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
+internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
     if (!foreground || channel?.state?.value !is LinkState.Ready) return
-    for (scope in scopes) action("read:" + scope.botId + ":" + scope.thread) {
-        channel?.call("markRead", body("botId" to scope.botId, "threadId" to scope.thread))
-    }
+    for (chat in chats) action("read:" + chat) { channel?.call("markRead", body("botId" to chat)) }
 }
+
+/** The entries of a host reply (`callEntries`, `botConversation`). */
+internal fun entriesOf(response: JsonElement): List<Entry> =
+    response.jsonObject["entries"]?.jsonArray?.map { Entry.decode(it.jsonObject) }.orEmpty()
+
+/** What a voice call carried (iOS `BotStore.callEntries`): the chat this phone holds may not reach back to it. */
+internal suspend fun AppStore.callEntries(botId: String, call: String): List<Entry> =
+    entriesOf(hostCall("callEntries", buildJsonObject { put("botId", botId); put("callId", call) }, 20_000))
 
 fun AppStore.loadHistory() {
     val id = state.value.selectedBot ?: return
@@ -73,13 +63,6 @@ fun AppStore.loadHistory() {
         if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
         refresh()
     }
-}
-
-fun AppStore.send(text: String, files: List<OutgoingFile> = emptyList()) {
-    val id = state.value.selectedBot ?: return
-    if (text.isBlank() && files.isEmpty()) return
-    val send = PendingSend(UUID.randomUUID().toString(), id, state.value.thread, text.trim(), System.currentTimeMillis(), files = files)
-    action("save:" + send.nonce) { savePending(send); deliver(send) }
 }
 
 fun AppStore.retry(send: PendingSend) = action("send:" + send.nonce) { deliver(send.copy(status = SendStatus.Sending, error = null)) }
@@ -125,11 +108,7 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
             ids.add(id)
             withContext(Dispatchers.IO) { attachments.cache(id, file) }
         }
-        val result = connection.call("send", buildJsonObject {
-            put("botId", send.botId); put("text", send.text); put("clientNonce", send.nonce)
-            send.threadId?.let { put("threadId", it) }
-            if (ids.isNotEmpty()) put("attachments", JsonArray(ids.map(::JsonPrimitive)))
-        })
+        val result = connection.call("send", send.body(ids))
         val entry = Entry.decode(result.jsonObject.getValue("entry").jsonObject)
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(entry)) }
         refresh()
@@ -158,10 +137,4 @@ fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + ent
     val active = ready()
     active.call("respondPermission", body("entryId" to entry.id, "optionId" to option))
     delay(2_000)
-}
-
-private suspend fun AppStore.receiveEntries(response: JsonElement) {
-    val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
-    withContext(Dispatchers.IO) { requireNotNull(database).receive(entries) }
-    refresh()
 }

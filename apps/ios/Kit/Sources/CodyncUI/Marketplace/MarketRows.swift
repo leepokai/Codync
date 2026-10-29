@@ -1,18 +1,6 @@
 import CodyncKit
 import SwiftUI
 
-struct MarketSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.headline).foregroundStyle(Palette.text).padding(.leading, 4)
-            content
-        }
-    }
-}
-
 /// Two columns on wide screens, one on a phone.
 struct ItemGrid<Content: View>: View {
     @ViewBuilder let content: Content
@@ -42,7 +30,7 @@ struct AgentCard: View {
                     .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 VStack(spacing: 2) {
                     Text(backend.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
-                    Text(status)
+                    Text(L10n.tr(status))
                         .font(.caption)
                         .foregroundStyle(Palette.secondary)
                         .lineLimit(1)
@@ -78,21 +66,21 @@ struct MarketRow<Icon: View>: View {
         HStack(spacing: 14) {
             icon.frame(width: 46, height: 46)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.medium)).foregroundStyle(Palette.text).lineLimit(1)
-                Text(subtitle).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(1)
+                Text(L10n.tr(title)).font(.body.weight(.medium)).foregroundStyle(Palette.text).lineLimit(1)
+                Text(L10n.tr(subtitle)).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if busy {
                 ThinkingOrb(size: 18, color: Palette.secondary).frame(width: 60)
             } else if added {
-                Label("Added", systemImage: "checkmark")
+                Label(L10n.tr("Added"), systemImage: "checkmark")
                     .labelStyle(.iconOnly)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Palette.secondary)
                     .frame(width: 60)
-                    .accessibilityLabel("Added")
+                    .accessibilityLabel(L10n.tr("Added"))
             } else {
-                Button(addLabel, action: add)
+                Button(L10n.tr(addLabel), action: add)
                     .buttonStyle(.plain)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Palette.text)
@@ -116,6 +104,15 @@ struct SkeletonGrid: View {
     @State private var dim = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L10n.tr("Loading…")).font(.footnote).foregroundStyle(Palette.secondary)
+            rows
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.tr("Loading…"))
+    }
+
+    private var rows: some View {
         ItemGrid {
             ForEach(0..<4, id: \.self) { _ in
                 HStack(spacing: 14) {
@@ -216,7 +213,7 @@ struct WebLink: View {
     }
 
     var body: some View {
-        Button(title) { openURL(url) }
+        Button(L10n.tr(title)) { openURL(url) }
             .buttonStyle(.plain)
             .foregroundStyle(Palette.text)
             .underline()

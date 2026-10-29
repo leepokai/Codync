@@ -25,6 +25,15 @@ class PairingTest {
         assertEquals(fixture.getValue("pairing").let { it as kotlinx.serialization.json.JsonObject }.text("offerId"), pairing.offerId)
     }
 
+    @Test fun `pairing again keeps the color route and push switch picked on this phone`() {
+        val paired = Pairing.parse(link(), "codync").computer
+        val picked = paired.copy(name = "Old name", color = "mint", route = ConnectionRoute.DirectOnly, notifications = false)
+        val kept = paired.keepingDevicePicks(picked)
+        assertEquals(Triple("mint", ConnectionRoute.DirectOnly, false), Triple(kept.color, kept.route, kept.notifications))
+        assertEquals(params["name"], kept.name)
+        assertEquals(paired, paired.keepingDevicePicks(null))
+    }
+
     @Test fun `Codync Dev and Codync only accept their own pairing links`() {
         val dev = link().replace("codync://", "codync-dev://")
         assertEquals(params["id"], Pairing.parse(dev, "codync-dev").computer.id)
@@ -40,6 +49,13 @@ class PairingTest {
         }
         assertFails<IllegalArgumentException> { Pairing.parse(link() + "&sk=" + params["sk"], "codync") }
         assertFails<IllegalArgumentException> { Pairing.parse("https://example.test/?v=3", "codync") }
+    }
+
+    @Test fun `a rejected link says why`() {
+        fun kind(text: String) = assertFails<PairingProblem> { Pairing.parse(text, "codync") }.kind
+        assertEquals(PairingProblem.Kind.NotPairingLink, kind("https://example.test/?v=3"))
+        assertEquals(PairingProblem.Kind.OutdatedHost, kind(link(params + ("v" to "2"))))
+        assertEquals(PairingProblem.Kind.Invalid, kind(link(params + ("sk" to "invalid"))))
     }
 
     @Test fun `unsafe direct endpoints are removed and at least one route must remain`() {

@@ -42,7 +42,7 @@ class ChannelIntegrationTest {
     private fun identity(): DeviceIdentity = DeviceIdentity(ByteArray(32) { 3 }, ByteArray(32) { 12 })
 
     private fun enqueueHost(forgeSignature: Boolean = false, holdCalls: Boolean = false, burst: Int = 0, welcomeDelay: Long = 0,
-        snapshotHead: Int = 5) {
+        snapshotHead: Int = 5, reject: String? = null) {
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
             private lateinit var opener: FrameOpener
             private lateinit var sealer: FrameSealer
@@ -50,6 +50,11 @@ class ChannelIntegrationTest {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val wire = Json.parseToJsonElement(text).jsonObject
                 if (wire.text("t") == "hello") {
+                    if (reject != null) {
+                        webSocket.send(buildJsonObject { put("t", "reject"); put("code", reject); put("message", "Refused: $reject") }.toString())
+                        webSocket.close(4001, reject)
+                        return
+                    }
                     if (welcomeDelay > 0) Thread.sleep(welcomeDelay)
                     val dk = requireNotNull(wire.text("dk")).decodeBase64Url(32)
                     val ek = requireNotNull(wire.text("ek")).decodeBase64Url(32)
@@ -146,6 +151,16 @@ class ChannelIntegrationTest {
         try { withTimeout(5_000) { HostConnector.connect(computer(), identity()) } }
         catch (_: SecurityException) { rejected = true }
         assertTrue(rejected)
+    }
+
+    @Test fun `a lapsed account lease is a transient failure while a revoked device is turned away`() = runBlocking {
+        enqueueHost(reject = "leaseExpired")
+        enqueueHost(reject = "revoked")
+        val lapsed = runCatching { HostConnector.connect(computer(), identity()) }.exceptionOrNull()
+        assertTrue(lapsed is IOException && lapsed !is HostError)
+        assertEquals("Refused: leaseExpired", lapsed?.message)
+        val revoked = runCatching { HostConnector.connect(computer(), identity()) }.exceptionOrNull()
+        assertEquals(403, (revoked as HostError).status)
     }
 
     @Test fun `an uncertain call timeout cancels its response without replaying the mutation`() = runBlocking {

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Create a signed manifest for one standalone host release archive, and a signed
-compat file (the iPhone app version the release needs) that updaters read before
-downloading anything (docs/reference/compatibility.md).
+"""Create a signed manifest for one standalone host release archive.
 
 HOST_UPDATE_SIGNING_KEY contains a base64 Ed25519 seed. Only the public key is
 committed. Requires cryptography (installed by the release workflow).
@@ -45,15 +43,6 @@ def main():
     }
     data = (json.dumps(manifest, indent=2) + "\n").encode()
     output = args.archive.with_name(f"codync-host-{args.platform}.update.json")
-    output.write_bytes(data)
-    output.with_suffix(output.suffix + ".sig").write_text(base64.b64encode(key.sign(data)).decode() + "\n")
-    print(f"Signed {output.name}")
-    source = Path(__file__).parents[2].joinpath("host/src/compat.rs").read_text()
-    min_app = re.search(r'pub const MIN_APP: &str = "([0-9]+\.[0-9]+\.[0-9]+)";', source)
-    if not min_app:
-        raise SystemExit("MIN_APP not found in host/src/compat.rs")
-    data = (json.dumps({"version": version, "minApp": min_app[1]}, indent=2) + "\n").encode()
-    output = args.archive.with_name(f"codync-host-{args.platform}.compat.json")
     output.write_bytes(data)
     output.with_suffix(output.suffix + ".sig").write_text(base64.b64encode(key.sign(data)).decode() + "\n")
     print(f"Signed {output.name}")

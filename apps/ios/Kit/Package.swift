@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "CodyncKit",
-    platforms: [.iOS(.v18)],
+    platforms: [.iOS("26.0")],
     products: [
         .library(name: "CodyncKit", targets: ["CodyncKit"]),
         .library(name: "CodyncUI", targets: ["CodyncUI"]),
@@ -16,7 +16,17 @@ let package = Package(
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.18.0"),
     ],
     targets: [
-        .target(name: "CodyncKit", resources: [.copy("Resources/ThirdPartyNotices"), .process("Resources/ProviderIcons.xcassets")]),
+        .target(name: "CodyncKit", resources: [
+            .copy("Resources/ThirdPartyNotices"),
+            .copy("Resources/Languages/zh-Hans.json"),
+            .copy("Resources/Languages/zh-Hant.json"),
+            .copy("Resources/Languages/ja.json"),
+            .copy("Resources/Languages/ko.json"),
+            .copy("Resources/Languages/fr.json"),
+            .copy("Resources/Languages/de.json"),
+            .copy("Resources/Languages/es.json"),
+            .process("Resources/ProviderIcons.xcassets"),
+        ]),
         .target(
             name: "CodyncUI",
             dependencies: [

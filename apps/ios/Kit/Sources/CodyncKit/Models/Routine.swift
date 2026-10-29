@@ -13,6 +13,20 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
     public var nextRunAt: Int64?
     public var timeoutSeconds: Int?
     public var lastError: String?
+
+    /// A timeout as typed, in words: whole hours, else whole minutes, else seconds; anything else as typed.
+    public static func timeoutText(_ text: String) -> String {
+        guard let seconds = Int(text), seconds >= 0 else { return "\(text)s" }
+        let unit: Duration.UnitsFormatStyle.Unit
+        if seconds > 0, seconds % 3600 == 0 {
+            unit = .hours
+        } else if seconds > 0, seconds % 60 == 0 {
+            unit = .minutes
+        } else {
+            unit = .seconds
+        }
+        return Duration.seconds(seconds).formatted(.units(allowed: [unit], width: .wide))
+    }
 }
 
 public struct RoutineTrigger: Codable, Hashable, Sendable {
@@ -42,7 +56,8 @@ public struct RoutineRun: Codable, Identifiable, Hashable, Sendable {
     public var createdAt: Int64
     public var finishedAt: Int64?
     public var detail: String?
-    public var rootId: String?
+    /// A retry of a run that failed before acting waits until then.
+    public var notBefore: Int64?
     public var isActive: Bool { ["pending", "starting", "running", "recovering"].contains(status) }
 }
 
@@ -69,6 +84,12 @@ extension HostClient {
     public func routineAction(_ method: String, botId: String, id: String, enabled: Bool? = nil) async throws {
         struct Body: Encodable { let botId: String; let id: String; let enabled: Bool? }
         let _: Empty = try await call(method, Body(botId: botId, id: id, enabled: enabled))
+    }
+
+    /// Runs a failed run's work again, with the event it had.
+    public func retryRoutineRun(botId: String, runId: String) async throws {
+        struct Body: Encodable { let botId: String; let runId: String }
+        let _: Empty = try await call("retryRoutineRun", Body(botId: botId, runId: runId))
     }
 
     /// `rotate` replaces the key first; senders using the old one stop working.

@@ -5,7 +5,8 @@ import SwiftUI
 extension BotStore {
     /// One short line for a computer's connection, used next to its name.
     var statusText: String {
-        switch connection {
+        if isUpdating { return "Updating…" }
+        return switch connection {
         case .online where mismatch != nil: "Needs update"
         case .online: "Online"
         case .connecting: "Connecting…"
@@ -28,13 +29,14 @@ extension AccountStore {
 /// How the phone reaches a computer right now: a subtle icon, direct Wi-Fi/LAN or the encrypted relay.
 struct RouteIcon: View {
     let route: HostRoute?
+    var cloud: URL?
 
     var body: some View {
         switch route {
         case .direct:
             Image(systemName: "wifi").accessibilityLabel("Wi-Fi or Tailscale")
         case .relay:
-            Image(systemName: "cloud").accessibilityLabel("Through Cloudflare")
+            Image(systemName: "cloud").accessibilityLabel(L10n.tr(RelayCopy.through(cloud: cloud)))
         case nil:
             EmptyView()
         }

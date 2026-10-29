@@ -32,7 +32,6 @@ impl Caller {
 const LOCAL_ONLY: &[&str] = &[
     "hostUpdateStatus",
     "checkHostUpdate",
-    "installHostUpdate",
     "setHostAutomaticUpdates",
     "setScreenEnabled",
     "requestScreenPermission",
@@ -47,8 +46,9 @@ const LOCAL_ONLY: &[&str] = &[
     "computerTools",
     "chatCall",
     "teamCall",
+    "agentCall",
+    "manageCall",
     "memoryCall",
-    "memoryTools",
     "routineCall",
     "composioCall",
     "connectorTarget",
@@ -62,7 +62,22 @@ const LOCAL_ONLY: &[&str] = &[
     "decideAccessRequest",
     "cloudStatus",
     "setCloud",
+    "setCloudUrl",
     "setApproval",
+    // Letting the cloud assistant in is decided at the computer, never through the cloud.
+    "setAssistants",
+    // Who is in the user's network of computers is decided at a computer.
+    "networkStatus",
+    "networkCreate",
+    "networkJoin",
+    "networkLeave",
+    "networkInvite",
+    "networkPeers",
+    "networkRemove",
+    "networkPromote",
+    "networkRecover",
+    // Who may write to this computer's bots is decided at the computer, like who is in.
+    "setNetworkRules",
 ];
 const SCREEN: &[&str] = &["screenPrepare", "screenOffer", "screenClose", "screenTakeover"];
 
@@ -198,7 +213,7 @@ impl Pairing {
     /// Counts a `pair` attempt from `source` (peer IP or relay link); false when over the limit.
     pub fn attempt(&mut self, source: &str) -> bool {
         let now = Instant::now();
-        self.attempts.retain(|(_, t)| now.duration_since(*t) < Duration::from_secs(60));
+        self.attempts.retain(|(_, t)| now.duration_since(*t) < Duration::from_mins(1));
         let from_source = self.attempts.iter().filter(|(s, _)| s == source).count();
         if from_source >= PER_SOURCE_PER_MINUTE || self.attempts.len() >= TOTAL_PER_MINUTE {
             return false;
@@ -235,11 +250,13 @@ mod tests {
             assert!(permit(&both, m).is_err(), "{m} is loopback only");
         }
         assert!(permit(&both, "send").is_ok());
+        assert!(permit(&both, "networkView").is_ok(), "phones read the network");
         assert!(permit(&both, "screenOffer").is_ok());
         assert!(permit(&both, "screenPrepare").is_ok());
         assert!(permit(&control, "screenPrepare").is_err());
         assert!(permit(&control, "screenOffer").is_err(), "screen needs the screen scope");
         assert!(permit(&control, "screenStatus").is_ok(), "status is control");
+        assert!(permit(&control, "installHostUpdate").is_ok(), "a phone can update a computer that's behind");
         assert!(permit(&Caller::Device { key: "k".into(), scopes: vec![] }, "hello").is_err());
         assert!(permit(&both, "pair").is_err(), "pair only on a pairing channel");
         assert!(permit(&Caller::Pairing { key: "k".into() }, "hello").is_err());

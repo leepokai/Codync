@@ -2,9 +2,10 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Modifier, Style};
 
 use super::super::app::{ACTIONS, Action, App, Click, FILTERS, GotoItem, Mark};
+use super::super::l10n::tr;
 use super::super::md::truncate;
 use super::buffer::{centered, frame_box, hline, put, put_line, restyle, rput};
 use super::overlay::field_line;
@@ -14,7 +15,7 @@ use super::style::{avatar, glyph, theme};
 pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super::app::Goto, items: &[GotoItem]) {
     let t = theme();
     let r = centered(area, 80, 24);
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Go to", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((tr("Go to").as_ref(), t.text)));
     let nbots = items.iter().filter(|i| matches!(i, GotoItem::Bot(_))).count();
     rput(buf, inner.right(), inner.y, &format!("{nbots} of {}", app.bots.len()), t.dim.patch(t.panel));
     field_line(
@@ -69,24 +70,29 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                 let room = inner.width.saturating_sub(47);
                 put(buf, inner.x + 47, y, room, &truncate(&pv, usize::from(room)), ps.patch(base));
             }
+            GotoItem::Unhide(id) => {
+                let style = action_row(buf, inner, list_top, &mut y, &mut shown_actions, sel);
+                let name = app.bots.get(id).map_or("", |b| b.name.as_str());
+                put(buf, inner.x + 2, y, inner.width, &format!("{} {name}", tr("Unhide")), style);
+            }
             GotoItem::Action(a) => {
-                if !shown_actions {
-                    shown_actions = true;
-                    if y > list_top {
-                        y += 1;
-                    }
-                    put(buf, inner.x, y, inner.width, "ACTIONS", t.dim.patch(t.panel).add_modifier(Modifier::BOLD));
-                    y += 1;
-                }
-                if sel {
-                    restyle(buf, Rect::new(inner.x - 1, y, inner.width + 2, 1), t.sel);
-                }
+                let style = action_row(buf, inner, list_top, &mut y, &mut shown_actions, sel);
                 if let Some((label, key, _)) = ACTIONS.iter().find(|x| x.2 == *a) {
-                    put(buf, inner.x + 2, y, inner.width, label, if sel { t.bold } else { t.secondary }.patch(base));
+                    let shown = tr(label);
+                    put(buf, inner.x + 2, y, inner.width, &shown, style);
+                    let language = super::super::l10n::language_title();
                     let hint = match (a, app.analytics) {
                         (Action::Analytics, Some(true)) => "on",
                         (Action::Analytics, Some(false)) => "off",
                         (Action::Analytics, None) => "",
+                        (Action::Language, _) => language.as_ref(),
+                        (Action::ThinkingDetails, _) => {
+                            if super::super::details::enabled() {
+                                "on"
+                            } else {
+                                "off"
+                            }
+                        }
                         _ => key,
                     };
                     rput(buf, inner.right(), y, hint, t.dim.patch(base));
@@ -99,7 +105,7 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
         }
     }
     if items.is_empty() {
-        put(buf, inner.x, list_top, inner.width, "Nothing matches", t.dim.patch(t.panel));
+        put(buf, inner.x, list_top, inner.width, tr("Nothing matches").as_ref(), t.dim.patch(t.panel));
     }
     hline(buf, inner.x, inner.bottom() - 3, inner.width, t.line.patch(t.panel));
     if let Some(GotoItem::Bot(id)) = items.get(g.cursor)
@@ -121,4 +127,24 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
         "↵ open   tab filter   ↑↓ move   esc close",
         t.dim.patch(t.panel),
     );
+}
+
+/// Starts an ACTIONS row: the section's title above the first one, the selection behind it.
+/// Returns the label's style.
+fn action_row(buf: &mut Buffer, inner: Rect, list_top: u16, y: &mut u16, titled: &mut bool, sel: bool) -> Style {
+    let t = theme();
+    if !*titled {
+        *titled = true;
+        if *y > list_top {
+            *y += 1;
+        }
+        put(buf, inner.x, *y, inner.width, tr("ACTIONS").as_ref(), t.dim.patch(t.panel).add_modifier(Modifier::BOLD));
+        *y += 1;
+    }
+    if sel {
+        restyle(buf, Rect::new(inner.x - 1, *y, inner.width + 2, 1), t.sel);
+        t.bold.patch(t.sel)
+    } else {
+        t.secondary.patch(t.panel)
+    }
 }

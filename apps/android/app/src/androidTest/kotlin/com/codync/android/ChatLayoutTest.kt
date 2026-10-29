@@ -74,7 +74,7 @@ class ChatLayoutTest {
         compose.onAllNodesWithText("Reply from Dex").assertCountEquals(1)
         compose.onAllNodesWithText(answer).assertCountEquals(1)
         compose.onNode(hasText(answer) and hasClickAction()).performTouchInput { longClick(Offset(4f, 4f)) }
-        compose.onNodeWithText("Reply in thread").assertIsDisplayed()
+        compose.onNodeWithText("Reply").assertIsDisplayed()
         compose.onNodeWithText("Show what it did").assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         if (InstrumentationRegistry.getArguments().getString("layoutSnapshots") == "true") {
@@ -98,7 +98,7 @@ class ChatLayoutTest {
         compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
         compose.onNodeWithText("You").assertDoesNotExist()
         compose.onNodeWithText("Message actions").assertDoesNotExist()
-        compose.onNodeWithText("Reply in thread").assertDoesNotExist()
+        compose.onNodeWithText("Reply").assertDoesNotExist()
         compose.onAllNodesWithText(bot.name).assertCountEquals(1)
         val user = compose.onNode(hasText(sent) and hasClickAction())
         val agent = compose.onNode(hasText(reply) and hasClickAction())
@@ -115,15 +115,29 @@ class ChatLayoutTest {
             File(compose.activity.cacheDir, "layout-chat-preview.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         user.performTouchInput { longClick(Offset(4f, 4f)) }
-        compose.onNodeWithText("Reply in thread").assertIsDisplayed()
+        compose.onNodeWithText("Reply").assertIsDisplayed()
         compose.onNodeWithContentDescription("👍").assertIsDisplayed()
         compose.onNodeWithText("Copy").assertIsDisplayed()
         compose.onNodeWithText("Show what it did").assertDoesNotExist()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         compose.onNodeWithText("Copy").assertDoesNotExist()
-        compose.onNode(chatMenu).performClick()
-        compose.onNodeWithText("Edit profile").assertIsDisplayed()
-        compose.onNodeWithText("Routines").assertIsDisplayed()
-        compose.onNodeWithText("Full conversation").assertIsDisplayed()
+    }
+
+    @Test fun theTitleOpensTheBotsDetailsOnDetails() {
+        assumeTrue(Build.PRODUCT.startsWith("sdk"))
+        val store = ViewModelProvider(compose.activity)[AppStore::class.java]
+        val bot = Bot("details-preview", "Scout")
+        val state = AppState(loading = false, selectedBot = bot.id, bots = listOf(bot), historyComplete = setOf(bot.id),
+            hello = buildJsonObject { put("version", ARTIFACTS_HOST) })
+        compose.runOnUiThread { compose.activity.setContent { Hosted { ChatScreen(state, store, {}) } } }
+        compose.onNode(chatTitle).performClick()
+        // Details first, with the routines; no Memory on Android until the read-only memory screen is ported.
+        compose.onNode(hasText("Details") and isSelected()).assertIsDisplayed()
+        compose.onNodeWithText("Library").assertIsDisplayed()
+        compose.onNodeWithText("Memory").assertDoesNotExist()
+        // The sheet merges plain text into itself, so the heading is found unmerged.
+        compose.onNodeWithText("Routines", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Notifications").performScrollTo().assertIsDisplayed()
     }
 }

@@ -6,6 +6,7 @@ import { DISCORD, EMAIL, GITHUB } from "../links";
 
 const nav: [href: string, label: string][] = [
   ["/#product", "Product"],
+  ["/docs", "Docs"],
   ["/compare", "Compare"],
   ["/#cost", "Pricing"],
   ["/#faq", "FAQ"],
@@ -52,10 +53,12 @@ export function SiteHeader() {
 }
 
 const footerLinks: [label: string, href: string][] = [
+  ["Docs", "/docs"],
   ["Free AI agent app", "/free-ai-agent-app"],
   ["Claude Code on iPhone", "/claude-code-iphone"],
   ["Codex on iPhone", "/codex-iphone"],
   ["Compare", "/compare"],
+  ["codync-mem", "/codync-mem"],
   ["Terms", "/terms"],
   ["Privacy", "/privacy"],
   ["Discord", DISCORD],

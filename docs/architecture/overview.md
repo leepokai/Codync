@@ -28,7 +28,7 @@ The phone tries direct candidates first, with a 1.5-second connection race, then
 | Host signing and mailbox keys | `identity.json`, separate from SQLite |
 | Loopback API bearer token | Host `token` file |
 | Agent context and provider credentials | Coding harness on that computer |
-| Long-term bot memory | Host `bots/<botId>/engram/engram.db` (Engram) |
+| Long-term bot memory | Host SQLite `memory_*` tables (`codync-mem`) |
 | Account users, computer ownership, devices and grants | `cloud/` D1 |
 | Presence, host-signed ACL, offline encrypted mailbox | Per-computer `ComputerRelay` Durable Object |
 | Phone remote-device signing and push keys | Keychain, partitioned by account context |
@@ -46,7 +46,7 @@ The host owns:
 
 - Bots, chats, sessions and agent processes: creating, configuring, starting, idling and resuming them.
 - MCP servers and connectors: installing them, parsing pasted configs, sign-in, and handing them to agents.
-- Conversation rules: groups, threads, mentions, collaboration and queueing.
+- Conversation rules: groups, replies, mentions, collaboration and queueing.
 - Routines, memory, usage, bot order, voice-call credentials, remote screen signaling and push sealing.
 - Validation, state every client shows the same way, and anything that spawns processes or touches the computer's files.
 
@@ -61,7 +61,7 @@ When a client needs data or behavior the host doesn't offer, add a host method o
 
 `api/` and `remote/channel.rs` share dispatch and caller checks. `hub.rs` coordinates actors and event publication; `store/` persists mutations and the global revision. Clients catch up from `rev`, then follow events. Duplicate sends are identified by `clientNonce`.
 
-`agent/bot/` serializes each bot's turns and owns its ACP process. A main chat and its reply threads can have distinct sessions. Group turns are queued on member bots and use their main sessions; the group itself has no harness. See [groups and threads](../features/groups-and-threads.md), [collaboration](../features/bot-collaboration.md) and [context/memory](../features/context-and-memory.md).
+`agent/bot/` serializes each bot's turns and owns its ACP process. Its chat and group turns use its main session; each routine run has one of its own. Group turns are queued on member bots; the group itself has no harness. See [groups and replies](../features/groups-and-replies.md), [collaboration](../features/bot-collaboration.md) and [context/memory](../features/context-and-memory.md).
 
 ## Client state and routing
 

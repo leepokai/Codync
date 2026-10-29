@@ -1,11 +1,11 @@
-//! The labeled text fields sheet: keys, connector setup, a pasted MCP config.
+//! The labeled text fields sheet: keys, connector setup, a pasted MCP config, a handoff.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
-use super::super::app::{App, Overlay};
+use super::super::app::{App, Editor, Entry, Overlay};
 use super::market::connector_inputs;
-use super::{Fields, Reply, Submit, ctrl, newline};
+use super::{Fields, Input, Reply, Submit, ctrl, newline};
 
 impl App {
     pub(in crate::tui) fn fields_key(&mut self, mut f: Box<Fields>, k: KeyEvent) -> Option<Overlay> {
@@ -75,6 +75,36 @@ impl App {
                 );
             }
             Submit::Import => self.sheet("importConnectors", json!({"config": values["config"]}), Reply::FieldsSaved),
+            Submit::Handoff(entry) => {
+                self.sheet("editHandoff", json!({"entryId": entry, "text": values["text"]}), Reply::FieldsSaved);
+            }
+            Submit::RenameArtifact { bot, artifact } => {
+                let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
+                self.sheet("renameArtifact", body, Reply::FieldsSaved);
+            }
         }
+    }
+}
+
+/// Edits what a handoff card carries into the next conversation.
+pub fn handoff_fields(entry: &Entry) -> Fields {
+    Fields {
+        title: "Edit the handoff".into(),
+        note: "Your next message starts a fresh conversation that begins with this. ⇧↵ new line, ↵ saves.".into(),
+        choices: vec![],
+        choice: 0,
+        inputs: vec![Input {
+            name: "text".into(),
+            label: "What it carries".into(),
+            secret: false,
+            required: true,
+            multiline: true,
+            placeholder: String::new(),
+            ed: Editor::with(entry.data["handoff"]["text"].as_str().unwrap_or_default()),
+        }],
+        cursor: 0,
+        error: None,
+        saving: false,
+        submit: Submit::Handoff(entry.id.clone()),
     }
 }

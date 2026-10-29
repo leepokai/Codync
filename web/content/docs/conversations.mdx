@@ -1,0 +1,155 @@
+Each bot has one chat that keeps going. You send it work, it replies, and everything stays in the same place on every device. This page covers what you can do in a bot's chat. For chats with several bots, see [Group chats](/docs/groups).
+
+## What the chat shows
+
+The chat shows your messages, the bot's messages, approval cards and short notices. A bot's message arrives complete; nothing streams in word by word. A bot can send several messages in one turn.
+
+While the bot works, a line under the last message shows what it's doing and for how long. It reads **Typing…** while the bot writes you a message.
+
+To see more, turn on **Show thinking details** in Settings, under **Chat**. It's off by default and only changes the device you set it on. With it on, the line ends in an arrow. Tap or click it to unfold this turn's steps right in the chat: its thinking, what it said along the way, the tools and MCP tools it called and its plan. Tap a tool to see its output or diff. A long turn scrolls inside the line, which keeps showing the newest step. On the terminal UI, turn it on from `Ctrl-K` (**Show thinking details**), then press `>` or click the line. Each new turn starts folded, and the steps leave with the line when the bot finishes.
+
+Everything else the agent did (its narration, thinking, tool calls, diffs and plans) is in **Full conversation**:
+
+- **iPhone:** touch and hold a bot message, then **Show what it did**.
+- **Desktop:** hover a bot message and choose **More message actions**, then **Show what it did**, or right-click the message.
+- **Terminal UI:** `t` opens the trace pane, `T` opens it full screen, and `o` shows the last turn's steps.
+
+## Sending messages
+
+Type in the box at the bottom and send.
+
+- **Desktop:** Return sends. Shift-Return or Option/Alt-Return starts a new line.
+- **iPhone:** tap the send button. With a hardware keyboard, Return starts a new line and Cmd-Return sends.
+- **Terminal UI:** press `i` or Enter to start typing, Enter to send, and Shift-Enter, Alt-Enter or Ctrl+J for a new line.
+
+Each chat keeps its own draft on each device, and the draft comes back when you return to the chat or reopen the app. Drafts aren't synced between devices.
+
+**While the bot works**, the box reads "Queue a message for" followed by the bot's name. Messages you send then show **Queued until this response finishes**, and they reach the agent together as its next turn.
+
+**When the computer is offline**, the iPhone can still take a text message: it shows **Waiting for the computer to come online** and goes out when the computer is back. It waits in the Codync relay, encrypted for your computer, for up to 24 hours; after that it shows **Failed to send**. Tap the cancel button beside it to take it back. A message with files can't wait; its send button stays off until the computer is online.
+
+If a message fails to send, it shows **Failed to send** with buttons to resend or delete it.
+
+On iPhone, sending clears the message box so you can type your next message. You can add text with dictation or switch to another chat's saved draft.
+
+**From Shortcuts (iPhone):** Codync's **Send Text to Bot** action sends a message without typing it in the chat. Pick a **Bot** and fill in **Text**. **Open Chat** is off by default, so the message goes out in the background; turn it on to open the chat. The action finishes when the computer accepts the message, or reports it queued when the computer is offline. The iPhone has to be unlocked, also from Siri ("Send text with Codync"). Only the current account's visible bots are listed.
+
+## Files
+
+Use the **+** button left of the message box.
+
+- **iPhone:** **Photos**, **Files**, or **Paste** when the clipboard holds an image. Photos are sent as JPEG.
+- **Desktop:** pick files, drop them on the box, or paste a copied image or file with Cmd+V (Ctrl+V on Windows and Linux).
+- **Terminal UI:** drag a file onto the terminal to paste its path. Backspace in an empty box removes the last file.
+
+A message can be files only. Each file can be up to 100 MB. The files are saved on the computer, in an `uploads` folder in the bot's personal workspace, or in Codync's data folder for a bot that works in a project folder. The agent gets your message with the path of each file and reads them with its own tools.
+
+Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. To save a file:
+
+- **Desktop:** saves through the system Save dialog.
+- **iPhone:** opens the share sheet, including Save to Files.
+- **Terminal UI:** pick the message (`v`), then `f` saves it to Downloads.
+
+Codync keeps its own copy of each shared file, so it stays downloadable even if the bot later changes or deletes the original. Bots share files only in their own chat, not in group chats or routine runs.
+
+A report or a tracker you'll come back to can come as an [artifact](/docs/artifacts) instead: a page that opens from its card. Everything made or shared in a chat is also in its [Library](/docs/artifacts#the-library).
+
+## Approval cards
+
+When a bot's **Permissions** setting is **Ask me** and its agent wants to run a command, change files or use another tool, an approval card appears in the chat. It says what the agent wants ("Wants to run a command", "Wants to change files"…), the computer and folder it runs in, and **Details** with the command or the diff.
+
+The answers come from the agent, usually:
+
+| Answer | Meaning |
+| --- | --- |
+| **Allow once** | Allow this request. |
+| **Always allow** | Allow it and requests like it, as the agent defines that. |
+| **Deny** | Refuse this request. |
+| **Never** | Refuse it and requests like it, as the agent defines that. |
+
+In the terminal UI, press `y` to allow once, `a` to always allow, `n` to reject, `N` to reject and say why, or `1`…`9` to pick an option.
+
+The agent waits for your answer. If the turn ends before you answer, for example because you stopped it, the card reads **Expired — the agent moved on**.
+
+With **Approve automatically**, no cards appear: Codync allows each request for you. Your agent's own permission rules still apply under either setting. To change the setting, see [Bots](/docs/bots#permissions-ask-me-or-approve-automatically).
+
+## Stopping a turn
+
+- **Desktop and iPhone:** while the bot works and the box is empty, the send button turns into **Stop**.
+- **Desktop menu bar or tray menu:** the bot's submenu has **Stop task**.
+- **Terminal UI:** press Esc to leave typing, then `s`.
+
+Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent.
+
+## Replying to a message
+
+You can reply to any of your messages or any message from the bot. The reply goes in the chat in time order and shows a quote of the message it answers at the top.
+
+- **iPhone:** touch and hold the message, then **Reply**.
+- **Desktop:** hover the message and click **Reply**, or right-click it.
+- **Terminal UI:** press `r`, move to the message with `j` and `k`, then Enter or `r`. Esc cancels.
+
+While you reply, the box shows the quote above it and reads "Reply…". The bot gets the quoted text with your reply, so it knows what you mean even when that message is from an earlier session.
+
+## Reactions
+
+- **iPhone:** touch and hold a message; the reactions are at the top of the menu.
+- **Desktop:** hover a message and click **Add reaction**, or right-click it.
+- **Terminal UI:** pick a message (`v`), then `1`…`6`.
+
+The quick reactions are 👍 ❤️ 😂 🎉 👀 ✅. Tap your reaction again to take it back. In a bot's own chat, the bot isn't told about your reactions. Bots react now and then too, and their reactions show with their avatars.
+
+## Commands
+
+Type `/` at the start of a message to see the bot's commands:
+
+- `/fast`: turns [Fast mode](/docs/agents#models-and-options) on or off, when the bot's agent offers it.
+- `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
+
+Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. New session isn't a command; it's in the bot's menu in the list. See [Bots](/docs/bots#new-session).
+
+## Fresh conversations
+
+When a conversation in a bot's own chat has grown long, Codync may start the agent over with a summary instead of carrying all of it. The chat then shows a card saying why: the conversation is long and has gone quiet, you've been away a while after several summaries, or summarizing no longer frees enough room. Your next message starts the fresh conversation.
+
+**What it carries** unfolds to what the new conversation begins with: the latest summary of the conversation, your last four messages word for word, the bot's last reply and its open plan. The bot can still search the earlier chat. The chat, memory, settings and files stay as they are.
+
+Before your next message, you can:
+
+- **Edit what it carries** (the pencil): change the text in **Edit the handoff** and save.
+- **Keep this conversation:** the bot carries on in the same conversation.
+- **Terminal UI:** pick the card (`v`), then `o` to show what it carries, `e` to edit it, or `K` to keep the conversation.
+
+Afterwards the card folds into one line that unfolds to what was carried.
+
+## Notifications
+
+Your iPhone gets a notification when a bot:
+
+| Kind | When | Action |
+| --- | --- | --- |
+| **Response needed** | It's waiting for you, such as on an approval card. | **Review request** |
+| **Task complete** | It finished. Sent once, after its last queued message is answered. The text is an excerpt of its final reply. | **Open conversation** |
+| **Task failed** | It hit an error or stopped short. | **Open conversation** |
+
+You don't get one when:
+
+- the Codync app on your iPhone is open and connected to the computer,
+- the bot's **Notifications** switch is off, or the bot is hidden,
+- you stopped the turn yourself.
+
+Routine runs notify you too. A group chat sends one "done" once its bots have finished answering your message.
+
+To turn notifications off on the iPhone, tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and switch off **Push notifications** on the computer whose alerts you don't want; each computer has its own switch. Previews, sounds and Focus follow your iOS settings. The push relay and Apple see only a generic line ("Your task is complete. Open Codync to read the result.") plus routing IDs. The bot's name and the message text are encrypted to your iPhone's key and decrypted on the phone. See [Privacy](/docs/privacy).
+
+### Live Activities
+
+When you send a message from the iPhone, a Live Activity for that bot appears on the Lock Screen and in the Dynamic Island. It shows whether the bot is working, needs you, is done or failed, without the message text. On the Lock Screen, a progress line of four segments in the state's color fills as the task moves: one while your message is sent or queued, two while the bot works, three when it needs you, four once it ends. A [voice call](/docs/voice#start-a-call) with the bot shows on its Live Activity too, with what the bot is doing while you talk. Turn it off in the **State** tab under **Live Activity**; that also keeps calls off it.
+
+## Usage limits
+
+Codync reads plan limits from the agents installed on your computer. Claude Code uses its usage report and status line. The signed-in Codex CLI reports current account limits without starting a conversation or model turn. oh-my-pi, Amp, Kiro, Kimi, Antigravity, OpenCode, Mistral Vibe and Junie are read the same way, from a command, a local database or an IDE file. Cursor has no usage command: Codync uses the sign-in Cursor saved on this computer and asks cursor.com for the summary. Nothing else is sent with an agent's login. To see them:
+
+- **iPhone:** the **State** tab, then **Usage limits**. There's also a Usage widget.
+- **Desktop:** the menu bar or tray menu, or **Usage** in the account menu at the bottom of the sidebar.
+- **Terminal UI:** press `U`.

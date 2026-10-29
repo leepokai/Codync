@@ -1,7 +1,7 @@
 {
   "name": "codync-desktop",
   "productName": "Codync",
-  "version": "2.17.5",
+  "version": "2.31.2",
   "description": "Codync for macOS, Linux and Windows: your coding agents as teammates.",
   "author": {
     "name": "leepokai",
@@ -12,11 +12,11 @@
   "private": true,
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "node tools/account-config.mjs dev && electron-vite dev",
+    "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/dev.mjs",
     "build": "electron-vite build",
     "build:demo": "vite build --config vite.demo.config.ts && mv ../../web/public/demo/desktop/index.html ../../web/public/demo/desktop.html",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test --experimental-strip-types src/shared/*.test.ts src/renderer/lib/*.test.ts src/renderer/views/thread/*.test.ts",
+    "test": "node --test --experimental-strip-types src/shared/*.test.ts src/renderer/lib/*.test.ts src/renderer/views/thread/*.test.ts src/renderer/views/routines/*.test.ts src/renderer/views/call/*.test.ts src/renderer/views/marketplace/*.test.ts",
     "icons": "swift tools/export-symbols.swift",
     "dist:mac:dev": "node tools/account-config.mjs dev && node tools/native-host.mjs dev && node tools/native-screen.mjs dev && electron-vite build && CSC_NAME=\"Pokai Lee (6KFK5J2LB4)\" electron-builder --mac --config tools/dev-builder.cjs",
     "dist:mac:main": "node tools/account-config.mjs main && node tools/native-host.mjs main && node tools/native-screen.mjs main && electron-vite build && electron-builder --mac",

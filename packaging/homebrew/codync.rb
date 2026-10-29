@@ -1,6 +1,5 @@
 # Homebrew cask template for the leepokai/homebrew-codync tap.
-# The macOS job in .github/workflows/release-desktop.yml fills in the version and the
-# DMG's sha256 on every `v*` tag.
+# tools/release-gate.py fills in the version and the DMG's sha256 of the release it marks latest.
 cask "codync" do
   version "0.0.0"
   sha256 "REPLACE_WITH_SHA256"

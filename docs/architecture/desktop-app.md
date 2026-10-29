@@ -4,10 +4,8 @@ Codync's computer-side app is one Electron app in `apps/desktop/` for macOS, Lin
 replaced the SwiftUI Mac app (`apps/macos/`) and the GTK 4 Linux app (`apps/linux/`) in 2.7.0.
 The iPhone app stays native SwiftUI; its package moved from `kit/` into `apps/ios/Kit/`.
 
-Conversation history stays available even when the recent snapshot contains mostly thread
-replies. The desktop, iPhone and terminal clients page the main conversation independently
-of the number of main-chat entries in that snapshot; reaching the end of a history response
-determines when there are no earlier messages.
+The desktop, iPhone and terminal clients page a conversation's history on their own;
+reaching the end of a history response determines when there are no earlier messages.
 
 ## Why
 
@@ -24,7 +22,7 @@ determines when there are no earlier messages.
 
 | Path | |
 |---|---|
-| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) |
+| `src/main/` | Main process: host service (`host-controller.ts`), loopback HTTP/SSE proxy (`host-proxy.ts`), menu bar/tray, windows, account sign-in (Clerk Frontend API, `account.ts`), cloud API and device key (`cloud.ts`), updates (`updates.ts`), SSH tunnels (`ssh.ts`), Codync Screen agent (`screen.ts`), on-device speech (`speech.ts`) and its [voice input shortcut](../features/voice-call.md#voice-input-shortcut) (`voice-shortcut.ts`), browser sign-in callbacks (`auth.ts`), the [notch island](../features/notch-island.md) window (`island.ts`), [error tracking](../features/analytics.md#error-tracking) (`error-reports.ts`) |
 | `src/preload/` | The `window.codync` bridge (types in `src/shared/ipc.ts`) |
 | `src/renderer/store/` | `BotStore` (port of kit's; `bot-store.ts` actions over `bot-sync.ts` events stream and `bot-mirror.ts` state), `AppModel` (window state, approvals), `CloudModel` (claims, cloud default), `AccountSession` |
 | `src/renderer/components/` | Design system: controls, overlays (sheets, dialogs, menus), SF Symbol icons, character avatars, thinking orbs |
@@ -35,15 +33,16 @@ determines when there are no earlier messages.
 The renderer owns all state; closing the window hides it, so the menu bar keeps its data.
 HTTP to the host leaves from the main process (the loopback API has no CORS).
 
-Unsent composer text is kept per computer, separately for every bot and reply thread, and
-saved to `localStorage`, so switching conversations, closing a reply panel or restarting the
-app restores the exact text. Submitting clears only that conversation's draft. Drafts are
+Unsent composer text is kept per computer, separately for every bot, and saved to
+`localStorage`, so switching conversations or restarting the app restores the exact text. Submitting clears only that conversation's draft. Drafts are
 cleared when the host identity changes or the bot is deleted. iOS and the TUI keep drafts the
 same way; the shared desktop behavior covers macOS and Linux.
 
 When several computers are selected, the sidebar groups bots by computer, with connection
 status and update notices in each section. Drag a heading or press Alt+Up/Down on the
-heading to reorder sections. Click a heading to fold its bots.
+heading to reorder sections: as on the iPhone, a dragged heading lifts (a copy follows the
+pointer), every section folds into its heading, the others make room as it passes them, and
+they unfold on release (`BotRoster.tsx`). Click a heading to fold its bots.
 Order and folded sections stay on this device; the iPhone and other computers keep
 independent orders even when signed in to the same account. Filtering a computer out
 does not discard its position. One selected computer keeps a flat roster. Bots stay within
@@ -56,6 +55,12 @@ preferences per account and cloud environment. See [computer ordering](../featur
 The TUI connects to one host at a time, so it keeps its single roster.
 
 ## Platform notes
+
+- **Local host recovery** uses the Codync character: looking around and bobbing while starting,
+  resting for setup, and a still disappointed expression with lowered eyelids and a downturned mouth if the host is missing or
+  failed. Error text and install/retry actions remain available in both full-window and compact
+  recovery layouts. Reduced motion removes the animation. This screen belongs to the desktop
+  service manager; iOS, Android and the TUI connect to hosts but do not install or start that service.
 
 - **SSH startup** in the shared desktop UI keeps the workspace open whenever saved profiles
   exist. With no online computer, the detail pane shows each profile's connection
@@ -81,17 +86,19 @@ The TUI connects to one host at a time, so it keeps its single roster.
   Agents start through `cmd /c` (`host/src/shell.rs`), setup terminals use ConPTY
   (`portable-pty`), and the vault key lives in Credential Manager. Not on Windows yet: Remote
   screen and the `computer` MCP (no screen helper), on-device speech, the Claude Code status
-  line hook (usage still comes from `claude -p /usage` and ACP), SSH tunnels to other
+  line hook (usage still comes from `claude -p /usage`, ACP and each agent's own report), SSH tunnels to other
   computers, and `curl | bash` installers (npm installs and Claude Code's PowerShell installer
   work). The tray icon is the app icon; left-click opens the chat, right-click the menu.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)
   as an SMAppService agent; Linux starts its helper from the host, as before.
 - **Other computers in the account** are reached through this computer's own host and SSH
   tunnels only. The encrypted channel to account computers (`ChannelTransport`) wasn't ported:
-  the product targets one computer, so "Ask for access" rows show status only.
-- **Updates**: electron-updater from GitHub releases (`latest-mac.yml` carries `minApp`, the same
-  iPhone gate as before). Installs of the SwiftUI app get the first desktop release through one
-  more Sparkle appcast, generated for the zip by the release workflow (deprecated, removed after
+  the product targets one computer, so "Ask for access" rows show status only. An older copy of a
+  computer the app uses shows *Older copy · last seen …* with *Remove from account* (confirmed first).
+- **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate
+  (`tools/release-gate.py`) sets that mark
+  ([holding releases](../reference/compatibility.md#holding-releases-for-the-app-store)).
+  Installs of the SwiftUI app get the first desktop release through one more Sparkle appcast, generated for the zip by the release workflow (deprecated, removed after
   2026-11-06: [updates guide](../guides/updates.md#deprecated-the-sparkle-migration-appcast-remove-after-2026-11-06)).
   On macOS the app removes an idle installer job (`<appId>.ShipIt`) whose update request is gone:
   launchd would otherwise restart it every 2 seconds, forever.
@@ -118,13 +125,14 @@ It uses port 19222 on the remote computer and leaves bots and settings unchanged
 cd apps/desktop
 npm ci
 npm run icons                       # macOS: SF Symbol masks
-npm run dev                         # Codync Dev, separate host on 19223
+npm run dev                         # main checkout: Codync Dev, separate host on 19223
+                                    # linked worktree: a sandbox beside it (docs/guides/dev-app.md)
 CODYNC_PORT=19333 CODYNC_HOME=/path/to/home npm run dev   # against a manually run host
 npm run typecheck && npm test
 ```
 
 UI checks: `CODYNC_SHOW_INACTIVE=1` opens the window without taking focus,
-`CODYNC_DEBUG_OPEN=compose|group|plugins|computers|<bot name>` opens a screen, and
+`CODYNC_DEBUG_OPEN=newBot|newGroup|plugins|computers|<bot name>` opens a screen, and
 `CODYNC_REMOTE_DEBUG=<port>` lets a script drive the renderer over the DevTools protocol.
 Each packaging script names its environment:
 

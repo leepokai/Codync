@@ -9,6 +9,7 @@ mod files;
 mod host;
 mod http;
 mod marketplace;
+mod network;
 mod remote;
 
 pub use events::{events_stream, term_events};
@@ -58,8 +59,8 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
     devices::permit(caller, method)?;
     let observed = crate::analytics::observe_call(hub, caller, method, &b);
     let result = route(hub, caller, method, b).await;
-    if result.is_ok()
-        && let Some((event, properties)) = observed
+    if let (Ok(answer), Some((event, properties))) = (&result, observed)
+        && let Some(properties) = crate::analytics::answered(event, properties, answer)
     {
         crate::analytics::capture(hub, event, properties);
     }
@@ -91,7 +92,11 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         ControlFlow::Break(v) => return Ok(v),
         ControlFlow::Continue(b) => b,
     };
-    let b = match bots::call(hub, method, b).await? {
+    let b = match network::call(hub, method, b).await? {
+        ControlFlow::Break(v) => return Ok(v),
+        ControlFlow::Continue(b) => b,
+    };
+    let b = match bots::call(hub, caller, method, b).await? {
         ControlFlow::Break(v) => return Ok(v),
         ControlFlow::Continue(b) => b,
     };

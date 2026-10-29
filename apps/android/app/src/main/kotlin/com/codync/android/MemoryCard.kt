@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,7 +45,12 @@ private enum class Backup { Export, Import }
     var backup by remember { mutableStateOf<Backup?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     LaunchedEffect(botId) { memory.load() }
-    CardSection("Memory", accessory = {
+    // At the end of bot details: viewed once it scrolls into sight, once per opening.
+    var viewed by remember(botId) { mutableStateOf(false) }
+    val seen = Modifier.onVisibilityChanged(minFractionVisible = 0f) { visible ->
+        if (visible && !viewed) { viewed = true; Analytics.capture(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Memory)) }
+    }
+    CardSection("Memory", modifier = seen, accessory = {
         IconButton("Add memory", "plus", enabled = !memory.busy) { editor = MemoryDraft.of(botId, null) }
         DropdownMenu({ listOf(
             MenuItem("Refresh", icon = "arrow.clockwise") { memory.refresh() },

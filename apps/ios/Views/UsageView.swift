@@ -19,8 +19,8 @@ struct UsageView: View {
                 if model.usage.providers.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "chart.bar").font(.system(size: 40)).foregroundStyle(Palette.tertiary)
-                        Text("No usage yet").font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
-                        Text("Your computer reads the limits from Claude Code and Codex.")
+                        Text(L10n.tr("No usage yet")).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+                        Text(L10n.tr("Your computer reads plan limits from the agents installed on it."))
                             .font(.subheadline).foregroundStyle(Palette.secondary)
                     }
                     .multilineTextAlignment(.center)
@@ -59,15 +59,15 @@ private struct ProviderCard: View {
             if let top = provider.tightest {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(top.label)
+                        Text(L10n.tr(top.title))
                         Spacer()
-                        Text("\(Int(top.percent.rounded()))%").monospacedDigit()
+                        Text(L10n.tr("\(Int(top.percent.rounded()))%")).monospacedDigit()
                     }
                     .font(.subheadline)
                     .foregroundStyle(Palette.text)
                     UsageTicks(percent: top.percent, tint: provider.widgetTint, height: 15)
                     if let reset = top.resetsShort() {
-                        Text(reset).font(.caption.monospacedDigit()).foregroundStyle(Palette.tertiary)
+                        Text(L10n.resetLine(reset)).font(.caption.monospacedDigit()).foregroundStyle(Palette.tertiary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
@@ -76,8 +76,8 @@ private struct ProviderCard: View {
             if !collapsed {
                 VStack(spacing: 8) {
                     ForEach(provider.windows) { w in
-                        row(w.label, "\(Int(w.percent.rounded()))%")
-                        if let reset = w.resetsShort() { row("\(w.label) reset", reset.replacingOccurrences(of: "resets ", with: "")) }
+                        row(L10n.tr(w.title), w.text ?? "\(Int(w.percent.rounded()))%")
+                        if let reset = w.resetsShort() { row(L10n.tr("Resets"), L10n.resetLine(reset)) }
                     }
                     row("Source", source)
                     row("Updated", Date(milliseconds: provider.updatedAt).formatted(date: .abbreviated, time: .shortened))
@@ -101,7 +101,7 @@ private struct ProviderCard: View {
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).foregroundStyle(Palette.secondary)
+            Text(L10n.tr(label)).foregroundStyle(Palette.secondary)
             Spacer()
             Text(value).foregroundStyle(Palette.text).monospacedDigit()
         }

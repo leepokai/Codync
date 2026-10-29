@@ -1,12 +1,19 @@
 import Foundation
 
 public enum HostEvent: Sendable {
-    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?)
+    /// The stream's first event; `network` is nil from hosts before the network view.
+    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?)
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
     case usage(Usage)
     case screen(ScreenState)
+    /// An artifact published or renamed (the catch-up replays it too).
+    case artifact(Artifact)
+    /// For the voice of a call on this device (only the device holding the call receives it).
+    case call(CallCue)
+    /// The computer's network changed (members, roles, presence, offered bots, cloud assistants).
+    case network(NetworkView)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -96,13 +103,16 @@ public struct HostClient: Sendable {
         struct EntryWrap: Decodable { var entry: Entry }
         struct UsageWrap: Decodable { var usage: Usage }
         struct ScreenWrap: Decodable { var screen: ScreenState }
+        struct ArtifactWrap: Decodable { var artifact: Artifact }
+        struct NetworkWrap: Decodable { var network: NetworkView }
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
         case "hello":
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
-            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen)
+            let network = (try? d.decode(NetworkWrap.self, from: data))?.network
+            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network)
         case "bot":
             if let stub = try? d.decode(StubWrap.self, from: data), stub.bot.deleted == true {
                 return .botDeleted(id: stub.bot.id, rev: stub.bot.rev)
@@ -114,6 +124,14 @@ public struct HostClient: Sendable {
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
         case "screen":
             return (try? d.decode(ScreenWrap.self, from: data)).map { .screen($0.screen) }
+        case "artifact":
+            // Not worth a rewind: a card or the Library reads the artifact again.
+            return (try? d.decode(ArtifactWrap.self, from: data)).map { .artifact($0.artifact) }
+        case "call":
+            return (try? d.decode(CallCue.self, from: data)).map { .call($0) }
+        case "network":
+            // Not worth a rewind: the next stream's hello carries the view again.
+            return (try? d.decode(NetworkWrap.self, from: data)).map { .network($0.network) }
         case "resync":
             return .resync
         default:
@@ -127,6 +145,14 @@ public struct HostClient: Sendable {
 public extension HostClient {
     func hello() async throws -> Hello { try await call("hello") }
 
+    /// The computer's network, read-only (hosts before it: "unknown method").
+    func networkView() async throws -> NetworkView { try await call("networkView") }
+
+    /// Updates a computer that's behind this app to the latest release (`Hello.canUpdate`).
+    func installHostUpdate() async throws {
+        let _: Empty = try await call("installHostUpdate")
+    }
+
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
         struct Body: Encodable { var botId: String; var beforeSeq: Int64; var limit: Int }
         struct Res: Decodable { var entries: [Entry] }
@@ -134,10 +160,10 @@ public extension HostClient {
         return res.entries
     }
 
-    /// A thread's replies (the root is in the main chat).
-    func thread(botId: String, rootId: String) async throws -> [Entry] {
+    /// What a voice call carried, from the computer: the chat this device holds may not reach back to it.
+    func callEntries(botId: String, call: String) async throws -> [Entry] {
         struct Res: Decodable { var entries: [Entry] }
-        let res: Res = try await call("thread", ["botId": botId, "rootId": rootId])
+        let res: Res = try await self.call("callEntries", ["botId": botId, "callId": call])
         return res.entries
     }
 
@@ -182,10 +208,9 @@ public extension HostClient {
         let _: Empty = try await call("reorderBots", ["ids": ids])
     }
 
-    /// The main chat, one thread (`threadId`), or everything (`all`).
-    func markRead(_ id: String, threadId: String? = nil, all: Bool = false) async throws {
-        struct Body: Encodable { var botId: String; var threadId: String?; var all: Bool }
-        let _: Empty = try await call("markRead", Body(botId: id, threadId: threadId, all: all))
+    /// The chat read; a no-op when nothing there is unread.
+    func markRead(_ id: String) async throws {
+        let _: Empty = try await call("markRead", ["botId": id])
     }
 
     /// Toggles the user's `emoji` reaction on a chat message.
@@ -195,11 +220,19 @@ public extension HostClient {
         return res.entry
     }
 
-    /// `threadId`: reply in the thread on that main-chat message.
-    func send(botId: String, text: String, clientNonce: String, threadId: String? = nil, attachments: [String]? = nil) async throws -> Entry {
-        struct Body: Encodable { var botId: String; var text: String; var clientNonce: String; var threadId: String?; var attachments: [String]? }
+    /// `replyTo`: the chat message this one quotes.
+    /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
+    /// `call`: the voice call it was said in (on-device or speech to text).
+    func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, attachments: [String]? = nil,
+              pasted: [String]? = nil, call: String? = nil) async throws -> Entry {
+        struct Body: Encodable {
+            var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var attachments: [String]?
+            var pasted: [String]?; var call: String?
+        }
         struct Res: Decodable { var entry: Entry }
-        let res: Res = try await call("send", Body(botId: botId, text: text, clientNonce: clientNonce, threadId: threadId, attachments: attachments))
+        let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, attachments: attachments,
+                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call)
+        let res: Res = try await self.call("send", body)
         return res.entry
     }
 
@@ -232,9 +265,50 @@ public extension HostClient {
         return out
     }
 
-    func logCall(_ botId: String, seconds: Int) async throws {
-        struct Body: Encodable { var botId: String; var seconds: Int }
-        let _: Empty = try await call("logCall", Body(botId: botId, seconds: seconds))
+    /// A call's audio is live: a lead opens it, and its opening is the call's.
+    func callStarted(_ botId: String, call: String) async throws {
+        let _: Empty = try await self.call("callStarted", ["botId": botId, "callId": call])
+    }
+
+    // MARK: voice calls (host/src/chat/calls)
+
+    /// The call is on (again, for a provider session that was replaced): the voice's instructions and tools, and a
+    /// realtime provider's credential. `mode`: `realtime`, `speech` or `device`.
+    func startCall(botId: String, call: String, mode: String, provider: VoiceProvider? = nil, model: String? = nil,
+                   voice: String? = nil, language: String?) async throws -> CallSession {
+        struct Body: Encodable {
+            var botId, callId, mode: String; var provider, model, voice, language: String?
+        }
+        let body = Body(botId: botId, callId: call, mode: mode, provider: provider?.rawValue, model: model, voice: voice,
+                        language: language)
+        let data = try await transport.call("startCall", body: try Self.encoder.encode(body), timeout: 30)
+        return try CallSession(json: data)
+    }
+
+    /// Runs one of the voice's tool calls on the computer, with what was said that it hasn't got yet (`lines`);
+    /// `arguments` and the answer are JSON.
+    func callTool(call: String, name: String, arguments: Data, lines: [CallLine]) async throws -> Data {
+        let args = (try? JSONSerialization.jsonObject(with: arguments)) ?? [String: Any]()
+        let said = try JSONSerialization.jsonObject(with: Self.encoder.encode(lines))
+        let body = try JSONSerialization.data(withJSONObject: ["callId": call, "name": name, "arguments": args, "lines": said])
+        let data = try await transport.call("callTool", body: body, timeout: 60)
+        let result = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["result"] ?? [String: Any]()
+        return try JSONSerialization.data(withJSONObject: result)
+    }
+
+    /// What was just said on the call, kept on the computer.
+    func callLines(call: String, lines: [CallLine]) async throws {
+        struct Body: Encodable { var callId: String; var lines: [CallLine] }
+        let _: Empty = try await self.call("callLines", Body(callId: call, lines: lines))
+    }
+
+    /// The call is over: its line in the chat, with the rest of the transcript (`lines`), which the computer titles.
+    /// Safe to repeat: the computer ends a call once.
+    func endCall(botId: String, call: String, seconds: Int, lines: [CallLine]) async throws -> Entry? {
+        struct Body: Encodable { var botId, callId: String; var seconds: Int; var lines: [CallLine] }
+        struct Res: Decodable { var entry: Entry? }
+        let res: Res = try await self.call("endCall", Body(botId: botId, callId: call, seconds: seconds, lines: lines))
+        return res.entry
     }
 
     func stop(_ botId: String) async throws {

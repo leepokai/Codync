@@ -28,6 +28,8 @@ pub struct Exchange {
     pub reply: Option<String>,
     pub created_at: i64,
     pub outcome: Outcome,
+    /// The peer's name when it is a bot on another computer (its id is `name@computer`).
+    pub peer_name: Option<String>,
 }
 
 impl Exchange {
@@ -55,6 +57,7 @@ impl Exchange {
             reply: reply.map(str::to_owned),
             created_at: e.created_at,
             outcome,
+            peer_name: message["peerName"].as_str().map(str::to_owned),
         })
     }
 
@@ -85,6 +88,7 @@ pub struct Group<'a> {
     /// The run's first exchange: its id keys the row and opens the conversation.
     pub first: &'a Entry,
     pub peer: String,
+    pub peer_name: Option<String>,
     pub count: usize,
     /// Any exchange in the run failed.
     pub failed: bool,
@@ -95,10 +99,10 @@ fn is_visible(e: &Entry) -> bool {
     matches!(e.kind, Kind::User | Kind::Permission | Kind::Notice) || e.is_final()
 }
 
-/// The main chat's rows: consecutive exchanges with one peer (either direction) become one group.
+/// The chat's rows: consecutive exchanges with one peer (either direction) become one group.
 /// Anything else the chat shows ends the run; trace entries neither break nor appear in it.
-/// A run of one stays a plain entry, and threads (`main` false) are never grouped.
-pub fn group<'a>(chat: &str, entries: &[&'a Entry], main: bool) -> Vec<Item<'a>> {
+/// A run of one stays a plain entry.
+pub fn group<'a>(chat: &str, entries: &[&'a Entry]) -> Vec<Item<'a>> {
     fn flush<'a>(out: &mut Vec<Item<'a>>, run: &mut Vec<(&'a Entry, Exchange)>) {
         match run.as_slice() {
             [] => {}
@@ -106,6 +110,7 @@ pub fn group<'a>(chat: &str, entries: &[&'a Entry], main: bool) -> Vec<Item<'a>>
             [(first, x), ..] => out.push(Item::Group(Group {
                 first,
                 peer: x.peer().to_owned(),
+                peer_name: run.iter().find_map(|(_, x)| x.peer_name.clone()),
                 count: run.len(),
                 failed: run.iter().any(|(_, x)| matches!(x.outcome, Outcome::Failed(_))),
             })),
@@ -115,9 +120,7 @@ pub fn group<'a>(chat: &str, entries: &[&'a Entry], main: bool) -> Vec<Item<'a>>
     let mut out = vec![];
     let mut run: Vec<(&Entry, Exchange)> = vec![];
     for &e in entries {
-        if !main {
-            out.push(Item::Entry(e));
-        } else if let Some(x) = Exchange::of(chat, e) {
+        if let Some(x) = Exchange::of(chat, e) {
             if run.last().is_some_and(|(_, r)| r.peer() != x.peer()) {
                 flush(&mut out, &mut run);
             }
@@ -199,7 +202,7 @@ mod tests {
 
     fn notice(id: &str, seq: i64, at: i64, message: &serde_json::Value, status: &str) -> Entry {
         let data = json!({"text": "A rendered notice", "botMessage": message, "status": status});
-        Entry { id: id.into(), seq, turn: 1, kind: Kind::Notice, created_at: at, thread_id: None, data }
+        Entry { id: id.into(), seq, turn: 1, kind: Kind::Notice, created_at: at, data }
     }
 
     fn msg(source: &str, target: &str, text: &str) -> serde_json::Value {
@@ -237,9 +240,9 @@ mod tests {
             .collect()
     }
 
-    fn grouped(chat: &str, entries: &[Entry], main: bool) -> Vec<String> {
+    fn grouped(chat: &str, entries: &[Entry]) -> Vec<String> {
         let refs: Vec<&Entry> = entries.iter().collect();
-        shape(&group(chat, &refs, main))
+        shape(&group(chat, &refs))
     }
 
     #[test]
@@ -249,10 +252,9 @@ mod tests {
             notice("2", 2, 0, &msg("b", "a", "y"), "completed"),
             notice("3", 3, 0, &msg("a", "b", "z"), "failed"),
         ];
-        assert_eq!(grouped("a", &xs, true), ["3xb!@1"]);
-        assert_eq!(grouped("a", &xs[..2], true), ["2xb@1"]);
-        assert_eq!(grouped("a", &xs[..1], true), ["1"]);
-        assert_eq!(grouped("a", &xs, false), ["1", "2", "3"], "threads never group");
+        assert_eq!(grouped("a", &xs), ["3xb!@1"]);
+        assert_eq!(grouped("a", &xs[..2]), ["2xb@1"]);
+        assert_eq!(grouped("a", &xs[..1]), ["1"]);
     }
 
     #[test]
@@ -268,15 +270,15 @@ mod tests {
         thought.kind = Kind::Agent;
         let ex = |id: &str, seq, peer: &str| notice(id, seq, 0, &msg("a", peer, "x"), "completed");
         let xs = [ex("1", 1, "b"), ex("2", 2, "b"), tool.clone(), thought, ex("3", 5, "b")];
-        assert_eq!(grouped("a", &xs, true), ["3xb@1"], "trace entries do not split");
+        assert_eq!(grouped("a", &xs), ["3xb@1"], "trace entries do not split");
         let xs = [ex("1", 1, "b"), ex("2", 2, "b"), user.clone(), ex("3", 4, "b"), ex("4", 5, "b")];
-        assert_eq!(grouped("a", &xs, true), ["2xb@1", "u", "2xb@3"]);
+        assert_eq!(grouped("a", &xs), ["2xb@1", "u", "2xb@3"]);
         let xs = [ex("1", 1, "b"), ex("2", 2, "b"), ex("3", 3, "c"), ex("4", 4, "b")];
-        assert_eq!(grouped("a", &xs, true), ["2xb@1", "3", "4"]);
+        assert_eq!(grouped("a", &xs), ["2xb@1", "3", "4"]);
         let mut other = ex("n", 3, "b");
         other.data = json!({"text": "Routine ran"});
         let xs = [ex("1", 1, "b"), other, ex("2", 3, "b")];
-        assert_eq!(grouped("a", &xs, true), ["1", "n", "2"]);
+        assert_eq!(grouped("a", &xs), ["1", "n", "2"]);
     }
 
     #[test]
@@ -303,7 +305,7 @@ mod tests {
         report.id = "report".into();
         report.data = json!({"text": "report for the user", "final": true});
         let entries = [ask, trace, report];
-        assert_eq!(grouped("b", &entries, true), ["ask", "report"]);
+        assert_eq!(grouped("b", &entries), ["ask", "report"]);
         let popup = conversation("b", &entries, None, "a");
         assert_eq!(popup.len(), 1);
         assert_eq!(popup[0].reply.as_deref(), Some("answer for a"));

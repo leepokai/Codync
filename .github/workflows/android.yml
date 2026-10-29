@@ -19,6 +19,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR supersedes the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,7 +41,10 @@ jobs:
           packages: platform-tools
       - run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:lintDebug
+      - run: python3 tools/agent_icons_test.py
+      # PRs run the tests, compile and lint. The minified release build (R8) runs once a change lands on
+      # dev or main, before a tag ships it.
+      - run: ./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug ${{ github.event_name != 'pull_request' && ':app:assembleRelease' || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: codync-android-debug

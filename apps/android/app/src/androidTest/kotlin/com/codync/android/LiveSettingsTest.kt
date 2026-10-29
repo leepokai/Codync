@@ -40,8 +40,8 @@ class LiveSettingsTest {
             val listing = WireJson.decodeFromJsonElement<DirListing>(listingResponse)
             val store = ViewModelProvider(compose.activity)[AppStore::class.java]
             compose.waitUntil(30_000) { !store.state.value.loading && store.state.value.bots.any { it.id == bot.id } && store.state.value.actualConnection is LinkState.Ready }
-            compose.runOnUiThread { store.openBot(bot.id) }
-            compose.chatAction("Edit profile")
+            compose.runOnUiThread { store.openBot(null) }
+            compose.rosterAction(bot.name, "Edit profile")
             compose.onNode(hasSetTextAction() and hasText(bot.name)).performTextReplacement("Unsaved draft")
             compose.onNodeWithContentDescription("Workspace").performScrollTo().performClick()
             compose.onNodeWithText("Choose project folder…").performClick()
@@ -57,7 +57,7 @@ class LiveSettingsTest {
             assertEquals(bot.name, cancelled.name)
             assertEquals(bot.cwd, cancelled.cwd)
             assertNull(cancelled.notify)
-            compose.chatAction("Edit profile")
+            compose.rosterAction(bot.name, "Edit profile")
             compose.onNodeWithContentDescription("Workspace").performScrollTo().performClick()
             compose.onNodeWithText("Choose project folder…").performClick()
             compose.waitUntil(15_000) { compose.onAllNodesWithText(useFolder).fetchSemanticsNodes().size == 1 }

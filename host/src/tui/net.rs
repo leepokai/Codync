@@ -1,5 +1,6 @@
 //! Host API over HTTP: JSON commands and the SSE event stream (same wire as the apps).
 
+pub mod artifacts;
 pub mod files;
 
 use futures::StreamExt;
@@ -12,10 +13,9 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::app::{After, Msg};
 use super::manage::Reply;
-mod memory_transfer;
 
 /// Methods that start an agent or download something: they can take minutes.
-const SLOW: [&str; 8] = [
+const SLOW: [&str; 7] = [
     "agentAuth",
     "agentAuthenticate",
     "agentModels",
@@ -23,7 +23,6 @@ const SLOW: [&str; 8] = [
     "installConnector",
     "installSkill",
     "importConnectors",
-    "memory",
 ];
 
 pub const NOT_INSTALLED: &str = "The Codync host isn't set up on this computer yet.";
@@ -63,13 +62,7 @@ impl Client {
                 .post(format!("{}/api/{method}", self.base))
                 .bearer_auth(&token)
                 .json(body)
-                .timeout(Duration::from_secs(
-                    if SLOW.contains(&method) || method.starts_with("memory") || method.ends_with("Memory") {
-                        11 * 60
-                    } else {
-                        60
-                    },
-                ))
+                .timeout(Duration::from_secs(if SLOW.contains(&method) { 11 * 60 } else { 60 }))
                 .send()
                 .await;
             match sent {
@@ -109,11 +102,7 @@ impl Client {
     pub fn spawn_call(&self, method: &'static str, body: Value, after: After, tx: UnboundedSender<Msg>) {
         let c = self.clone();
         tokio::spawn(async move {
-            let r = if matches!(method, "exportMemory" | "importMemory") {
-                memory_transfer::call(&c, method, &body).await
-            } else {
-                c.call(method, &body).await
-            };
+            let r = c.call(method, &body).await;
             let _ = tx.send(Msg::Reply(after, r));
         });
     }

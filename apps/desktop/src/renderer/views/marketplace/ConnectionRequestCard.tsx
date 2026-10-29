@@ -2,7 +2,8 @@ import { useState } from 'react'
 import type { Backend, Entry } from '@shared/models'
 import { Button, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { font } from '../../lib/fonts'
+import { HStack, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { AgentSheet, AgentTile } from './AgentSheet'
 import { ComposioConnectSheet } from './ComposioViews'
@@ -11,13 +12,14 @@ import {
   errorText, market, needsSignIn,
   type ComposioApp, type ConnectionRequest, type MarketConnector,
 } from './market-models'
-import { AppLogo, Field, FormSheet, ServiceLogo, lineClamp } from './pieces'
+import { AppLogo, Field, FormSheet, ServiceLogo } from './pieces'
 import { pluginsFor } from './plugins'
+import { useTr } from '../../lib/use-language'
 
-const caption = { ...font('caption'), color: 'var(--secondary)' }
 
 /** Credentials go through the setup API; only the request's state is a chat entry. */
 export function ConnectionRequestCard({ entry }: { entry: Entry }) {
+  const tr = useTr()
   const store = useStore()
   const request = entry.data.connectionRequest as unknown as ConnectionRequest
   const [app, setApp] = useState<ComposioApp | null>(null)
@@ -66,51 +68,51 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
 
   const pending = request.status === 'pending'
   return (
-    <div className="request-card" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 400, boxSizing: 'border-box', alignSelf: 'flex-start', padding: '14px 16px', border: '1px solid var(--border)', borderRadius: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+    <VStack gap={12} className="request-card">
+      <HStack gap={14}>
         <RequestLogo request={request} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-          <span style={{ ...font('body', 'semibold'), color: 'var(--text)', ...lineClamp(1) }}>{request.title}</span>
-          {entry.data.text ? <span style={{ ...font('subheadline'), color: 'var(--secondary)', ...lineClamp(2) }} title={entry.data.text}>{entry.data.text}</span> : null}
-        </div>
+        <VStack gap={2} grow>
+          <Text size="body" weight="semibold" tone="text" truncate>{request.title}</Text>
+          {entry.data.text ? <Text size="subheadline" tone="secondary" lines={2} title={entry.data.text}>{entry.data.text}</Text> : null}
+        </VStack>
         {pending ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
+          <HStack gap={6} className="request-card-trailing">
             {busy ? <Spinner /> : null}
             <Button disabled={busy || ((isSecret || isLogin) && !value)} onClick={() => void connect()}>
               {isAgent ? 'Sign in' : isLogin ? 'Save' : 'Connect'}
             </Button>
-          </div>
+          </HStack>
         ) : (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none', ...font('subheadline'), color: 'var(--secondary)' }}>
+          <HStack as="span" gap={6} className="request-card-trailing request-card-status">
             {request.status === 'ready' ? <Icon name="checkmark" size={11} weight="semibold" /> : null}
             {request.status === 'ready' ? (isAgent ? 'Signed in' : isLogin ? 'Saved' : 'Connected') : 'Cancelled'}
-          </span>
+          </HStack>
         )}
-      </div>
+      </HStack>
       {pending && isLogin ? (
         <>
           <Field value={username} onChange={setUsername} placeholder="Username or email" />
           <Field value={value} onChange={setValue} placeholder="Password or op:// reference" secret />
-          <span style={caption}>Saved securely on this computer. The bot types it into the sign-in page but never sees it.</span>
+          <Text size="caption" tone="secondary">{tr(`Saved securely on this computer. The bot types it into the sign-in page but never sees it.`)}</Text>
         </>
       ) : pending && isSecret ? (
         <>
-          <span style={caption}>{`${request.field ?? 'Credential'} · ${request.location ?? ''}`}</span>
+          <Text size="caption" tone="secondary">{`${request.field ?? tr(`Credential`)} · ${request.location ?? ''}`}</Text>
           <Field value={value} onChange={setValue} placeholder="Credential or op:// reference" secret />
-          <span style={caption}>Saved securely on this computer. Never added to the conversation.</span>
+          <Text size="caption" tone="secondary">{tr(`Saved securely on this computer. Never added to the conversation.`)}</Text>
         </>
       ) : null}
-      {error ? <span style={{ ...font('footnote'), color: 'var(--danger)' }}>{error}</span> : null}
+      {error ? <Text size="footnote" tone="danger">{error}</Text> : null}
       <FormSheet open={item !== null} onClose={() => setItem(null)}>
         {item ? <InstallConnectorSheet item={item} requestId={entry.id} done={() => setItem(null)} /> : null}
       </FormSheet>
       <FormSheet open={app !== null} onClose={() => setApp(null)}>
         {app ? <ComposioConnectSheet app={app} requestId={entry.id} done={() => setApp(null)} /> : null}
       </FormSheet>
-      <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560}>
+      <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560} fixed>
         {agent ? <AgentSheet key={agent.id} initial={agent} recheck /> : null}
       </FormSheet>
-    </div>
+    </VStack>
   )
 }
 

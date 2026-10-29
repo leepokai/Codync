@@ -5,16 +5,25 @@ import java.io.IOException
 import com.codync.android.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 
 // Pairing, the encrypted link to the computer and the mirror's event stream.
 
 fun AppStore.setRoute(route: ConnectionRoute) = action("route") {
-    val computer = state.value.computers.firstOrNull() ?: return@action
-    val changed = computer.copy(route = route)
+    changeComputer { it.copy(route = route) } ?: return@action
+    reconnect().join()
+}
+
+/**
+ * Changes the paired computer's latest copy, saved and then shown, one change at a time: a switch
+ * flipped while a link's `hello` runs isn't undone by the copy that link saves.
+ */
+internal suspend fun AppStore.changeComputer(change: (Computer) -> Computer): Computer? = computerChanges.withLock {
+    val changed = change(state.value.computers.firstOrNull() ?: return@withLock null)
     withContext(Dispatchers.IO) { local.saveComputers(listOf(changed)) }
     mutableState.update { it.copy(computers = listOf(changed)) }
-    reconnect().join()
+    changed
 }
 
 /**
@@ -48,7 +57,8 @@ fun AppStore.setForeground(active: Boolean) {
     }
 }
 
-fun AppStore.pair(text: String) {
+/** Pairs with the computer in a `codync://pair` link: scanned or pasted ([PairedVia.Qr]) or opened from outside ([PairedVia.Link]). */
+internal fun AppStore.pair(text: String, via: PairedVia) {
     if (pairingJob?.isActive == true) return
     pairingJob = contextScope.launch {
         state.first { !it.loading }
@@ -56,16 +66,23 @@ fun AppStore.pair(text: String) {
         try {
             val pairing = Pairing.parse(text, BuildConfig.URL_SCHEME)
             val old = state.value.computers.firstOrNull()
-            require(old == null || old.id == pairing.computer.id) { "Use Start over to pair a different computer." }
+            require(old == null || old.id == pairing.computer.id) { "Remove this phone's computer in Computer management to pair a different one." }
             require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Start over before pairing again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
-            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100)).copy(color = old?.color)
+            // Picked on this phone: re-pairing keeps them (iOS `AccountStore.pair`).
+            val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100))
+            val computer = paired.keepingDevicePicks(old)
             withContext(Dispatchers.IO) { local.saveComputers(listOf(computer)); local.completeSetup() }
             mutableState.update { it.copy(computers = listOf(computer), setupComplete = true) }
+            Analytics.capture(AnalyticsEvent.ComputerPaired(via, computer.id))
+            Analytics.completeOnboarding(OnboardingVia.Paired)
             if (database == null) openMirror()
             connect()
         } catch (error: CancellationException) { throw error }
-        catch (error: Exception) { showError(error) }
+        catch (error: Exception) {
+            Analytics.capture(AnalyticsEvent.PairingFailed(PairingFailure.of(error)))
+            showError(error)
+        }
         finally { mutableState.update { it.copy(pairing = false) } }
     }
 }
@@ -102,15 +119,16 @@ fun AppStore.connect() {
                                 reconcileMailbox(active)
                             }
                             if (link is LinkState.Ready) {
-                                // The latest saved copy: its color may have changed since this link opened.
-                                val updated = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
+                                val fromHost = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
                                 val hello = active.call("hello").jsonObject
-                                withContext(Dispatchers.IO) {
-                                    local.saveComputers(listOf(updated))
+                                // This phone's picks (color, route, push) may have changed during those calls.
+                                changeComputer { current -> if (current.id == fromHost.id) fromHost.keepingDevicePicks(current) else current }
+                                val dropped = withContext(Dispatchers.IO) {
                                     requireNotNull(database).setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
                                         BuildConfig.VERSION_NAME + "/" + hello["version"]?.jsonPrimitive?.content)
                                 }
-                                mutableState.update { it.copy(computers = listOf(updated)) }
+                                // Dropped chats page their earlier messages again.
+                                mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }
                                 noteHello(hello)
                                 // The event catch-up is ordered by revision; bot revisions can
                                 // follow hundreds of historical entries. Load the current roster
@@ -174,7 +192,10 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             }
             withContext(Dispatchers.IO) { requireNotNull(database).apply(batch) }
             refresh()
-            acknowledgeVisible(readAfter(batch, state.value.readingScopes))
+            receiveArtifacts(batch)
+            receiveNetwork(batch)
+            hearCalls(batch)
+            acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
         }
     } finally { source.cancel() }
@@ -209,15 +230,19 @@ private suspend fun AppStore.decode(event: JsonObject): MirrorEvent? {
     }
 }
 
-/** Reached, but nothing to sync until one side updates: ask again every 30 s (a host update restarts the link anyway). */
+/**
+ * Reached, but nothing to sync until one side updates: ask again every 30 s (a host update restarts
+ * the link anyway), every 5 s while an update this phone asked for runs, so the card goes soon.
+ */
 private suspend fun AppStore.awaitUpdate(active: EncryptedChannel) {
-    delay(30_000)
+    delay(if (state.value.hostUpdate.updating(System.currentTimeMillis())) 5_000 else 30_000)
     noteHello(active.call("hello").jsonObject)
 }
 
-/** A different host version may read fine: forget that its data was unreadable (iOS `noteHostVersion`). */
+/** A different host version may read fine: forget that its data was unreadable and any update asked of the old one (iOS `noteHostVersion`). */
 private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
-    it.copy(hello = hello, unreadable = it.unreadable && it.hello?.text("version") == hello.text("version"))
+    val same = it.hello?.text("version") == hello.text("version")
+    it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
 }
 
 private fun AppStore.showConnection(link: LinkState) {

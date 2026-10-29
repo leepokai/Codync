@@ -1,12 +1,17 @@
 //! Durable bot routines, shared by API clients and the built-in MCP server.
+mod check;
+pub use check::Checked;
 mod editor;
-pub use editor::preview as schedule_preview;
+pub use editor::{ScheduleDraft, preview as schedule_preview};
 pub mod hooks;
 use hooks::Refused;
+mod mcp;
+pub use mcp::{INSTRUCTIONS, call, tools};
+mod retry;
 mod runner;
 mod schedule;
 pub use runner::start;
-pub use schedule::Trigger;
+pub use schedule::{Trigger, local_zone};
 
 use crate::{
     LockExt,
@@ -76,7 +81,6 @@ pub struct Run {
     pub created_at: i64,
     pub finished_at: Option<i64>,
     pub detail: Option<String>,
-    pub root_id: Option<String>,
     pub event: Value,
     pub delivery_id: Option<String>,
     #[serde(default)]
@@ -85,6 +89,25 @@ pub struct Run {
     report_pending: bool,
     #[serde(default)]
     result: Option<String>,
+    /// How many earlier tries of the same work failed before acting (`retry.rs`).
+    #[serde(default)]
+    pub attempt: u32,
+    /// A queued retry waits until then.
+    #[serde(default)]
+    pub not_before: Option<i64>,
+    /// This failed run is tried again automatically then.
+    #[serde(default)]
+    pub retry_at: Option<i64>,
+    /// This failed run can be retried by the user, so it keeps its event until then.
+    #[serde(default)]
+    pub retryable: bool,
+}
+
+impl Run {
+    /// A retry still waiting for its time: it holds nothing up and nothing takes it yet.
+    fn waiting(&self, now: i64) -> bool {
+        self.status == Status::Pending && self.not_before.is_some_and(|at| at > now)
+    }
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -176,7 +199,8 @@ impl Routines {
         let mut kept = 0;
         next.runs.reverse();
         next.runs.retain(|run| {
-            if run.status.active() || run.report_pending {
+            // A failure the user can still retry keeps its event (at most one per routine).
+            if run.status.active() || run.report_pending || run.retryable {
                 return true;
             }
             kept += 1;
@@ -201,58 +225,30 @@ impl Routines {
             "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>()})
     }
 
+    pub fn owns(&self, bot: &str, id: &str) -> bool {
+        self.state.locked().routines.iter().any(|r| r.id == id && r.bot_id == bot && !r.deleted)
+    }
+
     pub fn save(&self, hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
         let row = hub
             .store
             .bot(bot)?
             .filter(|b| !b.deleted && !b.config.is_group())
             .context("routine requires an existing agent bot")?;
-        let name = required(body, "name")?.trim();
-        let instruction = required(body, "instruction")?.trim();
-        if name.is_empty() || name.len() > 200 || instruction.is_empty() || instruction.len() > 32_000 {
-            bail!("routine name or instruction is empty or too long");
-        }
-        let triggers: Vec<Trigger> = if let Some(draft) = body.get("schedule") {
-            serde_json::from_value::<editor::ScheduleDraft>(draft.clone()).context("invalid schedule")?.triggers()?
-        } else {
-            serde_json::from_value(body["triggers"].clone()).context("invalid triggers")?
-        };
-        if triggers.is_empty() || triggers.len() > 20 {
-            bail!("a routine requires 1 to 20 triggers");
-        }
-        let timeout = body
-            .get("timeoutSeconds")
-            .map(|value| {
-                value
-                    .as_u64()
-                    .or_else(|| value.as_str()?.parse::<u64>().ok())
-                    .filter(|seconds| (1..=86_400).contains(seconds))
-                    .context("timeoutSeconds must be an integer between 1 and 86400")
-            })
-            .transpose()?;
+        let Checked { name, instruction, triggers, timeout } = Checked::parse(body)?;
         let now = now_ms();
         let id = body["id"].as_str().map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
         let updated = body["id"].is_string();
         let routine = self.change(&hub.store, |s| {
-            let old = s.routines.iter().find(|r| r.id == id && r.bot_id == bot && !r.deleted).cloned();
-            if updated && old.is_none() {
-                bail!("routine not found");
-            }
-            for trigger in &triggers {
-                if matches!(trigger, Trigger::Once { .. }) && old.as_ref().is_some_and(|r| r.triggers.contains(trigger))
-                {
-                    continue;
-                }
-                trigger.validate(now)?;
-            }
+            let old = check::replaced(s, bot, body, &triggers, now)?;
             if !updated && s.routines.iter().filter(|r| !r.deleted).count() >= 1000 {
                 bail!("routine limit reached");
             }
             let r = Routine {
                 id: id.clone(),
                 bot_id: row.config.id.clone(),
-                name: name.into(),
-                instruction: instruction.into(),
+                name: name.clone(),
+                instruction,
                 enabled: body["enabled"].as_bool().unwrap_or_else(|| old.as_ref().is_none_or(|r| r.enabled)),
                 created_at: old.as_ref().map_or(now, |r| r.created_at),
                 updated_at: now,
@@ -308,8 +304,8 @@ impl Routines {
         })
     }
 
-    pub fn remove(&self, store: &Store, bot: &str, id: &str) -> Result<Value> {
-        self.change(store, |s| {
+    pub fn remove(&self, hub: &Hub, bot: &str, id: &str) -> Result<Value> {
+        let withdrawn = self.change(&hub.store, |s| {
             let r = s
                 .routines
                 .iter_mut()
@@ -318,14 +314,11 @@ impl Routines {
             r.deleted = true;
             r.enabled = false;
             r.webhook_key.clear();
-            for run in &mut s.runs {
-                if run.routine_id == id && run.status == Status::Pending {
-                    run.status = Status::Cancelled;
-                    run.finished_at = Some(now_ms());
-                }
-            }
-            Ok(json!({"ok":true}))
-        })
+            cancel_pending(s, id);
+            Ok(retry::forget(s, |run| run.routine_id == id))
+        })?;
+        retry::withdraw(hub, &withdrawn);
+        Ok(json!({"ok":true}))
     }
 
     pub fn enqueue(
@@ -349,7 +342,17 @@ impl Routines {
             {
                 return Ok(json!({"run":run}));
             }
-            if s.runs.iter().any(|run| run.routine_id == id && run.status.active()) {
+            // Asked to run now while a retry waits: that retry runs now.
+            if test
+                && let Some(waiting) = s
+                    .runs
+                    .iter_mut()
+                    .find(|run| run.routine_id == id && run.status == Status::Pending && run.not_before.is_some())
+            {
+                waiting.not_before = None;
+                return Ok(json!({"run":waiting}));
+            }
+            if busy(s, id) {
                 bail!(Refused::Busy);
             }
             let run = new_run(r, event, delivery);
@@ -359,8 +362,9 @@ impl Routines {
         })
     }
 
-    /// The routine's webhook: the public URL through the Codync cloud (when it's on), the
-    /// local one, and the key. `rotate` replaces the key first, cutting off the old one.
+    /// The routine's webhook: the public URL through the Codync cloud (when it's on; a private
+    /// relay doesn't deliver them), the local one, and the key. `rotate` replaces the key first,
+    /// cutting off the old one.
     pub fn credentials(&self, hub: &Hub, bot: &str, id: &str, rotate: bool) -> Result<Value> {
         if rotate {
             self.change(&hub.store, |s| {
@@ -384,7 +388,8 @@ impl Routines {
                 .clone()
         };
         let cloud = hub.cloud.status();
-        let url = crate::remote::cloud::url(&hub.store)
+        let url = crate::remote::cloud::codync_url(hub)
+            .ok()
             .map(|base| format!("{}/v1/hooks/{}/{id}", base.trim_end_matches('/'), hub.identity.computer_id()));
         Ok(json!({
             "url": url,
@@ -435,13 +440,27 @@ fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
         created_at: now_ms(),
         finished_at: None,
         detail: None,
-        root_id: None,
         event,
         delivery_id,
         started_at: None,
         report_pending: false,
         result: None,
+        attempt: 0,
+        not_before: None,
+        retry_at: None,
+        retryable: false,
     }
+}
+
+/// A paused routine still takes test runs.
+fn may_run(routine: &Routine, event: &Value) -> bool {
+    routine.enabled || event["source"] == "test"
+}
+
+/// Whether `routine` has a run under way or queued; a retry waiting for its time doesn't count.
+fn busy(s: &State, routine: &str) -> bool {
+    let now = now_ms();
+    s.runs.iter().any(|r| r.routine_id == routine && r.status.active() && !r.waiting(now))
 }
 
 fn cancel_run(run: &mut Run) {
@@ -457,129 +476,20 @@ fn cancel_pending(state: &mut State, id: &str) {
     }
 }
 
-pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
-    match name {
-        "list_routines" => Ok(hub.routines.list(bot)),
-        "save_routine" => hub.routines.save(hub, bot, args),
-        "set_routine_enabled" => hub.routines.set_enabled(
-            &hub.store,
-            bot,
-            required(args, "id")?,
-            args["enabled"].as_bool().context("enabled is required")?,
-        ),
-        "delete_routine" => hub.routines.remove(&hub.store, bot, required(args, "id")?),
-        "run_routine" => {
-            hub.routines.enqueue(&hub.store, bot, required(args, "id")?, json!({"source":"test"}), None, true)
-        }
-        "routine_webhook" => {
-            hub.routines.credentials(hub, bot, required(args, "id")?, args["rotate"].as_bool().unwrap_or(false))
-        }
-        _ => bail!("unknown routine tool"),
-    }
+/// The name of a run's own agent session, which it resumes after a restart.
+pub fn session_slot(run_id: &str) -> String {
+    format!("routine-{run_id}")
 }
 
-pub const INSTRUCTIONS: &str = "Create and manage persistent Codync routines when the user asks for scheduled or event-driven work. Use the built-in routines tools (save_routine, list_routines, set_routine_enabled, delete_routine, run_routine, routine_webhook), not operating-system cron or an improvised background process. For recurring clock schedules, always use a five-field cron trigger with an explicit IANA timezone, including minute/hour frequencies; do not create interval triggers for those requests. Preserve existing intervals when editing unrelated fields. Cron steps reset within their field: */7 minutes is not an exact seven-minute duration across hours. Use once for a single dated execution; never approximate a one-time task with an annually repeating cron expression. Before saving, resolve the task, trigger and intended timezone for calendar/one-time schedules from the conversation; ask only for missing or ambiguous details. If the request is already clear, create it without another confirmation. Check that tools, connector sign-ins and files needed by the task are available; describe any missing setup rather than promising the task will work. Use list_routines before creating or editing to avoid duplicates; preserve unrelated triggers, enabled state and instructions. Save returns the actual routine ID, trigger descriptions and nextRunAt: use these to report what was really saved, including timezone, next occurrence and enabled/paused state. Do not claim success if the tool failed. run_routine executes the real task immediately, including its side effects; use it when the user requested a test or immediate execution, not merely to validate a schedule. A routine runs locally in its own conversation; the host must be running and awake, results appear in the main chat, and (pass) stays silent. Webhook triggers: routine_webhook explains how senders deliver; never claim a third-party integration is connected until a real delivery has been verified. Keep secrets out of routine instructions and ordinary status summaries.";
+/// The notice a run posts in the chat when it begins; the run's turn is the notice's.
+pub fn notice_id(run_id: &str) -> String {
+    format!("routine-{run_id}")
+}
 
-pub fn tools() -> Value {
-    let id = json!({"type":"string"});
-    let mut tools = vec![
-        json!({"name":"list_routines","description":"List this bot's routines and run history.","inputSchema":{"type":"object","properties":{}}}),
-    ];
-    tools.push(json!({"name":"save_routine","description":"Create or replace a routine. Omit id to create; include id to update. triggers is an OR list. Use cron for recurring clock schedules; interval is for explicitly requested elapsed-duration semantics or existing schedules: interval {type:interval,seconds}; once {type:once,at:Unix milliseconds}; cron {type:cron,expression:five cron fields,timeZone:IANA zone}; webhook {type:webhook}; event {type:event,source:slack/github/origin/microsoftTeams/linear/sentry/pagerduty/email,event:event name or *,filters:field-to-value map}. Events require a configured webhook sender. Minimum interval is one second.","inputSchema":{"type":"object","properties":{"id":id,"name":{"type":"string"},"instruction":{"type":"string"},"enabled":{"type":"boolean"},"timeoutSeconds":{"type":"integer","minimum":1,"maximum":86400},"triggers":{"type":"array","items":{"type":"object"}}},"required":["name","instruction","triggers"]}}));
-    for (name, description) in [
-        ("set_routine_enabled", "Pause or resume a routine; enabled boolean is required."),
-        ("delete_routine", "Delete a routine and cancel pending runs."),
-        ("run_routine", "Start a test run, including for a paused routine."),
-        (
-            "routine_webhook",
-            "Get the routine's webhook: its public url (through the Codync cloud; null when the cloud is off, then only localUrl on this computer works), localUrl and per-routine key. Senders POST with Authorization: Bearer <key>; for GitHub, set the webhook's content type to application/json and its secret to the key (deliveries are verified by X-Hub-Signature-256) and they become events {source:github, event:<event>.<action>, repo, sender, text, url, payload} that event triggers can filter. Deliveries made while the computer is offline wait up to 72 hours in the cloud, which sees their contents (not end-to-end encrypted). rotate:true replaces the key; the old one stops working at once. This doesn't register a provider subscription: set that up with the user, and report the webhook as awaiting connection until then.",
-        ),
-    ] {
-        let required = if name == "set_routine_enabled" { vec!["id", "enabled"] } else { vec!["id"] };
-        let mut properties = json!({"id": id});
-        match name {
-            "set_routine_enabled" => properties["enabled"] = json!({"type":"boolean"}),
-            "routine_webhook" => properties["rotate"] = json!({"type":"boolean"}),
-            _ => {}
-        }
-        tools.push(json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required}}));
-    }
-    json!(tools)
+/// The chat notice that reports a run's outcome.
+fn result_notice_id(run_id: &str) -> String {
+    format!("routine-result-{run_id}")
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    pub(super) fn routine() -> Routine {
-        Routine {
-            id: "routine".into(),
-            bot_id: "bot".into(),
-            name: "Check".into(),
-            instruction: "Check status".into(),
-            triggers: vec![Trigger::Interval { seconds: 60 }],
-            enabled: true,
-            created_at: 0,
-            updated_at: 0,
-            next_runs: vec![Some(60_000)],
-            webhook_key: "secret".into(),
-            deleted: false,
-            timeout_seconds: default_timeout(),
-            last_error: None,
-        }
-    }
-    #[test]
-    fn pending_runs_survive_restart_but_running_runs_are_not_duplicated() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let routines = Routines::default();
-        let r = routine();
-        let pending = new_run(&r, Value::Null, None);
-        let mut running = new_run(&r, Value::Null, None);
-        running.status = Status::Running;
-        routines
-            .change(&store, |s| {
-                s.routines.push(r);
-                s.runs.extend([pending, running]);
-                Ok(())
-            })
-            .unwrap();
-        let restored = Routines::default();
-        restored.restore(&store).unwrap();
-        let state = restored.state.locked();
-        assert!(state.runs[0].status == Status::Pending);
-        assert!(state.runs[1].status == Status::Recovering);
-    }
-    #[test]
-    fn pause_cancels_pending_and_resume_recalculates_schedule() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let routines = Routines::default();
-        let r = routine();
-        routines
-            .change(&store, |s| {
-                s.runs.push(new_run(&r, Value::Null, None));
-                s.routines.push(r);
-                Ok(())
-            })
-            .unwrap();
-        routines.set_enabled(&store, "bot", "routine", false).unwrap();
-        assert!(routines.state.locked().runs[0].status == Status::Cancelled);
-        routines.set_enabled(&store, "bot", "routine", true).unwrap();
-        assert!(routines.state.locked().routines[0].next_runs[0].unwrap() > now_ms());
-    }
-    #[test]
-    fn duplicate_delivery_is_idempotent_and_cross_bot_edits_fail() {
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let routines = Routines::default();
-        routines
-            .change(&store, |s| {
-                s.routines.push(routine());
-                Ok(())
-            })
-            .unwrap();
-        let first = routines.enqueue(&store, "bot", "routine", Value::Null, Some("same".into()), false).unwrap();
-        let second = routines.enqueue(&store, "bot", "routine", Value::Null, Some("same".into()), false).unwrap();
-        assert_eq!(first["run"]["id"], second["run"]["id"]);
-        assert!(routines.set_enabled(&store, "other", "routine", false).is_err());
-        assert!(routines.remove(&store, "other", "routine").is_err());
-        assert!(routines.enqueue(&store, "bot", "routine", Value::Null, None, false).is_err());
-    }
-}
+mod tests;

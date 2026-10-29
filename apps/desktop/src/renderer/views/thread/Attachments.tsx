@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { isImageName, type Attachment } from '@shared/models'
+import { isImageName, type Attachment, type SharedFile } from '@shared/models'
 import { Icon } from '../../components/Icon'
-import { ModalHeader, Sheet } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
+import { HStack, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { useStoreRef } from '../../store/context'
+import './attachments.css'
 
 /** The symbol for a file by its extension. */
 export function attachmentSymbol(name: string) {
@@ -32,59 +34,82 @@ export function byteCount(bytes: number) {
 export function AttachmentList({ attachments, botId }: { attachments: Attachment[]; botId: string }) {
   const [viewing, setViewing] = useState<Attachment | null>(null)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+    <VStack align="flex-end" gap={4}>
       {attachments.map((file) =>
         isImageName(file.name) ? (
-          <button key={file.id} aria-label={file.name} onClick={() => setViewing(file)} style={{ borderRadius: 16, overflow: 'hidden', maxWidth: 220, maxHeight: 280, display: 'flex' }}>
-            <AttachmentImage file={file} botId={botId} style={{ maxWidth: 220, maxHeight: 280 }} />
+          <button key={file.id} className="attachment-image-button" aria-label={file.name} onClick={() => setViewing(file)}>
+            <AttachmentImage source={{ file, botId }} fit="thumbnail" />
           </button>
         ) : (
-          <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bubble-user)', borderRadius: 16 }}>
+          <HStack key={file.id} gap={8} className="attachment-file">
             <Icon name={attachmentSymbol(file.name)} size={16} color="var(--secondary)" />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-              <span style={{ ...font('subheadline'), color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{file.name}</span>
-              <span style={{ ...font('caption2'), color: 'var(--tertiary)' }}>{byteCount(file.size)}</span>
-            </div>
-          </div>
+            <VStack gap={1} shrink>
+              <Text size="subheadline" tone="text" truncate className="attachment-file-name">{file.name}</Text>
+              <Text size="caption2" tone="tertiary">{byteCount(file.size)}</Text>
+            </VStack>
+          </HStack>
         ),
       )}
-      <Sheet open={viewing !== null} onClose={() => setViewing(null)} width={720} height={560}>
-        {viewing ? (
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
-            <ModalHeader title={viewing.name} />
-            <div style={{ flex: 1, minHeight: 0, padding: 12, display: 'grid', placeItems: 'center' }}>
-              <AttachmentImage file={viewing} botId={botId} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-            </div>
-          </div>
-        ) : null}
-      </Sheet>
-    </div>
+      <AttachmentViewer source={viewing && { file: viewing, botId }} close={() => setViewing(null)} />
+    </VStack>
   )
 }
 
-/** A sent image, fetched from the computer once and then read from the cache. */
-function AttachmentImage({ file, botId, style }: { file: Attachment; botId: string; style?: React.CSSProperties }) {
+/** Where a picture's bytes are on the computer: a file sent with a message, or one a bot shared. */
+export type ImageSource = { file: Attachment; botId: string } | { file: SharedFile; entryId: string }
+
+/** A picture full size, in a sheet. */
+export function AttachmentViewer({ source, close }: { source: ImageSource | null; close: () => void }) {
+  return (
+    <Sheet open={source !== null} onClose={close} width={720} height={560}>
+      {source ? (
+        <SheetPage>
+          <ModalHeader title={source.file.name} />
+          <div className="attachment-viewer">
+            <AttachmentImage source={source} fit="full" />
+          </div>
+        </SheetPage>
+      ) : null}
+    </Sheet>
+  )
+}
+
+/** A picture from the computer, fetched once and then read from the cache. */
+export function AttachmentImage({ source, fit }: { source: ImageSource; fit: 'icon' | 'thumbnail' | 'full' }) {
   const store = useStoreRef()
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     let revoked = false
     let made: string | null = null
-    void store.attachmentData(file.id, botId).then((data) => {
-      if (!data || revoked) return
-      made = URL.createObjectURL(new Blob([data as BlobPart]))
-      setUrl(made)
+    const read = () => {
+      const data = 'entryId' in source ? store.sharedFileData(source.file, source.entryId) : store.attachmentData(source.file.id, source.botId)
+      void data.then((data) => {
+        if (!data || revoked || made) return
+        made = URL.createObjectURL(new Blob([data as BlobPart]))
+        setUrl(made)
+      })
+    }
+    // A chat shown before the computer connects reads its pictures again once it comes online.
+    let online = store.connection.kind === 'online'
+    const stop = store.subscribe(() => {
+      const now = store.connection.kind === 'online'
+      if (now && !online && !made) read()
+      online = now
     })
+    read()
     return () => {
       revoked = true
+      stop()
       if (made) URL.revokeObjectURL(made)
     }
-  }, [store, file.id, botId])
+    // A file's id names its bytes for good; `source` is a new object every render.
+  }, [store, source.file.id])
   if (!url) {
     return (
-      <div style={{ width: 160, height: 120, borderRadius: 16, background: 'var(--bubble-user)', display: 'grid', placeItems: 'center' }}>
+      <div className={`attachment-placeholder ${fit}`}>
         <Icon name="photo" size={13} color="var(--tertiary)" />
       </div>
     )
   }
-  return <img src={url} alt="" style={{ display: 'block', ...style }} />
+  return <img src={url} alt="" className={`attachment-image ${fit}`} />
 }

@@ -1,0 +1,11 @@
+/* A computer's icon (ComputerBadge); its size and color come from the computer. */
+.computer-badge {
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.computer-badge-linux {
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}

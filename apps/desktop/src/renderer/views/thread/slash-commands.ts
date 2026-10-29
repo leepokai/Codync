@@ -1,14 +1,11 @@
-// The composer's `/` commands, listed while the draft is just `/partial`: Fast mode and New
-// session run here through host methods (`updateBot`, `newSession`); a skill fills in
-// `/<id> `, and the host turns that message into "read this skill first"
-// (host/src/market/skills.rs `expand_command`). docs/features/marketplace.md, "Commands".
-import { fastModeDetail, fastModeShown, fastModeState } from '../../../shared/fast-mode.ts'
+// The composer's `/` commands, listed while the draft is just `/partial`: Fast mode runs here
+// through the host's `updateBot` (a new session is in the bot's menu); a skill fills in `/<id> `, and the host turns that message into "read this skill first"
+// (host/src/market/skills.rs `expand_command`). A group lists its members' commands: Fast mode
+// for all of them, and every skill one of them has. docs/features/marketplace.md, "Commands".
+import { fastModeDetail, fastModeShown, fastModeState, groupFastMode, type FastModeState } from '../../../shared/fast-mode.ts'
 import type { Bot } from '../../../shared/models.ts'
 
-/** The first host with `/skill` messages and skill details; older ones get the text as typed. */
-export const SKILLS_HOST = '2.14.1'
-
-export type SlashAction = { kind: 'fast' } | { kind: 'newSession' } | { kind: 'skill'; id: string }
+export type SlashAction = { kind: 'fast' } | { kind: 'skill'; id: string }
 
 export interface SlashCommand {
   /** What follows the `/`. */
@@ -25,32 +22,35 @@ export function slashQuery(draft: string): string | null {
   return /^\/\S*$/.test(draft) ? draft.slice(1) : null
 }
 
-/** The bot's built-in commands; a group has none (each member has its own agent). */
-function builtIn(bot: Bot): SlashCommand[] {
-  if (bot.kind === 'group') return []
-  const fast: SlashCommand[] = fastModeShown(bot)
-    ? [{ name: 'fast', icon: 'bolt', title: 'Fast mode', detail: fastModeDetail(bot), warning: fastModeState(bot) === 'refused', action: { kind: 'fast' } }]
-    : []
-  return [
-    ...fast,
-    { name: 'new', icon: 'arrow.counterclockwise', title: 'New session', detail: 'Start over with a fresh context; the transcript stays', warning: false, action: { kind: 'newSession' } },
-  ]
+/** The bot's built-in commands; a group's Fast mode is its members' (`groupFastMode`). */
+function builtIn(bot: Bot, members: Bot[]): SlashCommand[] {
+  const fast = bot.kind === 'group' ? groupFastMode(members) : ownFastMode(bot)
+  return fast ? [{ name: 'fast', icon: 'bolt', title: 'Fast mode', detail: fast.detail, warning: fast.state === 'refused', action: { kind: 'fast' } }] : []
 }
 
-/** Built-in commands, then the bot's skills (ids in `bot.skills`), whose name or title holds `query`. */
-export function slashCommands(bot: Bot | null, query: string, installedSkills: { id: string; name: string; description: string }[]): SlashCommand[] {
-  if (!bot || bot.kind === 'group') return []
+/** A bot's own Fast mode, while it shows it. */
+function ownFastMode(bot: Bot): { state: FastModeState; detail: string } | null {
+  return fastModeShown(bot) ? { state: fastModeState(bot), detail: fastModeDetail(bot) } : null
+}
+
+/**
+ * Built-in commands, then the bot's skills (ids in `bot.skills`; a group's `members` have them),
+ * whose name or title holds `query`.
+ */
+export function slashCommands(bot: Bot | null, query: string, installedSkills: { id: string; name: string; description: string }[], members: Bot[] = []): SlashCommand[] {
+  if (!bot) return []
+  const enabled = bot.kind === 'group' ? members.flatMap((m) => m.skills) : bot.skills
   const skills = installedSkills
-    .filter((s) => bot.skills.includes(s.id))
+    .filter((s) => enabled.includes(s.id))
     .map((s): SlashCommand => ({ name: s.id, icon: 'book.pages', title: s.name, detail: s.description, warning: false, action: { kind: 'skill', id: s.id } }))
   const q = query.toLowerCase()
-  return [...builtIn(bot), ...skills].filter((c) => c.name.includes(q) || c.title.toLowerCase().includes(q))
+  return [...builtIn(bot, members), ...skills].filter((c) => c.name.includes(q) || c.title.toLowerCase().includes(q))
 }
 
-/** A draft that is just a built-in command (`/fast`, `/new`): sending it runs the command. */
-export function builtInCommand(bot: Bot | null, draft: string): SlashCommand | null {
+/** A draft that is just a built-in command (`/fast`): sending it runs the command. */
+export function builtInCommand(bot: Bot | null, draft: string, members: Bot[] = []): SlashCommand | null {
   const name = slashQuery(draft.trim())
-  return bot && name !== null ? (builtIn(bot).find((c) => c.name === name) ?? null) : null
+  return bot && name !== null ? (builtIn(bot, members).find((c) => c.name === name) ?? null) : null
 }
 
 /**

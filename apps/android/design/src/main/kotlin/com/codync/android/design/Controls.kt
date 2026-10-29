@@ -18,6 +18,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,10 +92,11 @@ import com.kyant.shapes.RoundedRectangle
 @Composable fun IconButton(title: String, systemImage: String, modifier: Modifier = Modifier, enabled: Boolean = true,
     tint: Color = Color.Unspecified, action: () -> Unit) {
     val (source, pressed) = rememberPress()
+    val label = tr(title)
     Box(modifier.size(36.dp).pressScale(pressed).clip(RoundedRectangle(10.dp))
         .background(Palette.text.copy(alpha = if (pressed) 0.14f else 0f))
         .clickable(source, null, enabled = enabled, role = Role.Button, onClick = action)
-        .semantics { contentDescription = title }
+        .semantics { contentDescription = label }
         .graphicsLayer { alpha = if (enabled) 1f else 0.35f }, contentAlignment = Alignment.Center) {
         Symbol(systemImage, size = 21.dp, tint = if (tint.isSpecified) tint else Palette.secondary)
     }
@@ -101,10 +104,10 @@ import com.kyant.shapes.RoundedRectangle
 
 /** A filled capsule button: `.buttonStyle(.primary)` (accent) or `.secondary`. */
 @Composable fun PrimaryButton(title: String, modifier: Modifier = Modifier, enabled: Boolean = true, action: () -> Unit) =
-    PrimaryButton(action, modifier, enabled) { Text(title, maxLines = 1) }
+    PrimaryButton(action, modifier, enabled) { Text(tr(title), maxLines = 1, overflow = TextOverflow.Ellipsis) }
 
 @Composable fun SecondaryButton(title: String, modifier: Modifier = Modifier, enabled: Boolean = true, action: () -> Unit) =
-    SecondaryButton(action, modifier, enabled) { Text(title, maxLines = 1) }
+    SecondaryButton(action, modifier, enabled) { Text(tr(title), maxLines = 1, overflow = TextOverflow.Ellipsis) }
 
 /** `.buttonStyle(.primary)` around any label (the label sets its own font and frame). */
 @Composable fun PrimaryButton(action: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, label: @Composable () -> Unit) =
@@ -127,7 +130,7 @@ import com.kyant.shapes.RoundedRectangle
 @Composable fun LinkButton(title: String, modifier: Modifier = Modifier, enabled: Boolean = true, color: Color = Palette.text,
     style: TextStyle = Type.body, action: () -> Unit) {
     val (source, pressed) = rememberPress()
-    Text(title, modifier.clickable(source, null, enabled = enabled, role = Role.Button, onClick = action)
+    Text(tr(title), modifier.clickable(source, null, enabled = enabled, role = Role.Button, onClick = action)
         .graphicsLayer { alpha = if (!enabled) 0.4f else if (pressed) 0.5f else 1f }, style = style, color = color)
 }
 
@@ -161,18 +164,31 @@ import com.kyant.shapes.RoundedRectangle
 /** Picks one of a few values side by side: the replacement for `.segmented`. */
 @Composable fun <T> SegmentedChoice(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxWidth().clip(Capsule()).background(Palette.bubbleUser).padding(3.dp)) {
-        val index = options.indexOfFirst { it.first == selection }.coerceAtLeast(0)
+        val index = options.indexOfFirst { it.first == selection }
         val segment = (maxWidth - 2.dp * (options.size - 1)) / options.size
         val thumb by animateDpAsState((segment + 2.dp) * index, Motion.morph(), label = "Thumb")
-        Box(Modifier.offset(x = thumb).width(segment).height(36.dp).clip(Capsule()).background(Palette.background))
+        if (index >= 0) Box(Modifier.offset(x = thumb).width(segment).height(36.dp).clip(Capsule()).background(Palette.background))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             for ((id, label) in options) {
                 val on = id == selection
                 Box(Modifier.width(segment).height(36.dp).clip(Capsule())
                     .selectable(on, role = Role.Tab) { select(id) }, contentAlignment = Alignment.Center) {
-                    Text(label, style = Type.subheadline.medium, color = if (on) Palette.text else Palette.secondary, maxLines = 1)
+                    Text(tr(label), style = Type.subheadline.medium, color = if (on) Palette.text else Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+        }
+    }
+}
+
+/** Tabs as text, the chosen one on a filled pill (a details sheet's pages): `TabChoice`. */
+@Composable fun <T> TabChoice(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier) {
+    // Four long labels (German) on a narrow phone scroll rather than cut a label short.
+    Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        for ((id, label) in options) {
+            val on = id == selection
+            val fill by animateColorAsState(if (on) Palette.bubbleAgent else Color.Transparent, Motion.morph(), label = "Tab")
+            Text(tr(label), Modifier.clip(Capsule()).background(fill).selectable(on, role = Role.Tab) { select(id) }
+                .padding(horizontal = 12.dp, vertical = 6.dp), style = Type.subheadline, color = if (on) Palette.text else Palette.secondary, maxLines = 1)
         }
     }
 }
@@ -196,9 +212,10 @@ import com.kyant.shapes.RoundedRectangle
 /** Shows the current choice in a pill with a chevron and opens the menu: `ChoicePicker`. */
 @Composable fun <T> ChoicePicker(selection: T, options: List<Pair<T, String>>, select: (T) -> Unit, modifier: Modifier = Modifier,
     fill: Color = Color.Transparent, label: String? = null, enabled: Boolean = true) {
-    val current = options.firstOrNull { it.first == selection }?.second ?: "Choose"
-    DropdownMenu({ options.map { (id, text) -> MenuItem(text, selected = id == selection) { select(id) } } }, modifier,
-        enabled = enabled, label = label?.let { "$it: $current" }) {
+    val rows = options.map { (id, text) -> id to tr(text) }
+    val current = rows.firstOrNull { it.first == selection }?.second ?: tr("Choose")
+    DropdownMenu({ rows.map { (id, text) -> MenuItem(text, selected = id == selection) { select(id) } } }, modifier,
+        enabled = enabled, label = label?.let { "${tr(it)}: $current" }) {
         Row(Modifier.then(if (fill == Color.Transparent) Modifier.outline() else Modifier).pill(fill),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(current, Modifier.weight(1f, fill = false), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -232,10 +249,10 @@ class CardRows internal constructor() {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (title != null) Row(Modifier.padding(start = 2.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, Modifier.weight(1f).semantics { heading() }, style = Type.system(15f).semibold, color = Palette.text)
+            SectionHeading(title, Modifier.weight(1f))
             accessory()
         }
-        if (list.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.surface)) {
+        if (list.isNotEmpty()) Column(Modifier.fillMaxWidth().cardGroup()) {
             for ((index, row) in list.withIndex()) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 32.dp),
                     contentAlignment = Alignment.CenterStart) {
@@ -244,10 +261,29 @@ class CardRows internal constructor() {
                 if (index < list.lastIndex) Hairline(Modifier.padding(horizontal = 16.dp))
             }
         }
-        if (footer != null) Text(footer, Modifier.padding(horizontal = 2.dp), style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f),
+        if (footer != null) Text(tr(footer), Modifier.padding(horizontal = 2.dp), style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f),
             color = Palette.secondary)
     }
 }
+
+/** How `CardSection` draws its group: filled (Settings style), or outlined on the page like Grok Bot's routine cards (the bot details sheet). */
+enum class CardStyle { Filled, Outlined }
+
+val LocalCardStyle = staticCompositionLocalOf { CardStyle.Filled }
+
+/** A `CardSection` heading: small, bold, a heading to TalkBack. */
+@Composable fun SectionHeading(title: String, modifier: Modifier = Modifier) =
+    Text(tr(title), modifier.semantics { heading() }, style = Type.system(15f).semibold, color = Palette.text)
+
+/** A `CardSection`'s group, drawn in the [LocalCardStyle]. */
+@Composable fun Modifier.cardGroup(): Modifier =
+    if (LocalCardStyle.current == CardStyle.Outlined) cardOutline() else clip(RoundedRectangle(16.dp)).background(Palette.surface)
+
+/** Grok Bot's list cards (routines): an outline on the page, no fill. */
+@Composable fun Modifier.outlinedCard(vertical: Dp = 12.dp): Modifier =
+    fillMaxWidth().cardOutline().padding(horizontal = 14.dp, vertical = vertical)
+
+@Composable private fun Modifier.cardOutline(): Modifier = border(1.dp, Palette.border, RoundedRectangle(14.dp))
 
 /** A 1-pixel separator line in the border color. */
 @Composable fun Hairline(modifier: Modifier = Modifier) {
@@ -262,8 +298,8 @@ class CardRows internal constructor() {
 @Composable fun ValueRow(label: String, modifier: Modifier = Modifier, detail: String? = null, value: @Composable () -> Unit) {
     Layout({
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(label, style = Type.body, color = Palette.text)
-            if (detail != null) Text(detail, style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f), color = Palette.secondary)
+            Text(tr(label), style = Type.body, color = Palette.text)
+            if (detail != null) Text(tr(detail), style = Type.caption.copy(lineHeight = Type.caption.lineHeight * 1.12f), color = Palette.secondary)
         }
         CompositionLocalProvider(LocalContentColor provides Palette.secondary, LocalTextStyle provides Type.body.copy(color = Palette.secondary)) { value() }
     }, modifier.fillMaxWidth()) { (labels, values), constraints ->
@@ -279,15 +315,16 @@ class CardRows internal constructor() {
 }
 
 @Composable fun ValueRow(label: String, value: String, modifier: Modifier = Modifier, detail: String? = null) =
-    ValueRow(label, modifier, detail) { Text(value, style = Type.body, color = Palette.secondary) }
+    ValueRow(label, modifier, detail) { Text(tr(value), style = Type.body, color = Palette.secondary) }
 
 /** A search box: the replacement for `.searchable`. */
 @Composable fun SearchField(text: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, prompt: String = "Search") {
+    val clear = tr("Clear search")
     Row(modifier.fillMaxWidth().clip(Capsule()).background(Palette.bubbleAgent).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Symbol("magnifyingglass", size = 19.dp, tint = Palette.secondary)
         PlainTextField(text, onChange, Modifier.weight(1f), prompt, singleLine = true, imeAction = ImeAction.Search)
-        if (text.isNotEmpty()) Box(Modifier.clickable(role = Role.Button) { onChange("") }.semantics { contentDescription = "Clear search" }) {
+        if (text.isNotEmpty()) Box(Modifier.clickable(role = Role.Button) { onChange("") }.semantics { contentDescription = clear }) {
             Symbol("xmark.circle.fill", size = 18.dp, tint = Palette.tertiary)
         }
     }
@@ -301,10 +338,10 @@ class CardRows internal constructor() {
     BasicTextField(text, onChange, modifier, enabled = enabled, singleLine = singleLine, minLines = minLines, maxLines = maxLines,
         textStyle = style.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent), keyboardOptions = keyboard, keyboardActions = actions,
         decorationBox = { field ->
-            Box(contentAlignment = Alignment.CenterStart) {
-                // A centered field centers its placeholder too.
-                if (text.isEmpty()) Text(prompt, if (style.textAlign == TextAlign.Center) Modifier.fillMaxWidth() else Modifier, style = style,
-                    color = Palette.tertiary, maxLines = if (singleLine) 1 else Int.MAX_VALUE)
+            val centered = style.textAlign == TextAlign.Center
+            // A centered field spans its width, so its placeholder and empty cursor sit in the middle too.
+            Box(contentAlignment = Alignment.CenterStart, propagateMinConstraints = centered) {
+                if (text.isEmpty()) Text(tr(prompt), style = style, color = Palette.tertiary, maxLines = if (singleLine) 1 else Int.MAX_VALUE)
                 field()
             }
         })

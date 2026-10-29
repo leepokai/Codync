@@ -8,16 +8,16 @@
 .computer-access-identity { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
 .computer-access-identity img { flex: none; }
 .computer-access-identity div { display: grid; gap: 3px; min-width: 0; }
-.computer-access-identity span { color: var(--secondary); font-size: 11px; }
-.computer-access-identity strong { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.computer-access h1 { font-size: 26px; letter-spacing: -.65px; line-height: 1.2; font-weight: 600; margin: 0 0 10px; text-wrap: balance; }
-.computer-access p { color: var(--secondary); font-size: 12px; line-height: 1.6; margin: 0; text-wrap: pretty; }
-.computer-access-header > p { font-size: 13px; max-width: 480px; }
-.computer-access-section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 11px; color: var(--secondary); }
+.computer-access-identity span { color: var(--secondary); font-size: var(--text-caption); }
+.computer-access-identity strong { font-size: var(--text-callout); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.computer-access h1 { font-size: var(--text-large-title); letter-spacing: -.65px; line-height: 1.2; font-weight: 600; margin: 0 0 10px; text-wrap: balance; }
+.computer-access p { color: var(--secondary); font-size: var(--text-callout); line-height: 1.6; margin: 0; text-wrap: pretty; }
+.computer-access-header > p { font-size: var(--text-body); max-width: 480px; }
+.computer-access-section-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: var(--text-caption); color: var(--secondary); }
 .computer-access-section-label > :first-child { color: var(--text); font-weight: 500; }
 .computer-access-section-label > :last-child { display: inline-flex; align-items: center; gap: 4px; margin-right: -4px; }
 /* The requested outline matches the desktop toolbar/composer treatment; outlined, so no fill. */
-.computer-access-steps { border: 1px solid var(--composer-stroke); border-radius: 16px; overflow: hidden; }
+.computer-access-steps { border: 1px solid var(--stroke-strong); border-radius: var(--radius-l); overflow: hidden; }
 .computer-access-row { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; }
 .computer-access-row + .computer-access-row { border-top: 1px solid var(--border); }
 /* The badge carries the state: a check when granted, the step's symbol otherwise. */
@@ -25,32 +25,32 @@
 .computer-access-row.current .computer-access-badge { background: rgba(var(--text-rgb), .12); color: var(--text); }
 .computer-access-row.granted .computer-access-badge { background: var(--accent-fill); color: var(--on-accent); }
 .computer-access-row-body { flex: 1; min-width: 0; }
-.computer-access h2 { font-size: 13px; line-height: 28px; font-weight: 600; margin: 0; transition: color var(--fade); }
+.computer-access h2 { font-size: var(--text-body); line-height: 28px; font-weight: 600; margin: 0; transition: color var(--fade); }
 /* A step that can't be acted on yet recedes. */
 .computer-access-row.waiting:not(:has(button)) h2 { color: var(--secondary); }
 .computer-access-row.waiting:not(:has(button)) p { color: var(--tertiary); }
 .computer-access-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .computer-access-actions:not(:empty) { margin-top: 12px; }
-.computer-access .styled-button { min-height: 30px; font-size: 11px; padding: 6px 12px; }
-.computer-access .styled-button.secondary { background: transparent; border: 1px solid var(--composer-stroke); }
+.computer-access .styled-button { min-height: 30px; font-size: var(--text-caption); padding: 6px 12px; }
+.computer-access .styled-button.secondary { background: transparent; border: 1px solid var(--stroke-strong); }
 .computer-access .styled-button.secondary:hover:not(:disabled) { background: var(--chrome-fill); }
 .computer-access .styled-button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
-.computer-access .computer-access-inline-note { flex-basis: 100%; font-size: 11px; margin-bottom: 2px; }
+.computer-access .computer-access-inline-note { flex-basis: 100%; font-size: var(--text-caption); margin-bottom: 2px; }
 .computer-access-inline-note strong { font-weight: 500; color: var(--text); }
 .computer-access-notes { display: grid; gap: 8px; list-style: none; margin: 24px 0 0; padding: 0; color: var(--tertiary); }
 .computer-access-notes li { display: flex; align-items: flex-start; gap: 8px; }
 .computer-access-notes li > :first-child { margin-top: 2px; flex: none; }
-.computer-access .computer-access-notes p { font-size: 11px; color: var(--tertiary); }
+.computer-access .computer-access-notes p { font-size: var(--text-caption); color: var(--tertiary); }
 .computer-access-footer { display: flex; justify-content: flex-end; margin-top: 24px; }
-.computer-access-notice { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--composer-stroke); border-radius: 12px; padding: 12px 14px; margin-bottom: 20px; }
+.computer-access-notice { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-m); padding: 12px 14px; margin-bottom: 20px; }
 .computer-access-notice > :first-child { margin-top: 2px; color: var(--secondary); }
-.computer-access-notice strong { font-size: 12px; font-weight: 500; }
-.computer-access-notice p { font-size: 11px; margin-top: 3px; }
+.computer-access-notice strong { font-size: var(--text-callout); font-weight: 500; }
+.computer-access-notice p { font-size: var(--text-caption); margin-top: 3px; }
 .computer-access-notice.error { border-color: var(--danger); }
 .computer-access-notice.error strong, .computer-access-notice.error > :first-child { color: var(--danger); }
 @media (max-width: 440px) {
   .computer-access.onboarding { padding: 24px 16px; }
   .computer-access-row { padding: 14px 12px; gap: 10px; }
-  .computer-access h1 { font-size: 24px; }
+  .computer-access h1 { font-size: calc(24px * var(--scale)); }
 }
 @media (prefers-reduced-motion: reduce) { .computer-access { animation: none; } }

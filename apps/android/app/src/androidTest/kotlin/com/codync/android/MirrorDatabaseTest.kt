@@ -68,12 +68,20 @@ class MirrorDatabaseTest {
     }
 
     @Test fun incompatibleCacheAndDatabaseReplacementRewindSafely() {
-        mirror.setStamp("old", "2.4/2.4")
+        assertFalse(mirror.setStamp("old", "2.4/2.4"))
         mirror.apply(MirrorEvent.EntryChanged(entry(9)))
-        mirror.setStamp("old", "2.5/2.4")
-        assertEquals(0, mirror.snapshot().rev)
+        mirror.save(PendingSend("unsent", "bot", text = "message", createdAt = 1))
+        mirror.finishHistory("bot")
+        assertFalse(mirror.setStamp("old", "2.4/2.4"))
         assertEquals(1, mirror.snapshot().entries.size)
-        mirror.setStamp("new", "2.5/2.4")
+        // The new host removed "message": the catch-up from 0 brings only what it still has.
+        assertTrue(mirror.setStamp("old", "2.5/2.4"))
+        assertEquals(0, mirror.snapshot().rev)
+        assertFalse(mirror.historyComplete("bot"))
+        assertEquals("unsent", mirror.snapshot().pending.single().nonce)
+        mirror.apply(MirrorEvent.EntryChanged(Entry("kept", 2, "bot", rev = 10, kind = "user", data = buildJsonObject { put("text", "kept") })))
+        assertEquals(listOf("kept"), mirror.snapshot().entries.map { it.id })
+        assertTrue(mirror.setStamp("new", "2.5/2.4"))
         assertEquals(0, mirror.snapshot().rev)
         assertTrue(mirror.snapshot().entries.isEmpty())
     }
@@ -96,25 +104,35 @@ class MirrorDatabaseTest {
         assertEquals(1, mirror.snapshot().entries.size)
     }
 
-    @Test fun upgradingTheMirrorRetainsMessagesAndBackfillsNonceReconciliation() {
+    @Test fun upgradingTheMirrorFetchesTheConversationAgainAndKeepsUnsentMessages() {
         mirror.close()
         val path = File(directory, "mirror-$computer.db")
         path.delete()
         SQLiteDatabase.openOrCreateDatabase(path, null).use { db ->
             db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
             db.execSQL("CREATE TABLE bots(id TEXT PRIMARY KEY, rev INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)")
-            db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, seq INTEGER NOT NULL, rev INTEGER NOT NULL, payload TEXT NOT NULL)")
+            db.execSQL("CREATE TABLE entries(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, thread_id TEXT, seq INTEGER NOT NULL, rev INTEGER NOT NULL, nonce TEXT, payload TEXT NOT NULL)")
             db.execSQL("CREATE TABLE pending(nonce TEXT PRIMARY KEY, created INTEGER NOT NULL, payload TEXT NOT NULL)")
             db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
+            db.insertOrThrow("meta", null, ContentValues().apply { put("k", "rev"); put("v", "3") })
             db.insertOrThrow("entries", null, ContentValues().apply {
-                put("id", "message"); put("bot_id", "bot"); put("seq", 1); put("rev", 3)
-                put("payload", WireJson.encodeToString(entry(3, nonce = "stable")))
+                put("id", "message"); put("bot_id", "bot"); put("thread_id", "root"); put("seq", 1); put("rev", 3)
+                put("payload", WireJson.encodeToString(entry(3)))
             })
-            db.version = 1
+            db.insertOrThrow("pending", null, ContentValues().apply {
+                put("nonce", "unsent"); put("created", 1)
+                put("payload", """{"nonce":"unsent","botId":"bot","threadId":"root","text":"aside","createdAt":1}""")
+            })
+            db.insertOrThrow("history", null, ContentValues().apply { put("lane", "bot") })
+            db.version = 2
         }
         mirror = MirrorDatabase(context, directory, computer)
-        assertEquals("stable", mirror.snapshot().entries.single().clientNonce)
-        mirror.save(PendingSend("stable", "bot", text = "message", createdAt = 1))
+        val snapshot = mirror.snapshot()
+        assertTrue(snapshot.entries.isEmpty())
+        assertEquals(0, snapshot.rev)
+        assertFalse(mirror.historyComplete("bot"))
+        assertEquals("aside", snapshot.pending.single().text)
+        mirror.apply(MirrorEvent.EntryChanged(entry(4, nonce = "unsent")))
         assertTrue(mirror.snapshot().pending.isEmpty())
     }
 }

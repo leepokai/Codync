@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { Bot, BotDraft } from '@shared/models'
+import { useEffect, useRef, useState } from 'react'
+import { rebase } from '@shared/draft-rebase'
+import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { AVATAR_COLORS, AVATAR_SHAPES } from '../../lib/theme'
 import type { BotStore } from '../../store/bot-store'
 
@@ -32,29 +33,27 @@ export function newDraft(): BotDraft {
   return { name: '', description: '', avatarColor: pick(AVATAR_COLORS).id, avatarShape: pick(AVATAR_SHAPES), backend: 'claude', cwd: '', permission: 'auto' }
 }
 
-/** A new bot may go without a name: the host names it after its first conversations. */
-export const isValid = (d: BotDraft) => !d.id ||d.name.trim() !== ''
+/** A saved bot keeps a name; only a new one may go without (the host names it after its first conversations). */
+export const isValid = (d: BotDraft) => d.name.trim() !== ''
 
 /** What the host should get: no stale command unless the agent is custom. */
 export const normalized = (d: BotDraft): BotDraft => (d.backend === 'custom' ? d : { ...d, command: null })
 
 /**
  * Picks an installed agent we know (a registry agent nobody chose is never the default);
- * empty cwd requests a personal workspace from the host.
+ * empty cwd requests a personal workspace from the host. Connectors and skills stay unset:
+ * the host turns on every one it can run.
  */
-export function fillDefaults(store: BotStore, draft: BotDraft, plugins: Plugins): BotDraft {
+export function fillDefaults(store: BotStore, draft: BotDraft): BotDraft {
   const next = { ...draft }
   const backends = store.hello?.backends ?? []
   const first = backends.find((b) => b.available && b.curated === true)
   if (backends.find((b) => b.id === next.backend)?.available !== true && first) next.backend = first.id
-  // Connectors and skills start on; left unset, the host turns on every one.
-  if (next.connectors === undefined && plugins.connectors.length) next.connectors = plugins.connectors.map((c) => c.id)
-  if (next.skills === undefined && plugins.skills.length) next.skills = plugins.skills.map((s) => s.id)
   return next
 }
 
 /** The connectors and skills installed on the computer (kit `refreshPlugins`). */
-export async function loadPlugins(store: BotStore): Promise<Plugins> {
+async function loadPlugins(store: BotStore): Promise<Plugins> {
   const client = store.client
   if (!client) return { connectors: [], skills: [] }
   const [c, s] = await Promise.allSettled([
@@ -77,11 +76,20 @@ export function usePlugins(store: BotStore): Plugins | null {
   return plugins
 }
 
-/** Creates an unnamed bot with sensible defaults and opens it (desktop compose flow). */
-export async function createDefaultBot(store: BotStore): Promise<Bot> {
-  const bot = await store.save(fillDefaults(store, newDraft(), await loadPlugins(store)))
-  store.setSelection(bot.id)
-  return bot
+/**
+ * Keeps an open settings form on the host's copy of its bot: a change made elsewhere (a bot that manages the team,
+ * another device) replaces each field the user hasn't edited here, so saving the form never puts back the old value.
+ */
+export function useFollowSaved(bot: Bot | undefined, change: (update: (d: BotDraft) => BotDraft) => void) {
+  const saved = bot ? JSON.stringify(draftOf(bot)) : null
+  const last = useRef(saved)
+  useEffect(() => {
+    const old = last.current
+    last.current = saved
+    if (!old || !saved || old === saved) return
+    const [base, fresh] = [JSON.parse(old) as BotDraft, JSON.parse(saved) as BotDraft]
+    if (base.id === fresh.id) change((d) => rebase(d, base, fresh))
+  }, [saved])
 }
 
 export const lastPathComponent = (path: string) => path.split('/').filter(Boolean).pop() ?? path

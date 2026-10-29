@@ -236,13 +236,12 @@ export const market = {
   termClose: (c: HostClient, term: string) => c.call('termClose', { term }),
 }
 
-/** Keep fetched catalog metadata in memory, but create rows only as the user requests them. */
+/** Keep fetched catalog metadata in memory. The Extensions tabs scroll through it. */
 export interface MarketplacePage<T> {
   items: T[]
-  visibleCount: number
 }
 
-export const emptyPage = <T>(): MarketplacePage<T> => ({ items: [], visibleCount: 12 })
+export const emptyPage = <T>(): MarketplacePage<T> => ({ items: [] })
 
 export function appendPage<T>(page: MarketplacePage<T>, more: T[], id: (t: T) => string): MarketplacePage<T> {
   const known = new Set(page.items.map(id))
@@ -250,9 +249,15 @@ export function appendPage<T>(page: MarketplacePage<T>, more: T[], id: (t: T) =>
 }
 
 export const replacePage = <T>(items: T[], id: (t: T) => string) => appendPage(emptyPage<T>(), items, id)
-export const revealMore = <T>(page: MarketplacePage<T>): MarketplacePage<T> => ({ ...page, visibleCount: Math.min(page.items.length, page.visibleCount + 12) })
-export const visible = <T>(page: MarketplacePage<T>) => page.items.slice(0, page.visibleCount)
-export const hasHiddenItems = <T>(page: MarketplacePage<T>) => page.items.length > page.visibleCount
+
+export type ExtensionSection = 'agents' | 'connectors' | 'skills'
+
+/** Each section with the line saying where its items come from. */
+export const EXTENSION_SECTIONS: { id: ExtensionSection; label: string; source: string }[] = [
+  { id: 'agents', label: 'Agents', source: 'Agents come from the ACP registry and install on {name}.' },
+  { id: 'connectors', label: 'Connectors', source: 'Connectors come from the official MCP Registry and install on {name}.' },
+  { id: 'skills', label: 'Skills', source: 'Skills come from Anthropic and install on {name}.' },
+]
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

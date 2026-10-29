@@ -6,6 +6,9 @@
 #[allow(dead_code)]
 mod common;
 
+#[path = "routines_e2e/timeout.rs"]
+mod timeout;
+
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -29,7 +32,6 @@ impl Host {
     async fn start() -> Self {
         let home = std::env::temp_dir().join(format!("codync-routines-e2e-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        common::seed_memory_runtime(&home);
         let (child, base) = common::serve(&home).await;
         let mut host = Self { child, home, base, token: String::new() };
         std::fs::read_to_string(host.home.join("token")).unwrap().trim().clone_into(&mut host.token);
@@ -46,7 +48,8 @@ impl Host {
             .post(format!("{}/api/{method}", self.base))
             .bearer_auth(&self.token)
             .json(&body)
-            .timeout(Duration::from_secs(10))
+            // As long as `common::host`'s: on a busy machine (parallel tests) `createBot` alone can take over 10 s.
+            .timeout(Duration::from_mins(2))
             .send()
             .await
             .unwrap();
@@ -178,8 +181,8 @@ async fn routines_execute_pause_deduplicate_and_reject_wrong_webhook_keys() {
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
             let listing = host.call("routines", json!({"botId":bot})).await;
-            if listing["runs"][0]["status"] == "succeeded" {
-                assert!(listing["runs"][0]["rootId"].is_string());
+            // A finished run's session is forgotten.
+            if listing["runs"][0]["status"] == "succeeded" && common::routine_sessions(&host.home) == 0 {
                 break;
             }
             assert_ne!(listing["runs"][0]["status"], "failed", "{listing}");
@@ -257,7 +260,8 @@ async fn crash_resumes_the_same_session_and_publishes_one_result() {
     let resumed = host.wait_event("resume", "resumed", "BLOCK[resume]").await;
     assert_eq!(started["session"], resumed["session"]);
     std::fs::write(host.home.join("resume/release-resume"), "").unwrap();
-    let run = host.wait_status(&bot, &id, "succeeded").await;
+    host.wait_status(&bot, &id, "succeeded").await;
+    // The run's reply is its result, in the chat once.
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let history = host.call("history", json!({"botId":bot})).await;
@@ -265,7 +269,7 @@ async fn crash_resumes_the_same_session_and_publishes_one_result() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .filter(|e| e["kind"] == "agent" && e["data"]["runId"] == run["id"])
+                .filter(|e| e["kind"] == "agent" && e["data"]["final"] == true)
                 .collect();
             if !results.is_empty() {
                 assert_eq!(results.len(), 1);
@@ -286,6 +290,72 @@ async fn crash_resumes_the_same_session_and_publishes_one_result() {
             .count(),
         1
     );
+}
+
+#[tokio::test]
+async fn a_message_sent_during_a_run_gets_a_turn_of_its_own() {
+    let host = Host::start().await;
+    let bot = host.stable_bot("turns").await;
+    let id = host.save(&bot, "slow", "BLOCK[run]", json!([{"type":"webhook"}]), 30).await;
+    host.call("runRoutine", json!({"botId":bot,"id":id})).await;
+    // Nothing of the run is in the chat yet but its notice.
+    host.wait_event("turns", "started", "BLOCK[run]").await;
+    host.send(&bot, "MEANWHILE").await;
+    std::fs::write(host.home.join("turns/release-run"), "").unwrap();
+    let entries = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let history = host.call("history", json!({"botId":bot})).await;
+            let entries = history["entries"].as_array().unwrap().clone();
+            if entries.iter().filter(|e| e["kind"] == "agent" && e["data"]["final"] == true).count() == 2 {
+                return entries;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let turn =
+        |f: &dyn Fn(&Value) -> bool| entries.iter().filter(|e| f(e)).map(|e| e["turn"].clone()).collect::<Vec<_>>();
+    let notice = turn(&|e| e["kind"] == "notice" && e["data"]["runId"].is_string());
+    let user = turn(&|e| e["kind"] == "user");
+    assert_ne!(notice, user);
+    let finals = turn(&|e| e["kind"] == "agent" && e["data"]["final"] == true);
+    assert_eq!(finals, [notice[0].clone(), user[0].clone()], "each reply stays in its own turn");
+}
+
+#[tokio::test]
+async fn an_agent_started_for_a_run_stops_when_the_run_ends() {
+    let host = Host::start().await;
+    let bot = host.stable_bot("only-runs").await;
+    let id = host.save(&bot, "one-off", "ONE_OFF", json!([{"type":"webhook"}]), 30).await;
+    host.call("runRoutine", json!({"botId":bot,"id":id})).await;
+    // The run's outcome, not the agent's own "finished": a message sent before the host took the reply would wait in
+    // the queue and keep the agent running.
+    host.wait_status(&bot, &id, "succeeded").await;
+    host.send(&bot, "LATER").await;
+    host.wait_event("only-runs", "finished", "LATER").await;
+    let events = host.agent_events("only-runs");
+    let count = |event: &str| events.iter().filter(|e| e["event"] == event).count();
+    // The message started the agent again: the run's agent stopped with the run. Windows never stops an agent (it
+    // can't tell a dev server from an MCP server, see `lifecycle`), so there the run's session closes instead.
+    assert_eq!((count("initialize"), count("closed")), if cfg!(windows) { (1, 1) } else { (2, 0) });
+}
+
+#[tokio::test]
+async fn a_finished_run_closes_its_session_and_the_main_one_stays() {
+    let host = Host::start().await;
+    let bot = host.stable_bot("spent").await;
+    host.send(&bot, "MAIN_CHAT").await;
+    let main = host.wait_event("spent", "finished", "MAIN_CHAT").await;
+    let id = host.save(&bot, "one-off", "ONE_OFF", json!([{"type":"webhook"}]), 30).await;
+    host.call("runRoutine", json!({"botId":bot,"id":id})).await;
+    let run = host.wait_event("spent", "finished", "ONE_OFF").await;
+    let closed = host.wait_event("spent", "closed", "").await;
+    assert_eq!(closed["session"], run["session"]);
+    assert_ne!(run["session"], main["session"]);
+    host.send(&bot, "MAIN_AGAIN").await;
+    assert_eq!(host.wait_event("spent", "finished", "MAIN_AGAIN").await["session"], main["session"]);
+    assert_eq!(host.agent_events("spent").iter().filter(|e| e["event"] == "closed").count(), 1);
 }
 
 #[tokio::test]
@@ -319,21 +389,6 @@ async fn busy_bot_keeps_work_pending_and_honors_pause_delete_and_edit_across_res
         let text = e["text"].as_str().unwrap();
         text.contains("SHOULD_NOT_RUN") || text.contains("OLD_INSTRUCTION")
     }));
-}
-
-#[tokio::test]
-async fn a_hung_routine_times_out_and_the_next_task_still_runs() {
-    let host = Host::start().await;
-    let bot = host.stable_bot("timeout").await;
-    let hung = host.save(&bot, "hung", "BLOCK[forever] IGNORE_CANCEL", json!([{"type":"webhook"}]), 2).await;
-    let next = host.save(&bot, "next", "AFTER_TIMEOUT", json!([{"type":"webhook"}]), 30).await;
-    host.call("runRoutine", json!({"botId":bot,"id":hung})).await;
-    host.wait_event("timeout", "started", "BLOCK[forever]").await;
-    host.call("runRoutine", json!({"botId":bot,"id":next})).await;
-    let failed = host.wait_status(&bot, &hung, "failed").await;
-    assert!(failed["detail"].as_str().unwrap().contains("time limit"));
-    host.wait_status(&bot, &next, "succeeded").await;
-    host.wait_event("timeout", "finished", "AFTER_TIMEOUT").await;
 }
 
 #[tokio::test]

@@ -26,8 +26,12 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-/** Adds a registry connector (iOS `InstallConnectorSheet`): where it runs, its keys, then its sign-in. */
-@Composable internal fun InstallConnectorSheet(item: MarketConnector, state: AppState, store: AppStore, requestId: String? = null, done: () -> Unit = {}) {
+/**
+ * Adds a registry connector (iOS `InstallConnectorSheet`): where it runs, its keys, then its sign-in. `addsAtOnce`: opened
+ * by an Add, so a connector with nothing to fill in installs at once; opened to look at it, nothing installs until Add.
+ */
+@Composable internal fun InstallConnectorSheet(item: MarketConnector, state: AppState, store: AppStore, requestId: String? = null,
+    addsAtOnce: Boolean = true, done: () -> Unit = {}) {
     val dismiss = LocalDismissModal.current
     val scope = rememberCoroutineScope()
     var optionId by remember(item.name) { mutableStateOf(item.options.firstOrNull()?.id.orEmpty()) }
@@ -43,8 +47,8 @@ import kotlinx.coroutines.launch
         saving = true; error = null
         scope.launch {
             try {
-                val connector = installed?.let { known -> store.installedConnectors().firstOrNull { it.id == known.id } ?: known }
-                    ?: store.installConnector(item, choice, values).also { installed = it; values = emptyMap() }
+                // The host keeps the connector a try saved unless new values or another way to run it come in.
+                val connector = store.installConnector(item, choice, values).also { installed = it; values = emptyMap() }
                 if (connector.needsSignIn) {
                     // The store finishes a chat's request itself once the sign-in comes back.
                     signingIn = true
@@ -57,9 +61,10 @@ import kotlinx.coroutines.launch
             finally { saving = false; signingIn = false }
         }
     }
-    // Nothing to fill in: it adds itself.
-    LaunchedEffect(item.name) { if (item.options.size == 1 && item.options[0].inputs.isEmpty()) install() }
-    val ready = installed != null || option?.complete(values) == true
+    // Opened by an Add with nothing to fill in: it adds itself.
+    LaunchedEffect(item.name) { if (addsAtOnce && item.options.size == 1 && item.options[0].inputs.isEmpty()) install() }
+    // After a try that failed, Add with nothing typed tries the connector it saved again.
+    val ready = option?.complete(values) == true || (installed != null && values.values.all { it.isEmpty() })
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader("Add connector") {
             if (saving) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { Spinner() }
@@ -77,22 +82,27 @@ import kotlinx.coroutines.launch
             }
             if (item.options.size > 1) CardSection("Runs") {
                 row {
-                    ChoiceList(optionId, item.options.map { Triple(it.id, if (it.kind == "remote") "Hosted by ${item.title}" else "On ${state.hostName} (${it.kind})", null) },
+                    val hosted = tr("Hosted by {name}")
+                    val onComputer = tr("On {name} ({kind})")
+                    ChoiceList(optionId, item.options.map {
+                        Triple(it.id, if (it.kind == "remote") hosted.replace("{name}", item.title)
+                            else onComputer.replace("{name}", state.hostName).replace("{kind}", it.kind), null)
+                    },
                         { optionId = it; values = emptyMap() })
                 }
             }
-            if (option != null) CardSection("Setup", "Keys are saved on ${state.hostName} only.") {
+            if (option != null) CardSection("Setup", tr("Keys are saved on {name} only.").replace("{name}", state.hostName)) {
                 if (option.inputs.isEmpty()) row {
-                    Text(if (option.kind == "remote") "No keys needed here. If ${item.title} wants you to sign in, its sign-in page opens next." else "No setup needed.",
+                    Text(if (option.kind == "remote") tr("No keys needed here. If {name} wants you to sign in, its sign-in page opens next.").replace("{name}", item.title) else tr("No setup needed."),
                         style = Type.body, color = Palette.secondary)
                 }
                 for (input in option.inputs) row {
                     NotedInput(values[input.name].orEmpty(), { values = values + (input.name to it) },
                         if (input.secret) input.name else input.defaultValue ?: input.placeholder ?: input.name,
-                        input.description?.let { it + if (input.required) "" else " (optional)" }, secret = input.secret)
+                        input.description?.let { it + if (input.required) "" else tr(" (optional)") }, secret = input.secret)
                 }
             }
-            if (signingIn) CardSection { row { Waiting("Finish signing in to ${item.title} in the browser…") } }
+            if (signingIn) CardSection { row { Waiting(tr("Finish signing in to {name} in the browser…").replace("{name}", item.title)) } }
             error?.let { CardSection { row { ErrorRow(it) } } }
         }
     }
@@ -149,9 +159,9 @@ private enum class CustomMode { Command, Url, Config }
         }
         CardForm(Modifier.weight(1f)) {
             CardSection(footer = when (mode) {
-                CustomMode.Command -> "Runs on $host in the bot's project folder. Quotes work like in a shell."
+                CustomMode.Command -> tr("Runs on {name} in the bot's project folder. Quotes work like in a shell.").replace("{name}", host)
                 CustomMode.Url -> "A remote MCP server, streamable HTTP or SSE."
-                CustomMode.Config -> "Paste the MCP config from a README or another app (Claude, Cursor, VS Code). Every server in it is added. Saved on $host only."
+                CustomMode.Config -> tr("Paste the MCP config from a README or another app (Claude, Cursor, VS Code). Every server in it is added. Saved on {name} only.").replace("{name}", host)
             }) {
                 row { SegmentedChoice(mode, listOf(CustomMode.Command to "Command", CustomMode.Url to "URL", CustomMode.Config to "Config"), { mode = it }) }
                 if (mode == CustomMode.Config) row {
@@ -161,9 +171,9 @@ private enum class CustomMode { Command, Url, Config }
                     row { PlainInput(target, { target = it }, if (mode == CustomMode.Url) "https://example.com/mcp" else "npx -y @scope/server", style = Type.callout.monospaced) }
                 }
             }
-            if (mode == CustomMode.Url) CardSection("Headers", "Optional, one Name: value per line. Leave empty if the service has you sign in. Saved on $host only.") {
+            if (mode == CustomMode.Url) CardSection("Headers", tr("Optional, one Name: value per line. Leave empty if the service has you sign in. Saved on {name} only.").replace("{name}", host)) {
                 row { PlainInput(envText, { envText = it }, "Authorization: Bearer …", style = Type.callout.monospaced, minLines = 2, maxLines = 6) }
-            } else if (mode == CustomMode.Command) CardSection("Environment", "One KEY=value per line. Saved on $host only.") {
+            } else if (mode == CustomMode.Command) CardSection("Environment", tr("One KEY=value per line. Saved on {name} only.").replace("{name}", host)) {
                 row { PlainInput(envText, { envText = it }, "API_KEY=…", style = Type.callout.monospaced, minLines = 2, maxLines = 6) }
             }
             error?.let { CardSection { row { ErrorRow(it) } } }

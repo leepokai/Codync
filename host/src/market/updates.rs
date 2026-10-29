@@ -7,9 +7,9 @@ use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::time::Instant;
 
-const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
-const RETRY_INTERVAL: Duration = Duration::from_secs(15 * 60);
-const POLL_INTERVAL: Duration = Duration::from_secs(60);
+const CHECK_INTERVAL: Duration = Duration::from_hours(6);
+const RETRY_INTERVAL: Duration = Duration::from_mins(15);
+const POLL_INTERVAL: Duration = Duration::from_mins(1);
 
 pub async fn automatic_loop(hub: Arc<Hub>) {
     let mut tracker = Tracker::default();

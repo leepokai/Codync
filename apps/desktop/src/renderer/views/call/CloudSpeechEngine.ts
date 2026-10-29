@@ -1,4 +1,4 @@
-import { errorMessage, micPCM16k, SPEECH_CHUNK, spokenText, VoiceEngine, VoiceSettings, wav, type VoiceProvider } from './voice'
+import { errorMessage, micPCM16k, onDevicesChanged, SPEECH_CHUNK, spokenText, VoiceEngine, VoiceSettings, wav, type VoiceProvider } from './voice'
 
 export interface CloudSpeech {
   transcribe: (wav: Uint8Array) => Promise<string>
@@ -54,6 +54,7 @@ export function clips(text: string, limit: number): string[] {
  */
 export class CloudSpeechEngine extends VoiceEngine {
   private stopMic: (() => void) | null = null
+  private stopDevices: (() => void) | null = null
   private chunk: number
 
   // Listening: PCM since speech began (plus a little before), and when it last went quiet.
@@ -84,20 +85,36 @@ export class CloudSpeechEngine extends VoiceEngine {
   }
 
   async start() {
+    await this.openMic()
+    // A headset plugged in or out: the microphone starts again on what the system picks now.
+    if (!this.ended && this.stopMic) this.stopDevices = onDevicesChanged(() => void this.restartMic())
+  }
+
+  private async openMic() {
     try {
       const stop = await micPCM16k((pcm, level) => this.heard(pcm, level))
       if (this.ended) return stop()
       this.stopMic = stop
     } catch (e) {
-      return this.fail(errorMessage(e))
+      this.fail(errorMessage(e), 'microphone')
     }
-    this.setPhase('listening')
+  }
+
+  private async restartMic() {
+    if (this.ended || !this.stopMic) return
+    this.stopMic()
+    this.stopMic = null
+    this.dropUtterance()
+    if (this.phase === 'listening') this.setPhase('reconnecting')
+    await this.openMic()
   }
 
   end() {
     this.ended = true
     this.onActivityChanged?.(false)
     this.stopSpeaking()
+    this.stopDevices?.()
+    this.stopDevices = null
     this.stopMic?.()
     this.stopMic = null
   }
@@ -123,6 +140,8 @@ export class CloudSpeechEngine extends VoiceEngine {
   // MARK: listening
 
   private heard(pcm: Int16Array, level: number) {
+    // Listening once the microphone actually delivers.
+    if (!this.ended && this.isConnecting) this.setPhase('listening')
     if (this.ended || this.muted || this.phase !== 'listening' || Date.now() < this.deafUntil) return
     this.level = level
     if (level > THRESHOLD) {
@@ -157,7 +176,7 @@ export class CloudSpeechEngine extends VoiceEngine {
         if (!this.ended && text) this.speech.send(text)
       } catch (e) {
         console.error('transcribe:', errorMessage(e))
-        if (!this.ended) this.fail(errorMessage(e))
+        if (!this.ended) this.fail(errorMessage(e), 'provider')
       }
     })
   }

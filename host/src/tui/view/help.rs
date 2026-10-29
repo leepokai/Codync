@@ -5,11 +5,12 @@ use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 
 use super::super::app::Editor;
+use super::super::l10n::tr;
 use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 57] = [
+const HELP: [(&str, &str, &str); 69] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -26,16 +27,22 @@ const HELP: [(&str, &str, &str); 57] = [
     ("CHAT", "N", "reject and say why"),
     ("CHAT", "1…9", "pick an approval option"),
     ("CHAT", "s", "stop the bot"),
+    ("CHAT", ">", "show / hide the working turn's steps (thinking details on)"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
     ("CHAT", "C", "open connection / login request"),
-    ("CHAT", "r", "reply in a thread"),
+    ("CHAT", "F", "try a failed routine run again"),
+    ("CHAT", "r", "reply to a message"),
     ("CHAT", "v", "pick a message"),
-    ("CHAT", "j k  ↵", "picking: move / open"),
+    ("CHAT", "j k  ↵", "picking: move / reply"),
     ("CHAT", "1…6", "picking: react"),
-    ("CHAT", "f", "picking: save its files"),
+    ("CHAT", "f", "picking: save its files or artifact"),
+    ("CHAT", "o", "picking an artifact: open it in the browser"),
+    ("CHAT", "o", "picking: show a summary, handoff or note change"),
+    ("CHAT", "e K", "picking a handoff: edit / keep the chat"),
+    ("CHAT", "A", "picking a failure: add a fallback agent"),
     ("CHAT", "↵", "picking a bot message: open its conversation"),
-    ("CHAT", "esc", "close the thread"),
+    ("CHAT", "esc", "cancel the reply"),
     ("TYPE", "↵", "send"),
     ("TYPE", "⇧↵ alt↵ ^j", "new line"),
     ("TYPE", "esc", "back to NAV"),
@@ -44,15 +51,19 @@ const HELP: [(&str, &str, &str); 57] = [
     ("TYPE", "alt b / f", "word left / right"),
     ("TYPE", "^w ^u", "delete word / line"),
     ("TYPE", "@name", "group: ask just that bot"),
-    ("TYPE", "/", "commands: /fast, /new, skills"),
+    ("TYPE", "/", "commands: /fast, skills"),
     ("BOTS", "n", "new bot"),
     ("BOTS", "m", "new group chat"),
-    ("BOTS", "e", "edit bot or group"),
+    ("BOTS", "e", "settings, or edit a group"),
+    ("BOTS", "I", "About the lead agent"),
     ("BOTS", "p", "pin / unpin"),
     ("BOTS", "J K", "move bot down / up"),
     ("BOTS", "S", "new session"),
     ("BOTS", "M", "memory"),
-    ("BOTS", "R", "routines"),
+    ("BOTS", "R", "details: routines, computer"),
+    ("BOTS", "B", "details: switch back to the bot's own agent"),
+    ("BOTS", "L", "library: artifacts and files; open, save, rename"),
+    ("BOTS", "⇧← ⇧→", "between details, library, memory and settings"),
     ("BOTS", "A", "extensions, sign-in"),
     ("BOTS", "x", "delete bot or group"),
     ("VIEW", "t", "trace pane"),
@@ -61,8 +72,10 @@ const HELP: [(&str, &str, &str); 57] = [
     ("VIEW", "b", "compact roster"),
     ("VIEW", "U", "usage"),
     ("VIEW", "P", "pair a phone"),
+    ("VIEW", "N", "network: your other computers"),
     ("VIEW", "^k share", "share usage analytics on / off"),
     ("VIEW", "^k about", "what usage analytics include"),
+    ("VIEW", "language", "app language: follow system or choose one of eight languages"),
     ("VIEW", "esc", "close / go back"),
     ("VIEW", "q", "quit; bots keep going"),
     ("MOUSE", "click", "open, press a button"),
@@ -73,7 +86,7 @@ pub(super) fn help(buf: &mut Buffer, area: Rect, filter: &Editor) {
     let t = theme();
     // Two columns fit everything from 42 rows up; shorter windows get a third.
     let r = centered(area, if area.height >= 42 { 80 } else { 120 }, 40);
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Keys", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some((tr("Keys").as_ref(), t.text)));
     field_line(buf, inner, inner.y, filter, "filter actions and keys", true);
     let q = filter.text.to_lowercase();
     let items: Vec<&(&str, &str, &str)> = HELP

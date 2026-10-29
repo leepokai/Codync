@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.codync.android.core.ProviderLimit
 import com.codync.android.core.UsageProvider
 import com.codync.android.core.UsageReport
@@ -69,6 +70,47 @@ internal val UsageWindow.title: String get() = when {
 internal fun UsageWindow.resetsShort(now: Long = System.currentTimeMillis()): String? {
     resetDate(now)?.let { at -> return if (at > now) "resets " + until(at, now) else null }
     return resetsText?.takeIf(String::isNotBlank)?.let { "resets " + it.replace(Regex(" \\(.*\\)$"), "") }
+}
+
+/** "resets 3h 20m" / "resets in 2d 6h". Compact times become "3小时20分后重置". */
+@Composable internal fun resetLine(raw: String): String {
+    val language = LocalAppLanguage.current.resolved(LocalSystemTag.current)
+    return spokenReset(raw, language.usesChinese(LocalSystemChinese.current), translator())
+}
+
+internal fun spokenReset(raw: String, chinese: Boolean, tr: (String) -> String): String {
+    val time = when {
+        raw.startsWith("resets in ") -> raw.removePrefix("resets in ")
+        raw.startsWith("resets ") -> raw.removePrefix("resets ")
+        else -> return tr(raw)
+    }
+    if (!chinese) {
+        if (tr("resets") == "resets") return raw
+        return if (Regex("[0-9]+[dhm]( [0-9]+[dhm])*").matches(time)) tr("resets in {time}").replace("{time}", time)
+        else "${tr("resets")} $time"
+    }
+    val spoken = compactTime(time, tr)
+    return if (spoken != null) spoken + tr("after reset") else "${tr("resets")} $time"
+}
+
+private fun compactTime(time: String, tr: (String) -> String): String? {
+    var spoken = ""
+    var matched = false
+    for (token in time.split(" ")) {
+        if (token.length < 2) return null
+        val n = token.dropLast(1).toIntOrNull() ?: return null
+        val word = when (token.last()) {
+            'd' -> tr("day unit")
+            'h' -> tr("hour unit")
+            'm' -> tr("minute unit")
+            else -> return null
+        }
+        matched = true
+        if (n == 0) continue
+        spoken += "$n$word"
+    }
+    if (!matched) return null
+    return spoken.ifEmpty { "0${tr("minute unit")}" }
 }
 
 /** Time left: 2d · 3h 20m · 45m (CodyncKit `RelativeTime.until`). */
@@ -116,14 +158,14 @@ internal fun until(at: Long, now: Long): String {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(if (layout == ProviderLayout.Small) 6.dp else 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             ProviderMascot(provider, 22.dp)
-            Text(provider.name, Modifier.weight(1f), style = Type.system(13f).semibold, color = Palette.text, maxLines = 1)
-            if (layout != ProviderLayout.Small) Text("Usage", style = Type.system(10f).medium, color = Palette.secondary)
+            Text(provider.name, Modifier.weight(1f), style = Type.system(13f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (layout != ProviderLayout.Small) Text(tr("Usage"), style = Type.system(10f).medium, color = Palette.secondary)
         }
         val top = provider.tightest
         if (layout == ProviderLayout.Small && top != null) {
             Spacer(Modifier.weight(1f))
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(top.title, style = Type.system(11f), color = Palette.secondary, maxLines = 1)
+                Text(tr(top.title), style = Type.system(11f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.Bottom) {
                     val ink = if ((top.percent ?: 0.0) >= 90) Palette.danger else Palette.text
                     Text("${(top.percent ?: 0.0).roundToInt()}", style = Type.system(32f).semibold.monospacedDigit, color = ink)
@@ -131,24 +173,26 @@ internal fun until(at: Long, now: Long): String {
                 }
             }
             UsageTicks(top.percent ?: 0.0, tint, 13.dp)
-            Text(top.resetsShort() ?: "Usage reported by your computer", style = Type.system(9f), color = Palette.secondary, maxLines = 1)
+            val reset = top.resetsShort()
+            Text(if (reset == null) tr("Usage reported by your computer") else resetLine(reset), style = Type.system(9f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         } else {
             if (layout == ProviderLayout.Large && top != null) Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("${(top.percent ?: 0.0).roundToInt()}%", style = Type.system(36f).semibold.monospacedDigit,
                     color = if ((top.percent ?: 0.0) >= 90) Palette.danger else Palette.text)
-                Text("${top.title} · highest usage", Modifier.padding(bottom = 6.dp), style = Type.system(11f), color = Palette.secondary, maxLines = 2)
+                Text("${tr(top.title)} · ${tr("highest usage")}", Modifier.padding(bottom = 6.dp), style = Type.system(11f), color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            for (window in provider.windows.take(if (layout == ProviderLayout.Large) 4 else 2)) {
+            for (window in provider.limits.take(if (layout == ProviderLayout.Large) 4 else 2)) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(window.title, Modifier.weight(1f), style = Type.system(11f).medium, color = Palette.secondary, maxLines = 1)
+                        Text(tr(window.title), Modifier.weight(1f), style = Type.system(11f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${(window.percent ?: 0.0).roundToInt()}%", style = Type.system(13f).semibold.monospacedDigit,
                             color = if ((window.percent ?: 0.0) >= 90) Palette.danger else Palette.text)
                     }
                     UsageTicks(window.percent ?: 0.0, tint, 12.dp)
-                    window.resetsShort()?.let { Text(it, Modifier.fillMaxWidth(), style = Type.system(9f), color = Palette.secondary,
-                        maxLines = 1, textAlign = TextAlign.End) }
+                    val reset = window.resetsShort()
+                    if (reset != null) Text(resetLine(reset), Modifier.fillMaxWidth(), style = Type.system(9f), color = Palette.secondary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
                 }
             }
         }
@@ -173,9 +217,10 @@ internal fun until(at: Long, now: Long): String {
 @Composable private fun LimitHero(limit: ProviderLimit) {
     val percent = limit.window.percent ?: 0.0
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("${limit.provider} · ${limit.window.label}", style = Type.caption, color = Palette.secondary, maxLines = 1)
-        Text("${percent.roundToInt()}%", style = Type.system(34f).semibold.monospacedDigit, color = if (percent >= 90) Palette.danger else Palette.text, maxLines = 1)
-        Text(limit.window.resetsShort() ?: " ", style = Type.caption2, color = Palette.tertiary, maxLines = 1)
+        Text("${limit.provider} · ${limit.window.label}", style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("${percent.roundToInt()}%", style = Type.system(34f).semibold.monospacedDigit, color = if (percent >= 90) Palette.danger else Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val reset = limit.window.resetsShort()
+        Text(if (reset == null) " " else resetLine(reset), style = Type.caption2, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -183,7 +228,7 @@ internal fun until(at: Long, now: Long): String {
     val percent = limit.window.percent ?: 0.0
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row {
-            Text("${limit.provider} ${limit.window.label}", Modifier.weight(1f), style = Type.caption2, color = Palette.secondary, maxLines = 1)
+            Text("${limit.provider} ${limit.window.label}", Modifier.weight(1f), style = Type.caption2, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${percent.roundToInt()}%", style = Type.caption2.monospacedDigit, color = Palette.secondary)
         }
         UsageTicks(percent, usageTint(percent), 10.dp)
@@ -213,7 +258,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
     val summary: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text("$count", style = Type.system(36f).semibold.monospacedDigit, color = if (needs > 0) Palette.attention else Palette.text)
-            Text(label, style = Type.system(12f).medium, color = Palette.secondary)
+            Text(tr(label), style = Type.system(12f).medium, color = Palette.secondary)
         }
     }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -257,12 +302,11 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 CharacterAvatar(bot.avatarShape, bot.avatarColor, 24.dp)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Text(bot.name, style = Type.system(11f).semibold, color = Palette.text, maxLines = 1)
-                    activities[bot.id]?.takeIf { bot.status == "working" || bot.status == "needsInput" }?.let {
-                        Text(it, style = Type.system(10f), color = Palette.secondary, maxLines = 1)
-                    }
+                    Text(widgetName(bot), style = Type.system(11f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val activity = activities[bot.id]?.takeIf { bot.status == "working" || bot.status == "needsInput" }
+                    if (activity != null) Text(tr(activity), style = Type.system(10f), color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text(label, style = Type.system(10f, if (bot.status == "needsInput") FontWeight.SemiBold else FontWeight.Normal), color = tint, maxLines = 1)
+                Text(tr(label), style = Type.system(10f, if (bot.status == "needsInput") FontWeight.SemiBold else FontWeight.Normal), color = tint, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (bots.isEmpty()) Text("Create your first bot in Codync.", style = Type.system(12f), color = Palette.secondary)
@@ -279,7 +323,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
                 else {
                     Column(Modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         CharacterAvatar(bot.avatarShape, bot.avatarColor, 30.dp, bot.status)
-                        Text(bot.name, style = Type.system(9f).semibold, color = Palette.text, maxLines = 1)
+                        Text(widgetName(bot), style = Type.system(9f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (bot.status == "working" || bot.status == "error") Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(7.dp)
                         .clip(Capsule()).background(widgetState(bot.status).second))
@@ -288,6 +332,10 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
         }
     }
 }
+
+/** Sample bots in the gallery have translated names. A bot the user named stays as they wrote it. */
+@Composable internal fun widgetName(bot: WidgetBot): String =
+    if (bot.id.startsWith("preview-")) tr(bot.name) else bot.name
 
 /** Illustrative data only, for previews labelled as samples (the iOS gallery's). */
 internal object WidgetPreview {

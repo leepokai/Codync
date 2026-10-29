@@ -17,13 +17,13 @@ data class ProviderLimit(val provider: String, val window: UsageWindow)
 
 /** Every provider's limits for the Usage limits widget: the tightest first (its headline), then the rest in report order. */
 fun usageLimits(report: UsageReport): List<ProviderLimit> {
-    val all = report.providers.flatMap { provider -> provider.windows.map { ProviderLimit(provider.name, it) } }
+    val all = report.providers.flatMap { provider -> provider.limits.map { ProviderLimit(provider.name, it) } }
     val top = all.withIndex().maxByOrNull { it.value.window.reportedPercent ?: -1.0 } ?: return emptyList()
     return listOf(top.value) + all.filterIndexed { index, _ -> index != top.index }
 }
 
 /** The Bots tile's bot: the one that needs you most, in the feed's order, if any bot is at work. */
-fun leadBot(bots: List<WidgetBot>): WidgetBot? = bots.firstOrNull { it.status == "needsInput" || it.status == "working" }
+fun mostUrgentBot(bots: List<WidgetBot>): WidgetBot? = bots.firstOrNull { it.status == "needsInput" || it.status == "working" }
 
 /** The Team widget's four spots: the picked bots first (a deleted pick falls back), then the feed's order (who needs you). */
 fun teamSlots(bots: List<WidgetBot>, picks: List<String?>): List<WidgetBot?> {

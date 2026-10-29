@@ -1,0 +1,50 @@
+You can give a task to your Codync bots from an assistant you already use on the web or on your phone, such as ChatGPT or Claude. Add Codync to it as a connector, sign in with your Codync account, and the assistant can see your bots, ask one to do something, and read its answer. The bots still do the work on your computer, with their own agent, folder, tools and approval setting.
+
+## Turn it on for a computer
+
+Cloud assistants are off on every computer until you turn them on there, at the computer whose bots the assistant may use:
+
+- **Desktop:** Settings → **Computers**, the **Cloud assistants** switch under the computer's account rows.
+- **Terminal UI:** `N` opens the network sheet; `a` switches **Cloud assistants** (shown once the computer is in your Codync account).
+- **Command line:** `codync-host cloud --assistants on` (`off` turns it off; `codync-host cloud` shows it as `assistants: on`). On a Mac where you installed the app from the disk image rather than with Homebrew, `codync-host` is inside the app: `/Applications/Codync.app/Contents/Resources/codync-host`.
+
+The switch carries the same warning as [Privacy](#privacy) below: Codync's cloud can read these calls. Phones show whether it's on (**Network** on the computer's card in **Manage computers**) but can't change it. The computer has to be in your Codync account (signed in) and use the Codync relay.
+
+To keep one bot away from cloud assistants while they're on, turn off **Reachable by cloud assistants** in its settings.
+
+## Add the connector
+
+In your assistant's settings, add a custom connector (it may be called a connector, an app or an MCP server) with this address:
+
+```
+https://mcp.codync.dev/mcp
+```
+
+The assistant opens Codync's sign-in page. Sign in with the account your computer is in, then allow the assistant access. You can remove the connector in the assistant whenever you like.
+
+## What the assistant can do
+
+- **List your computers** and whether each one is online.
+- **List your bots**, with their names, descriptions, status and kind: a Codync bot, a Claude Code session, a Codex thread or a terminal. It can search them by name or description, or list only one kind.
+- **Message a bot**: it sends one bot a task, the way one bot asks another for help ([Teamwork](/docs/teamwork)). The bot works on it in its own chat.
+- **Read replies**: bots can take a few minutes, so the assistant comes back for the answer, for example when you ask it how the task went.
+
+If several of your computers are online, the assistant says which one a message is for. It reaches only the bots of computers where you turned cloud assistants on, and not hidden bots or groups.
+
+In the bot's chat, the request shows as a row saying **Message from Cloud assistant**, like a message from another bot. Its reply goes back to the assistant, not to you in that chat. Your computer keeps the replies until the assistant reads them, and forgets them when Codync restarts.
+
+## Current limits
+
+- **The computer needs Codync 2.28.0 or later.** An older one doesn't answer the assistant.
+- **Turned on at the computer.** The desktop app, the terminal UI or `codync-host` changes it; phones only show it.
+- **Only through computers in your Codync account that use the Codync relay.** A computer that uses your own relay can't be reached directly. Through one that can, the assistant also reaches the bots your other computers offer in your [network of computers](/docs/teamwork#bots-on-your-other-computers), as `name@computer`; each of those computers decides with its own rules, its Cloud assistants switch and each bot's **Reachable by cloud assistants** whether it takes the message.
+- **No hidden bots or group chats.** The assistant sees the same bots another bot can message.
+- **It can't be told when a reply is ready.** A hosted assistant only acts when you write to it, so ask it to check on the task later.
+- **Replies don't last.** The computer keeps the newest 50 requests, at most 16 of them running at once, and forgets them all when Codync restarts.
+- **At most 120 requests a minute** per account, across all your computers.
+- **Stopping access.** Turning cloud assistants off on the computer works at once. Removing the connector from the assistant, or the assistant's access from your Codync account, leaves a sign-in it already has working for up to a day.
+- **No connector of your own yet.** The connector runs in Codync's cloud. There is no version to run on your own server, other than running your own copy of the whole Codync cloud.
+
+## Privacy
+
+Unlike the encrypted connection between your devices and your computer, a cloud assistant's requests and the bots' replies pass through the Codync relay in readable form, over HTTPS. The assistant's service (OpenAI, Anthropic or another) also sees them, as it does everything in that conversation. That's why it's off until you turn it on at the computer: the relay can't turn it on for you, and it only passes on requests from your own account. More in [Privacy](/docs/privacy).

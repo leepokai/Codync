@@ -18,6 +18,7 @@ import androidx.annotation.DrawableRes
     "deepagents" -> R.drawable.agent_deepagents
     "devin" -> R.drawable.agent_devin
     "dimcode" -> R.drawable.agent_dimcode
+    "dsh" -> R.drawable.agent_dsh
     "factory-droid" -> R.drawable.agent_factory_droid
     "gemini" -> R.drawable.agent_gemini
     "github-copilot-cli" -> R.drawable.agent_github_copilot_cli
@@ -37,5 +38,6 @@ import androidx.annotation.DrawableRes
     "qoder" -> R.drawable.agent_qoder
     "qwen-code" -> R.drawable.agent_qwen_code
     "stakpak" -> R.drawable.agent_stakpak
+    "workbuddy" -> R.drawable.agent_workbuddy
     else -> null
 }

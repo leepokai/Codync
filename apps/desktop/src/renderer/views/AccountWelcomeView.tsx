@@ -2,10 +2,13 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { CharacterAvatar, type Mood } from '../components/Avatar'
 import { Button, Spinner } from '../components/Controls'
 import { Icon } from '../components/Icon'
-import { font } from '../lib/fonts'
+import { HStack, Spacer, VStack } from '../components/Stack'
+import { Text } from '../components/Text'
 import { useReduceMotion } from '../lib/theme'
+import { useTr } from '../lib/use-language'
 import { useAccount } from '../store/account'
 import googleLogo from '../assets/google.svg'
+import './account-welcome.css'
 
 const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
 
@@ -13,6 +16,8 @@ const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
 export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   const account = useAccount()
   const reduce = useReduceMotion()
+  const tr = useTr()
+  const onThis = tr(deviceName === 'Mac' ? 'Continue on this Mac' : 'Continue on this computer')
   const [beat, setBeat] = useState(reduce ? 4 : 0)
 
   useEffect(() => {
@@ -28,70 +33,66 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   if (!account.isReady) {
     // Keep first-run sign-in choices behind the persisted-session restore on launch.
     return (
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+      <VStack align="center" justify="center" gap={14} className="welcome-restoring">
         <Spinner size={24} />
-        <div style={{ ...font('callout'), color: 'var(--secondary)' }}>Checking for a saved account…</div>
-        <button style={{ color: 'var(--secondary)' }} onClick={onContinue}>
-          Continue on this {deviceName}
+        <Text as="div" size="callout" tone="secondary">{tr(`Checking for a saved account…`)}</Text>
+        <button className="welcome-skip" onClick={onContinue}>
+          {onThis}
         </button>
-      </div>
+      </VStack>
     )
   }
 
   const rise = (shown: boolean): CSSProperties => ({
     opacity: shown ? 1 : 0,
     transform: shown ? 'none' : 'translateY(14px)',
-    transition: 'opacity 0.6s cubic-bezier(0.34, 1.3, 0.64, 1), transform 0.6s cubic-bezier(0.34, 1.3, 0.64, 1)',
+    transition: 'opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out)',
   })
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', background: 'var(--background)' }}>
-      <div style={{ minHeight: '100%', maxWidth: 480, margin: '0 auto', display: 'flex', flexDirection: 'column', padding: '0 24px 12px' }}>
-        <div style={{ flex: 1, minHeight: 24 }} />
+    <div className="welcome">
+      <VStack className="welcome-column">
+        <Spacer min={24} />
         <WelcomeCrew shown={beat >= 1} />
-        <div style={{ flex: 1, minHeight: 24 }} />
-        <div style={{ paddingBottom: 24 }}>
+        <Spacer min={24} />
+        <div className="welcome-glimpse">
           <WelcomeChatGlimpse shown={beat >= 2} />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...rise(beat >= 3) }}>
-          <div style={{ fontSize: 34, fontWeight: 600, letterSpacing: -0.6, color: 'var(--text)', lineHeight: 1.15 }}>
-            Your coding agents,
-            <br />
-            as teammates.
-          </div>
-          <div style={{ ...font('body'), color: 'var(--secondary)' }}>Give each one a name and a project. They work on your computer while you're away.</div>
-        </div>
-        <div style={{ flex: 1, minHeight: 32 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...rise(beat >= 4) }}>
-          <Button onClick={onContinue} style={{ ...font('headline'), minHeight: 50, width: '100%' }}>
-            Continue on this {deviceName}
+        <VStack gap={10} style={rise(beat >= 3)}>
+          <div className="welcome-title">{tr('Your coding agents,\nas teammates.')}</div>
+          <Text as="div" size="body" tone="secondary">{tr(`Give each one a name and a project. They work on your computer while you're away.`)}</Text>
+        </VStack>
+        <Spacer min={32} />
+        <VStack gap={10} style={rise(beat >= 4)}>
+          <Button onClick={onContinue} className="welcome-button">
+            {onThis}
           </Button>
-          <Button onClick={() => void account.signIn('apple')} disabled={!account.isConfigured || account.isBusy} style={{ ...font('headline'), minHeight: 50, width: '100%' }}>
+          <Button onClick={() => void account.signIn('apple')} disabled={!account.isConfigured || account.isBusy} className="welcome-button">
             {account.isBusy ? (
               <Spinner size={18} />
             ) : (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <HStack as="span" gap={10}>
                 <Icon name="apple.logo" size={20} />
-                Continue with Apple
-              </span>
+                {tr('Continue with Apple')}
+              </HStack>
             )}
           </Button>
-          <Button kind="secondary" onClick={() => void account.signIn('google')} disabled={!account.isConfigured || account.isBusy} style={{ ...font('headline'), minHeight: 50, width: '100%' }}>
+          <Button kind="secondary" onClick={() => void account.signIn('google')} disabled={!account.isConfigured || account.isBusy} className="welcome-button">
             {account.isBusy ? (
               <Spinner size={18} />
             ) : (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <HStack as="span" gap={10}>
                 <img src={googleLogo} alt="" width={20} height={20} />
-                Continue with Google
-              </span>
+                {tr('Continue with Google')}
+              </HStack>
             )}
           </Button>
           {!account.isConfigured ? (
-            <div style={{ ...font('footnote'), color: 'var(--tertiary)' }}>Sign-in isn't configured in this build. You can still use Codync on this {deviceName}.</div>
+            <Text as="div" size="footnote" tone="tertiary">{tr(deviceName === 'Mac' ? "Sign-in isn't configured in this build. You can still use Codync on this Mac." : "Sign-in isn't configured in this build. You can still use Codync on this computer.")}</Text>
           ) : null}
-          {account.errorMessage ? <div style={{ ...font('footnote'), color: 'var(--warning)' }}>{account.errorMessage}</div> : null}
-        </div>
-      </div>
+          {account.errorMessage ? <Text as="div" size="footnote" tone="attention">{account.errorMessage}</Text> : null}
+        </VStack>
+      </VStack>
     </div>
   )
 }
@@ -119,15 +120,15 @@ function WelcomeCrew({ shown }: { shown: boolean }) {
     return () => cancelAnimationFrame(frame)
   }, [reduce, shown])
   return (
-    <div aria-hidden style={{ position: 'relative', height: 170 }}>
+    <div aria-hidden className="welcome-crew">
       {crew.map((m, i) => (
         <div
           key={m.shape}
+          className="welcome-crew-member"
           style={{
-            position: 'absolute', left: '50%', top: '50%',
             transform: `translate(calc(-50% + ${m.x}px), calc(-50% + ${m.y + (reduce ? 0 : Math.sin(t * 1.3 + i * 1.7) * 5)}px)) scale(${shown ? 1 : 0.3})`,
             opacity: shown ? 1 : 0,
-            transition: `opacity 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 0.07}s, scale 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 0.07}s`,
+            transition: `opacity 0.7s var(--ease-out) ${i * 0.07}s, scale 0.7s var(--ease-out) ${i * 0.07}s`,
           }}
         >
           <CharacterAvatar shape={m.shape} color={m.color} size={m.size} mood={m.mood} />
@@ -139,6 +140,7 @@ function WelcomeCrew({ shown }: { shown: boolean }) {
 
 /** A short animated user and bot exchange, matching the iPhone onboarding preview. */
 function WelcomeChatGlimpse({ shown }: { shown: boolean }) {
+  const tr = useTr()
   const reduce = useReduceMotion()
   const [replied, setReplied] = useState(false)
   useEffect(() => {
@@ -146,23 +148,22 @@ function WelcomeChatGlimpse({ shown }: { shown: boolean }) {
     const timer = setTimeout(() => setReplied(true), reduce ? 0 : 1600)
     return () => clearTimeout(timer)
   }, [shown, reduce])
-  const rise: CSSProperties = { opacity: shown ? 1 : 0, transform: shown ? 'none' : 'translateY(14px)', transition: 'opacity 0.6s, transform 0.6s cubic-bezier(0.34, 1.3, 0.64, 1)' }
+  const rise: CSSProperties = { opacity: shown ? 1 : 0, transform: shown ? 'none' : 'translateY(14px)', transition: 'opacity 0.6s, transform 0.6s var(--ease-out)' }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', ...rise }}>
-        <span style={{ ...font('subheadline'), color: 'var(--text)', padding: '9px 14px', background: 'var(--bubble-user)', borderRadius: 18 }}>Fix the flaky login test</span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, ...rise }}>
+    <VStack gap={10}>
+      <HStack align="stretch" justify="flex-end" style={rise}>
+        <Text size="subheadline" tone="text" className="welcome-bubble user">{tr(`Fix the flaky login test`)}</Text>
+      </HStack>
+      <HStack align="flex-end" gap={8} style={rise}>
         <CharacterAvatar shape="blob" color="blue" size={28} mood={replied ? 'idle' : 'working'} />
         {replied ? (
-          <span style={{ ...font('subheadline'), color: 'var(--text)', padding: '9px 14px', background: 'var(--bubble-agent)', borderRadius: 18, animation: 'bubble-in 0.45s cubic-bezier(0.34, 1.3, 0.64, 1) both', transformOrigin: 'bottom left' }}>
-            Done. It raced the session refresh; tests pass on fix/login.
-          </span>
+          <Text size="subheadline" tone="text" className="welcome-bubble agent">
+            {tr(`Done. It raced the session refresh; tests pass on fix/login.`)}
+          </Text>
         ) : (
-          <span style={{ ...font('subheadline'), color: 'var(--tertiary)' }}>Working…</span>
+          <Text size="subheadline" tone="tertiary">{tr(`Working…`)}</Text>
         )}
-      </div>
-      <style>{'@keyframes bubble-in { from { opacity: 0; transform: scale(0.92) } }'}</style>
-    </div>
+      </HStack>
+    </VStack>
   )
 }

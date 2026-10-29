@@ -14,7 +14,13 @@ data class Computer(
     val route: ConnectionRoute = ConnectionRoute.Automatic,
     /** The badge color picked on this phone (an `AvatarPalette` id). */
     val color: String? = null,
+    /** Whether this computer sends push alerts to this phone, switched on its card. */
+    val notifications: Boolean = true,
 ) {
+    /** Keeps what this phone picked (color, route, push) over a newer copy from pairing or the account (iOS `keepDevicePicks`). */
+    fun keepingDevicePicks(previous: Computer?): Computer =
+        previous?.let { copy(color = it.color, route = it.route, notifications = it.notifications) } ?: this
+
     fun validate() {
         require(RelayCrypto.computerId(signKey.decodeBase64Url(32)) == id) { "This computer's identity changed. Pair it again." }
         boxKey?.decodeBase64Url(32)

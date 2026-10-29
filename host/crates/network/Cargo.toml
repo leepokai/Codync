@@ -1,0 +1,55 @@
+[package]
+name = "codync-network"
+version = "0.2.1"
+edition = "2024"
+# iroh 1.4 needs 1.91.
+rust-version = "1.91"
+description = "Agent Tailscale: the agents on your computers find and message each other, peer to peer"
+license = "Apache-2.0"
+repository = "https://github.com/leepokai/codync-network"
+readme = "README.md"
+keywords = ["agent", "p2p", "iroh", "mesh", "bots"]
+categories = ["network-programming"]
+# The mirror's CI, not part of the package.
+exclude = [".github"]
+
+[dependencies]
+anyhow = "1"
+base64 = "0.23"
+getrandom = "0.4"
+iroh = { version = "1.4", default-features = false, features = ["metrics", "fast-apple-datapath", "portmapper"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+
+[dev-dependencies]
+# Moves a computer in tests: a watched address the test sets (iroh's own watcher type).
+n0-watcher = "1"
+
+# The TLS library under iroh. An app that already uses rustls with aws-lc-rs takes `tls-aws-lc-rs`
+# (with default-features = false): rustls can't pick a provider by itself when both are built in.
+[features]
+default = ["tls-ring"]
+tls-ring = ["iroh/tls-ring"]
+tls-aws-lc-rs = ["iroh/tls-aws-lc-rs"]
+
+# Written out instead of inherited, so the crate also builds on its own (like codync-mem).
+[lints.rust]
+unsafe_code = "forbid"
+unused_qualifications = "warn"
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+unwrap_used = "warn"
+dbg_macro = "warn"
+todo = "warn"

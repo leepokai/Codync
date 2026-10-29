@@ -39,7 +39,9 @@ struct Tracking {
     bot: String,
     started: Instant,
     entries: BTreeMap<i64, Value>,
-    sent: HashSet<String>,
+    /// Messages seen waiting in the queue: only one of these going out starts a turn (a reaction or edit to an older
+    /// message re-sends it as `sent`).
+    queued: HashSet<String>,
     starting: Vec<(String, i64)>,
     assigned: HashMap<String, i64>,
     active_turn: Option<i64>,
@@ -54,7 +56,7 @@ impl Tracking {
             bot: bot.to_owned(),
             started: Instant::now(),
             entries: BTreeMap::new(),
-            sent: HashSet::new(),
+            queued: HashSet::new(),
             starting: Vec::new(),
             assigned: HashMap::new(),
             active_turn: None,
@@ -193,11 +195,19 @@ impl State {
             return;
         }
         if kind == "user"
-            && entry["data"]["status"] == "sent"
-            && let (Some(id), Some(turn)) = (entry["id"].as_str(), entry["turn"].as_i64())
-            && tracked.sent.insert(id.to_owned())
+            && let Some(id) = entry["id"].as_str()
         {
-            tracked.starting.push((id.to_owned(), turn));
+            match entry["data"]["status"].as_str() {
+                Some("queued") => {
+                    tracked.queued.insert(id.to_owned());
+                }
+                Some("sent") if tracked.queued.remove(id) => {
+                    if let Some(turn) = entry["turn"].as_i64() {
+                        tracked.starting.push((id.to_owned(), turn));
+                    }
+                }
+                _ => {}
+            }
         }
         if let Some(seq) = entry["seq"].as_i64()
             && tracked.entries.get(&seq).is_none_or(|old| old["rev"].as_i64() <= entry["rev"].as_i64())

@@ -115,7 +115,11 @@ async fn send(State(state): State<Shared>, Json(body): Json<Value>) -> Response 
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 let _ = state.events.send(permission("approved", 3));
             }
+            let _ = state.events.send(json!({"type":"entry","rev":3,"entry":entry("queued", 3)}));
             let _ = state.events.send(json!({"type":"entry","rev":4,"entry":entry("sent", 4)}));
+            // A reaction to an older message re-sends it as `sent`: it mustn't take over the waited turn.
+            let older = json!({"id":"older","botId":"transport-bot","seq":1,"turn":0,"kind":"user","rev":4,"data":{"status":"sent","reaction":"👍"}});
+            let _ = state.events.send(json!({"type":"entry","rev":4,"entry":older}));
             let _ = state.events.send(bot("working", 5));
             let _ = state.events.send(reply("first", 3, "Early final", 6));
             if state.mode == Mode::EarlyFinal {

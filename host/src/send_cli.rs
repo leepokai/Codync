@@ -171,7 +171,11 @@ pub async fn run(args: SendArgs) -> Result<()> {
 }
 
 async fn execute(args: &SendArgs) -> Result<Exit, Failure> {
-    let text = read_message(args)?;
+    // A file or stdin read blocks: off the async workers.
+    let (file, words) = (args.file.clone(), args.text.clone());
+    let text = tokio::task::spawn_blocking(move || read_message(file.as_deref(), &words))
+        .await
+        .map_err(|_| Failure::usage("couldn't read the message"))??;
     let base = format!("http://127.0.0.1:{}", args.port);
     let token = Client::new(&base, None).token().ok_or_else(|| Failure::host(crate::NOT_RUNNING))?;
     let mut feed = BotFeed::connect(&base, &token).await?;
@@ -236,8 +240,8 @@ async fn send(base: &str, token: &str, body: &Value) -> Result<Value, Failure> {
     }
 }
 
-fn read_message(args: &SendArgs) -> Result<String, Failure> {
-    let message = match &args.file {
+fn read_message(file: Option<&std::path::Path>, words: &[String]) -> Result<String, Failure> {
+    let message = match file {
         Some(path) if path.as_os_str() == "-" => {
             let mut text = String::new();
             std::io::stdin()
@@ -248,7 +252,7 @@ fn read_message(args: &SendArgs) -> Result<String, Failure> {
         Some(path) => {
             std::fs::read_to_string(path).map_err(|_| Failure::usage("couldn't read the UTF-8 message file"))?
         }
-        None => args.text.join(" "),
+        None => words.join(" "),
     };
     if message.trim().is_empty() {
         return Err(Failure::usage("a nonempty message is required"));

@@ -394,7 +394,7 @@ function SSHProfileEditor({ profile: initial, isNew }: { profile: SSHProfile; is
           <div className="settings-row">
             <span>Key</span>
             <Spacer />
-            <Text tone="secondary">{profile.identityFile?.split('/').pop() ?? tr(`ssh-agent / SSH config`)}</Text>
+            <Text tone="secondary">{profile.identityFile?.split(/[\\/]/).pop() ?? tr(`ssh-agent / SSH config`)}</Text>
             <IconButton
               title="Choose key file"
               icon="key"

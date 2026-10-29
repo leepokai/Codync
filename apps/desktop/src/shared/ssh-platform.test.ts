@@ -4,9 +4,9 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { knownHostsFiles, tunnelArguments } from '../main/ssh-command.ts'
+import { knownHostsFiles, ownsWindowsTunnel, presentedKeyArguments, tunnelArguments } from '../main/ssh-command.ts'
+import { listenerCommand, run, sshListens, sshTools } from '../main/ssh-process.ts'
 import { isAbsoluteKeyPath, validate } from '../main/ssh-profile.ts'
-import { listenerCommand, ownsWindowsTunnel, run, sshListens, sshTools } from '../main/ssh-process.ts'
 import type { SSHProfile } from './ssh.ts'
 
 const profile: SSHProfile = { id: 'test', host: 'test-host', user: null, port: null, identityFile: null, remotePort: 19222, computerId: null, name: '' }
@@ -29,6 +29,18 @@ test('Windows uses native OpenSSH and normalizes quoted known_hosts paths', asyn
   assert.match(result.stdout, /localforward (?:\[)?127\.0\.0\.1(?:\])?:19333 (?:\[)?127\.0\.0\.1(?:\])?:19222/)
 })
 
+test('Windows host key scan files the presented key in a scratch known_hosts and never signs in', async () => {
+  const args = presentedKeyArguments({ hostname: '127.0.0.1', port: 2222, hostKeyAlias: null, proxyJump: null, proxyCommand: null }, 'C:\\Users\\Test User\\Temp\\known_hosts')
+  const result = await run(sshTools().ssh, ['-G', ...args])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^userknownhostsfile C:\/Users\/Test User\/Temp\/known_hosts$/m)
+  assert.match(result.stdout, /^globalknownhostsfile C:\/Users\/Test User\/Temp\/known_hosts$/m)
+  assert.match(result.stdout, /^stricthostkeychecking accept-new$/m)
+  assert.match(result.stdout, /^preferredauthentications none$/m)
+  assert.match(result.stdout, /^batchmode yes$/m)
+  assert.match(result.stdout, /^port 2222$/m)
+})
+
 test('key selection accepts native absolute paths and rejects drive-relative paths', () => {
   for (const path of ['C:\\Users\\Test User\\key.pub', 'D:/SSH/key', '\\\\server\\share\\key']) assert.equal(isAbsoluteKeyPath(path, 'win32'), true, path)
   for (const path of ['key', 'C:key', '\\key', '/key', '~/key']) assert.equal(isAbsoluteKeyPath(path, 'win32'), false, path)
@@ -45,16 +57,16 @@ test('key selection accepts native absolute paths and rejects drive-relative pat
 
 test('Windows orphan cleanup recognizes only this variant and its native ssh executable', () => {
   const binary = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'
-  const marker = 'C:/Users/Test User/.codync/ssh_known_hosts'
+  const dir = 'C:\\Users\\Test User\\.codync'
   const options = String.raw`"UserKnownHostsFile=\"C:/Users/Test User/.ssh/known_hosts\" \"C:/Users/Test User/.codync/ssh_known_hosts\""`
   const owned = { ProcessId: 123, ExecutablePath: binary, CommandLine: `"${binary}" -N -T -o ${options} -L 127.0.0.1:19333:127.0.0.1:19222 -- test-host` }
-  assert.equal(ownsWindowsTunnel(owned, binary, marker), true)
-  assert.equal(ownsWindowsTunnel(owned, binary, marker.replace('.codync/', '.codync-dev/')), false)
-  assert.equal(ownsWindowsTunnel(owned, binary, marker.replace('Test User', 'Other User')), false)
-  assert.equal(ownsWindowsTunnel({ ...owned, ExecutablePath: 'C:\\Other\\ssh.exe' }, binary, marker), false)
-  assert.equal(ownsWindowsTunnel({ ...owned, CommandLine: owned.CommandLine.replace(' -N ', ' ') }, binary, marker), false)
-  assert.equal(ownsWindowsTunnel({ ...owned, CommandLine: owned.CommandLine.replace('ssh_known_hosts', 'ssh_known_hosts_other') }, binary, marker), false)
-  assert.equal(ownsWindowsTunnel({ ...owned, CommandLine: null }, binary, marker), false)
+  assert.equal(ownsWindowsTunnel(owned, binary, dir), true)
+  assert.equal(ownsWindowsTunnel(owned, binary, `${dir}-dev`), false)
+  assert.equal(ownsWindowsTunnel(owned, binary, dir.replace('Test User', 'Other User')), false)
+  assert.equal(ownsWindowsTunnel({ ...owned, ExecutablePath: 'C:\\Other\\ssh.exe' }, binary, dir), false)
+  assert.equal(ownsWindowsTunnel({ ...owned, CommandLine: owned.CommandLine.replace(' -N ', ' ') }, binary, dir), false)
+  assert.equal(ownsWindowsTunnel({ ...owned, CommandLine: owned.CommandLine.replace('ssh_known_hosts', 'ssh_known_hosts_other') }, binary, dir), false)
+  assert.equal(ownsWindowsTunnel({ ...owned, CommandLine: null }, binary, dir), false)
 })
 
 test('listener ownership accepts the listening process and rejects another process', async () => {

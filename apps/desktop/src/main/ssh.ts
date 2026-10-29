@@ -7,9 +7,10 @@ import { join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { dataDir } from './host-controller'
 import type { SSHAttachment, SSHProfile, SSHState, SSHStatus } from '../shared/ssh'
-import { infoArguments, knownHostsFiles, resolveArguments, tunnelArguments } from './ssh-command'
-import { authRefused, consistent, hostKeys, keyscanArguments, knownHostsLines, knownHostsName, parseConfig, parseInfo, usesProxy, validate } from './ssh-profile'
-import { KEYGEN, KEYSCAN, SSH, killOrphanTunnels, lastLine, run, sshListens } from './ssh-process'
+import { codyncKnownHosts, infoArguments, keyscanArguments, knownHostsFiles, resolveArguments, tunnelArguments } from './ssh-command'
+import { authRefused, consistent, hostKeys, knownHostsLines, knownHostsName, parseConfig, parseInfo, usesProxy } from './ssh-parse'
+import { KEYGEN, KEYSCAN, SSH, killOrphanTunnels, lastLine, missingTools, run, scanHostKeys, sshListens } from './ssh-process'
+import { validate } from './ssh-profile'
 
 // SSH computers: profiles, host key checks and one
 // OpenSSH tunnel per connected profile. Arguments are always an argv array, never a shell string.
@@ -83,7 +84,7 @@ class SSHComputers {
 
   async connectAll() {
     // Before this copy has tunnels of its own, so only leftovers from an earlier copy match.
-    if (this.tunnels.size === 0 && this.tasks.size === 0) await killOrphanTunnels(home, dataDir)
+    if (this.tunnels.size === 0 && this.tasks.size === 0) await killOrphanTunnels(dataDir)
     for (const p of this.profiles) if (!this.tasks.has(p.id) && !this.tunnels.has(p.id)) this.connect(p.id)
   }
 
@@ -140,7 +141,7 @@ class SSHComputers {
     if (this.status.get(id)?.kind !== 'confirmHostKey' || !lines) return
     try {
       await fs.mkdir(dataDir, { recursive: true, mode: 0o700 })
-      await fs.appendFile(join(dataDir, 'ssh_known_hosts'), lines.join('\n') + '\n', { mode: 0o600 })
+      await fs.appendFile(codyncKnownHosts(dataDir), lines.join('\n') + '\n', { mode: 0o600 })
     } catch (e) {
       return this.setStatus(id, { kind: 'failed', message: `Couldn't save the host key: ${e instanceof Error ? e.message : String(e)}` })
     }
@@ -180,8 +181,7 @@ class SSHComputers {
     const id = profile.id
     const stop = (status: SSHStatus): Outcome => ({ kind: 'stop', status })
     const idle = stop({ kind: 'idle' })
-    const problem = validate(profile)
-    if (!existsSync(SSH) || !existsSync(KEYGEN) || !existsSync(KEYSCAN)) return stop({ kind: 'failed', message: process.platform === 'win32' ? 'Install OpenSSH Client in Windows Settings → Optional features, then connect again.' : 'Install OpenSSH, then connect again.' })
+    const problem = missingTools() ?? validate(profile)
     if (problem) return stop({ kind: 'failed', message: problem })
     this.setStatus(id, { kind: 'connecting', step: 'Reading SSH settings…' })
     const config = await run(SSH, resolveArguments(profile))
@@ -197,8 +197,7 @@ class SSHComputers {
         return stop({ kind: 'failed', message: `${profile.host} goes through a jump host. Connect once with ssh in Terminal to confirm its host key, then try again.` })
       }
       this.setStatus(id, { kind: 'connecting', step: 'Reading the host key…' })
-      const scan = await run(KEYSCAN, keyscanArguments(resolved))
-      const lines = knownHostsLines(scan.stdout, name)
+      const lines = knownHostsLines(await scanHostKeys(resolved), name)
       if (lines.length === 0) return { kind: 'retry', message: `Can't reach ${resolved.hostname}:${resolved.port}.` }
       const prints = await run(KEYGEN, ['-l', '-f', '-'], lines.join('\n') + '\n')
       const fingerprints = prints.stdout.split(/\r?\n/).filter(Boolean)
@@ -212,7 +211,8 @@ class SSHComputers {
     if (token.cancelled) return idle
     if (result.status === 255) {
       if (authRefused(result.stderr)) return stop({ kind: 'failed', message: signInRefused(profile) })
-      if (!usesProxy(resolved)) {
+      // Windows reads only the one key the host presents, which needn't be the pinned key's type.
+      if (!usesProxy(resolved) && process.platform !== 'win32') {
         const scan = await run(KEYSCAN, keyscanArguments(resolved))
         const current = hostKeys(scan.stdout)
         // Only plain host keys can be compared: a `@cert-authority` key is never what keyscan returns.

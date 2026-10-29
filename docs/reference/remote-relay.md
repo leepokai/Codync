@@ -570,7 +570,7 @@ The following implemented clarifications take precedence over the original contr
 - **Mailbox 重試**：沿用同一個 `clientNonce`，但每次重新 seal。
 - **ACL**：列表中 `grant` 為 null 的已封鎖 dk 會被解除封鎖；被封鎖的 dk 仍可開 pairing socket。
 - **帳號裝置 mailbox**：第一次拉取 state 之前收到的 item 先保留、不 ack。
-- **SSH forward**：以 `lsof` 確認本機 listener 屬於我們啟動的 `ssh`。
+- **SSH forward**：確認本機 listener 屬於我們啟動的 `ssh` 子行程才送出 host token：macOS/Linux 用 `lsof` 或 `/proc`，Windows 用 `Get-NetTCPConnection`。
 - **取消 access request**：iOS SAS sheet 有取消按鈕（`DELETE /v1/access-requests/{id}`）。
 
 ## 15. Limits and risks

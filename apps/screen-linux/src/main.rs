@@ -209,6 +209,7 @@ impl Helper {
             return;
         }
         *last = Some(status.clone());
+        // Fails only once the host link is gone; the next link starts a new Helper that sends its status first.
         let _ = self.notify("status", status);
     }
 
@@ -221,27 +222,35 @@ impl Helper {
             .map_err(|_| anyhow!("the host link closed"))
     }
 
+    /// Tells the host a session's state. It fails only once the host link is gone, and the host drops every session
+    /// of a helper whose link ended, so a lost notice changes nothing there.
+    fn notify_session(&self, id: &str, state: &str) {
+        if let Err(error) = self.notify("session", json!({"session": id, "state": state})) {
+            tracing::debug!(%error, session = id, state, "session notice not sent");
+        }
+    }
+
     /// A session's WebRTC connection ended on its own.
     pub fn ended(self: &Arc<Self>, id: &str) {
         let this = self.clone();
         let id = id.to_owned();
         self.rt.spawn(async move {
             this.sessions.close(&id).await;
-            let _ = this.notify("session", json!({"session": id, "state": "closed"}));
+            this.notify_session(&id, "closed");
         });
     }
 
     async fn connected(&self, id: &str, peer: &gst::Element) {
         let live = self.sessions.is_live(id, peer).await;
         if live {
-            let _ = self.notify("session", json!({"session": id, "state": "connected"}));
+            self.notify_session(id, "connected");
         }
     }
 
     async fn ended_peer(&self, id: &str, peer: &gst::Element) {
         self.sessions
             .close_peer(id, peer, || {
-                let _ = self.notify("session", json!({"session": id, "state": "closed"}));
+                self.notify_session(id, "closed");
             })
             .await;
     }

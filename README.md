@@ -158,6 +158,7 @@ and computer identity; do not use **Reset all data**, a cleanup utility, or Home
 |---|---|
 | `codync-host install` / `uninstall` | background service (launchd on macOS, systemd `--user` on Linux, the sign-in Run key on Windows) |
 | `codync-host tui [--url … --token …]` | message your bots from a terminal (this computer by default; SSH-friendly) |
+| `codync-host send --bot <id-or-name> [--wait] [--json] <text>...` | send from a script, optionally waiting for the final reply |
 | `codync-host pair [--json]` | pairing QR code / link |
 | `codync-host status` | installed? running? |
 | `codync-host serve [--port 19222]` | run in the foreground |
@@ -168,7 +169,17 @@ and computer identity; do not use **Reset all data**, a cleanup utility, or Home
 | `codync-host devices` | list/revoke authorized remote devices |
 | `codync-host access` | review device access requests |
 
-Data lives in `~/.codync`. The local bearer token authorizes loopback helpers and SSH-forwarded callers. Remote devices use individual keys and grants over the encrypted channel; revoke a lost device through device management rather than rotating the loopback token. Host methods and caller permissions live in `host/src/api/`.
+For non-interactive work, send a message and wait for a machine-readable result:
+
+```powershell
+codync-host send --bot reviewer --wait --json "Review the current diff without modifying files."
+```
+
+`--bot` accepts an ID or an exact, case-insensitive name; duplicate names require an ID. Use positional text or `--file request.txt` to read UTF-8 (`--file -` reads stdin). `--reply-to <id>` quotes a message of the bot's chat: the `entryId` or `replyId` of an earlier `--json` result. Without `--wait`, the command prints the accepted message's `id`, `seq` and `turn`; with `--wait`, it prints the reply once the bot is done (a reply in several messages comes joined; a turn that ends with no text, such as only a reaction, prints nothing). Group chats can't be waited on. Queued messages retain the host's batching behavior, so multiple sends can share one reply and turn.
+
+`--timeout <seconds>` defaults to 1800 active seconds. Pending approval pauses the clock and prints a summary to stderr; the command never approves a request or stops the bot on timeout. Notices also go to stderr. `--json` emits one JSON object with `botId`, `entryId`, `entrySeq`, `turn`, `status` (`completed`, `failed`, or `timeout`), optional `stopReason`, `reply` and `replyId`, `notices`, `elapsedSeconds` (wall time), and `waitedForApprovalSeconds`. Without `--wait`, `completed` means the send was accepted. Errors before acceptance only use stderr. Exit codes are **0** completed/accepted, **1** stopped/limited/declined/failed, **2** invalid arguments, missing/ambiguous bot or `--wait` on a group chat, **3** unavailable host or refused API request, and **4** timeout. See `codync-host send --help` for all options.
+
+Data lives in `~/.codync`. The local bearer token authorizes loopback helpers and SSH-forwarded callers. Use `--port` and `CODYNC_HOME` when targeting a host with a different port or data directory; development builds default to port 19223 and `~/.codync-dev`. Remote devices use individual keys and grants over the encrypted channel; revoke a lost device through device management rather than rotating the loopback token. Host methods and caller permissions live in `host/src/api/`.
 
 ## FAQ
 

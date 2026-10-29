@@ -9,6 +9,7 @@ Codync/
 ├── host/                      # Rust daemon and terminal client
 │   ├── src/
 │   │   ├── main.rs            # CLI entry, shared helpers (LockExt, http)
+│   │   ├── *_cli.rs           # Subcommands with their own module: cloud, network, send (+ send_cli/: event feed, --wait)
 │   │   ├── hub.rs, store/     # Shared state + event fan-out / SQLite persistence (schema, model, bots, entries, devices)
 │   │   ├── service/           # Data dir, launchd/systemd/Windows install, keep-awake
 │   │   ├── usage/, mcp.rs     # usage/: plan limits from each agent; mcp.rs: built-in stdio MCP servers; mcp/remote.rs: remote connector proxy
@@ -88,7 +89,7 @@ Codync/
 
 | Responsibility | Source entry points |
 |---|---|
-| CLI and background service | `host/src/main.rs`, `service/` |
+| CLI and background service | `host/src/main.rs`, `service/`; subcommands `cloud_cli.rs`, `network_cli.rs`, `send_cli.rs` (+ `send_cli/events.rs`, `wait.rs`) |
 | API, caller permissions, event ordering | `host/src/api/`, `hub.rs` |
 | SQLite transcript, bots, lanes and sessions | `host/src/store/` (`entries.rs`, `bots.rs`, `model.rs`, `devices.rs`, `schema.rs`) |
 | Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`launch.rs`, `queue.rs`, `session.rs`, `turn.rs`, `updates.rs`), `acp.rs` (+ `acp/codebuddy.rs`, CodeBuddy's ACP extensions), `process.rs` (process-tree ownership; `process_windows.rs` on Windows) |

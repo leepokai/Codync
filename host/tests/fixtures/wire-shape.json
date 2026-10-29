@@ -179,6 +179,7 @@
     "event:entry(user).rev": "number",
     "event:entry(user).type": "string",
     "event:hello": "object",
+    "event:hello.catchUp": "number",
     "event:hello.computerId": "string",
     "event:hello.hostId": "string",
     "event:hello.network": "object",

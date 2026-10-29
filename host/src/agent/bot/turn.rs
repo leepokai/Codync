@@ -295,13 +295,15 @@ impl Actor {
                 let tail = self.exit_tail.take().filter(|t| !t.is_empty());
                 if !self.invite_sign_in(e) {
                     let detail = tail.map(|t| format!("\n\n{}", acp::truncate(&t, 1200))).unwrap_or_default();
-                    self.failure_notice(e, &format!("The agent failed: {e}{detail}"));
+                    self.failure_notice(e, &format!("The agent failed: {e}{detail}"), "error");
                 }
             }
-            (_, "cancelled") | (Err(_), _) => self.notice("Stopped.", NoticeStyle::Info),
-            (_, "max_tokens") => self.notice("The agent hit its output limit.", NoticeStyle::Info),
-            (_, "max_turn_requests") => self.notice("The agent hit its step limit for this turn.", NoticeStyle::Info),
-            (_, "refusal") => self.notice("The agent declined to continue.", NoticeStyle::Info),
+            (_, "cancelled") | (Err(_), _) => self.stop_notice("Stopped.", "cancelled"),
+            (_, "max_tokens") => self.stop_notice("The agent hit its output limit.", "max_tokens"),
+            (_, "max_turn_requests") => {
+                self.stop_notice("The agent hit its step limit for this turn.", "max_turn_requests");
+            }
+            (_, "refusal") => self.stop_notice("The agent declined to continue.", "refusal"),
             (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg.backend),
             _ => {}
         }
@@ -398,6 +400,11 @@ impl Actor {
 }
 
 impl Actor {
+    /// Says why the running turn ended early; `stopReason` tells scripts (`codync-host send`) without the words.
+    fn stop_notice(&self, text: &str, reason: &str) {
+        self.notice_data(json!({"text": text, "style": NoticeStyle::Info, "stopReason": reason}));
+    }
+
     /// Ends what an attempt left open: file shares, the last text, unanswered permission cards (they can't be
     /// answered after the turn) and tool calls the agent never closed out (they'd spin forever in the trace).
     pub(super) fn close_attempt(&mut self, failed: bool) {

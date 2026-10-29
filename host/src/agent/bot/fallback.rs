@@ -333,9 +333,10 @@ impl Actor {
     }
 
     /// The failure notice: with a failure that moves on, a bot without fallbacks offers to add one, and a bot whose
-    /// agents all failed this turn (`fall_back` ran out of them) says how each one is.
-    pub(super) fn failure_notice(&self, error: &anyhow::Error, text: &str) {
-        let mut data = json!({"text": text, "style": NoticeStyle::Error});
+    /// agents all failed this turn (`fall_back` ran out of them) says how each one is. It carries the turn's stop
+    /// `reason` (see `stop_notice`).
+    pub(super) fn failure_notice(&self, error: &anyhow::Error, text: &str, reason: &str) {
+        let mut data = json!({"text": text, "style": NoticeStyle::Error, "stopReason": reason});
         match fallback::reason::of(error) {
             Some(Reason::UsageLimit | Reason::OutOfCredits | Reason::RateLimited | Reason::Overloaded)
                 if self.base.fallbacks.is_empty() =>

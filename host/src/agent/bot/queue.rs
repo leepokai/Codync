@@ -313,7 +313,7 @@ impl Actor {
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
         if !self.invite_sign_in(e) {
             // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
-            self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"));
+            self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"), "start_failed");
         }
         // What the chain carried in (a recap, a takeover) was this turn's; the user's handoff waits for the next.
         self.relay.carried = None;

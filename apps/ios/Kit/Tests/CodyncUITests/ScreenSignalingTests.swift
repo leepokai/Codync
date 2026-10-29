@@ -140,6 +140,16 @@ private let secondCandidate = ScreenCandidate(candidate: "candidate:2 1 UDP 1 19
     }
 }
 
+@Test @MainActor func aSignalingFailureBeforeReadyThrowsItsReason() async throws {
+    let transport = ScreenTransport()
+    let local = AsyncThrowingStream<ScreenCandidate, Error>.makeStream(bufferingPolicy: .bufferingOldest(129))
+    let signaling = ScreenSignaling(client: HostClient(transport: transport), session: "session", localPair: local,
+                                    applyCandidate: { _ in }, onFailure: { _ in })
+    let subscription = Task { try await signaling.subscribe() }
+    transport.emit(#"{"type":"error","message":"unknown screen session"}"#)
+    await #expect(throws: ScreenError.signalingFailed("unknown screen session")) { try await subscription.value }
+}
+
 private actor FailingSignalingTransport: HostTransport {
     private(set) var preparations = 0
 

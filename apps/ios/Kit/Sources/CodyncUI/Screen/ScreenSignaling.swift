@@ -151,7 +151,7 @@ final class ScreenSignaling {
 
     private func finishTasks() {
         deadline?.cancel()
-        ready?.resume(throwing: CancellationError())
+        ready?.resume(throwing: failure ?? CancellationError())
         ready = nil
         answerWaiter?.resume()
         answerWaiter = nil

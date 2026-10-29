@@ -248,9 +248,10 @@ public final class ScreenSession {
                 } catch {
                     guard !Task.isCancelled, self.phase != .closed else { return }
                     log.info("screen reconnect failed: \(error.localizedDescription)")
-                    self.lastError = error.localizedDescription
+                    // A failed signaling attempt cancels the rest of it; keep the reason its failure recorded.
+                    if !(error is CancellationError) { self.lastError = error.localizedDescription }
                     if self.recoveryAttempts >= Self.maxRecoveryAttempts {
-                        self.fail(error.localizedDescription)
+                        self.fail(self.lastError ?? error.localizedDescription)
                         return
                     }
                     try? await Task.sleep(for: .seconds(min(Double(self.recoveryAttempts) * 2, 10)))

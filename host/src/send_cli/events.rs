@@ -15,7 +15,8 @@ enum Phase {
     Ready,
     /// The running host is older than this command: its `hello` doesn't say how long the catch-up is.
     Outdated,
-    Disconnected,
+    /// Why the event stream ended.
+    Disconnected(String),
 }
 
 /// How a tracked turn ended, as the bot's status said.
@@ -110,18 +111,18 @@ impl BotFeed {
         let (sender, receiver) = watch::channel(State::default());
         let writer = sender.clone();
         let task = tokio::spawn(async move {
-            read_events(response, &writer).await;
-            writer.send_modify(|s| s.phase = Phase::Disconnected);
+            let why = read_events(response, &writer).await;
+            writer.send_modify(|s| s.phase = Phase::Disconnected(why));
         });
         let mut feed = Self { sender, receiver, task };
         tokio::time::timeout(Duration::from_secs(20), async {
             loop {
-                match feed.receiver.borrow().phase {
+                match &feed.receiver.borrow().phase {
                     Phase::Ready => return Ok(()),
                     Phase::Outdated => {
                         return Err(Failure::host("the running host is older than this command; restart it"));
                     }
-                    Phase::Disconnected => return Err(Failure::host("the host event stream disconnected")),
+                    Phase::Disconnected(why) => return Err(disconnected(why)),
                     Phase::Loading => {}
                 }
                 feed.changed().await?;
@@ -146,8 +147,8 @@ impl BotFeed {
     /// Where the turn answering sent message `entry` stands.
     pub fn progress(&self, entry: &str) -> Result<Progress, Failure> {
         let state = self.receiver.borrow();
-        if state.phase == Phase::Disconnected {
-            return Err(Failure::host("the host event stream disconnected"));
+        if let Phase::Disconnected(why) = &state.phase {
+            return Err(disconnected(why));
         }
         let tracked = state.tracking.as_ref().expect("track is called before waiting");
         let turn = tracked.assigned.get(entry).copied();
@@ -253,14 +254,23 @@ impl State {
     }
 }
 
-async fn read_events(response: reqwest::Response, sender: &watch::Sender<State>) {
+fn disconnected(why: &str) -> Failure {
+    Failure::host(format!("the host event stream disconnected: {why}"))
+}
+
+/// Reads events into `sender` until the stream ends, and says why it did.
+async fn read_events(response: reqwest::Response, sender: &watch::Sender<State>) -> String {
     let mut events = std::pin::pin!(crate::tui::net::sse_values(response));
     // Catch-up events still to come, once `hello` has said how many.
     let mut left = None;
-    while let Some(Ok(event)) = events.next().await {
+    while let Some(event) = events.next().await {
+        let event = match event {
+            Ok(event) => event,
+            Err(e) => return e.to_string(),
+        };
         // A lagged stream lost turn transitions that a current bot snapshot can't bring back.
         if event["type"] == "resync" {
-            return;
+            return "it fell behind".to_owned();
         }
         sender.send_modify(|s| {
             if event["type"] == "hello" {
@@ -277,4 +287,5 @@ async fn read_events(response: reqwest::Response, sender: &watch::Sender<State>)
             }
         });
     }
+    "the host closed it".to_owned()
 }

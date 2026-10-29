@@ -262,7 +262,7 @@ async fn lost_events_fail_after_acceptance_without_stopping_the_bot() {
     let result = json_output(&output, 3);
     assert_eq!(result["status"], "failed");
     assert_eq!(result["stopReason"], "error");
-    assert_ne!(result["notices"].as_array().unwrap().as_slice(), [] as [serde_json::Value; 0]);
+    assert_eq!(result["notices"][0], "the host event stream disconnected: it fell behind");
     assert!(!String::from_utf8_lossy(&output.stderr).contains(&host.token));
     assert!(!String::from_utf8_lossy(&output.stdout).contains(&host.token));
     assert_eq!(mock.requests().len(), 1);

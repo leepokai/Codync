@@ -232,11 +232,16 @@ impl Client {
                     }
                     let mut events = std::pin::pin!(sse_values(res));
                     while let Some(v) = events.next().await {
-                        let Ok(v) = v else {
-                            // Never skip what we can't read: start over from scratch.
-                            c.rev.store(0, Ordering::Relaxed);
-                            let _ = tx.send(Msg::Rewind);
-                            break;
+                        let v = match v {
+                            Ok(v) => v,
+                            // A dropped connection reconnects from the last rev, like the stream ending.
+                            Err(SseError::Read(_)) => break,
+                            Err(SseError::Json(_)) => {
+                                // Never skip what we can't read: start over from scratch.
+                                c.rev.store(0, Ordering::Relaxed);
+                                let _ = tx.send(Msg::Rewind);
+                                break;
+                            }
                         };
                         if v["type"] == "resync" {
                             break;
@@ -258,20 +263,48 @@ impl Client {
     }
 }
 
-/// The JSON of each `data:` line of a server-sent event stream until it ends (`Err` for one that isn't JSON).
-pub fn sse_values(res: reqwest::Response) -> impl futures::Stream<Item = serde_json::Result<Value>> {
-    let lines = futures::stream::unfold((Box::pin(res.bytes_stream()), Vec::new()), |(mut body, mut buf)| async move {
+/// Why an event stream gave something other than an event.
+pub enum SseError {
+    /// The connection failed; the stream ends after it.
+    Read(reqwest::Error),
+    /// An event that isn't JSON.
+    Json(serde_json::Error),
+}
+
+impl std::fmt::Display for SseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Read(e) => write!(f, "{e}"),
+            Self::Json(e) => write!(f, "an event that isn't JSON ({e})"),
+        }
+    }
+}
+
+/// The JSON of each `data:` line of a server-sent event stream until it ends.
+pub fn sse_values(res: reqwest::Response) -> impl futures::Stream<Item = Result<Value, SseError>> {
+    let body = Box::pin(res.bytes_stream());
+    let lines = futures::stream::unfold(Some((body, Vec::new())), |state| async move {
+        let (mut body, mut buf) = state?;
         loop {
             if let Some(i) = buf.iter().position(|&b| b == b'\n') {
                 let line: Vec<u8> = buf.drain(..=i).collect();
-                return Some((line, (body, buf)));
+                return Some((Ok(line), Some((body, buf))));
             }
-            buf.extend_from_slice(&body.next().await?.ok()?);
+            match body.next().await? {
+                Ok(chunk) => buf.extend_from_slice(&chunk),
+                Err(e) => return Some((Err(SseError::Read(e)), None)),
+            }
         }
     });
     lines.filter_map(|line| async move {
+        let line = match line {
+            Ok(line) => line,
+            Err(e) => return Some(Err(e)),
+        };
         let line = String::from_utf8_lossy(&line);
-        line.trim_end().strip_prefix("data:").map(|data| serde_json::from_str(data.trim_start()))
+        line.trim_end()
+            .strip_prefix("data:")
+            .map(|data| serde_json::from_str(data.trim_start()).map_err(SseError::Json))
     })
 }
 

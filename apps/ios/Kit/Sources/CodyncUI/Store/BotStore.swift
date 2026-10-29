@@ -107,6 +107,8 @@ public final class BotStore {
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// Section moves shown but not answered yet, oldest first.
+    @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 
     var rev: Int64 = 0
     var hostId: String?
@@ -207,6 +209,17 @@ public final class BotStore {
             return $0.lastAt > $1.lastAt
         }
     }
+
+    /// Every section on this computer by name, hidden and pinned bots' too (a row's "Move to section").
+    public var sections: [String] { RosterSection.sorted(Set(bots.values.compactMap(\.section))) }
+
+    /// Roster sections came with host 2.32.0: an older one drops a bot's `section` and has no
+    /// `renameSection`, so its bots offer no "Move to section". Unknown until the host answers.
+    public var supportsSections: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.sectionsHost) } ?? false
+    }
+
+    static let sectionsHost = "2.32.0"
 
     /// Display name for a harness id, as the host reports it (falls back to the built-in list).
     public func backendName(_ id: String) -> String {

@@ -95,6 +95,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             tokio::task::spawn_blocking(move || hub.reorder_bots(&ids)).await??;
             json!({})
         }
+        // Every bot in section `from` moves to `to`; `null` or an empty name removes the section.
+        "renameSection" => {
+            const TO: &str = "`to` must be a section name or null";
+            let from = str_arg(&b, "from")?.to_owned();
+            // A missing `to` is refused, not read as null: a client bug must not strip every section.
+            let to: Option<String> = serde_json::from_value(b.get("to").cloned().context(TO)?).context(TO)?;
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
+            json!({})
+        }
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;
             json!({})

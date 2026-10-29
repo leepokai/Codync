@@ -53,6 +53,8 @@ data class Bot(
     val pinned: Boolean = false,
     /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
     val lead: Boolean = false,
+    /** The roster section the user put it in; null for none (or a host without sections). Kept while pinned or hidden. */
+    val section: String? = null,
     /** Where the user dragged it in the roster, synced by the host to every device. */
     val position: Int = 0,
     val hidden: Boolean = false,

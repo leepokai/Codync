@@ -73,6 +73,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -337,14 +338,25 @@ val LocalCardStyle = staticCompositionLocalOf { CardStyle.Filled }
     actions: KeyboardActions = KeyboardActions.Default) {
     BasicTextField(text, onChange, modifier, enabled = enabled, singleLine = singleLine, minLines = minLines, maxLines = maxLines,
         textStyle = style.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent), keyboardOptions = keyboard, keyboardActions = actions,
-        decorationBox = { field ->
-            val centered = style.textAlign == TextAlign.Center
-            // A centered field spans its width, so its placeholder and empty cursor sit in the middle too.
-            Box(contentAlignment = Alignment.CenterStart, propagateMinConstraints = centered) {
-                if (text.isEmpty()) Text(tr(prompt), style = style, color = Palette.tertiary, maxLines = if (singleLine) 1 else Int.MAX_VALUE)
-                field()
-            }
-        })
+        decorationBox = plainDecoration(text.isEmpty(), prompt, style, singleLine))
+}
+
+/** [PlainTextField] over a [TextFieldValue], for a field that starts with its cursor somewhere (a name to edit: at its end). */
+@Composable fun PlainTextField(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, modifier: Modifier = Modifier, prompt: String = "",
+    singleLine: Boolean = false, style: TextStyle = Type.body, imeAction: ImeAction = ImeAction.Default,
+    keyboard: KeyboardOptions = KeyboardOptions(imeAction = imeAction), actions: KeyboardActions = KeyboardActions.Default) {
+    BasicTextField(value, onChange, modifier, singleLine = singleLine, textStyle = style.copy(color = Palette.text),
+        cursorBrush = SolidColor(Palette.accent), keyboardOptions = keyboard, keyboardActions = actions,
+        decorationBox = plainDecoration(value.text.isEmpty(), prompt, style, singleLine))
+}
+
+private fun plainDecoration(empty: Boolean, prompt: String, style: TextStyle, singleLine: Boolean): @Composable (@Composable () -> Unit) -> Unit = { field ->
+    val centered = style.textAlign == TextAlign.Center
+    // A centered field spans its width, so its placeholder and empty cursor sit in the middle too.
+    Box(contentAlignment = Alignment.CenterStart, propagateMinConstraints = centered) {
+        if (empty) Text(tr(prompt), style = style, color = Palette.tertiary, maxLines = if (singleLine) 1 else Int.MAX_VALUE)
+        field()
+    }
 }
 
 /** A row that expands to show more: the replacement for `DisclosureGroup`. */

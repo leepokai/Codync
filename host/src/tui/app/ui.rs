@@ -349,6 +349,8 @@ pub enum Click {
     Steps,
     /// A bot-message row (entry id): opens the conversation.
     BotChat(String),
+    /// A section's label (its name): folds or unfolds it, like `z`.
+    Section(String),
 }
 
 #[derive(Default)]

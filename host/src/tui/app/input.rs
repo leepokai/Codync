@@ -212,7 +212,7 @@ impl App {
                         }
                     }
                     _ => {
-                        if let Some(id) = self.roster().get(i).map(|b| b.id.clone()) {
+                        if let Some(id) = self.stop_at(i) {
                             self.select(&id);
                         }
                     }
@@ -373,6 +373,9 @@ impl App {
                     self.call("updateBot", json!({"id": id, "pinned": pinned}), After::Nothing);
                 }
             }
+            KeyCode::Char('w') => self.ask_section(),
+            KeyCode::Char('W') => self.ask_rename_section(),
+            KeyCode::Char('z') => self.toggle_section(),
             KeyCode::Char('c') => self.copy_last(),
             _ => {}
         }
@@ -418,6 +421,10 @@ impl App {
                     Some(Click::Composer) => self.start_typing(),
                     Some(Click::Steps) => self.toggle_steps(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
+                    Some(Click::Section(name)) => {
+                        self.click_section(&name);
+                        self.focus = Focus::Roster;
+                    }
                     None => {
                         if self.overlays.is_empty() {
                             if self.hits.trace.contains(at) {

@@ -37,14 +37,7 @@ public struct BotRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     preview
                     Spacer(minLength: 4)
-                    if bot.unread > 0 {
-                        Text(L10n.tr("\(bot.unread)"))
-                            .font(.caption2.bold())
-                            .foregroundStyle(Palette.onAccent)
-                            .padding(.horizontal, 6)
-                            .frame(minWidth: 18, minHeight: 18)
-                            .background(Palette.accentFill, in: Capsule())
-                    }
+                    if bot.unread > 0 { UnreadBadge(count: bot.unread) }
                 }
             }
         }
@@ -84,5 +77,21 @@ public struct BotRow: View {
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(1)
         }
+    }
+}
+
+/// An unread count in an accent capsule: a bot's, or a folded section's.
+public struct UnreadBadge: View {
+    let count: Int
+
+    public init(count: Int) { self.count = count }
+
+    public var body: some View {
+        Text("\(count)")
+            .font(.caption2.bold())
+            .foregroundStyle(Palette.onAccent)
+            .padding(.horizontal, 6)
+            .frame(minWidth: 18, minHeight: 18)
+            .background(Palette.accentFill, in: Capsule())
     }
 }

@@ -221,6 +221,7 @@ impl App {
             After::Hello => {
                 self.mismatch = crate::compat::check(env!("CARGO_PKG_VERSION"), crate::compat::MIN_HOST, &v);
                 v["name"].as_str().unwrap_or("computer").clone_into(&mut self.host);
+                v["version"].as_str().unwrap_or_default().clone_into(&mut self.host_version);
                 v["home"].as_str().unwrap_or_default().clone_into(&mut self.home);
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);

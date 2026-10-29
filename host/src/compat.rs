@@ -42,6 +42,11 @@ fn below(version: &str, minimum: &str) -> bool {
     matches!((parse(version), parse(minimum)), (Some(v), Some(m)) if v < m)
 }
 
+/// Whether `version` is `minimum` or newer; unreadable versions count as newer.
+pub fn at_least(version: &str, minimum: &str) -> bool {
+    !below(version, minimum)
+}
+
 /// Checks a client of version `app` with floor `min_host` against a host's `hello`.
 /// Hosts that predate `minApp` only get the floor check.
 pub fn check(app: &str, min_host: &str, hello: &Value) -> Option<Mismatch> {

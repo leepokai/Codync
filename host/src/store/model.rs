@@ -104,6 +104,9 @@ pub struct BotConfig {
     pub position: i64,
     #[serde(default)]
     pub hidden: bool,
+    /// The roster section it shows in; none when unset. Trimmed and checked (`hub::sections`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
     #[serde(default)]
     pub notify: Option<bool>,
     /// Connector ids (MCP servers) handed to the agent; see `market`.

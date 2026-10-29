@@ -52,6 +52,10 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     internal val transportRequired: Boolean get() = foreground || state.value.voice != null
     internal val sends = mutableSetOf<String>()
     internal val actions = mutableMapOf<String, Job>()
+    /** The bots as the mirror last had them; the state shows them with [pendingSectionMoves] laid over (`withMoves`). */
+    internal var mirrorBots: List<Bot> = emptyList()
+    /** Section moves shown but not answered yet, oldest first. */
+    internal val pendingSectionMoves = mutableListOf<SectionMove>()
     internal var pluginsRefreshAgain = false
     internal var widgetOwner: WidgetOwner? = null
     /** The host version an undecodable event already made the mirror fetch everything again for. */
@@ -135,6 +139,8 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         channel?.close(); channel = null
         connectionJob = null; pairingJob = null; graceJob = null
         actions.clear(); sends.clear(); downloadLocks.clear(); cloud = null
+        // A cancelled section move never heard back: it would lie over the next mirror for good.
+        pendingSectionMoves.clear(); mirrorBots = emptyList()
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
@@ -182,7 +188,8 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.IO) { retired.forEach(attachments::discard) }
         // Like iOS, a screen state this app can't read is a host without remote screen.
         val screen = snapshot.screen?.let { runCatching { ScreenState.decode(it) }.getOrNull() }
-        mutableState.update { current -> current.copy(bots = snapshot.bots, entries = snapshot.entries,
+        mirrorBots = snapshot.bots
+        mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = snapshot.entries,
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }
         if (voiceBinding != null && snapshot.bots.none { it.id == voiceBinding?.botId && !it.deleted }) endVoice("Voice chat ended because its bot was removed.")
@@ -209,8 +216,9 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         @Suppress("UNREACHABLE_CODE") error("Unreachable")
     }
 
-    internal fun action(key: String, operation: suspend () -> Unit) {
-        if (state.value.loading || key in state.value.busy) return
+    /** Runs [operation] as [key], its error shown; not while loading or while [key] still runs. Whether it started. */
+    internal fun action(key: String, operation: suspend () -> Unit): Boolean {
+        if (state.value.loading || key in state.value.busy) return false
         mutableState.update { it.copy(busy = it.busy + key, error = null) }
         val job = contextScope.launch(start = CoroutineStart.LAZY) {
             try { operation() }
@@ -220,6 +228,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         }
         actions[key] = job
         job.start()
+        return true
     }
 
     internal fun showError(error: Exception) { mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.") } }

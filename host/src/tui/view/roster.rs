@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
-use super::super::app::{App, Bot, Click, Focus, Mark, Status};
+use super::super::app::{App, Bot, Click, Focus, Mark, RosterLine, Status, cursor_line, roster_lines, stops};
 use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, restyle, rput, u};
@@ -50,61 +50,36 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             y += 1;
         }
     }
-    // Rows: an optional section label, then 2 lines per bot and a gap. The lead, on top, has no label.
-    let any_pinned = bots.iter().any(|b| b.pinned);
-    let mut rows: Vec<(u16, Option<&'static str>, Option<usize>)> = vec![];
+    // Lines: a label takes one row, a bot two and a gap.
+    let shown: Vec<&Bot> = bots.iter().collect();
+    let lines = roster_lines(&shown, &app.folded);
+    let mut rows: Vec<u16> = vec![];
     let mut y = 0u16;
-    for (i, b) in bots.iter().enumerate() {
-        if any_pinned && !b.lead && (i == 0 || bots[i - 1].band() != b.band()) {
-            rows.push((y, Some(if b.pinned { "PINNED" } else { "BOTS" }), None));
-            y += 1;
-        }
-        rows.push((y, None, Some(i)));
-        y += 3;
+    for line in &lines {
+        rows.push(y);
+        y += extent(line).0;
     }
-    let sel_idx = app.selected.as_ref().and_then(|s| bots.iter().position(|b| &b.id == s));
+    let cursor = cursor_line(&lines, app.selected.as_ref().and_then(|s| bots.iter().find(|b| &b.id == s)));
     let view_h = bottom.saturating_sub(top);
-    let sel_y = sel_idx.and_then(|i| rows.iter().find(|r| r.2 == Some(i)).map(|r| r.0)).unwrap_or(0);
-    let offset = (sel_y + 3).saturating_sub(view_h);
-    for (ry, label, idx) in rows {
+    let offset = cursor.map_or(0, |i| rows[i] + extent(&lines[i]).0).saturating_sub(view_h);
+    let bar = if focused { t.bold } else { t.secondary };
+    for (i, (line, &ry)) in lines.iter().zip(&rows).enumerate() {
         let Some(yy) = (top + ry).checked_sub(offset) else { continue };
-        if ry < offset || yy + 1 >= bottom {
+        if ry < offset || yy + extent(line).1 > bottom {
             continue;
         }
-        if let Some(l) = label {
-            put(buf, x0 + 1, yy, wd, l, t.dim.add_modifier(Modifier::BOLD));
-            continue;
+        if let Some(click) = line.click() {
+            app.hits.clicks.push((Rect::new(x0, yy, wd, extent(line).1), click));
         }
-        let Some(i) = idx else { continue };
-        let b = &bots[i];
-        let selected = Some(i) == sel_idx;
-        let row = Rect::new(x0, yy, wd, 2);
-        app.hits.clicks.push((row, Click::Bot(b.id.clone())));
-        if selected {
-            restyle(buf, row, t.sel);
-            let bar = if focused { t.bold } else { t.secondary };
-            put(buf, x0, yy, 1, "▌", bar);
-            put(buf, x0, yy + 1, 1, "▌", bar);
-        }
-        put_line(buf, x0 + 2, yy, 2, &avatar(app, b));
-        let (g, gs) = glyph(app, b.mark());
-        let time = if b.status == Status::Working { elapsed(b.started_at) } else { when(b.last_at) };
-        let tx = rput(buf, r.right() - 1, yy, &time, if b.unread > 0 { t.bold } else { t.dim });
-        let gx = tx.saturating_sub(2);
-        put(buf, gx, yy, 1, g, gs);
-        // The badge sits below the avatar, leaving activity and unread indicators visible.
-        if b.lead {
-            put(buf, x0 + 3, yy + 1, 1, "★", t.amber);
-            app.hits.clicks.push((Rect::new(x0 + 3, yy + 1, 1, 1), Click::LeadAgent));
-        }
-        let name_x = x0 + 5;
-        put(buf, name_x, yy, gx.saturating_sub(name_x + 1), &b.name, t.bold);
-        let (pv, ps) = preview(b);
-        let badge = if b.unread > 0 { format!(" {} ", b.unread) } else { String::new() };
-        let room = usize::from(wd.saturating_sub(7)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
-        put(buf, x0 + 5, yy + 1, u(room), &truncate(&pv, room), ps);
-        if !badge.is_empty() {
-            rput(buf, r.right() - 1, yy + 1, &badge, t.btn_primary);
+        let cursor_bar = (cursor == Some(i)).then_some(bar);
+        match line {
+            RosterLine::Label(l) => {
+                put(buf, x0 + 1, yy, wd, l, t.dim.add_modifier(Modifier::BOLD));
+            }
+            RosterLine::Section { name, bots: count, unread, folded, .. } => {
+                section_row(buf, Rect::new(x0, yy, wd, 1), cursor_bar, name, *count, *unread, *folded);
+            }
+            RosterLine::Bot(b) => bot_row(buf, Rect::new(x0, yy, wd, 2), app, b, cursor_bar),
         }
     }
     if !narrow {
@@ -115,6 +90,59 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         x = put(buf, x, hy, 10, "group", t.dim) + 2;
         x = put(buf, x, hy, 3, "^k", t.secondary.add_modifier(Modifier::BOLD)) + 1;
         put(buf, x, hy, 8, "go to", t.dim);
+    }
+}
+
+/// (rows a line takes in the list, rows it draws): a bot has a gap row below it.
+fn extent(line: &RosterLine<'_>) -> (u16, u16) {
+    if matches!(line, RosterLine::Bot(_)) { (3, 2) } else { (1, 1) }
+}
+
+/// A section's label row, `▾ name (bots)`: the name is cut so `(bots)` and a gap before the unread
+/// badge (shown while folded) always fit.
+fn section_row(buf: &mut Buffer, row: Rect, bar: Option<Style>, name: &str, bots: usize, unread: i64, folded: bool) {
+    let t = theme();
+    if let Some(bar) = bar {
+        mark_cursor(buf, row, bar);
+    }
+    let badge = if folded && unread > 0 { format!(" {unread} ") } else { String::new() };
+    let room = usize::from(row.width.saturating_sub(2)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
+    let tail = format!(" ({bots})");
+    let name = truncate(name, room.saturating_sub(2 + w(&tail)));
+    let label = format!("{} {name}{tail}", if folded { "▸" } else { "▾" });
+    put(buf, row.x + 1, row.y, u(room), &label, t.dim.add_modifier(Modifier::BOLD));
+    if !badge.is_empty() {
+        rput(buf, row.right() - 1, row.y, &badge, t.btn_primary);
+    }
+}
+
+/// A bot's two rows: avatar, name, status glyph and time, then its preview and unread badge; the
+/// lead's star below its avatar.
+fn bot_row(buf: &mut Buffer, row: Rect, app: &mut App, b: &Bot, bar: Option<Style>) {
+    let t = theme();
+    let (x0, y) = (row.x, row.y);
+    if let Some(bar) = bar {
+        mark_cursor(buf, row, bar);
+    }
+    put_line(buf, x0 + 2, y, 2, &avatar(app, b));
+    let (g, gs) = glyph(app, b.mark());
+    let time = if b.status == Status::Working { elapsed(b.started_at) } else { when(b.last_at) };
+    let tx = rput(buf, row.right() - 1, y, &time, if b.unread > 0 { t.bold } else { t.dim });
+    let gx = tx.saturating_sub(2);
+    put(buf, gx, y, 1, g, gs);
+    // The badge sits below the avatar, leaving activity and unread indicators visible.
+    if b.lead {
+        put(buf, x0 + 3, y + 1, 1, "★", t.amber);
+        app.hits.clicks.push((Rect::new(x0 + 3, y + 1, 1, 1), Click::LeadAgent));
+    }
+    let name_x = x0 + 5;
+    put(buf, name_x, y, gx.saturating_sub(name_x + 1), &b.name, t.bold);
+    let (pv, ps) = preview(b);
+    let badge = if b.unread > 0 { format!(" {} ", b.unread) } else { String::new() };
+    let room = usize::from(row.width.saturating_sub(7)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
+    put(buf, x0 + 5, y + 1, u(room), &truncate(&pv, room), ps);
+    if !badge.is_empty() {
+        rput(buf, row.right() - 1, y + 1, &badge, t.btn_primary);
     }
 }
 
@@ -154,28 +182,84 @@ pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
     let t = theme();
     app.hits.roster = r;
     let bots: Vec<Bot> = app.roster().into_iter().cloned().collect();
-    let sel = app.selected.clone();
-    let sel_idx = sel.as_ref().and_then(|s| bots.iter().position(|b| &b.id == s)).unwrap_or(0);
+    let shown: Vec<&Bot> = bots.iter().collect();
+    let lines = roster_lines(&shown, &app.folded);
+    let cursor = cursor_line(&lines, app.bot());
+    let cells = stops(&lines);
+    let at = cells.iter().position(|&(i, _)| Some(i) == cursor).unwrap_or(0);
     let per = 2u16;
     let view = r.height.saturating_sub(1) / per;
-    let offset = (u(sel_idx) + 1).saturating_sub(view);
-    for (i, b) in bots.iter().enumerate().skip(usize::from(offset)) {
-        let y = r.y + 1 + (u(i) - offset) * per;
+    let offset = (u(at) + 1).saturating_sub(view);
+    for (n, &(i, _)) in cells.iter().enumerate().skip(usize::from(offset)) {
+        let y = r.y + 1 + (u(n) - offset) * per;
         if y >= r.bottom() {
             break;
         }
         let row = Rect::new(r.x, y, r.width, 1);
-        app.hits.clicks.push((row, Click::Bot(b.id.clone())));
-        if sel.as_deref() == Some(b.id.as_str()) {
-            restyle(buf, row, t.sel);
-            put(buf, r.x, y, 1, "▌", if app.focus == Focus::Roster { t.bold } else { t.secondary });
+        // A folded section's cell unfolds it, like its label in the full roster.
+        if let Some(click) = lines[i].click() {
+            app.hits.clicks.push((row, click));
         }
-        put_line(buf, r.x + 1, y, 2, &avatar(app, b));
-        let (g, gs) = glyph(app, b.mark());
-        put(buf, r.x + 3, y, 1, g, gs);
-        if b.lead && y + 1 < r.bottom() {
-            put(buf, r.x + 2, y + 1, 1, "★", t.amber);
-            app.hits.clicks.push((Rect::new(r.x + 2, y + 1, 1, 1), Click::LeadAgent));
+        if cursor == Some(i) {
+            mark_cursor(buf, row, if app.focus == Focus::Roster { t.bold } else { t.secondary });
+        }
+        match &lines[i] {
+            RosterLine::Section { bots: count, unread, .. } => {
+                compact_section(buf, row, *count, (*unread > 0).then(|| glyph(app, Mark::Unread)));
+            }
+            RosterLine::Bot(b) => {
+                put_line(buf, r.x + 1, y, 2, &avatar(app, b));
+                let (g, gs) = glyph(app, b.mark());
+                put(buf, r.x + 3, y, 1, g, gs);
+                if b.lead && y + 1 < r.bottom() {
+                    put(buf, r.x + 2, y + 1, 1, "★", t.amber);
+                    app.hits.clicks.push((Rect::new(r.x + 2, y + 1, 1, 1), Click::LeadAgent));
+                }
+            }
+            RosterLine::Label(_) => {}
+        }
+    }
+}
+
+/// A folded section in the compact strip: `▸`, its bot count and the unread glyph if it has unread.
+fn compact_section(buf: &mut Buffer, row: Rect, bots: usize, unread: Option<(&str, Style)>) {
+    let t = theme();
+    let x = put(buf, row.x + 1, row.y, 1, "▸", t.dim);
+    let x = put(buf, x, row.y, 2, &bots.to_string(), t.dim.add_modifier(Modifier::BOLD));
+    if let Some((g, style)) = unread {
+        put(buf, x, row.y, 1, g, style);
+    }
+}
+
+/// The cursor's rows: a selection tint and a bar in the first cell of each.
+fn mark_cursor(buf: &mut Buffer, row: Rect, bar: Style) {
+    restyle(buf, row, theme().sel);
+    for y in row.top()..row.bottom() {
+        put(buf, row.x, y, 1, "▌", bar);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_section_name_gives_way_to_the_count_and_leaves_a_gap_before_the_badge() {
+        let row = Rect::new(0, 0, 24, 1);
+        let mut buf = Buffer::empty(row);
+        section_row(&mut buf, row, None, &"n".repeat(40), 12, 7, true);
+        let text = (0..row.width).map(|x| buf[(x, 0)].symbol()).collect::<String>();
+        assert_eq!(text, " ▸ nnnnnnnnnn… (12)  7  ");
+    }
+
+    #[test]
+    fn a_folded_section_is_one_cell_row_in_the_compact_strip() {
+        let row = Rect::new(0, 0, 5, 1);
+        for (bots, unread, text) in [(3, None, " ▸3  "), (12, Some(("●", Style::new())), " ▸12●")] {
+            let mut buf = Buffer::empty(row);
+            compact_section(&mut buf, row, bots, unread);
+            let cells = (0..row.width).map(|x| buf[(x, 0)].symbol()).collect::<String>();
+            assert_eq!(cells, text);
         }
     }
 }

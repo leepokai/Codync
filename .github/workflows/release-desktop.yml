@@ -207,6 +207,7 @@ jobs:
         # Unsigned for now: SmartScreen warns on first launch until the app has a code signing certificate.
         run: |
           npm ci
+          node --test --experimental-strip-types src/shared/ssh-platform.test.ts
           npm run dist:win:main -- --publish never
           cd dist
           sha256sum codync-windows-x64.exe > codync-windows-x64.exe.sha256

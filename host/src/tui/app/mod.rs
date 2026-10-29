@@ -12,6 +12,7 @@ mod model;
 mod navigate;
 mod new_bot;
 mod overlay_keys;
+mod roster;
 mod slash;
 mod steps;
 mod ui;
@@ -20,6 +21,7 @@ pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
+pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
 pub use ui::{
@@ -53,6 +55,8 @@ pub struct App {
     pub url: String,
     pub host: String,
     pub home: String,
+    /// The host's version (`hello`): features newer than `MIN_HOST` check it.
+    pub host_version: String,
     pub online: bool,
     pub error: Option<String>,
     /// This client and the host can't work together until one of them updates.
@@ -106,6 +110,8 @@ pub struct App {
     pub pick: Option<String>,
     /// Chat lines showing their full text: a handoff (`o` on the picked line).
     pub unfolded: HashSet<String>,
+    /// Roster sections showing their label alone (`z`); this run only.
+    pub folded: HashSet<String>,
     /// Voice calls' own messages, by call id (`callEntries`): the chat loaded here may not reach back to them.
     pub call_entries: HashMap<String, Vec<Entry>>,
     pub market: (Vec<Toggle>, Vec<Toggle>),
@@ -145,6 +151,7 @@ impl App {
             url,
             host: String::new(),
             home: String::new(),
+            host_version: String::new(),
             online: false,
             error: None,
             mismatch: None,
@@ -181,6 +188,7 @@ impl App {
             reply: None,
             pick: None,
             unfolded: HashSet::new(),
+            folded: HashSet::new(),
             call_entries: HashMap::new(),
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),
@@ -204,19 +212,6 @@ impl App {
     }
 
     // ---------- derived ----------
-
-    /// Roster order: the lead, pinned bots, then where the user put them, then most recent (same as the phone).
-    pub fn roster(&self) -> Vec<&Bot> {
-        let mut v: Vec<&Bot> = self.bots.values().filter(|b| !b.hidden).collect();
-        v.sort_by(|a, b| {
-            a.band()
-                .cmp(&b.band())
-                .then(a.position.cmp(&b.position))
-                .then(b.last_at.cmp(&a.last_at))
-                .then(a.name.cmp(&b.name))
-        });
-        v
-    }
 
     pub fn bot(&self) -> Option<&Bot> {
         self.selected.as_ref().and_then(|id| self.bots.get(id))
@@ -312,21 +307,6 @@ impl App {
             self.trace_scroll = 0;
             self.trace_turn = None;
         }
-    }
-
-    fn move_bot(&mut self, delta: isize) {
-        let ids: Vec<String> = self.roster().iter().map(|b| b.id.clone()).collect();
-        if ids.is_empty() {
-            return;
-        }
-        let i = self.selected.as_ref().and_then(|s| ids.iter().position(|x| x == s));
-        let n = isize::try_from(ids.len()).unwrap_or(isize::MAX);
-        let next = match i {
-            Some(i) => (isize::try_from(i).unwrap_or(0) + delta).clamp(0, n - 1),
-            None => 0,
-        };
-        let id = ids[usize::try_from(next).unwrap_or(0)].clone();
-        self.select(&id);
     }
 
     /// Next bot (after the selected one, wrapping) whose mark matches.

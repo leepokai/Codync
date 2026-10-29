@@ -172,6 +172,7 @@ mod tests {
             lead: false,
             position: 0,
             hidden: false,
+            section: None,
             notify: None,
             connectors: vec![],
             skills: vec![],

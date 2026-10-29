@@ -18,7 +18,7 @@ to be asked. Everything about it lives in the host (`host/src/chat/lead.rs`); th
   shows a gold `star.fill` badge at the avatar’s bottom-right, with unread/approval badges at the top-right.
   The larger badge in details opens the lead agent role explanation. TUI shows a gold `★` below the avatar;
   click it or press `I` on the lead to read the same explanation, scroll with arrow keys, and close with `Esc`. Its menus have no
-  Pin, Hide or Delete (TUI: `p` and `x` say why).
+  Pin, Move to section, Hide or Delete, and it shows in no roster section (TUI: `p`, `w` and `x` say why).
 
 ## Initiative
 

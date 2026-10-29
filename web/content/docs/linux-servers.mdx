@@ -59,11 +59,11 @@ CODYNC_TOKEN=$(ssh your-server 'cat ~/.codync/token') codync-host tui --url http
 
 ## Use the desktop app over SSH
 
-The desktop app on a Mac or Linux desktop can run the server's bots alongside its own. Open **Settings → Computers**, and under **Over SSH** choose **Add SSH computer**. Fill in the host (an SSH alias or hostname) and, if your SSH config doesn't already set them, the user, port and key. Sign-in must work with a key or ssh-agent: nothing prompts for a password. On the first connection, compare the host key fingerprint with the server's, then choose **Trust and connect**.
+The desktop app on macOS, Linux or Windows can run the server's bots alongside its own. Open **Settings → Computers**, and under **Over SSH** choose **Add SSH computer**. Fill in the host (an SSH alias or hostname) and, if your SSH config doesn't already set them, the user, port and key. Sign-in must work with a key or ssh-agent: nothing prompts for a password. On the first connection, compare the host key fingerprint with the server's, then choose **Trust and connect**.
 
 From that computer's card you can also show its pairing code, turn the relay on or off, and choose **Add to account** to put the server in your Codync account.
 
-The desktop app on Windows doesn't connect to SSH computers.
+On Windows, enable **OpenSSH Client** in **Windows Settings → Optional features** if it is missing. Codync uses the Windows SSH config, keys and agent; keys stay on that computer.
 
 ## Reach it from your phone
 

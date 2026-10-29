@@ -65,8 +65,7 @@ public final class ScreenSession {
             try await connect()
         } catch {
             guard phase == .connecting else { return }
-            close()
-            phase = .failed(error.localizedDescription)
+            fail(error.localizedDescription)
         }
     }
 
@@ -116,7 +115,7 @@ public final class ScreenSession {
             self.signaling = signaling
             try await signaling.subscribe()
             // Subscription failure can retire this peer before the ready waiter resumes.
-            guard self.pc === pc, generation == current, phase != .closed else { throw CancellationError() }
+            try ensureCurrent(pc)
             try signaling.check()
         }
 
@@ -153,8 +152,7 @@ public final class ScreenSession {
         connectionTimer = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
             guard let self, self.generation == current, self.phase != .live else { return }
-            self.close()
-            self.phase = .failed("Couldn't connect to the remote screen. Check the computer's connection and try again.")
+            self.fail("Couldn't connect to the remote screen. Check the computer's connection and try again.")
         }
     }
 
@@ -162,20 +160,25 @@ public final class ScreenSession {
     private func negotiate(_ pc: RTCPeerConnection) async throws {
         let signaling = signaling
         let offer = try await pc.offer(for: Self.noConstraints)
-        guard self.pc === pc, phase != .closed else { throw CancellationError() }
+        try ensureCurrent(pc)
         try await pc.setLocalDescription(offer)
-        guard self.pc === pc, phase != .closed else { throw CancellationError() }
+        try ensureCurrent(pc)
         if signaling == nil { await waitForCandidates(pc) }
         try Task.checkCancellation()
-        guard self.pc === pc, phase != .closed else { throw CancellationError() }
+        try ensureCurrent(pc)
         let sdp = signaling == nil ? (pc.localDescription?.sdp ?? offer.sdp) : offer.sdp
         let answer = try await client.screenOffer(sdp: sdp, session: session, display: display?.id)
         try Task.checkCancellation()
-        guard self.pc === pc, phase != .closed else { throw CancellationError() }
+        try ensureCurrent(pc)
         session = answer.session
         try await pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer.sdp))
-        guard self.pc === pc, phase != .closed else { throw CancellationError() }
+        try ensureCurrent(pc)
         try await signaling?.installedAnswer()
+    }
+
+    /// A newer peer or a close retired `pc` while we waited.
+    private func ensureCurrent(_ pc: RTCPeerConnection) throws {
+        guard self.pc === pc, phase != .closed else { throw CancellationError() }
     }
 
     private func waitForCandidates(_ pc: RTCPeerConnection) async {
@@ -225,16 +228,14 @@ public final class ScreenSession {
             try? await Task.sleep(for: delay)
             while let self, !Task.isCancelled, self.phase == .reconnecting {
                 guard self.recoveryAttempts < Self.maxRecoveryAttempts else {
-                    let error = self.lastError ?? HostError.unreachable.localizedDescription
-                    self.close()
-                    self.phase = .failed(error)
+                    self.fail(self.lastError ?? HostError.unreachable.localizedDescription)
                     return
                 }
-                do { try await self.waitForSignalingRoute() }
+                // A route outage is not a failed WebRTC attempt: wait for the host channel to recover.
+                do { try await self.client.transport.waitForRoute() }
                 catch {
                     guard !Task.isCancelled, self.phase != .closed else { return }
-                    self.close()
-                    self.phase = .failed(error.localizedDescription)
+                    self.fail(error.localizedDescription)
                     return
                 }
                 guard !Task.isCancelled, self.phase == .reconnecting else { break }
@@ -249,8 +250,7 @@ public final class ScreenSession {
                     log.info("screen reconnect failed: \(error.localizedDescription)")
                     self.lastError = error.localizedDescription
                     if self.recoveryAttempts >= Self.maxRecoveryAttempts {
-                        self.close()
-                        self.phase = .failed(error.localizedDescription)
+                        self.fail(error.localizedDescription)
                         return
                     }
                     try? await Task.sleep(for: .seconds(min(Double(self.recoveryAttempts) * 2, 10)))
@@ -260,26 +260,9 @@ public final class ScreenSession {
         }
     }
 
-    /// A route outage is not a failed WebRTC attempt; wait for the host channel to recover.
-    func waitForSignalingRoute() async throws {
-        let transport = client.transport
-        for await state in transport.states() {
-            try Task.checkCancellation()
-            switch state {
-            case .ready: return
-            case let .unauthorized(message): throw HostError.unauthorized(message)
-            case let .failed(message):
-                guard let channel = transport as? ChannelTransport else { continue }
-                let stopped = await channel.isStopped
-                guard stopped else { continue }
-                let needsUpgrade = await channel.needsUpgrade
-                if needsUpgrade { throw HostError.upgradeRequired }
-                throw ScreenError.signalingFailed(message)
-            case .connecting, .hostOffline: continue
-            }
-        }
-        try Task.checkCancellation()
-        throw HostError.unreachable
+    private func fail(_ message: String) {
+        close()
+        phase = .failed(message)
     }
 
     public func close() {

@@ -154,7 +154,8 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
         }
         "candidate" => {
             let id = p["session"].as_str().context("missing session")?;
-            h.sessions.candidate(id, &p["candidate"]).await?;
+            let candidate = serde_json::from_value(p["candidate"].clone())?;
+            h.sessions.candidate(id, &candidate).await?;
             json!({})
         }
         "screenshot" => {
@@ -208,9 +209,16 @@ impl Helper {
             return;
         }
         *last = Some(status.clone());
-        let _ = self
-            .out
-            .send(json!({"jsonrpc": "2.0", "method": "status", "params": status}));
+        let _ = self.notify("status", status);
+    }
+
+    /// One notification to the host; fails once the host link is gone.
+    fn notify(&self, method: &str, params: Value) -> Result<()> {
+        let mut message = json!({"jsonrpc": "2.0", "method": method});
+        message["params"] = params;
+        self.out
+            .send(message)
+            .map_err(|_| anyhow!("the host link closed"))
     }
 
     /// A session's WebRTC connection ended on its own.
@@ -219,20 +227,22 @@ impl Helper {
         let id = id.to_owned();
         self.rt.spawn(async move {
             this.sessions.close(&id).await;
-            let _ = this.out.send(json!({"jsonrpc": "2.0", "method": "session", "params": {"session": id, "state": "closed"}}));
+            let _ = this.notify("session", json!({"session": id, "state": "closed"}));
         });
     }
 
     async fn connected(&self, id: &str, peer: &gst::Element) {
         let live = self.sessions.is_live(id, peer).await;
         if live {
-            let _ = self.out.send(json!({"jsonrpc": "2.0", "method": "session", "params": {"session": id, "state": "connected"}}));
+            let _ = self.notify("session", json!({"session": id, "state": "connected"}));
         }
     }
 
     async fn ended_peer(&self, id: &str, peer: &gst::Element) {
-        self.sessions.close_peer(id, peer, || {
-            let _ = self.out.send(json!({"jsonrpc": "2.0", "method": "session", "params": {"session": id, "state": "closed"}}));
-        }).await;
+        self.sessions
+            .close_peer(id, peer, || {
+                let _ = self.notify("session", json!({"session": id, "state": "closed"}));
+            })
+            .await;
     }
 }

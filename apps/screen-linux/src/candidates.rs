@@ -1,15 +1,29 @@
-//! Ordered ICE notifications from GStreamer's signaling callbacks.
+//! Ordered ICE candidates: out from GStreamer's signaling callbacks, in from the host.
 
 use crate::Helper;
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use gst::prelude::*;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::{Arc, Mutex};
 
 const MAX_CANDIDATES: usize = 128;
 const MAX_CANDIDATE_BYTES: usize = 4096;
-const MAX_MEDIA_INDEX: u64 = 16;
+const MAX_MEDIA_INDEX: u32 = 16;
 
+/// One candidate event on the wire, as the host's `Candidate` (this helper needs no `sdpMid`).
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub(super) enum Candidate {
+    Candidate {
+        candidate: String,
+        #[serde(rename = "sdpMLineIndex")]
+        sdp_m_line_index: u32,
+    },
+    Complete,
+}
+
+/// One direction of the exchange: at most `MAX_CANDIDATES` valid candidates, then one completion.
 #[derive(Default)]
 pub(super) struct Candidates {
     count: usize,
@@ -17,20 +31,20 @@ pub(super) struct Candidates {
 }
 
 impl Candidates {
-    pub(super) fn accept(&mut self, candidate: &Value) -> Result<()> {
+    pub(super) fn accept(&mut self, candidate: &Candidate) -> Result<()> {
         if self.complete {
             bail!("screen candidates already complete");
         }
-        match candidate["type"].as_str() {
-            Some("complete") => self.complete = true,
-            Some("candidate") => {
-                let sdp = candidate["candidate"].as_str().unwrap_or_default();
-                if !sdp.starts_with("candidate:")
-                    || sdp.len() > MAX_CANDIDATE_BYTES
-                    || sdp.contains(['\r', '\n'])
-                    || candidate["sdpMLineIndex"]
-                        .as_u64()
-                        .is_none_or(|index| index > MAX_MEDIA_INDEX)
+        match candidate {
+            Candidate::Complete => self.complete = true,
+            Candidate::Candidate {
+                candidate,
+                sdp_m_line_index,
+            } => {
+                if !candidate.starts_with("candidate:")
+                    || candidate.len() > MAX_CANDIDATE_BYTES
+                    || candidate.contains(['\r', '\n'])
+                    || *sdp_m_line_index > MAX_MEDIA_INDEX
                 {
                     bail!("invalid screen candidate");
                 }
@@ -39,7 +53,6 @@ impl Candidates {
                 }
                 self.count += 1;
             }
-            _ => bail!("invalid screen candidate event"),
         }
         Ok(())
     }
@@ -51,7 +64,7 @@ pub(super) fn observe(webrtc: &gst::Element, id: &str, helper: &Arc<Helper>) {
     let emit = Arc::new({
         let id = id.to_owned();
         let helper = Arc::downgrade(helper);
-        move |candidate: Value| {
+        move |candidate: Result<Candidate>| {
             let Some(helper) = helper.upgrade() else {
                 return;
             };
@@ -59,13 +72,12 @@ pub(super) fn observe(webrtc: &gst::Element, id: &str, helper: &Arc<Helper>) {
             let mut state = state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Err(error) = state.accept(&candidate) {
+            let sent = candidate.and_then(|candidate| {
+                state.accept(&candidate)?;
+                helper.notify("candidate", json!({"session": id, "candidate": candidate}))
+            });
+            if let Err(error) = sent {
                 tracing::warn!(%error, "screen candidate exchange failed");
-                let _guard = runtime.enter();
-                helper.ended(&id);
-                return;
-            }
-            if helper.out.send(json!({"jsonrpc": "2.0", "method": "candidate", "params": {"session": id, "candidate": candidate}})).is_err() {
                 let _guard = runtime.enter();
                 helper.ended(&id);
             }
@@ -79,10 +91,11 @@ pub(super) fn observe(webrtc: &gst::Element, id: &str, helper: &Arc<Helper>) {
                 // transport. Aggregate gathering-state Complete below ends the
                 // wire exchange only after every transport has finished.
                 (Ok(_), Ok(candidate)) if candidate.is_empty() => {}
-                (Ok(index), Ok(candidate)) => emit(
-                    json!({"type": "candidate", "candidate": candidate, "sdpMLineIndex": index}),
-                ),
-                _ => emit(Value::Null),
+                (Ok(sdp_m_line_index), Ok(candidate)) => emit(Ok(Candidate::Candidate {
+                    candidate,
+                    sdp_m_line_index,
+                })),
+                _ => emit(Err(anyhow!("malformed native ICE candidate"))),
             }
             None
         }
@@ -91,7 +104,7 @@ pub(super) fn observe(webrtc: &gst::Element, id: &str, helper: &Arc<Helper>) {
         if peer.property::<gst_webrtc::WebRTCICEGatheringState>("ice-gathering-state")
             == gst_webrtc::WebRTCICEGatheringState::Complete
         {
-            emit(json!({"type": "complete"}));
+            emit(Ok(Candidate::Complete));
         }
     });
 }
@@ -101,7 +114,15 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use crate::stream::Session;
+    use serde_json::Value;
     use tokio::sync::{Mutex as AsyncMutex, mpsc};
+
+    fn wire(sdp: &str) -> Candidate {
+        Candidate::Candidate {
+            candidate: sdp.to_owned(),
+            sdp_m_line_index: 0,
+        }
+    }
 
     fn fixture() -> (Arc<Helper>, mpsc::UnboundedReceiver<Value>, Session) {
         gst::init().unwrap();
@@ -116,8 +137,7 @@ mod tests {
         let session = Session {
             pipeline: gst::Pipeline::new(),
             webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            trickle: true,
-            incoming: Mutex::default(),
+            incoming: Some(Mutex::default()),
         };
         (helper, events, session)
     }
@@ -222,21 +242,20 @@ mod tests {
     fn native_end_markers_do_not_relax_wire_candidate_validation() {
         for sdp in ["", " ", "candidate:1\r\n"] {
             let mut stream = Candidates::default();
-            let candidate = json!({"type": "candidate", "candidate": sdp, "sdpMLineIndex": 0});
-            assert!(stream.accept(&candidate).is_err());
+            assert!(stream.accept(&wire(sdp)).is_err());
         }
     }
 
     #[test]
     fn completion_follows_all_candidates_and_bounds_are_enforced() {
         let mut stream = Candidates::default();
-        let candidate = json!({"type": "candidate", "candidate": "candidate:1 1 UDP 1 192.0.2.1 5000 typ relay", "sdpMLineIndex": 0});
+        let candidate = wire("candidate:1 1 UDP 1 192.0.2.1 5000 typ relay");
         for _ in 0..128 {
             stream.accept(&candidate).unwrap();
         }
         assert!(stream.accept(&candidate).is_err());
-        stream.accept(&json!({"type": "complete"})).unwrap();
+        stream.accept(&Candidate::Complete).unwrap();
         assert!(stream.accept(&candidate).is_err());
-        assert!(stream.accept(&json!({"type": "complete"})).is_err());
+        assert!(stream.accept(&Candidate::Complete).is_err());
     }
 }

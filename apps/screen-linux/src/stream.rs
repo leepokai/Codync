@@ -43,8 +43,8 @@ const BITRATE_KBPS: u32 = 8000;
 pub struct Session {
     pub(super) pipeline: gst::Pipeline,
     pub(super) webrtc: gst::Element,
-    pub(super) trickle: bool,
-    pub(super) incoming: Mutex<crate::candidates::Candidates>,
+    /// The phone's candidates so far; `None` for a complete-SDP session.
+    pub(super) incoming: Option<Mutex<crate::candidates::Candidates>>,
 }
 
 impl Session {
@@ -191,8 +191,7 @@ impl Session {
         Ok(Self {
             pipeline,
             webrtc,
-            trickle,
-            incoming: Mutex::default(),
+            incoming: trickle.then(Mutex::default),
         })
     }
 
@@ -374,6 +373,7 @@ pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Re
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use crate::candidates::Candidate;
 
     #[tokio::test]
     async fn trickle_answer_does_not_wait_for_candidate_gathering() {
@@ -392,8 +392,7 @@ mod tests {
         let session = Session {
             pipeline,
             webrtc,
-            trickle: true,
-            incoming: Mutex::default(),
+            incoming: Some(Mutex::default()),
         };
         let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\
             m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\n\
@@ -428,9 +427,13 @@ mod tests {
             !answer.contains("a=candidate:"),
             "trickle returns the original SDP, not a gathered snapshot"
         );
-        session.candidate(&json!({"type": "candidate", "candidate": "candidate:1 1 UDP 1 192.0.2.1 5000 typ host", "sdpMLineIndex": 0})).unwrap();
-        session.candidate(&json!({"type": "complete"})).unwrap();
-        assert!(session.candidate(&json!({"type": "complete"})).is_err());
+        let host = Candidate::Candidate {
+            candidate: "candidate:1 1 UDP 1 192.0.2.1 5000 typ host".into(),
+            sdp_m_line_index: 0,
+        };
+        session.candidate(&host).unwrap();
+        session.candidate(&Candidate::Complete).unwrap();
+        assert!(session.candidate(&Candidate::Complete).is_err());
     }
 }
 

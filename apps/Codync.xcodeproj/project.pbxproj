@@ -16,6 +16,7 @@
 		1302DAC1A6D9AE9E33654B84 /* RowLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B708DF60FB00E1724260BCD2 /* RowLabel.swift */; };
 		16C24A622E33414C24B0C148 /* AppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0814BD0C30F01A163FBDF896 /* AppearanceSettings.swift */; };
 		17DD96A91B1EC2AE699F4A2F /* ViewingBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0E04490F5C56FD070539E6 /* ViewingBadge.swift */; };
+		17EFF498D834DBBE41BD0FDB /* SessionCandidate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D55F2906A970053C26B95A41 /* SessionCandidate.swift */; };
 		1855DC364C2F8E5B62878BD8 /* CodyncBot-teardrop-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 203A43D8DF8D3832F95FA837 /* CodyncBot-teardrop-Ink.ttf */; };
 		198096547EAA6C5FBB68558F /* CodyncBot-hex-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 89A0D530BEF30AF36F9DBEA8 /* CodyncBot-hex-Ink.ttf */; };
 		2002C16E427B4E4E7279E1C4 /* ComputerStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BC00039A6C2C0D3F39A5F67 /* ComputerStatus.swift */; };
@@ -176,6 +177,7 @@
 		D0DE72EEAEC947C1D3CA237F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D0E552136D473567E0C25ED4 /* CodyncBot-blob-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-blob-Tint.ttf"; sourceTree = "<group>"; };
 		D4D13418ABB5FD7CFC087677 /* AXTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXTree.swift; sourceTree = "<group>"; };
+		D55F2906A970053C26B95A41 /* SessionCandidate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCandidate.swift; sourceTree = "<group>"; };
 		D57A7C09154869DD84BACE19 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		D5F23C3F9FCE63B4AFB4771A /* CodyncBot-squircle-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-squircle-Tint.ttf"; sourceTree = "<group>"; };
 		D827E43025A592B41CB68EFD /* CodyncBot-hex-Tint.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "CodyncBot-hex-Tint.ttf"; sourceTree = "<group>"; };
@@ -371,6 +373,7 @@
 				4FA78A055791BBBA79DF8C8B /* Permissions.swift */,
 				28B2CB561A43ED9F2F1A4391 /* ScreenHelper.swift */,
 				F99C11684BFBEB49006600A9 /* Session.swift */,
+				D55F2906A970053C26B95A41 /* SessionCandidate.swift */,
 				46538A6E6E6B7C5E212F5CDF /* SessionCandidates.swift */,
 				2C0E04490F5C56FD070539E6 /* ViewingBadge.swift */,
 			);
@@ -684,6 +687,7 @@
 				A1B7C7774E7FAF6D45D1BEF8 /* Permissions.swift in Sources */,
 				F97C489DDB806224CEFCEB57 /* ScreenHelper.swift in Sources */,
 				921ED46A1643AB90BB3D4CF7 /* Session.swift in Sources */,
+				17EFF498D834DBBE41BD0FDB /* SessionCandidate.swift in Sources */,
 				FFCAB62428CD3D4FB479B4AB /* SessionCandidates.swift in Sources */,
 				17DD96A91B1EC2AE699F4A2F /* ViewingBadge.swift in Sources */,
 			);

@@ -28,7 +28,7 @@ emulator against a real host; device acceptance is listed separately.
 | Notifications | Ported: alerts as conversations with the bot's face (a group's face and its speaking member), conversation shortcuts, what happened ("Task complete") as sub text | Android's conversation layout doesn't draw sub text; background delivery needs FCM in the deployment |
 | Live updates | Android 16 Live updates (`ProgressStyle`), the status bar chip on Android 16 QPR1 (API 36.1) | Background updates need FCM in the deployment |
 | Version check | `VersionMismatch.MIN_HOST`, the host's `minApp`, the update card in the roster and in place of the composer | Set `MIN_HOST` to the first release that ships Android support when it's cut |
-| Remote screen | Ported: viewer from Computers, the chat header (watch a bot, then take over) and `codync-dev://screen`; WebRTC H.264, trackpad and direct touch, long-press drag, two-finger scroll, pinch zoom streaming the visible region, keyboard with IME and modifier keys, clipboard, displays, take over/hand back, Rotate | Pinch, IME composition and a hardware keyboard on a device; TURN relay path and renewal |
+| Remote screen | Ported: viewer from Computers, the chat header (watch a bot, then take over) and `codync-dev://screen`; WebRTC H.264, trackpad and direct touch, long-press drag, two-finger scroll, pinch zoom streaming the visible region, keyboard with IME and modifier keys, clipboard, displays, take over/hand back, Rotate | Trickle ICE and keeping the video through a channel reconnect (see [Not ported yet](#not-ported-yet)); pinch, IME composition and a hardware keyboard on a device; TURN relay path and renewal |
 | Analytics | Ported: PostHog feature events with the Settings switch (and its sheet), crash reports sent on the next launch | — |
 | Packaging | Debug, R8 release signed with the Play upload key, `versionCode` from the version, Firebase (`codync-auth`) and private configuration, `Submit Android` to Google Play (internal testing since 2.24.0) | Production access (closed test), see [Before a Play release](#before-a-play-release) |
 
@@ -54,6 +54,12 @@ was walked through on an emulator against a real host.
   sheet, the harness's own memory switch with its info sheet (2.19.0), the "Shared" row for harnesses whose memory every bot shares (2.25.0) and the handoff card. Since 2.21.0 the memory screen is read-only
   (the user changes memory by telling the bot), so the port drops its add and edit controls. Port them from the
   iPhone (`MemoryView.swift`, `MemoryFilesView.swift`, `MemoryInfoSheet.swift`, `HandoffRows.swift`).
+- **Remote screen trickle ICE (2.32.0).** The iPhone exchanges ICE candidates as they are found
+  (`screenPrepare` with `trickle`, `screenCandidate`, the `screenCandidates` subscription), keeps the video
+  once connected when the host channel reconnects, waits for the channel to come back before spending a
+  reconnect attempt, and reconnects only on errors that end the connection. Android still sends complete SDP
+  (gathering up to 10 s) and drops the screen when the channel reconnects; the host keeps complete SDP for it.
+  The port is #235 (`ScreenSession.kt`).
 
 ### Not verified (needs an account, a key, a device or the real Mac)
 

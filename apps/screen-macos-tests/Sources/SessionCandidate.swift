@@ -1,0 +1,1 @@
+../../screen-macos/SessionCandidate.swift

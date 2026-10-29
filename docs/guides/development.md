@@ -143,7 +143,7 @@ resources, dependencies, `apps/shared/Config`, `apps/screen-macos`, `packaging/`
 Left to CI: the iOS Kit tests (an iPhone simulator) and the platform builds (Linux screen
 helper: GStreamer development packages; macOS: the `Screen` Xcode target against WebRTC).
 
-The macOS helper's socket lifecycle checks run independently of capture permissions:
+The macOS helper's socket lifecycle and candidate rule checks run without capture permissions:
 
 ```sh
 swift test --package-path apps/screen-macos-tests --scratch-path build/dd/screen-macos-tests

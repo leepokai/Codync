@@ -22,10 +22,33 @@ extension ChannelTransport {
             case .ready, .connecting:
                 guard ContinuousClock.now < deadline else { throw HostError.unreachable }
                 await stateChange(until: deadline)
-            case let .hostOffline(lastSeen): throw HostError.computerOffline(lastSeen: lastSeen)
-            case let .unauthorized(message): throw HostError.unauthorized(message)
-            case .failed: throw needsUpgrade ? HostError.upgradeRequired : HostError.unreachable
+            case .hostOffline, .unauthorized, .failed: throw linkError(state)
             }
+        }
+    }
+
+    /// Waits out outages and an offline computer; throws only once the channel can't come back.
+    public func waitForRoute() async throws {
+        for await state in states() {
+            try Task.checkCancellation()
+            switch state {
+            case .ready: return
+            case .connecting, .hostOffline: continue
+            case .failed where !isStopped: continue
+            case .unauthorized, .failed: throw linkError(state)
+            }
+        }
+        try Task.checkCancellation()
+        throw HostError.unreachable
+    }
+
+    /// What a link state the caller can't use means to it.
+    private func linkError(_ state: LinkState) -> HostError {
+        switch state {
+        case let .hostOffline(lastSeen): .computerOffline(lastSeen: lastSeen)
+        case let .unauthorized(message): .unauthorized(message)
+        case .failed where needsUpgrade: .upgradeRequired
+        case .connecting, .ready, .failed: .unreachable
         }
     }
 
@@ -57,7 +80,7 @@ extension ChannelTransport {
     private func abandon(_ id: UInt32, error: Error) {
         guard let c = calls.removeValue(forKey: id) else { return }
         c.resume(throwing: error)
-        try? sendInner(JSONSerialization.data(withJSONObject: ["id": id, "cancel": true]))
+        try? sendCancellation(id)
     }
 
     private func sendInner(_ message: Data) throws {
@@ -75,8 +98,7 @@ extension ChannelTransport {
     }
 
     public nonisolated func stream(_ request: HostStreamRequest) -> AsyncThrowingStream<Data, Error> {
-        let policy: AsyncThrowingStream<Data, Error>.Continuation.BufferingPolicy = if case .screenCandidates = request { .bufferingOldest(ScreenCandidate.maxCount + 2) } else { .unbounded }
-        return AsyncThrowingStream(bufferingPolicy: policy) { continuation in
+        AsyncThrowingStream(bufferingPolicy: request.bufferLimit.map { .bufferingOldest($0) } ?? .unbounded) { continuation in
             let key = UUID()
             let task = Task { await self.openStream(request, key: key, continuation) }
             continuation.onTermination = { _ in
@@ -105,6 +127,7 @@ extension ChannelTransport {
         }
     }
 
+    /// Tells the host to stop a call or stream.
     func sendCancellation(_ id: UInt32) throws {
         try sendInner(JSONSerialization.data(withJSONObject: ["id": id, "cancel": true]))
     }
@@ -112,6 +135,12 @@ extension ChannelTransport {
     /// The consumer went away: stop the host's stream.
     private func closeStream(_ key: UUID) {
         guard let id = streamIds.removeValue(forKey: key), streams.removeValue(forKey: id) != nil else { return }
-        try? sendInner(JSONSerialization.data(withJSONObject: ["id": id, "cancel": true]))
+        try? sendCancellation(id)
+    }
+
+    /// The host ended a stream (or it overflowed): finish it and forget its id.
+    func finishStream(_ id: UInt32, throwing error: Error? = nil) {
+        streamIds = streamIds.filter { $0.value != id }
+        streams.removeValue(forKey: id)?.finish(throwing: error)
     }
 }

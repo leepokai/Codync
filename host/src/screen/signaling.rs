@@ -152,6 +152,14 @@ impl Signaling {
 }
 
 impl Viewer {
+    /// The viewer is done: watchers close it and its candidate stream reports `reason`.
+    fn fail(&mut self, reason: &str) {
+        self.state = ViewerState::Failed;
+        if let Some(signaling) = &self.signaling {
+            signaling.fail(reason);
+        }
+    }
+
     fn signaling(&mut self) -> Result<&mut Signaling> {
         if self.expired(crate::store::now_ms()) {
             bail!("screen session expired");
@@ -180,16 +188,14 @@ impl Screen {
             (rx, signaling.failure.subscribe())
         };
         let guard = Subscription { screen: self.clone(), session: session.to_owned() };
-        let events = stream::unfold((rx, failure, guard), |(mut rx, mut failure, guard)| async move {
-            let reason = failure.borrow().clone();
-            if let Some(message) = reason {
-                return Some((json!({"type": "error", "message": message}), (rx, failure, guard)));
-            }
+        // Ends right after reporting a failure, without draining possibly stale candidates.
+        let events = stream::unfold((Some((rx, failure)), guard), |(live, guard)| async move {
+            let (mut rx, mut failure) = live?;
             let event = tokio::select! {
                 biased;
-                result = failure.changed() => {
-                    if result.is_err() { return None; }
-                    return Some((json!({"type": "error", "message": failure.borrow().clone().unwrap_or_default()}), (rx, failure.clone(), guard)));
+                reason = failure.wait_for(Option::is_some) => {
+                    let message = reason.ok()?.clone().unwrap_or_default();
+                    return Some((json!({"type": "error", "message": message}), (None, guard)));
                 }
                 event = rx.recv() => event?,
             };
@@ -199,17 +205,7 @@ impl Screen {
                     signaling.outgoing_complete_delivered = true;
                 }
             }
-            Some((event, (rx, failure, guard)))
-        });
-        // Stop immediately after reporting failure, without draining possibly stale candidates.
-        let events = events.scan(false, |ended, event| {
-            let result = if *ended {
-                None
-            } else {
-                *ended = event["type"] == "error";
-                Some(event)
-            };
-            futures::future::ready(result)
+            Some((event, (Some((rx, failure)), guard)))
         });
         Ok(stream::once(futures::future::ready(json!({"type": "ready"}))).chain(events))
     }
@@ -225,8 +221,7 @@ impl Screen {
                 bail!("screen candidate is not ready");
             }
             if let Err(error) = signaling.incoming.accept(&candidate) {
-                signaling.fail(&error.to_string());
-                viewer.state = ViewerState::Failed;
+                viewer.fail(&error.to_string());
                 return Err(error);
             }
             signaling.uploading = true;
@@ -234,17 +229,12 @@ impl Screen {
         let result = link.request("candidate", json!({"session": session, "candidate": candidate})).await;
         let mut sessions = self.sessions.locked();
         let viewer = sessions.get_mut(session).context("screen session closed")?;
-        let signaling = viewer.signaling()?;
-        signaling.uploading = false;
+        viewer.signaling()?.uploading = false;
         if let Err(error) = &result {
-            signaling.fail(&error.to_string());
-        }
-        let check = signaling.check();
-        if result.is_err() {
-            viewer.state = ViewerState::Failed;
+            viewer.fail(&error.to_string());
         }
         result?;
-        check
+        viewer.signaling()?.check()
     }
 
     #[cfg(any(unix, test))]
@@ -259,22 +249,17 @@ impl Screen {
             .map_err(anyhow::Error::from)
             .and_then(|candidate| signaling.outgoing.accept(&candidate));
         if let Err(error) = result {
-            signaling.fail(&error.to_string());
-            viewer.state = ViewerState::Failed;
+            viewer.fail(&error.to_string());
             return;
         }
         if signaling.offer == Offer::Prepared || signaling.tx.try_send(candidate).is_err() {
-            signaling.fail("screen candidate stream overflow or closed");
-            viewer.state = ViewerState::Failed;
+            viewer.fail("screen candidate stream overflow or closed");
         }
     }
 
     pub(super) fn fail_signaling(&self, session: &str, message: &str) {
         if let Some(viewer) = self.sessions.locked().get_mut(session) {
-            viewer.state = ViewerState::Failed;
-            if let Some(signaling) = &viewer.signaling {
-                signaling.fail(message);
-            }
+            viewer.fail(message);
         }
     }
 
@@ -291,8 +276,7 @@ impl Screen {
             signaling.detached = true;
             return false;
         }
-        viewer.state = ViewerState::Failed;
-        signaling.fail("screen signaling disconnected");
+        viewer.fail("screen signaling disconnected");
         true
     }
 }

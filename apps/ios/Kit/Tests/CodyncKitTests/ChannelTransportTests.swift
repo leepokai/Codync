@@ -218,6 +218,36 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     await t.shutdown()
 }
 
+@Test(.timeLimit(.minutes(1))) func screenCandidateStreamIsBoundedAndCancelledOnOverflow() async throws {
+    let (dial, sockets) = fakeDialer()
+    var computer = v.computer
+    computer.urls = ["http://127.0.0.1:1"]
+    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    await t.start()
+    var it = sockets.makeAsyncIterator()
+    var host = HostSide(try #require(await it.next()))
+    try await host.accept()
+    let hello = try await host.receive()
+    try await host.send(["id": hello["id"] ?? 0, "ok": helloBody()])
+
+    let candidates = t.stream(.screenCandidates("s"))
+    let sub = try await host.receive()
+    #expect(sub["sub"] as? String == "screenCandidates")
+    #expect((sub["b"] as? [String: Any])?["session"] as? String == "s")
+    // Nobody reads: one event past the buffer ends the stream and the host's subscription.
+    for _ in 0...ScreenCandidate.maxCount + 2 {
+        try await host.send(["id": sub["id"] ?? 0, "ev": ["type": "candidate"]])
+    }
+    let cancel = try await host.receive()
+    #expect(cancel["id"] as? Int == sub["id"] as? Int && cancel["cancel"] as? Bool == true)
+    var read = 0
+    await #expect(throws: ScreenError.candidateOverflow) {
+        for try await _ in candidates { read += 1 }
+    }
+    #expect(read == ScreenCandidate.maxCount + 2)
+    await t.shutdown()
+}
+
 @Test(.timeLimit(.minutes(1))) func changedHostIdentityIsNotRetried() async throws {
     let (dial, sockets) = fakeDialer()
     var computer = v.computer

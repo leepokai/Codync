@@ -45,8 +45,7 @@ mod tests {
         Session {
             pipeline: gst::Pipeline::new(),
             webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            trickle: true,
-            incoming: std::sync::Mutex::default(),
+            incoming: Some(std::sync::Mutex::default()),
         }
     }
 

@@ -156,6 +156,12 @@ pub fn authorize(hub: &Hub, key: &str) -> Result<Device, RejectCode> {
     Ok(d)
 }
 
+/// Whether `key` may still view this computer's screen: `local` always, a device while
+/// it is authorized and holds the screen scope.
+pub fn may_view_screen(hub: &Hub, key: &str) -> bool {
+    key == "local" || authorize(hub, key).is_ok_and(|device| device.scopes.contains(&Scope::Screen))
+}
+
 // MARK: pairing codes
 
 const CODE_TTL_MS: i64 = 10 * 60 * 1000;

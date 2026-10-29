@@ -206,10 +206,7 @@ pub async fn watch_viewer(hub: Arc<Hub>, session: String, owner: String) {
             let now = crate::store::now_ms();
             viewer.expired(now)
         };
-        let authorized = owner == "local"
-            || crate::api::devices::authorize(&hub, &owner)
-                .is_ok_and(|d| d.scopes.contains(&crate::store::Scope::Screen));
-        if expired || !authorized || !hub.screen.enabled() {
+        if expired || !crate::api::devices::may_view_screen(&hub, &owner) || !hub.screen.enabled() {
             if let Err(error) = hub.screen.close(&session).await {
                 tracing::warn!(error = format!("{error:#}"), "couldn't close expired screen session");
                 continue;

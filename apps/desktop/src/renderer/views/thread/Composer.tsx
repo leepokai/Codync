@@ -98,9 +98,9 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   }, [routineDraft, botId, store, drafts])
 
   // Clicking this chat's bot in the roster brings the caret here.
-  const composerFocus = app?.composerFocus
+  const composerFocus = app?.composerFocus.target
   useEffect(() => {
-    if (!about && app?.takeComposerFocus({ computerId: store.computer.id, botId })) field.current?.focus()
+    if (!about && app?.composerFocus.take({ computerId: store.computer.id, botId })) field.current?.focus()
   }, [composerFocus, about, app, store, botId])
 
   // Picking a message to reply to brings the caret here.

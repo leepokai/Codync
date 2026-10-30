@@ -37,6 +37,7 @@ class WidgetRefreshWorker(context: Context, parameters: WorkerParameters) : Coro
                 val channel = HostConnector.connect(computer, identity)
                 try {
                     val current = HostClient.hello(channel, computer)
+                    // The finite roster snapshot includes its authoritative custom icons.
                     val bots = HostClient.bots(channel)
                     val response = channel.call("usage", buildJsonObject { put("refresh", false) })
                     val usage = UsageReport.decode(response)

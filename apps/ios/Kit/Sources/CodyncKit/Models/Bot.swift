@@ -12,6 +12,7 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var description: String
     public var avatarColor: String
     public var avatarShape: String
+    public var customIcon: CustomIcon?
     public var backend: String
     public var command: String?
     public var cwd: String
@@ -109,6 +110,7 @@ extension Bot {
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         avatarColor = try c.decodeIfPresent(String.self, forKey: .avatarColor) ?? "blue"
         avatarShape = try c.decodeIfPresent(String.self, forKey: .avatarShape) ?? "blob"
+        customIcon = try c.decodeIfPresent(CustomIcon.self, forKey: .customIcon)
         backend = try c.decodeIfPresent(String.self, forKey: .backend) ?? "custom"
         command = try c.decodeIfPresent(String.self, forKey: .command)
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd) ?? ""

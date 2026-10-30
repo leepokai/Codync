@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { Spinner } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import type { MenuItem } from '../components/Overlay'
-import { HStack, IconSlot, VStack } from '../components/Stack'
+import { IconSlot, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import type { Link } from '@shared/analytics'
 import { account, useAccount } from '../store/account'
@@ -15,19 +15,14 @@ import { useTr } from '../lib/use-language'
 // right-click actions, both built on the same keyboard-driven rows.
 
 export function ProfileAvatar() {
-  const { user, isBusy } = useAccount()
+  const { user, isBusy, isReady } = useAccount()
   return (
     <span className="profile-avatar" aria-hidden>
-      {user?.avatarURL ? (
+      {isBusy || !isReady ? <Spinner size={14} /> : user?.avatarURL ? (
         <img src={user.avatarURL} alt="" className="profile-avatar-image" />
       ) : (
         <Icon name="person.fill" size={15} weight="medium" color="var(--secondary)" />
       )}
-      {isBusy ? (
-        <HStack as="span" justify="center" className="profile-avatar-busy">
-          <Spinner size={14} />
-        </HStack>
-      ) : null}
     </span>
   )
 }

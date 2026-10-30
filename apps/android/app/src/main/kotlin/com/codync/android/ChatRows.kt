@@ -157,7 +157,7 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 @Composable internal fun AuthorLabel(botId: String?, state: AppState, name: String? = null) {
     val bot = state.bots.firstOrNull { it.id == botId }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp)
+        if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
         Text(state.authorName(botId, name), style = Type.subheadline.medium, color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.secondary)
     }
 }
@@ -300,7 +300,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(emoji, style = Type.system(15f))
                 Row(horizontalArrangement = Arrangement.spacedBy((-5).dp)) {
-                    for (bot in bots.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 16.dp)
+                    for (bot in bots.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 16.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                 }
             }
         }

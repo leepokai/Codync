@@ -234,7 +234,7 @@ internal object NotificationDisplay {
         val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty()).setContentTitle(alert.title).setContentText(alert.body)
             .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
             .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
-        alert.conversation(bot)?.let { conversation ->
+        alert.copy(faces = alert.faces.withCustomIcons(notificationIcons(context, scope, computer))).conversation(bot)?.let { conversation ->
             // A system that refuses the conversation still shows the plain alert.
             try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot), alert.body, conversation) }
             catch (error: Exception) { android.util.Log.w("Codync", "Alert shown without its conversation", error) }
@@ -275,7 +275,10 @@ internal object NotificationDisplay {
         val style = Notification.ProgressStyle().setStyledByProgress(true)
             .setProgressSegments(List(4) { Notification.ProgressStyle.Segment(25).setColor(tint) })
             .setProgress(filled * 25)
-        val face = com.codync.android.design.characterAvatarBitmap(watch.avatarShape, watch.avatarColor, 128, 0xFF141414.toInt())
+        val custom = notificationIcons(context, scope, computer)["bot:${watch.botId}"]
+        val face = com.codync.android.design.customAvatarBitmap(custom?.dataUrl, custom?.tinted == true, 128,
+            com.codync.android.design.AvatarPalette.colors[watch.avatarColor]?.toInt() ?: 0xFF1084FE.toInt())
+            ?: com.codync.android.design.characterAvatarBitmap(watch.avatarShape, watch.avatarColor, 128, 0xFF141414.toInt())
         val open = builder(context, scope, computer, watch.botId, TASKS).build().contentIntent
         val notification = Notification.Builder(context, TASKS).setSmallIcon(R.drawable.ic_notification).setContentTitle(watch.name).setContentText(text)
             .setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(face)).setContentIntent(open).setStyle(style)

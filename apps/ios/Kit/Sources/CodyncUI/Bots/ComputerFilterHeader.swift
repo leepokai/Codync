@@ -25,19 +25,21 @@ public struct ComputerFilterHeader: View {
 
     public var body: some View {
         Menu {
-            Button(L10n.tr("All computers"), systemImage: selection.shown.count == accounts.computers.count ? "checkmark" : "desktopcomputer") { update("") }
+            Toggle(isOn: Binding(get: { selection.shown.count == accounts.computers.count }, set: { _ in update("") })) {
+                Label(L10n.tr("All computers"), systemImage: "desktopcomputer")
+            }
             ForEach(accounts.computers) { computer in
-                Button {
-                    update(selection.toggling(computer.id))
-                } label: {
-                    Label(computerTitle(computer), systemImage: selection.shown.contains(computer.id) ? "checkmark" : "desktopcomputer")
+                Toggle(isOn: Binding(get: { selection.shown.contains(computer.id) }, set: { _ in update(selection.toggling(computer.id)) })) {
+                    Label { Text(computerTitle(computer)) } icon: { ComputerBadge(computer, size: 28) }
                 }
                 .menuActionDismissBehavior(.disabled)
             }
             if accounts.computers.count > 1 {
                 Menu(L10n.tr("Show only")) {
                     ForEach(accounts.computers) { computer in
-                        Button(computer.name) { update(selection.only(computer.id)) }
+                        Button { update(selection.only(computer.id)) } label: {
+                            Label { Text(computer.name) } icon: { ComputerBadge(computer, size: 28) }
+                        }
                     }
                 }
             }

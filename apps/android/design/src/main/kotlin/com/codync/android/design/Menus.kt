@@ -81,6 +81,7 @@ class MenuItem(
     val children: List<MenuItem>? = null,
     /** Shows [title] as it is, never translated: a name the user gave (a section's). */
     val verbatim: Boolean = false,
+    val detail: String? = null,
     val action: () -> Unit = {},
 ) {
     /** [title] as the row shows it: through [translate], unless [verbatim]. */
@@ -252,6 +253,7 @@ private val MenuShape = RoundedRectangle(26.dp)
         .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
         val leading = when {
+            item.icon != null -> item.icon
             item.selected == true -> "checkmark"
             item.selected == false -> null
             else -> item.icon
@@ -259,7 +261,11 @@ private val MenuShape = RoundedRectangle(26.dp)
         Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
             if (leading != null) Symbol(leading, size = 21.dp, tint = ink)
         }
-        Text(item.shownTitle(translator()), Modifier.weight(1f), style = if (bold) Type.body.semibold else Type.body, color = ink)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(item.shownTitle(translator()), style = if (bold) Type.body.semibold else Type.body, color = ink)
+            item.detail?.let { Text(tr(it), style = Type.caption, color = Palette.secondary) }
+        }
+        if (item.icon != null && item.selected == true) Symbol("checkmark", size = 16.dp, tint = ink)
         if (item.children != null) Symbol("chevron.right", size = 16.dp, tint = Palette.secondary)
     }
 }

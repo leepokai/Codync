@@ -44,6 +44,10 @@ Clicking a skill (an Extensions row, an installed skill, or the info button besi
 
 Registry-backed package connectors follow their upstream release. The host checks the Registry periodically after credentials are unlocked and checks again immediately before a package process starts. If a newer pinned npm, PyPI, OCI or NuGet reference is available, only that package/image argument is replaced; the running process is not interrupted, and the new version applies on its next launch. Network failures, missing packages and attempted downgrades leave the installed reference unchanged. Custom command connectors are never updated automatically.
 
+## A login that stops working
+
+An agent's process keeps the credentials it started with, and its account check can still say signed in when they no longer work (`claude auth status` reports `loggedIn: true` with a revoked OAuth token). So a prompt the agent refuses for auth (`acp::needs_sign_in`, `agent/bot/queue.rs` `invite_sign_in`) always drops the bot's process. When that process was already running before the turn, the turn's messages go out again on a new one first (`agent_sign_in::send_again`), which picks up a sign-in done elsewhere. Only a refusal on a process started for the turn posts the sign-in card and marks the agent refused (`note_prompt_refused`): from then on its account check reads signed out, so the sheet offers to sign in instead of showing *Signed in*, until a prompt goes through or a sign-in finishes in Codync (a setup terminal that exits 0, `authenticate`, saved keys).
+
 ## Codex usage
 
 The host asks the installed Codex CLI's app-server `account/rateLimits/read` method for the current account's plan windows every five minutes. Executable lookup and process startup run on a blocking worker. It initializes the CLI transport without creating a thread or model turn, then stops the probe through the host's existing process-tree cleanup. Startup, handshake and account-read failures retain their phase and cause in structured debug logs. The canonical `rateLimitsByLimitId.codex` bucket takes precedence over the older single `rateLimits` view. Reset timestamps are Unix seconds and become milliseconds in the existing `usage` event.
@@ -132,3 +136,7 @@ See [Connector setup and credentials](connector-credentials.md) for the shared
 macOS/Linux vault, optional 1Password references, in-chat connection requests and
 MCP readiness checks. Single-option connectors without setup fields start adding
 immediately; setup failures remain visible for retry.
+
+## Custom icons
+
+Agents and bots support per-computer image overrides. See [custom icons](custom-icons.md) for the API, storage limits, cache behavior and deployment.

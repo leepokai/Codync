@@ -41,15 +41,50 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         db.execSQL("CREATE TABLE history(lane TEXT PRIMARY KEY)")
     }
 
+    private var decodedIcons: Map<String, com.codync.android.core.CustomIcon>? = null
+    private var decodedIconsRevision: String? = null
+
+    private var iconConnectionEpoch = 0L
+
+    /** A reconnect's snapshot is authoritative even after restoring an older database with the same host id. */
+    @Synchronized fun beginIconConnection(): Long = transaction { db ->
+        iconConnectionEpoch++
+        db.delete("meta", "k='iconsRevision'", null)
+        iconConnectionEpoch
+    }
+
+    @Synchronized fun iconEpoch(): Long = iconConnectionEpoch
+
+    /** A reply from a previous connection cannot repopulate the newly restored cache. */
+    @Synchronized fun applyIconReply(event: MirrorEvent.Icons, epoch: Long): Boolean {
+        if (epoch != iconConnectionEpoch) return false
+        apply(event)
+        return true
+    }
+
+    /** Read only the image metadata; a push need not load the conversation history. */
+    @Synchronized fun icons(): Map<String, com.codync.android.core.CustomIcon> {
+        val db = readableDatabase
+        val revision = meta(db, "iconsRevision")
+        if (decodedIcons != null && decodedIconsRevision == revision) return requireNotNull(decodedIcons)
+        return meta(db, "icons")?.let { com.codync.android.core.decodeCustomIcons(WireJson.parseToJsonElement(it)) }.orEmpty().also {
+            decodedIcons = it
+            decodedIconsRevision = revision
+        }
+    }
+
     @Synchronized fun snapshot(): MirrorSnapshot {
         val db = readableDatabase
+        val icons = icons()
         return MirrorSnapshot(
-            rows(db, "SELECT payload FROM bots WHERE deleted=0") { WireJson.decodeFromString<Bot>(it) },
+            rows(db, "SELECT payload FROM bots WHERE deleted=0") { WireJson.decodeFromString<Bot>(it) }
+                .map { it.copy(customIcon = icons["bot:${it.id}"]) },
             rows(db, "SELECT payload FROM entries ORDER BY seq") { WireJson.decodeFromString<Entry>(it) },
             rows(db, "SELECT payload FROM pending ORDER BY created") { WireJson.decodeFromString<PendingSend>(it) },
             meta(db, "rev")?.toLong() ?: 0,
             meta(db, "usage")?.let { WireJson.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap()),
             meta(db, "screen")?.let { WireJson.parseToJsonElement(it).jsonObject },
+            icons,
         )
     }
 
@@ -72,6 +107,11 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     @Synchronized fun apply(event: MirrorEvent) = apply(listOf(event))
     @Synchronized fun apply(events: List<MirrorEvent>) = transaction { db ->
         for (event in events) when (event) {
+            is MirrorEvent.Icons -> if (event.revision >= (meta(db, "iconsRevision")?.toLong() ?: -1)) {
+                setMeta(db, "icons", WireJson.encodeToString(event.icons))
+                setMeta(db, "iconsRevision", event.revision.toString())
+                decodedIcons = null
+            }
             is MirrorEvent.Hello -> {
                 if (meta(db, "hostId")?.let { it != event.hostId } == true) reset(db)
                 setMeta(db, "hostId", event.hostId)
@@ -145,9 +185,11 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         entry.clientNonce?.takeIf { entry.kind == "user" && it.isNotEmpty() }?.let { db.delete("pending", "nonce=?", arrayOf(it)) }
     }
     private fun reset(db: SQLiteDatabase) {
+        decodedIcons = null
+        decodedIconsRevision = null
         db.delete("bots", null, null)
         dropConversation(db)
-        db.delete("meta", "k IN ('usage','screen')", null)
+        db.delete("meta", "k IN ('usage','screen','icons','iconsRevision')", null)
     }
     private fun dropConversation(db: SQLiteDatabase) {
         listOf("entries", "history").forEach { db.delete(it, null, null) }

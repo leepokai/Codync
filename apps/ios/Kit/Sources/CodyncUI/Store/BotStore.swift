@@ -21,6 +21,9 @@ public enum SendProgress: Sendable {
 @MainActor
 @Observable
 public final class BotStore {
+    public internal(set) var icons: [String: CustomIcon] = [:]
+    var iconsRevision: Int64 = -1
+    var iconsEpoch: UInt64 = 0
     public enum Connection: Equatable {
         case unpaired
         case connecting

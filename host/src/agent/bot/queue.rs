@@ -8,7 +8,7 @@ use crate::market::agent_sign_in;
 use crate::store::{Lane, now_ms};
 use anyhow::{Result, anyhow};
 use serde_json::json;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 impl Actor {
@@ -337,21 +337,34 @@ impl Actor {
 
     /// When `e` asks for signing in: marks the harness signed out and puts a sign-in card in the
     /// chat, which sends this turn's messages again once the user has signed in. Whether it did.
+    /// A process older than the turn may hold a sign-in replaced since: a new one tries its messages first.
     pub(super) fn invite_sign_in(&mut self, e: &anyhow::Error) -> bool {
         let backend = self.cfg.backend.clone();
         if crate::agent::backends::harness(&backend).is_none() || !crate::agent::acp::needs_sign_in(e) {
             return false;
         }
+        // The process keeps the credentials it started with (Claude's revoked token): the next turn starts a new one.
+        self.restart_after_turn = true;
         let held = self.held_for_sign_in().to_vec();
-        crate::agent::backends::set_signed_in(&backend, Some(false));
-        // WorkBuddy can still report an account after this, which is not a working login.
-        // Other agents' own checks are left alone, so a terminal or saved keys can sign them in.
-        // WorkBuddy's current process was opened before that, so drop it.
-        crate::agent::backends::note_prompt_refused(&backend);
-        if !crate::agent::backends::session_proves_sign_in(&backend) {
-            self.restart_after_turn = true;
+        if self.process_predates_turn() && !held.is_empty() {
+            match agent_sign_in::send_again(&self.hub, &self.cfg.id, held.iter().map(String::as_str)) {
+                Ok(()) => return true,
+                Err(error) => tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't retry"),
+            }
         }
+        crate::agent::backends::set_signed_in(&backend, Some(false));
+        // An account check can still say signed in (`claude auth status` with a revoked token): this refusal wins.
+        crate::agent::backends::note_prompt_refused(&backend);
         self.sign_in_card(&backend, &held)
+    }
+
+    /// The agent's process was already running when this turn started.
+    fn process_predates_turn(&self) -> bool {
+        let (Some(conn), Some(started_at)) = (&self.conn, self.hub.runtime(&self.id()).started_at) else {
+            return false;
+        };
+        let turn_age = Duration::from_millis(u64::try_from(now_ms() - started_at).unwrap_or(0));
+        conn.started.elapsed() > turn_age
     }
 
     /// Agent `backend`'s sign-in card in the chat, holding `entries`. Whether it's there.

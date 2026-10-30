@@ -9,6 +9,7 @@ mod cloud_cli;
 mod compat;
 mod environment;
 mod hub;
+mod icons;
 mod market;
 mod mcp;
 mod network;

@@ -7,6 +7,7 @@ import type { CallLine } from './calls'
 export type BotStatus = 'idle' | 'working' | 'needsInput' | 'error'
 
 export interface Bot {
+  customIcon?: import('./custom-icons').CustomIcon
   id: string
   /** `agent`, or `group`: several bots and the user in one chat. */
   kind: string
@@ -466,6 +467,8 @@ export function normalizeScreen(raw: Partial<ScreenState> | undefined | null): S
 }
 
 export interface Hello {
+  iconsRevision?: number
+  icons?: import('./custom-icons').CustomIcons
   hostId: string
   name: string
   version: string
@@ -501,7 +504,11 @@ export interface DirItem {
   isGit: boolean
 }
 
+export interface RecentWorkspace { path: string; usedAt: number }
+
 export interface DirListing {
+  recent?: RecentWorkspace[]
+  ancestors?: DirItem[]
   path: string
   parent?: string | null
   isGit: boolean

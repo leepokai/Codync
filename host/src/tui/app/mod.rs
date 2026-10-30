@@ -25,9 +25,9 @@ pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
 pub use ui::{
-    ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderPicker, Form, Goto,
-    GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle, TraceMode,
-    Width,
+    ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderMode, FolderPicker,
+    Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
+    TraceMode, Width,
 };
 
 use crate::tui::l10n::tr;
@@ -68,6 +68,7 @@ pub struct App {
     /// This computer's network (`networkView`'s shape); null on hosts without one.
     pub network: Value,
     pub backends: Vec<Value>,
+    pub custom_icons: bool,
     pub selected: Option<String>,
     pub focus: Focus,
     pub typing: bool,
@@ -161,6 +162,7 @@ impl App {
             screen: Value::Null,
             network: Value::Null,
             backends: vec![],
+            custom_icons: false,
             selected: None,
             focus: Focus::Roster,
             typing: false,

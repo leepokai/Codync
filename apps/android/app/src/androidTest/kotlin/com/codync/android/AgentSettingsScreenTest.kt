@@ -72,34 +72,37 @@ class AgentSettingsScreenTest {
     @Test fun hostFolderBrowsingFiltersLocallyDrillsInAndSelectsTheAuthoritativeDirectory() {
         var chosen: String? = null
         val requests = mutableListOf<String?>()
-        compose.setContent { Hosted { FolderPicker("/home", true, { path ->
+        compose.setContent { Hosted { FolderPicker("/home", true, "Fixture computer", load = { path ->
             requests.add(path)
-            if (path == "/home/Repo") DirListing("/home/Repo", "/home", true, emptyList())
-            else DirListing("/home", "/", false, listOf(DirItem("Repo", "/home/Repo", true), DirItem("Other", "/home/Other")))
-        }) { chosen = it } } }
+            if (path == "/home/Repo") DirListing("/home/Repo", "/home", true, emptyList(), recent = emptyList())
+            else DirListing("/home", "/", false, listOf(DirItem("Repo", "/home/Repo", true), DirItem("Other", "/home/Other")), recent = emptyList())
+        }, select = { it }) { chosen = it } } }
+        compose.waitUntil { compose.onAllNodesWithText("Browse other folders").fetchSemanticsNodes().size == 1 }
+        compose.onNodeWithText("Search recent workspaces").assertDoesNotExist()
+        compose.onNodeWithText("Browse other folders").performClick()
         compose.waitUntil { compose.onAllNodesWithText("Repo").fetchSemanticsNodes().size == 1 }
         compose.onNode(hasSetTextAction()).performTextInput("repo")
         compose.onNodeWithText("Other").assertDoesNotExist()
-        assertEquals(listOf<String?>("/home"), requests)
+        assertEquals(listOf(null, "/home"), requests)
         compose.onNodeWithText("Repo").performClick()
-        compose.waitUntil { compose.onAllNodesWithText("Use “Repo”").fetchSemanticsNodes().size == 1 }
-        assertEquals(listOf<String?>("/home", "/home/Repo"), requests)
-        compose.onNodeWithText("Use “Repo”").performClick()
-        assertEquals("/home/Repo", chosen)
-        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntil { requests.lastOrNull() == "/home/Repo" }
+        compose.onNodeWithText("Use this folder").performClick()
+        compose.waitUntil { chosen == "/home/Repo" }
+        assertEquals(listOf(null, "/home", "/home/Repo"), requests)
+        compose.onNodeWithContentDescription("Parent folder").performClick()
         compose.waitUntil { compose.onAllNodesWithText("Other").fetchSemanticsNodes().size == 1 }
-        compose.onNodeWithText("Use “home”").performClick()
-        assertEquals("/home", chosen)
+        compose.onNodeWithText("Use this folder").performClick()
+        compose.waitUntil { chosen == "/home" }
     }
 
     @Test fun anUnavailableOrOfflineFolderShowsWhyWithoutOfferingIt() {
         val online = mutableStateOf(true)
         var loads = 0
-        compose.setContent { Hosted { FolderPicker("/missing", online.value, { loads++; throw java.io.IOException("This folder no longer exists.") }) {
+        compose.setContent { Hosted { FolderPicker("/missing", online.value, "Fixture computer", load = { loads++; throw java.io.IOException("This folder no longer exists.") }, select = { fail("Unavailable folder must not be selected"); it }) {
             fail("A folder that failed to load can't be chosen")
         } } }
         compose.waitUntil { compose.onAllNodesWithText("This folder no longer exists.").fetchSemanticsNodes().size == 1 }
-        compose.onNodeWithText("Use “missing”").assertDoesNotExist()
+        compose.onNodeWithText("Use this folder").assertIsNotEnabled()
         compose.runOnUiThread { online.value = false }
         compose.onNodeWithText("Connect to this computer to browse its folders.").assertIsDisplayed()
         assertEquals(1, loads)

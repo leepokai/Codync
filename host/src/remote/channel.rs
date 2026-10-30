@@ -30,8 +30,8 @@ use x25519_dalek::StaticSecret;
 
 /// Largest WebSocket message accepted (and the Cloudflare limit); 256 KiB chunks fit.
 pub const MAX_WS_MESSAGE: usize = 1 << 20;
-/// Largest reassembled device → host message.
-const MAX_INBOUND: usize = 1 << 20;
+/// Largest reassembled authorized device → host message (5 MiB icon + base64/JSON).
+const MAX_INBOUND: usize = 8 << 20;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Channel keys are replaced (close `4011`) after this long.
 const MAX_AGE: Duration = Duration::from_hours(24);
@@ -188,7 +188,7 @@ pub async fn run(hub: Arc<Hub>, t: Transport, kind: ChannelKind) {
         lease: None,
         online: None,
     };
-    let opener = Opener::new(hs.keys.d2h, MAX_INBOUND);
+    let opener = Opener::new(hs.keys.d2h, if hs.device.is_some() { MAX_INBOUND } else { 1 << 20 });
     let (code, reason) = if let Some(d) = hs.device {
         ch.set_device(&d);
         ch.serve(&mut incoming, opener, &mut writer).await
@@ -814,6 +814,7 @@ mod tests {
         p.send(json!({"id": 3, "sub": "events", "b": {"since": hub.store.current_rev(), "client": "ios"}})).await;
         let hello = p.recv().await.unwrap();
         assert_eq!((hello["id"].as_u64(), hello["ev"]["type"].as_str()), (Some(3), Some("hello")));
+        assert_eq!(p.recv().await.unwrap()["ev"]["type"], "icons");
         assert!(hub.phone_connected());
 
         assert!(hub.revoke_device(&dk).unwrap());
@@ -908,6 +909,7 @@ mod tests {
         p.hello(&hub, false).await;
         p.send(json!({"id": 7, "sub": "events", "b": {"since": 0}})).await;
         assert_eq!(p.recv().await.unwrap()["ev"]["type"], "hello");
+        assert_eq!(p.recv().await.unwrap()["ev"]["type"], "icons");
         p.send(json!({"id": 7, "cancel": true})).await;
         assert_eq!(p.recv().await.unwrap(), json!({"id": 7, "end": true}));
         assert_eq!(p.call(8, "hello", json!({})).await["id"], 8, "the channel goes on");

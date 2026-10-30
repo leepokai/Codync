@@ -144,7 +144,19 @@ pub struct Dir {
     pub git: bool,
 }
 
+#[derive(PartialEq, Eq)]
+pub enum FolderMode {
+    Recent,
+    Browse,
+    Path,
+}
+
 pub struct FolderPicker {
+    pub request_id: String,
+    pub mode: FolderMode,
+    pub recent: Vec<Dir>,
+    pub remembers: bool,
+    pub busy: bool,
     pub path: String,
     pub parent: Option<String>,
     pub dirs: Vec<Dir>,

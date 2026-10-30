@@ -164,6 +164,11 @@ fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
         CodyncWidgets.update(getApplication())
     }
 }
+suspend fun AppStore.selectWorkspace(path: String): String {
+    return hostQuery("selectWorkspace", body("path" to path)).jsonObject["path"]?.jsonPrimitive?.content
+        ?: error("Missing selected folder")
+}
+
 suspend fun AppStore.listDirs(path: String?): DirListing {
     val response = hostQuery("listDirs", body("path" to path))
     return WireJson.decodeFromJsonElement(response)

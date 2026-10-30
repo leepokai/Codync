@@ -126,9 +126,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         if (state.network?.shown == true) row { RowLabel("Network", NETWORK_ICON, chevron = true, modifier = Modifier.plainButton(action = actions.network)) }
     }
     if (BuildConfig.PUSH_CONFIGURED) row {
-        CodyncSwitch(state.computers.first().notifications, store::notifications, Modifier.fillMaxWidth()) {
-            RowLabel("Push notifications", "bell", modifier = Modifier.weight(1f))
-        }
+        ComputerNotificationsRow(state.computers.first().notifications, store::notifications)
     }
     row { ConnectionRow(state.computers.first(), store) }
     // Kept while an update asked from here restarts the computer: its spinner says it's updating.
@@ -259,13 +257,7 @@ private const val NETWORK_ICON = "point.3.connected.trianglepath.dotted"
     val tint = color?.let(AvatarPalette::tint) ?: Palette.text
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         if (device == "linux") Symbol("computer.linux", size = size * 0.55f, tint = tint)
-        else Symbol(when (device) {
-            "laptop" -> "laptopcomputer"
-            "macmini" -> "macmini"
-            "macstudio" -> "macstudio"
-            "macpro" -> "macpro.gen3"
-            else -> "desktopcomputer"
-        }, size = size * 0.6f, tint = tint)
+        else Symbol(computerSymbol(device), size = size * 0.6f, tint = tint)
     }
 }
 
@@ -301,4 +293,13 @@ private val ConnectionRoute.icon get() = when (this) {
     ConnectionRoute.Automatic -> "arrow.triangle.branch"
     ConnectionRoute.CloudflareFirst -> "cloud"
     ConnectionRoute.DirectOnly -> "wifi"
+}
+
+internal fun computerSymbol(device: String?): String = when (device) {
+    "laptop" -> "laptopcomputer"
+    "macmini" -> "macmini"
+    "macstudio" -> "macstudio"
+    "macpro" -> "macpro.gen3"
+    "linux" -> "computer.linux"
+    else -> "desktopcomputer"
 }

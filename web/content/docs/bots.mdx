@@ -29,7 +29,7 @@ The host on your computer runs every bot. A bot's agent starts when you send it 
 
 ## Profile
 
-- **Avatar:** a character shape and a color.
+- **Avatar:** a character shape and a color, or your own image.
 - **Name:** shown in the bot list, the chat and notifications. If you create a bot without a name, it's called "New Bot" until Codync names it after its first few conversations.
 - **Standing instructions:** rules that always apply, such as "Reviews PRs. Never pushes without asking." Put task-specific requests in the chat instead. The bot gets your changes with its next message, and the conversation continues.
 
@@ -49,11 +49,13 @@ Changing the agent or the model starts a new agent session. The chat history sta
 The **Workspace** setting is the folder the bot starts in.
 
 - **Personal workspace** (the default): a folder of its own inside Codync's data folder, `~/.codync/bots/`. It stays when you rename the bot, change its model, restart the computer or start a new session.
-- **Choose project folder…**: an existing folder on the computer, such as a Git repository. The folder picker browses the computer's folders, wherever you are. It starts at your home folder; Back climbs to the folders above it and, on Windows, to the list of drives. Linked folders (symlinks, junctions, mounted drives) show up like any other folder.
+- **Choose project folder…**: an existing folder on the computer, such as a Git repository. The folder picker browses the computer's folders, wherever you are. Start with **Recent workspaces**, or choose **Browse other folders**. In the browser, use the path breadcrumbs and **Parent folder** to move through folders or Windows drives, or **Enter folder path** to paste an absolute path (including `~/`). Search filters the visible recent list or the current folder, not the whole computer. Confirm with **Use this folder** at the bottom. Recent selections are stored on that computer and shared across its connected clients; older hosts support browsing without recent history. Linked folders (symlinks, junctions, mounted drives) show up like any other folder.
 
 Either way, the bot can work in other folders when you ask it to. A workspace isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project folder can get in each other's way, and Codync doesn't create separate Git worktrees for them.
 
 Changing the folder starts a new agent session.
+
+When there are no recent workspaces, **Browse other folders** appears first. After you choose a folder, recent workspaces and their search appear on your next visit.
 
 ## Permissions: Ask me or Approve automatically
 
@@ -127,3 +129,15 @@ Confirm with **Delete bot and its conversation**. Deleting your lead bot leaves 
 
 On the iPhone details sheet or the desktop details panel, **Create template** shows the bot's settings as text you can copy, without its conversation.
 
+
+## Custom icons
+
+Open an existing bot's avatar picker and choose **Upload from desktop** (**Upload image** on phones), or choose **Paste URL** to reveal the address field, paste an HTTPS image address, and press the arrow button. Changes save immediately. **Tint icon** uses the bot's color; turn it off to keep the picture's original colors. **Use default** restores the character.
+
+PNG, JPEG and WebP files can be up to 5 MiB and 4096 × 4096 pixels. SVG files can be up to 256 KiB; external images and fonts are not loaded. Codync turns the image into a static PNG no larger than 256 × 256 pixels and compresses it to at most 48 KiB. Animated files use a still image.
+
+Sign in to the app and claim your computer before uploading. Choosing an image or Paste URL while signed out opens a sign-in prompt. The computer encrypts images before storing them in private Cloudflare R2 storage. Cached images remain available offline, and showing an icon does not download it from R2 again. New uploads and removals need a connection; a failed save keeps the previous icon. Each computer can have 128 custom icons.
+
+On iPhone, custom pictures stay still in Live Activities and the Dynamic Island. Built-in characters keep their animations. If a cached custom image cannot load, a still default character takes its place.
+
+In the **Terminal UI**, press Ctrl+O in a bot's settings. Enter a local file path or HTTPS URL, choose original colors, tint, or default, then press Enter. The terminal keeps its text avatar; graphical apps show your image.

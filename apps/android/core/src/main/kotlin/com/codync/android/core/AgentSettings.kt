@@ -24,5 +24,7 @@ import kotlinx.serialization.Serializable
 }
 data class ModelChoice(val id: String?, val name: String, val description: String? = null)
 
-@Serializable data class DirListing(val path: String, val parent: String? = null, val isGit: Boolean = false, val dirs: List<DirItem>)
+@Serializable data class RecentWorkspace(val path: String, val usedAt: Long)
+@Serializable data class DirListing(val path: String, val parent: String? = null, val isGit: Boolean = false, val dirs: List<DirItem>,
+    val recent: List<RecentWorkspace>? = null, val ancestors: List<DirItem>? = null)
 @Serializable data class DirItem(val name: String, val path: String, val isGit: Boolean = false)

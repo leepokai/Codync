@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 /** Private summaries only: widget storage never contains chat text or credentials. */
 @Serializable data class WidgetBot(val id: String, val name: String, val status: String,
-    val unread: Int = 0, val avatarColor: String = "blue", val avatarShape: String = "blob")
+    val unread: Int = 0, val avatarColor: String = "blue", val avatarShape: String = "blob", val customIcon: CustomIcon? = null)
 
 @Serializable data class WidgetFeed(val scope: String = "local", val computerId: String? = null,
     val computerName: String = "", val bots: List<WidgetBot> = emptyList(), val botsAt: Long = 0,
@@ -35,4 +35,4 @@ fun teamSlots(bots: List<WidgetBot>, picks: List<String?>): List<WidgetBot?> {
 fun widgetBots(bots: List<Bot>): List<WidgetBot> = bots.filter { !it.hidden && !it.deleted }
     .sortedWith(compareBy<Bot> { when (it.status) { "needsInput" -> 0; "working" -> 1; "error" -> 2; else -> 3 } }
         .thenByDescending { it.pinned }.thenByDescending { it.lastAt }.thenBy { it.name })
-    .take(256).map { WidgetBot(it.id, it.name.take(256), it.status, it.unread, it.avatarColor, it.avatarShape) }
+    .take(256).map { WidgetBot(it.id, it.name.take(256), it.status, it.unread, it.avatarColor, it.avatarShape, it.customIcon) }

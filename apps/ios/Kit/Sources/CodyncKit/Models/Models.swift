@@ -216,6 +216,8 @@ public enum SetupStep: String, Codable, Sendable {
 }
 
 public struct Hello: Codable, Sendable {
+    public var icons: [String: CustomIcon]?
+    public var iconsRevision: Int64?
     public var hostId: String
     public var name: String
     public var version: String
@@ -243,7 +245,15 @@ public struct Hello: Codable, Sendable {
     public var latestVersion: String?
 }
 
+public struct RecentWorkspace: Codable, Sendable, Identifiable {
+    public var path: String
+    public var usedAt: Int64
+    public var id: String { path }
+}
+
 public struct DirListing: Codable, Sendable {
+    public var recent: [RecentWorkspace]?
+    public var ancestors: [DirItem]?
     public var path: String
     public var parent: String?
     public var isGit: Bool

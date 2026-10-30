@@ -423,6 +423,10 @@ export class BotStore extends BotSync {
     } catch {}
   }
 
+  async selectWorkspace(path: string) {
+    return (await this.ready()).call<{ path: string }>('selectWorkspace', { path })
+  }
+
   async listDirs(path: string | null) {
     return (await this.ready()).call<DirListing>('listDirs', { path })
   }

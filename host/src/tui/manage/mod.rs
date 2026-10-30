@@ -10,6 +10,7 @@ mod analytics;
 mod bot_chat;
 mod fields;
 mod gear;
+mod icons;
 mod library;
 mod market;
 mod memory;
@@ -25,6 +26,7 @@ mod when;
 pub use analytics::AnalyticsSheet;
 pub use fields::{handoff_fields, section_fields};
 pub use gear::{Gear, GearRow};
+pub use icons::icon_fields;
 pub use library::{ArtifactTitles, LibraryItem};
 pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
@@ -181,6 +183,7 @@ pub struct AgentSetup {
 }
 
 pub enum SetupRow {
+    Icon,
     Install,
     Node,
     Login,
@@ -201,6 +204,7 @@ pub struct Input {
 }
 
 pub enum Submit {
+    Icon(String),
     AgentEnv(String),
     Connection(Box<super::connections::Connection>),
     Connector(Value),

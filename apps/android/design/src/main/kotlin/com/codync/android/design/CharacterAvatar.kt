@@ -32,7 +32,7 @@ object AvatarPalette {
     fun tint(id: String): Color = Color(colors[id] ?: colors.getValue("blue"))
 }
 
-data class AvatarFace(val shape: String, val color: String, val status: String = "idle")
+data class AvatarFace(val shape: String, val color: String, val status: String = "idle", val customImage: String? = null, val customTinted: Boolean = false)
 
 /** Static system-widget drawing uses the same mask, palette and eyes as the app; [cells] is its grid (7, 9 or 13). */
 fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, highlight: Int? = null, cells: Int = 9): android.graphics.Bitmap {
@@ -64,7 +64,8 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
 
 /** Port of CodyncKit's dotted character; the accompanying name/status supplies accessibility text. */
 @Composable fun CharacterAvatar(shape: String, color: String, size: Dp = 40.dp, status: String = "idle", monochrome: Color? = null,
-    highlight: Color? = null) {
+    highlight: Color? = null, customImage: String? = null, customTinted: Boolean = false) {
+    if (StaticCustomIcon(customImage, customTinted, size, monochrome ?: AvatarPalette.tint(color))) return
     val owner = LocalLifecycleOwner.current
     var active by remember(owner) { mutableStateOf(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
     DisposableEffect(owner) {
@@ -72,7 +73,7 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
-    val time = if (active && status in listOf("working", "needsInput") && ValueAnimator.areAnimatorsEnabled()) {
+    val time = if (customImage == null && active && status in listOf("working", "needsInput") && ValueAnimator.areAnimatorsEnabled()) {
         val transition = rememberInfiniteTransition(label = "Character activity")
         val seconds by transition.animateFloat(0f, 3600f, infiniteRepeatable(tween(3_600_000, easing = LinearEasing)), label = "Character light and eyes")
         seconds.toDouble()
@@ -111,7 +112,7 @@ fun characterAvatarBitmap(shape: String, color: String, pixels: Int, ink: Int, h
         fun side(fraction: Float) = size * fraction
         @Composable fun place(index: Int, fraction: Float, align: Alignment) {
             val face = faces[index]
-            Box(Modifier.align(align)) { CharacterAvatar(face.shape, face.color, side(fraction), face.status) }
+            Box(Modifier.align(align)) { CharacterAvatar(face.shape, face.color, side(fraction), face.status, customImage = face.customImage, customTinted = face.customTinted) }
         }
         when (faces.size) {
             0 -> Symbol("person.2", Modifier.align(Alignment.Center), size = size * 0.4f, tint = Palette.secondary)

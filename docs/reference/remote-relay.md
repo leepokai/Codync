@@ -269,7 +269,7 @@ d         = ChaCha20-Poly1305(kDir, nonce, plaintext, aad)   (密文 ‖ 16-byte
 ```
 - 每個方向各自從 `c = 0` 起算，每 frame +1；接收方要求 `c` 恰為預期值，否則關閉（close `4002 protocolError`）。這同時提供重放與重排保護。
 - 一則 inner 訊息（§6.5 的 JSON）UTF-8 編碼後切成 ≤ 256 KiB 的 chunk；接收方串接直到 flag `0x00`，再 JSON parse。
-- 重組上限：device→host 1 MiB；host→device 16 MiB。超過 → 關閉 `4013 tooLarge`。
+- 重組上限：已授權 device→host 8 MiB（含 5 MiB 自訂圖片的 base64/JSON）；僅供配對的 channel 維持 1 MiB；host→device 16 MiB。超過 → 關閉 `4013 tooLarge`。單一 WebSocket 訊息仍使用 256 KiB chunks。
 
 ### 6.4 Mailbox 封裝（device → 離線 host）
 

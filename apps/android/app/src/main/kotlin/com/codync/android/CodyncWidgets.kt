@@ -301,10 +301,14 @@ private fun ticks(percent: Double, tint: Int, red: Int): Bitmap {
     return bitmap
 }
 
-@Composable private fun Face(context: Context, shape: String, color: String, size: Dp, highlight: Int? = null) {
+@Composable private fun Face(context: Context, shape: String, color: String, size: Dp, highlight: Int? = null, customIcon: com.codync.android.core.CustomIcon? = null) {
     val pixels = (size.value * context.resources.displayMetrics.density).toInt().coerceIn(1, 256)
     val inkColor = ink.getColor(context).toArgb()
-    val bitmap = remember(shape, color, pixels, inkColor, highlight) { characterAvatarBitmap(shape, color, pixels, inkColor, highlight) }
+    val bitmap = remember(shape, color, pixels, inkColor, highlight, customIcon) {
+        com.codync.android.design.customAvatarBitmap(customIcon?.dataUrl, customIcon?.tinted == true, pixels,
+            com.codync.android.design.AvatarPalette.tint(color).toArgb())
+            ?: characterAvatarBitmap(shape, color, pixels, inkColor, highlight)
+    }
     Image(ImageProvider(bitmap), null, GlanceModifier.size(size))
 }
 
@@ -352,7 +356,7 @@ private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
                 Spacer(GlanceModifier.defaultWeight())
                 Summary(count, label, needs > 0, GlanceModifier)
                 Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    for (bot in bots.take(3)) Face(context, bot.avatarShape, bot.avatarColor, 23.dp)
+                    for (bot in bots.take(3)) Face(context, bot.avatarShape, bot.avatarColor, 23.dp, customIcon = bot.customIcon)
                     Spacer(GlanceModifier.defaultWeight())
                     if (working > 0 && needs > 0) Text("$working working", style = style(9f, secondary))
                 }
@@ -374,7 +378,7 @@ private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
             val (word, tint) = stateWord(bot)
             val open = if (sample) GlanceModifier else GlanceModifier.clickable(actionStartActivity(widgetIntent(context, feed, bot.id)))
             Row(open.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Face(context, bot.avatarShape, bot.avatarColor, 24.dp)
+                Face(context, bot.avatarShape, bot.avatarColor, 24.dp, customIcon = bot.customIcon)
                 Spacer(GlanceModifier.width(7.dp))
                 Text(bot.name, GlanceModifier.defaultWeight(), style = style(11f, ink, FontWeight.Medium), maxLines = 1)
                 Text(word, style = style(10f, tint, if (bot.status == "needsInput") FontWeight.Medium else FontWeight.Normal), maxLines = 1)
@@ -397,7 +401,7 @@ private fun stateWord(bot: WidgetBot): Pair<String, Ink> = when (bot.status) {
                     Box(open.defaultWeight().fillMaxHeight().background(tile).cornerRadius(16.dp), contentAlignment = Alignment.Center) {
                         if (bot == null) Face(context, "blob", "gray", 26.dp)
                         else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Face(context, bot.avatarShape, bot.avatarColor, 30.dp)
+                            Face(context, bot.avatarShape, bot.avatarColor, 30.dp, customIcon = bot.customIcon)
                             Text(bot.name, style = style(9f, ink, FontWeight.Medium), maxLines = 1)
                         }
                     }

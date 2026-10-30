@@ -291,6 +291,8 @@ pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) ->
         };
     }
     crate::market::vault::write(store, &env_slot(backend), &serde_json::to_string(&saved)?)?;
+    // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
+    backends::clear_prompt_refused(backend);
     check(store, backend).await
 }
 

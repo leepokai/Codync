@@ -91,11 +91,12 @@ import com.codync.android.design.*
 }
 
 /** Whether Android lets Codync show notifications at all; each computer's push switch is on its card. */
-@Composable private fun NotificationsSection() {
+@Composable internal fun NotificationsSection() {
     val context = LocalContext.current
-    var asked by remember { mutableStateOf(false) }
+    var answered by remember { mutableStateOf(false) }
+    val asked = rememberOnResume { PushPreferences.asked(context) } || answered
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        notificationsAnswered(context, granted, PromptSource.Settings); asked = true
+        notificationsAnswered(context, granted, PromptSource.Settings); answered = true
     }
     val allowed = rememberOnResume { notificationsAllowed(context) } || asked && notificationsAllowed(context)
     CardSection("Notifications", "Get a result summary, a request for input, or a failure notice. Notification previews follow your Android settings.") {

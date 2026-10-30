@@ -57,6 +57,16 @@ impl App {
         f.saving = true;
         f.error = None;
         match &f.submit {
+            Submit::Icon(target) => {
+                let mut body = json!({"target": target, "tinted": f.choice == 1});
+                if f.choice == 2 {
+                    body["remove"] = true.into();
+                } else if let Some(source) = values.get("source").and_then(Value::as_str) {
+                    let key = if source.starts_with("https://") { "url" } else { "localFile" };
+                    body[key] = source.into();
+                }
+                self.sheet("setIcon", body, Reply::FieldsSaved);
+            }
             Submit::Connection(_) => self.submit_connection(f, &values),
             Submit::AgentEnv(backend) => {
                 if values.is_empty() {

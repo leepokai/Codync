@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { TRAY_SYMBOLS, type TrayImage, type TraySummary } from '@shared/ipc'
 import { isGroup, isWorking, needsInput, folderName, type Bot, type UsageWindow } from '@shared/models'
 import type { NetworkView } from '@shared/network'
+import { iconBitmap, drawIconBitmap } from '../lib/icon-bitmap'
 import { drawCharacter, moodOf } from '../components/Avatar'
 import { fallbackPath } from '../components/icon-fallbacks'
 import { botsTemplate, presenceTitle, roleTitle } from '../lib/network-copy'
@@ -38,15 +39,17 @@ function canvasImage(key: string, width: number, height: number, draw: (ctx: Can
   const x2 = x1 && at(2)
   if (!x1 || !x2) return null
   const image = { x1, x2 }
+  if (cache.size >= 512) cache.delete(cache.keys().next().value!)
   cache.set(full, image)
   return image
 }
 
 function avatarIcon(bot: Bot) {
-  const key = `bot|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
+  const bitmap = iconBitmap(bot.customIcon)?.image
+  const key = `bot|${bot.customIcon?.dataUrl ?? ""}|${bot.customIcon?.tinted}|${bitmap?.complete}|${bot.id}|${bot.avatarShape}|${bot.avatarColor}|${bot.status}|${bot.unread > 0}`
   return canvasImage(key, 20, 20, (ctx) => {
     const dark = isDark()
-    drawCharacter(ctx, { shape: bot.avatarShape, fill: avatarColor(bot.avatarColor), size: 20, mood: moodOf(bot, false), dark, t: 0, still: true })
+    if (!drawIconBitmap(ctx, bot.customIcon, 20, avatarColor(bot.avatarColor))) drawCharacter(ctx, { shape: bot.avatarShape, fill: avatarColor(bot.avatarColor), size: 20, mood: moodOf(bot, false), dark, t: 0, still: true })
     const badge = needsInput(bot) ? palette(dark).warning : bot.unread > 0 ? (dark ? '#FFFFFF' : '#000000') : null
     if (badge) {
       const r = needsInput(bot) ? 3.6 : 2.8
@@ -139,11 +142,18 @@ function usageLine(w: UsageWindow) {
 
 /** Sends what the menu bar shows whenever the stores change. */
 export function useTraySummary(app: AppModel) {
+  const [, redraw] = useState(0)
   const stores = [...app.stores.values()]
   useModels(stores)
   const [textSize] = usePref(prefs.textSize)
   const [iconStyle] = usePref(prefs.usageIconStyle)
   const [language] = usePref(prefs.appLanguage)
+  useEffect(() => {
+    let current = true
+    const pending = app.roster.map(({ bot }) => iconBitmap(bot.customIcon)).filter((entry) => entry && !entry.image.complete)
+    if (pending.length) void Promise.all(pending.map((entry) => entry!.ready)).then(() => { if (current) redraw((n) => n + 1) })
+    return () => { current = false }
+  })
   useEffect(() => {
     const timer = setTimeout(() => {
       const local = app.local

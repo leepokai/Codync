@@ -87,12 +87,12 @@ internal object WidgetStore {
     @Synchronized fun refreshLanguage() { changed() }
     private fun changed() { changes.value++ }
     private inline fun <reified T> read(file: AtomicFile): T? = try {
-        if (!file.baseFile.exists() || file.baseFile.length() > 512 * 1024) null
+        if (!file.baseFile.exists() || file.baseFile.length() > MAX_WIDGET_FEED_BYTES) null
         else WireJson.decodeFromString<T>(file.readFully().toString(Charsets.UTF_8))
     } catch (_: Exception) { null }
     private inline fun <reified T> write(file: AtomicFile, value: T) {
         val bytes = WireJson.encodeToString(value).toByteArray()
-        require(bytes.size <= 512 * 1024) { "The widget report is too large." }
+        require(bytes.size <= MAX_WIDGET_FEED_BYTES) { "The widget report is too large." }
         val output = file.startWrite()
         try { output.write(bytes); file.finishWrite(output) }
         catch (error: Throwable) { file.failWrite(output); throw error }

@@ -271,10 +271,6 @@ html[data-platform="darwin"] .sidebar-header {
   height: 100%;
   object-fit: cover;
 }
-.profile-avatar-busy {
-  position: absolute;
-  inset: 0;
-}
 
 .rail-actions {
   display: flex;

@@ -155,7 +155,7 @@ struct BotSettingsForm: View {
                         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingAvatar.toggle() }
                     } label: {
                         ValueRow("Avatar") {
-                            CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 28)
+                            CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 28, customIcon: draft.id.flatMap { model.icons["bot:\($0)"] })
                                 .padding(5)
                                 .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
@@ -164,7 +164,10 @@ struct BotSettingsForm: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Edit Bot avatar")
                     if pickingAvatar {
-                        AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
+                        VStack(spacing: 16) {
+                            AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
+                            if let id = draft.id { CustomIconEditor(target: "bot:\(id)") }
+                        }
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }

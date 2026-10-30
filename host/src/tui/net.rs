@@ -2,6 +2,7 @@
 
 pub mod artifacts;
 pub mod files;
+mod icons;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -55,6 +56,13 @@ impl Client {
     }
 
     pub async fn call(&self, method: &str, body: &Value) -> Result<Value, String> {
+        let prepared;
+        let body = if method == "setIcon" {
+            prepared = icons::prepare(body).await.map_err(|e| format!("{e:#}"))?;
+            &prepared
+        } else {
+            body
+        };
         let token = self.token().ok_or(NOT_INSTALLED)?;
         let started = std::time::Instant::now();
         let res = loop {

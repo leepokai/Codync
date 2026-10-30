@@ -8,7 +8,11 @@ struct AccountSwitcherButton: View {
     var body: some View {
         Button { account.showSwitcher = true } label: {
             HStack(spacing: 4) {
-                AccountAvatar(url: account.avatarURL, email: account.email, size: 30)
+                if account.isBusy || !account.isReady {
+                    Spinner(size: 18).frame(width: 30, height: 30)
+                } else {
+                    AccountAvatar(url: account.avatarURL, email: account.email, size: 30)
+                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Palette.secondary)

@@ -76,6 +76,7 @@
 		C7ED489193AC0934515D2E85 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D0DE72EEAEC947C1D3CA237F /* PrivacyInfo.xcprivacy */; };
 		CF8160C37D98BD7C1472CF49 /* ReviewInvitationModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1B021A5F4CCAA3D180C2CB /* ReviewInvitationModifier.swift */; };
 		E0D116BF893B81AEC0D2135A /* BotShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300202AE0BDAB4961D1E4423 /* BotShortcuts.swift */; };
+		E1C181D77EA48DCDFEC2F15D /* CustomActivityIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 365F24B61AEDCFE6C389E904 /* CustomActivityIcon.swift */; };
 		E695251CFD06AC6F4E3396B7 /* OpenBotIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4EB0DBA2F08CD7C0E25E30 /* OpenBotIntent.swift */; };
 		E78E3B5FAFEB79F31AAC104D /* CodyncBot-teardrop-Tint.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C8F46BD8301E7E2C83C35111 /* CodyncBot-teardrop-Tint.ttf */; };
 		EBB0417A5FB2CE6D514D21BE /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = D9AB2F442A5F243653EAE936 /* ClerkKit */; };
@@ -139,6 +140,7 @@
 		300202AE0BDAB4961D1E4423 /* BotShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotShortcuts.swift; sourceTree = "<group>"; };
 		305DDCC18BB8AA6CD9D19CEF /* WidgetPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPreviews.swift; sourceTree = "<group>"; };
 		31BFDAD6DCCE1CC98642ACDD /* AccountSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSession.swift; sourceTree = "<group>"; };
+		365F24B61AEDCFE6C389E904 /* CustomActivityIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomActivityIcon.swift; sourceTree = "<group>"; };
 		36C62636FD789C49762696A3 /* RosterSectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosterSectionHeader.swift; sourceTree = "<group>"; };
 		3F4C4D3B64C608AEF2F85F91 /* Kit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Kit; path = ios/Kit; sourceTree = SOURCE_ROOT; };
 		445DB0A03CFBB5CC7A830139 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -306,6 +308,7 @@
 				F1162D95B42A1BF2EB5EC0E9 /* CallControlIntents.swift */,
 				F5B2717A8DFD43DC6DAA9D8C /* CallLiveActivity.swift */,
 				FAB9BDB52C3A9F7B2568A750 /* CodyncWidgets.swift */,
+				365F24B61AEDCFE6C389E904 /* CustomActivityIcon.swift */,
 				5C4EB0DBA2F08CD7C0E25E30 /* OpenBotIntent.swift */,
 				305DDCC18BB8AA6CD9D19CEF /* WidgetPreviews.swift */,
 				39BD6D06FC3DE74E5AA24856 /* Resources */,
@@ -682,6 +685,7 @@
 				B6ECB0743C67903DA1956B29 /* CallControlIntents.swift in Sources */,
 				ECE1339FED40D7D5D8806608 /* CallLiveActivity.swift in Sources */,
 				2CDF3DF16A13DAF83CA42168 /* CodyncWidgets.swift in Sources */,
+				E1C181D77EA48DCDFEC2F15D /* CustomActivityIcon.swift in Sources */,
 				5C9AE497DA83EB32AEC9057C /* OpenBotIntent.swift in Sources */,
 				3BCC04815E5CA8953E0DDCAD /* WidgetPreviews.swift in Sources */,
 			);

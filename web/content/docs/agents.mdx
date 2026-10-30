@@ -2,6 +2,8 @@ Every bot runs one coding agent on your computer. Codync drives agents through t
 
 Codync uses the agents with the accounts they're already signed in to on your computer, such as Claude Code with your Claude plan or Codex with your ChatGPT plan. It never calls a provider's API with your login.
 
+If an agent's login stops working (for example, signing in somewhere else revoked it), the bot first tries your message again on a fresh start of the agent, which picks up a newer login on the computer. If that fails too, the chat shows the agent's sign-in card: **Sign in** opens the agent's sign-in options, and your message goes out again once you've signed in.
+
 ## Usage limits
 
 On desktop, open **Settings > Usage** to see the limits reported by your connected computers. The host refreshes usage every five minutes.
@@ -120,3 +122,9 @@ There's no separate default-agent setting. A new bot gets Claude Code when Claud
 
 A bot can have fallback agents that carry on the same turn when its own agent is out of usage, rate limited, signed out or won't start. See [Agent fallbacks](/docs/agent-fallbacks).
 
+
+## Custom agent icons
+
+Open an agent in **Extensions** and use **Custom icon** to upload an image, or choose **Paste URL** to reveal the address field and submit an HTTPS image URL with the arrow button. Keep the original colors or turn on **Tint icon**. Choose **Use default** to restore its bundled logo, or the terminal symbol when no logo is bundled. Each computer keeps its own overrides, shared by its paired apps.
+
+The [custom icon limits and caching rules](/docs/bots#custom-icons) also apply to agents. In the terminal, open the agent's setup and choose **Custom icon**.

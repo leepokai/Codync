@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
             val phrases = remember(appLanguage, systemTag) { AppLanguageStore.phrases(applicationContext, appLanguage, systemTag) }
             val systemChinese = remember(systemTag) { systemScript(systemTag) != null }
             CompositionLocalProvider(
+                LocalAgentIconOverrides provides agentIconOverrides(state),
                 LocalNetworkImages provides images,
                 LocalAppLanguage provides appLanguage,
                 LocalSystemChinese provides systemChinese,

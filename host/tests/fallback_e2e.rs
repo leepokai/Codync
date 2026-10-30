@@ -280,3 +280,38 @@ async fn an_error_inside_a_refusal_holds_the_message_or_says_what_it_is() {
     host.call("send", json!({"botId": bot, "text": "Once more", "clientNonce": "n3"})).await;
     wait_for(&host, &bot, "declined notice", |e| e["data"]["text"] == "The agent declined to continue.").await;
 }
+
+#[tokio::test]
+async fn a_process_with_a_replaced_sign_in_starts_again_before_asking_to_sign_in() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Solo", "backend": "kimi", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    host.reply(&bot, "Hello").await;
+    wait_for(&host, &bot, "first reply", |e| e["data"]["final"] == true).await;
+    let prompts = || host.log(&bot, "primary.jsonl").iter().filter(|r| r["method"] == "session/prompt").count();
+    let answered = |history: &Value| {
+        history["entries"].as_array().unwrap().iter().filter(|e| e["data"]["text"] == "primary answered").count()
+    };
+
+    // The running process holds a sign-in replaced since (Claude's revoked token): a new process answers, no card.
+    std::fs::write(folder.join("primary.revoked"), "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "Fix the build", "clientNonce": "n1"})).await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while answered(&host.call("history", json!({"botId": bot})).await) < 2 {
+        assert!(Instant::now() < deadline, "the message wasn't answered again");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(last_prompt(&host, &bot, "primary").contains("Fix the build"));
+    assert_eq!(prompts(), 3, "the old process's try and the new one's");
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(!history["entries"].as_array().unwrap().iter().any(|e| e["data"]["connectionRequest"].is_object()));
+
+    // Signed out for real: the new process is refused too, and only then the card holds the message.
+    std::fs::write(folder.join("primary.signedout"), "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "Again", "clientNonce": "n2"})).await;
+    let card = wait_for(&host, &bot, "sign-in card", |e| e["data"]["connectionRequest"]["kind"] == "agent").await;
+    assert_eq!(card["data"]["connectionRequest"]["entryIds"].as_array().map(Vec::len), Some(1), "{card}");
+    assert_eq!(prompts(), 5, "tried once more on a new process, then no more");
+}

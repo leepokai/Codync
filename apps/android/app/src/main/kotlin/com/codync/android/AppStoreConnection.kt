@@ -114,6 +114,9 @@ fun AppStore.connect() {
                     }
                     launch {
                         active.state.collectLatest { link ->
+                            val iconEpoch = if (link is LinkState.Ready) {
+                                withContext(Dispatchers.IO) { requireNotNull(database).beginIconConnection() }
+                            } else null
                             showConnection(link)
                             if (link is LinkState.ComputerOffline) {
                                 reconcileMailbox(active)
@@ -124,8 +127,12 @@ fun AppStore.connect() {
                                 // This phone's picks (color, route, push) may have changed during those calls.
                                 changeComputer { current -> if (current.id == fromHost.id) fromHost.keepingDevicePicks(current) else current }
                                 val dropped = withContext(Dispatchers.IO) {
-                                    requireNotNull(database).setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
+                                    val mirror = requireNotNull(database)
+                                    val changed = mirror.setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
                                         BuildConfig.VERSION_NAME + "/" + hello["version"]?.jsonPrimitive?.content)
+                                    mirror.applyIconReply(MirrorEvent.Icons(hello["icons"]?.let(::decodeCustomIcons).orEmpty(),
+                                        hello["iconsRevision"]?.jsonPrimitive?.longOrNull ?: 0), requireNotNull(iconEpoch))
+                                    changed
                                 }
                                 // Dropped chats page their earlier messages again.
                                 mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }

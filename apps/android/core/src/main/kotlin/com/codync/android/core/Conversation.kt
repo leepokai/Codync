@@ -149,6 +149,7 @@ data class PendingSend(
 data class OutgoingFile(val path: String, val name: String, val size: Long)
 
 sealed interface MirrorEvent {
+    data class Icons(val icons: Map<String, CustomIcon>, val revision: Long = 0) : MirrorEvent
     /** The stream's first event; `network` is null from hosts before the network view (or one this app can't read). */
     data class Hello(val hostId: String, val rev: Long, val usage: JsonObject, val screen: JsonObject?, val network: NetworkView? = null) : MirrorEvent
     data class BotChanged(val bot: Bot) : MirrorEvent
@@ -166,6 +167,7 @@ sealed interface MirrorEvent {
 
     companion object {
         fun decode(value: JsonObject): MirrorEvent = when (value.text("type")) {
+            "icons" -> Icons(decodeCustomIcons(value.getValue("icons")), value["iconsRevision"]?.jsonPrimitive?.longOrNull ?: 0)
             "hello" -> Hello(requireNotNull(value.text("hostId")),
                 requireNotNull(value["rev"]?.jsonPrimitive?.longOrNull),
                 value["usage"]?.jsonObject ?: JsonObject(emptyMap()), value["screen"]?.takeUnless { it == JsonNull }?.jsonObject,
@@ -193,4 +195,5 @@ data class MirrorSnapshot(
     val rev: Long = 0,
     val usage: JsonObject = JsonObject(emptyMap()),
     val screen: JsonObject? = null,
+    val icons: Map<String, CustomIcon> = emptyMap(),
 )

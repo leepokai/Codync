@@ -125,5 +125,7 @@ import com.kyant.shapes.RoundedRectangle
 /** The account face of the roster's top bar. */
 @Composable internal fun AccountAvatar(state: AppState, size: Dp) {
     val current = state.account.accounts.firstOrNull { it.userId == state.account.userId }
-    AccountAvatar(current?.avatar, current?.email, size)
+    if (!state.account.ready || "session" in state.busy) {
+        Box(Modifier.size(size), contentAlignment = Alignment.Center) { ThinkingOrb(size = size * 0.6f) }
+    } else AccountAvatar(current?.avatar, current?.email, size)
 }

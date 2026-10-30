@@ -318,8 +318,13 @@ internal fun messagePreview(text: String): String {
     val summary = connectionSummary(state)
     DropdownMenu({
         listOf(
-            MenuItem("All computers", icon = "checkmark"),
-            *state.computers.map { MenuItem("${it.name} · ${connectionLabel(state)}", icon = "checkmark") }.toTypedArray(),
+            MenuItem("All computers", icon = "desktopcomputer", selected = true),
+            *state.computers.map { computer ->
+                val device = state.cloudComputers.firstOrNull { it.computerId == computer.id }?.device
+                    ?: if (state.computers.size == 1) state.hello?.text("device") else null
+                MenuItem(computer.name, icon = computerSymbol(device), selected = true,
+                    verbatim = true, detail = connectionLabel(state))
+            }.toTypedArray(),
             MenuItem("Reconnect", icon = "arrow.clockwise", divider = true, enabled = state.computers.isNotEmpty()) { store.reconnect() },
             MenuItem("Manage computers", icon = "desktopcomputer", action = manage),
         )

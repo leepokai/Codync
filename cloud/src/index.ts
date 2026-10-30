@@ -6,10 +6,14 @@ import * as api from "./api";
 import { ApiError, type Ctx } from "./api";
 import type { ComputerRelay } from "./relay";
 import { nudgeReleaseGate } from "./release-gate";
+import { icon, MAX_ICON_BYTES } from "./routes/icons";
+import { readBody } from "./request-body";
 
 export { ComputerRelay } from "./relay";
 
 export interface Env {
+  ICONS?: R2Bucket;
+  ICON_LIMITER?: RateLimit;
   DB: D1Database;
   RELAY: DurableObjectNamespace<ComputerRelay>;
   /** Workers Rate Limiting binding for new computer registrations. */
@@ -43,6 +47,9 @@ const RELEASE_GATE_CRON = "*/5 * * * *";
 
 const ID = "([A-Za-z0-9_-]{1,64})";
 const routes: [string, RegExp, Handler][] = [
+  ["PUT", /^\/v1\/host\/icons\/([^/]+)$/, icon],
+  ["GET", /^\/v1\/host\/icons\/([^/]+)$/, icon],
+  ["DELETE", /^\/v1\/host\/icons\/([^/]+)$/, icon],
   ["GET", /^\/v1\/health$/, api.health],
   ["GET", /^\/v1\/oauth\/callback$/, api.oauthCallback],
   ["GET", /^\/v1\/oauth\/callback\/dev$/, api.oauthDevCallback],
@@ -90,9 +97,7 @@ export default {
         const m = pattern.exec(url.pathname);
         if (!m || req.method !== method) continue;
         // Every route takes small bodies; refuse a big one before reading it.
-        if (Number(req.headers.get("content-length") ?? 0) > MAX_REQUEST) throw new ApiError("tooLarge");
-        const raw = new Uint8Array(await req.arrayBuffer());
-        if (raw.length > MAX_REQUEST) throw new ApiError("tooLarge");
+        const raw = await readBody(req, handler === icon ? MAX_ICON_BYTES : MAX_REQUEST);
         const out = await handler({ req, env, exec, url, raw, now: Date.now() }, m.slice(1));
         return out instanceof Response ? out : Response.json(out);
       }

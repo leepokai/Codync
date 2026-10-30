@@ -51,6 +51,7 @@ internal enum class FormPart { All, Often, Rarely }
                         CharacterAvatar(draft.avatarShape, draft.avatarColor, 96.dp)
                     }
                     AvatarPicker(draft.avatarShape, draft.avatarColor, { change(draft.copy(avatarShape = it)) }, { change(draft.copy(avatarColor = it)) })
+                    draft.id?.let { CustomIconEditor("bot:$it", state, store) }
                 }
                 CardSection("Profile") { nameRow(draft, change); instructionsRow(draft, change); createdByRow(state, bot) }
                 CardSection("Agent") {
@@ -75,6 +76,7 @@ internal enum class FormPart { All, Often, Rarely }
             FormPart.Rarely -> {
                 CardSection("Profile") {
                     row { AvatarPicker(draft.avatarShape, draft.avatarColor, { change(draft.copy(avatarShape = it)) }, { change(draft.copy(avatarColor = it)) }) }
+                    draft.id?.let { id -> row { CustomIconEditor("bot:$id", state, store) } }
                     nameRow(draft, change); createdByRow(state, bot)
                 }
                 // The agent and its model are on the Details page; what's left is where it works.
@@ -85,7 +87,7 @@ internal enum class FormPart { All, Often, Rarely }
         }
     }
     CodyncSheet(folders, { folders = false }) {
-        FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, store::listDirs) {
+        FolderPicker(draft.cwd.ifEmpty { state.hello?.get("home")?.jsonPrimitive?.contentOrNull }, online, state.hello?.get("name")?.jsonPrimitive?.contentOrNull ?: "Computer", store::listDirs, store::selectWorkspace) {
             change(draft.copy(cwd = it)); folders = false
         }
     }

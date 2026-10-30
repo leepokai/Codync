@@ -10,6 +10,7 @@ enum class LinkPage { Bots, Usage, Computers, Extensions }
 
 /** Everything the UI renders for the active account and its computer; `AppStore` owns the only writer. */
 data class AppState(
+    val icons: Map<String, CustomIcon> = emptyMap(),
     val contextId: String = "local",
     val generation: Int = 0,
     val account: AccountState = AccountState(),

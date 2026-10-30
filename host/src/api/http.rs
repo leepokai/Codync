@@ -28,11 +28,27 @@ pub fn router(hub: Arc<Hub>) -> Router {
         .route("/hooks/routines/{id}", post(routine_hook))
         .route("/events", get(events))
         .route("/api/{method}", post(command))
+        .route("/api/setIcon", post(icon_command).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/term/{id}", get(term_stream))
         .route("/ingest/statusline", post(statusline))
         .route("/channel", get(channel))
         .route("/oauth/callback", get(oauth_callback))
         .with_state(hub)
+}
+
+async fn icon_command(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    if !authorized(&hub, &headers, peer) {
+        return Err(unauthorized());
+    }
+    dispatch(&hub, &Caller::Local, "setIcon", body).await.map(Json).map_err(|e| {
+        let (status, message) = error_status(&e);
+        ApiError(status, message)
+    })
 }
 
 /// Loopback, also as an IPv4-mapped IPv6 address (`::ffff:127.0.0.1` under `--bind ::`).

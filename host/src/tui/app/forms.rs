@@ -170,6 +170,12 @@ impl App {
             return None;
         }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        if ctrl && k.code == KeyCode::Char('o') && !f.saving && self.custom_icons {
+            let target = format!("bot:{}", f.bot_id);
+            self.overlays.push(Overlay::Form(f));
+            self.overlays.push(Overlay::Fields(Box::new(crate::tui::manage::icon_fields(target))));
+            return None;
+        }
         let field = f.current();
         if field == Field::Fallbacks && self.fallback_key(&mut f, k) {
             return Some(Overlay::Form(f));

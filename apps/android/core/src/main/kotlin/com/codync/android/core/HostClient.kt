@@ -71,6 +71,7 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    val customIcon: CustomIcon? = null,
 ) {
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
     val band: Int get() = if (pinned) 0 else 1

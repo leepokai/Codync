@@ -159,6 +159,7 @@ impl Store {
             None
         };
         Ok(Self {
+            icon_lock: tokio::sync::Mutex::new(()),
             db: Mutex::new(c),
             connector_lock: Mutex::new(()),
             secret_key: Mutex::new(secret_key),

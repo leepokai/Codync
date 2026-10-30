@@ -318,7 +318,13 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.");
         put(buf, inner.x, by - 1, inner.width, &line, t.dim.patch(t.panel));
     }
-    let save = if f.saving { " … Saving " } else { " ↵ Save " };
+    let save = if f.saving {
+        " … Saving "
+    } else if app.custom_icons {
+        " ↵ Save · ^O Icon "
+    } else {
+        " ↵ Save "
+    };
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {

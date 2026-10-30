@@ -71,36 +71,6 @@ textarea.field-box {
   border-radius: var(--radius-s);
 }
 
-/* Folder picker (FolderPicker). */
-.folder-back {
-  padding-left: 10px;
-}
-.folder-title {
-  flex: 1;
-  min-width: 0;
-}
-.folder-levels {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-.folder-level-content {
-  gap: 14px;
-}
-.folder-use {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-body);
-  font-weight: 700;
-  color: var(--accent);
-}
-.folder-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .avatar-button {
   padding: 12px;
   background: var(--bubble-agent);
@@ -113,6 +83,11 @@ textarea.field-box {
 }
 .avatar-picker-panel {
   padding: 14px;
+  width: min(380px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
 }
 /* Five shapes and six colors to a row, like the new bot sheet. */
 .avatar-picker {

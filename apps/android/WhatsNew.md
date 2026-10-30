@@ -7,10 +7,15 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.33.1
-
+## 2.33.2
 ### zh-Hant
-- 選專案資料夾時，返回鍵可以往上走到家目錄以外的資料夾，Windows 電腦還能切換磁碟；連結（symlink）的資料夾也會出現在清單中。
+- 選擇工作資料夾時可使用最近紀錄、貼上路徑，並在底部確認。
+- 上傳圖片或貼上網址設定 bot 與 agent 圖示，支援原色、單色及離線快取；自訂圖片維持靜態。
+- 自訂圖片需要登入。登入載入時只顯示進度，電腦選單新增裝置圖示。
+- 推送設定顯示通知權限，並協助前往開啟。
 
 ### en-US
-- When you choose a project folder, Back climbs above your home folder and, on a Windows computer, to its other drives; linked folders now show up too.
+- Choose recent workspaces, paste a path, and confirm at the bottom.
+- Upload images or paste URLs for bot and agent icons, with colors, tinting and offline caching. Custom images stay still.
+- Custom images require sign-in. Account loading shows progress; computer menus show device icons.
+- Push settings show missing notification permission and help you enable it.

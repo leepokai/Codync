@@ -44,6 +44,8 @@ extension BotStore {
 
     /// Asked on every (re)connect: the host may have been updated while this app was away.
     private func refreshHello(_ client: HostClient) async throws {
+        iconsEpoch &+= 1
+        let epoch = iconsEpoch
         let h: Hello
         do {
             h = try await client.hello()
@@ -59,7 +61,10 @@ extension BotStore {
         }
         guard !Task.isCancelled, !retired else { return }
         // hello first: whatever the version change shows (notices, reminders) reads it.
+        guard epoch == iconsEpoch else { return }
+        iconsRevision = -1
         hello = h
+        applyIcons(h.icons ?? [:], revision: h.iconsRevision ?? 0)
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
     }
 
@@ -79,6 +84,8 @@ extension BotStore {
 
     private func apply(_ event: HostEvent) {
         switch event {
+        case let .icons(icons, revision):
+            applyIcons(icons, revision: revision)
         case let .hello(id, hostRev, newUsage, newScreen, newNetwork):
             if let hostId, hostId != id {
                 // Different host database: start over.
@@ -93,7 +100,8 @@ extension BotStore {
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
             bump(rev)
-        case let .bot(bot):
+        case .bot(var bot):
+            bot.customIcon = icons["bot:\(bot.id)"]
             bots[bot.id] = bot
             if bot.keptUnread { markingUnread[bot.id] = nil }
             bump(bot.rev)
@@ -149,6 +157,7 @@ extension BotStore {
     }
 
     private func resetMirror() {
+        iconsRevision = -1
         composerDrafts = [:]
         persistComposerDrafts()
         bots = [:]

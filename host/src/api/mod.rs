@@ -6,6 +6,7 @@ mod bots;
 pub mod devices;
 mod events;
 mod files;
+mod folders;
 mod host;
 mod http;
 mod marketplace;
@@ -70,6 +71,12 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
 }
 
 async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<Value> {
+    if method == "setIcon" {
+        return crate::icons::set(hub, &b).await;
+    }
+    if method == "icons" {
+        return Ok(serde_json::to_value(crate::icons::snapshot(&hub.store)?)?);
+    }
     if method.contains("onnector")
         || method.starts_with("composio")
         || method == "setComposioKey"

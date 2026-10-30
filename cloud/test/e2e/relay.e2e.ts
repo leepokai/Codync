@@ -13,6 +13,7 @@ import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ref from "../ref.ts";
+import { exerciseIcons } from "./icons.ts";
 import { Channel, FakePhone, parsePairing, waitFor, type Json, type PairingInfo, type Wire } from "./phone.ts";
 
 const CLOUD_DIR = fileURLToPath(new URL("../..", import.meta.url));
@@ -170,8 +171,22 @@ async function main() {
   let ch = await phone.relay(CLOUD, computerId, pairing.signKey);
   const hello = await ch.call("hello", {});
   check(hello.computerId === computerId && hello.boxKey === ref.b64url(pairing.boxKey), "inner hello returns computerId and boxKey");
-  for (let i = 0; i < 20; i++) await ch.call("sync", { since: 0 });
+  for (let i = 0; i < 20; i++) await ch.call("hello", {});
   check(true, "more than 16 messages on the regular link");
+
+  if (process.env.CODYNC_E2E_ICONS_ONLY === "1") {
+    const userId = "user_icons_e2e";
+    const token = await clerkToken(userId);
+    const claim = await cloud("POST", "/v1/claims", { token });
+    const signed = await loopback("claimSign", { claimId: claim.body.claimId, nonce: claim.body.nonce, userId });
+    check((await cloud("POST", `/v1/claims/${claim.body.claimId}/complete`, { token, body: signed })).status === 200, "icon test computer claimed");
+    await waitFor("icon host sees its owner", async () => (await loopback("cloudStatus")).owner?.userId === userId || undefined);
+    const png = await exerciseIcons((method, body) => ch.call(method, body, 60_000), "agent:claude");
+    await stop(host!);
+    await startHost();
+    check((await loopback("hello")).icons["agent:claude"].dataUrl === png, "icon remains cached after host restart");
+    return;
+  }
 
   const bot = (await ch.call("createBot", { name: "Tester", backend: "custom", command: `python3 '${FAKE_AGENT}'`, cwd: tmp, permission: "ask" })).bot.id;
   ch.subscribe("events", { since: 0, client: "ios" });
@@ -280,6 +295,8 @@ async function main() {
   const ch2 = await phone2.relay(CLOUD, computerId, ref.unb64url(listed.signKey));
   check((await ch2.call("hello", {})).computerId === computerId, "phone 2 connected through the relay");
 
+  const cachedIcon = await exerciseIcons((method, body) => ch2.call(method, body, 60_000), `bot:${bot}`);
+
   const started = Date.now();
   await cloud("DELETE", `/v1/computers/${computerId}/grants/${approved.grantId}`, { token });
   const code = await ch2.wire.closed(5000);
@@ -289,6 +306,7 @@ async function main() {
   await startHost();
   await waitFor("host back online", () => computerOnline(computerId), 20_000);
   check(await refused(phone2.relayWire(CLOUD, computerId)), "still refused after the host reconnects");
+  check((await loopback("hello")).icons[`bot:${bot}`].dataUrl === cachedIcon, "icon survives a real host restart in its local cache");
 
   step("6b. a grant injected into D1 is ignored by the host");
   const phone3 = new FakePhone();

@@ -11,6 +11,7 @@ mod entries;
 mod memory;
 mod model;
 mod schema;
+mod workspaces;
 
 pub use devices::{Device, DeviceSource, Scope};
 pub use model::{
@@ -24,6 +25,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::sync::Mutex;
 
 pub struct Store {
+    pub(crate) icon_lock: tokio::sync::Mutex<()>,
     db: Mutex<Connection>,
     pub(crate) connector_lock: Mutex<()>,
     pub(crate) secret_key: Mutex<Option<zeroize::Zeroizing<Vec<u8>>>>,

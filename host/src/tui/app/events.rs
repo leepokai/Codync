@@ -189,9 +189,12 @@ impl App {
                         }
                         _ => {}
                     },
-                    After::Dirs => {
-                        if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
+                    After::Dirs(id) | After::WorkspaceSelected(id) => {
+                        if let Some(Overlay::Folder(p)) = self.overlays.last_mut()
+                            && p.request_id == id
+                        {
                             p.error = Some(e);
+                            p.busy = false;
                         }
                     }
                     // In place of the code, which may have expired.
@@ -219,6 +222,7 @@ impl App {
                 self.call("hello", json!({}), After::Hello);
             }
             After::Hello => {
+                self.custom_icons = v["icons"].is_object();
                 self.mismatch = crate::compat::check(env!("CARGO_PKG_VERSION"), crate::compat::MIN_HOST, &v);
                 v["name"].as_str().unwrap_or("computer").clone_into(&mut self.host);
                 v["version"].as_str().unwrap_or_default().clone_into(&mut self.host_version);
@@ -248,9 +252,30 @@ impl App {
                     }
                 }
             }
-            After::Dirs => {
-                if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
+            After::WorkspaceSelected(id) => {
+                if matches!(self.overlays.last(), Some(Overlay::Folder(p)) if p.request_id == id)
+                    && let Some(path) = v["path"].as_str().filter(|p| !p.is_empty())
+                {
+                    self.overlays.pop();
+                    self.folder_chosen(path.to_owned());
+                }
+            }
+            After::Dirs(id) => {
+                if let Some(Overlay::Folder(p)) = self.overlays.last_mut()
+                    && p.request_id == id
+                {
                     v["path"].as_str().unwrap_or_default().clone_into(&mut p.path);
+                    p.busy = false;
+                    p.remembers = v["recent"].is_array();
+                    p.recent = v["recent"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|item| {
+                            let path = item["path"].as_str()?;
+                            Some(Dir { name: path.to_owned(), path: path.to_owned(), git: false })
+                        })
+                        .collect();
                     p.parent = v["parent"].as_str().map(str::to_owned);
                     p.dirs = v["dirs"]
                         .as_array()

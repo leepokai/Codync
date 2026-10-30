@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import posthog from "posthog-js";
-import { APP_STORE, DISCORD, DMG, GITHUB, PRODUCT_HUNT, WINDOWS } from "./links";
+import { APP_STORE, DISCORD, DMG, GITHUB, PRODUCT_HUNT, WINDOWS, WINDOWS_ARM64 } from "./links";
 
 // Cookieless counts for codync.dev (docs/reference/analytics-events.md, Website). Nothing is
 // stored on the device; PostHog's server hashes the visitor per day.
@@ -12,7 +12,7 @@ const MAIN = ["codync.dev", "www.codync.dev"];
 
 export type Platform = "mac" | "windows" | "linux" | "ios";
 
-const downloads: Record<string, Platform> = { [DMG]: "mac", [WINDOWS]: "windows", [APP_STORE]: "ios" };
+const downloads: Record<string, Platform> = { [DMG]: "mac", [WINDOWS]: "windows", [WINDOWS_ARM64]: "windows", [APP_STORE]: "ios" };
 // Matched by prefix, first hit wins.
 const links: [prefix: string, link: string][] = [
   [`${GITHUB}/issues`, "issues"],

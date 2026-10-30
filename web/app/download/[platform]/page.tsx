@@ -3,9 +3,9 @@ import { notFound } from "next/navigation";
 import GitHubStarButton from "../../components/github-star-button";
 import Halftone from "../../components/halftone";
 import { SiteFooter, SiteHeader } from "../../components/site-chrome";
-import { DMG_FILE, WINDOWS_FILE } from "../../links";
+import { DMG_FILE, WINDOWS_FILE, WINDOWS_ARM64_FILE } from "../../links";
 
-const files: Record<string, string> = { mac: DMG_FILE, windows: WINDOWS_FILE };
+const files: Record<string, string> = { mac: DMG_FILE, windows: WINDOWS_FILE, "windows-arm64": WINDOWS_ARM64_FILE };
 
 export const dynamicParams = false;
 

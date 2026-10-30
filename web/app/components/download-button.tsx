@@ -1,10 +1,11 @@
 import { CaretDown, DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react/ssr";
 import { AppleLogo } from "./apple-logo";
-import { APP_STORE, DMG, WINDOWS } from "../links";
+import { APP_STORE, DMG, WINDOWS, WINDOWS_ARM64 } from "../links";
 
 const others: [label: string, detail: string, href: string, Icon: typeof DeviceMobile | typeof AppleLogo][] = [
   ["macOS", "Apple silicon and Intel", DMG, AppleLogo],
-  ["Windows", "Installer for x64 PCs", WINDOWS, WindowsLogo],
+  ["Windows x64", "Installer for Intel and AMD PCs", WINDOWS, WindowsLogo],
+  ["Windows ARM64", "Installer for ARM64 Windows 11", WINDOWS_ARM64, WindowsLogo],
   ["iPhone", "App Store", APP_STORE, DeviceMobile],
   ["Linux", "AppImage, deb and servers", "/#install", LinuxLogo],
   ["Terminal", "Over SSH, any machine", "/#install", Terminal],

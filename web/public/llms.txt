@@ -5,7 +5,7 @@
 Key facts:
 
 - Price: $0, every feature included. No subscription, no paid tier, no in-app purchases. You pay only your agent's provider, through the plan or API key you already have (for example Claude Code with a Claude plan, Codex with a ChatGPT plan).
-- Where it runs: `codync-host`, one Rust binary, on macOS, Windows (x64, bundled in the desktop app) or Linux (desktop or headless server, static binary for x86_64 and arm64). Bots, chats and memory stay on that computer.
+- Where it runs: `codync-host`, one Rust binary, on macOS, Windows (x64 or ARM64, bundled in the matching desktop app) or Linux (desktop or headless server, static binary for x86_64 and arm64). Bots, chats and memory stay on that computer.
 - Clients: native SwiftUI iPhone app (iOS 26+), one Electron desktop app for macOS, Windows and Linux, and a terminal UI (`codync-host tui`) that works over SSH.
 - Features: persistent bots with their own agent, project folder and instructions; group chats where bots answer in turn; quote replies; bots asking each other for help; approval cards (allow once, always allow, deny) on the phone; per-bot memory; routines on a schedule or webhook; connectors from the MCP registry, apps through Composio, and skills; agent fallbacks (when a bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent in its list carries on in the same chat); SSH computers in the Mac and Linux desktop app, their bots in the same sidebar; remote screen over WebRTC; voice calls; "needs you" and "done" push notifications.
 - Remote access: a free Cloudflare relay, end-to-end encrypted between phone and computer, or a direct connection on the same network or Tailscale. No account required; pairing is a QR code.
@@ -14,7 +14,8 @@ Key facts:
 ## Get it
 
 - [Download for Mac (DMG)](https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg): Apple Silicon and Intel, signed and notarized
-- [Download for Windows (installer)](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe): x64; not code-signed yet, so Windows asks to confirm the first run. No remote screen on Windows yet.
+- [Download for Windows x64 (installer)](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe): Intel and AMD PCs; not code-signed yet, so Windows asks to confirm the first run. No remote screen on Windows yet.
+- [Download for Windows ARM64 (installer)](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-arm64.exe): ARM64 PCs running Windows 11; the same signing and remote-screen limitations apply.
 - [iPhone app on the App Store](https://apps.apple.com/app/codync/id6760984418)
 - [All releases (Linux AppImage, .deb, .tar.gz)](https://github.com/leepokai/Codync/releases/latest)
 - One-line install on macOS or Linux: `curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh`

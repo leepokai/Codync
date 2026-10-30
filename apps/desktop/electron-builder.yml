@@ -6,6 +6,7 @@
 #   build/native/CodyncScreen.app   macOS screen helper (Xcode `Screen` target, with cua-driver inside)
 #   build/native/cua-driver.exe     Windows: the computer-use driver and its UI Automation helper
 beforePack: tools/verify-build.cjs
+afterPack: tools/windows-archive.cjs
 appId: com.pokai.Codync
 productName: Codync
 copyright: ""
@@ -90,8 +91,7 @@ win:
   icon: resources/icon.png
   target:
     - target: nsis
-      arch: x64
-  artifactName: codync-windows-x64.${ext}
+  artifactName: codync-windows-${arch}.${ext}
   # The host ships inside the app, as on macOS: a per-user install keeps its path stable for
   # the sign-in entry that starts it.
   extraResources:

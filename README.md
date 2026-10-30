@@ -17,7 +17,7 @@ Bring your own agent and subscription — Claude Code, Codex, Gemini CLI, Cursor
 [![Download for Linux x86_64](https://img.shields.io/badge/Download-Linux_x86__64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/leepokai/Codync/releases/latest/download/codync-linux-x86_64.AppImage)
 [![Download for Linux ARM64](https://img.shields.io/badge/Download-Linux_ARM64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/leepokai/Codync/releases/latest/download/codync-linux-arm64.AppImage)
 
-macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage · [All downloads](https://github.com/leepokai/Codync/releases/latest)
+macOS: Apple Silicon + Intel (DMG) · Windows: x64 + ARM64 installers · Linux: AppImage · [All downloads](https://github.com/leepokai/Codync/releases/latest)
 
 [![App Store](https://img.shields.io/badge/App_Store-iOS-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/codync/id6760984418)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-FBB040?logo=homebrew&logoColor=white)](https://github.com/leepokai/homebrew-codync)
@@ -27,7 +27,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 <br>
 ![iOS](https://img.shields.io/badge/iOS-18+-black?logo=apple)
 ![macOS](https://img.shields.io/badge/macOS-14+-black?logo=apple)
-![Windows](https://img.shields.io/badge/Windows-x64-black?logo=windows&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-x64_%2B_ARM64-black?logo=windows&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-x86__64%20%7C%20arm64-black?logo=linux&logoColor=white)
 ![Rust](https://img.shields.io/badge/host-Rust-B7410E?logo=rust)
 ![Swift](https://img.shields.io/badge/iPhone-SwiftUI-F05138?logo=swift&logoColor=white)
@@ -118,7 +118,7 @@ All three install the same signed, notarized app.
 
 Open Codync: it sets up the host on first launch. **Open Codync** opens the full window; **Pair iPhone…** shows the QR code.
 
-**Windows** — [download codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) and run it. It installs for your user and starts the host at sign-in. The installer isn't code-signed yet, so SmartScreen asks you to confirm it once (**More info → Run anyway**). Not on Windows yet: remote screen, on-device speech and the Claude Code status line hook. Details: [desktop app](docs/architecture/desktop-app.md#platform-notes).
+**Windows** — download [codync-windows-x64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe) for Intel/AMD or [codync-windows-arm64.exe](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-arm64.exe) for ARM64 Windows 11 and run it. It installs for your user and starts the host at sign-in. The installer isn't code-signed yet, so SmartScreen asks you to confirm it once (**More info → Run anyway**). Not on Windows yet: remote screen, on-device speech and the Claude Code status line hook. Details: [desktop app](docs/architecture/desktop-app.md#platform-notes).
 
 **iPhone** — [get Codync on the App Store](https://apps.apple.com/app/codync/id6760984418) (iOS 26+, free), then scan the QR code from **Pair iPhone…** on the Mac, the Windows or Linux app, or `codync-host pair`.
 

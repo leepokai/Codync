@@ -5,7 +5,7 @@ import CopyCommand from "./copy-command";
 import Eyebrow from "./eyebrow";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
-import { APP_STORE, DMG, WINDOWS } from "../links";
+import { APP_STORE, DMG, WINDOWS, WINDOWS_ARM64 } from "../links";
 
 const INSTALL_SH = "curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh";
 
@@ -50,7 +50,10 @@ export default function Install() {
               </p>
               <a href={WINDOWS} className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-neutral-50 px-5 font-medium text-neutral-950 transition hover:bg-white active:scale-[0.98]">
                 <WindowsLogo size={16} weight="fill" />
-                Download for PC
+                Download for x64 PC
+              </a>
+              <a href={WINDOWS_ARM64} className="mt-3 text-center text-sm text-neutral-400 underline underline-offset-4 transition hover:text-white">
+                Windows 11 ARM64 installer
               </a>
             </div>
           </Reveal>

@@ -4,12 +4,15 @@ import type { Bot } from '@shared/models'
 import type { HostClient } from '../client/host-client'
 import { ReadMarks } from './read-marks.ts'
 
-function computer(bot: Partial<Bot>) {
+function computer(bot: Partial<Bot>, answer: (bots: Map<string, Bot>) => unknown = () => ({})) {
   const bots = new Map([['a', { id: 'a', unread: 0, keptUnread: false, ...bot } as Bot]])
   const sent: unknown[][] = []
   const answers: ((accepted: boolean) => void)[] = []
   const reads = new ReadMarks(() => bots, () => {}, (op, undo) => new Promise<boolean>((resolve) => {
-    void op({ call: async (method: string, body: unknown) => sent.push([method, body]) } as unknown as HostClient)
+    void op({ call: async (method: string, body: unknown) => {
+      sent.push([method, body])
+      return answer(bots)
+    } } as unknown as HostClient)
     answers.push((accepted) => {
       if (!accepted) undo()
       resolve(accepted)
@@ -66,4 +69,22 @@ test('mark as read clears a hold even with nothing counted unread', async () => 
   await new Promise((resolve) => setTimeout(resolve))
   assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
   assert.equal(bot().keptUnread, false)
+})
+
+test('a mark as unread the host had nothing to hold for lets the chat be read again', async () => {
+  const { reads, answer } = computer({}, (bots) => ({ bot: bots.get('a') }))
+  reads.markUnread('a')
+  await new Promise((resolve) => setTimeout(resolve))
+  answer(0, true)
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.equal(reads.held('a'), false)
+})
+
+test('a mark as unread the host holds keeps the hold until its event', async () => {
+  const { reads, answer } = computer({}, (bots) => ({ bot: { ...bots.get('a'), keptUnread: true } }))
+  reads.markUnread('a')
+  await new Promise((resolve) => setTimeout(resolve))
+  answer(0, true)
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.equal(reads.held('a'), true)
 })

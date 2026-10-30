@@ -70,6 +70,22 @@ import Testing
     #expect(await until { await fake.readReceipts.count == 2 })
 }
 
+@MainActor @Test func markingAnEmptyChatUnreadLeavesNoHold() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    await fake.setMarkUnreadAnswer(#"{"bot":{"id":"b1","name":"Bot","rev":1,"unread":0,"keptUnread":false}}"#)
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
+    #expect(await until { store.connection == .online })
+    store.markUnread("b1")
+    #expect(store.heldUnread("b1"))
+    #expect(await until { !store.heldUnread("b1") })
+}
+
 @MainActor @Test func initialOfflineReportWaitsForReconnect() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

@@ -119,8 +119,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "markUnread" => {
-            hub.mark_unread(str_arg(&b, "botId")?)?;
-            json!({})
+            json!({"bot": hub.mark_unread(str_arg(&b, "botId")?)?})
         }
         // One chunk of a file for a later `send` (`attachments`); base64 `data` at `offset`.
         "upload" => {

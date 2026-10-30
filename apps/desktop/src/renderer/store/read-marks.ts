@@ -41,10 +41,13 @@ export class ReadMarks {
 
   markUnread(botId: string) {
     if (!this.bots().has(botId)) return
-    const sent = this.perform((c) => c.call('markUnread', { botId }), () => {})
+    let kept = true
+    const sent = this.perform(async (c) => {
+      kept = (await c.call<{ bot?: Bot }>('markUnread', { botId })).bot?.keptUnread !== false
+    }, () => {})
     this.marking.set(botId, sent)
     void sent.then((accepted) => {
-      if (!accepted && this.marking.get(botId) === sent) this.marking.delete(botId)
+      if ((!accepted || !kept) && this.marking.get(botId) === sent) this.marking.delete(botId)
     })
   }
 

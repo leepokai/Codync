@@ -30,7 +30,7 @@ fun AppStore.markRead(id: String) {
 /** The roster's "Mark as unread": the host counts what comes back unread; until then only the hold shows, so nothing on screen reads it. */
 fun AppStore.markUnread(id: String) {
     markingUnread.add(id)
-    command("markUnread", body("botId" to id), "roster:$id", onFailure = { markingUnread.remove(id) })
+    command("markUnread", body("botId" to id), "roster:$id", onFailure = { markingUnread.remove(id) }, onSuccess = { markingUnread.remove(id) })
 }
 
 internal fun AppStore.keptUnread(id: String) = id in markingUnread || state.value.bots.any { it.id == id && it.keptUnread }

@@ -227,8 +227,14 @@ public extension HostClient {
     }
 
     /// The chat back to unread: what was unread before its last read, or else its latest message.
-    func markUnread(_ id: String) async throws {
-        let _: Empty = try await call("markUnread", ["botId": id])
+    /// False when the host had nothing to mark, so no hold follows.
+    func markUnread(_ id: String) async throws -> Bool {
+        struct Marked: Decodable {
+            struct Kept: Decodable { let keptUnread: Bool? }
+            let bot: Kept?
+        }
+        let marked: Marked = try await call("markUnread", ["botId": id])
+        return marked.bot?.keptUnread != false
     }
 
     /// Toggles the user's `emoji` reaction on a chat message.

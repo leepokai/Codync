@@ -197,7 +197,7 @@ export class FakeHost {
           bot.keptUnread = true
           this.emitBot(bot)
         }
-        return {}
+        return { bot }
       }
       case 'markRead': {
         const bot = this.bots.get(str('botId'))

@@ -7,7 +7,7 @@
 **The open-source Grok Bot alternative.**<br>
 Bring your own agent and subscription — Claude Code, Codex, Gemini CLI, Cursor and 40+ more — as teammates you can message from your phone.
 
-[Website](https://www.codync.dev) · [Docs](https://www.codync.dev/docs) · [Compare](https://www.codync.dev/compare) · [Launch film](https://youtu.be/QAhyZWpV70U)
+[Website](https://www.codync.dev) · [Docs](https://www.codync.dev/docs) · [Compare](https://www.codync.dev/compare) · [Launch film](https://youtu.be/QAhyZWpV70U) · [X @trycodync](https://x.com/trycodync)
 
 [![Star Codync on GitHub](https://img.shields.io/github/stars/leepokai/Codync?style=social&label=Star)](https://github.com/leepokai/Codync/stargazers)<br>
 <sub>Free, open source, no paid tier. A ⭐ is how others find it.</sub>

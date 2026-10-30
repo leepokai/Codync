@@ -328,7 +328,7 @@ struct BotListView: View {
                 bot.isGroup
                     ? MenuItem("Edit group", icon: "person.2") { editingGroup = GroupTarget(computerId: item.ref.computerId, group: bot) }
                     : MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
-                bot.unread > 0 || !store.supportsMarkUnread
+                bot.unread > 0 || bot.keptUnread || !store.supportsMarkUnread
                     ? MenuItem("Mark as read", icon: "checkmark.message") { store.markAllRead(bot.id) }
                     : MenuItem("Mark as unread", icon: "envelope.fill") { store.markUnread(bot.id) },
             ]

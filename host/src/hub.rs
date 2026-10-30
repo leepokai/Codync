@@ -308,7 +308,7 @@ impl Hub {
     /// may call it whenever a chat is on screen.
     pub fn mark_read(&self, id: &str) -> Result<()> {
         let Some(row) = self.store.bot(id)? else { bail!("unknown bot") };
-        if self.store.unread(id, row.read_rev) == 0 {
+        if self.store.unread(id, row.read_rev) == 0 && !self.store.kept_unread(id) {
             return Ok(());
         }
         let _g = self.emit_lock.locked();

@@ -141,8 +141,6 @@ public final class BotStore {
 
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
-    /// Chats marked unread: on screen, they stay unread until opened again.
-    @ObservationIgnored var keptUnread: Set<String> = []
 
     var cacheStamp: String?
 

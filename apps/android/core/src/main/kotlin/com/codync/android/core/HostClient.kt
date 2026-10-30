@@ -59,6 +59,8 @@ data class Bot(
     val position: Int = 0,
     val hidden: Boolean = false,
     val unread: Int = 0,
+    /** Marked unread from the roster: it stays unread on screen until opened again or marked read. */
+    val keptUnread: Boolean = false,
     val rev: Long = 0,
     val deleted: Boolean = false,
     /** Agents that carry on, in order, when its own can't answer (out of usage, rate limited, signed out…); null from an older host. */

@@ -18,6 +18,7 @@ import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
+import { ReadMarks } from './read-marks'
 import { BotSync, sleep } from './bot-sync'
 
 export { builtInBackendName, type Connection } from './bot-mirror'
@@ -51,6 +52,7 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 export class BotStore extends BotSync {
   readonly fileDownloads = new FileDownloads(() => this.changed())
   readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
+  private readonly reads = new ReadMarks(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
 
   override retire() { this.fileDownloads.retire(); super.retire() }
 
@@ -279,18 +281,16 @@ export class BotStore extends BotSync {
 
   /** The roster's "Mark as read". */
   markAllRead(botId: string) {
-    const bot = this.bots.get(botId)
-    if (!bot || bot.unread <= 0) return
-    this.bots.set(botId, { ...bot, unread: 0 })
-    this.keptUnread.delete(botId)
-    this.changed()
-    this.perform((c) => c.call('markRead', { botId }), true)
+    this.reads.markRead(botId)
   }
 
-  /** The roster's "Mark as Unread": the host counts what comes back unread. */
+  /** The roster's "Mark as Unread". */
   markUnread(botId: string) {
-    this.keptUnread.add(botId)
-    this.perform((c) => c.call('markUnread', { botId }), true)
+    this.reads.markUnread(botId)
+  }
+
+  openChat(botId: string) {
+    this.reads.open(botId)
   }
 
   private patchBot(bot: Bot, change: Partial<BotDraft>) {

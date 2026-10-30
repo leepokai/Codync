@@ -206,8 +206,8 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
             if (state.supportsSections) sectionMenu(bot, sections, { store.setSection(bot.id, it) }, newSection) else null,
             if (bot.kind == "group") MenuItem("Edit group", icon = "person.2", action = edit)
             else MenuItem("Edit profile", icon = "pencil", action = edit),
-            if (bot.unread > 0 || !state.supportsMarkUnread) MenuItem("Mark as read", icon = "checkmark.message") {
-                store.command("markRead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)
+            if (bot.unread > 0 || bot.keptUnread || !state.supportsMarkUnread) MenuItem("Mark as read", icon = "checkmark.message") {
+                store.markRead(bot.id)
             } else MenuItem("Mark as unread", icon = "envelope.fill") { store.markUnread(bot.id) },
             MenuItem("Make lead agent", icon = "star") {
                 store.command("setLead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)

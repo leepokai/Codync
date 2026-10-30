@@ -133,16 +133,15 @@ extension BotStore {
     /// read the same conversation without unregistering each other.
     func setReading(_ token: UUID, botId: String, active: Bool) {
         if active {
-            keptUnread.remove(botId)
             readingViews[token] = botId
-            if connection == .online { markRead(botId) }
+            if connection == .online, bots[botId]?.keptUnread != true { markRead(botId) }
         } else {
             readingViews[token] = nil
         }
     }
 
     func acknowledgeVisibleConversations(_ botId: String, entry: Entry? = nil) {
-        guard connection == .online, !keptUnread.contains(botId) else { return }
+        guard connection == .online, bots[botId]?.keptUnread != true else { return }
         guard readingViews.values.contains(botId), entry?.isChat != false else { return }
         markRead(botId)
     }
@@ -169,16 +168,23 @@ extension BotStore {
 
     /// The roster's "Mark as read": everything in the chat.
     public func markAllRead(_ botId: String) {
-        guard (bots[botId]?.unread ?? 0) > 0 else { return }
+        guard let bot = bots[botId], bot.unread > 0 || bot.keptUnread else { return }
         bots[botId]?.unread = 0
-        keptUnread.remove(botId)
+        bots[botId]?.keptUnread = false
         perform(replay: true) { try await $0.markRead(botId) }
     }
 
-    /// The roster's "Mark as unread": the host counts what comes back unread.
+    /// The roster's "Mark as unread": the host counts what comes back unread; until then only the hold
+    /// shows, so nothing on screen reads it.
     public func markUnread(_ botId: String) {
-        keptUnread.insert(botId)
-        perform(replay: true) { try await $0.markUnread(botId) }
+        guard bots[botId] != nil else { return }
+        bots[botId]?.keptUnread = true
+        Task { await attempt(replay: true, undo: { self.bots[botId]?.keptUnread = false }) { try await $0.markUnread(botId) } }
+    }
+
+    /// The user opened the chat: one marked unread is read now.
+    func openConversation(_ botId: String) {
+        if bots[botId]?.keptUnread == true { markAllRead(botId) }
     }
 
     public func setPinned(_ bot: Bot, _ pinned: Bool) {

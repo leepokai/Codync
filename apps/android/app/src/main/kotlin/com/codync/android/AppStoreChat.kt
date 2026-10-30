@@ -12,17 +12,27 @@ import kotlinx.serialization.json.*
 
 fun AppStore.openBot(id: String?) {
     mutableState.update { it.copy(selectedBot = id, trace = false) }
-    if (id != null) {
-        keptUnread.remove(id)
-        acknowledgeVisible()
-    }
+    if (id == null) return
+    if (keptUnread(id)) markRead(id) else acknowledgeVisible()
 }
 
-/** The roster's "Mark as unread": the host counts what comes back unread. */
-fun AppStore.markUnread(id: String) {
-    keptUnread.add(id)
-    command("markUnread", buildJsonObject { put("botId", id) }, "roster:$id")
+/** The roster's "Mark as read", and opening a chat marked unread. */
+fun AppStore.markRead(id: String) {
+    markingUnread.remove(id)
+    command("markRead", body("botId" to id), "roster:$id")
 }
+
+/** The roster's "Mark as unread": the host counts what comes back unread; until then only the hold shows, so nothing on screen reads it. */
+fun AppStore.markUnread(id: String) {
+    markingUnread.add(id)
+    command("markUnread", body("botId" to id), "roster:$id", onFailure = { markingUnread.remove(id) })
+}
+
+internal fun AppStore.keptUnread(id: String) = id in markingUnread || state.value.bots.any { it.id == id && it.keptUnread }
+
+/** The chats a batch shows the host holding unread. */
+internal fun keptUnreadIn(events: List<MirrorEvent>): List<String> =
+    events.mapNotNull { event -> (event as? MirrorEvent.BotChanged)?.bot?.takeIf { it.keptUnread }?.id }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
 /** The chat being read (iOS `ReadingConversation`): the open one, still on screen under Full conversation. */
@@ -42,7 +52,7 @@ internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<Str
 /** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
 internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
     if (!foreground || channel?.state?.value !is LinkState.Ready) return
-    for (chat in chats - keptUnread) action("read:" + chat) { channel?.call("markRead", body("botId" to chat)) }
+    for (chat in chats.filterNot { keptUnread(it) }) action("read:" + chat) { channel?.call("markRead", body("botId" to chat)) }
 }
 
 /** The entries of a host reply (`callEntries`, `botConversation`). */

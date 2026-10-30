@@ -47,8 +47,6 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private readingViews = new Map<string, string>()
-  /** Chats marked unread: on screen, they stay unread until opened again. */
-  protected keptUnread = new Set<string>()
 
   // MARK: lifecycle
 
@@ -130,7 +128,7 @@ export class BotSync extends BotMirror {
       this.connection = next
       this.changed()
     }
-    if (recovering) for (const botId of new Set(this.readingViews.values())) if (!this.keptUnread.has(botId)) this.markRead(botId)
+    if (recovering) for (const botId of new Set(this.readingViews.values())) if (!this.bots.get(botId)?.keptUnread) this.markRead(botId)
   }
 
   /** Events (catch-up since `rev`, then live) for as long as the store lives. */
@@ -406,16 +404,15 @@ export class BotSync extends BotMirror {
   /** Views register while visible. Multiple windows may read the same conversation. */
   setReading(token: string, botId: string, active: boolean) {
     if (active) {
-      this.keptUnread.delete(botId)
       this.readingViews.set(token, botId)
-      if (this.connection.kind === 'online') this.markRead(botId)
+      if (this.connection.kind === 'online' && !this.bots.get(botId)?.keptUnread) this.markRead(botId)
     } else {
       this.readingViews.delete(token)
     }
   }
 
   private acknowledgeVisible(botId: string, entry?: Entry) {
-    if (this.connection.kind !== 'online' || this.keptUnread.has(botId)) return
+    if (this.connection.kind !== 'online' || this.bots.get(botId)?.keptUnread) return
     if (![...this.readingViews.values()].includes(botId) || (entry && !isChat(entry))) return
     this.markRead(botId)
   }

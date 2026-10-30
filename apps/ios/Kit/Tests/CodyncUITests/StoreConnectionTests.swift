@@ -38,6 +38,34 @@ import Testing
 }
 
 
+@MainActor @Test func chatMarkedUnreadStaysUnreadOnScreenUntilOpenedAgain() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
+    #expect(await until { store.connection == .online })
+    let token = UUID()
+    store.setReading(token, botId: "b1", active: true)
+    #expect(await until { await fake.readReceipts.count == 1 })
+    store.markUnread("b1")
+    #expect(store.bots["b1"]?.keptUnread == true)
+    #expect(await until { await fake.calls.contains("markUnread") })
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":2,"unread":1,"keptUnread":true}}"#)
+    #expect(await until { store.bots["b1"]?.rev == 2 })
+    // Coming back into focus, or the link coming back, is not opening the chat.
+    store.setReading(token, botId: "b1", active: false)
+    store.setReading(token, botId: "b1", active: true)
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(await fake.readReceipts.count == 1)
+    store.openConversation("b1")
+    #expect(store.bots["b1"]?.keptUnread == false)
+    #expect(await until { await fake.readReceipts.count == 2 })
+}
+
 @MainActor @Test func initialOfflineReportWaitsForReconnect() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

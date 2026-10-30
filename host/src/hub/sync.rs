@@ -42,6 +42,7 @@ impl Hub {
         }
         v["fastModeIssue"] = rt.fast_mode.issue().into();
         v["unread"] = self.store.unread(&cfg.id, row.read_rev).into();
+        v["keptUnread"] = self.store.kept_unread(&cfg.id).into();
         let preview = last.as_ref().map(|l| match &l.author {
             // A group names who spoke.
             Some(author) if cfg.is_group() => format!("{}: {}", self.bot_name(author), l.text),

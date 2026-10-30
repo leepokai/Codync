@@ -24,4 +24,9 @@ class ReadingTest {
         assertEquals(chats, readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 2))), chats))
         assertEquals(emptyList<String>(), readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 0))), chats))
     }
+
+    @Test fun `a bot the host holds unread is picked out of a batch`() {
+        val held = MirrorEvent.BotChanged(Bot("held", unread = 1, keptUnread = true))
+        assertEquals(listOf("held"), keptUnreadIn(listOf(held, MirrorEvent.BotChanged(Bot("bot", unread = 1)), message())))
+    }
 }

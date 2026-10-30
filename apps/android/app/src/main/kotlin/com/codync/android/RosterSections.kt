@@ -69,6 +69,13 @@ private const val LEAD_CHOICE_HOST = "2.33.0"
 internal val AppState.supportsLeadChoice: Boolean
     get() = hello?.text("version")?.let { !AppVersion.isBelow(it, LEAD_CHOICE_HOST) } == true
 
+/** The first host with `markUnread`. */
+private const val MARK_UNREAD_HOST = "2.33.2"
+
+/** An older host refuses it, so "Mark as unread" waits for its `hello`. */
+internal val AppState.supportsMarkUnread: Boolean
+    get() = hello?.text("version")?.let { !AppVersion.isBelow(it, MARK_UNREAD_HOST) } == true
+
 /** `updateBot`'s section patch: null goes as JSON null, which clears it (a missing key keeps it). */
 internal fun sectionUpdate(id: String, section: String?): JsonObject = buildJsonObject { put("id", id); put("section", section) }
 

@@ -133,6 +133,7 @@ extension BotStore {
     /// read the same conversation without unregistering each other.
     func setReading(_ token: UUID, botId: String, active: Bool) {
         if active {
+            keptUnread.remove(botId)
             readingViews[token] = botId
             if connection == .online { markRead(botId) }
         } else {
@@ -141,7 +142,7 @@ extension BotStore {
     }
 
     func acknowledgeVisibleConversations(_ botId: String, entry: Entry? = nil) {
-        guard connection == .online else { return }
+        guard connection == .online, !keptUnread.contains(botId) else { return }
         guard readingViews.values.contains(botId), entry?.isChat != false else { return }
         markRead(botId)
     }
@@ -170,7 +171,14 @@ extension BotStore {
     public func markAllRead(_ botId: String) {
         guard (bots[botId]?.unread ?? 0) > 0 else { return }
         bots[botId]?.unread = 0
+        keptUnread.remove(botId)
         perform(replay: true) { try await $0.markRead(botId) }
+    }
+
+    /// The roster's "Mark as unread": the host counts what comes back unread.
+    public func markUnread(_ botId: String) {
+        keptUnread.insert(botId)
+        perform(replay: true) { try await $0.markUnread(botId) }
     }
 
     public func setPinned(_ bot: Bot, _ pinned: Bool) {

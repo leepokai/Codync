@@ -33,6 +33,8 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     internal var attachments = AttachmentFiles(application, local.directory)
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
     internal val mutableState = MutableStateFlow(AppState())
+    /** Chats marked unread: on screen, they stay unread until opened again. */
+    internal val keptUnread = mutableSetOf<String>()
     val state = mutableState.asStateFlow()
     internal var database: MirrorDatabase? = null
     internal var draftBook: DraftBook? = null

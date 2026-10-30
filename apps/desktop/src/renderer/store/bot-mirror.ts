@@ -21,6 +21,9 @@ import { canLoadHistory } from '@shared/mirror-window'
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
 
+/** The first host with `markUnread`. */
+const MARK_UNREAD_HOST = '2.33.2'
+
 export type Connection =
   | { kind: 'unpaired' }
   | { kind: 'connecting' }
@@ -123,6 +126,11 @@ export class BotMirror extends Observable {
   /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
   get hasLeadChoice() {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
+  /** A chat can go back to unread (`markUnread`): an older host refuses it. */
+  get hasMarkUnread() {
+    return this.hostVersion !== null && !isBelow(this.hostVersion.version, MARK_UNREAD_HOST)
   }
 
   /** What the update notice offers while this computer is behind this app. */

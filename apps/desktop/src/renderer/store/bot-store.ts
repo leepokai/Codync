@@ -282,8 +282,15 @@ export class BotStore extends BotSync {
     const bot = this.bots.get(botId)
     if (!bot || bot.unread <= 0) return
     this.bots.set(botId, { ...bot, unread: 0 })
+    this.keptUnread.delete(botId)
     this.changed()
     this.perform((c) => c.call('markRead', { botId }), true)
+  }
+
+  /** The roster's "Mark as Unread": the host counts what comes back unread. */
+  markUnread(botId: string) {
+    this.keptUnread.add(botId)
+    this.perform((c) => c.call('markUnread', { botId }), true)
   }
 
   private patchBot(bot: Bot, change: Partial<BotDraft>) {

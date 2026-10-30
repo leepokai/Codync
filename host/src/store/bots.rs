@@ -25,6 +25,17 @@ fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<Bo
     }
 }
 
+/// The entries that count as unread once newer than the read mark (`UNREAD_REV`): see `Store::unread`.
+const UNREAD_ENTRY: &str =
+    "((kind = 'agent' AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.call') IS NULL) OR
+       (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
+     json_extract(data, '$.reactions') IS NULL";
+const UNREAD_REV: &str = "COALESCE(json_extract(data, '$.contentRev'), rev)";
+
+fn read_before_key(id: &str) -> String {
+    format!("read.before.{id}")
+}
+
 const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
 const SAVE_BOT: &str = "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
      ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0";
@@ -89,6 +100,7 @@ impl Store {
             "DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2",
             [format!("context.{id}.*"), format!("context.epoch.{id}.*")],
         )?;
+        c.execute("DELETE FROM kv WHERE k = ?1", [read_before_key(id)])?;
         // Its artifacts' details (`chat::artifacts`).
         c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("artifact.{id}.*")])?;
         Ok(rev)
@@ -100,12 +112,42 @@ impl Store {
         Ok(())
     }
 
-    /// The chat read: bumps the bot's `read_rev`.
+    /// The chat read: bumps the bot's `read_rev`, keeping the one before for `mark_unread`.
     pub fn mark_read(&self, id: &str) -> Result<i64> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        let rev = next_rev(&tx)?;
+        tx.execute(
+            "INSERT INTO kv(k, v) SELECT ?2, read_rev FROM bots WHERE id = ?1
+             ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+            params![id, read_before_key(id)],
+        )?;
+        tx.execute("UPDATE bots SET read_rev = ?2, rev = ?2 WHERE id = ?1", params![id, rev])?;
+        tx.commit()?;
+        Ok(rev)
+    }
+
+    /// The chat back to unread: what was unread before the last read, or else its latest message. `None` when
+    /// it has nothing that could count as unread.
+    pub fn mark_unread(&self, id: &str) -> Result<Option<i64>> {
+        let before = self.kv_get(&read_before_key(id)).and_then(|v| v.parse::<i64>().ok());
+        let read_rev = if let Some(r) = before.filter(|&r| self.unread(id, r) > 0) {
+            r
+        } else if let Some(latest) = self.latest_unread_rev(id)? {
+            latest - 1
+        } else {
+            return Ok(None);
+        };
         let c = self.db.locked();
         let rev = next_rev(&c)?;
-        c.execute("UPDATE bots SET read_rev = ?2, rev = ?2 WHERE id = ?1", params![id, rev])?;
-        Ok(rev)
+        c.execute("UPDATE bots SET read_rev = ?2, rev = ?3 WHERE id = ?1", params![id, read_rev, rev])?;
+        Ok(Some(rev))
+    }
+
+    fn latest_unread_rev(&self, id: &str) -> Result<Option<i64>> {
+        let c = self.db.locked();
+        let sql = format!("SELECT MAX({UNREAD_REV}) FROM entries WHERE bot_id = ?1 AND {UNREAD_ENTRY}");
+        Ok(c.query_row(&sql, [id], |r| r.get(0))?)
     }
 
     /// Final agent messages + pending permission cards newer than what the user has read. A reacted-to message
@@ -114,11 +156,7 @@ impl Store {
     pub fn unread(&self, id: &str, read_rev: i64) -> i64 {
         let c = self.db.locked();
         let n = c.query_row(
-            "SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND
-               ((kind = 'agent' AND json_extract(data, '$.final') = 1 AND json_extract(data, '$.call') IS NULL) OR
-                (kind = 'permission' AND json_extract(data, '$.status') = 'pending')) AND
-               json_extract(data, '$.reactions') IS NULL AND
-               COALESCE(json_extract(data, '$.contentRev'), rev) > ?2",
+            &format!("SELECT COUNT(*) FROM entries WHERE bot_id = ?1 AND {UNREAD_ENTRY} AND {UNREAD_REV} > ?2"),
             params![id, read_rev],
             |r| r.get(0),
         );

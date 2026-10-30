@@ -141,6 +141,8 @@ public final class BotStore {
 
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
+    /// Chats marked unread: on screen, they stay unread until opened again.
+    @ObservationIgnored var keptUnread: Set<String> = []
 
     var cacheStamp: String?
 
@@ -225,6 +227,13 @@ public final class BotStore {
     }
 
     static let leadChoiceHost = "2.33.0"
+
+    /// From host 2.33.2 a chat can go back to unread (`markUnread`); an older host refuses it.
+    public var supportsMarkUnread: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.markUnreadHost) } ?? false
+    }
+
+    static let markUnreadHost = "2.33.2"
 
     static let sectionsHost = "2.32.0"
 

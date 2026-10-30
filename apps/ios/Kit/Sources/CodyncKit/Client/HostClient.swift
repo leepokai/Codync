@@ -226,6 +226,11 @@ public extension HostClient {
         let _: Empty = try await call("markRead", ["botId": id])
     }
 
+    /// The chat back to unread: what was unread before its last read, or else its latest message.
+    func markUnread(_ id: String) async throws {
+        let _: Empty = try await call("markUnread", ["botId": id])
+    }
+
     /// Toggles the user's `emoji` reaction on a chat message.
     func react(entryId: String, emoji: String) async throws -> Entry {
         struct Res: Decodable { var entry: Entry }

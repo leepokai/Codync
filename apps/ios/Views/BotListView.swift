@@ -328,7 +328,9 @@ struct BotListView: View {
                 bot.isGroup
                     ? MenuItem("Edit group", icon: "person.2") { editingGroup = GroupTarget(computerId: item.ref.computerId, group: bot) }
                     : MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
-                MenuItem("Mark as read", icon: "checkmark.message") { store.markAllRead(bot.id) },
+                bot.unread > 0 || !store.supportsMarkUnread
+                    ? MenuItem("Mark as read", icon: "checkmark.message") { store.markAllRead(bot.id) }
+                    : MenuItem("Mark as unread", icon: "envelope.fill") { store.markUnread(bot.id) },
             ]
             if !bot.lead && !bot.isGroup && store.supportsLeadChoice {
                 items.append(MenuItem("Make lead agent", icon: "star") { store.setLead(bot) })

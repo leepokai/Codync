@@ -319,6 +319,21 @@ impl Hub {
         Ok(())
     }
 
+    /// The user puts a chat back to unread (the roster's "Mark as Unread").
+    pub fn mark_unread(&self, id: &str) -> Result<()> {
+        if self.store.bot(id)?.is_none() {
+            bail!("unknown bot")
+        }
+        let _g = self.emit_lock.locked();
+        if self.store.mark_unread(id)?.is_none() {
+            return Ok(());
+        }
+        if let Some(v) = self.bot_value(id) {
+            let _ = self.events.send(json!({"type": "bot", "rev": v["rev"], "bot": v}));
+        }
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn bot_value_for_test(&self, id: &str) -> Value {
         self.bot_value(id).unwrap_or(Value::Null)

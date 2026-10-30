@@ -1,0 +1,4152 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codync — Avatar Studio &amp; Decision Lab (D1–D5 · Plantillas, Accesorios y Grupos Unidos)</title>
+  <style>
+    :root,
+    [data-theme="light"] {
+      --bg: #f4f5f8;
+      --surface: #ffffff;
+      --surface-raised: #eceff4;
+      --surface-subtle: #e2e6ef;
+      --studio-bg: #111318;
+      --studio-card: #181b22;
+      --studio-surface: #20242d;
+      --studio-border: rgba(255, 255, 255, 0.09);
+      --text: #14161c;
+      --text-secondary: #4a5060;
+      --text-muted: #687082;
+      --accent: #0b6bcb;
+      --accent-soft: rgba(11, 107, 203, 0.12);
+      --outline: rgba(20, 22, 28, 0.11);
+      --outline-strong: rgba(20, 22, 28, 0.22);
+      --success: #0d8a52;
+      --success-soft: rgba(13, 138, 82, 0.14);
+      --warning: #b25000;
+      --warning-soft: rgba(178, 80, 0, 0.14);
+      --danger: #c92a2a;
+      --shadow-sm: 0 2px 8px rgba(15, 18, 28, 0.06);
+      --shadow-md: 0 8px 28px rgba(15, 18, 28, 0.11);
+      --terminal-bg: #10131a;
+      --terminal-border: #262b38;
+      --font-sans: "Segoe UI", "Inter", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+      --radius-xl: 24px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0b0c0f;
+      --surface: #13151b;
+      --surface-raised: #1a1d25;
+      --surface-subtle: #232733;
+      --studio-bg: #090a0d;
+      --studio-card: #14161c;
+      --studio-surface: #1c1f28;
+      --studio-border: rgba(255, 255, 255, 0.09);
+      --text: #f3f5f9;
+      --text-secondary: #a9b1c2;
+      --text-muted: #7b8499;
+      --accent: #4da3ff;
+      --accent-soft: rgba(77, 163, 255, 0.16);
+      --outline: rgba(255, 255, 255, 0.09);
+      --outline-strong: rgba(255, 255, 255, 0.20);
+      --success: #3ddc97;
+      --success-soft: rgba(61, 220, 151, 0.16);
+      --warning: #ff9800;
+      --warning-soft: rgba(255, 152, 0, 0.16);
+      --danger: #ff5c5c;
+      --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+      --shadow-md: 0 12px 34px rgba(0, 0, 0, 0.55);
+      --terminal-bg: #080a0e;
+      --terminal-border: #242938;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Sticky Top Header */
+    .top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--surface);
+      border-bottom: 1px solid var(--outline);
+      box-shadow: var(--shadow-sm);
+      padding: 12px 24px;
+    }
+
+    .top-bar-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-title h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .badge.live {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .global-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button, .btn {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 13px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--outline-strong);
+      background: var(--surface-raised);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 140ms ease, transform 90ms ease, border-color 140ms ease;
+    }
+
+    button:hover { background: var(--surface-subtle); }
+    button:active { transform: scale(0.98); }
+
+    button.primary {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: transparent;
+    }
+
+    button.primary:hover { filter: brightness(1.08); }
+
+    button[aria-pressed="true"] {
+      background: var(--warning-soft);
+      color: var(--warning);
+      border-color: var(--warning);
+    }
+
+    /* Main Container */
+    .container {
+      max-width: 1440px;
+      margin: 18px auto 64px;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* =========================================================================
+       VIDEO-STYLE AVATAR STUDIO & CUSTOMIZER (INTERFAZ PRINCIPAL COMO EL VIDEO)
+       ========================================================================= */
+    .video-studio-shell {
+      background: var(--studio-bg);
+      border: 1px solid var(--studio-border);
+      border-radius: var(--radius-xl);
+      padding: 28px;
+      color: #f3f5f9;
+      box-shadow: var(--shadow-md);
+      display: grid;
+      grid-template-columns: 440px 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    @media (max-width: 1080px) {
+      .video-studio-shell {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Left Column: Floating Pill + Big Avatar Stage + State Pills (Exact Video Layout) */
+    .v-stage-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      background: radial-gradient(circle at 50% 38%, rgba(77, 163, 255, 0.09) 0%, rgba(12, 14, 20, 0.96) 72%);
+      border: 1px solid var(--studio-border);
+      border-radius: 22px;
+      padding: 24px 20px;
+      min-height: 510px;
+      position: relative;
+    }
+
+    .v-top-pill-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .v-identity-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 16px 6px 10px;
+      background: #1a1d26;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+
+    .v-hero-canvas-wrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin: 12px 0;
+      padding: 14px;
+      border-radius: 24px;
+      cursor: grab;
+      user-select: none;
+    }
+
+    .v-hero-canvas-wrap:active {
+      cursor: grabbing;
+    }
+
+    .v-interaction-hint {
+      font-size: 11.5px;
+      color: #8b95a9;
+      margin-top: 6px;
+      text-align: center;
+    }
+
+    /* Video-style State Pills (Idle | Thinking | Happy | Needs Input | Speaking | Screen) */
+    .v-state-pills {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      padding: 5px;
+      background: #14171f;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      width: 100%;
+    }
+
+    .v-state-pill {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #8e96a8;
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 6px 13px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 140ms ease;
+    }
+
+    .v-state-pill:hover {
+      color: #e2e7f2;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .v-state-pill.active {
+      background: #222735;
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    /* Multi-size real-time strip inside Stage column */
+    .v-multisize-strip {
+      width: 100%;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      gap: 10px;
+    }
+
+    .v-multisize-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 10.5px;
+      color: #8e96a8;
+      font-family: var(--font-mono);
+    }
+
+    /* Right Column: Tabbed Customizer Card (Bot | Rol & Accesorios | Equipo | Generate | Import | Reset) */
+    .v-card-panel {
+      background: var(--studio-card);
+      border: 1px solid var(--studio-border);
+      border-radius: 22px;
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      min-height: 510px;
+    }
+
+    .v-tab-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 12px;
+    }
+
+    .v-tabs-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .v-tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #8e96a8;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+
+    .v-tab-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .v-tab-btn.active {
+      background: #232836;
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.16);
+    }
+
+    .v-reset-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #9aa3b5;
+      font-size: 12.5px;
+      padding: 6px 12px;
+      border-radius: 999px;
+    }
+
+    .v-reset-btn:hover {
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    .v-tab-pane {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .v-tab-pane.active {
+      display: flex;
+    }
+
+    /* Preset Role Templates Strip */
+    .v-role-presets-row {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .v-role-preset-chip {
+      background: #1d212b;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      color: #d2d8e6;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 11px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 130ms ease;
+    }
+
+    .v-role-preset-chip:hover {
+      border-color: #4da3ff;
+      color: #ffffff;
+    }
+
+    .v-role-preset-chip.active {
+      background: rgba(77, 163, 255, 0.22);
+      border-color: #4da3ff;
+      color: #ffffff;
+    }
+
+    /* Character Silhouette Grid (Like Video 00:12-00:20 — 7 cols x 3 rows = 21 cells) */
+    .v-char-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    @media (max-width: 720px) {
+      .v-char-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+
+    .v-char-cell {
+      background: #1c2029;
+      border: 2px solid rgba(255, 255, 255, 0.07);
+      border-radius: 14px;
+      padding: 6px 4px 5px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      cursor: pointer;
+      transition: all 140ms ease;
+    }
+
+    .v-char-cell:hover {
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .v-char-cell.active {
+      background: #252b39;
+      border-color: #ffffff;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
+    }
+
+    .v-char-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #b4bdd0;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .v-char-add-btn {
+      background: #191d26;
+      border: 2px dashed rgba(255, 255, 255, 0.18);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 76px;
+      color: #9aa3b5;
+      font-size: 22px;
+      cursor: pointer;
+    }
+
+    .v-char-add-btn:hover {
+      border-color: #4da3ff;
+      color: #ffffff;
+    }
+
+    /* Video-Style Circular Color Swatches Row */
+    .v-color-dots-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      background: #191c24;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .v-color-dot {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      cursor: pointer;
+      padding: 0;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+
+    .v-color-dot:hover {
+      transform: scale(1.12);
+    }
+
+    .v-color-dot.active {
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.24);
+      transform: scale(1.12);
+    }
+
+    /* Accessories Grid (Tab 2) */
+    .v-props-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+      gap: 8px;
+    }
+
+    .v-prop-card {
+      background: #1c2029;
+      border: 1.5px solid rgba(255, 255, 255, 0.09);
+      border-radius: 12px;
+      padding: 9px 11px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      color: #d0d7e6;
+      font-size: 12.5px;
+      font-weight: 600;
+      transition: all 130ms ease;
+      text-align: left;
+    }
+
+    .v-prop-card:hover {
+      border-color: rgba(255, 255, 255, 0.28);
+      background: #232834;
+    }
+
+    .v-prop-card.active {
+      background: rgba(77, 163, 255, 0.20);
+      border-color: #4da3ff;
+      color: #ffffff;
+      box-shadow: 0 0 12px rgba(77, 163, 255, 0.22);
+    }
+
+    .v-prop-icon {
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    /* Facial Traits & Sliders Grid */
+    .v-traits-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+      gap: 12px;
+      background: #191c24;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .v-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 12px;
+      color: #a9b1c2;
+    }
+
+    .v-field label {
+      font-weight: 600;
+      color: #d5dceb;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .v-field select,
+    .v-field input[type="text"] {
+      background: #12141b;
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+    }
+
+    .v-field input[type="range"] {
+      accent-color: #4da3ff;
+      cursor: pointer;
+    }
+
+    /* Generate & Import Tabs (Like Video 00:01-00:11) */
+    .v-code-textarea {
+      width: 100%;
+      min-height: 155px;
+      background: #0e1016;
+      color: #e5e9f0;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 14px;
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      resize: vertical;
+    }
+
+    .v-code-textarea:focus {
+      outline: 2px solid #4da3ff;
+      border-color: transparent;
+    }
+
+    .v-fullwidth-cta {
+      width: 100%;
+      justify-content: center;
+      padding: 12px 18px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      background: #ffffff;
+      color: #0b0c10;
+      border: none;
+    }
+
+    .v-fullwidth-cta:hover {
+      background: #e6eaf2;
+    }
+
+    .v-sublabel {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8e96a8;
+      margin: 0;
+    }
+
+    /* Controls Panel (D1 - D5) */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 14px;
+    }
+
+    .decision-card {
+      background: var(--surface);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-md);
+      padding: 15px 17px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    .decision-card.disabled { opacity: 0.48; }
+    .decision-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .decision-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: var(--surface-raised);
+      border: 1px solid var(--outline-strong);
+      color: var(--text);
+    }
+    .decision-title { font-weight: 700; font-size: 14px; margin: 0; }
+    .decision-desc { margin: 0; font-size: 12px; color: var(--text-secondary); }
+
+    .radio-stack, .control-inline { display: flex; flex-direction: column; gap: 6px; }
+    .radio-label, .switch-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+      padding: 3px 6px;
+      border-radius: 6px;
+    }
+    .radio-label:hover, .switch-label:hover { background: var(--surface-raised); }
+    input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; cursor: pointer; }
+
+    .emoji-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+    .emoji-input {
+      width: 58px;
+      padding: 4px 8px;
+      font-size: 15px;
+      text-align: center;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--outline-strong);
+      background: var(--surface-raised);
+      color: var(--text);
+    }
+    .emoji-preset { padding: 3px 7px; font-size: 13px; border-radius: 6px; }
+
+    /* Section Card */
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-lg);
+      padding: 22px 24px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .section-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--outline);
+      padding-bottom: 12px;
+    }
+
+    .section-header h2 { margin: 0; font-size: 17px; font-weight: 700; }
+    .section-header p { margin: 0; font-size: 13px; color: var(--text-secondary); }
+
+    /* Marketplace Pre-made Bots & Huddled Teams */
+    .market-subhead {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .market-bots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 14px;
+    }
+
+    .market-bot-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-md);
+      padding: 15px;
+      display: flex;
+      gap: 15px;
+      align-items: flex-start;
+      transition: border-color 140ms ease;
+    }
+    .market-bot-card:hover { border-color: var(--accent); }
+
+    .market-avatar-stage {
+      min-width: 88px;
+      min-height: 92px;
+      background: var(--surface);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      gap: 6px;
+    }
+
+    .market-bot-info { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+    .market-role-tag {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      width: fit-content;
+    }
+    .market-prop-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+    .prop-mini-btn {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--surface);
+      border: 1px solid var(--outline);
+      color: var(--text-secondary);
+    }
+    .prop-mini-btn.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* Huddled Teams Grid */
+    .teams-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(390px, 1fr));
+      gap: 14px;
+    }
+
+    .team-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .team-stage {
+      min-width: 132px;
+      min-height: 114px;
+      background: var(--surface);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      gap: 6px;
+    }
+
+    /* Life & Micro-animations Showcase */
+    .life-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 14px;
+    }
+    .life-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .life-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      min-width: 82px;
+      padding: 8px;
+      background: var(--surface);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-md);
+    }
+    .life-info { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+    .life-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .life-title { margin: 0; font-size: 14px; font-weight: 700; color: var(--text); }
+    .life-tag {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .life-desc { margin: 0; font-size: 12.5px; color: var(--text-secondary); }
+    .life-meta {
+      margin-top: 2px;
+      padding-top: 6px;
+      border-top: 1px dashed var(--outline);
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .life-meta strong { color: var(--text); }
+
+    /* Terminal D5 Strip */
+    .terminal-box {
+      background: var(--terminal-bg);
+      border: 1px solid var(--terminal-border);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+      color: #e5e9f0;
+      font-family: var(--font-mono);
+      overflow-x: auto;
+    }
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: #9aa3b5;
+      border-bottom: 1px solid #1e2330;
+      padding-bottom: 8px;
+    }
+    .terminal-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+    .tui-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #121620;
+      border: 1px solid #23293a;
+      padding: 6px 10px;
+      border-radius: 6px;
+    }
+    .tui-cell {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      background: #0b0d13;
+      border: 1px solid #2b3246;
+      border-radius: 4px;
+      padding: 2px 4px;
+      white-space: pre;
+      line-height: 1.2;
+    }
+    .tui-bot-meta { font-size: 12px; color: #c5cddb; }
+    .tui-bot-corner { font-size: 10px; color: #8892a6; display: block; }
+
+    /* Main Board Table */
+    .table-scroll { overflow-x: auto; }
+    table.avatar-board { width: 100%; border-collapse: collapse; min-width: 920px; }
+    table.avatar-board th, table.avatar-board td {
+      padding: 11px 12px;
+      text-align: center;
+      border-bottom: 1px solid var(--outline);
+      vertical-align: middle;
+    }
+    table.avatar-board th {
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-secondary);
+      background: var(--surface-raised);
+    }
+    table.avatar-board th.col-bot, table.avatar-board td.col-bot { text-align: left; padding-left: 14px; }
+    table.avatar-board tr:hover td { background: var(--surface-raised); }
+    .bot-identity { display: flex; flex-direction: column; gap: 2px; }
+    .bot-name { font-weight: 700; font-size: 14px; color: var(--text); display: flex; align-items: center; gap: 6px; }
+    .bot-id-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: var(--surface-subtle);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .bot-specs { font-size: 12px; color: var(--text-secondary); }
+    .color-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+    .group-divider { border-left: 2px solid var(--outline-strong); }
+    .cell-wrapper { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+    .cell-caption { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+    canvas.avatar-canvas { display: block; cursor: pointer; }
+
+    /* Identification Test */
+    .quiz-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .quiz-card {
+      background: var(--surface-raised);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .quiz-card.correct { border-color: var(--success); background: var(--success-soft); }
+    .quiz-card.wrong { border-color: var(--danger); }
+    .quiz-number { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+    .quiz-input {
+      width: 100%;
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--outline-strong);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      text-align: center;
+    }
+    .quiz-feedback { font-size: 12px; font-weight: 600; min-height: 18px; }
+    .quiz-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 8px; }
+    .score-pill { font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 999px; background: var(--surface-raised); border: 1px solid var(--outline-strong); }
+    .score-pill.pass { background: var(--success-soft); color: var(--success); border-color: var(--success); }
+
+    .vectors-pre {
+      margin: 0;
+      padding: 14px;
+      background: var(--terminal-bg);
+      color: #d7e0f0;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      overflow-x: auto;
+      border: 1px solid var(--terminal-border);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- BARRA SUPERIOR FIJA -->
+  <header class="top-bar">
+    <div class="top-bar-inner">
+      <div class="brand-title">
+        <h1>Codync · Avatar Studio &amp; Decision Lab</h1>
+        <span class="badge">Halftone 2 + SVG Path Engine</span>
+        <span class="badge live" id="motion-status-badge">● 60 FPS Activo</span>
+      </div>
+      <div class="global-actions">
+        <button type="button" id="btn-pause-anim" aria-pressed="false">⏸ Pausar animación</button>
+        <button type="button" id="btn-theme-toggle">☀️ Modo Claro</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- =========================================================================
+         1. INTERFAZ ESTUDIO INTERACTIVO (INSPIRADA EN EL VIDEO: SPROUT / CAT + NUESTRO MOTOR HALFTONE, ACCESORIOS Y GRUPOS UNIDOS)
+         ========================================================================= -->
+    <section class="video-studio-shell" aria-label="Estudio Interactivo de Personalización de Avatares y Grupos">
+      <!-- Columna Izquierda: Píldora superior + Avatar Héroe a 180 pt + Píldoras de Estado (como en el video) -->
+      <div class="v-stage-column">
+        <div class="v-top-pill-bar">
+          <div class="v-identity-pill" id="v-top-pill">
+            <canvas id="v-mini-pill-canvas" width="26" height="26"></canvas>
+            <span id="v-pill-title">Cat · Arquitecta Full-Stack</span>
+          </div>
+          <button type="button" id="v-btn-spawn" style="border-radius:999px;background:#202534;color:#fff;border-color:rgba(255,255,255,0.16);padding:6px 12px;font-size:12px;">🌌 Spawn</button>
+        </div>
+
+        <!-- Escenario Central Interactivo (185 pt) -->
+        <div class="v-hero-canvas-wrap" id="v-hero-wrap" title="Pasa el cursor o haz clic para acariciar / saludar al avatar">
+          <canvas id="v-hero-canvas"></canvas>
+          <div class="v-interaction-hint" id="v-stage-subtitle">✋ Pasa el cursor sobre el avatar para acariciarlo · Haz clic para reacción feliz</div>
+        </div>
+
+        <!-- Píldoras de Estado debajo del avatar (Idle | Thinking | Happy | Needs Input | Speaking | Screen) -->
+        <div class="v-state-pills" role="tablist" aria-label="Estados del Avatar">
+          <button type="button" class="v-state-pill active" data-vstate="idle">Idle</button>
+          <button type="button" class="v-state-pill" data-vstate="working">Thinking</button>
+          <button type="button" class="v-state-pill" data-vstate="happy">Happy</button>
+          <button type="button" class="v-state-pill" data-vstate="needsInput">Needs Input</button>
+          <button type="button" class="v-state-pill" data-vstate="speaking">Speaking</button>
+          <button type="button" class="v-state-pill" data-vstate="computerUse">Screen</button>
+        </div>
+
+        <!-- Previsualización simultánea a escalas reales de la app (46 pt móvil, 30 pt lista, 18 pt mención) -->
+        <div class="v-multisize-strip">
+          <div class="v-multisize-item">
+            <canvas id="v-scale-46"></canvas>
+            <span>46 pt (Móvil)</span>
+          </div>
+          <div class="v-multisize-item">
+            <canvas id="v-scale-30"></canvas>
+            <span>30 pt (Sidebar)</span>
+          </div>
+          <div class="v-multisize-item">
+            <canvas id="v-scale-18"></canvas>
+            <span>18 pt (Inline)</span>
+          </div>
+          <div class="v-multisize-item">
+            <div class="tui-cell" id="v-scale-tui" style="font-size:14px;"> C✦</div>
+            <span>TUI (3 cols)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Columna Derecha: Tarjeta con Pestañas (Personaje | Personalizar & Rol | Grupos Unidos | Generate | Import JSON | Reset) -->
+      <div class="v-card-panel">
+        <div class="v-tab-header">
+          <div class="v-tabs-left" role="tablist">
+            <button type="button" class="v-tab-btn active" data-vtab="bot">Personaje (20)</button>
+            <button type="button" class="v-tab-btn" data-vtab="customize">Personalizar &amp; Rol</button>
+            <button type="button" class="v-tab-btn" data-vtab="squad">Grupos Unidos (Huddle)</button>
+            <button type="button" class="v-tab-btn" data-vtab="generate">Generate (IA)</button>
+            <button type="button" class="v-tab-btn" data-vtab="import">Import / JSON</button>
+          </div>
+          <button type="button" class="v-reset-btn" id="v-btn-reset">Reset</button>
+        </div>
+
+        <!-- Barra rápida de Plantillas de Oficio (siempre visible para partir de una plantilla y personalizarla) -->
+        <div>
+          <p class="v-sublabel" style="margin-bottom:7px;">Plantillas listas para personalizar (elige una base y edítala a tu gusto):</p>
+          <div class="v-role-presets-row" id="v-role-presets-bar"></div>
+        </div>
+
+        <!-- PESTAÑA 1: PERSONAJE & COLOR (COMO EN EL VIDEO 00:12-00:20) -->
+        <div class="v-tab-pane active" id="v-pane-bot">
+          <p class="v-sublabel">1. Elige el Personaje / Silueta Base (18 formas en matriz de puntos + botón + para importar):</p>
+          <div class="v-char-grid" id="v-char-grid"></div>
+
+          <p class="v-sublabel" style="margin-top:4px;">2. Familia de Color (14 tonos con luz 3D, base y sombra teñida):</p>
+          <div class="v-color-dots-row" id="v-color-dots-row"></div>
+        </div>
+
+        <!-- PESTAÑA 2: PERSONALIZAR ACCESORIOS DE OFICIO, OJOS, CORONA Y ADN -->
+        <div class="v-tab-pane" id="v-pane-customize">
+          <p class="v-sublabel">1. Accesorios de Rol Superpuestos (Alta visibilidad con halo de contraste · Combina varios):</p>
+          <div class="v-props-grid" id="v-props-grid"></div>
+
+          <p class="v-sublabel" style="margin-top:4px;">2. Personalización Facial, Geometría de Ojos, Corona y Textura ADN:</p>
+          <div class="v-traits-grid">
+            <div class="v-field">
+              <label for="v-ctrl-eyes">Estilo de Ojos</label>
+              <select id="v-ctrl-eyes">
+                <option value="round">Redondos con chispa (Round)</option>
+                <option value="slit">Verticales / Gato (Slit)</option>
+                <option value="wide">Amplios expresivos (Wide)</option>
+                <option value="happy">Ojos Felices (^ ^)</option>
+                <option value="wink">Guiño cómplice (; -)</option>
+                <option value="visor">Visor Cyber LED</option>
+              </select>
+            </div>
+
+            <div class="v-field">
+              <label for="v-ctrl-crown">Corona / Cresta Superior</label>
+              <select id="v-ctrl-crown">
+                <option value="0">0 · Sin corona adicional</option>
+                <option value="1">1 · Antena Estelar</option>
+                <option value="2">2 · Cresta / Orejas Gemelas</option>
+                <option value="3">3 · Halo Binario Flotante</option>
+              </select>
+            </div>
+
+            <div class="v-field">
+              <label for="v-ctrl-dna">Textura de Piel (ADN)</label>
+              <select id="v-ctrl-dna">
+                <option value="0">0 · Aura Core (Brillo central)</option>
+                <option value="1">1 · Anillo Orbital</option>
+                <option value="2">2 · Aurora Bipolar (Doble tono)</option>
+                <option value="3">3 · Moteado Estelar</option>
+                <option value="4">4 · Halftone Clásico Uniforme</option>
+              </select>
+            </div>
+
+            <div class="v-field">
+              <label for="v-ctrl-accent">Esquina del Acento (✦)</label>
+              <select id="v-ctrl-accent">
+                <option value="0">0 · Arriba Derecha (NE)</option>
+                <option value="1">1 · Arriba Izquierda (NW)</option>
+                <option value="2">2 · Abajo Derecha (SE)</option>
+                <option value="3">3 · Abajo Izquierda (SW)</option>
+                <option value="-1">Ocultar acento de esquina</option>
+              </select>
+            </div>
+
+            <div class="v-field">
+              <label for="v-ctrl-eye-spacing">Separación de ojos <span id="v-lbl-spacing">17</span></label>
+              <input type="range" id="v-ctrl-eye-spacing" min="11" max="25" step="1" value="17" />
+            </div>
+
+            <div class="v-field">
+              <label for="v-ctrl-eye-scale">Tamaño de ojos <span id="v-lbl-scale">1.1x</span></label>
+              <input type="range" id="v-ctrl-eye-scale" min="0.75" max="1.45" step="0.05" value="1.10" />
+            </div>
+
+            <div class="v-field">
+              <label for="v-ctrl-eye-y">Altura de mirada (Y) <span id="v-lbl-eyey">45</span></label>
+              <input type="range" id="v-ctrl-eye-y" min="32" max="60" step="1" value="45" />
+            </div>
+
+            <div class="v-field">
+              <label for="v-ctrl-grid-density">Densidad de Puntos</label>
+              <select id="v-ctrl-grid-density">
+                <option value="13">13×13 (Estándar Halftone 2)</option>
+                <option value="15" selected>15×15 (Alta definición Studio)</option>
+                <option value="17">17×17 (Micro-punto detallado)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- PESTAÑA 3: GRUPOS UNIDOS (HUDDLE / ESCUADRÓN AGRUPADO HOMBRO CON HOMBRO) -->
+        <div class="v-tab-pane" id="v-pane-squad">
+          <p style="margin:0;font-size:13px;color:#c2cadb;">
+            Al seleccionar esta pestaña, el escenario central muestra el <strong>Avatar de Grupo Unido (Squad Huddle)</strong>: los bots ya no están sueltos ni separados en esquinas, sino <strong>agrupados hombro con hombro con superposición limpia, inclinación hacia el centro y aura compartida</strong>.
+          </p>
+          <div class="v-traits-grid">
+            <div class="v-field">
+              <label for="v-squad-preset">Equipo Pre-armado</label>
+              <select id="v-squad-preset">
+                <option value="0">Equipo «Cierre Contable &amp; Auditoría» (3 bots juntos)</option>
+                <option value="1">Escuadrón «Producto, Código &amp; Voz 5+» (Líder + Flancos + Badge +2)</option>
+                <option value="2">Dúo Simbiótico «Arquitecta + Contador» (2 bots hombro con hombro)</option>
+                <option value="3">Escuadrón Creativo «Diseño, Growth &amp; QA» (4 bots agrupados)</option>
+              </select>
+            </div>
+
+            <div class="v-field">
+              <label for="v-squad-formation">Formación de Agrupación</label>
+              <select id="v-squad-formation">
+                <option value="huddle">Abrazo de Escuadrón (Huddle · Hombro con hombro)</option>
+                <option value="vsquad">Abanico Táctico en V (Líder al frente + escoltas pegados)</option>
+                <option value="cluster">Fusión Simbiótica (Núcleo compacto + halo compartido)</option>
+              </select>
+            </div>
+
+            <div class="v-field">
+              <label for="v-squad-Overlap">Cercanía / Unión del Grupo <span id="v-lbl-tightness">92%</span></label>
+              <input type="range" id="v-squad-tightness" min="65" max="100" step="1" value="92" />
+            </div>
+
+            <div class="v-field">
+              <label for="v-squad-synapse">Vínculo de Partículas Activo</label>
+              <select id="v-squad-synapse">
+                <option value="on">Sí · Flujo sináptico y miradas coordinadas</option>
+                <option value="calm">Calmo · Solo respiración grupal sincronizada</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="v-squad-members-summary" style="background:#161922;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:12px 14px;font-size:12.5px;color:#cdd5e5;"></div>
+        </div>
+
+        <!-- PESTAÑA 4: GENERATE (HERRAMIENTA DE DISEÑO / PROMPT IA COMO EN EL VIDEO 00:01-00:07) -->
+        <div class="v-tab-pane" id="v-pane-generate">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <span class="badge" style="background:rgba(255,152,0,0.16);color:#ffb74d;">Herramienta Interna de Diseño (No expuesta al usuario final)</span>
+            <span style="font-size:12px;color:#8e96a8;">Genera geometría SVG <code>body.path</code> + <code>eyes</code> para el motor Halftone</span>
+          </div>
+          <textarea id="v-gen-input" class="v-code-textarea" style="min-height:90px;" placeholder="Describe la nueva plantilla de avatar (ej. 'dragon', 'astronaut helmet', 'penguin with glasses', 'trophy')...">cat with pointy ears and curved tail</textarea>
+          <button type="button" class="v-fullwidth-cta" id="v-btn-copy-prompt">📋 Copy prompt (Formato Avatar Geometry Designer)</button>
+
+          <div style="background:#10131a;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:12px;font-size:12px;color:#9aa3b5;">
+            <strong style="color:#fff;">Prueba instantánea sin salir del prototipo:</strong> Haz clic en cualquiera de estas respuestas generadas por el prompt para importarla directo al motor Halftone:
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;" id="v-ai-mock-replies"></div>
+          </div>
+        </div>
+
+        <!-- PESTAÑA 5: IMPORT / JSON (COMO EN EL VIDEO 00:08-00:11) -->
+        <div class="v-tab-pane" id="v-pane-import">
+          <p style="margin:0;font-size:12.5px;color:#a9b1c2;">
+            Pega o edita el JSON de geometría y personalización del avatar (compatible con el esquema <code>version: 1</code> del video: <code>body.path</code> + <code>eyes</code> + nuestras capas <code>color</code> y <code>props</code>). Se valida y rasteriza en puntos al instante:
+          </p>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;" id="v-json-examples-bar"></div>
+          <textarea id="v-import-textarea" class="v-code-textarea" spellcheck="false"></textarea>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button type="button" class="v-fullwidth-cta" id="v-btn-apply-json" style="width:auto;padding:9px 20px;">✓ Add / Apply avatar</button>
+            <label class="btn" style="background:#202532;color:#fff;border-color:rgba(255,255,255,0.16);cursor:pointer;">
+              ↑ Choose file (.json)
+              <input type="file" id="v-file-json" accept=".json,application/json" style="display:none;" />
+            </label>
+            <button type="button" id="v-btn-clear-json" style="background:transparent;color:#9aa3b5;border-color:transparent;">Clear</button>
+            <span id="v-import-status" style="font-size:12px;font-weight:600;color:#3ddc97;"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         2. MARKETPLACE: GRUPOS MUCHO MÁS AGRUPADOS (HUDDLE) + BOTS ESPECIALIZADOS
+         ========================================================================= -->
+    <section class="section-card" aria-label="Marketplace de Equipos Unidos y Bots Especializados">
+      <div class="section-header">
+        <div>
+          <h2>Marketplace · Equipos Unidos (Huddle) y Plantillas de Bots Especializados</h2>
+          <p>Observa cómo los <strong>grupos se ven realmente juntos como un solo equipo</strong> (hombro con hombro con superposición limpia, inclinados hacia el centro y con aura compartida) y cómo cada especialista muestra sus accesorios con alto contraste.</p>
+        </div>
+      </div>
+
+      <h3 class="market-subhead">1. Equipos Pre-armados del Marketplace (Agrupados Hombro con Hombro · Haz clic para abrir en el Estudio)</h3>
+      <div class="teams-grid" id="marketplace-teams-grid"></div>
+
+      <h3 class="market-subhead" style="margin-top:8px;">2. Plantillas de Bots Especializados (Haz clic en sus accesorios o en «Editar en Estudio»)</h3>
+      <div class="market-bots-grid" id="marketplace-bots-grid"></div>
+    </section>
+
+    <!-- =========================================================================
+         3. CONTROLES DE DECISIÓN (D1 a D5)
+         ========================================================================= -->
+    <section aria-label="Controles de decisión D1 a D5" class="controls-grid">
+      <div class="decision-card">
+        <div class="decision-head">
+          <h2 class="decision-title">Dirección visual</h2>
+          <span class="decision-badge">D1</span>
+        </div>
+        <p class="decision-desc">Compara el halftone clásico frente a Halftone 2 Vivo y el Robot de Matriz LED.</p>
+        <div class="radio-stack" role="radiogroup" aria-label="D1 Dirección">
+          <label class="radio-label"><input type="radio" name="d1-direction" value="A" /><span>A · Pulido actual</span></label>
+          <label class="radio-label"><input type="radio" name="d1-direction" value="A2" checked /><span>A2 · Halftone 2</span></label>
+          <label class="radio-label"><input type="radio" name="d1-direction" value="A3" /><span>A3 · Halftone 2 + robot</span></label>
+        </div>
+      </div>
+
+      <div class="decision-card" id="card-d2">
+        <div class="decision-head">
+          <h2 class="decision-title">Robot matriz de puntos</h2>
+          <span class="decision-badge">D2</span>
+        </div>
+        <p class="decision-desc">Solo aplica en A3. Dibujado 100 % con matriz LED de puntos para conservar la misma familia visual.</p>
+        <label class="switch-label"><input type="checkbox" id="d2-robot" checked /><span>Mostrar robot como alternativa</span></label>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-head">
+          <h2 class="decision-title">ADN y Variante por bot</h2>
+          <span class="decision-badge">D3</span>
+        </div>
+        <p class="decision-desc">En el tablero de los 10 bots, deriva acento, ojos, corona y ADN desde <code>fnv1a32(bot.id)</code>.</p>
+        <div class="radio-stack" role="radiogroup" aria-label="D3 Variante">
+          <label class="radio-label"><input type="radio" name="d3-variant" value="seeded" checked /><span>Automática por bot (semilla)</span></label>
+          <label class="radio-label"><input type="radio" name="d3-variant" value="fixed" /><span>Fija (sin semilla)</span></label>
+        </div>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-head">
+          <h2 class="decision-title">Insignia Emoji</h2>
+          <span class="decision-badge">D4</span>
+        </div>
+        <p class="decision-desc">Muestra el emoji como pastilla circular de esquina (≥ 30 pt) sin tapar la cara de puntos.</p>
+        <label class="switch-label"><input type="checkbox" id="d4-emoji-toggle" /><span>Acento con emoji</span></label>
+        <div class="emoji-row">
+          <label for="d4-emoji-input" style="font-size:12px;color:var(--text-secondary);">Glifo:</label>
+          <input type="text" id="d4-emoji-input" class="emoji-input" value="✦" maxlength="4" aria-label="Emoji de acento" />
+          <button type="button" class="emoji-preset" data-emoji="✦">✦</button>
+          <button type="button" class="emoji-preset" data-emoji="⚡">⚡</button>
+          <button type="button" class="emoji-preset" data-emoji="🚀">🚀</button>
+          <button type="button" class="emoji-preset" data-emoji="🔥">🔥</button>
+        </div>
+      </div>
+
+      <div class="decision-card">
+        <div class="decision-head">
+          <h2 class="decision-title">Representación TUI</h2>
+          <span class="decision-badge">D5</span>
+        </div>
+        <p class="decision-desc">Muestra la fila monoespaciada de 3 caracteres: espacio, inicial a color y acento <code>✦</code>.</p>
+        <label class="switch-label"><input type="checkbox" id="d5-terminal-toggle" checked /><span>Vista de terminal</span></label>
+      </div>
+    </section>
+
+    <!-- D5 VISTA DE TERMINAL -->
+    <section class="section-card" id="terminal-section" aria-label="Vista de terminal (D5)">
+      <div class="section-header">
+        <h2>Vista de terminal (D5 · Cuadrícula monoespaciada)</h2>
+        <p>Cada celda ocupa 3 caracteres: <code>[espacio][Inicial en color base][✦ en esquina según variante]</code>.</p>
+      </div>
+      <div class="terminal-box">
+        <div class="terminal-header">
+          <span>codync tui — roster (10 bots)</span>
+          <span>formato: &quot; X✦&quot; (3 cols monoespaciadas)</span>
+        </div>
+        <div class="terminal-row" id="terminal-roster-row"></div>
+      </div>
+    </section>
+
+    <!-- GALERÍA DE 10 MICRO-ANIMACIONES CON VIDA -->
+    <section class="section-card" aria-label="Galería de micro-animaciones con vida">
+      <div class="section-header">
+        <div>
+          <h2>Laboratorio de Vida · 10 Micro-animaciones sobre Matriz de Puntos (58 pt en vivo)</h2>
+          <p>Documentación completa: qué hace cada animación en la matriz de puntos, en qué pantalla de Codync entra y por qué le da vida.</p>
+        </div>
+      </div>
+      <div class="life-grid" id="life-showcase-grid"></div>
+    </section>
+
+    <!-- TABLERO DE TAMAÑOS Y ESTADOS -->
+    <section class="section-card" aria-label="Tablero de tamaños y estados">
+      <div class="section-header">
+        <div>
+          <h2>Tablero de tamaños (15, 18, 30, 46 pt) y estados (idle, working, needsInput)</h2>
+          <p>Rejilla cuadrada automática: <strong>7×7</strong> (&lt;18 pt), <strong>9×9</strong> (18–27 pt), <strong>13×13</strong> (≥28 pt). Haz clic en cualquier avatar para ciclar entre estados con salto elástico.</p>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="avatar-board">
+          <thead>
+            <tr>
+              <th class="col-bot">Bot (ID · Personaje · ADN · Corona)</th>
+              <th>15 pt<br /><span style="font-weight:400;font-size:10px;">7×7 nítido</span></th>
+              <th>18 pt<br /><span style="font-weight:400;font-size:10px;">9×9 nítido</span></th>
+              <th>30 pt<br /><span style="font-weight:400;font-size:10px;">13×13 (Roster Desktop)</span></th>
+              <th>46 pt<br /><span style="font-weight:400;font-size:10px;">13×13 (Roster Móvil)</span></th>
+              <th class="group-divider">Estado: idle<br /><span style="font-weight:400;font-size:10px;">Chispa + Satélite</span></th>
+              <th>Estado: working<br /><span style="font-weight:400;font-size:10px;">Vórtice + Lectura</span></th>
+              <th>Estado: needsInput<br /><span style="font-weight:400;font-size:10px;">Latido + Cejas</span></th>
+            </tr>
+          </thead>
+          <tbody id="board-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PRUEBA DE IDENTIFICACIÓN -->
+    <section class="section-card" aria-label="Prueba de identificación a 30 pt">
+      <div class="section-header">
+        <div>
+          <h2>Prueba de identificación a 30 pt (Criterio: ≥ 8 / 10 aciertos)</h2>
+          <p>Los 10 avatares se muestran a 30 pt en orden aleatorio sin etiqueta. Escribe o elige el nombre de cada bot.</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" id="btn-shuffle-quiz">🔀 Mezclar orden</button>
+          <button type="button" id="btn-autofill-quiz" title="Rellenar con las respuestas correctas para verificar el validador">✨ Simular prueba</button>
+          <button type="button" class="primary" id="btn-check-quiz">✓ Evaluar aciertos</button>
+        </div>
+      </div>
+      <datalist id="bot-names-datalist">
+        <option value="Ana"></option><option value="Bruno"></option><option value="Carla"></option>
+        <option value="Dani"></option><option value="Elena"></option><option value="Fede"></option>
+        <option value="Gabi"></option><option value="Hugo"></option><option value="Irene"></option>
+        <option value="Julián"></option>
+      </datalist>
+      <div class="quiz-grid" id="quiz-grid"></div>
+      <div class="quiz-bar">
+        <div class="score-pill" id="quiz-score-pill">Resultado: pendiente de evaluar (meta: 8/10 o más)</div>
+        <span style="font-size:12px;color:var(--text-secondary);">Se aceptan nombres con o sin tilde (ej. «Julian» o «Julián») y sin importar mayúsculas.</span>
+      </div>
+    </section>
+
+    <!-- VECTORES DORADOS FNV-1A -->
+    <section class="section-card" aria-label="Vectores dorados FNV-1a">
+      <div class="section-header">
+        <h2>Vectores Dorados · Salida de <code>variant(botId)</code> (FNV-1a 32-bit)</h2>
+        <p>También impresos en la consola de desarrollador (<code>console.table</code>) para portar exactamente igual a Swift, Kotlin, Rust y TypeScript.</p>
+      </div>
+      <pre class="vectors-pre" id="golden-vectors-output"></pre>
+    </section>
+
+  </main>
+  <script>
+    // =========================================================================
+    // 1. SEMILLA DETERMINISTA OBLIGATORIA (FNV-1a 32-bit)
+    // =========================================================================
+    function fnv1a32(str) {
+      let h = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      return h >>> 0;
+    }
+
+    function variant(botId) {
+      const h = fnv1a32(botId);
+      return {
+        accent: h % 4,          // 0..3: esquina del acento
+        eyes: (h >>> 8) % 3,    // 0..2: round, slit, wide
+        shift: (h >>> 16) % 2,  // 0..1: desplazamiento de la rejilla
+      };
+    }
+
+    function botDna(botId) {
+      const h = fnv1a32(botId);
+      return {
+        ...variant(botId),
+        crown: (h >>> 3) % 4,
+        dnaPattern: (h >>> 6) % 4,
+        temperament: (h >>> 10) % 4,
+        sparkAngle: ((h >>> 12) % 360) * (Math.PI / 180),
+      };
+    }
+
+    const CROWN_NAMES = ['Sin corona', 'Antena Estelar', 'Cresta Gemela', 'Halo Binario'];
+    const DNA_NAMES   = ['Aura Core', 'Anillo Orbital', 'Aurora Bipolar', 'Moteado Estelar', 'Halftone Uniforme'];
+    const TEMP_NAMES  = ['Calmo', 'Curioso', 'Analítico', 'Cósmico'];
+
+    // =========================================================================
+    // 2. FAMILIAS DE COLOR (14 familias: 11 existentes + 3 nuevas)
+    // =========================================================================
+    const COLOR_FAMILIES = {
+      green:   { name: 'Green',   base: '#00C972', light: '#7CFAB8', shadowDark: '#193C2C', shadowLight: '#8EDBB5', isNew: false },
+      mint:    { name: 'Mint',    base: '#3DDC97', light: '#9EFAE1', shadowDark: '#1B3E34', shadowLight: '#97DFC4', isNew: true  },
+      cyan:    { name: 'Cyan',    base: '#00BCA6', light: '#7CF7E8', shadowDark: '#173A38', shadowLight: '#8CDAD1', isNew: false },
+      blue:    { name: 'Blue',    base: '#1084FE', light: '#82C5FF', shadowDark: '#1C2F4C', shadowLight: '#9ABCE8', isNew: false },
+      indigo:  { name: 'Indigo',  base: '#5B5BD6', light: '#A8ACFF', shadowDark: '#26274A', shadowLight: '#AEAFE6', isNew: true  },
+      violet:  { name: 'Violet',  base: '#9159FE', light: '#CAAEFF', shadowDark: '#30234E', shadowLight: '#C0ADEA', isNew: false },
+      magenta: { name: 'Magenta', base: '#FF309B', light: '#FF9AD2', shadowDark: '#481D37', shadowLight: '#E89EC4', isNew: false },
+      red:     { name: 'Red',     base: '#FF263C', light: '#FF8E9B', shadowDark: '#481E24', shadowLight: '#E89EA6', isNew: false },
+      coral:   { name: 'Coral',   base: '#FF7A66', light: '#FFC0B5', shadowDark: '#482825', shadowLight: '#EAB4AC', isNew: true  },
+      orange:  { name: 'Orange',  base: '#FF6700', light: '#FFB478', shadowDark: '#472916', shadowLight: '#E8B18B', isNew: false },
+      yellow:  { name: 'Yellow',  base: '#FF9800', light: '#FFDA75', shadowDark: '#473516', shadowLight: '#E8C689', isNew: false },
+      brown:   { name: 'Brown',   base: '#936439', light: '#D8AB82', shadowDark: '#36281D', shadowLight: '#C9B19B', isNew: false },
+      gray:    { name: 'Gray',    base: '#777777', light: '#C4C8D0', shadowDark: '#2B2E36', shadowLight: '#B8BDC7', isNew: false },
+      black:   { name: 'Black',   base: '#3A3F4B', light: '#8C94A6', shadowDark: '#1C1F26', shadowLight: '#9EA4B0', isNew: false },
+    };
+
+    // =========================================================================
+    // 3. CATÁLOGO DE 18 PERSONAJES / SILUETAS CON ESQUEMA JSON (body.path + eyes)
+    //    Inspirado en el video (Sprout, Cat, Controller, Mug, Ghost, Bubble, Watering...)
+    //    + Siluetas geométricas clásicas. Rasterizadas en vivo sobre nuestra Matriz Halftone.
+    // =========================================================================
+    const CHARACTER_TEMPLATES = [
+      {
+        id: 'cat',
+        name: 'Cat (Gato)',
+        icon: '🐱',
+        isNew: true,
+        eyes: { x: 48, y: 48, spacing: 16, scale: 1.12 },
+        // Orejas puntiagudas + cabeza redonda + cuerpo + cola curva a la derecha (como el video 00:09)
+        path: 'M 22 42 L 16 14 C 16 10 21 9 24 13 L 36 28 C 41 26 46 26 52 28 L 64 13 C 67 9 72 10 72 14 L 66 42 C 74 48 77 58 75 69 C 79 68 83 62 84 53 C 85 47 92 48 91 55 C 89 71 80 82 68 85 C 60 88 30 88 20 83 C 11 77 12 52 22 42 Z'
+      },
+      {
+        id: 'sprout',
+        name: 'Sprout (Planta)',
+        icon: '🌱',
+        isNew: true,
+        eyes: { x: 50, y: 69, spacing: 14, scale: 1.08 },
+        // Maceta con borde superior + tallo central + 2 hojas superiores (como el video 00:00)
+        path: 'M 47 45 L 47 30 C 34 32 22 25 22 15 C 34 12 45 18 49 27 C 54 16 67 10 80 14 C 79 26 66 32 53 30 L 53 45 L 76 45 C 80 45 82 48 82 52 C 82 55 80 57 76 57 L 72 85 C 71 89 67 91 62 91 L 38 91 C 33 91 29 89 28 85 L 24 57 C 20 57 18 55 18 52 C 18 48 20 45 24 45 Z'
+      },
+      {
+        id: 'controller',
+        name: 'Gamepad',
+        icon: '🎮',
+        isNew: true,
+        eyes: { x: 50, y: 49, spacing: 18, scale: 1.05 },
+        // Mando ergonómico con cuernos inferiores (video 00:12 fila 1 col 1)
+        path: 'M 28 26 L 72 26 C 84 26 92 36 90 52 L 86 76 C 84 86 74 88 68 79 L 60 66 L 40 66 L 32 79 C 26 88 16 86 14 76 L 10 52 C 8 36 16 26 28 26 Z'
+      },
+      {
+        id: 'botmech',
+        name: 'Mech Dron',
+        icon: '🤖',
+        isNew: true,
+        eyes: { x: 50, y: 50, spacing: 17, scale: 1.10 },
+        // Cuerpo cápsula con orejas/antenas laterales (video 00:12 fila 1 col 2)
+        path: 'M 46 12 L 54 12 L 54 24 L 68 24 C 77 24 82 30 82 39 L 91 39 L 91 63 L 82 63 C 82 74 75 82 65 82 L 35 82 C 25 82 18 74 18 63 L 9 63 L 9 39 L 18 39 C 18 30 23 24 32 24 L 46 24 Z'
+      },
+      {
+        id: 'mug',
+        name: 'Mug (Café)',
+        icon: '☕',
+        isNew: true,
+        eyes: { x: 44, y: 54, spacing: 15, scale: 1.08 },
+        // Taza con asa derecha (video 00:12 fila 1 col 3)
+        path: 'M 18 24 L 68 24 L 68 34 L 82 34 C 89 34 93 40 93 49 C 93 58 89 64 82 64 L 68 64 L 66 78 C 64 86 57 90 43 90 C 29 90 22 86 20 78 Z'
+      },
+      {
+        id: 'ghost',
+        name: 'Espíritu',
+        icon: '👻',
+        isNew: true,
+        eyes: { x: 50, y: 44, spacing: 16, scale: 1.12 },
+        // Fantasma redondeado con base ondulada (video 00:12 fila 1 col 4)
+        path: 'M 50 12 C 72 12 84 26 84 48 L 84 84 C 84 89 78 90 74 84 L 66 75 L 56 85 C 52 90 48 90 44 85 L 34 75 L 26 84 C 22 90 16 89 16 84 L 16 48 C 16 26 28 12 50 12 Z'
+      },
+      {
+        id: 'bubble',
+        name: 'Burbuja Chat',
+        icon: '💬',
+        isNew: true,
+        eyes: { x: 50, y: 46, spacing: 17, scale: 1.10 },
+        // Burbuja de diálogo con pico abajo (video 00:12 fila 1 col 5)
+        path: 'M 26 18 L 74 18 C 85 18 91 25 91 37 L 91 57 C 91 69 85 76 74 76 L 44 76 L 24 90 L 26 76 C 15 75 9 68 9 57 L 9 37 C 9 25 15 18 26 18 Z'
+      },
+      {
+        id: 'watering',
+        name: 'Regadera',
+        icon: '🚿',
+        isNew: true,
+        eyes: { x: 52, y: 56, spacing: 15, scale: 1.05 },
+        // Regadera con pico izquierdo y asa (video 00:12 fila 2 col 2)
+        path: 'M 34 32 L 72 32 C 83 32 90 40 90 54 C 90 67 83 75 72 75 L 70 84 C 68 89 63 91 50 91 C 37 91 32 89 30 84 L 28 64 L 10 44 L 17 35 L 31 48 Z'
+      },
+      {
+        id: 'owl',
+        name: 'Owl (Búho)',
+        icon: '🦉',
+        isNew: true,
+        eyes: { x: 50, y: 45, spacing: 18, scale: 1.18 },
+        // Búho sabio con penachos y alas redondeadas
+        path: 'M 22 16 L 36 24 C 44 21 56 21 64 24 L 78 16 L 76 34 C 86 42 89 56 84 72 C 79 84 66 90 50 90 C 34 90 21 84 16 72 C 11 56 14 42 24 34 Z'
+      },
+      {
+        id: 'fox',
+        name: 'Fox (Zorro)',
+        icon: '🦊',
+        isNew: true,
+        eyes: { x: 50, y: 50, spacing: 17, scale: 1.08 },
+        // Zorro con orejas grandes y mejillas angulares
+        path: 'M 18 12 L 38 28 C 46 26 54 26 62 28 L 82 12 L 84 44 C 91 52 91 64 80 74 L 58 89 C 53 92 47 92 42 89 L 20 74 C 9 64 9 52 16 44 Z'
+      },
+      {
+        id: 'rocket',
+        name: 'Rocket',
+        icon: '🚀',
+        isNew: true,
+        eyes: { x: 50, y: 46, spacing: 14, scale: 1.05 },
+        // Cohete espacial con aletas laterales
+        path: 'M 50 10 C 66 22 74 38 74 58 L 88 72 L 84 86 L 68 78 C 62 86 38 86 32 78 L 16 86 L 12 72 L 26 58 C 26 38 34 22 50 10 Z'
+      },
+      {
+        id: 'flask',
+        name: 'Matraz Lab',
+        icon: '🧪',
+        isNew: true,
+        eyes: { x: 50, y: 62, spacing: 16, scale: 1.06 },
+        // Matraz Erlenmeyer de laboratorio
+        path: 'M 36 14 L 64 14 L 64 22 L 59 22 L 59 35 L 84 74 C 89 82 84 90 73 90 L 27 90 C 16 90 11 82 16 74 L 41 35 L 41 22 L 36 22 Z'
+      },
+      {
+        id: 'blob',
+        name: 'Blob',
+        icon: '🫧',
+        isNew: false,
+        eyes: { x: 50, y: 45, spacing: 17, scale: 1.05 },
+        path: 'M 52 12 C 74 11 89 26 88 49 C 87 72 74 89 49 89 C 24 89 11 73 12 50 C 13 27 30 13 52 12 Z'
+      },
+      {
+        id: 'squircle',
+        name: 'Squircle',
+        icon: '▢',
+        isNew: false,
+        eyes: { x: 50, y: 45, spacing: 17, scale: 1.05 },
+        path: 'M 28 12 L 72 12 C 84 12 88 16 88 28 L 88 72 C 88 84 84 88 72 88 L 28 88 C 16 88 12 84 12 72 L 12 28 C 12 16 16 12 28 12 Z'
+      },
+      {
+        id: 'hex',
+        name: 'Hexágono',
+        icon: '⬢',
+        isNew: false,
+        eyes: { x: 50, y: 45, spacing: 17, scale: 1.05 },
+        path: 'M 50 10 L 85 29 L 85 71 L 50 90 L 15 71 L 15 29 Z'
+      },
+      {
+        id: 'diamond',
+        name: 'Diamante',
+        icon: '◆',
+        isNew: true,
+        eyes: { x: 50, y: 46, spacing: 16, scale: 1.05 },
+        path: 'M 50 10 C 55 10 88 43 88 50 C 88 57 55 90 50 90 C 45 90 12 57 12 50 C 12 43 45 10 50 10 Z'
+      },
+      {
+        id: 'star',
+        name: 'Estrella',
+        icon: '★',
+        isNew: true,
+        eyes: { x: 50, y: 48, spacing: 15, scale: 1.02 },
+        path: 'M 50 9 L 62 33 L 89 37 L 70 56 L 75 84 L 50 71 L 25 84 L 30 56 L 11 37 L 38 33 Z'
+      },
+      {
+        id: 'cloud',
+        name: 'Cloud (Nube)',
+        icon: '☁️',
+        isNew: false,
+        eyes: { x: 50, y: 52, spacing: 17, scale: 1.05 },
+        path: 'M 34 26 C 43 14 63 15 70 29 C 83 30 91 41 90 55 C 89 70 78 82 64 82 L 28 82 C 15 82 8 71 10 58 C 11 45 21 36 34 26 Z'
+      },
+      {
+        id: 'dragon',
+        name: 'Dragon',
+        icon: '🐉',
+        isNew: true,
+        eyes: { x: 50, y: 48, spacing: 17, scale: 1.12 },
+        path: 'M 18 14 L 34 26 L 44 16 L 50 26 L 56 16 L 66 26 L 82 14 L 78 38 C 88 46 90 62 82 76 C 74 88 62 90 50 90 C 38 90 26 88 18 76 C 10 62 12 46 22 38 Z'
+      },
+      {
+        id: 'penguin',
+        name: 'Penguin',
+        icon: '🐧',
+        isNew: true,
+        eyes: { x: 50, y: 38, spacing: 14, scale: 1.08 },
+        path: 'M 50 12 C 68 12 78 24 78 42 C 88 48 92 60 86 70 L 76 66 C 75 82 66 90 50 90 C 34 90 25 82 24 66 L 14 70 C 8 60 12 48 22 42 C 22 24 32 12 50 12 Z'
+      }
+    ];
+
+    const CHAR_MAP = {};
+    const PATH2D_CACHE = {};
+    CHARACTER_TEMPLATES.forEach((c) => {
+      CHAR_MAP[c.id] = c;
+      if (typeof Path2D !== 'undefined' && c.path) {
+        PATH2D_CACHE[c.id] = new Path2D(c.path);
+      }
+    });
+
+    // Helper offscreen context for Path2D hit-testing
+    const hitCanvas = document.createElement('canvas');
+    hitCanvas.width = 100;
+    hitCanvas.height = 100;
+    const hitCtx = hitCanvas.getContext('2d');
+
+    // Supersampled coverage (0..1) of a cell at normalized (nx, ny) in 0..1 space
+    function getShapeCoverage(shapeId, nx, ny, customPathStr) {
+      let p2d = null;
+      if (customPathStr) {
+        if (!PATH2D_CACHE[customPathStr]) {
+          try { PATH2D_CACHE[customPathStr] = new Path2D(customPathStr); } catch (e) {}
+        }
+        p2d = PATH2D_CACHE[customPathStr];
+      } else if (PATH2D_CACHE[shapeId]) {
+        p2d = PATH2D_CACHE[shapeId];
+      }
+
+      if (p2d && hitCtx) {
+        const px = nx * 100;
+        const py = ny * 100;
+        const step = 2.6;
+        let hits = 0;
+        if (hitCtx.isPointInPath(p2d, px, py)) hits += 2;
+        if (hitCtx.isPointInPath(p2d, px - step, py - step)) hits += 1;
+        if (hitCtx.isPointInPath(p2d, px + step, py - step)) hits += 1;
+        if (hitCtx.isPointInPath(p2d, px - step, py + step)) hits += 1;
+        if (hitCtx.isPointInPath(p2d, px + step, py + step)) hits += 1;
+        return hits / 6;
+      }
+
+      // Fallback analytical shapes (pebble, tablet, wedge, teardrop, capsule, arch)
+      const dx = nx - 0.5;
+      const dy = ny - 0.5;
+      if (shapeId === 'pebble') {
+        const rx = 0.44, ry = 0.39 - 0.05 * dx;
+        return ((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1.0) ? 1 : 0;
+      }
+      if (shapeId === 'tablet') {
+        return (Math.abs(dx) <= 0.34 && Math.abs(dy) <= 0.43) ? 1 : 0;
+      }
+      if (shapeId === 'wedge') {
+        const t = (ny - 0.10) / 0.80;
+        if (t < 0 || t > 1) return 0;
+        const halfW = 0.14 + 0.31 * t;
+        return Math.abs(dx) <= halfW ? 1 : 0;
+      }
+      if (shapeId === 'teardrop') {
+        const t = (ny - 0.08) / 0.84;
+        if (t < 0 || t > 1) return 0;
+        const halfW = 0.43 * Math.sin(t * Math.PI * 0.88) * (0.45 + 0.65 * t);
+        return Math.abs(dx) <= halfW ? 1 : 0;
+      }
+      if (shapeId === 'capsule') {
+        return (Math.abs(dx) <= 0.31 && Math.abs(dy) <= 0.43) ? 1 : 0;
+      }
+      if (shapeId === 'arch') {
+        if (ny > 0.88 || ny < 0.10) return 0;
+        if (ny >= 0.46) return Math.abs(dx) <= 0.39 ? 1 : 0;
+        const ady = ny - 0.46;
+        return (dx * dx + ady * ady <= 0.39 * 0.39) ? 1 : 0;
+      }
+      return (dx * dx + dy * dy <= 0.42 * 0.42) ? 1 : 0;
+    }
+
+    // =========================================================================
+    // 4. ACCESORIOS DE OFICIO EN PUNTOS (10 ACCESORIOS CON HALO DE CONTRASTE)
+    // =========================================================================
+    const ROLE_PROPS = {
+      glasses:     { id: 'glasses',     label: 'Lentes Analista',    icon: '👓', desc: 'Montura de alto contraste + cristal cian con reflejo' },
+      spreadsheet: { id: 'spreadsheet', label: 'Hoja de Cálculo',    icon: '📊', desc: 'Tabla contable 4×4 flotante con celdas vivas' },
+      code:        { id: 'code',        label: 'Holograma </>',      icon: '💻', desc: 'Terminal oscura con líneas de código compilando' },
+      magnifier:   { id: 'magnifier',   label: 'Lupa / Monóculo QA', icon: '🔍', desc: 'Aro dorado/cian de inspección con lente y mango' },
+      headset:     { id: 'headset',     label: 'Headset de Voz',     icon: '🎧', desc: 'Diadema metálica superior + auricular + micrófono LED' },
+      shield:      { id: 'shield',      label: 'Escudo SecOps',      icon: '🛡️', desc: 'Escudo heráldico con borde dorado y núcleo de energía' },
+      palette:     { id: 'palette',     label: 'Boina & Paleta',     icon: '🎨', desc: 'Boina de artista + paleta cromática de 4 colores' },
+      crown:       { id: 'crown',       label: 'Corona Líder',       icon: '👑', desc: 'Corona real de 5 puntas en oro y gemas luminosas' },
+      tie:         { id: 'tie',         label: 'Corbata Ejecutiva',  icon: '👔', desc: 'Cuello blanco + corbata carmesí de puntos ejecutivos' },
+      wrench:      { id: 'wrench',      label: 'Casco & DevOps',     icon: '🔧', desc: 'Insignia de engranaje e ingeniería en el hombro' },
+    };
+
+    // =========================================================================
+    // 5. PLANTILLAS PRE-HECHAS DEL MARKETPLACE (BOTS Y EQUIPOS UNIDOS)
+    // =========================================================================
+    const MARKETPLACE_BOTS = [
+      {
+        id: 'mkt-accountant',
+        name: 'Mateo · Contador Fiscal',
+        role: 'Finanzas & Impuestos',
+        shape: 'owl',
+        color: 'green',
+        props: ['glasses', 'spreadsheet', 'tie'],
+        mood: 'working',
+        eyesStyle: 'round',
+        crown: 0,
+        dna: 0,
+        desc: 'Búho financiero con lentes de analista, corbata ejecutiva y hoja de cálculo flotante que balancea activos en vivo.'
+      },
+      {
+        id: 'mkt-architect',
+        name: 'Sofía · Arquitecta Full-Stack',
+        role: 'Ingeniería de Software',
+        shape: 'cat',
+        color: 'indigo',
+        props: ['glasses', 'code'],
+        mood: 'computerUse',
+        eyesStyle: 'slit',
+        crown: 0,
+        dna: 1,
+        desc: 'Personaje Cat con gafas de desarrolladora, reflejo de pantalla en las pupilas y terminal holográfica compilando código.'
+      },
+      {
+        id: 'mkt-secops',
+        name: 'Lucas · Guardián SecOps',
+        role: 'Auditoría & Seguridad',
+        shape: 'botmech',
+        color: 'red',
+        props: ['magnifier', 'shield'],
+        mood: 'working',
+        eyesStyle: 'visor',
+        crown: 1,
+        dna: 2,
+        desc: 'Dron táctico con visor cyber, lupa de auditoría profunda y escudo heráldico de puntos orbitando el flanco.'
+      },
+      {
+        id: 'mkt-pm',
+        name: 'Valeria · Orquestadora PM',
+        role: 'Líder de Producto',
+        shape: 'sprout',
+        color: 'yellow',
+        props: ['crown', 'spreadsheet'],
+        mood: 'idle',
+        eyesStyle: 'happy',
+        crown: 0,
+        dna: 3,
+        desc: 'Plantilla Sprout con corona dorada de orquestadora y tablero de métricas de sprint en tiempo real.'
+      },
+      {
+        id: 'mkt-voice',
+        name: 'Clara · Concierge de Voz',
+        role: 'Atención & Llamadas',
+        shape: 'ghost',
+        color: 'coral',
+        props: ['headset'],
+        mood: 'speaking',
+        eyesStyle: 'round',
+        crown: 0,
+        dna: 0,
+        desc: 'En modo speaking (boca de puntos con lip-sync) equipada con diadema metálica, auricular y micrófono LED pulsante.'
+      },
+      {
+        id: 'mkt-designer',
+        name: 'Gael · Diseñador UI/UX',
+        role: 'Sistemas de Diseño',
+        shape: 'fox',
+        color: 'magenta',
+        props: ['palette', 'glasses'],
+        mood: 'idle',
+        eyesStyle: 'wink',
+        crown: 0,
+        dna: 2,
+        desc: 'Zorro creativo con boina de artista, paleta de 4 gotas cromáticas y lentes de precisión visual.'
+      }
+    ];
+
+    const MARKETPLACE_TEAMS = [
+      {
+        id: 'team-finance-huddle',
+        name: 'Equipo «Cierre Contable & Auditoría»',
+        tag: 'Escuadrón Unido · 3 bots hombro con hombro',
+        formation: 'huddle',
+        tightness: 92,
+        extraCount: 0,
+        desc: 'Agrupados hombro con hombro como un verdadero equipo: Mateo (Contador) al frente flanqueado muy de cerca por Lucas (SecOps) y Valeria (PM), inclinados hacia el centro sobre un aura común.',
+        members: [
+          { id: 'mkt-accountant', shape: 'owl',     color: 'green',  props: ['glasses', 'spreadsheet', 'tie'] },
+          { id: 'mkt-secops',     shape: 'botmech', color: 'red',    props: ['shield', 'magnifier'] },
+          { id: 'mkt-pm',         shape: 'sprout',  color: 'yellow', props: ['crown'] }
+        ]
+      },
+      {
+        id: 'team-product-squad',
+        name: 'Escuadrón «Producto, Código & Voz 5+»',
+        tag: 'Escuadrón en V · 6 miembros (+3 integrados)',
+        formation: 'vsquad',
+        tightness: 94,
+        extraCount: 3,
+        extraColors: ['#3DDC97', '#FF6700', '#1084FE'],
+        desc: 'Formación compacta con la Arquitecta Cat al frente, el Diseñador Fox y la Concierge a sus hombros, e insignia coral integrada en la base con las partículas de los 3 bots adicionales.',
+        members: [
+          { id: 'mkt-architect', shape: 'cat',   color: 'indigo',  props: ['glasses', 'code'] },
+          { id: 'mkt-designer',  shape: 'fox',   color: 'magenta', props: ['palette'] },
+          { id: 'mkt-voice',     shape: 'ghost', color: 'coral',   props: ['headset'] },
+          { id: 'mkt-pm',        shape: 'sprout',color: 'mint',    props: ['crown'] }
+        ]
+      },
+      {
+        id: 'team-duo-huddle',
+        name: 'Dúo Simbiótico «Arquitecta ⇄ Contador»',
+        tag: 'Dúo Unido · 2 especialistas juntos',
+        formation: 'huddle',
+        tightness: 95,
+        extraCount: 0,
+        desc: 'Sofía (Cat Full-Stack) y Mateo (Búho Contador) juntos hombro con hombro, mirándose con complicidad y compartiendo un puente sináptico de partículas.',
+        members: [
+          { id: 'mkt-architect',  shape: 'cat', color: 'indigo', props: ['glasses', 'code'] },
+          { id: 'mkt-accountant', shape: 'owl', color: 'green',  props: ['glasses', 'spreadsheet'] }
+        ]
+      }
+    ];
+
+    // 10 Bots de prueba obligatorios para el Tablero D1-D5 y Prueba de Identificación
+    const TEST_BOTS = [
+      { id: 'bot-01', name: 'Ana',    shape: 'cat',        color: 'blue',    props: ['glasses'] },
+      { id: 'bot-02', name: 'Bruno',  shape: 'sprout',     color: 'coral',   props: [] },
+      { id: 'bot-03', name: 'Carla',  shape: 'star',       color: 'mint',    props: ['crown'] },
+      { id: 'bot-04', name: 'Dani',   shape: 'hex',        color: 'violet',  props: ['code'] },
+      { id: 'bot-05', name: 'Elena',  shape: 'owl',        color: 'magenta', props: ['glasses'] },
+      { id: 'bot-06', name: 'Fede',   shape: 'controller', color: 'orange',  props: [] },
+      { id: 'bot-07', name: 'Gabi',   shape: 'ghost',      color: 'cyan',    props: ['headset'] },
+      { id: 'bot-08', name: 'Hugo',   shape: 'rocket',     color: 'yellow',  props: [] },
+      { id: 'bot-09', name: 'Irene',  shape: 'mug',        color: 'green',   props: ['spreadsheet'] },
+      { id: 'bot-10', name: 'Julián', shape: 'diamond',    color: 'indigo',  props: ['shield'] },
+    ];
+
+    // =========================================================================
+    // 6. ESTADO GLOBAL Y ESTUDIO INTERACTIVO (ESTILO VIDEO)
+    // =========================================================================
+    const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const appState = {
+      d1Direction: 'A2',
+      d2Robot: true,
+      d3VariantMode: 'seeded',
+      d4EmojiEnabled: false,
+      d4EmojiChar: '✦',
+      d5Terminal: true,
+      theme: 'dark',
+      paused: false,
+      globalSpawnStartSec: -10,
+      lastTimeSec: 0,
+    };
+
+    // Estado del Estudio Interactivo (estilo video)
+    const vStudio = {
+      activeTab: 'bot', // 'bot' | 'customize' | 'squad' | 'generate' | 'import'
+      presetId: 'mkt-architect',
+      id: 'cat',
+      name: 'Sofía · Arquitecta Full-Stack',
+      shape: 'cat',
+      customPath: null, // si el usuario importa un path SVG personalizado
+      color: 'indigo',
+      mood: 'idle', // 'idle' | 'working' | 'happy' | 'needsInput' | 'speaking' | 'computerUse'
+      props: ['glasses', 'code'],
+      eyesStyle: 'slit', // 'round' | 'slit' | 'wide' | 'happy' | 'wink' | 'visor'
+      crown: 0,
+      dna: 1,
+      accent: 0,
+      eyesGeom: { x: 48, y: 48, spacing: 16, scale: 1.12 },
+      gridDensity: 15,
+      spawnStartSec: 0,
+      petBoostUntil: 0,
+      // Configuración de Grupo Unido (pestaña Squad)
+      squadPresetIdx: 0,
+      squadFormation: 'huddle',
+      squadTightness: 92,
+      squadSynapse: 'on'
+    };
+
+    const pointerState = { x: 0, y: 0, active: false, lastMoveSec: -10 };
+    window.addEventListener('pointermove', (e) => {
+      pointerState.x = e.clientX;
+      pointerState.y = e.clientY;
+      pointerState.active = true;
+      pointerState.lastMoveSec = performance.now() / 1000;
+    }, { passive: true });
+
+    // =========================================================================
+    // 7. MOTOR DE RENDERIZADO DE ACCESORIOS DE OFICIO (ALTO CONTRASTE 100% VISIBLE)
+    // =========================================================================
+    function drawDotWithHalo(ctx, x, y, r, fillStyle, haloColor = 'rgba(8, 10, 16, 0.88)', haloExtra = 1.6) {
+      ctx.fillStyle = haloColor;
+      ctx.beginPath();
+      ctx.arc(x, y, r + haloExtra, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = fillStyle;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawRoleProps(ctx, sizePt, propsList, eyePositions, palette, isDark, timeSec, animate) {
+      if (!propsList || propsList.length === 0) return;
+
+      const u = sizePt / 100; // Unidad porcentual (0..100)
+      const dotR = Math.max(1.3, u * 2.5);
+      const haloCol = isDark ? 'rgba(6, 8, 14, 0.90)' : 'rgba(18, 22, 32, 0.85)';
+
+      const leftEye = eyePositions && eyePositions[0] ? eyePositions[0] : { cx: sizePt * 0.36, cy: sizePt * 0.46 };
+      const rightEye = eyePositions && eyePositions[1] ? eyePositions[1] : { cx: sizePt * 0.64, cy: sizePt * 0.46 };
+      const midEyeX = (leftEye.cx + rightEye.cx) * 0.5;
+      const midEyeY = (leftEye.cy + rightEye.cy) * 0.5;
+      const eyeHalfDist = Math.max(sizePt * 0.11, Math.abs(rightEye.cx - leftEye.cx) * 0.5);
+
+      ctx.save();
+
+      // 1. 👓 GLASSES (Montura de lentes nítida alrededor de los ojos que deja ver las pupilas al 100%)
+      if (propsList.includes('glasses')) {
+        const rx = Math.max(u * 9.5, eyeHalfDist * 0.68);
+        const ry = rx * 0.78;
+
+        [leftEye, rightEye].forEach((eye) => {
+          // Cristal translúcido sutil + marco de alto contraste
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.14)';
+          ctx.strokeStyle = haloCol;
+          ctx.lineWidth = Math.max(2.4, u * 3.4);
+          ctx.beginPath();
+          ctx.roundRect(eye.cx - rx, eye.cy - ry, rx * 2, ry * 2, rx * 0.42);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.strokeStyle = '#38BDF8';
+          ctx.lineWidth = Math.max(1.4, u * 2.0);
+          ctx.beginPath();
+          ctx.roundRect(eye.cx - rx, eye.cy - ry, rx * 2, ry * 2, rx * 0.42);
+          ctx.stroke();
+
+          // Puntos remache en las esquinas superiores del armazón + destello diagonal en la lente
+          drawDotWithHalo(ctx, eye.cx - rx * 0.85, eye.cy - ry * 0.75, dotR * 0.68, '#FFFFFF', haloCol, 0.6);
+          drawDotWithHalo(ctx, eye.cx + rx * 0.85, eye.cy - ry * 0.75, dotR * 0.68, '#FFFFFF', haloCol, 0.6);
+        });
+
+        // Puente central + patillas laterales
+        ctx.strokeStyle = '#E2E8F0';
+        ctx.lineWidth = Math.max(1.5, u * 2.0);
+        ctx.beginPath();
+        ctx.moveTo(leftEye.cx + rx, midEyeY - u * 1);
+        ctx.lineTo(rightEye.cx - rx, midEyeY - u * 1);
+        ctx.stroke();
+      }
+
+      // 2. 🔍 MAGNIFIER (Monóculo / Lupa QA sobre el ojo derecho + mango diagonal)
+      if (propsList.includes('magnifier')) {
+        const mR = Math.max(u * 10.5, eyeHalfDist * 0.74);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+        ctx.strokeStyle = haloCol;
+        ctx.lineWidth = Math.max(2.4, u * 3.2);
+        ctx.beginPath();
+        ctx.arc(rightEye.cx, rightEye.cy, mR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.strokeStyle = '#FBBF24';
+        ctx.lineWidth = Math.max(1.5, u * 2.0);
+        ctx.beginPath();
+        ctx.arc(rightEye.cx, rightEye.cy, mR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        for (let h = 1; h <= 3; h++) {
+          const hx = rightEye.cx + mR * 0.68 + h * u * 3.4;
+          const hy = rightEye.cy + mR * 0.68 + h * u * 3.4;
+          drawDotWithHalo(ctx, hx, hy, dotR * 0.88, '#F59E0B', haloCol, dotR * 0.55);
+        }
+      }
+
+      // 3. 📊 SPREADSHEET (Hoja de Cálculo Contable en mano inferior derecha — no tapa cara ni orejas)
+      if (propsList.includes('spreadsheet')) {
+        const floatY = animate ? Math.sin(timeSec * 3.0) * (u * 1.8) : 0;
+        const bx = sizePt * 0.62;
+        const by = sizePt * 0.62 + floatY;
+        const bw = sizePt * 0.34;
+        const bh = sizePt * 0.29;
+
+        ctx.fillStyle = 'rgba(8, 12, 20, 0.94)';
+        ctx.strokeStyle = '#10B981';
+        ctx.lineWidth = Math.max(1.3, u * 1.7);
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, u * 4);
+        ctx.fill();
+        ctx.stroke();
+
+        const cols = 4, rows = 3;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const cx = bx + bw * (0.18 + c * 0.215);
+            const cy = by + bh * (0.24 + r * 0.26);
+            const activeCell = animate && ((Math.floor(timeSec * 3.5) + r * 2 + c) % 5 === 0);
+            let cellColor = '#34D399';
+            if (r === 0) cellColor = '#6EE7B7';
+            else if (activeCell) cellColor = '#FBBF24';
+            else if (c === 3) cellColor = '#38BDF8';
+            ctx.fillStyle = cellColor;
+            ctx.beginPath();
+            ctx.arc(cx, cy, dotR * (activeCell ? 0.90 : 0.74), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // 4. 💻 CODE (Holograma de Terminal </> en esquina inferior/lateral derecha — despeja las orejas)
+      if (propsList.includes('code')) {
+        const floatY = animate ? Math.cos(timeSec * 2.8) * (u * 1.8) : 0;
+        const hasSheet = propsList.includes('spreadsheet');
+        const bx = sizePt * 0.60;
+        const by = (hasSheet ? sizePt * 0.26 : sizePt * 0.60) + floatY;
+        const bw = sizePt * 0.36;
+        const bh = sizePt * 0.27;
+
+        ctx.fillStyle = 'rgba(8, 11, 20, 0.94)';
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = Math.max(1.3, u * 1.6);
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, u * 4);
+        ctx.fill();
+        ctx.stroke();
+
+        const lengths = [4, 3, 4];
+        const lineCols = ['#38BDF8', '#C084FC', '#34D399'];
+        for (let r = 0; r < 3; r++) {
+          const maxC = lengths[r];
+          const typed = animate ? ((Math.floor(timeSec * 5) + r) % (maxC + 1)) : maxC;
+          for (let c = 0; c < maxC; c++) {
+            const cx = bx + bw * (0.16 + c * 0.21);
+            const cy = by + bh * (0.26 + r * 0.25);
+            ctx.fillStyle = c <= typed ? lineCols[r] : 'rgba(148, 163, 184, 0.35)';
+            ctx.beginPath();
+            ctx.arc(cx, cy, dotR * 0.76, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      // 5. 🎧 HEADSET (Diadema superior metálica + Auricular izquierdo + Micrófono LED verde)
+      if (propsList.includes('headset')) {
+        // Arco superior de puntos blancos/cian bien visibles
+        for (let i = 0; i <= 8; i++) {
+          const t = i / 8;
+          const ang = Math.PI + t * Math.PI;
+          const hx = sizePt * 0.50 + Math.cos(ang) * (sizePt * 0.37);
+          const hy = sizePt * 0.44 + Math.sin(ang) * (sizePt * 0.36);
+          drawDotWithHalo(ctx, hx, hy, dotR * 0.95, i % 2 === 0 ? '#F8FAFC' : '#38BDF8', haloCol, dotR * 0.7);
+        }
+        // Auricular izquierdo grande (cápsula de puntos)
+        const earX = sizePt * 0.13;
+        const earY = midEyeY + u * 2;
+        ctx.fillStyle = haloCol;
+        ctx.beginPath();
+        ctx.roundRect(earX - u * 6, earY - u * 10, u * 12, u * 20, u * 5);
+        ctx.fill();
+        for (let r = -1; r <= 1; r++) {
+          drawDotWithHalo(ctx, earX, earY + r * u * 5.2, dotR * 1.05, '#38BDF8', haloCol, dotR * 0.5);
+        }
+        // Brazo del micrófono hacia la boca + punta verde neón pulsante
+        drawDotWithHalo(ctx, sizePt * 0.18, earY + u * 11, dotR * 0.85, '#E2E8F0', haloCol, dotR * 0.5);
+        drawDotWithHalo(ctx, sizePt * 0.26, earY + u * 15, dotR * 0.85, '#E2E8F0', haloCol, dotR * 0.5);
+        const micPulse = animate ? 1 + 0.28 * Math.sin(timeSec * 8) : 1;
+        drawDotWithHalo(ctx, sizePt * 0.35, earY + u * 16, dotR * 1.25 * micPulse, '#00F59B', haloCol, dotR * 0.8);
+      }
+
+      // 6. 🛡️ SHIELD (Escudo Heráldico SecOps con placa oscura, borde oro y centro cian)
+      if (propsList.includes('shield')) {
+        const floatY = animate ? Math.sin(timeSec * 2.6 + 1) * (u * 2.2) : 0;
+        const sx = sizePt * 0.18;
+        const sy = sizePt * 0.62 + floatY;
+        const sr = sizePt * 0.15;
+
+        // Fondo oscuro en forma de escudo
+        ctx.fillStyle = 'rgba(8, 12, 22, 0.94)';
+        ctx.strokeStyle = '#F59E0B';
+        ctx.lineWidth = Math.max(1.4, u * 1.8);
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - sr);
+        ctx.lineTo(sx + sr, sy - sr * 0.55);
+        ctx.lineTo(sx + sr * 0.82, sy + sr * 0.45);
+        ctx.lineTo(sx, sy + sr * 1.1);
+        ctx.lineTo(sx - sr * 0.82, sy + sr * 0.45);
+        ctx.lineTo(sx - sr, sy - sr * 0.55);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Puntos dorados perimetrales + cruz cian interior
+        const shieldPts = [
+          [0, -0.62, '#FFD460'], [-0.52, -0.25, '#FFD460'], [0.52, -0.25, '#FFD460'],
+          [-0.42, 0.28, '#FFD460'], [0.42, 0.28, '#FFD460'], [0, 0.65, '#FFD460'],
+          [0, 0, '#38BDF8'], [0, -0.25, '#7CF7E8'], [0, 0.28, '#7CF7E8']
+        ];
+        shieldPts.forEach(([dx, dy, col]) => {
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.arc(sx + dx * sr, sy + dy * sr, dotR * 0.86, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      // 7. 🎨 PALETTE (Boina creativa + Paleta con 4 gotas de pintura vibrantes)
+      if (propsList.includes('palette')) {
+        const px = sizePt * 0.20;
+        const py = sizePt * 0.72;
+        const pr = sizePt * 0.14;
+        ctx.fillStyle = 'rgba(12, 15, 24, 0.92)';
+        ctx.strokeStyle = '#F3F4F6';
+        ctx.lineWidth = Math.max(1.2, u * 1.4);
+        ctx.beginPath();
+        ctx.arc(px, py, pr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        const paints = [
+          [-0.42, -0.32, '#FF309B'],
+          [0.42, -0.32, '#FFCC00'],
+          [-0.38, 0.38, '#00E5FF'],
+          [0.38, 0.38, '#00F59B']
+        ];
+        paints.forEach(([dx, dy, col], idx) => {
+          const pScale = animate ? 1 + 0.15 * Math.sin(timeSec * 3.5 + idx) : 1;
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.arc(px + dx * pr, py + dy * pr, dotR * 0.95 * pScale, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      // 8. 👑 CROWN (Corona Real de 5 puntas en oro brillante y gemas sobre la cabeza)
+      if (propsList.includes('crown')) {
+        const bob = animate ? Math.sin(timeSec * 3.0) * (u * 1.6) : 0;
+        const cx = sizePt * 0.50;
+        const cy = sizePt * 0.11 + bob;
+        const cw = sizePt * 0.34;
+        const ch = sizePt * 0.13;
+
+        // Respaldo oscuro para máxima visibilidad sobre cualquier fondo o color
+        ctx.fillStyle = haloCol;
+        ctx.beginPath();
+        ctx.roundRect(cx - cw * 0.58, cy - ch * 0.75, cw * 1.16, ch * 1.45, u * 4);
+        ctx.fill();
+
+        // Base de 5 puntos dorados + 3 puntas altas con gemas
+        for (let i = -2; i <= 2; i++) {
+          const bx = cx + i * (cw * 0.21);
+          drawDotWithHalo(ctx, bx, cy + ch * 0.32, dotR * 0.92, '#FFD700', haloCol, 0.6);
+          if (i % 2 === 0) {
+            drawDotWithHalo(ctx, bx, cy - ch * 0.32, dotR * 1.08, '#FFF3B0', haloCol, 0.6);
+            const gemCol = i === 0 ? '#FF263C' : '#38BDF8';
+            drawDotWithHalo(ctx, bx, cy, dotR * 0.85, gemCol, haloCol, 0.4);
+          }
+        }
+      }
+
+      // 9. 👔 TIE (Corbata Ejecutiva Carmesí + Cuello Blanco bajo los ojos)
+      if (propsList.includes('tie')) {
+        const tx = sizePt * 0.50;
+        const ty = Math.min(sizePt * 0.78, midEyeY + sizePt * 0.24);
+        // Cuello blanco a los lados
+        drawDotWithHalo(ctx, tx - u * 6, ty - u * 3, dotR * 0.92, '#FFFFFF', haloCol, dotR * 0.6);
+        drawDotWithHalo(ctx, tx + u * 6, ty - u * 3, dotR * 0.92, '#FFFFFF', haloCol, dotR * 0.6);
+        // Nudo y caída de la corbata roja
+        drawDotWithHalo(ctx, tx, ty - u * 2, dotR * 1.0, '#FF263C', haloCol, dotR * 0.65);
+        drawDotWithHalo(ctx, tx, ty + u * 3.5, dotR * 1.08, '#FF263C', haloCol, dotR * 0.65);
+        drawDotWithHalo(ctx, tx, ty + u * 9.0, dotR * 0.95, '#FF5C70', haloCol, dotR * 0.65);
+      }
+
+      // 10. 🔧 WRENCH (Insignia de Engranaje DevOps giratorio arriba a la izquierda)
+      if (propsList.includes('wrench')) {
+        const wx = sizePt * 0.20;
+        const wy = sizePt * 0.20;
+        const wr = sizePt * 0.11;
+        const rot = animate ? timeSec * 1.6 : 0;
+        drawDotWithHalo(ctx, wx, wy, wr * 0.55, '#F59E0B', haloCol, u * 2.5);
+        for (let i = 0; i < 6; i++) {
+          const a = rot + (i / 6) * Math.PI * 2;
+          drawDotWithHalo(ctx, wx + Math.cos(a) * wr, wy + Math.sin(a) * wr, dotR * 0.88, '#FDE047', haloCol, dotR * 0.5);
+        }
+        ctx.fillStyle = '#0F172A';
+        ctx.beginPath();
+        ctx.arc(wx, wy, dotR * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // 8. MOTOR DE RENDERIZADO DE AVATAR INDIVIDUAL (HALFTONE 2 + SVG PATH + OVERRIDES)
+    // =========================================================================
+    function getGridResolution(sizePt, densityOverride) {
+      if (sizePt < 18) return 7;
+      if (sizePt < 28) return 9;
+      if (densityOverride && sizePt >= 46) return Number(densityOverride);
+      return 13;
+    }
+
+    function computeEyeGaze(bot, mood, timeSec, animate, canvasEl) {
+      if (!animate) return { gx: 0, gy: 0 };
+      const dna = botDna(bot.id || 'bot-01');
+      const seedPhase = (fnv1a32(bot.id || 'bot-01') % 997) / 997 * 10;
+
+      if (canvasEl && pointerState.active && (timeSec - pointerState.lastMoveSec) < 2.5) {
+        const rect = canvasEl.getBoundingClientRect();
+        const cx = rect.left + rect.width * 0.5;
+        const cy = rect.top + rect.height * 0.5;
+        const dx = pointerState.x - cx;
+        const dy = pointerState.y - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 280 && dist > 1) {
+          const factor = Math.min(1, (280 - dist) / 220);
+          return {
+            gx: (dx / dist) * factor * 0.85,
+            gy: (dy / dist) * factor * 0.65
+          };
+        }
+      }
+
+      if (mood === 'working' || mood === 'computerUse') {
+        const scanSpeed = mood === 'computerUse' ? 5.2 : 3.8;
+        return {
+          gx: Math.sin(timeSec * scanSpeed + seedPhase) * 0.88,
+          gy: Math.cos(timeSec * (scanSpeed * 0.5) + seedPhase) * 0.25
+        };
+      }
+      if (mood === 'needsInput') {
+        return { gx: Math.sin(timeSec * 2.0 + seedPhase) * 0.18, gy: -0.45 };
+      }
+
+      const step = Math.floor((timeSec + seedPhase) / 1.9);
+      const sub = ((timeSec + seedPhase) % 1.9) / 1.9;
+      const smooth = sub < 0.16 ? (sub / 0.16) : 1.0;
+      const h1 = fnv1a32((bot.id || 'bot') + ':' + step);
+      const h2 = fnv1a32((bot.id || 'bot') + ':' + (step - 1));
+      const tx = (((h1 % 5) - 2) / 2) * 0.65;
+      const ty = ((((h1 >>> 4) % 3) - 1)) * 0.40;
+      const px = (((h2 % 5) - 2) / 2) * 0.65;
+      const py = ((((h2 >>> 4) % 3) - 1)) * 0.40;
+
+      if (dna.temperament === 3) {
+        return {
+          gx: Math.sin(timeSec * 1.4 + seedPhase) * 0.68,
+          gy: Math.sin(timeSec * 2.8 + seedPhase) * 0.32
+        };
+      }
+      return {
+        gx: px + (tx - px) * smooth,
+        gy: py + (ty - py) * smooth
+      };
+    }
+
+    function computeBlinkAmount(botId, timeSec, animate) {
+      if (!animate) return 0;
+      const h = fnv1a32(botId || 'bot-01');
+      const period = 3.2 + (h % 2600) / 1000;
+      const offset = ((h >>> 12) % 3000) / 1000;
+      const cyclePos = (timeSec + offset) % period;
+      const blinkDuration = 0.17;
+      if (cyclePos < blinkDuration) {
+        const p = cyclePos / blinkDuration;
+        return Math.sin(p * Math.PI);
+      }
+      if ((h % 3 === 0) && cyclePos > 0.23 && cyclePos < 0.23 + blinkDuration) {
+        const p = (cyclePos - 0.23) / blinkDuration;
+        return Math.sin(p * Math.PI);
+      }
+      return 0;
+    }
+
+    function drawAvatarCanvas(canvas, bot, sizePt, mood, timeSec, extraOpts = {}) {
+      const dpr = window.devicePixelRatio || 1;
+      const targetW = Math.round(sizePt * dpr);
+      const targetH = Math.round(sizePt * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        canvas.style.width = sizePt + 'px';
+        canvas.style.height = sizePt + 'px';
+      }
+
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, sizePt, sizePt);
+
+      const isDark = appState.theme === 'dark' || extraOpts.forceDark;
+      const palette = COLOR_FAMILIES[bot.color] || COLOR_FAMILIES.blue;
+      const shadowHex = isDark ? palette.shadowDark : palette.shadowLight;
+
+      const dna = (appState.d3VariantMode === 'seeded' || extraOpts.forceSeeded)
+        ? botDna(bot.id || 'bot-01')
+        : { accent: 0, eyes: 0, shift: 0, crown: 0, dnaPattern: 0, temperament: 1, sparkAngle: 0.7 };
+
+      // Overrides explícitos desde el Estudio o Plantilla para que TODA opción se vea aplicada al 100%
+      const activeCrown = (extraOpts.crownOverride !== undefined && extraOpts.crownOverride !== null)
+        ? Number(extraOpts.crownOverride)
+        : (bot.crown !== undefined ? Number(bot.crown) : dna.crown);
+
+      const activeDna = (extraOpts.dnaOverride !== undefined && extraOpts.dnaOverride !== null)
+        ? Number(extraOpts.dnaOverride)
+        : (bot.dna !== undefined ? Number(bot.dna) : dna.dnaPattern);
+
+      const activeAccent = (extraOpts.accentOverride !== undefined && extraOpts.accentOverride !== null)
+        ? Number(extraOpts.accentOverride)
+        : (bot.accent !== undefined ? Number(bot.accent) : dna.accent);
+
+      const activeEyesStyle = extraOpts.eyesStyle || bot.eyesStyle || ['round', 'slit', 'wide'][dna.eyes];
+      const activeProps = extraOpts.props !== undefined ? extraOpts.props : (bot.props || []);
+      const customPath = extraOpts.customPath || bot.customPath || null;
+
+      // Geometría de ojos (estilo video: x, y, spacing, scale en coordenadas 0..100)
+      const defaultChar = CHAR_MAP[bot.shape] || CHAR_MAP.blob;
+      const eyesGeom = extraOpts.eyesGeom || bot.eyesGeom || defaultChar.eyes || { x: 50, y: 46, spacing: 17, scale: 1.08 };
+
+      const animate = !appState.paused;
+      const seedOffset = (fnv1a32(bot.id || 'bot-01') % 1000) / 1000 * Math.PI * 2;
+
+      // Progreso de Quantum Spawn
+      const spawnStart = extraOpts.spawnStartSec !== undefined ? extraOpts.spawnStartSec : appState.globalSpawnStartSec;
+      const spawnElapsed = Math.max(0, timeSec - spawnStart);
+      const spawnProgress = animate ? Math.min(1, spawnElapsed / 0.48) : 1;
+
+      // Respiración + Squash & Stretch + Petting reacción
+      let scaleX = 1.0, scaleY = 1.0, tiltRad = 0;
+      const isPetted = extraOpts.petBoostUntil && timeSec < extraOpts.petBoostUntil;
+      const effectiveMood = isPetted ? 'happy' : mood;
+
+      if (animate) {
+        const breathPhase = Math.sin((timeSec * Math.PI * 2) / 3.0 + seedOffset);
+        scaleX = 1.0 - 0.024 * breathPhase;
+        scaleY = 1.0 + 0.030 * breathPhase;
+
+        if (effectiveMood === 'happy') {
+          const hop = Math.abs(Math.sin(timeSec * 5.2));
+          scaleY *= (1.0 + 0.06 * hop);
+          scaleX *= (1.0 - 0.04 * hop);
+          tiltRad = Math.sin(timeSec * 5.2) * 0.05;
+        } else if (effectiveMood === 'needsInput') {
+          tiltRad = Math.sin(timeSec * 3.0 + seedOffset) * 0.055;
+        } else if (effectiveMood === 'working' || effectiveMood === 'computerUse') {
+          tiltRad = Math.sin(timeSec * 1.8 + seedOffset) * 0.025;
+        }
+      }
+
+      // Escalar ligeramente el cuerpo dentro del lienzo cuando hay accesorios o corona para que NADA se corte
+      const hasOuterGear = activeProps.length > 0 || activeCrown > 0;
+      const bodyInsetScale = (hasOuterGear && sizePt >= 28) ? 0.84 : 0.92;
+
+      const cx = sizePt / 2;
+      const cy = sizePt / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(tiltRad);
+      ctx.scale(scaleX * bodyInsetScale, scaleY * bodyInsetScale);
+      ctx.translate(-cx, -cy);
+
+      const N = getGridResolution(sizePt, extraOpts.gridDensity);
+      const gridPadding = sizePt * 0.04;
+      const usableSize = sizePt - gridPadding * 2;
+      const cellSize = usableSize / N;
+      const gaze = extraOpts.forcedGaze || computeEyeGaze(bot, effectiveMood, timeSec, animate, canvas);
+      const blink = computeBlinkAmount(bot.id || 'bot-01', timeSec, animate);
+
+      // Robot Matrix LED cuando D1 === 'A3' y D2 encendido (salvo en el Estudio personalizado si se quiere ver el personaje)
+      if (!extraOpts.ignoreA3Robot && appState.d1Direction === 'A3' && appState.d2Robot) {
+        drawMatrixRobot(ctx, sizePt, N, gridPadding, cellSize, palette, shadowHex, effectiveMood, dna, gaze, blink, timeSec, animate);
+        ctx.restore();
+        return;
+      }
+
+      // Respaldo y contorno sutil de la silueta vectorial (0..100) para que orejas, hojas, colas y asas sean 100% nítidas en toda escala
+      const silP2D = customPath ? PATH2D_CACHE[customPath] : PATH2D_CACHE[bot.shape];
+      if (silP2D && spawnProgress > 0.7) {
+        ctx.save();
+        ctx.translate(gridPadding, gridPadding);
+        ctx.scale(usableSize / 100, usableSize / 100);
+        ctx.fillStyle = isDark ? (palette.shadowDark + 'AA') : (palette.shadowLight + '66');
+        ctx.strokeStyle = palette.base + (isDark ? '75' : '90');
+        ctx.lineWidth = Math.max(1.8, (100 / usableSize) * 1.4);
+        ctx.lineJoin = 'round';
+        ctx.fill(silP2D);
+        ctx.stroke(silP2D);
+        ctx.restore();
+      }
+
+      // Posición de los dos ojos en unidades de rejilla (0..N-1) a partir de eyesGeom (0..100)
+      const eyeCenterCol = (eyesGeom.x / 100) * (N - 1) + gaze.gx * 0.65;
+      const eyeCenterRow = (eyesGeom.y / 100) * (N - 1) + gaze.gy * 0.55;
+      const eyeHalfSpan = ((eyesGeom.spacing / 100) * (N - 1));
+      const leftEyeCol  = eyeCenterCol - eyeHalfSpan;
+      const rightEyeCol = eyeCenterCol + eyeHalfSpan;
+      const eyeScale    = eyesGeom.scale || 1.05;
+
+      const focusCol = animate
+        ? 1.5 + Math.cos(timeSec * 1.3 + seedOffset) * 0.85
+        : 1.5;
+      const focusRow = animate
+        ? 1.5 + Math.sin(timeSec * 1.3 + seedOffset) * 0.85
+        : 1.5;
+      const maxDist = Math.hypot(N - 1 - 1.5, N - 1 - 1.5);
+
+      const accentCorners = [
+        { col: N - 2, row: 1 },
+        { col: 1,     row: 1 },
+        { col: N - 2, row: N - 2 },
+        { col: 1,     row: N - 2 },
+      ];
+      const activeCorner = activeAccent >= 0 ? (accentCorners[activeAccent % 4] || accentCorners[0]) : { col: -99, row: -99 };
+
+      for (let row = 0; row < N; row++) {
+        for (let col = 0; col < N; col++) {
+          const shiftOffset = (dna.shift === 1 && row % 2 === 1 && appState.d1Direction !== 'A') ? 0.10 : 0;
+          const nx = (col + 0.5 + shiftOffset) / N;
+          const ny = (row + 0.5) / N;
+
+          let coverage = getShapeCoverage(bot.shape, nx, ny, customPath);
+
+          // Corona esculpida en la cima (para N >= 9)
+          let isCrownDot = false;
+          if (N >= 9 && activeCrown > 0 && coverage <= 0) {
+            const midC = Math.floor(N / 2);
+            if (activeCrown === 1 && ((row === 0 && col === midC) || (row === 1 && Math.abs(col - midC) <= 1))) {
+              coverage = 0.95; isCrownDot = true;
+            } else if (activeCrown === 2 && (row <= 1) && (Math.abs(col - (midC - 3)) <= 0.6 || Math.abs(col - (midC + 3)) <= 0.6)) {
+              coverage = 0.95; isCrownDot = true;
+            } else if (activeCrown === 3 && row === 0 && (col === midC - 1 || col === midC || col === midC + 1)) {
+              coverage = 0.95; isCrownDot = true;
+            }
+          }
+
+          if (coverage <= 0.01) continue;
+
+          // Recorte de ojos según estilo (round, slit, wide, happy, wink, visor)
+          if (N >= 7 && appState.d1Direction !== 'A') {
+            const dLeftCol  = col - leftEyeCol;
+            const dRightCol = col - rightEyeCol;
+            const dRow      = row - eyeCenterRow;
+
+            if (activeEyesStyle === 'happy' || effectiveMood === 'happy') {
+              // Arco feliz ^ ^
+              const nearL = Math.abs(dLeftCol) <= 1.25 * eyeScale && Math.abs(dRow + 0.35 - Math.abs(dLeftCol) * 0.55) <= 0.68;
+              const nearR = Math.abs(dRightCol) <= 1.25 * eyeScale && Math.abs(dRow + 0.35 - Math.abs(dRightCol) * 0.55) <= 0.68;
+              if (nearL || nearR) continue;
+            } else if (activeEyesStyle === 'wink') {
+              // Ojo izquierdo guiñando (^), derecho abierto
+              const winkL = Math.abs(dLeftCol) <= 1.25 * eyeScale && Math.abs(dRow - 0.1) <= 0.58;
+              const openR = Math.hypot(dRightCol / (0.95 * eyeScale), dRow / (1.15 * eyeScale)) <= 1.05;
+              if (winkL || openR) continue;
+            } else if (activeEyesStyle === 'visor') {
+              // Visor horizontal continuo de lado a lado
+              if (col >= leftEyeCol - 1.1 && col <= rightEyeCol + 1.1 && Math.abs(dRow) <= 0.95 * eyeScale) {
+                continue;
+              }
+            } else {
+              let rx = 0.92 * eyeScale;
+              let ry = 1.12 * eyeScale;
+              if (activeEyesStyle === 'slit') { rx = 0.72 * eyeScale; ry = 1.38 * eyeScale; }
+              else if (activeEyesStyle === 'wide') { rx = 1.15 * eyeScale; ry = 0.95 * eyeScale; }
+              if (blink > 0.55) ry *= 0.35;
+
+              const inL = (dLeftCol * dLeftCol) / (rx * rx) + (dRow * dRow) / (ry * ry) <= 1.05;
+              const inR = (dRightCol * dRightCol) / (rx * rx) + (dRow * dRow) / (ry * ry) <= 1.05;
+              if (inL || inR) continue;
+            }
+
+            // Boca de puntos con Lip-Sync cuando mood === 'speaking'
+            if (effectiveMood === 'speaking' && N >= 9) {
+              const mouthRow = eyeCenterRow + 2.9;
+              const mouthOpen = animate ? (0.45 + 0.75 * Math.abs(Math.sin(timeSec * 10.5)) * Math.abs(Math.cos(timeSec * 4.3))) : 0.7;
+              if (Math.abs(col - eyeCenterCol) <= 1.35 && Math.abs(row - mouthRow) <= mouthOpen) {
+                continue;
+              }
+            }
+          }
+
+          const dFocus = Math.hypot(col - focusCol, row - focusRow);
+          let normDist = Math.min(1, dFocus / maxDist);
+
+          if (animate && (effectiveMood === 'working' || effectiveMood === 'computerUse')) {
+            const angle = Math.atan2(row - (N - 1) / 2, col - (N - 1) / 2);
+            const wave = Math.sin(angle * 2 - timeSec * 5.0 + dFocus * 0.45);
+            normDist = Math.max(0, Math.min(1, normDist - wave * 0.30));
+          }
+
+          const edgeScale = 0.72 + 0.28 * coverage;
+          let radius = cellSize * (0.50 - 0.14 * normDist) * edgeScale;
+
+          // Color según distancia a la luz + Patrón ADN
+          let dotColor = palette.base;
+          if (normDist < 0.35) dotColor = palette.light;
+          else if (normDist < 0.72) dotColor = palette.base;
+          else dotColor = shadowHex;
+
+          if (isCrownDot) {
+            dotColor = palette.light;
+            radius *= 1.06;
+          }
+
+          if (appState.d1Direction !== 'A' && N >= 9 && activeDna !== 4) {
+            const centerDist = Math.hypot(col - (N - 1) / 2, row - (N - 1) / 2);
+            if (activeDna === 0 && centerDist < 2.3) {
+              dotColor = palette.light;
+              radius *= 1.07;
+            } else if (activeDna === 1 && Math.abs(centerDist - 3.3) < 0.65) {
+              dotColor = palette.light;
+            } else if (activeDna === 2 && (col + row > N * 1.05) && normDist < 0.76) {
+              dotColor = palette.light;
+            } else if (activeDna === 3 && ((col * 7 + row * 13) % 5 === 0) && normDist < 0.74) {
+              dotColor = palette.light;
+              radius *= 1.05;
+            }
+          }
+
+          if (effectiveMood === 'computerUse' && N >= 9 && row >= 1 && row <= 4) {
+            const scanCol = animate ? ((timeSec * 7.5) % N) : N / 2;
+            if (Math.abs(col - scanCol) < 1.5) {
+              dotColor = '#7CF7E8';
+              radius *= 1.09;
+            }
+          }
+
+          const isAccentCluster = activeAccent >= 0 && (Math.abs(col - activeCorner.col) + Math.abs(row - activeCorner.row) <= 1);
+          if (isAccentCluster && appState.d1Direction !== 'A') {
+            dotColor = palette.light;
+            if (effectiveMood === 'needsInput' && animate) {
+              const tBeat = (timeSec * 1.4) % 1.0;
+              const lub = Math.exp(-Math.pow((tBeat - 0.12) / 0.05, 2));
+              const dub = Math.exp(-Math.pow((tBeat - 0.28) / 0.06, 2)) * 0.8;
+              radius = Math.min(cellSize * 0.66, radius * (1.0 + 0.34 * (lub + dub)));
+            } else {
+              radius = Math.min(cellSize * 0.56, radius * 1.12);
+            }
+          }
+
+          let dotX = gridPadding + (col + 0.5) * cellSize;
+          let dotY = gridPadding + (row + 0.5) * cellSize;
+
+          if (spawnProgress < 1) {
+            const ease = 1 - Math.pow(1 - spawnProgress, 3);
+            const swirlAngle = (1 - ease) * Math.PI * 2.4 + (col + row) * 0.3;
+            const swirlDist = (1 - ease) * sizePt * 0.42;
+            dotX += Math.cos(swirlAngle) * swirlDist;
+            dotY += Math.sin(swirlAngle) * swirlDist;
+            radius *= ease;
+          }
+
+          ctx.fillStyle = dotColor;
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, Math.max(0.7, radius), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Posiciones en píxeles de ambos ojos para dibujar Catchlights y Accesorios con precisión exacta
+      const leftEyePx = {
+        cx: gridPadding + (leftEyeCol + 0.5) * cellSize,
+        cy: gridPadding + (eyeCenterRow + 0.5) * cellSize
+      };
+      const rightEyePx = {
+        cx: gridPadding + (rightEyeCol + 0.5) * cellSize,
+        cy: gridPadding + (eyeCenterRow + 0.5) * cellSize
+      };
+
+      // Chispas Oculares Vivas (Catchlights) o Barra LED en Visor
+      if (N >= 9 && appState.d1Direction !== 'A' && blink < 0.65 && effectiveMood !== 'happy' && activeEyesStyle !== 'happy') {
+        if (activeEyesStyle === 'visor') {
+          // Barra de escaneo estilo KITT / Cyber dentro del visor
+          const visorY = leftEyePx.cy;
+          const scanT = animate ? (0.5 + 0.42 * Math.sin(timeSec * 4.2)) : 0.5;
+          const scanX = leftEyePx.cx + (rightEyePx.cx - leftEyePx.cx) * scanT;
+          drawDotWithHalo(ctx, scanX, visorY, cellSize * 0.44, '#00F59B', 'rgba(6, 10, 18, 0.9)', cellSize * 0.25);
+          drawDotWithHalo(ctx, leftEyePx.cx, visorY, cellSize * 0.34, '#38BDF8', 'rgba(6, 10, 18, 0.85)', cellSize * 0.15);
+          drawDotWithHalo(ctx, rightEyePx.cx, visorY, cellSize * 0.34, '#38BDF8', 'rgba(6, 10, 18, 0.85)', cellSize * 0.15);
+        } else {
+          const sparkColor = effectiveMood === 'computerUse'
+            ? '#7CF7E8'
+            : (isDark ? '#FFFFFF' : palette.light);
+          const sparkR = cellSize * 0.35 * Math.min(1.2, eyeScale);
+          const ox = Math.cos(dna.sparkAngle) * (cellSize * 0.20) + gaze.gx * (cellSize * 0.24);
+          const oy = Math.sin(dna.sparkAngle) * (cellSize * 0.20) + gaze.gy * (cellSize * 0.24);
+
+          [leftEyePx, rightEyePx].forEach((ep, idx) => {
+            if (activeEyesStyle === 'wink' && idx === 0) return;
+            ctx.fillStyle = sparkColor;
+            ctx.beginPath();
+            ctx.arc(ep.cx + ox, ep.cy + oy, sparkR, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        }
+      }
+
+      // DIBUJAR ACCESORIOS DE OFICIO POR ENCIMA CON ALTO CONTRASTE (Lentes, Hoja de Cálculo, Código, Lupa, Headset, Escudo, Paleta, Corona, Corbata, Llave)
+      if (sizePt >= 26 && activeProps && activeProps.length > 0) {
+        drawRoleProps(ctx, sizePt, activeProps, [leftEyePx, rightEyePx], palette, isDark, timeSec, animate);
+      }
+
+      // Reacción de corazones/estrellas de puntos cuando el usuario acaricia al avatar (como en el video 00:12)
+      if (isPetted && sizePt >= 60) {
+        for (let i = 0; i < 3; i++) {
+          const ang = -Math.PI * 0.5 + (i - 1) * 0.55 + Math.sin(timeSec * 6 + i) * 0.15;
+          const dist = sizePt * 0.42 + ((timeSec * 30 + i * 12) % 14);
+          const hx = sizePt * 0.5 + Math.cos(ang) * dist;
+          const hy = sizePt * 0.46 + Math.sin(ang) * dist;
+          drawDotWithHalo(ctx, hx, hy, Math.max(2.5, sizePt * 0.024), i % 2 === 0 ? '#FF309B' : '#FFD700', 'rgba(8,10,16,0.85)', 1.5);
+        }
+      }
+
+      // D4: Insignia Emoji en esquina (si está activada)
+      if (appState.d4EmojiEnabled && sizePt >= 30 && !extraOpts.hideEmojiBadge) {
+        const badgePositions = [
+          { x: sizePt * 0.80, y: sizePt * 0.20 },
+          { x: sizePt * 0.20, y: sizePt * 0.20 },
+          { x: sizePt * 0.80, y: sizePt * 0.80 },
+          { x: sizePt * 0.20, y: sizePt * 0.80 },
+        ];
+        const pos = badgePositions[Math.max(0, activeAccent) % 4];
+        const badgeR = Math.max(8, sizePt * 0.20);
+        ctx.fillStyle = isDark ? 'rgba(15, 18, 26, 0.92)' : 'rgba(255, 255, 255, 0.94)';
+        ctx.strokeStyle = palette.base;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, badgeR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = `${Math.round(badgeR * 1.15)}px "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = isDark ? '#FFFFFF' : '#14161C';
+        ctx.fillText(appState.d4EmojiChar || '✦', pos.x, pos.y + 0.5);
+      }
+
+      ctx.restore();
+    }
+
+    // Robot de Matriz LED (D1 = A3, D2 = true)
+    function drawMatrixRobot(ctx, sizePt, N, gridPadding, cellSize, palette, shadowHex, mood, dna, gaze, blink, timeSec, animate) {
+      const focusCol = animate ? 1.5 + Math.cos(timeSec * 1.4) * 0.9 : 1.5;
+      const focusRow = animate ? 1.5 + Math.sin(timeSec * 1.4) * 0.9 : 1.5;
+      const maxDist = Math.hypot(N - 1 - 1.5, N - 1 - 1.5);
+      const mid = (N - 1) / 2;
+
+      for (let row = 0; row < N; row++) {
+        for (let col = 0; col < N; col++) {
+          const dx = Math.abs(col - mid);
+          const isAntenna = (row === 0 && dx <= 0.6) || (row === 1 && dx <= 0.5);
+          const isEars = (row >= Math.floor(N * 0.36) && row <= Math.floor(N * 0.62) && dx >= mid - 0.6);
+          const isHead = (row >= 2 && row <= N - 2 && dx <= mid - 1.1);
+          if (!isAntenna && !isEars && !isHead) continue;
+
+          const visorTop = Math.floor(N * 0.34);
+          const visorBot = Math.floor(N * 0.58);
+          const inVisor = (row >= visorTop && row <= visorBot && dx <= mid - 2.2);
+
+          if (inVisor && N >= 9) {
+            const leftEyeC = mid - 1.8 + gaze.gx * 0.5;
+            const rightEyeC = mid + 1.8 + gaze.gx * 0.5;
+            const eyeR = (visorTop + visorBot) / 2 + gaze.gy * 0.4;
+            const isLedEye = (Math.abs(col - leftEyeC) <= 0.75 || Math.abs(col - rightEyeC) <= 0.75) &&
+                             Math.abs(row - eyeR) <= (blink > 0.5 ? 0.25 : 0.75);
+            if (!isLedEye) {
+              const vx = gridPadding + (col + 0.5) * cellSize;
+              const vy = gridPadding + (row + 0.5) * cellSize;
+              ctx.fillStyle = shadowHex;
+              ctx.beginPath();
+              ctx.arc(vx, vy, cellSize * 0.24, 0, Math.PI * 2);
+              ctx.fill();
+              continue;
+            }
+            const ex = gridPadding + (col + 0.5) * cellSize;
+            const ey = gridPadding + (row + 0.5) * cellSize;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(ex, ey, cellSize * 0.46, 0, Math.PI * 2);
+            ctx.fill();
+            continue;
+          }
+
+          const dFocus = Math.hypot(col - focusCol, row - focusRow);
+          const normDist = Math.min(1, dFocus / maxDist);
+          let radius = cellSize * (0.48 - 0.13 * normDist);
+          let dotColor = normDist < 0.35 ? palette.light : (normDist < 0.72 ? palette.base : shadowHex);
+
+          if (row === 0 && dx <= 0.6) {
+            dotColor = palette.light;
+            if (animate) radius *= (1.08 + 0.20 * Math.sin(timeSec * 5.0));
+          }
+
+          const dotX = gridPadding + (col + 0.5) * cellSize;
+          const dotY = gridPadding + (row + 0.5) * cellSize;
+          ctx.fillStyle = dotColor;
+          ctx.beginPath();
+          ctx.arc(dotX, dotY, Math.max(0.8, radius), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // =========================================================================
+    // 9. MOTOR DE GRUPOS MUCHO MÁS AGRUPADOS (HUDDLED SQUAD RENDERER)
+    //    Los bots se dibujan hombro con hombro con superposición limpia de contorno,
+    //    inclinados hacia el centro, compartiendo un aura común como un verdadero equipo.
+    // =========================================================================
+    const memberOffscreenCache = {};
+    function getMemberCanvas(key) {
+      if (!memberOffscreenCache[key]) {
+        memberOffscreenCache[key] = document.createElement('canvas');
+      }
+      return memberOffscreenCache[key];
+    }
+
+    function drawHuddledSquad(canvas, team, widthPt, heightPt, timeSec, opts = {}) {
+      const dpr = window.devicePixelRatio || 1;
+      const tw = Math.round(widthPt * dpr);
+      const th = Math.round(heightPt * dpr);
+      if (canvas.width !== tw || canvas.height !== th) {
+        canvas.width = tw;
+        canvas.height = th;
+        canvas.style.width = widthPt + 'px';
+        canvas.style.height = heightPt + 'px';
+      }
+
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, widthPt, heightPt);
+
+      const isDark = appState.theme === 'dark' || opts.forceDark;
+      const animate = !appState.paused;
+      const formation = opts.formation || team.formation || 'huddle';
+      const tightness = (opts.tightness !== undefined ? opts.tightness : (team.tightness || 92)) / 100;
+      const showSynapse = (opts.synapse || 'on') === 'on';
+
+      const cx = widthPt * 0.50;
+      const cy = heightPt * 0.52;
+      const minDim = Math.min(widthPt, heightPt);
+
+      // 1. Aura / Plataforma de puntos compartida en el fondo que une a todo el equipo como un solo emblema
+      const auraR = minDim * 0.44;
+      const auraGrad = ctx.createRadialGradient(cx, cy, auraR * 0.15, cx, cy, auraR);
+      const leadPal = COLOR_FAMILIES[team.members[0]?.color] || COLOR_FAMILIES.green;
+      auraGrad.addColorStop(0, leadPal.base + '38');
+      auraGrad.addColorStop(0.7, leadPal.base + '14');
+      auraGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = auraGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, auraR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Anillo orbital punteado sutil que abraza al grupo unido
+      if (minDim >= 44) {
+        const ringDots = 24;
+        for (let i = 0; i < ringDots; i++) {
+          const ang = (i / ringDots) * Math.PI * 2 + (animate ? timeSec * 0.35 : 0);
+          const rx = cx + Math.cos(ang) * (auraR * 0.92);
+          const ry = cy + Math.sin(ang) * (auraR * 0.78);
+          ctx.fillStyle = i % 2 === 0 ? (leadPal.light + '55') : 'rgba(255,255,255,0.18)';
+          ctx.beginPath();
+          ctx.arc(rx, ry, Math.max(1.0, minDim * 0.014), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // 2. Calcular posiciones superpuestas (Hombro con Hombro) según el número de miembros y formación
+      //    spread controla qué tan pegados están al centro: a mayor tightness (0.92), menor separación (0.17)
+      const spread = (1.18 - tightness * 0.85); // ~0.39 cuando tightness=0.65, ~0.40 -> ajustado a rango compacto
+      const compactX = minDim * (0.17 + (1 - tightness) * 0.32);
+      const compactY = minDim * (0.08 + (1 - tightness) * 0.16);
+
+      const count = team.members.length;
+      let layout = [];
+
+      if (count === 2) {
+        // Dúo hombro con hombro superpuestos en el centro
+        layout = [
+          { idx: 1, x: cx + compactX * 0.78, y: cy + compactY * 0.15, size: minDim * 0.62, tilt: 0.11, gazeX: -0.7, z: 1 },
+          { idx: 0, x: cx - compactX * 0.72, y: cy - compactY * 0.05, size: minDim * 0.66, tilt: -0.09, gazeX: 0.7, z: 2 }
+        ];
+      } else if (count === 3) {
+        if (formation === 'vsquad') {
+          layout = [
+            { idx: 1, x: cx - compactX * 1.05, y: cy - compactY * 0.85, size: minDim * 0.54, tilt: -0.13, gazeX: 0.5, z: 1 },
+            { idx: 2, x: cx + compactX * 1.05, y: cy - compactY * 0.85, size: minDim * 0.54, tilt: 0.13,  gazeX: -0.5, z: 1 },
+            { idx: 0, x: cx,                   y: cy + compactY * 0.80, size: minDim * 0.66, tilt: 0,     gazeX: 0,    z: 3 }
+          ];
+        } else {
+          // Huddle (Abrazo de escuadrón: dos compañeros pegados a los hombros y el líder centrado al frente)
+          layout = [
+            { idx: 1, x: cx - compactX * 0.98, y: cy - compactY * 0.30, size: minDim * 0.56, tilt: -0.14, gazeX: 0.65, z: 1 },
+            { idx: 2, x: cx + compactX * 0.98, y: cy - compactY * 0.30, size: minDim * 0.56, tilt: 0.14,  gazeX: -0.65, z: 2 },
+            { idx: 0, x: cx,                   y: cy + compactY * 0.55, size: minDim * 0.66, tilt: 0,     gazeX: 0,    z: 3 }
+          ];
+        }
+      } else {
+        // 4 o más miembros: fila trasera pegada + flancos + líder al frente
+        layout = [
+          { idx: 2, x: cx - compactX * 0.95, y: cy - compactY * 1.15, size: minDim * 0.48, tilt: -0.12, gazeX: 0.5, z: 1 },
+          { idx: 3, x: cx + compactX * 0.95, y: cy - compactY * 1.15, size: minDim * 0.48, tilt: 0.12,  gazeX: -0.5, z: 1 },
+          { idx: 1, x: cx - compactX * 1.08, y: cy + compactY * 0.35, size: minDim * 0.54, tilt: -0.10, gazeX: 0.6, z: 2 },
+          { idx: 0, x: cx + compactX * 0.25, y: cy + compactY * 0.65, size: minDim * 0.64, tilt: 0.03,  gazeX: -0.2, z: 3 }
+        ];
+      }
+
+      layout.sort((a, b) => a.z - b.z);
+
+      // 3. Dibujar cada miembro del escuadrón con máscara de silueta sólida detrás para que al superponerse
+      //    hombro con hombro los puntos del bot trasero NO se mezclen con los huecos de ojos del bot delantero
+      const haloSepColor = isDark ? '#0B0D13' : '#FFFFFF';
+      const wearableOnly = ['glasses', 'crown', 'headset', 'magnifier', 'tie', 'wrench'];
+
+      layout.forEach((slot) => {
+        const m = team.members[slot.idx];
+        if (!m) return;
+        const mSize = Math.max(20, Math.round(slot.size));
+        const subCanvas = getMemberCanvas(`${team.id}-${slot.idx}-${mSize}`);
+
+        const syncBreath = animate ? Math.sin(timeSec * 2.4 + slot.idx * 0.4) * (minDim * 0.015) : 0;
+        const memberProps = slot.idx === 0
+          ? (m.props || [])
+          : (m.props || []).filter((p) => wearableOnly.includes(p));
+
+        drawAvatarCanvas(
+          subCanvas,
+          { id: m.id, shape: m.shape, color: m.color, props: memberProps },
+          mSize,
+          slot.idx === 0 ? 'working' : 'idle',
+          timeSec,
+          {
+            props: minDim >= 52 ? memberProps : [],
+            forcedGaze: { gx: slot.gazeX, gy: 0.05 },
+            hideEmojiBadge: true,
+            forceDark: opts.forceDark
+          }
+        );
+
+        ctx.save();
+        ctx.translate(slot.x, slot.y + syncBreath);
+        ctx.rotate(slot.tilt);
+
+        // Placa de oclusión de silueta sólida detrás de cada bot para que la superposición hombro con hombro sea 100% nítida
+        const silPath = PATH2D_CACHE[m.shape] || PATH2D_CACHE.blob;
+        if (silPath) {
+          ctx.save();
+          const bodyScale = (memberProps.length > 0 && mSize >= 28) ? 0.84 : 0.92;
+          const s = (mSize * bodyScale) / 100;
+          ctx.scale(s, s);
+          ctx.translate(-50, -50);
+          ctx.fillStyle = haloSepColor;
+          ctx.strokeStyle = haloSepColor;
+          ctx.lineWidth = 10;
+          ctx.lineJoin = 'round';
+          ctx.stroke(silPath);
+          ctx.fill(silPath);
+          ctx.restore();
+        }
+
+        ctx.drawImage(subCanvas, -mSize / 2, -mSize / 2, mSize, mSize);
+        ctx.restore();
+      });
+
+      // 4. Partículas sinápticas de unión que viajan suavemente entre los hombros del grupo unido
+      if (showSynapse && animate && layout.length >= 2 && minDim >= 44) {
+        const pairIdx = Math.floor(timeSec * 1.6) % layout.length;
+        const fromSlot = layout[pairIdx];
+        const toSlot = layout[(pairIdx + 1) % layout.length];
+        const p = (timeSec * 1.6) % 1.0;
+        const px = fromSlot.x + (toSlot.x - fromSlot.x) * p;
+        const py = fromSlot.y + (toSlot.y - fromSlot.y) * p - Math.sin(p * Math.PI) * (minDim * 0.10);
+        const pal = COLOR_FAMILIES[team.members[fromSlot.idx]?.color] || COLOR_FAMILIES.cyan;
+        drawDotWithHalo(ctx, px, py, Math.max(2.0, minDim * 0.028), pal.light, 'rgba(6,8,14,0.9)', 1.5);
+      }
+
+      // 5. Si el equipo tiene miembros extra (5+ bots, ej. +3), dibujar una píldora coral integrada en la base del grupo
+      if (team.extraCount && team.extraCount > 0 && minDim >= 42) {
+        const bx = cx + minDim * 0.26;
+        const by = cy + minDim * 0.32;
+        const br = Math.max(10, minDim * 0.14);
+
+        ctx.fillStyle = 'rgba(10, 13, 20, 0.94)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Puntos orbitando en el borde de la insignia con los colores de los miembros extra
+        const extraCols = team.extraColors || ['#3DDC97', '#FF9800', '#1084FE'];
+        extraCols.forEach((colHex, i) => {
+          const a = (animate ? timeSec * 2.2 : 0) + (i / extraCols.length) * Math.PI * 2;
+          ctx.fillStyle = colHex;
+          ctx.beginPath();
+          ctx.arc(bx + Math.cos(a) * (br * 0.78), by + Math.sin(a) * (br * 0.78), Math.max(1.6, br * 0.18), 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = `700 ${Math.max(8, Math.round(br * 0.78))}px ${getComputedStyle(document.body).getPropertyValue('--font-mono')}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`+${team.extraCount}`, bx, by + 0.5);
+      }
+
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // 10. ESTUDIO INTERACTIVO ESTILO VIDEO (CONSTRUCCIÓN Y EVENTOS EN TIEMPO REAL)
+    // =========================================================================
+    const AI_GENERATED_CUSTOM_SHAPES = [
+      {
+        version: 1,
+        id: 'dragon',
+        name: 'Dragon · Guardián',
+        color: 'mint',
+        props: ['crown', 'shield'],
+        body: { path: 'M 18 14 L 34 26 L 44 16 L 50 26 L 56 16 L 66 26 L 82 14 L 78 38 C 88 46 90 62 82 76 C 74 88 62 90 50 90 C 38 90 26 88 18 76 C 10 62 12 46 22 38 Z' },
+        eyes: { x: 50, y: 48, spacing: 17, scale: 1.12 }
+      },
+      {
+        version: 1,
+        id: 'astronaut',
+        name: 'Astronaut · Explorador',
+        color: 'cyan',
+        props: ['headset', 'code'],
+        body: { path: 'M 26 14 L 74 14 C 86 14 90 24 90 44 C 90 60 85 68 78 72 L 82 88 L 62 88 L 58 78 L 42 78 L 38 88 L 18 88 L 22 72 C 15 68 10 60 10 44 C 10 24 14 14 26 14 Z' },
+        eyes: { x: 50, y: 42, spacing: 16, scale: 1.15 }
+      },
+      {
+        version: 1,
+        id: 'penguin',
+        name: 'Penguin · Analista Linux',
+        color: 'blue',
+        props: ['glasses', 'tie', 'spreadsheet'],
+        body: { path: 'M 50 12 C 68 12 78 24 78 42 C 88 48 92 60 86 70 L 76 66 C 75 82 66 90 50 90 C 34 90 25 82 24 66 L 14 70 C 8 60 12 48 22 42 C 22 24 32 12 50 12 Z' },
+        eyes: { x: 50, y: 36, spacing: 14, scale: 1.08 }
+      },
+      {
+        version: 1,
+        id: 'briefcase',
+        name: 'Briefcase · Ejecutivo CFO',
+        color: 'brown',
+        props: ['glasses', 'spreadsheet'],
+        body: { path: 'M 36 14 L 64 14 C 68 14 70 17 70 22 L 70 28 L 84 28 C 90 28 92 32 92 40 L 92 78 C 92 85 88 88 82 88 L 18 88 C 12 88 8 85 8 78 L 8 40 C 8 32 10 28 16 28 L 30 28 L 30 22 C 30 17 32 14 36 14 Z' },
+        eyes: { x: 50, y: 54, spacing: 18, scale: 1.10 }
+      },
+      {
+        version: 1,
+        id: 'trophy',
+        name: 'Trophy · Campeón Ventas',
+        color: 'yellow',
+        props: ['crown'],
+        body: { path: 'M 22 14 L 78 14 L 76 26 L 90 26 C 92 44 84 54 70 56 C 66 64 60 68 55 70 L 55 80 L 72 80 L 72 90 L 28 90 L 28 80 L 45 80 L 45 70 C 40 68 34 64 30 56 C 16 54 8 44 10 26 L 24 26 Z' },
+        eyes: { x: 50, y: 38, spacing: 15, scale: 1.08 }
+      }
+    ];
+
+    const charThumbCanvases = [];
+
+    function syncStudioJsonText() {
+      const charDef = CHAR_MAP[vStudio.shape] || CHAR_MAP.cat;
+      const jsonObj = {
+        version: 1,
+        id: vStudio.id,
+        name: vStudio.name,
+        shape: vStudio.shape,
+        color: vStudio.color,
+        mood: vStudio.mood,
+        props: vStudio.props,
+        traits: {
+          eyesStyle: vStudio.eyesStyle,
+          crown: vStudio.crown,
+          dna: vStudio.dna,
+          accent: vStudio.accent,
+          gridDensity: vStudio.gridDensity
+        },
+        body: {
+          path: vStudio.customPath || charDef.path
+        },
+        eyes: {
+          x: vStudio.eyesGeom.x,
+          y: vStudio.eyesGeom.y,
+          spacing: vStudio.eyesGeom.spacing,
+          scale: vStudio.eyesGeom.scale
+        }
+      };
+      const ta = document.getElementById('v-import-textarea');
+      if (ta && document.activeElement !== ta) {
+        ta.value = JSON.stringify(jsonObj, null, 2);
+      }
+    }
+
+    function updateStudioUI() {
+      // Actualizar píldora superior
+      const pillTitle = document.getElementById('v-pill-title');
+      if (pillTitle) {
+        if (vStudio.activeTab === 'squad') {
+          const sq = MARKETPLACE_TEAMS[vStudio.squadPresetIdx] || MARKETPLACE_TEAMS[0];
+          pillTitle.textContent = `👥 ${sq.name}`;
+        } else {
+          pillTitle.textContent = vStudio.name;
+        }
+      }
+
+      // Actualizar estado activo de personajes
+      document.querySelectorAll('.v-char-cell').forEach((cell) => {
+        cell.classList.toggle('active', cell.dataset.charId === vStudio.shape && !vStudio.customPath);
+      });
+
+      // Actualizar estado activo de colores
+      document.querySelectorAll('.v-color-dot').forEach((dot) => {
+        dot.classList.toggle('active', dot.dataset.colorKey === vStudio.color);
+      });
+
+      // Actualizar tarjetas de accesorios
+      document.querySelectorAll('.v-prop-card').forEach((card) => {
+        card.classList.toggle('active', vStudio.props.includes(card.dataset.propId));
+      });
+
+      // Actualizar píldoras de estado bajo el avatar
+      document.querySelectorAll('.v-state-pill').forEach((pill) => {
+        pill.classList.toggle('active', pill.dataset.vstate === vStudio.mood);
+      });
+
+      // Actualizar controles de rasgos
+      const elEyes = document.getElementById('v-ctrl-eyes');
+      if (elEyes) elEyes.value = vStudio.eyesStyle;
+      const elCrown = document.getElementById('v-ctrl-crown');
+      if (elCrown) elCrown.value = String(vStudio.crown);
+      const elDna = document.getElementById('v-ctrl-dna');
+      if (elDna) elDna.value = String(vStudio.dna);
+      const elAccent = document.getElementById('v-ctrl-accent');
+      if (elAccent) elAccent.value = String(vStudio.accent);
+      const elSpacing = document.getElementById('v-ctrl-eye-spacing');
+      if (elSpacing) {
+        elSpacing.value = String(vStudio.eyesGeom.spacing);
+        document.getElementById('v-lbl-spacing').textContent = vStudio.eyesGeom.spacing;
+      }
+      const elScale = document.getElementById('v-ctrl-eye-scale');
+      if (elScale) {
+        elScale.value = String(vStudio.eyesGeom.scale);
+        document.getElementById('v-lbl-scale').textContent = Number(vStudio.eyesGeom.scale).toFixed(2) + 'x';
+      }
+      const elEyeY = document.getElementById('v-ctrl-eye-y');
+      if (elEyeY) {
+        elEyeY.value = String(vStudio.eyesGeom.y);
+        document.getElementById('v-lbl-eyey').textContent = vStudio.eyesGeom.y;
+      }
+      const elDensity = document.getElementById('v-ctrl-grid-density');
+      if (elDensity) elDensity.value = String(vStudio.gridDensity);
+
+      // Actualizar celda TUI en la tira inferior
+      const tuiEl = document.getElementById('v-scale-tui');
+      if (tuiEl) {
+        const pal = COLOR_FAMILIES[vStudio.color] || COLOR_FAMILIES.blue;
+        const initLetter = (vStudio.name || 'C').replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g, '').charAt(0).toUpperCase() || 'B';
+        tuiEl.innerHTML = `&nbsp;<span style="color:${pal.base};">${initLetter}</span><span style="color:${pal.light};">${appState.d4EmojiChar || '✦'}</span>`;
+      }
+
+      // Redibujar miniaturas de los 20 personajes en el color seleccionado (exactamente como en el video)
+      charThumbCanvases.forEach(({ canvas, charId }) => {
+        drawAvatarCanvas(
+          canvas,
+          { id: 'thumb-' + charId, shape: charId, color: vStudio.color },
+          38,
+          'idle',
+          appState.lastTimeSec,
+          { props: [], crownOverride: 0, dnaOverride: 4, hideEmojiBadge: true, forceDark: true, spawnStartSec: -10 }
+        );
+      });
+
+      // Resumen e inspector interactivo de miembros del escuadrón en la pestaña Grupos
+      const sqSummary = document.getElementById('v-squad-members-summary');
+      if (sqSummary) {
+        const sq = MARKETPLACE_TEAMS[vStudio.squadPresetIdx] || MARKETPLACE_TEAMS[0];
+        const slotLabels = ['Líder Frontal', 'Hombro Izquierdo', 'Hombro Derecho', 'Soporte Trasero'];
+        let membersHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:8px;margin-top:10px;">`;
+        sq.members.forEach((m, mIdx) => {
+          const shapeOpts = CHARACTER_TEMPLATES.map((c) =>
+            `<option value="${c.id}" ${c.id === m.shape ? 'selected' : ''}>${c.icon} ${c.name}</option>`
+          ).join('');
+          const colorOpts = Object.entries(COLOR_FAMILIES).map(([k, p]) =>
+            `<option value="${k}" ${k === m.color ? 'selected' : ''}>${p.name}</option>`
+          ).join('');
+          membersHtml += `
+            <div style="background:#1c202b;border:1px solid rgba(255,255,255,0.10);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:5px;">
+              <strong style="font-size:11px;color:#4da3ff;">${slotLabels[mIdx] || ('Miembro #' + (mIdx + 1))}</strong>
+              <select data-sq-member="${mIdx}" data-sq-field="shape" style="background:#11141c;color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:4px 6px;font-size:11.5px;">${shapeOpts}</select>
+              <select data-sq-member="${mIdx}" data-sq-field="color" style="background:#11141c;color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:4px 6px;font-size:11.5px;">${colorOpts}</select>
+            </div>
+          `;
+        });
+        membersHtml += `</div>`;
+
+        sqSummary.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px;">
+            <strong style="color:#fff;">${sq.name} (Personaliza cada miembro del grupo en vivo)</strong>
+            <span class="badge">${sq.tag}</span>
+          </div>
+          <div style="font-size:12px;color:#a9b1c2;">${sq.desc}</div>
+          ${membersHtml}
+        `;
+
+        sqSummary.querySelectorAll('select[data-sq-member]').forEach((sel) => {
+          sel.addEventListener('change', (ev) => {
+            const idx = Number(ev.target.dataset.sqMember);
+            const field = ev.target.dataset.sqField;
+            if (sq.members[idx]) {
+              sq.members[idx][field] = ev.target.value;
+            }
+          });
+        });
+      }
+
+      syncStudioJsonText();
+    }
+
+    function loadTemplateIntoStudio(tpl) {
+      vStudio.presetId = tpl.id;
+      vStudio.id = tpl.id;
+      vStudio.name = tpl.name;
+      vStudio.shape = tpl.shape;
+      vStudio.customPath = null;
+      vStudio.color = tpl.color;
+      vStudio.props = [...(tpl.props || [])];
+      vStudio.mood = tpl.mood === 'happy' ? 'happy' : (tpl.mood || 'idle');
+      vStudio.eyesStyle = tpl.eyesStyle || 'round';
+      vStudio.crown = tpl.crown !== undefined ? tpl.crown : 0;
+      vStudio.dna = tpl.dna !== undefined ? tpl.dna : 0;
+      const charDef = CHAR_MAP[tpl.shape] || CHAR_MAP.cat;
+      vStudio.eyesGeom = { ...(charDef.eyes || { x: 50, y: 46, spacing: 17, scale: 1.08 }) };
+      vStudio.spawnStartSec = performance.now() / 1000;
+      updateStudioUI();
+    }
+
+    function switchStudioTab(tabName) {
+      vStudio.activeTab = tabName;
+      document.querySelectorAll('.v-tab-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.vtab === tabName);
+      });
+      document.querySelectorAll('.v-tab-pane').forEach((pane) => {
+        pane.classList.toggle('active', pane.id === 'v-pane-' + tabName);
+      });
+      const sub = document.getElementById('v-stage-subtitle');
+      if (sub) {
+        sub.textContent = tabName === 'squad'
+          ? '👥 Vista de Escuadrón Unido (Huddle): bots agrupados hombro con hombro sobre aura común'
+          : '✋ Pasa el cursor sobre el avatar para acariciarlo · Haz clic para reacción feliz';
+      }
+      updateStudioUI();
+    }
+
+    function initVideoStudio() {
+      // 1. Píldoras de Plantillas de Oficio Rápidas
+      const presetsBar = document.getElementById('v-role-presets-bar');
+      MARKETPLACE_BOTS.forEach((tpl) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'v-role-preset-chip' + (tpl.id === vStudio.presetId ? ' active' : '');
+        const ch = CHAR_MAP[tpl.shape] || CHAR_MAP.cat;
+        btn.textContent = `${ch.icon} ${tpl.name}`;
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.v-role-preset-chip').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          if (vStudio.activeTab === 'squad') switchStudioTab('customize');
+          loadTemplateIntoStudio(tpl);
+        });
+        presetsBar.appendChild(btn);
+      });
+
+      // Chip especial para ver el Escuadrón Unido directo
+      const squadChip = document.createElement('button');
+      squadChip.type = 'button';
+      squadChip.className = 'v-role-preset-chip';
+      squadChip.textContent = '👥 Ver Grupo Unido (Huddle)';
+      squadChip.addEventListener('click', () => {
+        document.querySelectorAll('.v-role-preset-chip').forEach((b) => b.classList.remove('active'));
+        squadChip.classList.add('active');
+        switchStudioTab('squad');
+      });
+      presetsBar.appendChild(squadChip);
+
+      // 2. Rejilla de 18 Personajes + botón '+' (como en el video 00:12)
+      const charGrid = document.getElementById('v-char-grid');
+      CHARACTER_TEMPLATES.forEach((ch) => {
+        const cell = document.createElement('div');
+        cell.className = 'v-char-cell' + (ch.id === vStudio.shape ? ' active' : '');
+        cell.dataset.charId = ch.id;
+
+        const cnv = document.createElement('canvas');
+        charThumbCanvases.push({ canvas: cnv, charId: ch.id });
+
+        const lbl = document.createElement('span');
+        lbl.className = 'v-char-label';
+        lbl.textContent = `${ch.icon} ${ch.name.split(' ')[0]}`;
+
+        cell.appendChild(cnv);
+        cell.appendChild(lbl);
+        cell.addEventListener('click', () => {
+          vStudio.shape = ch.id;
+          vStudio.customPath = null;
+          vStudio.eyesGeom = { ...ch.eyes };
+          vStudio.spawnStartSec = performance.now() / 1000;
+          updateStudioUI();
+        });
+        charGrid.appendChild(cell);
+      });
+
+      // Botón '+' al final de la rejilla de personajes (salta a Import / Generate como en el video)
+      const addBtn = document.createElement('div');
+      addBtn.className = 'v-char-add-btn';
+      addBtn.title = 'Importar o generar nuevo personaje con geometría JSON';
+      addBtn.innerHTML = '<span>+</span><span style="font-size:10px;font-weight:600;">Importar</span>';
+      addBtn.addEventListener('click', () => switchStudioTab('import'));
+      charGrid.appendChild(addBtn);
+
+      // 3. Fila de 14 círculos de color (como en el video 00:13)
+      const colorRow = document.getElementById('v-color-dots-row');
+      Object.entries(COLOR_FAMILIES).forEach(([key, pal]) => {
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'v-color-dot' + (key === vStudio.color ? ' active' : '');
+        dot.dataset.colorKey = key;
+        dot.style.background = pal.base;
+        dot.title = `${pal.name} (${pal.base})`;
+        dot.addEventListener('click', () => {
+          vStudio.color = key;
+          updateStudioUI();
+        });
+        colorRow.appendChild(dot);
+      });
+
+      // 4. Rejilla de 10 Accesorios de Oficio (Pestaña 2)
+      const propsGrid = document.getElementById('v-props-grid');
+      Object.values(ROLE_PROPS).forEach((prop) => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'v-prop-card' + (vStudio.props.includes(prop.id) ? ' active' : '');
+        card.dataset.propId = prop.id;
+        card.title = prop.desc;
+        card.innerHTML = `<span class="v-prop-icon">${prop.icon}</span><span>${prop.label}</span>`;
+        card.addEventListener('click', () => {
+          const idx = vStudio.props.indexOf(prop.id);
+          if (idx >= 0) vStudio.props.splice(idx, 1);
+          else vStudio.props.push(prop.id);
+          updateStudioUI();
+        });
+        propsGrid.appendChild(card);
+      });
+
+      // 5. Controles de Rasgos Faciales, Corona, ADN y Sliders de Ojos
+      document.getElementById('v-ctrl-eyes').addEventListener('change', (e) => {
+        vStudio.eyesStyle = e.target.value;
+        updateStudioUI();
+      });
+      document.getElementById('v-ctrl-crown').addEventListener('change', (e) => {
+        vStudio.crown = Number(e.target.value);
+        updateStudioUI();
+      });
+      document.getElementById('v-ctrl-dna').addEventListener('change', (e) => {
+        vStudio.dna = Number(e.target.value);
+        updateStudioUI();
+      });
+      document.getElementById('v-ctrl-accent').addEventListener('change', (e) => {
+        vStudio.accent = Number(e.target.value);
+        updateStudioUI();
+      });
+      document.getElementById('v-ctrl-eye-spacing').addEventListener('input', (e) => {
+        vStudio.eyesGeom.spacing = Number(e.target.value);
+        updateStudioUI();
+      });
+      document.getElementById('v-ctrl-eye-scale').addEventListener('input', (e) => {
+        vStudio.eyesGeom.scale = Number(e.target.value);
+        updateStudioUI();
+      });
+      document.getElementById('v-ctrl-eye-y').addEventListener('input', (e) => {
+        vStudio.eyesGeom.y = Number(e.target.value);
+        updateStudioUI();
+      });
+      document.getElementById('v-ctrl-grid-density').addEventListener('change', (e) => {
+        vStudio.gridDensity = Number(e.target.value);
+        updateStudioUI();
+      });
+
+      // 6. Controles de Pestaña Grupos Unidos (Squad Huddle)
+      document.getElementById('v-squad-preset').addEventListener('change', (e) => {
+        vStudio.squadPresetIdx = Number(e.target.value);
+        updateStudioUI();
+      });
+      document.getElementById('v-squad-formation').addEventListener('change', (e) => {
+        vStudio.squadFormation = e.target.value;
+        updateStudioUI();
+      });
+      document.getElementById('v-squad-tightness').addEventListener('input', (e) => {
+        vStudio.squadTightness = Number(e.target.value);
+        document.getElementById('v-lbl-tightness').textContent = vStudio.squadTightness + '%';
+        updateStudioUI();
+      });
+      document.getElementById('v-squad-synapse').addEventListener('change', (e) => {
+        vStudio.squadSynapse = e.target.value;
+        updateStudioUI();
+      });
+
+      // 7. Pestañas del Estudio y Botón Reset
+      document.querySelectorAll('.v-tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => switchStudioTab(btn.dataset.vtab));
+      });
+      document.getElementById('v-btn-reset').addEventListener('click', () => {
+        loadTemplateIntoStudio(MARKETPLACE_BOTS[1]); // Sofía Cat
+      });
+
+      // 8. Píldoras de Estado bajo el Avatar Héroe (Idle | Thinking | Happy | Needs Input | Speaking | Screen)
+      document.querySelectorAll('.v-state-pill').forEach((pill) => {
+        pill.addEventListener('click', () => {
+          vStudio.mood = pill.dataset.vstate;
+          updateStudioUI();
+        });
+      });
+
+      // Acariciar / Hacer clic en el Escenario Héroe
+      const heroWrap = document.getElementById('v-hero-wrap');
+      heroWrap.addEventListener('pointerenter', () => {
+        vStudio.petBoostUntil = (performance.now() / 1000) + 1.1;
+      });
+      heroWrap.addEventListener('click', () => {
+        vStudio.petBoostUntil = (performance.now() / 1000) + 1.8;
+        vStudio.spawnStartSec = performance.now() / 1000;
+      });
+      document.getElementById('v-btn-spawn').addEventListener('click', () => {
+        vStudio.spawnStartSec = performance.now() / 1000;
+      });
+
+      // 9. Pestaña Generate (Prompt de Geometría IA como en el video 00:05)
+      document.getElementById('v-btn-copy-prompt').addEventListener('click', (e) => {
+        const desc = document.getElementById('v-gen-input').value.trim() || 'cat';
+        const promptText =
+`Avatar geometry designer
+You design one avatar for a small vector/halftone character engine: a soft, chunky object or creature silhouette with two eyes, given as compact JSON (0..100 viewBox).
+The user describes the avatar: "${desc}".
+You write geometry only. The engine adds halftone 3D dots, colour, implied volume, gaze, blinking, and motion.
+Output ONLY valid JSON:
+{"version":1,"id":"custom","name":"Custom","body":{"path":"M...Z"},"eyes":{"x":50,"y":45,"spacing":16,"scale":1.1}}`;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(promptText).catch(() => {});
+        }
+        e.target.textContent = '✓ Copied prompt! (Pega la respuesta en Import / JSON o prueba un preset abajo)';
+        setTimeout(() => {
+          e.target.textContent = '📋 Copy prompt (Formato Avatar Geometry Designer)';
+        }, 2400);
+      });
+
+      const aiRepliesContainer = document.getElementById('v-ai-mock-replies');
+      AI_GENERATED_CUSTOM_SHAPES.forEach((shapeObj) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.style.cssText = 'font-size:11.5px;padding:4px 10px;border-radius:999px;background:#1e2330;color:#fff;border:1px solid rgba(255,255,255,0.16);';
+        b.textContent = `✨ Importar "${shapeObj.name}"`;
+        b.addEventListener('click', () => {
+          applyImportedJsonObject(shapeObj);
+          switchStudioTab('import');
+        });
+        aiRepliesContainer.appendChild(b);
+      });
+
+      // 10. Pestaña Import / JSON (como en el video 00:08-00:11)
+      const jsonExamplesBar = document.getElementById('v-json-examples-bar');
+      ['cat', 'sprout', 'controller', 'owl', 'mug'].forEach((cid) => {
+        const ch = CHAR_MAP[cid];
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.style.cssText = 'font-size:11px;padding:3px 9px;border-radius:6px;background:#1c202b;color:#cbd5e1;border:1px solid rgba(255,255,255,0.12);';
+        b.textContent = `${ch.icon} Cargar JSON ${ch.name.split(' ')[0]}`;
+        b.addEventListener('click', () => {
+          vStudio.shape = ch.id;
+          vStudio.customPath = null;
+          vStudio.name = ch.name;
+          vStudio.eyesGeom = { ...ch.eyes };
+          vStudio.spawnStartSec = performance.now() / 1000;
+          updateStudioUI();
+        });
+        jsonExamplesBar.appendChild(b);
+      });
+
+      document.getElementById('v-btn-apply-json').addEventListener('click', () => {
+        const raw = document.getElementById('v-import-textarea').value;
+        const statusEl = document.getElementById('v-import-status');
+        try {
+          const parsed = JSON.parse(raw);
+          applyImportedJsonObject(parsed);
+          statusEl.style.color = '#3ddc97';
+          statusEl.textContent = '✓ Geometría y configuración aplicadas al motor Halftone';
+        } catch (err) {
+          statusEl.style.color = '#ff5c5c';
+          statusEl.textContent = '✗ JSON inválido: ' + err.message;
+        }
+      });
+
+      document.getElementById('v-btn-clear-json').addEventListener('click', () => {
+        document.getElementById('v-import-textarea').value = '';
+        document.getElementById('v-import-status').textContent = '';
+      });
+
+      document.getElementById('v-file-json').addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          document.getElementById('v-import-textarea').value = String(reader.result || '');
+          document.getElementById('v-btn-apply-json').click();
+        };
+        reader.readAsText(file);
+      });
+
+      updateStudioUI();
+    }
+
+    function applyImportedJsonObject(parsed) {
+      if (parsed.name) vStudio.name = parsed.name;
+      if (parsed.id) vStudio.id = parsed.id;
+      if (parsed.color && COLOR_FAMILIES[parsed.color]) vStudio.color = parsed.color;
+      if (Array.isArray(parsed.props)) vStudio.props = parsed.props.filter((p) => ROLE_PROPS[p]);
+      if (parsed.shape && CHAR_MAP[parsed.shape]) {
+        vStudio.shape = parsed.shape;
+        vStudio.customPath = null;
+      }
+      if (parsed.body && typeof parsed.body.path === 'string' && parsed.body.path.trim().length > 5) {
+        const matchingStd = CHARACTER_TEMPLATES.find((c) => c.path === parsed.body.path.trim());
+        if (matchingStd) {
+          vStudio.shape = matchingStd.id;
+          vStudio.customPath = null;
+        } else {
+          vStudio.customPath = parsed.body.path.trim();
+        }
+      }
+      if (parsed.eyes && typeof parsed.eyes === 'object') {
+        vStudio.eyesGeom = {
+          x: Number(parsed.eyes.x ?? 50),
+          y: Number(parsed.eyes.y ?? 46),
+          spacing: Number(parsed.eyes.spacing ?? 16),
+          scale: Number(parsed.eyes.scale ?? 1.08),
+        };
+      }
+      if (parsed.traits && typeof parsed.traits === 'object') {
+        if (parsed.traits.eyesStyle) vStudio.eyesStyle = parsed.traits.eyesStyle;
+        if (parsed.traits.crown !== undefined) vStudio.crown = Number(parsed.traits.crown);
+        if (parsed.traits.dna !== undefined) vStudio.dna = Number(parsed.traits.dna);
+        if (parsed.traits.accent !== undefined) vStudio.accent = Number(parsed.traits.accent);
+      }
+      vStudio.spawnStartSec = performance.now() / 1000;
+      updateStudioUI();
+    }
+
+    // =========================================================================
+    // 11. MARKETPLACE (EQUIPOS UNIDOS HUDDLE + BOTS ESPECIALISTAS)
+    // =========================================================================
+    const activeCanvases = [];
+    const activeTeamCanvases = [];
+
+    function buildMarketplaceSection() {
+      // 1. Equipos Unidos (Huddle)
+      const teamsGrid = document.getElementById('marketplace-teams-grid');
+      teamsGrid.innerHTML = '';
+
+      MARKETPLACE_TEAMS.forEach((team, tIdx) => {
+        const card = document.createElement('div');
+        card.className = 'team-card';
+
+        const stage = document.createElement('div');
+        stage.className = 'team-stage';
+        const cnv = document.createElement('canvas');
+        cnv.className = 'avatar-canvas';
+        stage.appendChild(cnv);
+
+        const openTeamBtn = document.createElement('button');
+        openTeamBtn.type = 'button';
+        openTeamBtn.style.cssText = 'font-size:10.5px;padding:3px 8px;border-radius:6px;';
+        openTeamBtn.textContent = '🎨 Ver en Estudio';
+        openTeamBtn.addEventListener('click', () => {
+          vStudio.squadPresetIdx = tIdx;
+          document.getElementById('v-squad-preset').value = String(tIdx);
+          switchStudioTab('squad');
+          document.querySelector('.video-studio-shell').scrollIntoView({ behavior: 'smooth' });
+        });
+        stage.appendChild(openTeamBtn);
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:5px;';
+        info.innerHTML = `
+          <span class="market-role-tag">${team.tag}</span>
+          <strong style="font-size:14.5px;color:var(--text);">${team.name}</strong>
+          <span style="font-size:12.5px;color:var(--text-secondary);">${team.desc}</span>
+        `;
+
+        card.appendChild(stage);
+        card.appendChild(info);
+        teamsGrid.appendChild(card);
+
+        activeTeamCanvases.push({ canvas: cnv, team, w: 118, h: 92 });
+      });
+
+      // 2. Plantillas de Bots Especializados
+      const botsGrid = document.getElementById('marketplace-bots-grid');
+      botsGrid.innerHTML = '';
+
+      MARKETPLACE_BOTS.forEach((mBot) => {
+        const card = document.createElement('div');
+        card.className = 'market-bot-card';
+
+        const stage = document.createElement('div');
+        stage.className = 'market-avatar-stage';
+        const cnv = document.createElement('canvas');
+        cnv.className = 'avatar-canvas';
+        stage.appendChild(cnv);
+
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.style.cssText = 'font-size:10.5px;padding:3px 8px;border-radius:6px;';
+        editBtn.textContent = '✏️ Personalizar';
+        editBtn.addEventListener('click', () => {
+          loadTemplateIntoStudio(mBot);
+          switchStudioTab('customize');
+          document.querySelector('.video-studio-shell').scrollIntoView({ behavior: 'smooth' });
+        });
+        stage.appendChild(editBtn);
+
+        const info = document.createElement('div');
+        info.className = 'market-bot-info';
+        info.innerHTML = `
+          <span class="market-role-tag">${mBot.role}</span>
+          <strong style="font-size:14.5px;color:var(--text);">${mBot.name}</strong>
+          <span style="font-size:12px;color:var(--text-secondary);">${mBot.desc}</span>
+        `;
+
+        const pillsWrap = document.createElement('div');
+        pillsWrap.className = 'market-prop-pills';
+        Object.values(ROLE_PROPS).forEach((prop) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'prop-mini-btn' + (mBot.props.includes(prop.id) ? ' active' : '');
+          btn.textContent = `${prop.icon} ${prop.label}`;
+          btn.addEventListener('click', () => {
+            const idx = mBot.props.indexOf(prop.id);
+            if (idx >= 0) mBot.props.splice(idx, 1);
+            else mBot.props.push(prop.id);
+            btn.classList.toggle('active', mBot.props.includes(prop.id));
+          });
+          pillsWrap.appendChild(btn);
+        });
+
+        info.appendChild(pillsWrap);
+        card.appendChild(stage);
+        card.appendChild(info);
+        botsGrid.appendChild(card);
+
+        activeCanvases.push({
+          canvas: cnv,
+          bot: mBot,
+          sizePt: 68,
+          getMood: () => mBot.mood,
+          getExtra: () => ({
+            props: mBot.props,
+            eyesStyle: mBot.eyesStyle,
+            crownOverride: mBot.crown,
+            dnaOverride: mBot.dna
+          })
+        });
+      });
+    }
+
+    // =========================================================================
+    // 12. GALERÍA DE 10 MICRO-ANIMACIONES DOCUMENTADAS
+    // =========================================================================
+    const LIFE_ANIMATIONS_DOCS = [
+      {
+        id: 'A1', title: 'Materialización espiral por puntos (450 ms)', tag: 'Quantum Spawn',
+        botIdx: 2, mood: 'idle', props: ['crown'],
+        desc: 'Al aparecer o cambiar de plantilla, los puntos nacen dispersos en órbita y convergen magnéticamente hasta su celda.',
+        where: 'Creación de bot, cambio de plantilla e instalación en Marketplace.',
+        why: 'Hace sentir que el personaje se ensambla desde partículas de luz.'
+      },
+      {
+        id: 'A2', title: 'Geometría SVG Path → Matriz Halftone 3D', tag: 'Vector to Dots',
+        botIdx: 0, mood: 'idle', props: ['glasses'],
+        desc: 'Cualquier silueta vectorial (Cat, Sprout, Owl, Gamepad o JSON importado) se muestrea con supermuestreo 5× en puntos 3D.',
+        where: 'Todo el sistema de avatares e importador de plantillas.',
+        why: 'Combina formas icónicas reconocibles con la textura única de puntos.'
+      },
+      {
+        id: 'A3', title: 'Accesorios de oficio con halo de alto contraste', tag: 'Role Props HD',
+        botIdx: 8, mood: 'working', props: ['glasses', 'spreadsheet', 'tie'],
+        desc: 'Cada accesorio (lentes, hoja de cálculo, headset, escudo, corona) lleva respaldo de contraste y puntos animados propios.',
+        where: 'Marketplace, cabecera de conversación y estudio de personalización.',
+        why: 'Garantiza 100 % de visibilidad sin importar el color base del avatar.'
+      },
+      {
+        id: 'A4', title: 'Escuadrón Unido Hombro con Hombro (Huddle)', tag: 'Group Huddle',
+        botIdx: 3, mood: 'working', props: ['code', 'crown'],
+        desc: 'En grupos, los bots se superponen hombro con hombro inclinados hacia el centro con contorno limpio y aura común.',
+        where: 'Avatares de grupo en Sidebar, Marketplace y cabeceras multi-bot.',
+        why: 'Se ven como un equipo real unido y no como iconos sueltos.'
+      },
+      {
+        id: 'A5', title: 'Chispa ocular viva (Catchlight) + Seguimiento', tag: 'Living Gaze',
+        botIdx: 4, mood: 'idle', props: [],
+        desc: 'Dentro de cada cuenca ocular vive un punto especular que sigue al cursor y realiza micro-sacadas naturales.',
+        where: 'Todos los avatares de ≥ 28 pt.',
+        why: 'Convierte los recortes oculares en una mirada viva y atenta.'
+      },
+      {
+        id: 'A6', title: 'Reacción al acariciar (Petting / Happy ^ ^)', tag: 'Interactive Pet',
+        botIdx: 1, mood: 'happy', props: [],
+        desc: 'Al pasar el cursor o tocar el avatar en el Estudio, arquea los ojos (^ ^), da un salto elástico y emite chispas.',
+        where: 'Estudio de personalización y tarjeta de perfil del bot.',
+        why: 'Crea conexión emocional inmediata al configurar tu asistente.'
+      },
+      {
+        id: 'A7', title: 'Vórtice sináptico + Reflejo Computer Use', tag: 'Screen Scan',
+        botIdx: 3, mood: 'computerUse', props: ['code'],
+        desc: 'Mientras opera la pantalla, un barrido cian se refleja en la frente y en las pupilas mientras lee de lado a lado.',
+        where: 'Estado working y computerUse.',
+        why: 'Comunica visualmente que el bot está viendo y operando tu pantalla.'
+      },
+      {
+        id: 'A8', title: 'Boca dinámica de puntos + Lip-Sync de voz', tag: 'Voice Lip-Sync',
+        botIdx: 6, mood: 'speaking', props: ['headset'],
+        desc: 'En llamadas de voz se abre una boca ovalada en la matriz que articula sílabas con micrófono LED pulsante.',
+        where: 'Modo de voz bidireccional.',
+        why: 'Sabes al instante qué bot está hablando sin depender de iconos externos.'
+      },
+      {
+        id: 'A9', title: 'Doble latido (lub-dub) en Needs Input', tag: 'Heartbeat Alert',
+        botIdx: 5, mood: 'needsInput', props: ['magnifier'],
+        desc: 'El acento late con ritmo cardíaco doble mientras el bot inclina la cabeza mirando hacia ti.',
+        where: 'Aprobaciones de herramientas y preguntas del bot.',
+        why: 'Atrae la atención con empatía sin parpadeos agresivos.'
+      },
+      {
+        id: 'A10', title: 'Visor Cyber KITT + Texturas ADN', tag: 'Cyber & DNA',
+        botIdx: 9, mood: 'working', props: ['shield'],
+        desc: 'Ojos estilo visor con escáner LED horizontal combinados con 5 patrones de piel ADN (Aura, Anillo, Aurora, Estelar).',
+        where: 'Bots de seguridad, DevOps y personalización avanzada.',
+        why: 'Multiplica la variedad estética manteniendo una sola familia visual.'
+      }
+    ];
+
+    function buildLifeShowcase() {
+      const grid = document.getElementById('life-showcase-grid');
+      grid.innerHTML = '';
+      LIFE_ANIMATIONS_DOCS.forEach((doc) => {
+        const bot = TEST_BOTS[doc.botIdx];
+        const card = document.createElement('div');
+        card.className = 'life-card';
+
+        const stage = document.createElement('div');
+        stage.className = 'life-stage';
+        const cnv = document.createElement('canvas');
+        cnv.className = 'avatar-canvas';
+        const cap = document.createElement('span');
+        cap.className = 'cell-caption';
+        cap.textContent = `${bot.name} · 58pt`;
+        stage.appendChild(cnv);
+        stage.appendChild(cap);
+
+        const info = document.createElement('div');
+        info.className = 'life-info';
+        info.innerHTML = `
+          <div class="life-title-row">
+            <h3 class="life-title">${doc.title}</h3>
+            <span class="life-tag">${doc.id} · ${doc.tag}</span>
+          </div>
+          <p class="life-desc">${doc.desc}</p>
+          <div class="life-meta">
+            <span><strong>Dónde usarla:</strong> ${doc.where}</span>
+            <span><strong>Por qué:</strong> ${doc.why}</span>
+          </div>
+        `;
+
+        card.appendChild(stage);
+        card.appendChild(info);
+        grid.appendChild(card);
+
+        activeCanvases.push({
+          canvas: cnv,
+          bot,
+          sizePt: 58,
+          getMood: () => doc.mood,
+          getExtra: () => ({ props: doc.props })
+        });
+      });
+    }
+
+    // =========================================================================
+    // 13. TABLERO PRINCIPAL (15, 18, 30, 46 PT + ESTADOS), D5 TUI Y QUIZ 30 PT
+    // =========================================================================
+    function buildMainBoard() {
+      const tbody = document.getElementById('board-tbody');
+      tbody.innerHTML = '';
+      const sizes = [15, 18, 30, 46];
+      const states = ['idle', 'working', 'needsInput'];
+
+      TEST_BOTS.forEach((bot) => {
+        const tr = document.createElement('tr');
+        const dna = botDna(bot.id);
+        const pal = COLOR_FAMILIES[bot.color];
+        const ch = CHAR_MAP[bot.shape] || CHAR_MAP.blob;
+
+        const tdInfo = document.createElement('td');
+        tdInfo.className = 'col-bot';
+        tdInfo.innerHTML = `
+          <div class="bot-identity">
+            <div class="bot-name">
+              <span>${ch.icon} ${bot.name}</span>
+              <span class="bot-id-tag">${bot.id}</span>
+            </div>
+            <div class="bot-specs">
+              <span class="color-dot" style="background:${pal.base};"></span>${pal.name} · <strong>${ch.name}</strong>
+            </div>
+            <div class="bot-specs" style="font-family:var(--font-mono);font-size:11px;">
+              ADN: ${DNA_NAMES[dna.dnaPattern]} · ${CROWN_NAMES[dna.crown]}
+            </div>
+          </div>
+        `;
+        tr.appendChild(tdInfo);
+
+        sizes.forEach((sz) => {
+          const td = document.createElement('td');
+          const wrap = document.createElement('div');
+          wrap.className = 'cell-wrapper';
+          const cnv = document.createElement('canvas');
+          cnv.className = 'avatar-canvas';
+          let cellMood = 'idle';
+          cnv.addEventListener('click', () => {
+            const order = ['idle', 'working', 'needsInput'];
+            cellMood = order[(order.indexOf(cellMood) + 1) % order.length];
+          });
+          const cap = document.createElement('span');
+          cap.className = 'cell-caption';
+          cap.textContent = `${sz}pt`;
+          wrap.appendChild(cnv);
+          wrap.appendChild(cap);
+          td.appendChild(wrap);
+          tr.appendChild(td);
+
+          activeCanvases.push({
+            canvas: cnv,
+            bot,
+            sizePt: sz,
+            getMood: () => cellMood,
+            getExtra: () => ({ props: sz >= 30 ? bot.props : [] })
+          });
+        });
+
+        states.forEach((st, idx) => {
+          const td = document.createElement('td');
+          if (idx === 0) td.className = 'group-divider';
+          const wrap = document.createElement('div');
+          wrap.className = 'cell-wrapper';
+          const cnv = document.createElement('canvas');
+          cnv.className = 'avatar-canvas';
+          const cap = document.createElement('span');
+          cap.className = 'cell-caption';
+          cap.textContent = st;
+          wrap.appendChild(cnv);
+          wrap.appendChild(cap);
+          td.appendChild(wrap);
+          tr.appendChild(td);
+
+          activeCanvases.push({
+            canvas: cnv,
+            bot,
+            sizePt: 38,
+            getMood: () => st,
+            getExtra: () => ({ props: bot.props })
+          });
+        });
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderTerminalRow() {
+      const section = document.getElementById('terminal-section');
+      const rowEl = document.getElementById('terminal-roster-row');
+      section.style.display = appState.d5Terminal ? 'flex' : 'none';
+      if (!appState.d5Terminal) return;
+
+      const cornerLabels = ['0: sup-der (NE)', '1: sup-izq (NW)', '2: inf-der (SE)', '3: inf-izq (SW)'];
+      const glyph = (appState.d4EmojiEnabled && appState.d4EmojiChar) ? appState.d4EmojiChar : '✦';
+      rowEl.innerHTML = '';
+
+      TEST_BOTS.forEach((bot) => {
+        const v = appState.d3VariantMode === 'seeded' ? variant(bot.id) : { accent: 0 };
+        const pal = COLOR_FAMILIES[bot.color];
+        const initial = bot.name.charAt(0).toUpperCase();
+        const item = document.createElement('div');
+        item.className = 'tui-item';
+        item.innerHTML = `
+          <div class="tui-cell">&nbsp;<span style="color:${pal.base};">${initial}</span><span style="color:${pal.light};">${glyph}</span></div>
+          <div class="tui-bot-meta">
+            <strong>${bot.name}</strong>
+            <span class="tui-bot-corner">${cornerLabels[v.accent]}</span>
+          </div>
+        `;
+        rowEl.appendChild(item);
+      });
+    }
+
+    // Prueba de identificación a 30 pt
+    let quizOrder = [];
+    function normalizeName(str) {
+      return (str || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+
+    function buildQuiz() {
+      const grid = document.getElementById('quiz-grid');
+      grid.innerHTML = '';
+      quizOrder = [...TEST_BOTS];
+      for (let i = quizOrder.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [quizOrder[i], quizOrder[j]] = [quizOrder[j], quizOrder[i]];
+      }
+
+      quizOrder.forEach((bot, index) => {
+        const card = document.createElement('div');
+        card.className = 'quiz-card';
+        card.dataset.expectedName = bot.name;
+
+        const num = document.createElement('div');
+        num.className = 'quiz-number';
+        num.textContent = `Incógnita #${index + 1} (30 pt)`;
+
+        const cnv = document.createElement('canvas');
+        cnv.className = 'avatar-canvas';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'quiz-input';
+        input.placeholder = 'Escribe el nombre...';
+        input.setAttribute('list', 'bot-names-datalist');
+
+        const fb = document.createElement('div');
+        fb.className = 'quiz-feedback';
+
+        card.appendChild(num);
+        card.appendChild(cnv);
+        card.appendChild(input);
+        card.appendChild(fb);
+        grid.appendChild(card);
+
+        activeCanvases.push({
+          canvas: cnv,
+          bot,
+          sizePt: 30,
+          getMood: () => 'idle',
+          getExtra: () => ({ props: bot.props })
+        });
+      });
+
+      const scorePill = document.getElementById('quiz-score-pill');
+      scorePill.className = 'score-pill';
+      scorePill.textContent = 'Resultado: pendiente de evaluar (meta: 8/10 o más)';
+    }
+
+    function evaluateQuiz() {
+      const cards = document.querySelectorAll('#quiz-grid .quiz-card');
+      let hits = 0;
+      cards.forEach((card) => {
+        const expected = card.dataset.expectedName;
+        const input = card.querySelector('.quiz-input');
+        const fb = card.querySelector('.quiz-feedback');
+        const ok = normalizeName(input.value) === normalizeName(expected);
+        card.classList.remove('correct', 'wrong');
+        if (ok) {
+          hits++;
+          card.classList.add('correct');
+          fb.style.color = 'var(--success)';
+          fb.textContent = `✓ Correcto (${expected})`;
+        } else {
+          card.classList.add('wrong');
+          fb.style.color = 'var(--danger)';
+          fb.textContent = `✗ Era ${expected}`;
+        }
+      });
+      const scorePill = document.getElementById('quiz-score-pill');
+      const passed = hits >= 8;
+      scorePill.className = 'score-pill ' + (passed ? 'pass' : 'fail');
+      scorePill.textContent = `Aciertos: ${hits} / 10 — ${passed ? 'APROBADO (≥ 8/10)' : 'NO APROBADO (< 8/10)'}`;
+    }
+
+    function printAndRenderGoldenVectors() {
+      const rows = TEST_BOTS.map((b) => {
+        const v = variant(b.id);
+        const dna = botDna(b.id);
+        const hashHex = '0x' + fnv1a32(b.id).toString(16).padStart(8, '0');
+        return {
+          botId: b.id, name: b.name, fnv1a32: hashHex,
+          accent: v.accent, eyes: v.eyes, shift: v.shift,
+          crown: CROWN_NAMES[dna.crown], dnaPattern: DNA_NAMES[dna.dnaPattern]
+        };
+      });
+      console.log('=== CODYNC AVATAR LAB: VECTORES DORADOS variant(botId) ===');
+      console.table(rows);
+      document.getElementById('golden-vectors-output').textContent =
+        '// Vectores dorados deterministas (FNV-1a 32-bit)\n' + JSON.stringify(rows, null, 2);
+    }
+
+    function initControls() {
+      document.querySelectorAll('input[name="d1-direction"]').forEach((r) => {
+        r.addEventListener('change', (e) => {
+          appState.d1Direction = e.target.value;
+          document.getElementById('card-d2').classList.toggle('disabled', appState.d1Direction !== 'A3');
+        });
+      });
+      document.getElementById('card-d2').classList.toggle('disabled', appState.d1Direction !== 'A3');
+
+      document.getElementById('d2-robot').addEventListener('change', (e) => {
+        appState.d2Robot = e.target.checked;
+      });
+      document.querySelectorAll('input[name="d3-variant"]').forEach((r) => {
+        r.addEventListener('change', (e) => {
+          appState.d3VariantMode = e.target.value;
+          renderTerminalRow();
+        });
+      });
+      document.getElementById('d4-emoji-toggle').addEventListener('change', (e) => {
+        appState.d4EmojiEnabled = e.target.checked;
+        renderTerminalRow();
+        updateStudioUI();
+      });
+      document.getElementById('d4-emoji-input').addEventListener('input', (e) => {
+        appState.d4EmojiChar = e.target.value.trim() || '✦';
+        renderTerminalRow();
+        updateStudioUI();
+      });
+      document.querySelectorAll('.emoji-preset').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const g = btn.dataset.emoji;
+          document.getElementById('d4-emoji-input').value = g;
+          appState.d4EmojiChar = g;
+          document.getElementById('d4-emoji-toggle').checked = true;
+          appState.d4EmojiEnabled = true;
+          renderTerminalRow();
+          updateStudioUI();
+        });
+      });
+      document.getElementById('d5-terminal-toggle').addEventListener('change', (e) => {
+        appState.d5Terminal = e.target.checked;
+        renderTerminalRow();
+      });
+
+      const pauseBtn = document.getElementById('btn-pause-anim');
+      const badge = document.getElementById('motion-status-badge');
+      function updatePauseUI() {
+        pauseBtn.setAttribute('aria-pressed', String(appState.paused));
+        pauseBtn.textContent = appState.paused ? '▶ Reanudar animación' : '⏸ Pausar animación';
+        badge.textContent = appState.paused ? '⏸ Pausa (Pose reposo)' : '● 60 FPS Activo';
+      }
+      pauseBtn.addEventListener('click', () => {
+        appState.paused = !appState.paused;
+        updatePauseUI();
+      });
+      updatePauseUI();
+
+      const themeBtn = document.getElementById('btn-theme-toggle');
+      themeBtn.addEventListener('click', () => {
+        appState.theme = appState.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', appState.theme);
+        themeBtn.textContent = appState.theme === 'dark' ? '☀️ Modo Claro' : '🌙 Modo Oscuro';
+      });
+
+      document.getElementById('btn-shuffle-quiz').addEventListener('click', buildQuiz);
+      document.getElementById('btn-check-quiz').addEventListener('click', evaluateQuiz);
+      document.getElementById('btn-autofill-quiz').addEventListener('click', () => {
+        document.querySelectorAll('#quiz-grid .quiz-card').forEach((c) => {
+          c.querySelector('.quiz-input').value = c.dataset.expectedName;
+        });
+        evaluateQuiz();
+      });
+    }
+
+    // =========================================================================
+    // 14. BUCLE DE ANIMACIÓN (60 FPS)
+    // =========================================================================
+    function renderFrame(nowMs) {
+      const timeSec = nowMs / 1000;
+      appState.lastTimeSec = timeSec;
+
+      // 1. Renderizar Escenario Héroe del Estudio Interactivo (Estilo Video: 185 pt + Mini Pill 26 pt + Tira 46/30/18 pt)
+      const heroCanvas = document.getElementById('v-hero-canvas');
+      const miniPillCanvas = document.getElementById('v-mini-pill-canvas');
+      const scale46 = document.getElementById('v-scale-46');
+      const scale30 = document.getElementById('v-scale-30');
+      const scale18 = document.getElementById('v-scale-18');
+
+      if (vStudio.activeTab === 'squad') {
+        // Modo Grupo Unido (Huddle) en el Escenario Central y escalas
+        const sq = MARKETPLACE_TEAMS[vStudio.squadPresetIdx] || MARKETPLACE_TEAMS[0];
+        const sqOpts = {
+          formation: vStudio.squadFormation,
+          tightness: vStudio.squadTightness,
+          synapse: vStudio.squadSynapse,
+          forceDark: true
+        };
+        if (heroCanvas) drawHuddledSquad(heroCanvas, sq, 210, 185, timeSec, sqOpts);
+        if (miniPillCanvas) drawHuddledSquad(miniPillCanvas, sq, 26, 26, timeSec, sqOpts);
+        if (scale46) drawHuddledSquad(scale46, sq, 52, 46, timeSec, sqOpts);
+        if (scale30) drawHuddledSquad(scale30, sq, 34, 30, timeSec, sqOpts);
+        if (scale18) drawHuddledSquad(scale18, sq, 20, 18, timeSec, sqOpts);
+      } else {
+        // Modo Personaje Individual Personalizable
+        const studioBot = {
+          id: vStudio.id,
+          name: vStudio.name,
+          shape: vStudio.shape,
+          color: vStudio.color,
+          props: vStudio.props
+        };
+        const studioExtra = {
+          props: vStudio.props,
+          customPath: vStudio.customPath,
+          eyesStyle: vStudio.eyesStyle,
+          crownOverride: vStudio.crown,
+          dnaOverride: vStudio.dna,
+          accentOverride: vStudio.accent,
+          eyesGeom: vStudio.eyesGeom,
+          gridDensity: vStudio.gridDensity,
+          spawnStartSec: vStudio.spawnStartSec,
+          petBoostUntil: vStudio.petBoostUntil,
+          ignoreA3Robot: true,
+          forceDark: true
+        };
+        if (heroCanvas) drawAvatarCanvas(heroCanvas, studioBot, 185, vStudio.mood, timeSec, studioExtra);
+        if (miniPillCanvas) drawAvatarCanvas(miniPillCanvas, studioBot, 26, 'idle', timeSec, { ...studioExtra, props: [], hideEmojiBadge: true });
+        if (scale46) drawAvatarCanvas(scale46, studioBot, 46, vStudio.mood, timeSec, { ...studioExtra, gridDensity: 13 });
+        if (scale30) drawAvatarCanvas(scale30, studioBot, 30, vStudio.mood, timeSec, { ...studioExtra, gridDensity: 13 });
+        if (scale18) drawAvatarCanvas(scale18, studioBot, 18, vStudio.mood, timeSec, { ...studioExtra, props: [] });
+      }
+
+      // 2. Renderizar todos los avatares del Marketplace, Galería de Vida, Tablero y Quiz
+      for (let i = 0; i < activeCanvases.length; i++) {
+        const item = activeCanvases[i];
+        const extra = item.getExtra ? item.getExtra() : {};
+        drawAvatarCanvas(item.canvas, item.bot, item.sizePt, item.getMood(), timeSec, extra);
+      }
+
+      // 3. Renderizar Equipos Unidos del Marketplace
+      for (let i = 0; i < activeTeamCanvases.length; i++) {
+        const tc = activeTeamCanvases[i];
+        drawHuddledSquad(tc.canvas, tc.team, tc.w, tc.h, timeSec);
+      }
+
+      requestAnimationFrame(renderFrame);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      appState.globalSpawnStartSec = performance.now() / 1000;
+      vStudio.spawnStartSec = appState.globalSpawnStartSec;
+      initVideoStudio();
+      buildMarketplaceSection();
+      buildLifeShowcase();
+      buildMainBoard();
+      renderTerminalRow();
+      buildQuiz();
+      printAndRenderGoldenVectors();
+      initControls();
+      requestAnimationFrame(renderFrame);
+    });
+  </script>
+</body>
+</html>

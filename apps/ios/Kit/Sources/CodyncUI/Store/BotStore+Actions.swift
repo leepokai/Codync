@@ -134,14 +134,14 @@ extension BotStore {
     func setReading(_ token: UUID, botId: String, active: Bool) {
         if active {
             readingViews[token] = botId
-            if connection == .online, bots[botId]?.keptUnread != true { markRead(botId) }
+            if connection == .online, !heldUnread(botId) { markRead(botId) }
         } else {
             readingViews[token] = nil
         }
     }
 
     func acknowledgeVisibleConversations(_ botId: String, entry: Entry? = nil) {
-        guard connection == .online, bots[botId]?.keptUnread != true else { return }
+        guard connection == .online, !heldUnread(botId) else { return }
         guard readingViews.values.contains(botId), entry?.isChat != false else { return }
         markRead(botId)
     }
@@ -167,24 +167,37 @@ extension BotStore {
     }
 
     /// The roster's "Mark as read": everything in the chat.
+    /// Sent after a mark as unread still under way, so the host never gets them the other way round.
     public func markAllRead(_ botId: String) {
-        guard let bot = bots[botId], bot.unread > 0 || bot.keptUnread else { return }
+        guard let bot = bots[botId], bot.unread > 0 || heldUnread(botId) else { return }
+        let marking = markingUnread.removeValue(forKey: botId)
         bots[botId]?.unread = 0
         bots[botId]?.keptUnread = false
-        perform(replay: true) { try await $0.markRead(botId) }
+        perform(replay: true) {
+            _ = await marking?.value
+            try await $0.markRead(botId)
+        }
     }
 
     /// The roster's "Mark as unread": the host counts what comes back unread; until then only the hold
     /// shows, so nothing on screen reads it.
     public func markUnread(_ botId: String) {
         guard bots[botId] != nil else { return }
-        bots[botId]?.keptUnread = true
-        Task { await attempt(replay: true, undo: { self.bots[botId]?.keptUnread = false }) { try await $0.markUnread(botId) } }
+        let sent = Task { await attempt(replay: true) { try await $0.markUnread(botId) } }
+        markingUnread[botId] = sent
+        Task {
+            if !(await sent.value), markingUnread[botId] == sent { markingUnread[botId] = nil }
+        }
+    }
+
+    /// Whether automatic reads leave this chat alone.
+    func heldUnread(_ botId: String) -> Bool {
+        markingUnread[botId] != nil || bots[botId]?.keptUnread == true
     }
 
     /// The user opened the chat: one marked unread is read now.
     func openConversation(_ botId: String) {
-        if bots[botId]?.keptUnread == true { markAllRead(botId) }
+        if heldUnread(botId) { markAllRead(botId) }
     }
 
     public func setPinned(_ bot: Bot, _ pinned: Bool) {

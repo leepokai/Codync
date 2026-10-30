@@ -95,6 +95,7 @@ extension BotStore {
             bump(rev)
         case let .bot(bot):
             bots[bot.id] = bot
+            if bot.keptUnread { markingUnread[bot.id] = nil }
             bump(bot.rev)
             onBotUpdated?(bot)
             onRosterChanged?()

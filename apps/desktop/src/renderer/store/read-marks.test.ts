@@ -18,25 +18,39 @@ function computer(bot: Partial<Bot>) {
   return { reads, sent, bot: () => bots.get('a')!, answer: (i: number, accepted: boolean) => answers[i]!(accepted) }
 }
 
-test('mark as unread holds the chat unread at once', () => {
+test('mark as unread holds the chat at once, through a bot event from before it', () => {
   const { reads, sent, bot } = computer({})
   reads.markUnread('a')
   assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
-  assert.equal(bot().keptUnread, true)
+  reads.received(bot())
+  assert.equal(reads.held('a'), true)
 })
 
 test('a refused mark as unread lets the chat be read again', async () => {
-  const { reads, bot, answer } = computer({})
+  const { reads, answer } = computer({})
   reads.markUnread('a')
   answer(0, false)
-  await Promise.resolve()
-  assert.equal(bot().keptUnread, false)
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.equal(reads.held('a'), false)
 })
 
-test('opening a chat marked unread reads it', () => {
-  const { reads, sent, bot } = computer({ unread: 2, keptUnread: true })
+test('the host showing the hold carries it from then on', () => {
+  const { reads, bot } = computer({})
+  reads.markUnread('a')
+  reads.received({ ...bot(), keptUnread: true })
+  assert.equal(reads.held('a'), false)
+})
+
+test('opening a chat marked unread reads it, after the mark goes through', async () => {
+  const { reads, sent, bot, answer } = computer({})
+  reads.markUnread('a')
   reads.open('a')
-  assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
+  assert.equal(reads.held('a'), false)
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.deepEqual(sent, [['markUnread', { botId: 'a' }]])
+  answer(0, true)
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.deepEqual(sent, [['markUnread', { botId: 'a' }], ['markRead', { botId: 'a' }]])
   assert.deepEqual([bot().unread, bot().keptUnread], [0, false])
 })
 
@@ -46,9 +60,10 @@ test('opening a chat not marked unread leaves reading to the view', () => {
   assert.deepEqual(sent, [])
 })
 
-test('mark as read clears a hold even with nothing counted unread', () => {
+test('mark as read clears a hold even with nothing counted unread', async () => {
   const { reads, sent, bot } = computer({ keptUnread: true })
   reads.markRead('a')
+  await new Promise((resolve) => setTimeout(resolve))
   assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
   assert.equal(bot().keptUnread, false)
 })

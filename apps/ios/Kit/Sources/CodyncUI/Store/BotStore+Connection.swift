@@ -194,7 +194,7 @@ extension BotStore {
         heldDrop = nil
         if new != connection { Motion.animate { connection = new } }
         if recovering {
-            for botId in Set(readingViews.values) where bots[botId]?.keptUnread != true { markRead(botId) }
+            for botId in Set(readingViews.values) where !heldUnread(botId) { markRead(botId) }
         }
     }
 

@@ -4,6 +4,7 @@ import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
+import { ReadMarks } from './read-marks'
 import type { CallCue } from '@shared/calls'
 
 const REFRESH_TIMEOUT = 20_000
@@ -47,6 +48,7 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private readingViews = new Map<string, string>()
+  protected readonly reads = new ReadMarks(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
 
   // MARK: lifecycle
 
@@ -128,7 +130,7 @@ export class BotSync extends BotMirror {
       this.connection = next
       this.changed()
     }
-    if (recovering) for (const botId of new Set(this.readingViews.values())) if (!this.bots.get(botId)?.keptUnread) this.markRead(botId)
+    if (recovering) for (const botId of new Set(this.readingViews.values())) if (!this.reads.held(botId)) this.markRead(botId)
   }
 
   /** Events (catch-up since `rev`, then live) for as long as the store lives. */
@@ -230,6 +232,7 @@ export class BotSync extends BotMirror {
         break
       case 'bot':
         this.bots.set(event.bot.id, event.bot)
+        this.reads.received(event.bot)
         this.bump(event.bot.rev)
         this.onRosterChanged?.()
         if (event.bot.unread > 0) this.acknowledgeVisible(event.bot.id)
@@ -405,14 +408,14 @@ export class BotSync extends BotMirror {
   setReading(token: string, botId: string, active: boolean) {
     if (active) {
       this.readingViews.set(token, botId)
-      if (this.connection.kind === 'online' && !this.bots.get(botId)?.keptUnread) this.markRead(botId)
+      if (this.connection.kind === 'online' && !this.reads.held(botId)) this.markRead(botId)
     } else {
       this.readingViews.delete(token)
     }
   }
 
   private acknowledgeVisible(botId: string, entry?: Entry) {
-    if (this.connection.kind !== 'online' || this.bots.get(botId)?.keptUnread) return
+    if (this.connection.kind !== 'online' || this.reads.held(botId)) return
     if (![...this.readingViews.values()].includes(botId) || (entry && !isChat(entry))) return
     this.markRead(botId)
   }

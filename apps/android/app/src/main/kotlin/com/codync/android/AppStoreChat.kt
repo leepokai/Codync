@@ -16,10 +16,15 @@ fun AppStore.openBot(id: String?) {
     if (keptUnread(id)) markRead(id) else acknowledgeVisible()
 }
 
-/** The roster's "Mark as read", and opening a chat marked unread. */
+/** The roster's "Mark as read", and opening a chat marked unread: after a mark as unread still under way, so the host never gets them the other way round. */
 fun AppStore.markRead(id: String) {
     markingUnread.remove(id)
-    command("markRead", body("botId" to id), "roster:$id")
+    val marking = actions["roster:$id"]
+    action("open:$id") {
+        marking?.join()
+        ready().call("markRead", body("botId" to id))
+        refresh()
+    }
 }
 
 /** The roster's "Mark as unread": the host counts what comes back unread; until then only the hold shows, so nothing on screen reads it. */

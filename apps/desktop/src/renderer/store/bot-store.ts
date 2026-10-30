@@ -18,7 +18,6 @@ import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
-import { ReadMarks } from './read-marks'
 import { BotSync, sleep } from './bot-sync'
 
 export { builtInBackendName, type Connection } from './bot-mirror'
@@ -52,7 +51,6 @@ export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 export class BotStore extends BotSync {
   readonly fileDownloads = new FileDownloads(() => this.changed())
   readonly sections = new BotSections(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
-  private readonly reads = new ReadMarks(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
 
   override retire() { this.fileDownloads.retire(); super.retire() }
 

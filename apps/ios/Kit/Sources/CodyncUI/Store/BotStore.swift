@@ -141,6 +141,8 @@ public final class BotStore {
 
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
+    /// Mark as unread sent but not yet showing as the bot's `keptUnread`: a bot event from before it mustn't drop the hold.
+    @ObservationIgnored var markingUnread: [String: Task<Bool, Never>] = [:]
 
     var cacheStamp: String?
 

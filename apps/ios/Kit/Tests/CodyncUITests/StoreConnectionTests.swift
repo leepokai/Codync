@@ -52,8 +52,12 @@ import Testing
     store.setReading(token, botId: "b1", active: true)
     #expect(await until { await fake.readReceipts.count == 1 })
     store.markUnread("b1")
-    #expect(store.bots["b1"]?.keptUnread == true)
+    #expect(store.heldUnread("b1"))
     #expect(await until { await fake.calls.contains("markUnread") })
+    // A bot event from before the mark doesn't drop the hold.
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":1,"unread":0}}"#)
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(store.heldUnread("b1"))
     await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":2,"unread":1,"keptUnread":true}}"#)
     #expect(await until { store.bots["b1"]?.rev == 2 })
     // Coming back into focus, or the link coming back, is not opening the chat.
@@ -62,7 +66,7 @@ import Testing
     try await Task.sleep(for: .milliseconds(50))
     #expect(await fake.readReceipts.count == 1)
     store.openConversation("b1")
-    #expect(store.bots["b1"]?.keptUnread == false)
+    #expect(!store.heldUnread("b1"))
     #expect(await until { await fake.readReceipts.count == 2 })
 }
 

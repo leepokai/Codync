@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { groupFastMode } from '@shared/fast-mode'
 import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifacts'
 import { isGroup, isWorkingIn, quoteOf, type Bot, type Entry } from '@shared/models'
@@ -12,7 +12,7 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
-import { useStore } from '../../store/context'
+import { AppContext, useStore } from '../../store/context'
 import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/bot-store'
 import { pluginsFor } from '../marketplace/plugins'
 import { composerEnter } from './composer-keyboard'
@@ -52,6 +52,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   botId: string; reply: Entry | null; about: Artifact | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
 }) {
   const store = useStore()
+  const app = useModel(useContext(AppContext))
   const tr = useTr()
   const plugins = useModel(pluginsFor(store))
   const bot = store.bots.get(botId) ?? null
@@ -95,6 +96,12 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
     drafts.set(botId, previous ? `${previous}\n${incoming}` : incoming)
     field.current?.focus()
   }, [routineDraft, botId, store, drafts])
+
+  // Clicking this chat's bot in the roster brings the caret here.
+  const composerFocus = app?.composerFocus
+  useEffect(() => {
+    if (!about && app?.takeComposerFocus({ computerId: store.computer.id, botId })) field.current?.focus()
+  }, [composerFocus, about, app, store, botId])
 
   // Picking a message to reply to brings the caret here.
   useEffect(() => {

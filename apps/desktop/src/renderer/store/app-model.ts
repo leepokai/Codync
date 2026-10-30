@@ -46,6 +46,8 @@ export class AppModel extends Observable {
   computers: Computer[] = []
   stores = new Map<string, BotStore>()
   selection: BotRef | null = null
+  /** The chat whose message box takes the caret when it shows; set by `open`. */
+  composerFocus: BotRef | null = null
   refreshing = false
   lastError: string | null = null
   /** Codync Screen waits for the user to allow it in System Settings → Login Items. */
@@ -187,7 +189,21 @@ export class AppModel extends Observable {
 
   select(ref: BotRef | null) {
     this.selection = ref
+    if (!sameRef(ref, this.composerFocus)) this.composerFocus = null
     this.changed()
+  }
+
+  /** Selects a bot by clicking it: its chat's message box takes the caret (↑/↓ through the roster leaves it be). */
+  open(ref: BotRef) {
+    this.composerFocus = { ...ref }
+    this.select(ref)
+  }
+
+  /** Whether the chat `ref` was just opened by a click; answers true once. */
+  takeComposerFocus(ref: BotRef) {
+    if (!sameRef(this.composerFocus, ref)) return false
+    this.composerFocus = null
+    return true
   }
 
   get selectedStore() {

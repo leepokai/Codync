@@ -388,11 +388,7 @@ impl App {
                     Some(Click::Bot(id)) => {
                         self.overlays.clear();
                         self.select(&id);
-                        self.focus = Focus::Roster;
-                        if self.width == Width::Narrow {
-                            self.chat_page = true;
-                            self.focus = Focus::Chat;
-                        }
+                        self.start_typing();
                     }
                     Some(Click::Option { entry, option }) => self.answer(&entry, &option),
                     Some(Click::Filter(i)) => {

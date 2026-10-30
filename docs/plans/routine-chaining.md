@@ -80,7 +80,8 @@ The code lives in `routines/chain.rs`; `complete` gains one call.
 |---|---|
 | Not after itself | Saving refuses `routineId` equal to the routine's own id |
 | No loop | Saving walks the upstreams' own upstreams and refuses a loop back to the routine |
-| Depth | The event carries `depth` (upstream's depth + 1 when it was itself chained, else 1); past 5 nothing is queued |
+| Depth | The event carries `depth` (upstream's depth + 1 when it was itself chained, else 1), the number of routines before the one it queues; at 5 nothing is queued, so a chain runs at most 5 routines |
+| Host only | A webhook delivery with `source: "routine"` is refused, so a sender holding a routine's key can't fake an upstream finishing |
 | Busy | A routine already running or queued is skipped, not queued twice |
 | Unknown upstream | Saving refuses it; one deleted later just never fires and reads "a deleted routine" |
 

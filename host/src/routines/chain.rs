@@ -96,7 +96,8 @@ pub(super) fn emit(s: &mut State, i: usize, reply: Option<&str>) {
         })
         .collect();
     for j in next {
-        let skipped = if depth > MAX_DEPTH {
+        // `depth` counts the routines before the one it would queue, so that one is number `depth + 1`.
+        let skipped = if depth >= MAX_DEPTH {
             Some(format!("Did not run after \"{name}\": a chain runs at most {MAX_DEPTH} routines in a row"))
         } else if busy(s, &s.routines[j].id) {
             Some(format!("Did not run after \"{name}\": it was still running or queued"))

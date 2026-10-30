@@ -47,6 +47,15 @@ async fn a_finished_run_starts_the_routine_after_it_on_another_bot() {
     let repair = repair["routine"]["id"].as_str().unwrap().to_owned();
     let hooks = host.call("routineWebhook", json!({"botId": fixer, "id": repair})).await;
     assert!(hooks["key"].is_string(), "the local endpoint stays, though the cloud registers no hook for it");
+    let forged = json!({"source": "routine", "event": "succeeded", "routineId": check, "passed": "false"});
+    let refused = reqwest::Client::new()
+        .post(hooks["localUrl"].as_str().unwrap())
+        .bearer_auth(hooks["key"].as_str().unwrap())
+        .json(&forged)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), reqwest::StatusCode::BAD_REQUEST, "only the host reports a run finishing");
 
     host.call("runRoutine", json!({"botId": checker, "id": check})).await;
     let first = run(&host, &checker, &check, "succeeded").await;

@@ -83,7 +83,8 @@ every enabled routine whose trigger matches, with the trigger data
 `{source:"routine", event, routineId, routineName, botId, runId, passed, text, finishedAt,
 depth}` (`text` is the reply, up to 16 KB, empty on a pass). Only the final outcome counts:
 a failure that will be retried on its own, and a cancelled run, trigger nothing. These events
-never leave the host, so such a routine registers no webhook. Saving refuses an unknown
+never leave the host, so such a routine registers no webhook, and a webhook delivery
+claiming `source:"routine"` is refused (400) even with the right key. Saving refuses an unknown
 upstream and a loop (a routine running after itself, directly or further up); at run time a
 chain stops after 5 routines in a row, and a routine still running or queued is skipped. Both
 skips are left in the routine's `lastError`. The apps keep the trigger as is and show its

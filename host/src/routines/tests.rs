@@ -163,8 +163,13 @@ fn a_busy_or_paused_routine_is_skipped_and_a_long_chain_stops() {
     finish(&mut s, 1, Status::Succeeded, Some("done"));
     assert_eq!(s.runs.len(), 2, "next is already queued, paused doesn't run");
     assert!(s.routines[1].last_error.as_deref().is_some_and(|e| e.contains("still running")));
+    // The fourth routine in a row queues the fifth; the fifth queues nothing.
     s.runs.clear();
-    s.runs.push(new_run(&s.routines[0], json!({"source":"routine","depth":5}), None));
+    s.runs.push(new_run(&s.routines[0], json!({"source":"routine","depth":3}), None));
+    finish(&mut s, 0, Status::Succeeded, Some("done"));
+    assert_eq!(queued(&s, "next").len(), 1);
+    s.runs.clear();
+    s.runs.push(new_run(&s.routines[0], json!({"source":"routine","depth":4}), None));
     finish(&mut s, 0, Status::Succeeded, Some("done"));
     assert_eq!(queued(&s, "next"), Vec::<Value>::new());
     assert!(s.routines[1].last_error.as_deref().is_some_and(|e| e.contains("at most 5")));

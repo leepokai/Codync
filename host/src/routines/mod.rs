@@ -412,6 +412,10 @@ impl Routines {
         let Some(event) = hooks::event(headers, body)? else {
             return Ok(json!({"ping": true}));
         };
+        // Only the host reports a run finishing, so a sender holding the key can't start a chain.
+        if event["source"] == chain::SOURCE {
+            return Err(Refused::Invalid("routine events come only from this host".into()));
+        }
         if !r.enabled {
             return Err(Refused::Paused);
         }

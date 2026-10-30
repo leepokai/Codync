@@ -9,6 +9,7 @@ import { BotStore } from './bot-store'
 import { CloudModel } from './cloud'
 import { DeviceComputerOrder } from './computer-order'
 import { ComputerAccess } from './computer-access'
+import { ComposerFocus } from './composer-focus'
 
 /** A bot on a computer: bot ids are only unique per computer. */
 export interface BotRef {
@@ -46,6 +47,7 @@ export class AppModel extends Observable {
   computers: Computer[] = []
   stores = new Map<string, BotStore>()
   selection: BotRef | null = null
+  readonly composerFocus = new ComposerFocus()
   refreshing = false
   lastError: string | null = null
   /** Codync Screen waits for the user to allow it in System Settings → Login Items. */
@@ -187,7 +189,14 @@ export class AppModel extends Observable {
 
   select(ref: BotRef | null) {
     this.selection = ref
+    this.composerFocus.select(ref)
     this.changed()
+  }
+
+  /** Selects a bot by clicking it: its chat's message box takes the caret (↑/↓ through the roster leaves it be). */
+  open(ref: BotRef) {
+    this.composerFocus.open(ref)
+    this.select(ref)
   }
 
   get selectedStore() {

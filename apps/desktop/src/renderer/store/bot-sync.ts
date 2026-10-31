@@ -130,7 +130,7 @@ export class BotSync extends BotMirror {
       this.connection = next
       this.changed()
     }
-    if (recovering) for (const botId of new Set(this.readingViews.values())) if (!this.reads.held(botId)) this.markRead(botId)
+    if (recovering) for (const botId of new Set(this.readingViews.values())) this.markRead(botId)
   }
 
   /** Events (catch-up since `rev`, then live) for as long as the store lives. */
@@ -417,23 +417,24 @@ export class BotSync extends BotMirror {
   setReading(token: string, botId: string, active: boolean) {
     if (active) {
       this.readingViews.set(token, botId)
-      if (this.connection.kind === 'online' && !this.reads.held(botId)) this.markRead(botId)
+      if (this.connection.kind === 'online') this.markRead(botId)
     } else {
       this.readingViews.delete(token)
     }
   }
 
   private acknowledgeVisible(botId: string, entry?: Entry) {
-    if (this.connection.kind !== 'online' || this.reads.held(botId)) return
+    if (this.connection.kind !== 'online') return
     if (![...this.readingViews.values()].includes(botId) || (entry && !isChat(entry))) return
     this.markRead(botId)
   }
 
+  /** The chat on screen is read, unless it's held unread (`ReadMarks.held`): only opening it reads that. */
   markRead(botId: string) {
     void (async () => {
       if (!this.live) await sleep(INITIAL_GRACE)
       const client = this.live
-      if (!client) return
+      if (!client || this.reads.held(botId)) return
       try {
         await client.call('markRead', { botId })
       } catch {

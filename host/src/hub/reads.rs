@@ -26,9 +26,6 @@ impl Hub {
     /// The user puts a chat back to unread (the roster's "Mark as Unread"). Returns the bot as it is now, so a
     /// client can settle its pending hold even when there was nothing to mark and no event follows.
     pub fn mark_unread(&self, id: &str) -> Result<Value> {
-        if self.store.bot(id)?.is_none() {
-            bail!("unknown bot")
-        }
         let _g = self.emit_lock.locked();
         let marked = self.store.mark_unread(id)?.is_some();
         let Some(v) = self.bot_value(id) else { bail!("unknown bot") };
@@ -46,15 +43,20 @@ mod tests {
     use crate::store::{BotConfig, EntryKind, Lane, Store};
     use serde_json::json;
 
-    #[test]
-    fn mark_unread_answers_with_the_bot_even_when_nothing_could_be_unread() {
+    /// A hub with one agent bot, "a".
+    fn hub_with_bot() -> std::sync::Arc<Hub> {
         let dir = std::env::temp_dir().join(format!("codync-reads-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let cfg: BotConfig =
             serde_json::from_value(json!({"id": "a", "name": "Ann", "backend": "claude", "cwd": dir})).unwrap();
         store.save_bot(&cfg).unwrap();
-        let hub = Hub::new(store, "reads-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        Hub::new(store, "reads-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0)
+    }
+
+    #[test]
+    fn mark_unread_answers_with_the_bot_even_when_nothing_could_be_unread() {
+        let hub = hub_with_bot();
         let mut events = hub.events.subscribe();
 
         let empty = hub.mark_unread("a").unwrap();
@@ -72,13 +74,7 @@ mod tests {
 
     #[test]
     fn concurrent_reads_keep_what_mark_unread_restores() {
-        let dir = std::env::temp_dir().join(format!("codync-reads-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let cfg: BotConfig =
-            serde_json::from_value(json!({"id": "a", "name": "Ann", "backend": "claude", "cwd": dir})).unwrap();
-        store.save_bot(&cfg).unwrap();
-        let hub = Hub::new(store, "reads-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let hub = hub_with_bot();
         for turn in 1..=3 {
             hub.add_entry(&Lane::main("a"), EntryKind::Agent, turn, &json!({"text": "Done.", "final": true})).unwrap();
         }

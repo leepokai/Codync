@@ -23,7 +23,7 @@ import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 const LEAD_CHOICE_HOST = '2.33.0'
 
 /** The first host with `markUnread`. */
-const MARK_UNREAD_HOST = '2.33.2'
+const MARK_UNREAD_HOST = '2.34.0'
 
 export type Connection =
   | { kind: 'unpaired' }
@@ -159,9 +159,9 @@ export class BotMirror extends Observable {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
   }
 
-  /** A chat can go back to unread (`markUnread`): an older host refuses it. */
-  get hasMarkUnread() {
-    return this.hostVersion !== null && !isBelow(this.hostVersion.version, MARK_UNREAD_HOST)
+  /** The roster offers "Mark as Unread" for a chat with nothing unread; otherwise, or on an older host (it refuses `markUnread`), "Mark as Read". */
+  offersMarkUnread(bot: Bot) {
+    return bot.unread <= 0 && !bot.keptUnread && this.hostVersion !== null && !isBelow(this.hostVersion.version, MARK_UNREAD_HOST)
   }
 
   /** What the update notice offers while this computer is behind this app. */

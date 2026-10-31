@@ -86,6 +86,43 @@ import Testing
     #expect(await until { !store.heldUnread("b1") })
 }
 
+@MainActor @Test func holdTheHostAlreadyLetGoEndsWithTheNextBotEvent() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    await fake.setMarkUnreadAnswer(#"{"bot":{"id":"b1","name":"Bot","rev":5,"unread":1,"keptUnread":true}}"#)
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(botEvent("b1", name: "Bot", rev: 1))
+    #expect(await until { store.connection == .online })
+    store.markUnread("b1")
+    #expect(await until { await fake.calls.contains("markUnread") })
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(store.heldUnread("b1"))
+    // Its keptUnread event was missed and another device read it since.
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":6,"unread":0}}"#)
+    #expect(await until { !store.heldUnread("b1") })
+}
+
+@MainActor @Test func refusedMarkAsReadGivesTheHoldBack() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":1,"unread":1,"keptUnread":true}}"#)
+    #expect(await until { store.connection == .online && store.bots["b1"]?.keptUnread == true })
+    await fake.setReadRefusal(true)
+    store.markAllRead("b1")
+    #expect(store.bots["b1"]?.keptUnread == false)
+    #expect(await until { store.bots["b1"]?.keptUnread == true })
+    #expect(store.heldUnread("b1"))
+}
+
 @MainActor @Test func initialOfflineReportWaitsForReconnect() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

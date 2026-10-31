@@ -143,8 +143,14 @@ public final class BotStore {
 
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
-    /// Mark as unread sent but not yet showing as the bot's `keptUnread`: a bot event from before it mustn't drop the hold.
-    @ObservationIgnored var markingUnread: [String: Task<Bool, Never>] = [:]
+    /// Mark as unread sent but not yet seen in a bot event: one from before it mustn't drop the hold.
+    @ObservationIgnored var markingUnread: [String: PendingUnread] = [:]
+
+    /// A mark as unread on its way; `from` is the host's rev for it once it answered.
+    struct PendingUnread {
+        let sent: Task<Int64?, Never>
+        var from: Int64?
+    }
 
     var cacheStamp: String?
 
@@ -230,12 +236,14 @@ public final class BotStore {
 
     static let leadChoiceHost = "2.33.0"
 
-    /// From host 2.33.2 a chat can go back to unread (`markUnread`); an older host refuses it.
-    public var supportsMarkUnread: Bool {
-        hostVersion.map { !AppVersion.isBelow($0.version, Self.markUnreadHost) } ?? false
+    /// The roster offers "Mark as unread" for a chat with nothing unread; otherwise, or before host 2.34.0
+    /// (it refuses `markUnread`), "Mark as read".
+    public func offersMarkUnread(_ bot: Bot) -> Bool {
+        bot.unread == 0 && !bot.keptUnread
+            && hostVersion.map { !AppVersion.isBelow($0.version, Self.markUnreadHost) } ?? false
     }
 
-    static let markUnreadHost = "2.33.2"
+    static let markUnreadHost = "2.34.0"
 
     static let sectionsHost = "2.32.0"
 

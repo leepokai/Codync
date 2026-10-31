@@ -102,7 +102,7 @@ extension BotStore {
             bump(rev)
         case .bot(let received):
             let bot = putHostBot(received)
-            if bot.keptUnread { markingUnread[bot.id] = nil }
+            settleUnreadHold(bot)
             bump(bot.rev)
             onBotUpdated?(bot)
             onRosterChanged?()

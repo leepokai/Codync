@@ -77,6 +77,8 @@ export interface Bot {
   startedAt?: number | null
   workingChat?: string | null
   unread: number
+  /** Marked unread from the roster: it stays unread on screen until opened again or marked read. */
+  keptUnread: boolean
   lastMessage?: string | null
   lastAt: number
 }
@@ -132,6 +134,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     startedAt: raw.startedAt ?? null,
     workingChat: raw.workingChat ?? null,
     unread: raw.unread ?? 0,
+    keptUnread: raw.keptUnread ?? false,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
   }

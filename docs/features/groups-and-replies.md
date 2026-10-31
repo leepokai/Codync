@@ -41,7 +41,8 @@ quotes itself.
 | `stop` | `botId` | For a group: ends its room turn and stops members working in it. |
 | `react` | `entryId, emoji` | Toggles the user's reaction on a chat message (`data.reactions`, oldest first, at most 8). A reacted-to message never turns unread again. The bot isn't told, except in a group, where members see reactions on the room lines they're shown. Bots react themselves with the `chat` server's `react` ([bot reactions](chat-messages.md#bot-reactions)). |
 | `respondPermission` | `entryId, optionId?` | Routed to `data.author`, so cards in a group reach the bot that asked. |
-| `markRead` | `botId` | Reads the chat. A no-op when nothing there is unread, so clients call it whenever a chat is on screen. `send` marks its chat read. |
+| `markRead` | `botId` | Reads the chat and clears `keptUnread`. A no-op when nothing there is unread or kept unread, so clients call it whenever a chat is on screen. `send` marks its chat read. |
+| `markUnread` | `botId` | Puts the chat back to unread: what was unread before its last read, or else its latest message. A no-op when it has no messages. Returns `{bot}` as it is now, so a client drops its pending hold when `bot.keptUnread` is false. The bot shows `keptUnread` until the next `markRead`: clients don't read it while it's on screen, only when the user opens it again or marks it read. From host 2.34.0: clients offer "Mark as unread" only on a host that has it. |
 
 ## How a group answers (`host/src/chat/group.rs`, Grok Bot's design)
 

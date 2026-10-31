@@ -24,4 +24,18 @@ class ReadingTest {
         assertEquals(chats, readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 2))), chats))
         assertEquals(emptyList<String>(), readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 0))), chats))
     }
+
+    @Test fun `a bot the host holds unread is picked out of a batch`() {
+        val held = MirrorEvent.BotChanged(Bot("held", unread = 1, keptUnread = true))
+        assertEquals(listOf("held"), keptUnreadIn(listOf(held, MirrorEvent.BotChanged(Bot("bot", unread = 1)), message())))
+    }
+
+    @Test fun `mark as unread is offered for a read chat on a host that has it`() {
+        val host = AppState(hello = buildJsonObject { put("version", "2.34.0") })
+        assertEquals(true, host.offersMarkUnread(Bot("bot")))
+        assertEquals(false, host.offersMarkUnread(Bot("bot", unread = 1)))
+        assertEquals(false, host.offersMarkUnread(Bot("bot", keptUnread = true)))
+        assertEquals(false, AppState(hello = buildJsonObject { put("version", "2.33.5") }).offersMarkUnread(Bot("bot")))
+        assertEquals(false, AppState().offersMarkUnread(Bot("bot")))
+    }
 }

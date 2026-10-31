@@ -20,6 +20,8 @@ actor FakeRemote: RemoteTransport {
     private(set) var replyTos: [String?] = []
     private(set) var readReceipts: [Data] = []
     private var failReadReceipts = false
+    private var refuseReadReceipts = false
+    private var markUnreadAnswer = "{}"
     private(set) var readAttempts = 0
     private(set) var shutdownCount = 0
     private var isShutdown = false
@@ -45,6 +47,9 @@ actor FakeRemote: RemoteTransport {
     }
 
     func setReadFailure(_ fail: Bool) { failReadReceipts = fail }
+    /// `markRead` answers with an error from the host itself (not retried).
+    func setReadRefusal(_ refuse: Bool) { refuseReadReceipts = refuse }
+    func setMarkUnreadAnswer(_ answer: String) { markUnreadAnswer = answer }
     private(set) var calls: [String] = []
     private var failures: [String: Int] = [:]
     /// The next `count` calls of `method` fail as if the link dropped under them.
@@ -88,8 +93,11 @@ actor FakeRemote: RemoteTransport {
         case "markRead":
             readAttempts += 1
             if failReadReceipts { throw HostError.unreachable }
+            if refuseReadReceipts { throw HostError.http(400, "refused") }
             readReceipts.append(body)
             return Data("{}".utf8)
+        case "markUnread":
+            return Data(markUnreadAnswer.utf8)
         case "send":
             let b = (try JSONSerialization.jsonObject(with: body) as? [String: String]) ?? [:]
             sent.append(b["text"] ?? "")

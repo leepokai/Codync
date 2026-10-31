@@ -25,6 +25,7 @@
     "event:bot.bot.harnessMemoryShared": "bool",
     "event:bot.bot.hidden": "bool",
     "event:bot.bot.id": "string",
+    "event:bot.bot.keptUnread": "bool",
     "event:bot.bot.kind": "string",
     "event:bot.bot.lastAt": "number",
     "event:bot.bot.lastMessage": "string",

@@ -146,7 +146,8 @@ extension BotStore {
         markRead(botId)
     }
 
-    /// The chat on screen is read; the host ignores it when nothing there is unread.
+    /// The chat on screen is read; the host ignores it when nothing there is unread. A chat held unread
+    /// (`heldUnread`) is left alone: only opening it reads it.
     public func markRead(_ botId: String) {
         // Entry events may arrive before the roster's unread count. The host is
         // authoritative and treats a redundant scoped acknowledgement as a no-op.
@@ -156,7 +157,7 @@ extension BotStore {
             if live == nil {
                 try? await Task.sleep(for: Self.initialConnectionGrace)
             }
-            guard !Task.isCancelled, isActive, let client = live else { return }
+            guard !Task.isCancelled, isActive, !heldUnread(botId), let client = live else { return }
             do {
                 try await client.markRead(botId)
             } catch {
@@ -167,10 +168,57 @@ extension BotStore {
     }
 
     /// The roster's "Mark as read": everything in the chat.
+    /// Sent after a mark as unread still under way, so the host never gets them the other way round.
     public func markAllRead(_ botId: String) {
-        guard (bots[botId]?.unread ?? 0) > 0 else { return }
+        guard let bot = bots[botId], bot.unread > 0 || heldUnread(botId) else { return }
+        let marking = markingUnread.removeValue(forKey: botId)?.sent
         bots[botId]?.unread = 0
-        perform(replay: true) { try await $0.markRead(botId) }
+        bots[botId]?.keptUnread = false
+        // A refused read gives the hold back, so the chat isn't read on screen behind the error.
+        Task {
+            await attempt(replay: true, undo: { self.bots[botId]?.keptUnread = bot.keptUnread }) {
+                _ = await marking?.value
+                try await $0.markRead(botId)
+            }
+        }
+    }
+
+    /// The roster's "Mark as unread": the host counts what comes back unread; until then only the hold
+    /// shows, so nothing on screen reads it.
+    public func markUnread(_ botId: String) {
+        guard bots[botId] != nil else { return }
+        let sent = Task {
+            var from: Int64?
+            let accepted = await attempt(replay: true) { from = try await $0.markUnread(botId) }
+            return accepted ? from : nil
+        }
+        markingUnread[botId] = PendingUnread(sent: sent)
+        Task {
+            let from = await sent.value
+            guard markingUnread[botId]?.sent == sent else { return }
+            guard let from else {
+                markingUnread[botId] = nil
+                return
+            }
+            markingUnread[botId]?.from = from
+            if let bot = bots[botId] { settleUnreadHold(bot) }
+        }
+    }
+
+    /// A bot event: once it shows the host's hold, or is from after the mark, the host's state carries it.
+    func settleUnreadHold(_ bot: Bot) {
+        guard let pending = markingUnread[bot.id], bot.keptUnread || bot.rev >= pending.from ?? .max else { return }
+        markingUnread[bot.id] = nil
+    }
+
+    /// Whether automatic reads leave this chat alone.
+    func heldUnread(_ botId: String) -> Bool {
+        markingUnread[botId] != nil || bots[botId]?.keptUnread == true
+    }
+
+    /// The user opened the chat: one marked unread is read now.
+    func openConversation(_ botId: String) {
+        if heldUnread(botId) { markAllRead(botId) }
     }
 
     public func setPinned(_ bot: Bot, _ pinned: Bool) {

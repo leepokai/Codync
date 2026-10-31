@@ -16,10 +16,10 @@ private struct ReadingConversation: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onAppear { visible = true; update() }
+            .onAppear { visible = true; model.openConversation(botId); update() }
             .onDisappear { visible = false; update() }
             .onChange(of: scenePhase) { _, _ in update() }
-            .onChange(of: botId) { _, _ in update() }
+            .onChange(of: botId) { _, _ in model.openConversation(botId); update() }
             .onChange(of: model.connection) { _, _ in update() }
     }
 

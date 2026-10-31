@@ -115,3 +115,34 @@ async fn lead_role_opens_from_the_keyboard_and_badge_without_changing_selection(
     app.on_key(KeyEvent::from(KeyCode::Enter));
     assert!(app.overlays.is_empty());
 }
+
+#[tokio::test]
+async fn a_chat_marked_unread_stays_unread_while_watched_and_is_read_when_opened_again() {
+    let mut app = test_app();
+    let bot = |id: &str, unread: i64, kept: bool| {
+        Bot::parse(&serde_json::json!({"id": id, "unread": unread, "keptUnread": kept}))
+            .expect("a bot with an id parses")
+    };
+    app.bots.insert("a".into(), bot("a", 0, false));
+    app.bots.insert("b".into(), bot("b", 0, false));
+    app.selected = Some("a".into());
+    app.chat_page = true;
+    app.tick();
+
+    // Marked unread on another device while this chat is on screen.
+    app.bots.insert("a".into(), bot("a", 2, true));
+    app.tick();
+    assert!(!app.reading.contains("a"), "watching a chat marked unread leaves it unread");
+
+    app.select("b");
+    app.tick();
+    app.select("a");
+    app.tick();
+    assert!(app.reading.contains("a"), "opening it again reads it");
+
+    // Held with nothing left unread (its card was answered elsewhere): opening it still clears the hold.
+    app.bots.insert("b".into(), bot("b", 0, true));
+    app.select("b");
+    app.tick();
+    assert!(app.reading.contains("b"), "opening a held chat reads it");
+}

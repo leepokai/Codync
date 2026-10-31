@@ -4,6 +4,7 @@ import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
+import { ReadMarks } from './read-marks'
 import type { CallCue } from '@shared/calls'
 
 const REFRESH_TIMEOUT = 20_000
@@ -47,6 +48,7 @@ export class BotSync extends BotMirror {
   private requestedSince = 0
   private floors = new Map<string, number>()
   private readingViews = new Map<string, string>()
+  protected readonly reads = new ReadMarks(() => this.bots, () => this.changed(), (op, undo) => this.perform(op, true, undo))
 
   // MARK: lifecycle
 
@@ -237,6 +239,7 @@ export class BotSync extends BotMirror {
         break
       case 'bot':
         this.putHostBot(event.bot)
+        this.reads.received(event.bot)
         this.bump(event.bot.rev)
         this.onRosterChanged?.()
         if (event.bot.unread > 0) this.acknowledgeVisible(event.bot.id)
@@ -426,11 +429,12 @@ export class BotSync extends BotMirror {
     this.markRead(botId)
   }
 
+  /** The chat on screen is read, unless it's held unread (`ReadMarks.held`): only opening it reads that. */
   markRead(botId: string) {
     void (async () => {
       if (!this.live) await sleep(INITIAL_GRACE)
       const client = this.live
-      if (!client) return
+      if (!client || this.reads.held(botId)) return
       try {
         await client.call('markRead', { botId })
       } catch {

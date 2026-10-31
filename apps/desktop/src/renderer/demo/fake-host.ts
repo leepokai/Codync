@@ -190,10 +190,20 @@ export class FakeHost {
         void this.converse(chat, str('text'), replyTo?.author)
         return { entry }
       }
+      case 'markUnread': {
+        const bot = this.bots.get(str('botId'))
+        if (bot && bot.unread === 0) {
+          bot.unread = 1
+          bot.keptUnread = true
+          this.emitBot(bot)
+        }
+        return { bot }
+      }
       case 'markRead': {
         const bot = this.bots.get(str('botId'))
-        if (bot && bot.unread > 0) {
+        if (bot && (bot.unread > 0 || bot.keptUnread)) {
           bot.unread = 0
+          bot.keptUnread = false
           this.emitBot(bot)
         }
         return {}

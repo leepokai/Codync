@@ -202,6 +202,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveArtifacts(batch)
             receiveNetwork(batch)
             hearCalls(batch)
+            markingUnread -= keptUnreadIn(batch).toSet()
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
         }

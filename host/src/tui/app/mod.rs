@@ -129,6 +129,8 @@ pub struct App {
     pub shell: Option<Shell>,
     /// Chats marked read since their bot's unread count last changed.
     reading: HashSet<String>,
+    /// The chat on screen at the last tick: one that appears there has just been opened.
+    shown_chat: Option<String>,
     history_busy: HashSet<String>,
     /// Permission cards whose answer is on its way, with the chosen option.
     pub answering: HashMap<String, String>,
@@ -202,6 +204,7 @@ impl App {
             fast_mode: HashSet::new(),
             shell: None,
             reading: HashSet::new(),
+            shown_chat: None,
             history_busy: HashSet::new(),
             answering: HashMap::new(),
             history_done: HashSet::new(),
@@ -369,10 +372,15 @@ impl App {
         if self.hint.as_ref().is_some_and(|(_, until)| *until <= now) {
             self.hint = None;
         }
+        // A chat marked unread stays unread while it's watched, and is read once it's opened again.
+        let shown = self.chat_visible().then(|| self.selected.clone()).flatten();
+        let opened = shown.is_some() && shown != self.shown_chat;
+        self.shown_chat = shown;
         if self.chat_visible()
             && self.term_focused
             && let Some(b) = self.bot()
-            && b.unread > 0
+            && (b.unread > 0 || (opened && b.kept_unread))
+            && (opened || !b.kept_unread)
         {
             let id = b.id.clone();
             if self.reading.insert(id.clone()) {

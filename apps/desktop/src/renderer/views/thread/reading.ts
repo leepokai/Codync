@@ -5,6 +5,7 @@ import type { BotStore } from '../../store/bot-store'
 export function useReading(store: BotStore, botId: string) {
   const token = useId()
   const connected = store.connection.kind
+  useEffect(() => store.openChat(botId), [store, botId])
   useEffect(() => {
     const update = () => store.setReading(token, botId, document.visibilityState === 'visible' && document.hasFocus())
     update()

@@ -29,6 +29,7 @@ mod tui;
 mod update;
 mod usage;
 mod voice;
+mod workflows;
 
 use agent::backends;
 use local_api::local_call;
@@ -230,6 +231,13 @@ enum McpServer {
     },
     /// Invite the user to connect services securely.
     Connectors {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Workflows on this computer, as a script a bot can read and rewrite.
+    Workflows {
         #[arg(long)]
         bot: String,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -485,6 +493,7 @@ async fn main() -> Result<()> {
         }
         Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port, mcp::Server::Computer).await,
         Sub::Mcp { server: McpServer::Routines { bot, port } } => mcp::serve(bot, port, mcp::Server::Routines).await,
+        Sub::Mcp { server: McpServer::Workflows { bot, port } } => mcp::serve(bot, port, mcp::Server::Workflows).await,
         Sub::Mcp { server: McpServer::Chat { bot, port } } => mcp::serve(bot, port, mcp::Server::Chat).await,
         Sub::Mcp { server: McpServer::Team { bot, port } } => mcp::serve(bot, port, mcp::Server::Team).await,
         Sub::Mcp { server: McpServer::Manage { bot, port } } => mcp::serve(bot, port, mcp::Server::Manage).await,

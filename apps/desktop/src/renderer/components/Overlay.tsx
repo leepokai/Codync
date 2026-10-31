@@ -33,6 +33,27 @@ export function usePresence(open: boolean, exitMs = 300, animateOnMount = true) 
   return { mounted, shown }
 }
 
+/**
+ * A sheet is portaled onto `document.body`, so it is not inside the title-bar drag strips.
+ * Electron treats those strips as window drags and ignores whatever is painted on top.
+ * While a sheet, dialog, or menu is open, every drag strip stands down.
+ */
+let overlayDepth = 0
+export function useSuspendWindowDrag(active: boolean) {
+  useLayoutEffect(() => {
+    if (!active) return
+    overlayDepth += 1
+    document.documentElement.classList.add('overlay-open')
+    return () => {
+      overlayDepth -= 1
+      if (overlayDepth <= 0) {
+        overlayDepth = 0
+        document.documentElement.classList.remove('overlay-open')
+      }
+    }
+  }, [active])
+}
+
 /** Closes the modal the view is in (kit's `\.dismissModal`). */
 export const DismissContext = createContext<() => void>(() => {})
 export const useDismiss = () => useContext(DismissContext)
@@ -114,6 +135,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
   children: ReactNode
 }) {
   const { mounted, shown } = usePresence(open)
+  useSuspendWindowDrag(mounted)
   const last = useRef(children)
   const layer = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -143,17 +165,20 @@ export interface DialogAction {
 }
 
 /** A centered card over a dimmed screen with the actions and Cancel (`.codyncDialog`). */
-export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClose, children }: {
+export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClose, cardClassName, children }: {
   open: boolean
   title: string
   message?: string | null
   actions: DialogAction[]
   cancel?: string | null
   onClose: () => void
+  /** Extra class on the card, for a dialog that needs a different size. */
+  cardClassName?: string
   /** A field between the text and the buttons (a name to type); `data-autofocus` on it takes the focus. */
   children?: ReactNode
 }) {
   const { mounted, shown } = usePresence(open, 120)
+  useSuspendWindowDrag(mounted)
   const tr = useTr()
   const last = useRef({ title, message, actions, children })
   const layer = useRef<HTMLDivElement>(null)
@@ -166,7 +191,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
   return createPortal(
     <div ref={layer} className={`dialog ${shown ? 'shown' : ''}`} role="alertdialog" aria-modal aria-labelledby={`${id}-title`} aria-describedby={shownContent.message ? `${id}-message` : undefined}>
       <div className="dialog-dim" onClick={() => cancel !== null && onClose()} />
-      <div className="dialog-card" data-modal-card tabIndex={-1}>
+      <div className={`dialog-card${cardClassName ? ` ${cardClassName}` : ''}`} data-modal-card tabIndex={-1}>
         <div className="dialog-text">
           {/* Callers translate the sentence, then insert names. A second pass would also translate a device named "Done". */}
           <Text as="h2" id={`${id}-title`} size="title3" weight="semibold">{shownContent.title}</Text>
@@ -201,8 +226,9 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
 /** One row in a Codync menu: an action, or a choice when `selected` is set. */
 export interface MenuItem {
   title: string
-  /** Secondary context below the main label. */
+  /** Secondary context below the main label, or beside it when `detailBeside` is set. */
   detail?: string
+  detailBeside?: boolean
   icon?: string
   /** A picture in the icon's place (an agent's logo). */
   leading?: ReactNode
@@ -290,7 +316,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
                 {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
               </span>
             ) : null}
-            <span className={`menu-title${item.detail ? ' with-detail' : ''}`}>
+            <span className={`menu-title${item.detail ? ' with-detail' : ''}${item.detailBeside ? ' beside' : ''}`}>
               <span>{item.verbatim ? item.title : tr(item.title)}</span>
               {item.detail && <span className="menu-detail">{tr(item.detail)}</span>}
             </span>
@@ -331,18 +357,21 @@ export function anchorPlacement(rect: DOMRect) {
  * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
  * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
  */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }: {
+export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, children, className }: {
   open: boolean
   onClose: () => void
   anchor?: RefObject<HTMLElement | null>
   point?: { x: number; y: number } | null
-  items: () => MenuItem[]
+  items?: () => MenuItem[]
   reactions?: ReactionPick
+  children?: ReactNode
+  className?: string
 }) {
   const { mounted, shown } = usePresence(open, 120)
+  useSuspendWindowDrag(mounted)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const frozen = useRef<MenuItem[]>([])
-  if (open) frozen.current = items()
+  if (open && items) frozen.current = items()
   useLayoutEffect(() => {
     if (!open) return
     if (point) setRect(new DOMRect(point.x, point.y, 0, 0))
@@ -353,8 +382,8 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
     <div className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
-      <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
+      <div className={`anchored-panel ${className ?? ''}`} style={{ ...style, maxWidth: width }}>
+        {children ?? <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />}
       </div>
     </div>,
     document.body,
@@ -415,17 +444,21 @@ export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTit
 }
 
 /** Plain icon button that lights up on hover and press. Icon-only, labelled for VoiceOver. */
-export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen }: {
+export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, iconSize, disabled, className, buttonRef, menuOpen, systemTip = true }: {
   title: string
   icon: string
   onClick?: (e: React.MouseEvent) => void
   selected?: boolean
   size?: number
+  /** Point size of the symbol. Defaults to half the button. */
+  iconSize?: number
   disabled?: boolean
   className?: string
   buttonRef?: RefObject<HTMLButtonElement | null>
   /** Set when the button opens a menu: whether that menu is open. */
   menuOpen?: boolean
+  /** Set when a parent draws the hover tip, so the system tooltip does not appear as well. */
+  systemTip?: boolean
 }) {
   const tr = useTr()
   const label = tr(title)
@@ -434,14 +467,14 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
       ref={buttonRef}
       className={`icon-button ${selected ? 'selected' : ''} ${className ?? ''}`}
       style={{ width: size, height: size, borderRadius: size * 0.28 }}
-      title={label}
+      title={systemTip ? label : undefined}
       aria-label={label}
       aria-haspopup={menuOpen === undefined ? undefined : 'menu'}
       aria-expanded={menuOpen}
       disabled={disabled}
       onClick={onClick}
     >
-      <Icon name={icon} size={size / 2} weight="medium" />
+      <Icon name={icon} size={iconSize ?? size / 2} weight="medium" />
     </button>
   )
 }

@@ -90,6 +90,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         turn_session: None,
         active_group: None,
         active_routine: None,
+        active_workflow: None,
         routine_deadline: None,
         routine_timed_out: false,
         routine_completion: None,
@@ -245,6 +246,7 @@ struct Actor {
     turn_session: Option<String>,
     active_group: Option<GroupTurn>,
     active_routine: Option<String>,
+    active_workflow: Option<String>,
     routine_deadline: Option<Instant>,
     routine_timed_out: bool,
     routine_completion: Option<RoutineCompletion>,
@@ -370,7 +372,7 @@ impl Actor {
                         self.set_inflight(false);
                         self.next_in_queue(&done_tx).await;
                     }
-                    if self.active_routine.is_some() && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
+                    if (self.active_routine.is_some() || self.active_workflow.is_some()) && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
                         self.stop_requested = true;
                         if let Some(c) = self.conn.take() { c.acp.kill().await; }

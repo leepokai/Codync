@@ -132,7 +132,9 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
             // Artifacts and the network live in memory (`AppStore.receiveArtifacts`, `receiveNetwork`).
-            MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged, is MirrorEvent.Call, is MirrorEvent.Network -> Unit
+            // Workflow events carry no rev. Applying one here would not move the cursor, and must not.
+            MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged, is MirrorEvent.Call, is MirrorEvent.Network,
+            is MirrorEvent.Workflow -> Unit
         }
     }
 

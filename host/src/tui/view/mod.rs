@@ -30,6 +30,7 @@ mod time;
 mod trace;
 mod transcript;
 mod usage;
+mod workflows;
 
 pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u};
 pub(super) use chat::composer_lines;

@@ -47,12 +47,13 @@ private enum class AppTab { Bots, State, Settings }
     var tab by rememberSaveable { mutableStateOf(AppTab.Bots) }
     // The open chat, on whichever computer it lives (one at a time).
     val open = states.firstOrNull { it.selectedBot != null }
-    // Opening a bot (notification, widget, link) always lands on the Bots tab.
-    if (open != null && tab != AppTab.Bots) tab = AppTab.Bots
+    val workflow = states.firstOrNull { it.workflow != null }
+    // Opening a bot or a workflow always lands on the Bots tab.
+    if ((open != null || workflow != null) && tab != AppTab.Bots) tab = AppTab.Bots
     // Leaving a chat whose answer was read may invite a rating, once the roster has stayed clear (iOS `RootView`).
     val context = LocalContext.current
     ReviewOnReturn(open?.let { "${app.contextId}/${it.computer.id}/${it.selectedBot}" })
-    ReviewInvitationEffect(covered || tab != AppTab.Bots || open != null || states.isEmpty() || states.any { state ->
+    ReviewInvitationEffect(covered || tab != AppTab.Bots || open != null || workflow != null || states.isEmpty() || states.any { state ->
         !state.settledForReview || state.bots.any { it.status in listOf("working", "needsInput", "error") }
     })
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(when (tab) {
@@ -65,7 +66,7 @@ private enum class AppTab { Bots, State, Settings }
     GlassStage(Modifier.fillMaxSize(), chrome = {
         // Access requests still waiting after their sheet closed: the code to check, until the computer answers.
         val tickets = app.access.values.sortedBy { it.requestId }
-        AnimatedVisibility(tickets.isNotEmpty() && open == null, Modifier.align(Alignment.BottomCenter).padding(bottom = barSpace - 16.dp),
+        AnimatedVisibility(tickets.isNotEmpty() && open == null && workflow == null, Modifier.align(Alignment.BottomCenter).padding(bottom = barSpace - 16.dp),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it }, exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (ticket in tickets) key(ticket.computerId) {
@@ -75,7 +76,7 @@ private enum class AppTab { Bots, State, Settings }
                 }
             }
         }
-        AnimatedVisibility(open == null, Modifier.align(Alignment.BottomCenter),
+        AnimatedVisibility(open == null && workflow == null, Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it / 2 },
             exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it / 2 }) {
             Box(contentAlignment = Alignment.BottomCenter) {
@@ -93,11 +94,23 @@ private enum class AppTab { Bots, State, Settings }
             // A chat's entry names its computer and bot; it keeps its state while sliding away.
             var shown by remember { mutableStateOf<AppState?>(null) }
             if (open != null) shown = open
-            NavStack(listOfNotNull("roster", open?.let { "${it.computer.id}/${it.selectedBot}" } ?: REMOVED_CHAT.takeIf { app.removedChat }),
-                key = { it }, pop = { accounts.openBot(null) }) { entry ->
-                when (entry) {
-                    "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace)
-                    REMOVED_CHAT -> RemovedComputer { accounts.openBot(null) }
+            NavStack(listOfNotNull(
+                "roster",
+                workflow?.let { "workflow:${it.computer.id}" },
+                open?.let { "${it.computer.id}/${it.selectedBot}" } ?: REMOVED_CHAT.takeIf { app.removedChat },
+            ), key = { it }, pop = {
+                if (open != null || app.removedChat) accounts.openBot(null)
+                else workflow?.let { accounts.store(it.computer.id)?.closeWorkflows() }
+            }) { entry ->
+                when {
+                    entry == "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace)
+                    entry == REMOVED_CHAT -> RemovedComputer { accounts.openBot(null) }
+                    entry.startsWith("workflow:") -> {
+                        val id = entry.removePrefix("workflow:")
+                        val current = states.firstOrNull { it.computer.id == id }
+                        val store = accounts.store(id)
+                        if (current != null && store != null) WorkflowsView(current, store)
+                    }
                     else -> (states.firstOrNull { "${it.computer.id}/${it.selectedBot}" == entry } ?: shown)?.let { chat(it) }
                 }
             }

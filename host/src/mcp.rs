@@ -30,6 +30,7 @@ pub enum Server {
     Chat,
     Connectors,
     Routines,
+    Workflows,
     Computer,
     Team,
     Manage,
@@ -70,6 +71,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         // Listed by the host: they depend on this computer's driver.
         Server::Computer => ("codync-computer", INSTRUCTIONS, Value::Null),
         Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS, crate::routines::tools()),
+        Server::Workflows => ("codync-workflows", crate::workflows::INSTRUCTIONS, crate::workflows::tool_list()),
         Server::Chat => {
             let mut tools = crate::chat::outbox::tools();
             if let Some(list) = tools.as_array_mut() {
@@ -161,6 +163,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
     let (method, timeout) = match server {
         Server::Connectors => ("connectorCall", Duration::from_secs(90)),
         Server::Routines => ("routineCall", Duration::from_secs(30)),
+        Server::Workflows => ("workflowCall", Duration::from_secs(30)),
         Server::Computer => ("computerCall", Duration::from_mins(1)),
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
         Server::Team => ("teamCall", Duration::from_secs(30)),
@@ -190,6 +193,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
                         | Server::Manage
                         | Server::Memory
                         | Server::Routines
+                        | Server::Workflows
                         | Server::Network
                         | Server::Connectors => {
                             json!({"content": [{"type": "text", "text": v.to_string()}]})

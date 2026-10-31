@@ -91,6 +91,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
     var naming by remember { mutableStateOf<SectionNaming?>(null) }
     val context = LocalContext.current
     var folded by remember { mutableStateOf(FoldedSections.load(context)) }
+    var pins by remember { mutableStateOf(0) }
     var hidden by remember { mutableStateOf(RosterComputers.hidden(context)) }
     var collapsed by remember { mutableStateOf(RosterComputers.folded(context)) }
     val listState = rememberLazyListState()
@@ -136,6 +137,11 @@ private class ComputerRoster(private val context: Context, val key: String) {
                 ComputerFilterHeader(states, hidden, { hidden = it; RosterComputers.setHidden(context, it) },
                     { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage)
             }
+            // One computer has no heading, so the same button lives in the bar (iOS `BotListView`).
+            val solo = shown.singleOrNull()
+            if (solo != null && solo.actualConnection is LinkState.Ready && solo.offersWorkflows) {
+                IconButton("Workflows", "flowchart") { accounts.store(solo.computer.id)?.openWorkflows() }
+            }
             // A new bot starts on the first computer online (its dialog can move it); a group chat gathers one computer's bots.
             NewMenuButton(enabled = available.isNotEmpty(), groupEnabled = online.isNotEmpty(),
                 { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } },
@@ -166,6 +172,15 @@ private class ComputerRoster(private val context: Context, val key: String) {
                         extensions = { extensions(id) })
                 }
                 if (grouped && (movingComputer || id in collapsed)) continue
+                if (state.offersWorkflows) {
+                    val pinned = pinnedWorkflows(context, state).let { if (pins < 0) emptyList() else it }
+                    items(pinned, key = { "workflow:$id:${it.id}" }) { workflow ->
+                        PinnedWorkflowRow(workflow, pinned = true, onOpen = { store.showWorkflow(workflow.id) }) {
+                            WorkflowPins.toggle(context, id, workflow.id)
+                            pins++
+                        }
+                    }
+                }
                 botLines(state, store, roster, folded, grouped, RosterActions(toggleSection,
                     rename = { name -> naming = SectionNaming("Rename section", name) { renameSection(roster, store, name, it) } },
                     remove = { name -> renameSection(roster, store, name, null) },

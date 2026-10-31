@@ -12,6 +12,7 @@ mod http;
 mod marketplace;
 mod network;
 mod remote;
+mod workflows;
 
 pub use events::{events_stream, term_events};
 pub use http::router;
@@ -102,6 +103,10 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         ControlFlow::Continue(b) => b,
     };
     let b = match network::call(hub, method, b).await? {
+        ControlFlow::Break(v) => return Ok(v),
+        ControlFlow::Continue(b) => b,
+    };
+    let b = match workflows::call(hub, method, b)? {
         ControlFlow::Break(v) => return Ok(v),
         ControlFlow::Continue(b) => b,
     };

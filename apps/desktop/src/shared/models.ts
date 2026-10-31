@@ -487,6 +487,8 @@ export interface Hello {
   cloud?: string | null
   /** Product analytics on this computer: on unless its owner turned it off. */
   analytics?: boolean
+  /** The host can store workflows. Missing means it cannot. */
+  workflows?: boolean
 }
 
 export interface PairingInfo {

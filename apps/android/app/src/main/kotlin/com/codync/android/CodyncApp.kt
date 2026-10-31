@@ -123,7 +123,10 @@ private data class Editing<T>(val computerId: String, val draft: T)
         }
         CodyncSheet(showComputers && !app.loading, { showComputers = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Computers))
-            ComputersView(app, states, accounts, { showPairing = true }, { access = it }, openMarketplace)
+            ComputersView(app, states, accounts, { showPairing = true }, { access = it }, openMarketplace) { id ->
+                showComputers = false
+                accounts.store(id)?.openWorkflows()
+            }
         }
         CodyncSheet(access, { access = null }) { AccessRequestView(app, accounts, it) }
         CodyncSheet(showPairing && !app.loading, { showPairing = false }) {

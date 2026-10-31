@@ -56,6 +56,8 @@ export function stepTextSize(size: number, up: boolean) {
 export const prefs = {
   textSize: pref('conversationFontSize', DEFAULT_TEXT_SIZE),
   sidebarCompact: pref('sidebarCompact', false),
+  /** The bot list stays closed until the agents icon on the rail is clicked. */
+  agentsOpen: pref('agentsSidebarOpen', false),
   sidebarWidth: pref('desktopSidebarWidth', 266),
   detailsPanelWidth: pref('detailsPanelWidth', 400),
   hiddenComputers: pref('hiddenComputers', ''),

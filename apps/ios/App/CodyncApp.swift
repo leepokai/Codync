@@ -113,6 +113,13 @@ struct CodyncApp: App {
 
 enum AppTab: Hashable { case bots, state, settings }
 
+/// A workflow a notification asked to open. The list pushes it after the chat is cleared.
+struct WorkflowDeepLink: Equatable {
+    var computerId: ComputerID
+    var workflowId: String
+    var runId: String?
+}
+
 /// One `AccountStore` per account context: switching accounts retires the old one so
 /// in-flight work can't land on another user's screen or storage.
 @MainActor
@@ -132,6 +139,8 @@ final class AppStore {
     var showUsage = false
     /// The computer whose marketplace is open.
     var marketplace: ComputerID?
+    /// A notification that should open a workflow once the chat is out of the way.
+    var pendingWorkflow: WorkflowDeepLink?
 
     private init() {
         let session = AccountSession()
@@ -173,6 +182,7 @@ final class AppStore {
         tab = .bots
         showComputers = false
         marketplace = nil
+        pendingWorkflow = nil
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         BotsWidgetFeed.reset()
         WidgetCenter.shared.reloadAllTimelines()
@@ -207,6 +217,7 @@ final class AppStore {
         showComputers = false
         account.showSwitcher = false
         marketplace = nil
+        pendingWorkflow = nil
         tab = .bots
         contextID = storage.id
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
@@ -372,16 +383,26 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let ctx = info["ctx"] as? String
         let computerId = info["computerId"] as? String
         let botId = info["botId"] as? String
+        let workflowId = info["workflowId"] as? String
+        let runId = info["runId"] as? String
         let kind = AnalyticsEvent.NotificationKind(category: response.notification.request.content.categoryIdentifier)
         // UIKit saves application state from this completion. The async delegate
         // bridge can complete off the main thread even after MainActor.run.
         Task { @MainActor in
             defer { completionHandler() }
             if let kind { Analytics.shared.capture(.notificationOpened(kind)) }
-            guard let ctx, let computerId, let botId else { return }
+            guard let ctx, let computerId else { return }
             // Only open it in the account it was sent to, on a computer that account still has.
             let accounts = AppStore.shared.accounts
             guard ctx == accounts.storage.id, accounts.store(for: computerId) != nil else { return }
+            if let workflowId, !workflowId.isEmpty {
+                AppStore.shared.tab = .bots
+                accounts.selection = nil
+                let run = runId?.isEmpty == false ? runId : nil
+                AppStore.shared.pendingWorkflow = WorkflowDeepLink(computerId: computerId, workflowId: workflowId, runId: run)
+                return
+            }
+            guard let botId else { return }
             AppStore.shared.tab = .bots
             accounts.selection = BotReference(accountId: accounts.accountId, computerId: computerId, botId: botId)
         }

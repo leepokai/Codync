@@ -32,7 +32,7 @@ public enum WorkflowCopy {
         case .prompt:
             firstLine(node.string("text")) ?? "Prompt"
         case .agent:
-            namedBot(node.string("botId"), botName: botName) ?? "Assistant"
+            namedBot(node.string("botId"), botName: botName) ?? "Agent"
         case .condition:
             "Condition"
         case .approval:

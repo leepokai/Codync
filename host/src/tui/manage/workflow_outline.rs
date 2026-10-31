@@ -296,7 +296,7 @@ fn bot_label(app: &App, id: Option<&str>) -> String {
 
 pub(in crate::tui) fn kind_name(kind: NodeKind) -> &'static str {
     match kind {
-        NodeKind::Agent => "Assistant",
+        NodeKind::Agent => "Agent",
         NodeKind::Condition => "Condition",
         NodeKind::Approval => "Approval",
         NodeKind::Prompt => "Prompt",

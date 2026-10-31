@@ -193,7 +193,7 @@ import kotlinx.serialization.json.put
 
 private fun addMenu(after: String, outline: Outline, onAdd: (String, NodeKind) -> Unit): List<MenuItem> {
     val kinds = buildList {
-        add(NodeKind.Agent to "Assistant")
+        add(NodeKind.Agent to "Agent")
         if (outline.condition == null && (after == outline.trigger || after in outline.main)) add(NodeKind.Condition to "Condition")
         add(NodeKind.Approval to "Approval")
         add(NodeKind.Prompt to "Prompt")

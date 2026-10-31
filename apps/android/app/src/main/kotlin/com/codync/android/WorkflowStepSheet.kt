@@ -136,7 +136,7 @@ import kotlinx.coroutines.launch
 @Composable private fun AgentFields(state: AppState, node: WorkflowNode, onChange: (WorkflowNode) -> Unit) {
     val selected = node.fields.field("botId").orEmpty()
     val options = listOf("" to "Choose a bot") + state.workflowAgents().map { it.id to it.name }
-    Field("Assistant") { ChoicePicker(selected, options, { onChange(node.copy(fields = node.fields.withField("botId", it.ifBlank { null }))) }, label = "Assistant") }
+    Field("Agent") { ChoicePicker(selected, options, { onChange(node.copy(fields = node.fields.withField("botId", it.ifBlank { null }))) }, label = "Agent") }
     state.workflowModel(selected)?.let { Text(it, style = Type.footnote, color = Palette.secondary) }
     Field("Instructions") {
         FieldBox(node.fields.field("task").orEmpty(), { onChange(node.copy(fields = node.fields.withField("task", it.ifBlank { null }))) }, "What this step should do", 3, 8, fill = Palette.bubbleUser)
@@ -163,7 +163,7 @@ import kotlinx.coroutines.launch
     if (target == "chat") {
         val selected = node.fields.field("botId").orEmpty()
         val options = listOf("" to "Choose a bot") + state.workflowAgents().map { it.id to it.name }
-        Field("Assistant") { ChoicePicker(selected, options, { onChange(node.copy(fields = node.fields.withField("botId", it.ifBlank { null }))) }, label = "Assistant") }
+        Field("Agent") { ChoicePicker(selected, options, { onChange(node.copy(fields = node.fields.withField("botId", it.ifBlank { null }))) }, label = "Agent") }
     }
 }
 

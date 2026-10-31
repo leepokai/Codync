@@ -9,6 +9,7 @@ import {
   loopEdges,
   makeNode,
   nodeTitle,
+  splitJoinedInputs,
   outlineOf,
   ports,
   readingOrder,
@@ -99,7 +100,10 @@ test('an unknown kind is read only and a bad line is refused', () => {
 
 test('titles and a copied workflow get new ids', () => {
   assert.equal(nodeTitle(node('a', 'agent', { botId: 'b' }), (id) => (id === 'b' ? 'Ada' : undefined)), 'Ada')
-  assert.equal(nodeTitle(node('a', 'agent')), 'Assistant')
+  assert.equal(nodeTitle(node('a', 'agent')), 'Agent')
+  assert.equal(splitJoinedInputs('just one'), null)
+  const joined = splitJoinedInputs('Input 1:\nfirst\n\nInput 2:\nsecond')
+  assert.deepEqual(joined, [{ label: 'Input 1', body: 'first' }, { label: 'Input 2', body: 'second' }])
   assert.equal(nodeTitle(node('p', 'prompt', { text: '' })), 'Prompt')
   assert.equal(copyTitle('Weekly'), 'Copy of Weekly')
   const original = graph([makeNode('trigger', { x: 80, y: 80 })])

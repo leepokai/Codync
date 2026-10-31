@@ -73,7 +73,7 @@ struct WorkflowStepSheet: View {
         case .prompt:
             Field("Prompt") { textField("text", axis: .vertical) }
         case .agent:
-            Field("Assistant") { botPicker }
+            Field("Agent") { botPicker }
             Field("Task") { textField("task", axis: .vertical) }
         case .condition:
             Field("Condition") {

@@ -80,7 +80,7 @@ class WorkflowTest {
         assertEquals(graph.strokes, again.strokes)
         assertEquals("yes", again.edges.single().branch)
         assertEquals("text", again.edges.single().type)
-        assertEquals("Assistant", graph.nodes[1].stepTitle())
+        assertEquals("Agent", graph.nodes[1].stepTitle())
         assertEquals("Choose a bot", graph.nodes[1].stepSummary())
     }
 

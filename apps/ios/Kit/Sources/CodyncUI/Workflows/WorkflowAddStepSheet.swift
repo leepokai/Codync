@@ -8,7 +8,7 @@ struct WorkflowAddStepSheet: View {
     var add: (WorkflowNodeKind) -> Void
 
     private let kinds: [(WorkflowNodeKind, String)] = [
-        (.agent, "Assistant"), (.condition, "Condition"), (.approval, "Approval"), (.prompt, "Prompt"), (.output, "Output"),
+        (.agent, "Agent"), (.condition, "Condition"), (.approval, "Approval"), (.prompt, "Prompt"), (.output, "Output"),
     ]
 
     var body: some View {

@@ -211,6 +211,15 @@
   white-space: pre-wrap;
 }
 
+.workflow-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.workflow-outputs .workflow-done { margin-top: 0; }
+.workflow-output-copy { flex: 1; min-width: 0; }
+
 .workflow-viewport.chrome-hidden::before {
   content: '';
   position: absolute;
@@ -303,13 +312,110 @@
 }
 
 .workflow-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   max-width: 280px;
-  padding: 4px 8px;
-  border-radius: var(--radius-s);
+  min-width: 0;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: inherit;
   font: inherit;
-  font-weight: 600;
+  transition: background-color var(--hover);
+}
+
+.workflow-title:hover,
+.workflow-title[aria-expanded="true"] {
+  background: rgba(var(--text-rgb), 0.08);
+}
+
+.workflow-title .truncate {
+  min-width: 0;
+}
+
+.anchored-panel.workflow-title-panel {
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workflow-title-menu {
+  min-width: 248px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bubble-agent);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
+}
+
+.workflow-menu-label {
+  padding: 6px 10px 4px;
+  font-size: var(--text-caption);
+  color: var(--secondary);
+}
+
+.workflow-title-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.workflow-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(var(--text-rgb), 0.28);
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--text);
+}
+
+.workflow-mark.on {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--background);
+}
+
+.workflow-mark.add {
+  border-style: dashed;
+}
+
+.workflow-version-anchor {
+  position: relative;
+}
+
+.workflow-version-pop {
+  position: absolute;
+  left: 100%;
+  top: -6px;
+  padding-left: 8px;
+  z-index: 1;
+}
+
+.workflow-version-pop.flip {
+  left: auto;
+  right: 100%;
+  padding-left: 0;
+  padding-right: 8px;
+}
+
+.workflow-version-menu {
+  min-width: 280px;
+  max-height: 320px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  background: var(--bubble-agent);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
 }
 
 .workflow-tools {
@@ -514,9 +620,16 @@
   background: var(--surface);
 }
 
+.dialog-card.workflow-script-dialog {
+  width: min(960px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+}
 .workflow-script {
-  min-height: 280px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-height: 360px;
+  height: min(62vh, 640px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .workflow-input {

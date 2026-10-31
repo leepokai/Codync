@@ -185,7 +185,18 @@ function firstLine(text: string) {
   return line
 }
 
-/** The name a card and a step list show. An assistant or a chat output uses the bot's name. */
+/** A merged output is `Input 1:\n…\n\nInput 2:\n…`. One input has no prefix. */
+export function splitJoinedInputs(text: string): { label: string; body: string }[] | null {
+  if (!text.startsWith('Input 1:\n')) return null
+  const parts = text.split(/\n\n(?=Input \d+:\n)/)
+  const parsed = parts.flatMap((part) => {
+    const match = /^Input (\d+):\n([\s\S]*)$/.exec(part)
+    return match ? [{ label: `Input ${match[1]}`, body: match[2] }] : []
+  })
+  return parsed.length >= 2 && parsed.length === parts.length ? parsed : null
+}
+
+/** The name a card and a step list show. An agent or a chat output uses the bot's name. */
 export function nodeTitle(node: Node, botName?: (id: string) => string | undefined) {
   switch (node.kind) {
     case 'trigger':
@@ -194,7 +205,7 @@ export function nodeTitle(node: Node, botName?: (id: string) => string | undefin
       return firstLine(fieldString(node.fields, 'text')) || 'Prompt'
     case 'agent': {
       const id = fieldString(node.fields, 'botId').trim()
-      return (id && botName?.(id)) || 'Assistant'
+      return (id && botName?.(id)) || 'Agent'
     }
     case 'condition':
       return 'Condition'

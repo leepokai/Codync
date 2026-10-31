@@ -1578,5 +1578,13 @@
   "Then": "Then",
   "Duplicate": "Duplicate",
   "Note": "Note",
-  "Run the previous step first": "Run the previous step first"
+  "Run the previous step first": "Run the previous step first",
+  "Version history": "Version history",
+  "Current canvas": "Current canvas",
+  "In effect": "In effect",
+  "Before the run": "Before the run",
+  "Autosaved": "Autosaved",
+  "Before restoring": "Before restoring",
+  "{count} steps": "{count} steps",
+  "Make a copy": "Make a copy"
 }

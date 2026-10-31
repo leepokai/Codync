@@ -781,7 +781,7 @@ pub fn step_title(node: &Node) -> String {
         }
         .into(),
         NodeKind::Prompt => first_line(field_str(&node.fields, "text")).unwrap_or("Prompt").into(),
-        NodeKind::Agent => "Assistant".into(),
+        NodeKind::Agent => "Agent".into(),
         NodeKind::Condition => "Condition".into(),
         NodeKind::Approval => first_line(field_str(&node.fields, "question")).unwrap_or("Approval").into(),
         NodeKind::Output if field_str(&node.fields, "target") == Some("chat") => "Chat".into(),

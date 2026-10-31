@@ -1498,7 +1498,7 @@
   "History": "历史",
   "Today {time}": "今天 {time}",
   "{seconds} s": "{seconds} 秒",
-  "Tell the assistant what to do": "告诉助手要做什么",
+  "Tell the assistant what to do": "告诉智能体要做什么",
   "Write a prompt": "写一段提示词",
   "Zoom to fit": "缩放以适应",
   "Select all": "全选",
@@ -1578,5 +1578,13 @@
   "Then": "然后",
   "Duplicate": "复制一份",
   "Note": "批注",
-  "Run the previous step first": "请先运行上一步"
+  "Run the previous step first": "请先运行上一步",
+  "Version history": "版本历史",
+  "Current canvas": "当前画布",
+  "In effect": "生效中",
+  "Before the run": "运行之前",
+  "Autosaved": "自动保存",
+  "Before restoring": "恢复之前",
+  "{count} steps": "{count} 个步骤",
+  "Make a copy": "创建副本"
 }

@@ -35,6 +35,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
   const [versions, setVersions] = useState<WorkflowVersion[]>([])
   const [versionGraph, setVersionGraph] = useState<Graph | null>(null)
   const [versionLabelText, setVersionLabelText] = useState<string | null>(null)
+  const [previewId, setPreviewId] = useState<string | null>(null)
   const [solo, setSolo] = useState<WorkflowStep[]>([])
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState('')
@@ -101,6 +102,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
     noteHistory()
     setVersionGraph(null)
     setVersionLabelText(null)
+    setPreviewId(null)
     previewRef.current = null
     saver.current = new GraphSaver(workflow.revision, async (base, nextGraph) => saveWorkflowGraph(await store.ready(), workflow.id, base, nextGraph))
     setSource(workflow.source ?? 'graph')
@@ -284,6 +286,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
         followLive={viewed === null}
         viewing={viewed}
         versions={versions}
+        previewId={previewId}
         previewLabel={versionLabelText}
         pinned={pinned}
         notice={notice}
@@ -306,6 +309,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
         onOlder={() => void older()}
         onLoadVersions={() => void loadVersions()}
         onPreview={(version) => void preview(version)}
+        onShowCurrent={showCurrent}
         onRestore={() => void restore()}
         onScript={() => { setScriptText(scriptText); setScriptOpen(true) }}
         onShowHistory={() => void refreshRuns()}
@@ -344,7 +348,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
         <input className="workflow-input" data-autofocus aria-label="Name" value={name} onChange={(event) => setName(event.target.value)} />
       </Dialog>
       <Dialog open={confirmDelete} title="Delete workflow" actions={[{ title: 'Delete workflow', destructive: true, action: () => void remove() }]} onClose={() => setConfirmDelete(false)} />
-      <Dialog open={scriptOpen} title={tr('Script')} actions={[{ title: 'Save', action: () => void saveScript() }]} onClose={() => setScriptOpen(false)}>
+      <Dialog open={scriptOpen} cardClassName="workflow-script-dialog" title={tr('Script')} actions={[{ title: 'Save', action: () => void saveScript() }]} onClose={() => setScriptOpen(false)}>
         <textarea className="workflow-input workflow-script" aria-label={tr('Script')} value={scriptText} onChange={(event) => setScriptText(event.target.value)} />
       </Dialog>
     </div>
@@ -418,6 +422,8 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
       const { run: detail } = await fetchWorkflowRun(await store.ready(), id)
       followRef.current = false
       setVersionGraph(null)
+      setPreviewId(null)
+      previewRef.current = null
       setViewed(detail)
       sync(selected, dirtyRef.current)
     } catch (error) {
@@ -443,9 +449,17 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
     if (!selected) return
     const { graph: snapshot } = await workflowVersion(await store.ready(), selected, version.id)
     previewRef.current = version
+    setPreviewId(version.id)
     setViewed(null)
     setVersionGraph(snapshot)
     setVersionLabelText(tr('Version {revision} · Saved {time}').replaceAll('{revision}', String(version.revision)).replaceAll('{time}', new Date(version.createdAt).toLocaleString()))
+  }
+
+  function showCurrent() {
+    previewRef.current = null
+    setPreviewId(null)
+    setVersionGraph(null)
+    setVersionLabelText(null)
   }
 
   async function restore() {

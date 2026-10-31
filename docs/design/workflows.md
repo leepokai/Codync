@@ -8,7 +8,7 @@
 
 ## 要做成什么样
 
-桌面打开某台电脑的工作流之后，主区域是点阵画布，不是聊天。空画布中间是「从触发器开始」和「添加触发器」。加上节点之后，从左到右是触发器、助手、输出，中间用线连着。触发器卡片上可以选手动或定时（每天 09:00，并写出下次运行）。助手卡片上选这台电脑的一个 bot，任务写在卡片里，模型名是这个 bot 当前的模型，只读。输出卡片的目标是通知。选中一条边或一个节点可以删。底部工具条：选择、平移、铅笔、便利贴、形状、文本、搜索、添加节点。左下角是缩放（25% 到 200%）、缩放以适应、小地图。小地图默认收起，点它的按钮才展开。右上角是历史和运行。历史里能看到「最新结果」和每一次运行（第 N 次、今天的时间、耗时）。画布标题上的菜单可以新建、看版本、重命名、复制、删除。
+桌面打开某台电脑的工作流之后，主区域是点阵画布，不是聊天。空画布中间是「从触发器开始」和「添加触发器」。加上节点之后，从左到右是触发器、智能体、输出，中间用线连着。触发器卡片上可以选手动或定时（每天 09:00，并写出下次运行）。智能体卡片上选这台电脑的一个 bot，任务写在卡片里，模型名是这个 bot 当前的模型，只读。输出卡片的目标是通知。选中一条边或一个节点可以删。底部工具条：选择、平移、铅笔、便利贴、形状、文本、搜索、添加节点。左下角是缩放（25% 到 200%）、缩放以适应、小地图。小地图默认收起，点它的按钮才展开。右上角是历史和运行。历史里能看到「最新结果」和每一次运行（第 N 次、今天的时间、耗时）。画布标题上的菜单列出这台电脑的工作流，当前这份标出步骤数。版本历史从这里展开：当前画布，以及按时间记下的自动保存、运行之前和恢复之前。同一处还可以新建、重命名、创建副本、置顶和删除。
 
 手机从 bot 列表进入「工作流」。列表里每一行是名称和最近一次状态。点进去是详情：立即运行、编辑、步骤（按图的阅读顺序排成竖列）、触发器、运行记录、删除、版本号和保存时间。再点进某一次运行，能看到每一步的完成状态和输出；两路助手汇合到一个输出时，输出里按 `Input 1`、`Input 2` 分栏。审批停在这一页上，就地同意或拒绝。长按一条工作流，把它固定到这台电脑的列表里，固定项出现在 bot 的上面。
 
@@ -1027,7 +1027,7 @@ live 广播，不进 `events_stream` 的 catch-up 数组，不带 `rev`：
 入口：
 
 - 多台电脑时，`apps/desktop/src/renderer/views/ComputerRosterSection.tsx` 在 Extensions 按钮旁边加一个图标按钮，符号 `flowchart`，标签 `Workflows`。`point.3.connected.trianglepath.dotted` 已经用在 Connectors 上，不要再用来表示工作流。电脑不在线或 `store.mismatch` 时不显示，和 `openExtensions` 相同。
-- 只有一台电脑时，`SidebarFooter.tsx` 在 Extensions 旁边加同样的按钮。折叠成轨时，`ChatWindow.tsx` 的 `rail-actions` 里加一个 `IconButton`。
+- 工作流、扩展和账号在左边的图标栏上，机器人列表底部不再放这一排。
 - 点下去清空当前 bot 选择，主区域换成画布，绑定这台电脑的 store。再点一个 bot，回到那个 bot 的线程。画布不做成盖住线程的 sheet。
 
 `ChatWindow` 的 detail 增加一种状态：`workflowComputerId: string | null`。有值时渲染 `WorkflowsView`，并把对应 store 放进现有的 store context。
@@ -1251,7 +1251,7 @@ sheet 里：列表 `j` / `k` 移动，Enter 进详情，`n` 新建，`r` 运行�
 
 带插值的句子整句做键，参数用现有的 `L10n` 替换方式，不要拼接翻译过的碎片。
 
-步骤在列表上的标题：触发器用 `Manual`、`Schedule` 或 `Webhook`；提示词用文本的第一行，空则 `Prompt`；助手用 bot 名，没有则 `Assistant`；条件用 `Condition`；审批用问题的第一行，空则 `Approval`；输出用 `Notification` 或那个 bot 的名字。
+步骤在列表上的标题：触发器用 `Manual`、`Schedule` 或 `Webhook`；提示词用文本的第一行，空则 `Prompt`；智能体用 bot 名，没有则 `Agent`；条件用 `Condition`；审批用问题的第一行，空则 `Approval`；输出用 `Notification` 或那个 bot 的名字。
 
 实现时同步写用户手册 `web/content/docs/workflows.mdx`，并在 `web/app/docs/pages.ts` 登记。只写页面文件的话，`npm run check:docs` 过不了。手册只写用户能做的事，不写表和命令。Android 还没公开，手册里按 `docs/guides/user-docs.md` 先不写 Android。
 
@@ -1369,7 +1369,7 @@ host/src/tui/l10n.rs
 apps/desktop/src/renderer/client/host-client.ts  解析 workflow 事件和 hello 字段
 apps/desktop/src/renderer/store/bot-sync.ts      apply 时刷新，不 bump rev
 apps/desktop/src/renderer/views/ComputerRosterSection.tsx
-apps/desktop/src/renderer/views/SidebarFooter.tsx
+apps/desktop/src/renderer/views/PageRail.tsx
 apps/desktop/src/renderer/views/ChatWindow.tsx
 apps/desktop/src/renderer/lib/prefs.ts            固定的工作流 id
 apps/ios/Kit/Sources/CodyncKit/Client/HostClient.swift

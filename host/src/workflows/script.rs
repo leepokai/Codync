@@ -300,7 +300,7 @@ fn fresh(seq: &mut u32) -> String {
 
 fn label_of(task: &str) -> String {
     let line = task.lines().next().unwrap_or("").trim();
-    let line = if line.is_empty() { "Assistant" } else { line };
+    let line = if line.is_empty() { "Agent" } else { line };
     line.chars().take(80).collect()
 }
 

@@ -17,7 +17,7 @@ const GROUPS: { label: string; kinds: { kind: NodeKind; title: string; icon: str
   {
     label: 'Steps',
     kinds: [
-      { kind: 'agent', title: 'Assistant', icon: 'person.fill', tone: 'green' },
+      { kind: 'agent', title: 'Agent', icon: 'person.fill', tone: 'green' },
     ],
   },
   {

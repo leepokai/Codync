@@ -4,12 +4,12 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { WorkflowFields } from './WorkflowFields'
-import { fieldString, ports, type Branch, type Graph, type Node, type WorkflowStep } from './workflow'
+import { fieldString, ports, splitJoinedInputs, type Branch, type Graph, type Node, type WorkflowStep } from './workflow'
 
 const KIND: Record<string, { title: string; icon: string }> = {
   trigger: { title: 'Trigger', icon: 'bolt' },
   prompt: { title: 'Prompt', icon: 'text.bubble' },
-  agent: { title: 'Assistant', icon: 'person.fill' },
+  agent: { title: 'Agent', icon: 'person.fill' },
   condition: { title: 'Condition', icon: 'arrow.triangle.branch' },
   approval: { title: 'Approval', icon: 'person.crop.circle.badge.checkmark' },
   output: { title: 'Output', icon: 'paperplane' },
@@ -145,14 +145,32 @@ function StepResult({ kind, step, now, onRetry, onDecide, onStop }: {
   }
   if (step.status === 'skipped') return <Text size="caption" tone="secondary">Skipped</Text>
   if (step.status === 'stopped') return <Text size="caption" tone="secondary">Stopped</Text>
-  if (step.output && kind === 'output') {
+  if (step.output && kind === 'output') return <OutputDone text={step.output} />
+  if (step.output) return <Text size="caption" lines={4}>{step.output}</Text>
+  return null
+}
+
+function OutputDone({ text }: { text: string }) {
+  const parts = splitJoinedInputs(text)
+  if (!parts) {
     return (
       <div className="workflow-done">
         <Icon name="checkmark.circle.fill" size={14} />
-        <Text size="caption" tone="added" lines={4}>{step.output}</Text>
+        <Text size="caption" tone="added" lines={4}>{text}</Text>
       </div>
     )
   }
-  if (step.output) return <Text size="caption" lines={4}>{step.output}</Text>
-  return null
+  return (
+    <div className="workflow-outputs">
+      {parts.map((part) => (
+        <div key={part.label} className="workflow-done">
+          <Icon name="checkmark.circle.fill" size={14} />
+          <VStack gap={2} className="workflow-output-copy">
+            <Text size="caption" weight="semibold" tone="added">{part.label}</Text>
+            <Text size="caption" tone="added" lines={3}>{part.body}</Text>
+          </VStack>
+        </div>
+      ))}
+    </div>
+  )
 }

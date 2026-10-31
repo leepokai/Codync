@@ -271,7 +271,7 @@ fun WorkflowNode.stepTitle(botName: (String) -> String? = { null }): String = wh
         else -> "Manual"
     }
     NodeKind.Prompt -> fields.field("text").firstLine() ?: "Prompt"
-    NodeKind.Agent -> fields.field("botId")?.let(botName) ?: "Assistant"
+    NodeKind.Agent -> fields.field("botId")?.let(botName) ?: "Agent"
     NodeKind.Condition -> "Condition"
     NodeKind.Approval -> fields.field("question").firstLine() ?: "Approval"
     NodeKind.Output -> if (fields.field("target") == "chat") fields.field("botId")?.let(botName) ?: "Choose a bot" else "Notification"

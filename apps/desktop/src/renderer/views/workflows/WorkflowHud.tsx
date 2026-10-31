@@ -1,14 +1,15 @@
 import { useRef, useState } from 'react'
-import { Button, DropdownMenu, IconButton, Switch } from '../../components/Controls'
+import { Button, IconButton, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, type MenuItem } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { WorkflowTip } from './WorkflowTip'
+import { WorkflowTitleMenu } from './WorkflowTitleMenu'
 import { progressOf, runClock, runWhen, type Graph, type RunSummary, type WorkflowStep, type WorkflowSummary, type WorkflowVersion } from './workflow'
 
-export function WorkflowHud({ title, selectedId, workflows, enabled, graph, steps, live, runs, hasMore, followLive, viewing, versions, previewLabel, pinned, notice, scripted, canUndo, canRedo, onUndo, onRedo, onOpen, onCreate, onRename, onDuplicate, onDelete, onPin, onEnabled, onRun, onStop, onLatest, onRunOpen, onOlder, onLoadVersions, onPreview, onRestore, onScript, onShowHistory }: {
+export function WorkflowHud({ title, selectedId, workflows, enabled, graph, steps, live, runs, hasMore, followLive, viewing, versions, previewId, previewLabel, pinned, notice, scripted, canUndo, canRedo, onUndo, onRedo, onOpen, onCreate, onRename, onDuplicate, onDelete, onPin, onEnabled, onRun, onStop, onLatest, onRunOpen, onOlder, onLoadVersions, onPreview, onShowCurrent, onRestore, onScript, onShowHistory }: {
   title: string
   selectedId: string | null
   workflows: WorkflowSummary[]
@@ -21,6 +22,7 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
   followLive: boolean
   viewing: RunSummary | null
   versions: WorkflowVersion[]
+  previewId: string | null
   previewLabel: string | null
   pinned: boolean
   notice: string | null
@@ -43,25 +45,15 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
   onOlder: () => void
   onLoadVersions: () => void
   onPreview: (version: WorkflowVersion) => void
+  onShowCurrent: () => void
   onRestore: () => void
   onScript: () => void
   onShowHistory: () => void
 }) {
   const historyButton = useRef<HTMLButtonElement>(null)
-  const titleAnchor = useRef<HTMLSpanElement>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [versionsOpen, setVersionsOpen] = useState(false)
   const tr = useTr()
   const progress = graph ? progressOf(graph, steps) : null
-  const menu = (): MenuItem[] => [
-    ...workflows.map((item) => ({ title: item.title, verbatim: true, selected: item.id === selectedId, action: () => onOpen(item.id) })),
-    { title: 'New workflow', icon: 'plus', divider: workflows.length > 0, action: onCreate },
-    { title: 'Versions', divider: true, action: () => { onLoadVersions(); setVersionsOpen(true) } },
-    { title: 'Rename', action: onRename },
-    { title: 'Duplicate', action: onDuplicate },
-    { title: pinned ? 'Unpin' : 'Pin', action: onPin },
-    { title: 'Delete workflow', destructive: true, action: onDelete },
-  ]
   const history = (): MenuItem[] => [
     { title: 'Latest results', selected: followLive, action: onLatest },
     ...runs.map((run) => ({
@@ -74,29 +66,38 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
     })),
     ...(hasMore ? [{ title: 'Show older runs', action: onOlder }] : []),
   ]
-  const versionItems = (): MenuItem[] => versions.map((version) => ({
-    title: `Version ${version.revision}`,
-    detail: versionDetail(version, tr),
-    action: () => onPreview(version),
-  }))
   return (
     <div className="workflow-hud">
       <HStack gap={8}>
         {title ? <IconButton title="Undo" icon="arrow.uturn.backward" disabled={!canUndo} onClick={onUndo} /> : null}
         {title ? <IconButton title="Redo" icon="arrow.uturn.forward" disabled={!canRedo} onClick={onRedo} /> : null}
-        <span ref={titleAnchor} className="workflow-title-wrap">
-          <DropdownMenu className="workflow-title" title={title || 'Workflows'} items={menu}>
-            <Text weight="semibold" truncate>{title || 'Workflows'}</Text>
-          </DropdownMenu>
+        <span className="workflow-title-wrap">
+          <WorkflowTitleMenu
+            title={title}
+            selectedId={selectedId}
+            workflows={workflows}
+            graph={graph}
+            versions={versions}
+            previewId={previewId}
+            pinned={pinned}
+            onOpen={onOpen}
+            onCreate={onCreate}
+            onRename={onRename}
+            onDuplicate={onDuplicate}
+            onDelete={onDelete}
+            onPin={onPin}
+            onLoadVersions={onLoadVersions}
+            onPreview={onPreview}
+            onShowCurrent={onShowCurrent}
+          />
         </span>
         {title ? <Switch className="workflow-enabled" on={enabled} label="Enabled" onChange={onEnabled} /> : null}
         {title ? (
           <WorkflowTip label="Script" below>
-            <IconButton title="Script" systemTip={false} icon="chevron.left.forwardslash.chevron.right" onClick={onScript} />
+            <IconButton className="workflow-script-button" title="Script" systemTip={false} icon="chevron.left.forwardslash.chevron.right" size={34} iconSize={22} onClick={onScript} />
           </WorkflowTip>
         ) : null}
         {progress && progress.total > 0 && !previewLabel && (live || (viewing && !followLive)) ? <Text size="caption" tone="secondary" tabular>{progress.done}/{progress.total}</Text> : null}
-        <AnchoredMenu open={versionsOpen} onClose={() => setVersionsOpen(false)} anchor={titleAnchor} items={versionItems} />
         <HStack grow />
         {viewing && !followLive ? (
           <span className="workflow-viewing">
@@ -140,13 +141,6 @@ export function WorkflowHud({ title, selectedId, workflows, enabled, graph, step
       ) : null}
     </div>
   )
-}
-
-function versionDetail(version: WorkflowVersion, tr: (text: string) => string) {
-  const when = runWhenLabel(version.createdAt, tr)
-  if (version.kind === 'restore') return `${tr('Before restore')} · ${when}`
-  if (version.kind === 'run') return `${tr('Run started')} · ${when}`
-  return when
 }
 
 function runWhenLabel(startedAt: number, tr: (text: string) => string) {

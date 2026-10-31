@@ -47,7 +47,7 @@ internal sealed interface FlowSelection {
         "skipped" -> "minus.circle"; "cancelled" -> "stop.circle"; else -> "circle.dashed"
     }
     val tint = when (status) { "succeeded" -> Palette.added; "failed" -> Palette.danger; "running" -> Palette.accent; else -> Palette.secondary }
-    Row(Modifier.clip(RoundedRectangle(50)).background(Palette.text.copy(alpha = 0.07f)).padding(horizontal = 8.dp, vertical = 2.dp),
+    Row(Modifier.clip(RoundedRectangle(50.dp)).background(Palette.text.copy(alpha = 0.07f)).padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Symbol(symbol, size = 12.dp, tint = tint)
         Text(tr(flowStatusLabel(status)), style = Type.caption, color = tint, maxLines = 1)
@@ -57,7 +57,8 @@ internal sealed interface FlowSelection {
 /** The sheet over the canvas or the list: what the selected routine, bot or link says, and the actions on it. */
 @Composable internal fun FlowDetail(owner: Bot, canvas: FlowCanvas, bots: Map<String, Bot>, takers: List<Bot>, selection: FlowSelection,
     online: Boolean, busy: Boolean, store: AppStore, note: (String?) -> Unit, reselect: (FlowSelection) -> Unit, close: () -> Unit) {
-    val name = { id: String -> bots[id]?.name ?: tr("Unknown bot") }
+    val unknownBot = tr("Unknown bot")
+    val name = { id: String -> bots[id]?.name ?: unknownBot }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader(when (selection) {
             is FlowSelection.OfLink -> tr("Link")

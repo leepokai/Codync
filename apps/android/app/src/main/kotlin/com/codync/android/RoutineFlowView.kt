@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -41,7 +42,8 @@ private fun Context.screenReaderOn(): Boolean =
     val canvas = state.flows[bot.id]
     val busy = "flow:${bot.id}" in state.busy
     val context = LocalContext.current
-    var listMode by remember(bot.id) { mutableStateOf(context.screenReaderOn() || context.resources.configuration.screenWidthDp < 600) }
+    val narrow = LocalConfiguration.current.screenWidthDp < 600
+    var listMode by remember(bot.id) { mutableStateOf(context.screenReaderOn() || narrow) }
     var selection by remember(bot.id) { mutableStateOf<FlowSelection?>(null) }
     var note by remember(bot.id) { mutableStateOf<String?>(null) }
     val rev = state.flowRevs[bot.id] ?: 0

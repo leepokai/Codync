@@ -3,16 +3,16 @@
 Branch `feat/routine-flows-ui` (from `feat/routine-flows-host`). Feature: [routine flows](../features/routine-flows.md).
 Host report: [routine-flows-host-report.md](routine-flows-host-report.md).
 
-**Nothing in this branch has been compiled, type-checked or run.** At the user's request the code was written first and the
-gates are left for one pass at the end together with other additions. Every statement below about behavior is therefore a
-design statement, not a test result.
+The code was first written without building (at the user's request). The gates were then run for the first time; they found
+five small compile, test and lint errors, all fixed (commits `3bfb6528`, `d1b54ec8`). Statements about how the screens
+look and feel are still design statements: **no screen has been seen**.
 
 ## Scope
 
 | Client | State |
 |---|---|
-| Desktop (Electron/React) | Written, not built |
-| Android (Compose) | Written, not built |
+| Desktop (Electron/React) | Type-checks; model tests pass; not seen running |
+| Android (Compose) | Compiles, lint clean, unit tests pass; not seen running |
 | Terminal | Done in the host branch; vocabulary checked against these screens (same statuses and words) |
 | iPhone / Mac native | **Not done, by instruction** (no iOS work). CLAUDE.md asks for every client in the same change: this is a deliberate gap, and the iPhone has no Flow screen yet |
 
@@ -41,9 +41,9 @@ status, "Not connected" / "No runs yet") in this app's tokens. No Openstark file
 
 | Gate | Result |
 |---|---|
-| `npm run typecheck`, `npm test` (desktop) | **not run** |
-| `./gradlew assembleDebug testDebugUnitTest :core:test lintDebug` | **not run** |
-| E2E on desktop (`npm run dev`) and Android (signed APK, adb) | **not run**; screenshots: none |
+| `npm run typecheck`, `npm test` (desktop) | clean; 395 passed, 0 failed |
+| `./gradlew assembleDebug testDebugUnitTest :core:test lintDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx2g` | BUILD SUCCESSFUL (after fixing: a missing `contentOrNull` import, a `Dp` radius, a composable called in a plain lambda, and a lint error reading the screen width from `resources.configuration` instead of `LocalConfiguration`) |
+| E2E on desktop (`npm run dev`) and Android (signed APK, adb) | **not run**; screenshots: none. Needs the Electron binary (dependencies were installed with `--ignore-scripts`), a build of the host of this branch, and the owner to accept the MIUI prompt for the APK |
 | Host | unchanged by this branch |
 
 ## Known gaps to check on the first build

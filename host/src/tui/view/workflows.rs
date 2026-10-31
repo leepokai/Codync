@@ -352,9 +352,7 @@ fn step_name(app: &App, node: &Node) -> String {
             _ => tr("Manual").into_owned(),
         },
         NodeKind::Prompt => first_line(field_str(&node.fields, "text")).unwrap_or_else(|| tr("Prompt").into_owned()),
-        NodeKind::Agent => {
-            bot_name(app, field_str(&node.fields, "botId")).unwrap_or_else(|| tr("Agent").into_owned())
-        }
+        NodeKind::Agent => bot_name(app, field_str(&node.fields, "botId")).unwrap_or_else(|| tr("Agent").into_owned()),
         NodeKind::Condition => tr("Condition").into_owned(),
         NodeKind::Approval => {
             first_line(field_str(&node.fields, "question")).unwrap_or_else(|| tr("Approval").into_owned())

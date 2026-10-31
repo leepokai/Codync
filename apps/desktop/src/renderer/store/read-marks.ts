@@ -50,6 +50,7 @@ export class ReadMarks {
 
   markUnread(botId: string) {
     if (!this.bots().has(botId)) return
+    this.openedEarly?.delete(botId)
     let held: Bot | undefined
     const sent = this.perform(async (c) => {
       held = (await c.call<{ bot?: Bot }>('markUnread', { botId })).bot

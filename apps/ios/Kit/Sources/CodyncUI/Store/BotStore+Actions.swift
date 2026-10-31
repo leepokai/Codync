@@ -187,6 +187,7 @@ extension BotStore {
     /// shows, so nothing on screen reads it.
     public func markUnread(_ botId: String) {
         guard bots[botId] != nil else { return }
+        openedEarly?.remove(botId)
         let sent = Task {
             var from: Int64?
             let accepted = await attempt(replay: true) { from = try await $0.markUnread(botId) }

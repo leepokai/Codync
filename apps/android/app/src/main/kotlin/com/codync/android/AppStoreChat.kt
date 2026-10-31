@@ -41,6 +41,7 @@ fun AppStore.markRead(id: String) {
 /** The roster's "Mark as unread": the host counts what comes back unread; until then only the hold shows, so nothing on screen reads it. */
 fun AppStore.markUnread(id: String) {
     markingUnread.add(id)
+    openedEarly?.remove(id)
     command("markUnread", body("botId" to id), "roster:$id", onFailure = { markingUnread.remove(id) }, onSuccess = { markingUnread.remove(id) })
 }
 

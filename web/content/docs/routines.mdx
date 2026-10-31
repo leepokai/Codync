@@ -1,4 +1,4 @@
-A routine is a task a bot does on its own: on a schedule, at a set time, or whenever another service sends it a webhook. Use one for a morning summary, a nightly check of a repository, or a review each time a pull request opens.
+A routine is a task a bot does on its own: on a schedule, at a set time, whenever another service sends it a webhook, or after another routine finishes. Use one for a morning summary, a nightly check of a repository, or a review each time a pull request opens.
 
 Each routine belongs to one bot and runs on your computer, with that bot's agent, folder, tools and approval setting. Its results show up in the bot's chat.
 
@@ -51,8 +51,33 @@ If the bot set up triggers the editor doesn't offer, the editor shows them as **
 | Once | One time, at a date and time in the future. | Bot (or terminal UI) |
 | Interval | Every so many seconds, minutes, hours or days, from 1 second to 365 days. | Bot (or terminal UI) |
 | Event | When a webhook delivery matches a source and event, such as a pull request opening on GitHub. | Bot |
+| After another routine | When another routine, on this bot or any other, finishes. | Bot |
 
 A routine can have several triggers; it runs when any of them fires.
+
+### Run a routine after another
+
+Ask the bot that should do the follow-up work, naming the routine it waits for:
+
+> When the "Server check" routine finds a problem, run a routine that tries to fix it.
+
+The bot sets the trigger to that routine finishing. You can narrow when it runs:
+
+- **Succeeds**, **fails**, or either. A failure counts only once Codync has given up retrying it; a cancelled run starts nothing.
+- **With something to report**, or **with nothing to report** (the earlier run stayed silent).
+- **When its result contains** some words.
+
+The routine that runs next is given the earlier run's routine, outcome and reply, so it can act on what was found. The two routines can belong to different bots: a checking bot and a fixing bot, for example.
+
+The apps show such a trigger as, for example, *After "Server check" succeeds with something to report*. It needs no webhook, and nothing outside your computer can set it off.
+
+Codync keeps chains from running away:
+
+- A routine can't wait for itself, directly or through others; the bot is told it would make a loop.
+- A chain runs at most 5 routines in a row.
+- If the next routine is still running or queued, it's skipped for that run.
+
+When a routine is skipped, the reason shows in its details. If the routine it waits for is deleted, it stops running after it and reads *After a deleted routine*.
 
 ## Test, pause, delete
 

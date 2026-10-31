@@ -32,6 +32,10 @@ On Android, the call's notification shows the same: the call's state and what th
 
 In the Shortcuts app, add Codync's **Open Live Mode** action and pick a **Bot**, or leave it empty to call your lead bot, whichever bot you made the lead; if you have none, it asks which bot. With a lead on more than one computer, it calls the first computer's, or the one you pick in **Settings → Shortcuts → Lead to call**. Running it opens that bot's chat and starts a call. Siri runs it too: say "Talk to Codync" or "Open Live Mode in Codync" to call your lead bot. The computer has to be online; otherwise the action stops with an error instead of starting a call.
 
+### From the app icon (Android)
+
+Touch and hold the Codync icon and choose **Talk to Codync**: it opens your lead bot's chat and starts a call, like Open Live Mode without a bot. With a lead on more than one computer, it calls the first computer's, or the one you pick in **Settings → Shortcuts → Lead to call**. With no lead, it opens Bots so you can pick one; a computer that can't be reached shows an error instead of starting a call.
+
 ## Choose a voice engine
 
 Open **Voice chat** settings from the call bar's gear, or:
@@ -90,7 +94,7 @@ The key is stored encrypted in Codync's vault on the computer (with the system k
 
 | You use | Your audio | Your key |
 | --- | --- | --- |
-| On device | Stays on your device. Only the recognized text goes to the computer, as a message. Apple's speech recognition may use Apple's servers when on-device recognition isn't available for your language. | Not needed |
+| On device | Stays on your device. Only the recognized text goes to the computer, as a message. Apple's speech recognition may use Apple's servers when on-device recognition isn't available for your language. On Android, calls are always recognized on the phone; dictation uses the phone's speech service when the phone can't recognize your language itself, and that service may use its provider's servers (Google's on most phones). | Not needed |
 | Realtime | Streams directly between your device and the provider (OpenAI over WebRTC, Gemini over a WebSocket). It doesn't pass through your computer or the relay. The written transcript of the call is kept on your computer. | Stays on the computer, which gives your device a short-lived credential for each call |
 | Speech mode, or dictation with a provider | Recordings go to your computer over the encrypted connection, and the computer sends them to the provider, with the names of the bots on the computer as spelling hints. The spoken replies come back the same way. | Stays on the computer |
 
@@ -106,7 +110,7 @@ While it listens, the microphone becomes a recording pill with a stop button, th
 
 The small arrow beside the microphone (**Dictation engine**) chooses **On device**, **OpenAI** or **Gemini**. It's kept on this device, separate from the call engine.
 
-- **On device:** words appear as they're recognized, in the language set for calls. On the iPhone, stop keeps what was recognized so far. In the desktop app, dictation keeps listening through pauses until you press stop.
+- **On device:** words appear as they're recognized, in the language set for calls. On the iPhone and Android, stop keeps what was recognized so far. In the desktop app, dictation keeps listening through pauses until you press stop.
 - **OpenAI or Gemini:** Codync first checks that the computer has the provider's key (if not, voice settings open so you can configure it before anything is recorded). The pill appears once the microphone is open, so nothing you say is lost. Nothing is typed while you record. When you press stop, the pill shows "Transcribing…" and the text lands in the box when it arrives. It uses the **Speech to text** model from Voice chat settings, and the recording counts toward that provider's minutes this month.
 
 If dictation uses a provider that your calls don't, Voice chat settings show a separate section for it ("For dictation in the message box.") with its key status and speech-to-text model.

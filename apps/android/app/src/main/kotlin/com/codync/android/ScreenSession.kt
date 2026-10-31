@@ -73,7 +73,7 @@ class ScreenSession(private val store: AppStore, display: ScreenDisplay?) {
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val context: Context = store.getApplication<android.app.Application>()
+    private val context: Context = store.application
     private var session: String? = null
     private var pc: PeerConnection? = null
     private var track: VideoTrack? = null

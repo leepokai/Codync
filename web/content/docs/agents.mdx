@@ -1,12 +1,14 @@
 Every bot runs one coding agent on your computer. Codync drives agents through the [Agent Client Protocol](https://agentclientprotocol.com) (ACP), so it can run any agent that speaks it: the ones it knows by name, everything in the official [ACP registry](https://agentclientprotocol.com/registry), and any command you give it. Each bot picks its own agent, and different bots can use different ones.
 
-Codync uses the agents with the accounts they're already signed in to on your computer, such as Claude Code with your Claude plan or Codex with your ChatGPT plan. It never calls a provider's API with your login.
+Codync uses the agents with the accounts they're already signed in to on your computer, such as Claude Code with your Claude plan or Codex with your ChatGPT plan. Cursor's usage checks are the exception to reading usage locally; see [Privacy](/docs/privacy).
 
 If an agent's login stops working (for example, signing in somewhere else revoked it), the bot first tries your message again on a fresh start of the agent, which picks up a newer login on the computer. If that fails too, the chat shows the agent's sign-in card: **Sign in** opens the agent's sign-in options, and your message goes out again once you've signed in.
 
 ## Usage limits
 
-On desktop, open **Settings > Usage** to see the limits reported by your connected computers. The host refreshes usage every five minutes.
+On desktop, open **Settings > Usage** to see the limits reported by your connected computers, including Cursor. The host refreshes usage every five minutes. Unified Cursor plans, including Super, show one **Weekly** allowance with its next reset. Older Cursor plans retain their monthly usage readings.
+
+Cursor usage works with the CLI's saved sign-in file on Linux and Windows, or the Cursor desktop app's sign-in. On macOS, a CLI login stored only in Keychain needs the desktop app signed in too; CLI file storage also works. You do not need to install the Cursor desktop app on a Linux or Windows host just to report usage.
 
 Each limit here shows how much of it is already used, such as **62% used**, and its bar fills up as you use it, turning amber and then red near the limit. Some agents' own screens show what's left instead, so 99% used in Codync is 1% left there. Antigravity's Gemini limits are labeled **Gemini 5h** and **Gemini 7d**, next to its Claude ones.
 
@@ -124,9 +126,3 @@ There's no separate default-agent setting. A new bot gets Claude Code when Claud
 
 A bot can have fallback agents that carry on the same turn when its own agent is out of usage, rate limited, signed out or won't start. See [Agent fallbacks](/docs/agent-fallbacks).
 
-
-## Custom agent icons
-
-Open an agent in **Extensions** and use **Custom icon** to upload an image, or choose **Paste URL** to reveal the address field and submit an HTTPS image URL with the arrow button. Keep the original colors or turn on **Tint icon**. Choose **Use default** to restore its bundled logo, or the terminal symbol when no logo is bundled. Each computer keeps its own overrides, shared by its paired apps.
-
-The [custom icon limits and caching rules](/docs/bots#custom-icons) also apply to agents. In the terminal, open the agent's setup and choose **Custom icon**.

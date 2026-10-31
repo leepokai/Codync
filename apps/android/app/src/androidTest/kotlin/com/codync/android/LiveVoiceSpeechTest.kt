@@ -4,7 +4,6 @@ import android.os.Build
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import java.io.File
@@ -44,7 +43,7 @@ class LiveVoiceSpeechTest {
             val created = runBlocking { channel.call("createBot", draft) }
             val id = created.jsonObject.getValue("bot").jsonObject.getValue("id").jsonPrimitive.content
             botId = id
-            val store = ViewModelProvider(compose.activity)[AppStore::class.java]; model = store
+            val store = compose.computerStore(); model = store
             compose.waitUntil(30_000) { store.state.value.bots.any { it.id == id } && store.state.value.actualConnection is LinkState.Ready }
             compose.runOnUiThread { store.voiceSettings(VoiceSettings(2_500)); store.openBot(id) }
             compose.onNodeWithContentDescription("Call").performClick()

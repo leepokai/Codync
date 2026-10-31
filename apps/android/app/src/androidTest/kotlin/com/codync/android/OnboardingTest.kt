@@ -12,18 +12,25 @@ class OnboardingTest {
     @get:Rule val compose = createComposeRule()
 
     @Test fun welcomeLeadsToInstallAndBackReturnsToWelcome() {
-        compose.setContent { Hosted { CodyncApp(AppState(loading = false), viewModel()) } }
+        // The welcome crew never stops moving: step the clock by hand so the test can settle.
+        compose.mainClock.autoAdvance = false
+        compose.setContent { Hosted { CodyncApp(AccountContext(loading = false), emptyMap(), viewModel()) } }
+        step()
         compose.onNodeWithText("Your coding agents", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Get started").performClick()
+        step()
         compose.onNodeWithText("Install Codync", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Step 1 of 2").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back").performClick()
+        step()
         compose.onNodeWithText("Get started").assertIsDisplayed()
     }
 
+    private fun step() = compose.mainClock.advanceTimeBy(1_000)
+
     @Test fun installStepsFollowTheComputerAndScanKeepsTheChoice() {
         var skipped = false
-        compose.setContent { Hosted { PairingView(AppState(loading = false), viewModel(), onSkip = { skipped = true }) } }
+        compose.setContent { Hosted { PairingView(AccountContext(loading = false), viewModel(), onSkip = { skipped = true }) } }
         compose.onNodeWithText("Mac").assertIsSelected()
         compose.onNodeWithText("brew install --cask leepokai/codync/codync").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Linux").performClick().assertIsSelected()
@@ -46,7 +53,7 @@ class OnboardingTest {
     }
 
     @Test fun macPairingPointsToTheMenuBarApp() {
-        compose.setContent { Hosted { PairingView(AppState(loading = false), viewModel()) } }
+        compose.setContent { Hosted { PairingView(AccountContext(loading = false), viewModel()) } }
         compose.onNodeWithText("Continue").performClick()
         compose.onNodeWithText("On your Mac, click Codync in the menu bar, then Pair iPhone. The same code pairs this phone.").assertIsDisplayed()
         compose.onNodeWithText("codync-host pair").assertDoesNotExist()

@@ -35,7 +35,7 @@ import com.codync.android.design.*
  * analytics, Start over; iOS `SettingsView`). Each computer's own settings (voice chat, push, connection,
  * hidden bots) are in Computer management (`ComputersView`).
  */
-@Composable internal fun SettingsView(state: AppState, store: AppStore, bottomInset: Dp) {
+@Composable internal fun SettingsView(state: AccountContext, computers: List<AppState>, store: AccountStore, bottomInset: Dp) {
     val uri = LocalUriHandler.current
     var confirmStartOver by remember { mutableStateOf(false) }
     var aboutAnalytics by remember { mutableStateOf(false) }
@@ -56,6 +56,7 @@ import com.codync.android.design.*
             }
         }
         ThinkingDetailsSettings()
+        ShortcutLeadSettings(state, computers, store)
         NotificationsSection()
         CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {
             row {
@@ -70,6 +71,13 @@ import com.codync.android.design.*
             }
         }
         CardSection {
+            row {
+                LinkButton("Rate on Google Play") {
+                    Analytics.capture(AnalyticsEvent.ReviewLinkOpened)
+                    uri.openUri(PLAY_LISTING)
+                }
+            }
+            row { LinkButton("Report an issue") { uri.open("https://github.com/leepokai/Codync/issues", OutboundLink.Issues) } }
             row { ValueRow("App version", BuildConfig.VERSION_NAME) }
             row { LinkButton("Source code") { uri.open("https://github.com/leepokai/Codync", OutboundLink.Github) } }
         }
@@ -89,6 +97,9 @@ import com.codync.android.design.*
         listOf(DialogAction("Start over", destructive = true, action = store::startOver))
     }
 }
+
+/** The app's Google Play page (the production app's, which testers and the public both have). */
+internal const val PLAY_LISTING = "https://play.google.com/store/apps/details?id=com.pokai.Codync.android"
 
 /** Whether Android lets Codync show notifications at all; each computer's push switch is on its card. */
 @Composable internal fun NotificationsSection() {

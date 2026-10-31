@@ -6,6 +6,9 @@ import com.codync.android.core.*
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
@@ -32,19 +35,46 @@ class WidgetRefreshWorker(context: Context, parameters: WorkerParameters) : Coro
             val revision = WidgetStore.changes.value
             withTimeout(30_000) {
                 val local = LocalStore(context, owner.context)
-                val computer = withContext(Dispatchers.IO) { local.computers().firstOrNull() } ?: return@withTimeout false
+                val computers = withContext(Dispatchers.IO) { local.computers() }
+                if (computers.isEmpty()) return@withTimeout false
+                val usageId = computers.currentId(withContext(Dispatchers.IO) { local.lastComputer() })
                 val identity = withContext(Dispatchers.IO) { local.identity() }
-                val channel = HostConnector.connect(computer, identity)
-                try {
-                    val current = HostClient.hello(channel, computer)
-                    // The finite roster snapshot includes its authoritative custom icons.
-                    val bots = HostClient.bots(channel)
-                    val response = channel.call("usage", buildJsonObject { put("refresh", false) })
-                    val usage = UsageReport.decode(response)
-                    withContext(Dispatchers.IO) { WidgetStore.publish(context, owner, current, bots, usage, true, true, expectedRevision = revision) }
-                } finally { channel.close() }
+                // Each computer at once; one that can't be reached keeps the bots it had (and isn't fresh).
+                val reads = coroutineScope {
+                    computers.map { computer ->
+                        async {
+                            try { read(computer, identity, computer.id == usageId) }
+                            catch (cancelled: CancellationException) { throw cancelled }
+                            catch (error: Exception) { android.util.Log.i("Codync", "Widget refresh couldn't read ${computer.id}: ${error.message}"); null }
+                        }
+                    }.awaitAll()
+                }
+                val previous = withContext(Dispatchers.IO) { WidgetStore.feed(context) }
+                val bots = computers.zip(reads).map { (computer, read) ->
+                    read?.let { WidgetComputer(it.computer, it.bots, true) } ?: WidgetComputer(computer, null, false)
+                }
+                val usage = reads.firstNotNullOfOrNull { it?.usage }
+                val usageComputer = bots.first { it.computer.id == usageId }.computer
+                withContext(Dispatchers.IO) {
+                    WidgetStore.publish(context, owner, bots, usageComputer, usage ?: previous.usage.takeIf { previous.computerId == usageId } ?: UsageReport(),
+                        usage != null, expectedRevision = revision)
+                }
             }
         }
+        private class Read(val computer: Computer, val bots: List<Bot>, val usage: UsageReport?)
+
+        /** One computer's roster (and, for the last active one, its usage), then the link closes. */
+        private suspend fun read(computer: Computer, identity: DeviceIdentity, usage: Boolean): Read {
+            val channel = HostConnector.connect(computer, identity)
+            try {
+                val current = HostClient.hello(channel, computer)
+                // The finite roster snapshot includes its authoritative custom icons.
+                val bots = HostClient.bots(channel)
+                val report = if (usage) UsageReport.decode(channel.call("usage", buildJsonObject { put("refresh", false) })) else null
+                return Read(current, bots, report)
+            } finally { channel.close() }
+        }
+
         suspend fun stop(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(NAME)
             // Join every reader before account erasure can remove its storage.

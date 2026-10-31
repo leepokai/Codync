@@ -48,7 +48,11 @@ The cloud sees these calls in plain text, and a bot can run anything on its comp
 
 - **Off by default.** The **Cloud assistants** switch on the computer turns it on for that computer: the desktop
   app (Settings → Computers, beside the account rows, shown while the computer is in the account) and the terminal
-  UI's network sheet (`N`, then `a`), or `codync-host cloud --assistants on`. All go through the local API
+  UI's network sheet (`N`, then `a`), or `codync-host cloud --assistants on`. It turns on only while the computer
+  is in a Codync account (`setAssistants` refuses otherwise, or says the account isn't known yet when no state pull
+  worked on this connection; off always works), and a state pull with no owner turns it off, so the account the
+  computer joins next is asked again. A computer reached through the network needs this too: its own switch decides
+  its letters. All go through the local API
   `setAssistants`, loopback only. The setting is the `assistants` field of `cloudStatus` and of `networkView`, which
   phones read (they show it in the network sheet and can't change it); the `network` event carries a change. The
   view's `assistantsAvailable` says whether the computer is in a Codync account: the terminal UI and the phones show

@@ -71,7 +71,7 @@ When a client needs data or behavior the host doesn't offer, add a host method o
 - Account changes retire the old stores; late responses must not update the new context. Signing out erases that context's local credentials and caches.
 - The desktop app (`apps/desktop/`) has its own TypeScript `BotStore` and attaches its local host and configured SSH hosts through loopback only ([desktop app](desktop-app.md)). iPhone connections use device identities.
 
-The product currently prioritizes one computer. Existing account-scoped aggregation and SSH support remain; their presence is not a reason to add multi-computer features without a product requirement.
+Several computers per account are supported: the iPhone and Android apps pair several, with a heading per computer in the roster, Computer management for each, and each computer's push, usage and widgets; the desktop app attaches its local host and configured SSH hosts. Account-scoped aggregation and SSH build on the same structure (`AccountStore`, `BotReference`).
 
 ## Service boundaries
 

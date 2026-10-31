@@ -6,9 +6,11 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.33.6
+## 2.34.0
 ### zh-Hant
-- 「網路」功能換上 Codync Network 自己的圖示，在電腦頁、電腦選單與網路畫面中都一樣。
+- 自訂圖示現在只用在 bot 上，代理程式一律顯示自己的標誌。
+- 只用 Cursor CLI 登入時，也能看到 Cursor 的用量。
 
 ### en-US
-- Network now has its own Codync Network icon on the Computers screen, in the computer menu and on the Network screen.
+- Custom icons are now for bots only; agents always show their own logo.
+- Cursor usage now shows when you sign in with the Cursor CLI only.

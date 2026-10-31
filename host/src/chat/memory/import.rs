@@ -18,6 +18,9 @@ const NOTE_PREFIX: &str = "[note] ";
 /// The note the facts that don't fit `MEMORY.md` go to.
 const EARLIER: &str = "earlier.md";
 
+/// `earlier.md`'s description when Codync's own old memory starts it.
+const EARLIER_OLD: &str = "Older facts about the user from Codync's previous memory; read when one comes up";
+
 /// A fact from the Engram or Markdown memory.
 struct Old {
     text: String,
@@ -90,7 +93,7 @@ fn move_entries(hub: &Hub) -> Result<()> {
         if entry.active { active.push(entry.fact) } else { archived.push(entry.fact) }
     }
     for (layer, (active, archived)) in layers {
-        move_in(hub, layer.as_deref(), active, archived)?;
+        move_in(hub, layer.as_deref(), active, archived, EARLIER_OLD)?;
     }
     hub.store.memory_write(|c, _, _| codync_mem::legacy::finish(c))?;
     tracing::info!("moved the memory entries into files");
@@ -100,8 +103,8 @@ fn move_entries(hub: &Hub) -> Result<()> {
 /// Writes facts into a layer's `MEMORY.md` as far as its cap allows, each with who wrote it, and the rest (with
 /// `rest`, and any too long for one line) into `earlier.md`. Facts memory may not hold (secrets, planted
 /// instructions, hidden characters) stay out. Facts a file already holds aren't written twice, so a move cut short
-/// can run again.
-fn move_in(hub: &Hub, layer: Option<&str>, facts: Vec<Fact>, rest: Vec<Fact>) -> Result<()> {
+/// can run again. `about` describes `earlier.md` when it's new. Returns how many facts it wrote.
+fn move_in(hub: &Hub, layer: Option<&str>, facts: Vec<Fact>, rest: Vec<Fact>, about: &str) -> Result<usize> {
     let writer = Writer { author: Author::Imported, bot: None, cause: Cause::Edit, message: None };
     let main = files::read(layer, MAIN)?;
     let mut lines = main.clone().unwrap_or_default();
@@ -136,20 +139,29 @@ fn move_in(hub: &Hub, layer: Option<&str>, facts: Vec<Fact>, rest: Vec<Fact>) ->
             Ok(())
         })?;
     }
+    let mut written = kept.len();
     if !earlier.is_empty() {
         let before = files::read(layer, EARLIER)?;
-        let mut note = before.clone().unwrap_or_else(|| {
-            "---\ndescription: Older facts about the user from Codync's previous memory; read when one comes up\n---\n"
-                .to_owned()
-        });
+        let mut note = before.clone().unwrap_or_else(|| format!("---\ndescription: {about}\n---\n"));
         for fact in &earlier {
             if !mf::facts(&note).iter().any(|f| f.eq_ignore_ascii_case(&fact.text)) {
                 note = format!("{note}- {}\n", fact.text);
+                written += 1;
             }
         }
         files::write(hub, layer, EARLIER, Some(&note), before.as_deref().map(mf::hash).as_deref(), writer)?;
     }
-    Ok(())
+    Ok(written)
+}
+
+/// Facts brought from another app (`import`) into `bot`'s memory, the same way the old memory moved in.
+/// Returns how many it wrote: the checks refuse some, and a fact the bot already has isn't written again.
+pub fn add_facts(hub: &Hub, bot: &str, texts: &[String]) -> Result<usize> {
+    let at = crate::store::now_ms();
+    let fact =
+        |text: &String| Fact { text: text.clone(), author: Author::Imported, author_bot: None, message: None, at };
+    let about = "Older facts the bot brought from the app it was imported from; read when one comes up";
+    move_in(hub, Some(bot), texts.iter().map(fact).collect(), Vec::new(), about)
 }
 
 /// Old facts as one line each, without those the checks on what memory may say refuse.
@@ -174,7 +186,7 @@ fn import_bot(hub: &Hub, bot: &str, dir: &Path) -> Result<()> {
         .into_iter()
         .map(|old| Fact { text: old.text, author: Author::Imported, author_bot: None, message: None, at: old.at })
         .collect();
-    move_in(hub, Some(bot), facts, Vec::new())?;
+    move_in(hub, Some(bot), facts, Vec::new(), EARLIER_OLD)?;
     // Dreaming starts from now: what came before is in the moved memory already.
     super::dream::set_bookmark(store, bot, store.last_seq(bot))?;
     store.kv_set(&marker, &count.to_string())?;

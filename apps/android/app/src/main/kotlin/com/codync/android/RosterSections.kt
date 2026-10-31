@@ -109,10 +109,20 @@ internal fun withMoves(bots: List<Bot>, pending: List<SectionMove>): List<Bot> {
     return bots.map { bot -> if (bot.id in sections) bot.copy(section = sections[bot.id]) else bot }
 }
 
-/** The sections folded on this device (iOS `@AppStorage("collapsedRosterSections")`); not synced. */
+/** The roster's preferences: kept on this device, never synced. */
+internal fun rosterPrefs(context: Context) = context.getSharedPreferences("codync-roster", Context.MODE_PRIVATE)
+
+/** The sections folded on this device (iOS `@AppStorage("collapsedRosterSections")`). */
 internal object FoldedSections {
     private const val KEY = "collapsedRosterSections"
-    private fun prefs(context: Context) = context.getSharedPreferences("codync-roster", Context.MODE_PRIVATE)
-    fun load(context: Context): Set<String> = prefs(context).getStringSet(KEY, null).orEmpty().toSet()
-    fun save(context: Context, names: Set<String>) { prefs(context).edit { putStringSet(KEY, names) } }
+    fun load(context: Context): Set<String> = rosterPrefs(context).getStringSet(KEY, null).orEmpty().toSet()
+    fun save(context: Context, names: Set<String>) { rosterPrefs(context).edit { putStringSet(KEY, names) } }
+}
+
+/** Computers left out of the roster (`ComputerSelection`'s list), and computers whose bots are folded away (iOS `@AppStorage`). */
+internal object RosterComputers {
+    fun hidden(context: Context): String = rosterPrefs(context).getString("hiddenComputers", "").orEmpty()
+    fun setHidden(context: Context, value: String) = rosterPrefs(context).edit { putString("hiddenComputers", value) }
+    fun folded(context: Context): Set<String> = rosterPrefs(context).getStringSet("foldedComputers", null).orEmpty().toSet()
+    fun setFolded(context: Context, ids: Set<String>) = rosterPrefs(context).edit { putStringSet("foldedComputers", ids) }
 }

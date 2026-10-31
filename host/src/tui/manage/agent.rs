@@ -59,9 +59,6 @@ impl App {
         }
         rows.push(SetupRow::Check);
         rows.push(SetupRow::Brings);
-        if self.custom_icons {
-            rows.push(SetupRow::Icon);
-        }
         rows
     }
 
@@ -76,11 +73,6 @@ impl App {
                 let (cols, rows_n) = crossterm::terminal::size().unwrap_or((80, 24));
                 let size = json!({"cols": cols, "rows": rows_n});
                 match rows.get(a.cursor) {
-                    Some(SetupRow::Icon) => {
-                        self.overlays.push(Overlay::Agent(a));
-                        self.overlays.push(Overlay::Fields(Box::new(super::icon_fields(format!("agent:{backend}")))));
-                        return None;
-                    }
                     Some(SetupRow::Install) => self.start_setup(&backend, "install", None, &size),
                     Some(SetupRow::Node) => self.start_setup(&backend, "node", None, &size),
                     Some(SetupRow::Login) => self.start_setup(&backend, "login", None, &size),

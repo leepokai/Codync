@@ -1,48 +1,108 @@
-//! Cursor's usage summary. Cursor has no usage command: the token is the one
-//! the Cursor app saved in `state.vscdb`, and the summary is
-//! `GET https://cursor.com/api/usage-summary`. The token is never logged.
+//! Cursor's plan usage, using the app's `state.vscdb` or CLI's `auth.json` login.
+//! Unified plans use the dashboard service's weekly allowance. The website's
+//! usage summary reports only the legacy monthly pools. The token is never logged.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use super::Window;
 
+/// Whether the dashboard last named a unified plan, so a failed poll keeps its weekly reading.
+static LAST_UNIFIED: AtomicBool = AtomicBool::new(false);
+
+/// Which reading a poll reports.
+#[derive(Debug, PartialEq)]
+enum Route {
+    /// The dashboard's weekly window, or `None` to keep the last one.
+    Unified(Option<Vec<Window>>),
+    /// The legacy plan's usage summary.
+    Summary,
+}
+
 pub(super) async fn collect() -> Option<Vec<Window>> {
     let token = tokio::task::spawn_blocking(read_token).await.ok().flatten()?;
-    let sub = jwt_sub(&token)?;
-    let cookie = cookie(&sub, &token)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .ok()?;
-    let response = client
-        .get("https://cursor.com/api/usage-summary")
-        .header("Cookie", cookie)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .ok()?;
-    if !response.status().is_success() {
-        tracing::debug!(status = %response.status(), "cursor usage summary was refused");
-        return None;
+
+    let status_request = client
+        .post("https://api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus")
+        .bearer_auth(&token)
+        .header("Connect-Protocol-Version", "1")
+        .json(&serde_json::json!({}));
+    let status = read_response(status_request).await;
+    let route = choose(status.as_ref(), LAST_UNIFIED.load(Ordering::Relaxed));
+    LAST_UNIFIED.store(matches!(route, Route::Unified(_)), Ordering::Relaxed);
+    if let Route::Unified(windows) = route {
+        return windows;
     }
-    let body: Value = response.json().await.ok()?;
-    Some(parse(&body))
+
+    let summary_request = client
+        .get("https://cursor.com/api/usage-summary")
+        .header("Cookie", session_cookie(&token)?)
+        .header("Accept", "application/json");
+    let summary = read_response(summary_request).await?;
+    Some(parse(&summary))
 }
 
-fn db_path() -> Option<PathBuf> {
-    let path = dirs::config_dir()?.join("Cursor/User/globalStorage/state.vscdb");
-    path.is_file().then_some(path)
+/// The dashboard service is internal: when it fails, a legacy plan still reads its summary,
+/// while a unified plan keeps its last weekly reading (its summary pools read zero).
+fn choose(status: Option<&Value>, last_unified: bool) -> Route {
+    let unified = status.map_or(last_unified, |s| s["isUnified"].as_bool() == Some(true));
+    if unified { Route::Unified(status.and_then(parse_unified)) } else { Route::Summary }
+}
+
+async fn read_response(request: reqwest::RequestBuilder) -> Option<Value> {
+    let response = request.send().await.ok()?;
+    if !response.status().is_success() {
+        tracing::debug!(status = %response.status(), "cursor usage request was refused");
+        return None;
+    }
+    response.json::<Value>().await.ok()
+}
+
+fn parse_unified(status: &Value) -> Option<Vec<Window>> {
+    let percent = non_negative(status["usagePercent"].as_f64())?;
+    let resets = status["nextResetTimestampUtc"].as_str().and_then(iso_ms);
+    Some(vec![Window::new("weekly", "Weekly", percent, resets)])
+}
+
+fn cli_auth_path() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    return Some(dirs::home_dir()?.join(".cursor/auth.json"));
+    #[cfg(windows)]
+    return Some(dirs::config_dir()?.join("Cursor/auth.json"));
+    #[cfg(not(any(target_os = "macos", windows)))]
+    Some(dirs::config_dir()?.join("cursor/auth.json"))
 }
 
 fn read_token() -> Option<String> {
-    let path = db_path()?;
-    let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    let cli_path = cli_auth_path();
+    let app_path = dirs::config_dir().map(|dir| dir.join("Cursor/User/globalStorage/state.vscdb"));
+    read_saved_token(cli_path.as_deref(), app_path.as_deref())
+}
+
+fn read_saved_token(cli_path: Option<&Path>, app_path: Option<&Path>) -> Option<String> {
+    // A stale CLI login must not hide an already-working desktop login.
+    let usable = |token: &String| session_cookie(token).is_some();
+    app_path.and_then(read_app_token).filter(usable).or_else(|| read_cli_token(cli_path?).filter(usable))
+}
+
+fn read_cli_token(path: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let auth: Value = serde_json::from_str(&raw).ok()?;
+    Some(token_text(auth["accessToken"].as_str()?))
+}
+
+fn read_app_token(path: &Path) -> Option<String> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
     conn.busy_timeout(Duration::from_millis(200)).ok()?;
     let raw =
         conn.query_row("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'", [], stored_text).ok()?;
@@ -70,6 +130,10 @@ fn jwt_sub(token: &str) -> Option<String> {
     let value: Value = serde_json::from_slice(&bytes).ok()?;
     let sub = value["sub"].as_str().filter(|s| !s.is_empty())?;
     Some(sub.to_owned())
+}
+
+fn session_cookie(token: &str) -> Option<String> {
+    cookie(&jwt_sub(token)?, token)
 }
 
 fn cookie(sub: &str, token: &str) -> Option<String> {
@@ -130,6 +194,32 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn a_unified_super_plan_reports_its_weekly_usage_and_actual_reset() {
+        let status = json!({
+            "isUnified": true,
+            "cursorPlanName": "Super",
+            "usagePercent": 46.030_076_118_571_69,
+            "nextResetTimestampUtc": "2026-10-27T23:30:44.854Z",
+            "billingCycleEnd": "2026-11-01T00:00:00.000Z",
+            "individualUsage": {"plan": {"totalPercentUsed": 0, "autoPercentUsed": 0, "apiPercentUsed": 0}}
+        });
+        let windows = parse_unified(&status).unwrap();
+        assert_eq!(windows.len(), 1, "a unified allowance is not three legacy pools");
+        assert_eq!((windows[0].id.as_str(), windows[0].label.as_str()), ("weekly", "Weekly"));
+        assert!((windows[0].percent - 46.030_076_118_571_69).abs() < 1e-9);
+        assert_eq!(windows[0].resets_at, Some(1_793_143_844_854));
+    }
+
+    #[test]
+    fn missing_unified_usage_is_not_reported_as_zero() {
+        for status in [json!({"isUnified": true}), json!({"usagePercent": -1}), json!({"usagePercent": "46%"})] {
+            assert_eq!(parse_unified(&status), None);
+        }
+        let windows = parse_unified(&json!({"usagePercent": 0})).unwrap();
+        assert!(windows[0].percent.abs() < f64::EPSILON, "an explicit zero is a valid reading");
+    }
+
+    #[test]
     fn the_summary_keeps_each_percent_the_api_reports() {
         let body = json!({
             "limitType": "team",
@@ -171,21 +261,61 @@ mod tests {
 
     #[test]
     fn a_database_value_is_the_saved_token() {
-        let path = std::env::temp_dir().join(format!("codync-cursor-{}.db", std::process::id()));
-        let _ = std::fs::remove_file(&path);
+        let path = std::env::temp_dir().join(format!("codync-cursor-{}.db", uuid::Uuid::new_v4()));
         let conn = Connection::open(&path).unwrap();
         conn.execute("CREATE TABLE ItemTable (key TEXT, value BLOB)", []).unwrap();
+        let app_token = test_token("user_app");
         conn.execute(
             "INSERT INTO ItemTable (key, value) VALUES ('cursorAuth/accessToken', ?1)",
-            [rusqlite::types::Value::Blob(br#""tok""#.to_vec())],
+            [rusqlite::types::Value::Blob(format!("\"{app_token}\"").into_bytes())],
         )
         .unwrap();
+        let cli_path = path.with_extension("json");
+        for raw in ["{", "{}", r#"{"accessToken":""}"#, r#"{"accessToken":"not-a-jwt"}"#] {
+            std::fs::write(&cli_path, raw).unwrap();
+            assert_eq!(read_saved_token(Some(&cli_path), Some(&path)), Some(app_token.clone()));
+            assert_eq!(read_saved_token(Some(&cli_path), None), None);
+        }
+        let token = test_token("user_cli");
+        std::fs::write(&cli_path, json!({"accessToken": token}).to_string()).unwrap();
+        assert_eq!(read_saved_token(Some(&cli_path), Some(&path)), Some(app_token.clone()));
+        assert_eq!(read_saved_token(Some(&cli_path), None), Some(token.clone()));
+        conn.execute("UPDATE ItemTable SET value = 'tok'", []).unwrap();
+        assert_eq!(read_saved_token(Some(&cli_path), Some(&path)), Some(token), "a broken app value is not a login");
         drop(conn);
-        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-        let raw = conn
-            .query_row("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'", [], stored_text)
-            .unwrap();
-        let _ = std::fs::remove_file(&path);
-        assert_eq!(token_text(&raw), "tok");
+        std::fs::remove_file(&cli_path).unwrap();
+        assert_eq!(read_saved_token(Some(&cli_path), Some(&path)), None);
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(read_saved_token(Some(&cli_path), Some(&path)), None);
+        assert!(!path.exists(), "reading an absent desktop database never creates one");
+    }
+
+    #[test]
+    fn a_cli_only_login_supplies_usage_credentials_without_changing_them() {
+        let path = std::env::temp_dir().join(format!("codync-cursor-{}.json", uuid::Uuid::new_v4()));
+        let token = test_token("user_cli");
+        let raw = json!({"accessToken": token, "refreshToken": "leave-this-alone"}).to_string();
+        std::fs::write(&path, &raw).unwrap();
+        let saved = read_saved_token(Some(&path), None);
+        let after = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(saved, Some(token));
+        assert_eq!(after, raw);
+    }
+
+    fn test_token(sub: &str) -> String {
+        let payload = URL_SAFE_NO_PAD.encode(json!({ "sub": sub }).to_string());
+        format!("eyJhbGciOiJub25lIn0.{payload}.sig")
+    }
+
+    #[test]
+    fn a_failed_dashboard_keeps_a_unified_plan_off_the_legacy_summary() {
+        let unified = json!({"isUnified": true, "usagePercent": 46});
+        let Route::Unified(Some(windows)) = choose(Some(&unified), false) else { panic!("a unified reading") };
+        assert_eq!(windows[0].id, "weekly");
+        assert_eq!(choose(Some(&json!({"isUnified": true})), false), Route::Unified(None));
+        assert_eq!(choose(None, true), Route::Unified(None), "a failed poll keeps the last weekly window");
+        assert_eq!(choose(None, false), Route::Summary, "a legacy or unknown plan still reads its summary");
+        assert_eq!(choose(Some(&json!({"isUnified": false})), true), Route::Summary);
     }
 }

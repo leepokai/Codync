@@ -26,8 +26,12 @@ glance = "1.2.0"
 backdrop = "2.0.1"
 kyant-shapes = "1.2.1"
 webrtc = "125.6422.07"
+play-app-update = "2.1.0"
+play-review = "2.0.2"
 
 [libraries]
+play-app-update = { module = "com.google.android.play:app-update-ktx", version.ref = "play-app-update" }
+play-review = { module = "com.google.android.play:review-ktx", version.ref = "play-review" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose" }
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }

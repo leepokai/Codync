@@ -41,6 +41,14 @@ data class Bot(
     val reachableByAssistants: Boolean? = null,
     /** The bot that created this one; null when the user did. */
     val createdBy: String? = null,
+    /** Uses the memory all the user's bots share ("About you"); null from an older host. */
+    val sharedMemory: Boolean? = null,
+    /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
+    val harnessMemory: Boolean? = null,
+    /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
+    val harnessMemoryShared: Boolean? = null,
+    /** Moves whenever memory changes, so an open memory screen fetches it again. */
+    val memoryRev: Long? = null,
     val autoName: Boolean = false,
     val createdAt: Long = 0,
     val startedAt: Long? = null,

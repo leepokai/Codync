@@ -8,11 +8,17 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.drag
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -59,6 +65,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -122,22 +129,29 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         open = true
     }
-    val gestures = if (reorder == null) Modifier.combinedClickable(enabled = enabled, onClick = { tap?.invoke() },
-        onLongClickLabel = "Actions", onLongClick = hold)
+    val longPress = LocalViewConfiguration.current.longPressTimeoutMillis
     // One gesture for tap, hold and drag: a click detector would swallow the move after the hold.
-    else Modifier.semantics {
+    // A message reads as one node with its actions, as a clickable would merge it; a row that reorders keeps its own.
+    val gestures = Modifier.semantics(mergeDescendants = reorder == null) {
         if (enabled) { onClick { tap?.invoke(); true }; onLongClick("Actions") { hold(); true } }
     }.pointerInput(reorder, enabled) {
         if (!enabled) return@pointerInput
         awaitEachGesture {
-            val down = awaitFirstDown()
+            // A message's hold counts on its links and buttons too, as the iPhone's context menu: even a press a child took.
+            val down = awaitFirstDown(requireUnconsumed = reorder != null)
             val held = awaitLongPressOrCancellation(down.id)
             if (held == null) {
+                // Not an unconsumed up: a child (a link, a button) took the tap, or the press became a scroll.
                 val up = currentEvent.changes.firstOrNull { it.id == down.id }
                 if (up != null && up.changedToUp() && !up.isConsumed) { up.consume(); tap?.invoke() }
                 return@awaitEachGesture
             }
             hold()
+            if (reorder == null) {
+                // The rest of the press is kept from the child, so a held link opens the menu, not the page.
+                do { awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } } while (currentEvent.changes.any { it.pressed })
+                return@awaitEachGesture
+            }
             var moved = 0f
             var started = false
             // finally: a cancelled gesture (the row left the list, the handler restarted) still ends the drag.
@@ -154,7 +168,14 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
             }
         }
     }
-    return onGloballyPositioned { anchor = it.boundsInRoot() }.then(gestures)
+    // Keys as a clickable takes them (a row that reorders has none): Enter taps, a held Enter or the Menu key opens the menu.
+    val keys = if (reorder != null || !enabled) Modifier else Modifier.onKeyEvent { event ->
+        if (event.key !in listOf(Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Menu)) return@onKeyEvent false
+        val key = event.nativeKeyEvent
+        if (event.type == KeyEventType.KeyUp) { if (event.key == Key.Menu || key.eventTime - key.downTime >= longPress) hold() else tap?.invoke() }
+        true
+    }.focusable()
+    return onGloballyPositioned { anchor = it.boundsInRoot() }.then(gestures).then(keys)
 }
 
 /** The menu panel and its placement around `anchor`. `cover`: grow over the anchor (pull-down menus). */

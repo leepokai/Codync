@@ -162,6 +162,7 @@ const map: Record<string, IconNode> = {
   'speaker.slash.fill': L.VolumeX,
   'speaker.wave.2': L.Volume2,
   'speaker.wave.2.fill': L.Volume2,
+  'square.and.arrow.down': L.Import,
   'square.and.arrow.up': L.Share,
   'square.and.pencil': L.SquarePen,
   'square.grid.2x2': L.LayoutGrid,

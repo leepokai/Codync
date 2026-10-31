@@ -59,7 +59,9 @@ lead, and Siri's "Talk to Codync" does the same. Each computer may have its own 
 Shortcuts > *Lead to call* picks whose (`SharedStore.Context.shortcutLeadComputer`, kept on this iPhone). Automatic,
 and a pick whose lead is gone, call the lead of the first computer, in the user's computer order, that has one. With
 no lead anywhere (deleted, or not synced yet) it asks which bot. The Bot picker lists leads first. See
-[iOS Shortcuts](ios-shortcuts.md). Android has no Siri, Shortcuts or Action button, so it has no such setting. The desktop's voice input shortcut goes to the lead when no chat is open, or the
+[iOS Shortcuts](ios-shortcuts.md). On Android, **Talk to Codync** in the app icon's shortcuts calls the lead the same way
+(`LiveShortcut.kt`): the same Settings > Shortcuts > *Lead to call*, Automatic and fallback, saved per account in
+`LocalStore` (`shortcut-lead`); with no lead it opens Bots to pick one. The desktop's voice input shortcut goes to the lead when no chat is open, or the
 top bot where no computer has one.
 
 ## Compatibility

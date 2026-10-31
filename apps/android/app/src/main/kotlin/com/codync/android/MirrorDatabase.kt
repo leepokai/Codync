@@ -18,8 +18,15 @@ import kotlinx.serialization.json.jsonObject
 
 /** All entity writes, send reconciliation and the event cursor commit together. */
 class MirrorDatabase(context: Context, directory: File, computerId: String) :
-    SQLiteOpenHelper(context, File(directory, "mirror-$computerId.db").absolutePath, null, 3) {
-    init { require(computerId.matches(Regex("[A-Za-z0-9_-]{22}"))) }
+    SQLiteOpenHelper(context, file(directory, computerId).absolutePath, null, 3) {
+    companion object {
+        private fun file(directory: File, computerId: String): File {
+            require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
+            return File(directory, "mirror-$computerId.db")
+        }
+        /** Deletes a computer's mirror with its journal files, once it's closed. */
+        fun delete(directory: File, computerId: String) { SQLiteDatabase.deleteDatabase(file(directory, computerId)) }
+    }
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")

@@ -5,7 +5,6 @@ import UIKit
 /// A coding agent's logo, by ACP registry id or by Codync's id for agents outside the registry,
 /// tinted like text; a terminal glyph otherwise.
 public struct AgentIcon: View {
-    @Environment(BotStore.self) private var store
     let registry: String?
     let size: CGFloat
 
@@ -16,9 +15,7 @@ public struct AgentIcon: View {
 
     public var body: some View {
         Group {
-            if let custom = customIcon, custom.image != nil {
-                CustomIconView(icon: custom, size: size)
-            } else if let name = registry.map({ "agent-\($0)" }), Self.exists(name) {
+            if let name = registry.map({ "agent-\($0)" }), Self.exists(name) {
                 Image(name, bundle: .module).resizable().scaledToFit()
             } else {
                 Image(systemName: "terminal").resizable().scaledToFit().padding(size * 0.1)
@@ -26,12 +23,6 @@ public struct AgentIcon: View {
         }
         .frame(width: size, height: size)
         .foregroundStyle(tint)
-    }
-
-    private var customIcon: CustomIcon? {
-        guard let registry else { return nil }
-        let backend = store.hello?.backends.first { $0.id == registry || $0.registry == registry }
-        return store.icons["agent:\(backend?.id ?? registry)"]
     }
 
     /// Registry logos are one-color; paint the ones with a known brand color in it.

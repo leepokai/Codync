@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.lifecycle.ViewModelProvider
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import com.codync.android.core.*
@@ -53,18 +52,22 @@ class LiveRoutingTest {
                 try {
                     val intent = Intent(Intent.ACTION_VIEW, link(), context, MainActivity::class.java)
                     ActivityScenario.launch<MainActivity>(intent).use { scenario ->
-                        var model: AppStore? = null
-                        scenario.onActivity { model = ViewModelProvider(it)[AppStore::class.java] }
-                        val store = requireNotNull(model)
-                        withTimeout(35_000) { store.state.first { !it.loading && it.contextId == "local" && it.selectedBot == bot } }
-                        assertNull(store.state.value.account.userId)
-                        assertNull(store.state.value.error)
+                        var model: AccountStore? = null
+                        scenario.onActivity { model = accountStore(it) }
+                        val accounts = requireNotNull(model)
+                        val store = withTimeout(35_000) {
+                            accounts.state.first { !it.loading && it.contextId == "local" }
+                            accounts.stores.first { stores -> stores.any { it.id == computer.id } }.single { it.id == computer.id }
+                        }
+                        withTimeout(35_000) { store.state.first { !it.loading && it.selectedBot == bot } }
+                        assertNull(accounts.state.value.account.userId)
+                        assertNull(accounts.state.value.error)
                         suspend fun reject(uri: Uri, message: String) {
-                            instrumentation.runOnMainSync { store.openBot(null); store.clearError(); store.openLink(uri) }
-                            withTimeout(15_000) { store.state.first { it.error?.contains(message) == true } }
+                            instrumentation.runOnMainSync { accounts.openBot(null); accounts.clearError(); accounts.openLink(uri) }
+                            withTimeout(15_000) { accounts.state.first { it.error?.contains(message) == true } }
                             assertNull(store.state.value.selectedBot)
-                            assertEquals("local", store.state.value.contextId)
-                            assertNull(store.state.value.account.userId)
+                            assertEquals("local", accounts.state.value.contextId)
+                            assertNull(accounts.state.value.account.userId)
                         }
                         reject(link(scope = "a".repeat(64)), "Switch to the account")
                         reject(link(cid = "AAAAAAAAAAAAAAAAAAAAAA"), "computer is no longer paired")
@@ -76,15 +79,17 @@ class LiveRoutingTest {
                         compose.onNodeWithContentDescription("Usage limits").performClick()
                         val usage = hasText("Usage") and isHeading()
                         compose.waitUntil(10_000) { compose.onAllNodes(usage).fetchSemanticsNodes().size == 1 }
-                        instrumentation.runOnMainSync { store.openLink(link(id = parent)) }
-                        withTimeout(10_000) { store.state.first { it.selectedBot == parent && it.error == null } }
+                        instrumentation.runOnMainSync { accounts.openLink(link(id = parent)) }
+                        withTimeout(10_000) { store.state.first { it.selectedBot == parent } }
+                        assertNull(accounts.state.value.error)
                         compose.onNode(chatTitle).assertIsDisplayed()
                         // Recreating the Activity must retain the current navigation, not replay its original intent.
                         scenario.recreate()
                         scenario.onActivity { activity ->
-                            val retained = ViewModelProvider(activity)[AppStore::class.java]
-                            assertSame(store, retained)
-                            assertEquals(parent, retained.state.value.selectedBot)
+                            val retained = accountStore(activity)
+                            assertSame(accounts, retained)
+                            assertSame(store, retained.store(computer.id))
+                            assertEquals(parent, store.state.value.selectedBot)
                         }
                     }
                 } finally { channel.call("deleteBot", body("botId" to bot)); metadata.delete() }

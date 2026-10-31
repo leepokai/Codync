@@ -48,39 +48,46 @@ import com.kyant.shapes.RoundedRectangle
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** Computer management: every computer this phone can use or ask for, and the way to pair another (iOS `ComputersView`). */
-@Composable internal fun ComputersView(state: AppState, store: AppStore, pair: () -> Unit, ask: (CloudComputer) -> Unit, extensions: () -> Unit) {
-    val signedIn = state.account.userId != null
-    val paired = state.computers.firstOrNull()
-    var confirmForget by remember { mutableStateOf(false) }
+/**
+ * Computer management: every computer this phone can use or ask for (paired here and in the account,
+ * merged by computer ID), and the way to pair another (iOS `ComputersView`).
+ */
+@Composable internal fun ComputersView(app: AccountContext, states: List<AppState>, accounts: AccountStore, pair: () -> Unit, ask: (CloudComputer) -> Unit,
+    extensions: (String) -> Unit) {
+    val signedIn = app.account.userId != null
+    var confirmForget by remember { mutableStateOf<AppState?>(null) }
     var confirmRevoke by remember { mutableStateOf<CloudComputer?>(null) }
-    var coloring by remember { mutableStateOf(false) }
-    var voice by remember { mutableStateOf(false) }
-    var network by remember { mutableStateOf(false) }
-    LaunchedEffect(state.contextId) { store.refreshCloud() }
+    var coloring by remember { mutableStateOf<String?>(null) }
+    var voice by remember { mutableStateOf<String?>(null) }
+    var network by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(app.contextId) { accounts.refreshCloud() }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
         PageHeader("Computer management", icon = "gearshape")
         // One card per computer, so each one's rows read as its own.
-        PullToRefresh(store::refreshComputers, Modifier.weight(1f)) { CardForm {
-            if (paired != null) {
-                val inAccount = state.cloudComputers.firstOrNull { it.computerId == paired.id }
+        PullToRefresh(accounts::refreshComputers, Modifier.weight(1f)) { CardForm {
+            for (state in states) {
+                val id = state.computer.id
+                val store = accounts.store(id) ?: continue
+                val inAccount = app.cloudComputers.firstOrNull { it.computerId == id }
                 CardSection {
-                    computerRows(state, store, inAccount != null, ComputerActions(extensions, store::openScreen, voice = { voice = true },
-                        network = { network = true }, color = { coloring = true }, ask = inAccount?.let { c -> { ask(c) } },
-                        revoke = inAccount?.takeIf { it.isGranted }?.let { c -> { confirmRevoke = c } }) { confirmForget = true })
+                    computerRows(state, store, inAccount != null, app.isStale(state, states), app.access[id]?.code,
+                        ComputerActions({ extensions(id) }, store::openScreen, voice = { voice = id }, network = { network = id }, color = { coloring = id },
+                            ask = inAccount?.let { c -> { ask(c) } }, revoke = inAccount?.takeIf { it.isGranted }?.let { c -> { confirmRevoke = c } }) {
+                            confirmForget = state
+                        })
                 }
             }
-            for (computer in state.cloudComputers.filter { it.computerId != paired?.id }) CardSection {
+            // Account computers this phone isn't set up for yet.
+            for (computer in app.cloudComputers.filter { c -> app.computers.none { it.id == c.computerId } }) CardSection {
                 row {
-                    if (state.isOlderCopy(computer)) OlderCopyRow(computer)
-                    else AccountComputerRow(computer, state.access?.takeIf { it.computerId == computer.computerId }?.code,
-                        askingAnother = state.askingAccess.let { it != null && it != computer.computerId },
-                        ask = { ask(computer) }, revoke = { confirmRevoke = computer })
+                    if (app.isOlderCopy(computer)) OlderCopyRow(computer)
+                    else AccountComputerRow(computer, app.access[computer.computerId]?.code,
+                        asking = computer.computerId in app.asking, ask = { ask(computer) }, revoke = { confirmRevoke = computer })
                 }
             }
-            val hidden = state.bots.filter { it.hidden && !it.deleted }
+            val hidden = states.flatMap { state -> state.bots.filter { it.hidden && !it.deleted }.map { state to it } }
             if (hidden.isNotEmpty()) CardSection("Hidden bots") {
-                for (bot in hidden) row { HiddenBotRow(state, store, bot) }
+                for ((state, bot) in hidden) row { accounts.store(state.computer.id)?.let { HiddenBotRow(state, it, bot) } }
             }
             CardSection(footer = if (signedIn) "Computers in your account need your OK on the computer before this phone can use them."
                 else "Each bot runs on its own computer. Sign in to see the computers in your account.") {
@@ -94,16 +101,23 @@ import kotlinx.serialization.json.put
             }
         } }
     }
-    CodyncSheet(voice, { voice = false }) { VoiceChatSettings(state, store) }
-    CodyncSheet(network, { network = false }) { state.network?.let { NetworkSheet(it, store::refreshNetwork) } }
-    SwatchPanel(coloring, paired?.color, { coloring = false }, store::setColor)
-    CodyncDialog(tr("Remove {name}?").replace("{name}", paired?.name ?: "computer"), confirmForget, { confirmForget = false },
+    val voiceState = states.firstOrNull { it.computer.id == voice }
+    CodyncSheet(voiceState, { voice = null }) { state -> accounts.store(state.computer.id)?.let { VoiceChatSettings(state, it) } }
+    val networkState = states.firstOrNull { it.computer.id == network }
+    CodyncSheet(networkState?.network?.let { networkState to it }, { network = null }) { (state, view) ->
+        accounts.store(state.computer.id)?.let { NetworkSheet(view, it::refreshNetwork) }
+    }
+    SwatchPanel(coloring != null, states.firstOrNull { it.computer.id == coloring }?.computer?.color, { coloring = null }) {
+        accounts.store(coloring)?.setColor(it)
+    }
+    val forgetting = confirmForget
+    CodyncDialog(tr("Remove {name}?").replace("{name}", forgetting?.computer?.name ?: "computer"), forgetting != null, { confirmForget = null },
         "Its bots and conversations stay on that computer. You can pair again any time.") {
-        listOf(DialogAction("Remove", destructive = true, action = store::removeComputer))
+        listOfNotNull(forgetting?.let { target -> DialogAction("Remove", destructive = true) { accounts.removeComputer(target.computer.id) } })
     }
     CodyncDialog("Revoke this phone's access to ${confirmRevoke?.name ?: "the computer"}?", confirmRevoke != null, { confirmRevoke = null },
         "You can ask for access again; the computer will show a new code to confirm.") {
-        listOfNotNull(confirmRevoke?.let { target -> DialogAction("Revoke", destructive = true) { store.revokeAccess(target.computerId) } })
+        listOfNotNull(confirmRevoke?.let { target -> DialogAction("Revoke", destructive = true) { accounts.revokeAccess(target.computerId) } })
     }
 }
 
@@ -117,8 +131,8 @@ private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit
  * (saved with the computer, so another account's computer keeps its own), how it's reached, the Codync it runs
  * (and its update) and, for a stale pairing, Remove (iOS `ComputerRows`).
  */
-private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: Boolean, actions: ComputerActions) {
-    row { ComputerSummary(state, inAccount, actions) }
+private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: Boolean, stale: Boolean, code: String?, actions: ComputerActions) {
+    row { ComputerSummary(state, inAccount, stale, code, actions) }
     if (state.connection is LinkState.Ready) {
         row { RowLabel("Extensions", "square.grid.2x2", chevron = true, modifier = Modifier.plainButton(action = actions.extensions)) }
         row { RowLabel("Voice chat", "waveform", chevron = true, modifier = Modifier.plainButton(action = actions.voice)) }
@@ -126,23 +140,23 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         if (state.network?.shown == true) row { RowLabel("Network", NETWORK_ICON, chevron = true, modifier = Modifier.plainButton(action = actions.network)) }
     }
     if (BuildConfig.PUSH_CONFIGURED) row {
-        ComputerNotificationsRow(state.computers.first().notifications, store::notifications)
+        ComputerNotificationsRow(state.computer.notifications, store::notifications)
     }
-    row { ConnectionRow(state.computers.first(), store) }
+    row { ConnectionRow(state.computer, store) }
     // Kept while an update asked from here restarts the computer: its spinner says it's updating.
     if ((state.connection is LinkState.Ready || state.isUpdating) && state.hello != null) row { CodyncVersionRow(state, store::requestHostUpdate) }
-    if (state.isStale && !inAccount) row { RowLabel("Remove", "trash", Palette.danger, modifier = Modifier.plainButton(action = actions.remove)) }
+    if (stale && !inAccount) row { RowLabel("Remove", "trash", Palette.danger, modifier = Modifier.plainButton(action = actions.remove)) }
 }
 
 /** Name, connection, and an access request when this phone can't reach the computer; a long press opens its menu. */
-@Composable private fun ComputerSummary(state: AppState, inAccount: Boolean, actions: ComputerActions) {
-    val computer = state.computers.first()
+@Composable private fun ComputerSummary(state: AppState, inAccount: Boolean, stale: Boolean, code: String?, actions: ComputerActions) {
+    val computer = state.computer
     val link = state.connection
     val online = link is LinkState.Ready
     val detail = if (link is LinkState.Ready) {
         val count = state.bots.count { !it.deleted && it.kind != "group" }
         "$count bot${if (count == 1) "" else "s"} · ${routeLabel(link.route, computer.cloud)}"
-    } else computerStatusText(state)
+    } else computerStatusText(state, stale)
     Column(Modifier.fillMaxWidth().contextActions(items = {
         listOfNotNull(
             MenuItem("Color", icon = "paintpalette", action = actions.color),
@@ -162,7 +176,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         val unreachable = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating
         Text(detail, style = Type.footnote, color = if (unreachable) Palette.warning else Palette.secondary)
         if (unreachable && actions.ask != null) {
-            SecondaryButton(if (state.access?.computerId == computer.id) "Show code" else "Ask for access", action = actions.ask)
+            SecondaryButton(if (code != null) "Show code" else "Ask for access", action = actions.ask)
         }
     }
 }
@@ -203,8 +217,8 @@ private const val NETWORK_ICON = "codync.network"
     }
 }
 
-/** A computer in the account that this phone can't use yet; `askingAnother` while this phone asks a different one. */
-@Composable private fun AccountComputerRow(computer: CloudComputer, code: String?, askingAnother: Boolean, ask: () -> Unit,
+/** A computer in the account that this phone can't use yet; [asking] while this phone's request is on its way to it. */
+@Composable private fun AccountComputerRow(computer: CloudComputer, code: String?, asking: Boolean, ask: () -> Unit,
     revoke: () -> Unit) {
     val online = if (computer.online == true) "Online" else "Offline"
     val detail = when {
@@ -222,7 +236,7 @@ private const val NETWORK_ICON = "codync.network"
         when {
             code != null -> SecondaryButton("Code", action = ask)
             computer.isGranted -> SecondaryButton("Revoke", action = revoke)
-            else -> SecondaryButton("Ask for access", enabled = !askingAnother, action = ask)
+            else -> SecondaryButton("Ask for access", enabled = !asking, action = ask)
         }
     }
 }
@@ -244,7 +258,7 @@ private const val NETWORK_ICON = "codync.network"
         BotAvatar(bot, state.bots, 28.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(bot.name, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(state.hello?.text("name") ?: state.computers.firstOrNull()?.name.orEmpty(), style = Type.caption, color = Palette.tertiary)
+            Text(state.hostName, style = Type.caption, color = Palette.tertiary)
         }
         IconButton("Unhide", "eye") {
             store.command("updateBot", buildJsonObject { put("id", bot.id); put("hidden", false) }, "roster:" + bot.id)

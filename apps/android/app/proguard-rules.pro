@@ -19,3 +19,6 @@
 -keep,allowoptimization class com.codync.android.** extends androidx.glance.appwidget.GlanceAppWidget {
     public <init>();
 }
+
+# play review-ktx references an annotation that ships only with Play services; it is never needed at runtime.
+-dontwarn com.google.android.gms.common.annotation.NoNullnessRewrite

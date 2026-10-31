@@ -41,7 +41,7 @@ pub(crate) fn front_matter(md: &str) -> (Option<String>, Option<String>) {
 }
 
 /// `SKILL.md` without its front matter: what a skill tells the agent to do.
-fn body(md: &str) -> &str {
+pub(crate) fn body(md: &str) -> &str {
     let mut lines = md.split_inclusive('\n');
     if lines.next().map(str::trim) != Some("---") {
         return md.trim();

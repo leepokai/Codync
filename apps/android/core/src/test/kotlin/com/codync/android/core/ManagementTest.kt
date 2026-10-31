@@ -23,21 +23,4 @@ class ManagementTest {
                 Bot("nested", "Team", kind = "group"), Bot("deleted", "Gone", deleted = true))) }
         }
     }
-
-    @Test fun `memory decodes profiles history and future kinds without discarding facts`() {
-        val memory = MemoryListing.decode(WireJson.parseToJsonElement("""{"facts":[
-            {"id":"profile","title":"Android","content":"Works on Android","createdAt":1,"kind":"profile","pinned":true},
-            {"id":"log","content":"Reviewed a release","createdAt":2,"kind":"future","extra":true}],"total":5,"nextOffset":2}"""))
-        assertEquals(2, memory.facts.size)
-        assertEquals("future", memory.facts.last().kind)
-        assertEquals(2, memory.nextOffset)
-        assertEquals(true, memory.facts.first().pinned)
-        assertFails<IllegalArgumentException> { MemoryListing.decode(WireJson.parseToJsonElement("""{"facts":[{"id":"","content":"fact","createdAt":0,"kind":"profile"}]}""")) }
-    }
-
-    @Test fun `memory history keeps its cursor`() {
-        val detail = WireJson.decodeFromJsonElement<MemoryDetail>(WireJson.parseToJsonElement("""{"fact":{"id":"a","content":"x"},
-            "history":{"result":"v2","history_cursor":3},"timeline":{"result":"t"}}"""))
-        assertEquals(3, detail.history.cursor)
-    }
 }

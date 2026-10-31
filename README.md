@@ -163,6 +163,7 @@ and computer identity; do not use **Reset all data**, a cleanup utility, or Home
 | `codync-host install` / `uninstall` | background service (launchd on macOS, systemd `--user` on Linux, the sign-in Run key on Windows) |
 | `codync-host tui [--url … --token …]` | message your bots from a terminal (this computer by default; SSH-friendly) |
 | `codync-host send --bot <id-or-name> [--wait] [--json] <text>...` | send from a script, optionally waiting for the final reply |
+| `codync-host import <file> [--dry-run] [--only a,b] [--skill]` | import bots from another app's export file; `--skill` prints the skill that writes one |
 | `codync-host pair [--json]` | pairing QR code / link |
 | `codync-host status` | installed? running? |
 | `codync-host serve [--port 19222]` | run in the foreground |

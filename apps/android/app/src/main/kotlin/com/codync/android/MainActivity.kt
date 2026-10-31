@@ -36,7 +36,7 @@ import kotlinx.coroutines.launch
 import okio.Path.Companion.toOkioPath
 
 class MainActivity : ComponentActivity() {
-    private val store: AppStore by viewModels()
+    private val accounts: AccountStore by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppearancePreferences.initialize(applicationContext)
@@ -49,10 +49,11 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) lifecycleScope.launch { CodyncWidgets.publishPreviews(applicationContext) }
         enableEdgeToEdge()
         setContent {
-            val state by store.state.collectAsStateWithLifecycle()
+            val state by accounts.state.collectAsStateWithLifecycle()
+            val computers by accounts.computerStates.collectAsStateWithLifecycle()
             val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
                 notificationsAnswered(applicationContext, granted, PromptSource.Automatic)
-                store.syncPush()
+                accounts.syncPush()
             }
             LaunchedEffect(state.computers.isNotEmpty(), state.contextId) {
                 if (BuildConfig.PUSH_CONFIGURED && state.computers.isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 33 && !PushPreferences.asked(applicationContext)) {
@@ -68,7 +69,6 @@ class MainActivity : ComponentActivity() {
             val phrases = remember(appLanguage, systemTag) { AppLanguageStore.phrases(applicationContext, appLanguage, systemTag) }
             val systemChinese = remember(systemTag) { systemScript(systemTag) != null }
             CompositionLocalProvider(
-                LocalAgentIconOverrides provides agentIconOverrides(state),
                 LocalNetworkImages provides images,
                 LocalAppLanguage provides appLanguage,
                 LocalSystemChinese provides systemChinese,
@@ -87,22 +87,26 @@ class MainActivity : ComponentActivity() {
                 key(state.contextId, state.generation) {
                     val appearance by AppearancePreferences.mode.collectAsStateWithLifecycle()
                     val dark = appearance.isDark(isSystemInDarkTheme())
-                    val darkBars = dark || state.screenRequest != null
+                    val darkBars = dark || computers.values.any { it.screenRequest != null }
                     SideEffect {
                         WindowCompat.getInsetsController(window, window.decorView).apply {
                             isAppearanceLightStatusBars = !darkBars
                             isAppearanceLightNavigationBars = !darkBars
                         }
                     }
-                    CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, store); LaunchLayer(state.loading) } }
+                    CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, computers, accounts)
+                        LaunchLayer(state.loading, state.computers.all { computers[it.id]?.widgetBotsCurrent == true }) } }
                 }
             }
         }
-        // Rotation keeps its ViewModel/navigation; process restoration gets a fresh owner.
-        if (savedInstanceState?.getString("codync:activityOwner") != store.activityOwnerId) handle(intent)
+        // Rotation keeps its ViewModel/navigation; process restoration gets a fresh owner and the activity's first intent
+        // again, as does a return from Recents: its links open again, but a call or a share happened once.
+        val replayed = savedInstanceState != null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        if (savedInstanceState?.getString("codync:activityOwner") != accounts.activityOwnerId &&
+            !(replayed && intent.action in setOf(LiveShortcut.ACTION, Intent.ACTION_SEND))) handle(intent)
     }
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString("codync:activityOwner", store.activityOwnerId)
+        outState.putString("codync:activityOwner", accounts.activityOwnerId)
         super.onSaveInstanceState(outState)
     }
     override fun onNewIntent(intent: Intent) {
@@ -110,14 +114,23 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         handle(intent)
     }
-    override fun onStart() { super.onStart(); store.setForeground(true); Analytics.becameActive(applicationContext) }
+    override fun onStart() {
+        super.onStart(); accounts.setForeground(true); Analytics.becameActive(applicationContext)
+        lifecycleScope.launch { AppUpdates.refresh(applicationContext) }
+    }
     override fun onStop() {
-        store.setForeground(false)
+        accounts.setForeground(false)
         // A rotation isn't a trip to the background.
         if (!isChangingConfigurations) Analytics.enteredBackground()
         super.onStop()
     }
     private fun handle(intent: Intent?) {
+        if (intent?.action == LiveShortcut.ACTION) { accounts.talkToLead(); return }
+        // Text shared from another app, handed over by `ShareActivity`.
+        if (intent?.action == Intent.ACTION_SEND) {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let(accounts::share)
+            return
+        }
         val uri = intent?.data ?: return
         intent.getStringExtra(NotificationDisplay.ALERT_KIND)?.let { category ->
             intent.removeExtra(NotificationDisplay.ALERT_KIND)
@@ -125,14 +138,14 @@ class MainActivity : ComponentActivity() {
         }
         if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "pair") {
             intent.data = null
-            store.pair(uri.toString(), PairedVia.Link)
+            accounts.pair(uri.toString(), PairedVia.Link)
         }
         // Retain the scoped, non-secret destination for Activity/process restoration.
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) store.openLink(uri)
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; store.finishConnectorSignIn(uri) }
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; store.openScreenLink() }
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "computers") { intent.data = null; store.openPage(LinkPage.Computers) }
-        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "plugins") { intent.data = null; store.openPage(LinkPage.Extensions) }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host in setOf("bot", "usage")) accounts.openLink(uri)
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "oauth") { intent.data = null; accounts.finishConnectorSignIn(uri) }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "screen") { intent.data = null; accounts.openScreenLink() }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "computers") { intent.data = null; accounts.openPage(LinkPage.Computers) }
+        if (uri.scheme == BuildConfig.URL_SCHEME && uri.host == "plugins") { intent.data = null; accounts.openPage(LinkPage.Extensions) }
     }
 }
 

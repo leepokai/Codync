@@ -43,7 +43,7 @@ import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
 /** Who you're signed in as, and the other accounts on this phone (iOS `AccountSwitcherView`). */
-@Composable internal fun AccountSwitcherView(state: AppState, store: AppStore, pair: () -> Unit) {
+@Composable internal fun AccountSwitcherView(state: AccountContext, store: AccountStore, pair: () -> Unit) {
     val account = state.account
     val current = account.accounts.firstOrNull { it.userId == account.userId }
     val busy = "session" in state.busy
@@ -94,7 +94,7 @@ import com.kyant.shapes.RoundedRectangle
 }
 
 /** Every account on this phone as a face; tap one to switch, + to add another. */
-@Composable private fun Switcher(state: AppState, store: AppStore, busy: Boolean, add: () -> Unit) {
+@Composable private fun Switcher(state: AccountContext, store: AccountStore, busy: Boolean, add: () -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
         for (item in state.account.accounts) {
@@ -123,7 +123,7 @@ import com.kyant.shapes.RoundedRectangle
 }
 
 /** The account face of the roster's top bar. */
-@Composable internal fun AccountAvatar(state: AppState, size: Dp) {
+@Composable internal fun AccountAvatar(state: AccountContext, size: Dp) {
     val current = state.account.accounts.firstOrNull { it.userId == state.account.userId }
     if (!state.account.ready || "session" in state.busy) {
         Box(Modifier.size(size), contentAlignment = Alignment.Center) { ThinkingOrb(size = size * 0.6f) }

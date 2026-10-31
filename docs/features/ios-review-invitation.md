@@ -44,11 +44,11 @@ is unavailable. Never treat a StoreKit attempt or a manual link tap as a submitt
 
 ## Platform scope
 
-This feature is specific to the iPhone App Store build. Android's Settings, desktop Settings
-and help menu, and terminal settings were inspected: they have no Apple StoreKit review
-capability. They retain their existing behavior; Google Play review invitations would need
-a separate store-specific implementation. Desktop package and host versions change only
-for the repository's synchronized release version.
+The iPhone uses StoreKit. Since 2026-10-31 the Android app follows the same policy with Google Play's in-app
+review API (`core/Review.kt` for the policy, `ReviewPrompt.kt` for the hooks): a send from the composer, a
+finished answer read in its chat, returning to Bots, then two clear seconds before Play is asked. Play decides
+whether its dialog shows; Android's Settings has **Rate on Google Play** and **Report an issue**. Desktop
+Settings and help menu and terminal settings have no store review capability and keep their behavior.
 
 ## Validation (2026-10-26)
 

@@ -181,10 +181,12 @@ async function main() {
     const signed = await loopback("claimSign", { claimId: claim.body.claimId, nonce: claim.body.nonce, userId });
     check((await cloud("POST", `/v1/claims/${claim.body.claimId}/complete`, { token, body: signed })).status === 200, "icon test computer claimed");
     await waitFor("icon host sees its owner", async () => (await loopback("cloudStatus")).owner?.userId === userId || undefined);
-    const png = await exerciseIcons((method, body) => ch.call(method, body, 60_000), "agent:claude");
+    const target = `bot:${(await ch.call("createBot", { name: "Icons", backend: "custom", command: "true", cwd: tmp })).bot.id}`;
+    const png = await exerciseIcons((method, body) => ch.call(method, body, 60_000), target);
+    check(await ch.call("setIcon", { target: "agent:claude", remove: true }).then(() => false, () => true), "agents have no custom icons");
     await stop(host!);
     await startHost();
-    check((await loopback("hello")).icons["agent:claude"].dataUrl === png, "icon remains cached after host restart");
+    check((await loopback("hello")).icons[target].dataUrl === png, "icon remains cached after host restart");
     return;
   }
 

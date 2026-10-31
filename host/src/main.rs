@@ -10,6 +10,9 @@ mod compat;
 mod environment;
 mod hub;
 mod icons;
+mod import;
+mod import_cli;
+mod local_api;
 mod market;
 mod mcp;
 mod network;
@@ -28,6 +31,7 @@ mod usage;
 mod voice;
 
 use agent::backends;
+use local_api::local_call;
 use remote::identity;
 
 use anyhow::{Context, Result};
@@ -115,6 +119,8 @@ enum Sub {
     Cloud(cloud_cli::CloudArgs),
     /// Your other computers: create a network, invite them, see who is around.
     Network(network_cli::NetworkArgs),
+    /// Import bots from another app's export file (`--skill` prints the skill that writes one in Grok Bot).
+    Import(import_cli::ImportArgs),
     /// Install and start the host as a background service (launchd / systemd --user).
     Install {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
@@ -349,6 +355,7 @@ async fn main() -> Result<()> {
         Sub::Pair { port, json } => pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
         Sub::Send(args) => send_cli::run(args).await,
+        Sub::Import(args) => import_cli::run(args).await,
         Sub::Devices { port, action } => match action.unwrap_or(DevicesAction::List) {
             DevicesAction::List => {
                 let v = local_call(port, "devices", json!({})).await?;
@@ -571,29 +578,6 @@ async fn shutdown_signal() {
         () = ctrl_c => {}
         () = term => {}
     }
-}
-
-/// What a local command says when it can't reach the running host.
-const NOT_RUNNING: &str = "codync-host isn't running here. Start it with `codync-host install` (or `serve`).";
-
-/// Calls the running host's local API (`~/.codync/token` over loopback).
-async fn local_call(port: u16, method: &str, body: serde_json::Value) -> Result<serde_json::Value> {
-    let not_running = || anyhow::anyhow!(NOT_RUNNING);
-    let token = std::fs::read_to_string(service::data_dir().join("token")).map_err(|_| not_running())?;
-    let res = http()
-        .post(format!("http://127.0.0.1:{port}/api/{method}"))
-        .bearer_auth(token.trim())
-        .json(&body)
-        .timeout(Duration::from_secs(20))
-        .send()
-        .await
-        .map_err(|_| not_running())?;
-    let status = res.status();
-    let v: serde_json::Value = res.json().await.context("reading the host's answer")?;
-    if !status.is_success() {
-        anyhow::bail!("{}", v["error"].as_str().unwrap_or("the host refused"));
-    }
-    Ok(v)
 }
 
 async fn pair(port: u16, as_json: bool) -> Result<()> {

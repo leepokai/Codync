@@ -105,7 +105,7 @@ codync-host devices revoke <key>     # removes one; it disconnects at once
 - **Saved secrets need a keyring.** Connector credentials, voice API keys and agent API keys are encrypted with a key kept in the Secret Service (for example GNOME Keyring). The host's user needs a session D-Bus and an unlocked Secret Service; without one, saving such a secret fails with an error, and new bots start with no connectors turned on. If the keyring is locked, the host shows its unlock prompt for a minute and then gives the same error; on a server nobody logs in to graphically, unlock the keyring yourself (for example `gnome-keyring-daemon --unlock`) or give it an empty password. Codync never falls back to storing them in plain text.
 - **No desktop app on the server itself.** The Linux desktop app needs a graphical session. Use the phone, the desktop app on another computer over SSH, or the terminal UI.
 - **Keeping the machine awake does nothing.** VMs don't sleep; if the host can't hold off sleep, it only logs a warning.
-- **Usage limits** come from the agents installed on the server, the same as on a desktop. Cursor asks cursor.com with the sign-in saved on that server.
+- **Usage limits** come from the agents installed on the server, the same as on a desktop. Cursor reads the CLI's saved sign-in (`$XDG_CONFIG_HOME/cursor/auth.json`, normally `~/.config/cursor/auth.json`) or the desktop app's, so a CLI-only login works, then asks Cursor's dashboard service (unified plans) or cursor.com (legacy plans).
 
 ## Updates
 

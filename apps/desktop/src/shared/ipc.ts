@@ -248,6 +248,8 @@ export interface CodyncBridge {
     copy(text: string): void
     /** Files picked in the system dialog: name and bytes. */
     pickFiles(): Promise<{ name: string; data: Uint8Array }[]>
+    /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */
+    pickExport(): Promise<string | null>
     readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
     setTraySummary(summary: TraySummary): void
     onCommand(cb: (command: WindowCommand) => void): () => void

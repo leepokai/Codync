@@ -204,7 +204,7 @@ import kotlinx.coroutines.launch
     val count = connectors.size + state.plugins?.skills.orEmpty().size
     Column(modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ComputerBadge(state.hello?.text("device"), 32.dp, state.computers.firstOrNull()?.color)
+            ComputerBadge(state.hello?.text("device"), 32.dp, state.computer.color)
             Column(Modifier.weight(1f)) {
                 Text(tr("Extensions"), style = Type.title2.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(state.hostName, style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)

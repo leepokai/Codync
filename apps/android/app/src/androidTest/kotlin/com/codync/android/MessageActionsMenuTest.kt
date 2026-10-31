@@ -12,7 +12,6 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import com.codync.android.design.MenuItem
@@ -28,6 +27,7 @@ import org.junit.Test
 /** A message's long-press menu (`Modifier.contextActions`): reactions over copy, reply and trace. */
 class MessageActionsMenuTest {
     @get:Rule val compose = createComposeRule()
+    private val store = previewStore()
     private fun back() = InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
 
     @Before fun isolatedEmulatorOnly() { assumeTrue(Build.PRODUCT.startsWith("sdk")) }
@@ -36,10 +36,10 @@ class MessageActionsMenuTest {
         val bot = Bot("message-preview", "Scout")
         val text = "Checked the connection. The saved route works."
         val entry = Entry("reply", 1, bot.id, rev = 1, kind = "agent", data = buildJsonObject { put("text", text); put("final", true) })
-        val initial = AppState(loading = false, selectedBot = bot.id, bots = listOf(bot),
+        val initial = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot),
             connection = LinkState.Ready(HostRoute.Direct), historyComplete = setOf(bot.id), entries = listOf(entry))
         val state = mutableStateOf(initial)
-        compose.setContent { Hosted { ChatScreen(state.value, viewModel(), {}) } }
+        compose.setContent { Hosted { ChatScreen(state.value, store, {}) } }
         val bubble = compose.onNode(hasText(text, substring = true) and hasClickAction())
         bubble.performTouchInput { longClick() }
         compose.onNodeWithContentDescription("👍").assertIsDisplayed().assertIsNotSelected()
@@ -67,9 +67,10 @@ class MessageActionsMenuTest {
         val quoted = Entry("quoted", 2, bot.id, rev = 2, kind = "user", data = buildJsonObject {
             put("text", "Ship it"); put("replyTo", buildJsonObject { put("id", reply.id); put("author", bot.id); put("text", text) })
         })
-        val state = AppState(loading = false, selectedBot = bot.id, bots = listOf(bot), connection = LinkState.Ready(HostRoute.Direct),
+        val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot), connection = LinkState.Ready(HostRoute.Direct),
             historyComplete = setOf(bot.id), entries = listOf(reply, quoted))
-        compose.setContent { Hosted { ChatScreen(state, viewModel(), {}) } }
+        var shown by mutableStateOf(state)
+        compose.setContent { Hosted { ChatScreen(shown, store, {}) } }
         // The sent reply shows what it quotes.
         compose.onNodeWithText("“$text”").assertIsDisplayed()
         compose.onNode(hasText(text) and hasClickAction()).performTouchInput { longClick() }
@@ -80,7 +81,7 @@ class MessageActionsMenuTest {
         compose.onAllNodesWithText("“$text”").assertCountEquals(1)
         compose.onNodeWithContentDescription("Cancel reply").assertDoesNotExist()
         // An older host can't quote: no Reply.
-        compose.setContent { Hosted { ChatScreen(state.copy(hello = buildJsonObject { put("version", "2.20.0") }), viewModel(), {}) } }
+        compose.runOnUiThread { shown = state.copy(hello = buildJsonObject { put("version", "2.20.0") }) }
         compose.onNode(hasText(text) and hasClickAction()).performTouchInput { longClick() }
         compose.onNodeWithText("Copy").assertIsDisplayed()
         compose.onNodeWithText("Reply").assertDoesNotExist()

@@ -39,6 +39,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -49,6 +50,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -106,8 +110,15 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         if (external != text.text.toString() && external !in echoes) text.setTextAndPlaceCursorAtEnd(external)
     }
     val clipboard = LocalClipboard.current
-    val clips = LocalContext.current.getSystemService(ClipboardManager::class.java)
+    val context = LocalContext.current
+    val clips = context.getSystemService(ClipboardManager::class.java)
     val scope = rememberCoroutineScope()
+    // Dictation stops with its chat or draft (another chat, an artifact's box) and when the box goes.
+    val dictation = remember(draftKey) { Dictation(context, scope) }
+    DisposableEffect(dictation) { onDispose { dictation.stop() } }
+    // Typing, files or dictation here hold off reading results and any rating invitation.
+    var focused by remember { mutableStateOf(false) }
+    ReviewInterruption(focused || files.isNotEmpty() || dictation.listening || dictation.transcribing)
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
         if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(draftKey, it) }
     }
@@ -160,6 +171,8 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         }
     }
     fun send() {
+        // Words still on their way would land in the emptied box.
+        dictation.stop()
         val command = if (files.isEmpty()) SlashCommands.builtIn(bot, typed, members) else null
         if (command != null) run(command) else store.sendDraft(draftKey, bot.id, typed, replyTo) { clear(); cancelReply() }
     }
@@ -206,15 +219,21 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
                     if (ctrlEnter && trailing == Trailing.Send && canSend) send()
                     ctrlEnter
                 }
-                BasicTextField(state = text, enabled = !queuing, modifier = Modifier.weight(1f).focusRequester(focus).contentReceiver(receiver).then(sendKey).padding(vertical = 10.dp),
+                BasicTextField(state = text, enabled = !queuing, modifier = Modifier.weight(1f).focusRequester(focus).onFocusChanged { focused = it.isFocused }.contentReceiver(receiver).then(sendKey).padding(vertical = 10.dp),
                     textStyle = Type.body.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent),
                     lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
                     decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis); input() } })
+                Box(Modifier.padding(bottom = 4.dp)) {
+                    DictationButton(dictation, state, store, 34.dp, { text.text.toString() }) { change ->
+                        text.setTextAndPlaceCursorAtEnd(change(text.text.toString()))
+                    }
+                }
                 TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp)) {
                     when (trailing) {
                         Trailing.Interrupt -> onInterrupt?.invoke()
                         Trailing.Stop -> store.command("stop", body("botId" to bot.id))
-                        Trailing.Call -> onCall?.invoke()
+                        // The call takes the microphone.
+                        Trailing.Call -> { dictation.stop(); onCall?.invoke() }
                         Trailing.Send -> send()
                     }
                 }

@@ -102,7 +102,6 @@ struct AgentSheet: View {
     private var overview: some View {
         CardForm {
             CardSection {
-                CustomIconEditor(target: "agent:\(backend.id)")
                 HStack(spacing: 14) {
                     AgentIcon(registry: backend.registry ?? backend.id, size: 30)
                         .frame(width: 52, height: 52)

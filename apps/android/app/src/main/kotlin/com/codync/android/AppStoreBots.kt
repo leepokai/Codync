@@ -14,16 +14,21 @@ fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), 
         val response = try { ready().call(method, body) }
             catch (error: CancellationException) { throw error }
             catch (error: Exception) { onFailure(); throw error }
-        response.jsonObject["bot"]?.let { value ->
-            withContext(Dispatchers.IO) { requireNotNull(database).receive(HostClient.decode(value.jsonObject)) }
-        }
-        response.jsonObject["entry"]?.let { value ->
-            withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(Entry.decode(value.jsonObject))) }
-        }
-        refresh()
+        receiveReply(response)
         onSuccess()
     }
     if (!started) onFailure()
+}
+
+/** Takes in the bot or entry a command's reply carries, then shows it. */
+private suspend fun AppStore.receiveReply(response: JsonElement) {
+    response.jsonObject["bot"]?.let { value ->
+        withContext(Dispatchers.IO) { requireNotNull(database).receive(HostClient.decode(value.jsonObject)) }
+    }
+    response.jsonObject["entry"]?.let { value ->
+        withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(Entry.decode(value.jsonObject))) }
+    }
+    refresh()
 }
 
 /** Moves a bot into the roster section [section], or out of any (null). */
@@ -61,12 +66,19 @@ fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
     val bot = HostClient.decode(result.jsonObject.getValue("bot").jsonObject)
     withContext(Dispatchers.IO) { requireNotNull(database).receive(bot) }
     refresh()
-    openBot(bot.id)
+    // A new bot or group opens its chat; an edit stays where it was made (iOS `BotEditorView.save`).
+    if (draft.id == null) openBot(bot.id)
     onSaved()
 }
 
-/** A saved bot's settings from its details, saved as they're edited: the chat stays where it is. */
-fun AppStore.saveSettings(draft: BotDraft) = command("updateBot", draft.body(), "settings:" + draft.id)
+/** A saved bot's settings from its details, saved as they're edited; [done] gets the error, or null once it took. */
+fun AppStore.saveSettings(draft: BotDraft, done: (String?) -> Unit) = action("settings:" + draft.id) {
+    try {
+        receiveReply(ready().call("updateBot", draft.body()))
+        done(null)
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (error: Exception) { done(error.message ?: "Couldn't save the changes.") }
+}
 
 fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor") {
     val payload = draft.body(state.value.bots)
@@ -75,7 +87,8 @@ fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor"
     val bot = HostClient.decode(result.jsonObject.getValue("bot").jsonObject)
     withContext(Dispatchers.IO) { requireNotNull(database).receive(bot) }
     refresh()
-    openBot(bot.id)
+    // A new bot or group opens its chat; an edit stays where it was made (iOS `BotEditorView.save`).
+    if (draft.id == null) openBot(bot.id)
     onSaved()
 }
 
@@ -157,12 +170,7 @@ fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
     UsageReport.decode(response)
     withContext(Dispatchers.IO) { requireNotNull(database).apply(MirrorEvent.Usage(response)) }
     refresh()
-    widgetOwner?.let { owner ->
-        val current = state.value
-        withContext(Dispatchers.IO) { WidgetStore.publish(getApplication(), owner, current.computers.firstOrNull(),
-            current.bots, UsageReport.decode(current.usage), false, true) }
-        CodyncWidgets.update(getApplication())
-    }
+    usageRead(this)
 }
 suspend fun AppStore.selectWorkspace(path: String): String {
     return hostQuery("selectWorkspace", body("path" to path)).jsonObject["path"]?.jsonPrimitive?.content
@@ -185,3 +193,15 @@ suspend fun AppStore.routineWebhook(botId: String, id: String, rotate: Boolean =
     val response = hostQuery("routineWebhook", buildJsonObject { put("botId", botId); put("id", id); put("rotate", rotate) })
     return WireJson.decodeFromJsonElement(response)
 }
+
+/** Saves a dragged roster order (the host syncs it to every device). */
+internal fun AppStore.reorder(ids: List<String>) =
+    command("reorderBots", buildJsonObject { putJsonArray("ids") { ids.forEach { add(JsonPrimitive(it)) } } }, "reorder")
+
+/** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
+internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =
+    command("updateBot", buildJsonObject { put("id", bot.id); put("harnessMemory", on) }, "memory:" + bot.id)
+
+/** Whether the bot uses what all the user's bots share (iOS `setSharedMemory`). */
+internal fun AppStore.setSharedMemory(bot: Bot, shared: Boolean) =
+    command("updateBot", buildJsonObject { put("id", bot.id); put("sharedMemory", shared) }, "memory:" + bot.id)

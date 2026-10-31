@@ -112,7 +112,6 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
     val curated = backend.curated
     val setUp = setUp(backend, auth)
     CardForm {
-        CardSection { row { CustomIconEditor("agent:${backend.id}", state, store) } }
         CardSection {
             row {
                 Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {

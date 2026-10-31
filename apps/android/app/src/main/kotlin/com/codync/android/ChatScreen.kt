@@ -87,6 +87,8 @@ import com.kyant.shapes.Capsule
     var connector by remember { mutableStateOf<MarketConnector?>(null) }
     val connect = ConnectionRequestActions({ id, item -> setupEntry = id; app = item }, { id, item -> setupEntry = id; connector = item })
     val startCall = rememberStartVoice(bot.id, state, store) { micDenied = true }
+    // "Talk to Codync" asked for a call here: taken even during a call, so it can't start one after it.
+    LaunchedEffect(state.callRequest) { if (store.takeCallRequest(bot.id) && state.voice == null) startCall() }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
@@ -96,6 +98,10 @@ import com.kyant.shapes.Capsule
     val reply = { entry: Entry -> replyId = entry.id }
     // The chat ignores Full conversation over it: it stays put underneath.
     val chatState = state.copy(trace = false)
+    // ponytail: "in sight" is the open chat with nothing over it, not its scroll position; add that if ratings come too early.
+    ReviewReading("${state.contextId}/${state.computer.id}/${bot.id}", state.entries.filter { it.botId == bot.id },
+        ready = details == null && viewing == null && peer == null && callLine == null && !state.trace && state.voice == null &&
+            state.drafts[bot.id]?.let { it.text.isBlank() && it.files.isEmpty() } != false && state.settledForReview && bot.status == "idle")
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         // Down to just above the header's bottom; the bottom one stops under Jump to latest.
         ScrollEdge(Edge.Top, top + 84.dp)
@@ -215,7 +221,8 @@ import com.kyant.shapes.Capsule
             // A chat shorter than the screen never scrolls, so showing the row is the trigger.
             LaunchedEffect(Unit) { if ("history" !in state.busy) store.loadHistory() }
         }
-        if (items.isEmpty() && !more) item("intro") { IntroCard(bot, state) }
+        // Shown while earlier messages may still load, as on the iPhone.
+        if (items.isEmpty()) item("intro") { IntroCard(bot, state) }
         items(items, key = { it.id }) { item ->
             when (item) {
                 is ChatItem.Separator -> TimeSeparator(item.at)

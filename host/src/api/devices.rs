@@ -41,6 +41,9 @@ const LOCAL_ONLY: &[&str] = &[
     "reportError",
     // Voice keys are entered on the computer itself; phones only use them.
     "setVoiceKey",
+    // An export file is a path on this computer.
+    "previewImport",
+    "importBots",
     "pairing",
     "computerCall",
     "computerTools",

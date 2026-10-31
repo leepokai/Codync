@@ -47,8 +47,8 @@ test('nodes never moved sit in columns by depth, and a saved position wins', () 
   assert.deepEqual([nodes.get(botKey('b'))!.x, nodes.get(botKey('b'))!.y, nodes.get(botKey('b'))!.saved], [5, 7, true])
   assert.ok(colX(botKey('z')) > colX(botKey('c')), 'a bot no flow reaches stands after the flows')
   const fan = layoutNodes(canvas([link('a', 'b'), link('a', 'c')]))
-  const [b, c] = [botKey('b'), botKey('c')].map((key) => fan.find((n) => n.key === key)!)
-  assert.ok(b.x === c.x && b.y !== c.y, 'nodes of one column don\'t overlap')
+  const [nb, nc] = [botKey('b'), botKey('c')].map((key) => fan.find((n) => n.key === key)!)
+  assert.ok(nb.x === nc.x && nb.y !== nc.y, 'nodes of one column don\'t overlap')
 })
 
 test('edges: each routine to its bot, then one per link', () => {

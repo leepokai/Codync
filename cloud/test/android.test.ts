@@ -34,7 +34,8 @@ describe("Android devices", () => {
     ]);
     const tables = ["devices", "grants", "access_requests"];
     const before = await Promise.all(tables.map(table => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all()));
-    await applyD1Migrations(db, env.TEST_MIGRATIONS.slice(androidMigration));
+    // Only the Android migration: later ones add columns of their own.
+    await applyD1Migrations(db, env.TEST_MIGRATIONS.slice(androidMigration, androidMigration + 1));
     const after = await Promise.all(tables.map(table => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all()));
     expect(after.map(result => result.results)).toEqual(before.map(result => result.results));
     const old = await db.prepare("SELECT platform,created_at,last_used_at,revoked_at FROM devices ORDER BY platform").all();

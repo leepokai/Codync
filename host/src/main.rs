@@ -136,6 +136,9 @@ enum Sub {
         /// Allow a manual update to interrupt active bots (their sessions resume).
         #[arg(long)]
         force: bool,
+        /// Install this release instead of the latest (never one older than the running host).
+        #[arg(long, conflicts_with_all = ["check", "status", "auto"])]
+        target: Option<String>,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
         #[arg(long)]
@@ -400,7 +403,7 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
-        Sub::Update { check, status, auto, force, port, json, worker } => {
+        Sub::Update { check, status, auto, force, target, port, json, worker } => {
             let status = if let Some(auto) = auto {
                 update::set_automatic(auto == "on")?
             } else if status {
@@ -408,10 +411,10 @@ async fn main() -> Result<()> {
             } else if check {
                 update::check().await?
             } else if !worker && service::installed() {
-                tokio::task::spawn_blocking(move || update::spawn_worker(port, force)).await??;
+                tokio::task::spawn_blocking(move || update::spawn_worker(port, force, target.as_deref())).await??;
                 update::status()?
             } else {
-                update::apply(port, force, worker).await?
+                update::apply(port, force, worker, target.as_deref()).await?
             };
             if json {
                 println!("{}", serde_json::to_string_pretty(&status)?);

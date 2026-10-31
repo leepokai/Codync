@@ -122,6 +122,99 @@ class CloudClientTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun `every request names this app and its oldest host, with a bare version`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"computers":[]}"""))
+            server.enqueue(MockResponse().setBody("""{"cloudComputer":null}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit, appVersion = "2.24.0-dev")
+            client.computers()
+            client.cloudComputer()
+            repeat(2) { assertEquals("android/2.24.0; minHost=${VersionMismatch.MIN_HOST}", server.takeRequest().getHeader("Codync-App")) }
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `account computers say which one Codync Cloud runs, and older clouds say nothing`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"computers":[
+                {"computerId":"a","name":"Cloud","signKey":"k","cloud":{"provider":"boat","providerName":"Boat","region":"EU","state":"stopped"}},
+                {"computerId":"b","name":"Studio","signKey":"k","cloud":null},{"computerId":"c","name":"Old","signKey":"k"}]}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            val (cloud, plain, old) = client.computers()
+            assertEquals(CloudMachine("boat", "Boat", "EU", "stopped"), cloud.cloud)
+            assertTrue(requireNotNull(cloud.cloud).asleep)
+            assertNull(plain.cloud)
+            assertNull(old.cloud)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `the account's cloud computer, created, preparing and deleted`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"cloudComputer":null}"""))
+            server.enqueue(MockResponse().setBody("""{"cloudComputer":null,"available":true}"""))
+            server.enqueue(MockResponse().setBody("""{"cloudComputer":{"cloudComputerId":"cm_1","provider":"boat","providerName":"Boat",
+                "region":"EU","state":"starting","computerId":null,"backupAt":null,"createdAt":5}}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            server.enqueue(MockResponse().setBody("{}"))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            assertEquals(CloudOffer(null, available = false), client.cloudComputer())
+            assertTrue(client.cloudComputer().available)
+            val created = client.createCloudComputer()
+            assertEquals("cm_1", created.cloudComputerId)
+            assertNull(created.computerId)
+            assertEquals(5L, created.createdAt)
+            client.deleteCloudSnapshots()
+            client.deleteCloudComputer()
+            repeat(2) { assertEquals("GET /v1/cloud-computers", server.takeRequest().requestLine.substringBeforeLast(' ')) }
+            val create = server.takeRequest()
+            assertEquals("POST /v1/cloud-computers", create.requestLine.substringBeforeLast(' '))
+            assertEquals("Bearer session", create.getHeader("Authorization"))
+            assertEquals("DELETE /v1/cloud-computers/snapshots", server.takeRequest().requestLine.substringBeforeLast(' '))
+            assertEquals("DELETE /v1/cloud-computers", server.takeRequest().requestLine.substringBeforeLast(' '))
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `refusals carry the cloud's own words, and an app floor asks for an update`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":{"code":"forbidden","message":"Codync Cloud isn't available for this account yet."}}"""))
+            server.enqueue(MockResponse().setResponseCode(409).setBody("""{"error":{"code":"conflict","message":"Your cloud computer is asleep."}}"""))
+            server.enqueue(MockResponse().setResponseCode(426).setBody("""{"error":{"code":"appUpdateRequired","message":"Update Codync: security fix."}}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            suspend fun refusal(call: suspend () -> Unit) = try { call(); error("Expected a refusal") } catch (error: CloudError) { error }
+            assertEquals("Codync Cloud isn't available for this account yet.", refusal { client.createCloudComputer() }.message)
+            assertEquals("Your cloud computer is asleep.", refusal { client.deleteCloudSnapshots() }.message)
+            val floor = refusal { client.computers() }
+            assertEquals("appUpdateRequired", floor.code)
+            assertEquals("Update Codync: security fix.", floor.message)
+            assertFalse(floor.isTransient)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun `the relay upgrade names this app and reads an app floor's reason`() = runBlocking {
+        val computer = Computer(id, "Cloud", hostKey.base64Url(), cloud = "https://cloud.example")
+        val request = HostConnector.relayRequest(computer, identity, null, "2.24.0")
+        assertEquals("/v1/relay/device/$id", request.url.encodedPath)
+        assertEquals("android/2.24.0; minHost=${VersionMismatch.MIN_HOST}", request.header("Codync-App"))
+        assertNotNull(request.header("Codync-Sig"))
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setResponseCode(426).setBody("""{"error":{"code":"appUpdateRequired","message":"Update Codync: security fix."}}"""))
+            server.enqueue(MockResponse().setResponseCode(426).setBody("""{"error":{"code":"upgradeRequired","message":"Expected a WebSocket upgrade"}}"""))
+            suspend fun refusal() = try { OkHttpChannelSocket.dial(okhttp3.Request.Builder().url(server.url("/v1/relay/device/$id")).build())
+                error("Expected a refusal") } catch (error: SocketRefused) { error }
+            assertEquals(426 to "Update Codync: security fix.", refusal().let { it.status to it.appFloor })
+            assertNull(refusal().appFloor)
+        } finally { server.shutdown() }
+    }
+
     @Test fun `an unknown device has no grants to revoke`() = runBlocking {
         val server = MockWebServer()
         server.start()

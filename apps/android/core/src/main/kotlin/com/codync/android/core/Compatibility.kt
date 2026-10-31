@@ -9,6 +9,8 @@ sealed interface VersionMismatch {
     data class UpdateApp(val minimum: String) : VersionMismatch
     /** The host is older than `MIN_HOST`. */
     data class UpdateHost(val version: String, val minimum: String) : VersionMismatch
+    /** The Codync cloud turned this app version away (`426`), saying why: an emergency floor. */
+    data class AppFloor(val reason: String) : VersionMismatch
 
     companion object {
         /** The oldest host this app works with; raise it only when a core flow needs something older hosts lack. */
@@ -23,6 +25,12 @@ sealed interface VersionMismatch {
         }
     }
 }
+
+/**
+ * `Codync-App`, on every request to the Codync cloud and the relay upgrade: the cloud records it, moves a cloud
+ * computer to the host this app needs, and can answer `426 appUpdateRequired`. Its versions are bare x.y.z.
+ */
+fun appHeader(version: String): String = "android/${version.substringBefore('-')}; minHost=${VersionMismatch.MIN_HOST}"
 
 object AppVersion {
     /** `2.9.0` < `2.14.1`, numerically, ignoring a `-dev` style suffix; unreadable versions compare as not below. */

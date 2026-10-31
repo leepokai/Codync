@@ -1445,5 +1445,22 @@
   "Enter folder path": "Enter folder path",
   "Folder path": "Folder path",
   "Paste an absolute path": "Paste an absolute path",
-  "Go to folder": "Go to folder"
+  "Go to folder": "Go to folder",
+  "Sleeping · wakes when you message": "スリープ中 · メッセージを送ると起動します",
+  "Cloud computer failed": "クラウドコンピュータでエラーが発生しました",
+  "Connecting to {name}…": "{name} に接続中…",
+  "Runs on {provider} · {region}": "{provider} · {region} で稼働",
+  "Starting": "起動中",
+  "Running": "稼働中",
+  "Going to sleep": "スリープに移行中",
+  "Sleeping": "スリープ中",
+  "Preparing your cloud computer…": "クラウドコンピュータを準備しています…",
+  "Create cloud computer": "クラウドコンピュータを作成",
+  "Delete snapshots": "スナップショットを削除",
+  "Delete cloud computer": "クラウドコンピュータを削除",
+  "A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.": "Codync がクラウドであなたのために動かすコンピュータです。使っていないときはスリープし、メッセージを送ると起動します。",
+  "Delete snapshots?": "スナップショットを削除しますか？",
+  "Erases your cloud computer's earlier saved states and its backup. The computer and what's on it now stay.": "クラウドコンピュータの以前の保存状態とバックアップを消去します。コンピュータ本体と現在の内容は残ります。",
+  "Delete your cloud computer?": "クラウドコンピュータを削除しますか？",
+  "Erases everything on it: bots, chats, files and sign-ins. This can't be undone.": "ボット、チャット、ファイル、サインイン情報など、すべてが消去されます。元に戻すことはできません。"
 }

@@ -166,6 +166,8 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 3. 桌面 App `POST /v1/claims/{claimId}/complete`（Clerk）帶上 host 回傳的內容。Worker 驗 Clerk、claim、簽章，原子化設定 owner。
 4. Worker 通知 DO `cloud.changed` → host 拉 state 得知 owner。
 
+雲端電腦（Codync Cloud，`docs/plans/codync-cloud.md`）由 host 自己 claim：Worker 建 claim（30 分鐘），在機器開機前把認主卡 `{claimId, nonce, userId, approval:"auto"}` 寫進 `~/.codync/managed.json`；host 註冊後以 Sig(host) `POST /v1/host/claim`（同上的簽章內容加 `claimId`），成功或被最終拒絕後刪除該檔。`approval:"auto"` 讓 B 流程的 SAS 交換照跑（commit 必須相符），只省略使用者比對代碼。
+
 **B. 手機取得存取權**（commit-then-reveal SAS，ZRTP／BLE numeric comparison 同型）：
 1. 手機登入後 `POST /v1/devices`（Clerk + 該 device key 的 `Codync-Sig`）。
 2. `GET /v1/computers`（帶 `Codync-Sig` 則回傳每台的 `access`）。 手機在「電腦與設定」（Computers）列出帳號裡的電腦，不需掃 QR Code；存取申請只在使用者點該電腦的 **Ask for access** 後才開始（登入或重新整理都不會自動申請），點下後才顯示 6 位數代碼；關閉申請畫面後，等待中的申請仍以橫幅顯示代碼，直到電腦回應。核准後顯示該電腦的 bots。首次裝置授權仍由電腦上的使用者確認。
@@ -483,6 +485,8 @@ The route table below summarizes the contract. Executable schema and validation 
 
 所有 body 為 JSON；時間為 ms。「Clerk」= 需要 Bearer；「Sig(dev)」= 需要該 device key 的 `Codync-Sig`；「Sig(host)」= host key 的 `Codync-Sig`。
 
+**App 版本（所有 app 發出的請求）**：每個送到 Worker 的請求，以及 relay 裝置連線的 upgrade，都帶 `Codync-App: <ios|android|desktop>/<版本>; minHost=<版本>`。有簽章的裝置請求（relay 裝置連線、帶 Sig(dev) 的 `GET /v1/computers`）會把它記在該裝置的 `devices.app_version`／`min_host`／`app_seen_at`。版本低於該平台緊急下限（`APP_FLOOR_IOS`／`APP_FLOOR_ANDROID`／`APP_FLOOR_DESKTOP`）時，任何請求都回 `426 appUpdateRequired`，訊息是 `APP_FLOOR_REASON`。沒帶 header 的舊 app 不受影響。
+
 **公開**
 - `GET /v1/health` → `{"ok":true,"version":"2.2.0"}`
 
@@ -503,9 +507,12 @@ The route table below summarizes the contract. Executable schema and validation 
 - `DELETE /v1/access-requests/{id}` → `{}`（申請者取消 pending）
 - `GET /v1/computers/{id}/grants` → `{"grants":[{"grantId","deviceId","deviceName","platform","scopes","createdAt"}]}`
 - `DELETE /v1/computers/{id}/grants/{grantId}` → `{}`（`owner`）+ DO block + changed
+- `POST /v1/cloud-computers` → `{"cloudComputer":{"cloudComputerId","provider","providerName","region","state","computerId"|null,"backupAt"|null,"createdAt"}}`：建立這個帳號的雲端電腦（每帳號一台，已有就回傳那台）；付款未定前只開放 `CLOUD_COMPUTER_USERS` 名單，否則 `403 forbidden`。`GET` 回傳同一物件（含供應商的即時狀態）或 `null`，另有 `available`（這個帳號能不能建立；app 只在 `available` 或已有雲端電腦時顯示 Codync Cloud）；`DELETE` 刪除機器、所有快照與備份，並把電腦移出帳號。
+- `DELETE /v1/cloud-computers/snapshots` → `{}`：刪除雲端電腦保存的歷史（較早的快照與備份），電腦保留；睡著時 `409 conflict`（那時快照就是電腦本身）。
+- `GET /v1/computers` 的每台電腦多一個 `cloud`：`{"provider","providerName","region","state"}`，自己的電腦是 `null`。
 
 **Sig(host)（不需要帳號）**
-- `POST /v1/host/register` `{"boxKey","name","platform":"macos"|"linux"|"windows","device","version"}` → `{"computerId","owned":bool}`。以 kid 推導 id；upsert（`name`/`device`/`version`/`box_pub`/`updated_at`）。同 IP 每分鐘最多 10 次新建（Workers Rate Limiting binding；平台不支援時先略過並在 README 註記）。Host 指向 [private relay](../../private-relay/README.md) 時只在這個請求帶 `Codync-Relay-Token`（官方 cloud 忽略它）：私人中繼收新電腦必須 token 相符，不符回 `403 forbidden`（"This relay needs its relay token to add a new computer."），最多 32 台；已註冊的 key 不需要 token 就能 refresh。私人中繼的 `GET /v1/host/state` 永遠是空的，host 不拉它（不套用 grants、不處理 requests）。
+- `POST /v1/host/register` `{"boxKey","name","platform":"macos"|"linux"|"windows","device","version"}` → `{"computerId","owned":bool}`。以 kid 推導 id；upsert（`name`/`device`/`version`/`box_pub`/`updated_at`）。同 IP 每分鐘最多 10 次新建（Workers Rate Limiting binding；平台不支援時先略過並在 README 註記）。自己的電腦版本低於緊急下限 `HOST_FLOOR` 時回 `426 hostUpdateRequired`（訊息 `HOST_FLOOR_REASON`），host 收到後立刻檢查並安裝更新；雲端電腦照常註冊，改由 state 的更新指令處理。Host 指向 [private relay](../../private-relay/README.md) 時只在這個請求帶 `Codync-Relay-Token`（官方 cloud 忽略它）：私人中繼收新電腦必須 token 相符，不符回 `403 forbidden`（"This relay needs its relay token to add a new computer."），最多 32 台；已註冊的 key 不需要 token 就能 refresh。私人中繼的 `GET /v1/host/state` 永遠是空的，host 不拉它（不套用 grants、不處理 requests）。
 - `GET /v1/host/state` →
   ```json
   {"owner":{"userId":"user_…","email":"a@b.c"} | null,
@@ -513,10 +520,15 @@ The route table below summarizes the contract. Executable schema and validation 
    "requests":[{"requestId","deviceKey","deviceName","platform","email","commit","hostNonce"?,"deviceNonce"?,"createdAt","expiresAt"}]}
   ```
   grants 只含：grant active、device 未撤銷、device.owner == computer.owner。host 只把它當成「可續約／應刪除」的清單（§4.3）。
+  雲端電腦另有 `"update": {"version", "force": true}`：帳號 30 天內的裝置需要的最高 `minHost`，或緊急下限 `HOST_FLOOR`，比 host 版本新時出現；host 立刻安裝那個版本（`force` 會中斷工作中的 bot，session 之後接續）。裝置帶著更高的 `minHost` 連上 relay 時，Worker 會送 `cloud.changed` 讓 host 馬上讀到。
 - `POST /v1/host/access-requests/{id}/nonce` `{"nonce"}` → `{}`（`cloud/src/routes/host.ts`；已設過 → `409`）
 - `POST /v1/host/grants/{grantId}/revoke` `{}` → `{}`（host 在本機撤銷帳號來源裝置時同步 D1，`revoked_reason='owner'`；失敗記錄並存入 `grant_revokes` 重試，本機撤銷已生效）
 - `POST /v1/host/access-requests/{id}/decision` `{"decision":"approve"|"deny"}` → `{"status","grantId"?}`（`cloud/src/routes/host.ts` 的原子更新；request 過期 → `410 requestExpired`；approve 要求 `device_nonce IS NOT NULL`，否則 `409`）
 - `POST /v1/host/unclaim` `{}` → `{}`（在電腦上移出帳號；同 `DELETE /v1/computers/{id}` 的效果）
+- `POST /v1/host/claim` `{"claimId", …claim 的 complete 欄位}` → `{"computer":<Computer>}`：雲端電腦用認主卡自己 claim（§4.2 A 末段）；`signKey` 必須等於簽章的 kid，帳號取自該 claim。
+- `POST /v1/host/sleep` `{"wakeAt": ms | null}` → `{}`：閒置的雲端電腦請求睡眠。DO 有裝置連線時 `409 conflict`；否則 DO 記下 `wakeAt`（alarm）、立刻把 host 視為離線（停機後的 socket 不會乾淨關閉），Worker 再呼叫供應商的 stop。DO 在 host 離線時，遇到裝置連線、mailbox 訊息、routine webhook 或 `wakeAt` 到期，就請供應商 resume（每分鐘最多一次；機器還在停止中或達到啟動上限時 20 秒後重試；機器根本沒停時把原本的 host socket 收回）。非雲端電腦沒有影響。
+- `POST /v1/host/sleep` 在有更新的 release 適合帳號所有近期裝置時（`minApp` ≤ 最舊的 app、版本 ≥ 需要的 `minHost`，release 清單由 cron 從 GitHub 讀入 `host_releases`），回 `{"update": {"version", "force": false}}` 而不停機；host 安裝後重啟，下次閒置再睡。
+- `GET /v1/host/sleep` → `{"state"}`：雲端電腦最近一次的機器狀態。請求睡眠後還在執行的 host 每 3 秒問一次，狀態離開 `stopping`／`stopped` 就重新連上 relay（保留記憶體的快速喚醒會帶回同一個程序和舊 socket）。
 
 **Routine webhook（公開）**：`POST /v1/hooks/{computerId}/{routineId}`，§7.8。
 

@@ -14,9 +14,10 @@ Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/reference/remo
   Setup and checks: [docs/features/cloud-assistants.md](../docs/features/cloud-assistants.md).
 - **`ComputerRelay`** (`src/relay.ts`): one Durable Object per computer (SQLite storage, WebSocket
   Hibernation). It admits device sockets against the host-signed ACL, forwards channel frames it can't
-  read, reports presence, holds the offline mailbox, and queues routine webhook deliveries (`hookbox`,
-  checked against the keys the host registers; `src/hooks.ts`). It is reachable only through requests the Worker
-  builds itself (`X-Codync-Internal: 1`); `/internal/*` has no public route.
+  read, reports presence, holds the offline mailbox (`src/relay-mailbox.ts`), queues routine webhook deliveries
+  (`src/relay-hooks.ts`, checked against the keys the host registers; `src/hooks.ts`), and wakes a sleeping cloud
+  computer (`src/cloud-machines.ts`). Limits and wire types: `src/relay-wire.ts`. It is reachable only through
+  requests the Worker builds itself (`X-Codync-Internal: 1`); `/internal/*` has no public route.
 - **Auth** (`src/auth.ts`): Clerk session JWTs via `@clerk/backend` (`CLERK_SECRET_KEY` → JWKS fetched and
   cached per isolate; `CLERK_JWT_KEY` → networkless, dev/e2e only) and Ed25519 request signatures
   (WebCrypto).
@@ -70,6 +71,17 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 | `CLERK_AUTHORIZED_PARTIES` | var, optional | comma-separated; a token with `azp` must match |
 | `CLERK_JWT_KEY` | var, dev/e2e only | public key for networkless verification |
 | `ASSISTANT_LIMITER` | rate limit binding | cloud assistant (MCP connector) requests per account, 120 per minute |
+| `BOAT_API_KEY` | secret, optional | Codync Cloud: scoped Boat key (`sandbox.create/read/stop/resume/delete`, `snapshot.read/write`); unset = no cloud computers |
+| `CLOUD_COMPUTER_USERS` | var, optional | comma-separated Clerk user ids allowed a cloud computer while payments are set aside |
+| `BOAT_API_URL`, `CLOUD_AUTO_STOP_SECONDS` | var, dev/e2e only | Boat base URL; provider auto-stop (Boat's trial needs ≤ 7200) |
+| `CLOUD_HOST_ENV`, `CLOUD_HOST_BINARY_URL`, `CLOUD_MACHINE_PREFIX` | var, dev/e2e only | a cloud computer's host service environment (`CODYNC_…=value`, e.g. its cloud URL, analytics off); a host build to boot instead of the release; the machine name prefix ([cloud computer testing](../docs/guides/cloud-computer-testing.md)) |
+| `HOST_FLOOR`, `HOST_FLOOR_REASON` | var, emergencies only | cloud hosts below it update at once; self-hosted ones below it get `426 hostUpdateRequired` at registration |
+| `APP_FLOOR_IOS`, `APP_FLOOR_ANDROID`, `APP_FLOOR_DESKTOP`, `APP_FLOOR_REASON` | var, emergencies only | apps below their platform's floor get `426 appUpdateRequired` on every request |
+
+Cloud computers (`src/routes/cloud-computers.ts`, provider calls in the sans-I/O `machines/` package) are
+tested end to end on a real Boat sandbox with `npm run e2e:cloud`, and with the real apps against a local cloud with
+`npm run cloud:stack` ([cloud computer testing](../docs/guides/cloud-computer-testing.md);
+[trial log](../docs/plans/codync-cloud-boat-trial.md)).
 
 `RELEASE_GATE_TOKEN` is a fine-grained token without expiry. If it's revoked, set a new one with
 `npx wrangler secret put RELEASE_GATE_TOKEN`: without a working token the release gate runs only after

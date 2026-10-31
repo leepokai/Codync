@@ -74,10 +74,12 @@ import kotlinx.serialization.json.put
                 row {
                     if (state.isOlderCopy(computer)) OlderCopyRow(computer)
                     else AccountComputerRow(computer, state.access?.takeIf { it.computerId == computer.computerId }?.code,
+                        asking = state.askingAccess == computer.computerId,
                         askingAnother = state.askingAccess.let { it != null && it != computer.computerId },
                         ask = { ask(computer) }, revoke = { confirmRevoke = computer })
                 }
             }
+            if (signedIn) CloudSettings(state, store)
             val hidden = state.bots.filter { it.hidden && !it.deleted }
             if (hidden.isNotEmpty()) CardSection("Hidden bots") {
                 for (bot in hidden) row { HiddenBotRow(state, store, bot) }
@@ -137,6 +139,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
 /** Name, connection, and an access request when this phone can't reach the computer; a long press opens its menu. */
 @Composable private fun ComputerSummary(state: AppState, inAccount: Boolean, actions: ComputerActions) {
     val computer = state.computers.first()
+    val cloud = state.cloudOf(computer.id)
     val link = state.connection
     val online = link is LinkState.Ready
     val detail = if (link is LinkState.Ready) {
@@ -157,10 +160,18 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ComputerBadge(state.hello?.text("device"), 32.dp, computer.color)
             Text(state.hello?.text("name") ?: computer.name, Modifier.weight(1f), style = Type.body.semibold, color = Palette.text)
+            if (cloud != null) Symbol("cloud", size = 18.dp, tint = Palette.tertiary, contentDescription = "Codync Cloud")
             if (inAccount) Symbol("person.crop.circle.badge.checkmark", size = 20.dp, tint = Palette.tertiary, contentDescription = "In your account")
         }
-        val unreachable = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating
-        Text(detail, style = Type.footnote, color = if (unreachable) Palette.warning else Palette.secondary)
+        if (cloud != null) Text(cloud.summary, style = Type.footnote, color = Palette.secondary)
+        // A sleeping cloud computer is fine: messaging it wakes it.
+        val unreachable = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating && cloud?.asleep != true
+        val ink = when {
+            !unreachable -> Palette.secondary
+            cloud?.failed == true -> Palette.danger
+            else -> Palette.warning
+        }
+        Text(tr(detail), style = Type.footnote, color = ink)
         if (unreachable && actions.ask != null) {
             SecondaryButton(if (state.access?.computerId == computer.id) "Show code" else "Ask for access", action = actions.ask)
         }
@@ -203,23 +214,40 @@ private const val NETWORK_ICON = "codync.network"
     }
 }
 
-/** A computer in the account that this phone can't use yet; `askingAnother` while this phone asks a different one. */
-@Composable private fun AccountComputerRow(computer: CloudComputer, code: String?, askingAnother: Boolean, ask: () -> Unit,
+/**
+ * A computer in the account that this phone can't use yet; `asking` while this phone asks it, `askingAnother` while it
+ * asks a different one. A cloud computer approves by itself: no code to check, and asleep isn't offline.
+ */
+@Composable private fun AccountComputerRow(computer: CloudComputer, code: String?, asking: Boolean, askingAnother: Boolean, ask: () -> Unit,
     revoke: () -> Unit) {
-    val online = if (computer.online == true) "Online" else "Offline"
+    val cloud = computer.cloud
+    val online = when {
+        cloud?.asleep == true -> "Sleeping · wakes when you message"
+        cloud?.failed == true -> "Cloud computer failed"
+        computer.online == true -> "Online"
+        else -> "Offline"
+    }
     val detail = when {
+        cloud != null && asking -> tr("Connecting to {name}…").replace("{name}", computer.name)
         code != null -> "Waiting for your OK on the computer · $code"
         computer.isGranted -> "Approved for an earlier install of Codync. Revoke it, then ask again."
         computer.access == "pending" -> "$online · A request is waiting"
+        cloud != null -> tr(online)
         else -> "$online · In your account"
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.graphicsLayer { alpha = 0.5f }) { ComputerBadge(computer.device, 40.dp) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(computer.name, style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(detail, style = Type.subheadline, color = Palette.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(computer.name, Modifier.weight(1f, fill = false), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (cloud != null) Symbol("cloud", size = 16.dp, tint = Palette.tertiary, contentDescription = "Codync Cloud")
+            }
+            if (cloud != null) Text(cloud.summary, style = Type.footnote, color = Palette.secondary)
+            Text(detail, style = Type.subheadline, color = if (cloud?.failed == true) Palette.danger else Palette.secondary,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         when {
+            cloud != null && asking -> Spinner()
             code != null -> SecondaryButton("Code", action = ask)
             computer.isGranted -> SecondaryButton("Revoke", action = revoke)
             else -> SecondaryButton("Ask for access", enabled = !askingAnother, action = ask)

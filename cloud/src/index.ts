@@ -4,6 +4,7 @@
 
 import * as api from "./api";
 import { ApiError, type Ctx } from "./api";
+import { checkAppFloor, parseApp } from "./app-versions";
 import type { ComputerRelay } from "./relay";
 import { nudgeReleaseGate } from "./release-gate";
 import { icon, MAX_ICON_BYTES } from "./routes/icons";
@@ -34,6 +35,27 @@ export interface Env {
   CLERK_WEBHOOK_SECRET?: string;
   /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
   RELEASE_GATE_TOKEN?: string;
+  /** Codync Cloud: Boat API key (secret) and base URL; unset = no cloud computers. */
+  BOAT_API_KEY?: string;
+  BOAT_API_URL?: string;
+  /** Comma-separated Clerk user ids allowed a cloud computer while payments are set aside. */
+  CLOUD_COMPUTER_USERS?: string;
+  /** Dev and test clouds (docs/guides/cloud-computer-testing.md): `CODYNC_…=value` pairs for a cloud computer's
+   * host service (its cloud URL, analytics off, a short idle time); a host build to run instead of the release;
+   * the provider name prefix, so test machines are easy to find and sweep. */
+  CLOUD_HOST_ENV?: string;
+  CLOUD_HOST_BINARY_URL?: string;
+  CLOUD_MACHINE_PREFIX?: string;
+  /** Seconds after which the provider stops a cloud computer on its own; needed on Boat's trial (≤ 7200). */
+  CLOUD_AUTO_STOP_SECONDS?: string;
+  /** Emergency floors (docs/plans/codync-cloud.md, cloud hard update): cloud hosts below `HOST_FLOOR` update at
+   * once and self-hosted ones may not register; apps below their platform's floor get `426`. */
+  HOST_FLOOR?: string;
+  HOST_FLOOR_REASON?: string;
+  APP_FLOOR_IOS?: string;
+  APP_FLOOR_ANDROID?: string;
+  APP_FLOOR_DESKTOP?: string;
+  APP_FLOOR_REASON?: string;
 }
 
 type Handler = (c: Ctx, params: string[]) => Promise<unknown>;
@@ -58,6 +80,10 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/v1\/devices$/, api.listDevices],
   ["DELETE", new RegExp(`^/v1/devices/${ID}$`), api.revokeDevice],
   ["POST", /^\/v1\/claims$/, api.createClaim],
+  ["POST", /^\/v1\/cloud-computers$/, api.createCloudComputer],
+  ["GET", /^\/v1\/cloud-computers$/, api.getCloudComputer],
+  ["DELETE", /^\/v1\/cloud-computers$/, api.deleteCloudComputer],
+  ["DELETE", /^\/v1\/cloud-computers\/snapshots$/, api.deleteCloudSnapshots],
   ["POST", new RegExp(`^/v1/claims/${ID}/complete$`), api.completeClaim],
   ["GET", /^\/v1\/computers$/, api.listComputers],
   ["PATCH", new RegExp(`^/v1/computers/${ID}$`), api.renameComputer],
@@ -69,6 +95,9 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", new RegExp(`^/v1/access-requests/${ID}/reveal$`), api.revealAccessRequest],
   ["DELETE", new RegExp(`^/v1/access-requests/${ID}$`), api.cancelAccessRequest],
   ["POST", /^\/v1\/host\/register$/, api.hostRegister],
+  ["POST", /^\/v1\/host\/claim$/, api.hostClaim],
+  ["POST", /^\/v1\/host\/sleep$/, api.hostSleep],
+  ["GET", /^\/v1\/host\/sleep$/, api.hostSleepState],
   ["GET", /^\/v1\/host\/state$/, api.hostState],
   ["POST", /^\/v1\/host\/screen-ice$/, api.hostScreenIce],
   ["POST", new RegExp(`^/v1/host/access-requests/${ID}/nonce$`), api.hostNonce],
@@ -93,6 +122,8 @@ export default {
     const requestId = req.headers.get("cf-ray") ?? crypto.randomUUID();
     try {
       const url = new URL(req.url);
+      // An app below an emergency floor is told to update before anything else.
+      checkAppFloor(env, parseApp(req.headers.get("Codync-App")));
       for (const [method, pattern, handler] of routes) {
         const m = pattern.exec(url.pathname);
         if (!m || req.method !== method) continue;

@@ -1445,5 +1445,22 @@
   "Enter folder path": "Enter folder path",
   "Folder path": "Folder path",
   "Paste an absolute path": "Paste an absolute path",
-  "Go to folder": "Go to folder"
+  "Go to folder": "Go to folder",
+  "Sleeping · wakes when you message": "休眠中 · 发消息即可唤醒",
+  "Cloud computer failed": "云端电脑出错了",
+  "Connecting to {name}…": "正在连接 {name}…",
+  "Runs on {provider} · {region}": "运行于 {provider} · {region}",
+  "Starting": "正在启动",
+  "Running": "运行中",
+  "Going to sleep": "正在进入休眠",
+  "Sleeping": "休眠中",
+  "Preparing your cloud computer…": "正在准备你的云端电脑…",
+  "Create cloud computer": "创建云端电脑",
+  "Delete snapshots": "删除快照",
+  "Delete cloud computer": "删除云端电脑",
+  "A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.": "Codync 在云端为你运行的一台电脑。闲置时休眠，你发消息时唤醒。",
+  "Delete snapshots?": "删除快照？",
+  "Erases your cloud computer's earlier saved states and its backup. The computer and what's on it now stay.": "清除云端电脑先前保存的状态和备份。电脑本身和它现在的内容会保留。",
+  "Delete your cloud computer?": "删除你的云端电脑？",
+  "Erases everything on it: bots, chats, files and sign-ins. This can't be undone.": "清除上面的所有内容：机器人、对话、文件和登录状态。此操作无法撤销。"
 }

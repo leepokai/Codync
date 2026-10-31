@@ -152,26 +152,5 @@ async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
 /// Signs this computer into an account claim (§4.2 A) for the signed-in desktop app to complete.
 async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
     crate::remote::cloud::require_accounts(&hub.store)?;
-    let field = |k: &str| -> Result<&str> {
-        let v = str_arg(b, k)?;
-        // Fields are newline-separated in the signed string: a newline would forge another field.
-        if v.is_empty() || v.contains('\n') {
-            bail!("`{k}` is invalid");
-        }
-        Ok(v)
-    };
-    let (claim_id, nonce, user_id) = (field("claimId")?, field("nonce")?, field("userId")?);
-    let computer_id = hub.identity.computer_id();
-    let box_key = hub.identity.box_pub_b64();
-    let input = crypto::claim_input(claim_id, nonce, user_id, &computer_id, &box_key);
-    Ok(json!({
-        "computerId": computer_id,
-        "signKey": hub.identity.sign_pub_b64(),
-        "boxKey": box_key,
-        "name": crate::service::host_name(),
-        "platform": std::env::consts::OS,
-        "device": tokio::task::spawn_blocking(crate::service::device).await?,
-        "version": env!("CARGO_PKG_VERSION"),
-        "sig": crypto::b64(&hub.identity.sign(input.as_bytes())),
-    }))
+    crate::remote::claim::payload(hub, str_arg(b, "claimId")?, str_arg(b, "nonce")?, str_arg(b, "userId")?).await
 }

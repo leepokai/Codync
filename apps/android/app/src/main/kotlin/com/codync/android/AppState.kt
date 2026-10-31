@@ -19,6 +19,10 @@ data class AppState(
     val approvedAccess: Map<String, String> = emptyMap(),
     /** The account computer an access request is running for: one at a time. */
     val askingAccess: String? = null,
+    /** The account's Codync Cloud computer and whether it may have one (Settings → Codync Cloud); null until asked. */
+    val cloudOffer: CloudOffer? = null,
+    /** The Codync cloud asked this app version to update (`426 appUpdateRequired`), with its reason. */
+    val appFloor: String? = null,
     val tasks: Boolean = true,
     val setupComplete: Boolean = false,
     val loading: Boolean = true,
@@ -62,6 +66,9 @@ data class AppState(
     val hostUpdate: HostUpdate? = null,
     val error: String? = null,
 ) {
+    /** Codync Cloud runs this account computer: its provider, region and whether it's asleep. */
+    internal fun cloudOf(computerId: String?): CloudMachine? = cloudComputers.firstOrNull { it.computerId == computerId }?.cloud
+
     /** Connection alone cannot make a cached roster current before event catch-up. */
     internal val widgetBotsCurrent: Boolean get() {
         val head = hello?.get("rev")?.jsonPrimitive?.longOrNull ?: return false

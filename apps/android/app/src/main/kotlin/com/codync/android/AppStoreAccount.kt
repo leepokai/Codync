@@ -49,7 +49,8 @@ fun AppStore.refreshCloud() = action("cloud") {
     try {
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
-        mutableState.update { it.copy(cloudComputers = computers) }
+        mutableState.update { it.copy(cloudComputers = computers, appFloor = null) }
+        askCloudComputer(computers)
         // Signed in to an account with computers, before pairing any (iOS: the same moment).
         if (computers.isNotEmpty() && state.value.computers.isEmpty()) Analytics.completeOnboarding(OnboardingVia.Account)
     } catch (error: IOException) {
@@ -185,7 +186,7 @@ fun AppStore.removeComputer() = sessionAction {
 
 fun AppStore.forgetComputer() = sessionAction { forget() }
 
-private suspend fun AppStore.forget() {
+internal suspend fun AppStore.forget() {
     transitions.withLock {
         val userId = state.value.account.userId
         retireContext()

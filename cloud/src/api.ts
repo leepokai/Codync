@@ -1,12 +1,17 @@
 // /v1 HTTP handlers (spec §8.4) and the relay upgrade routes (§7.1). Route groups live in
 // `routes/`; this module is what the router and the cron call.
 
+import { compareVersions } from "./app-versions";
+import { saveBackups } from "./cloud-machines";
+import { syncReleases } from "./host-releases";
 import type { Env } from "./index";
-import type { Ctx } from "./routes/common";
+import { notify, type Ctx } from "./routes/common";
 
 export { ApiError, type Ctx } from "./routes/common";
 export * from "./routes/account";
 export * from "./routes/assistant";
+export * from "./routes/cloud-computers";
+export * from "./routes/cloud-host";
 export * from "./routes/host";
 export * from "./routes/relay";
 export * from "./routes/webhooks";
@@ -41,4 +46,21 @@ export async function sweep(env: Env, now: number): Promise<void> {
     ).bind(now),
     env.DB.prepare("DELETE FROM audit_events WHERE created_at <= ?").bind(now - 30 * 86_400_000),
   ]);
+  await cloudUpkeep(env, now);
+}
+
+/** Codync Cloud: the releases the soft update picks from, backups of long-asleep machines, and awake cloud
+ * computers below an emergency floor told to read their update order now. Each part fails on its own. */
+async function cloudUpkeep(env: Env, now: number): Promise<void> {
+  if (!env.BOAT_API_KEY) return;
+  const run = (what: string, job: Promise<void>) => job.catch((e) => console.error(`cloud upkeep: ${what}`, { error: String(e) }));
+  await run("releases", syncReleases(env));
+  await run("backups", saveBackups(env, now));
+  const floor = env.HOST_FLOOR;
+  if (floor) {
+    const { results } = await env.DB.prepare(
+      "SELECT c.id, c.version FROM cloud_machines m JOIN computers c ON c.id = m.computer_id WHERE m.state IN ('starting', 'running')",
+    ).all<{ id: string; version: string }>();
+    for (const r of results) if (compareVersions(r.version, floor) < 0) await run("floor", notify(env, r.id));
+  }
 }

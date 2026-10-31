@@ -226,7 +226,7 @@ fn signed(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value
 }
 
 /// One signed `/v1/host/*` call.
-async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
+pub(crate) async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
     answer(signed(hub, base, method, path, body)?).await
 }
 
@@ -294,6 +294,9 @@ struct State {
     grants: Vec<Grant>,
     #[serde(default)]
     requests: Vec<StateRequest>,
+    /// A cloud computer's update order (`remote::managed`).
+    #[serde(default)]
+    update: Option<crate::remote::managed::UpdateOrder>,
 }
 
 #[derive(Deserialize)]
@@ -337,6 +340,9 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
         s.last_error = None;
     });
     sync_requests(hub, base, state.requests).await;
+    if let Some(order) = state.update {
+        crate::remote::managed::update_to(hub, order);
+    }
     if approval(&hub.store) == Approval::Auto {
         // The SAS exchange still runs (the device's commit must match); only the user's comparison is skipped.
         let ready: Vec<String> =

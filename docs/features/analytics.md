@@ -32,7 +32,10 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   approximate location (`$geoip_country_name`, `$geoip_city_name`, …), then the project's
   *Discard client IP data* drops the IP before storage.
 - `env` is `main` or `dev`; filter dev out in PostHog. Debug host builds (`cargo test`, `cargo run`)
-  send nothing: every e2e test starts a fresh host that would count as a new user.
+  send nothing: every e2e test starts a fresh host that would count as a new user. Test machines that run
+  release builds (Dev and end-to-end cloud computers) start with `CODYNC_ANALYTICS_ENV=dev`: their events say
+  `env: dev`, so no chart counts them, and the mark is stored, so a release the machine updates to keeps it
+  (releases from before the mark, such as 2.24.0, don't know it).
 
 ## Where events come from
 

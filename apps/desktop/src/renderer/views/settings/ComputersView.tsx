@@ -6,6 +6,7 @@ import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { offlineCloudStatus, placementLine, type StatusLine } from '../../lib/cloud-computer'
 import { useModel } from '../../lib/observable'
 import { useAccount } from '../../store/account'
 import type { CloudComputer } from '../../store/cloud'
@@ -16,6 +17,7 @@ import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
 import { cloudStatusLine } from '../../lib/relay-copy'
+import { CodyncCloudSection } from './CodyncCloudSection'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
 import { RelayAddressRow, RelayTokenRow } from './RelayFields'
@@ -66,6 +68,8 @@ export function ComputersView() {
           ))}
           <SSHConfigSuggestions add={addSSH} />
         </div>
+
+        <CodyncCloudSection />
 
         <div>
           <SectionHeader title="Other computers in your account">
@@ -304,9 +308,13 @@ function CodyncVersionRow({ store }: { store: BotStore }) {
   )
 }
 
-/** An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`). */
+/**
+ * An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`).
+ * A cloud computer says where it runs, and sleeping isn't offline.
+ */
 function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: CloudComputer; olderCopy: boolean; onRemove: () => void }) {
   const tr = useTr()
+  const status = accountComputerStatus(computer, olderCopy)
   return (
     <div className="settings-card settings-appear">
       <div className="settings-row">
@@ -314,8 +322,12 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
           <ComputerBadge computer={{ id: computer.computerId, name: computer.name, signKey: computer.signKey, urls: [], device: computer.device ?? null }} size={22} />
         </span>
         <div className="settings-stack">
-          <Text size="callout" weight="medium" tone={olderCopy ? 'secondary' : undefined}>{computer.name}</Text>
-          <Text size="caption" tone={olderCopy ? 'tertiary' : 'secondary'}>{tr(accountComputerStatus(computer, olderCopy))}</Text>
+          <HStack gap={5}>
+            <Text size="callout" weight="medium" tone={olderCopy ? 'secondary' : undefined}>{computer.name}</Text>
+            {computer.cloud ? <span title={tr('Codync Cloud')}><Icon name="cloud" size={11} color="var(--secondary)" /></span> : null}
+          </HStack>
+          {computer.cloud ? <Text size="caption" tone="secondary">{placementLine(computer.cloud)}</Text> : null}
+          <Text size="caption" tone={status.error ? 'danger' : olderCopy ? 'tertiary' : 'secondary'}>{tr(status.text)}</Text>
         </div>
         <Spacer />
         {olderCopy ? <IconButton title="Remove from account" icon="trash" onClick={onRemove} /> : null}
@@ -325,9 +337,11 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
 }
 
 /** "Older copy", not the phones' "Older copy of this computer": on the desktop "this computer" reads as this Mac. */
-function accountComputerStatus(computer: CloudComputer, olderCopy: boolean) {
-  if (!olderCopy) return computer.online ? 'Online' : 'Offline'
-  return computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy'
+function accountComputerStatus(computer: CloudComputer, olderCopy: boolean): StatusLine {
+  const line = (text: string) => ({ text, error: false })
+  if (computer.online) return line('Online')
+  if (!olderCopy) return offlineCloudStatus(computer.cloud) ?? line('Offline')
+  return line(computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy')
 }
 
 /** "Pair iPhone" for a computer this app manages, through its store. */

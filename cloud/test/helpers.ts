@@ -158,10 +158,11 @@ export class Sock {
 export async function upgrade(
   path: string,
   key: SignKey,
-  o: { authority?: string; nonce?: string } = {},
+  o: { authority?: string; nonce?: string; headers?: Record<string, string> } = {},
 ): Promise<{ status: number; sock?: Sock; body?: Json }> {
   const res = await SELF.fetch(ORIGIN + path, {
     headers: {
+      ...o.headers,
       Upgrade: "websocket",
       "Codync-Sig": signRequest(key, { method: "GET", authority: o.authority ?? AUTHORITY, pathAndQuery: path, nonce: o.nonce }),
     },
@@ -170,8 +171,8 @@ export async function upgrade(
   return { status: 101, sock: new Sock(res.webSocket!) };
 }
 
-export async function socket(path: string, key: SignKey): Promise<Sock> {
-  const r = await upgrade(path, key);
+export async function socket(path: string, key: SignKey, headers?: Record<string, string>): Promise<Sock> {
+  const r = await upgrade(path, key, { headers });
   if (!r.sock) throw new Error(`upgrade ${path} failed: ${r.status} ${JSON.stringify(r.body)}`);
   return r.sock;
 }

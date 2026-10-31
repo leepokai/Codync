@@ -18,6 +18,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Ship app and host updates | [Updates](guides/updates.md), [client and host compatibility](reference/compatibility.md) |
 | Plan and build Android | [Android plan](plans/android-app.md), [Android status](../apps/android/README.md) |
 | Test a phone over Cloudflare instead of LAN | [Cloudflare testing](guides/cloudflare-testing.md) |
+| Test cloud computers (Codync Cloud), isolated per worktree or on the persistent Dev | [Cloud computer testing](guides/cloud-computer-testing.md) |
 | Configure dev/main or deploy the services | [Environments and deployment](guides/environments-and-deployment.md) |
 | Run the host on a Linux server or cloud VM | [Linux servers](guides/linux-servers.md) |
 | Reproduce or check something on Windows (UTM VM) | [Windows testing](guides/windows-testing.md) |
@@ -60,6 +61,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
 - [Error tracking detail](plans/error-tracking-detail.md) (symbolicated iPhone crashes and sessions, built; consented problem reports, proposed)
+- [Codync Cloud](plans/codync-cloud.md) (a Codync-sold cloud computer on Boat first; phase 1 built), its [provider survey](plans/codync-cloud-providers.md), [Boat trial log](plans/codync-cloud-boat-trial.md) and a not-adopted alternative for [updates](plans/codync-cloud-updates.md)
 
 ## Investigations
 

@@ -34,7 +34,7 @@ class WidgetRefreshWorker(context: Context, parameters: WorkerParameters) : Coro
                 val local = LocalStore(context, owner.context)
                 val computer = withContext(Dispatchers.IO) { local.computers().firstOrNull() } ?: return@withTimeout false
                 val identity = withContext(Dispatchers.IO) { local.identity() }
-                val channel = HostConnector.connect(computer, identity)
+                val channel = HostConnector.connect(computer, identity, BuildConfig.VERSION_NAME)
                 try {
                     val current = HostClient.hello(channel, computer)
                     // The finite roster snapshot includes its authoritative custom icons.

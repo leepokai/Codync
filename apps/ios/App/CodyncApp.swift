@@ -93,6 +93,10 @@ struct CodyncApp: App {
                     if let s = ProcessInfo.processInfo.environment["CODYNC_PAIR_URL"], let p = Pairing(string: s) {
                         _ = try? await app.pair(p, via: .link)
                     }
+                    // Cloud computer tests: SIMCTL_CHILD_CODYNC_TEST_SIGN_IN=<name>+clerk_test@example.com
+                    if let email = ProcessInfo.processInfo.environment["CODYNC_TEST_SIGN_IN"] {
+                        await app.account.signInTestAccount(email)
+                    }
                     if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .state; app.showUsage = true }
                     if ProcessInfo.processInfo.environment["CODYNC_STATE_SURFACE"] != nil { app.tab = .state }
                     // Screenshots: CODYNC_OPEN_URL=codync://bot/<botId>?scope=local&computer=<id>, without the system prompt.

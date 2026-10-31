@@ -1,6 +1,9 @@
 // Sig(host) routes: a computer registers, reads its account state and decides access requests.
 
+import { checkHostFloor, urgentUpdate } from "../app-versions";
 import { b64url, computerIdFor, fromB64url, randomId, sha256 } from "../auth";
+import { machineFor } from "../cloud-machines";
+import { finishClaim } from "./account";
 import {
   ApiError,
   audit,
@@ -33,6 +36,8 @@ export async function hostRegister(c: Ctx) {
     .bind(id)
     .first<{ status: string; owner_user_id: string | null }>();
   if (existing && existing.status !== "active") throw new ApiError("forbidden");
+  // A cloud computer below an emergency floor still registers: its update order arrives in its state.
+  if (!(await machineFor(c.env, id))) checkHostFloor(c.env, version);
   if (!existing && c.env.REGISTER_LIMITER) {
     const ip = c.req.headers.get("CF-Connecting-IP") ?? "unknown";
     if (!(await c.env.REGISTER_LIMITER.limit({ key: ip })).success) throw new ApiError("rateLimited");
@@ -46,6 +51,22 @@ export async function hostRegister(c: Ctx) {
     .bind(id, s.kid, boxKey, name, platform, device, version, c.now)
     .run();
   return { computerId: id, owned: !!existing?.owner_user_id };
+}
+
+/** A cloud computer Codync started for a signed-in user claims itself with the one-time ticket it
+ * was given at creation (`/v1/cloud-computers`). The claim must be signed by the calling computer. */
+export async function hostClaim(c: Ctx) {
+  const s = await signed(c);
+  const b = body(c);
+  const claimId = str(b, "claimId", 64);
+  if (b.signKey !== s.kid) throw new ApiError("badSignature");
+  const claim = await c.env.DB.prepare("SELECT user_id FROM claims WHERE id = ?").bind(claimId).first<{ user_id: string }>();
+  if (!claim) throw new ApiError("notFound");
+  const done = await finishClaim(c, claim.user_id, claimId, b);
+  await c.env.DB.prepare("UPDATE cloud_machines SET computer_id = ? WHERE claim_id = ? AND state != 'deleted'")
+    .bind(done.computer.computerId, claimId)
+    .run();
+  return done;
 }
 
 /** The host attests that this device passed its local screen authorization (including QR pairing).
@@ -155,7 +176,15 @@ export async function hostState(c: Ctx) {
       createdAt: r.created_at,
       expiresAt: r.expires_at,
     })),
+    // A cloud computer's update that can't wait (`remote::managed` on the host installs it at once).
+    ...(await updateFor(c, comp)),
   };
+}
+
+async function updateFor(c: Ctx, comp: Awaited<ReturnType<typeof host>>) {
+  if (!(await machineFor(c.env, comp.id))) return {};
+  const update = await urgentUpdate(c.env, comp, c.now);
+  return update ? { update } : {};
 }
 
 async function hostRequest(c: Ctx, computerId: string, id: string): Promise<RequestRow> {

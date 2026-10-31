@@ -57,7 +57,7 @@ export interface Ctx {
   now: number;
 }
 
-type Body = Record<string, unknown>;
+export type Body = Record<string, unknown>;
 
 export function body(c: Ctx): Body {
   if (c.raw.length > MAX_BODY) throw new ApiError("badRequest", "Body too large");

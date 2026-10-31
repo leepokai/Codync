@@ -18,11 +18,53 @@ public struct CloudComputer: Codable, Hashable, Sendable, Identifiable {
     public var claimedAt: Int64?
     /// `none` · `pending` · `granted` (only when the request carried this device's signature).
     public var access: String?
+    /// Set for a Codync Cloud computer; nil for the user's own (and from clouds that predate it).
+    public var cloud: CloudHosting?
 
     public var id: ComputerID { computerId }
     public var isOnline: Bool { online ?? false }
     /// This device was approved on it through the account.
     public var isGranted: Bool { access == "granted" }
+}
+
+/// Who runs a Codync Cloud computer, where, and whether it's awake (`cloud` in `GET /v1/computers`).
+public struct CloudHosting: Codable, Hashable, Sendable {
+    public var provider: String
+    /// Shown as the cloud names it ("Boat"), never hard-coded here.
+    public var providerName: String
+    public var region: String
+    public var state: CloudMachineState
+
+    /// "Boat · EU".
+    public var placement: String { "\(providerName) · \(region)" }
+}
+
+public enum CloudMachineState: String, Codable, Sendable {
+    case starting, running, stopping, stopped, failed
+    /// A state this version doesn't know.
+    case unknown
+
+    public init(from decoder: any Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
+
+    /// Asleep or falling asleep: a connection or a message wakes it, so it isn't offline.
+    public var isAsleep: Bool { self == .stopped || self == .stopping }
+}
+
+/// The account's Codync Cloud computer (`GET` / `POST /v1/cloud-computers`).
+public struct CloudMachine: Decodable, Hashable, Sendable {
+    public var hosting: CloudHosting
+    /// Nil until the machine has booted and claimed itself into the account.
+    public var computerId: ComputerID?
+
+    private enum CodingKeys: String, CodingKey { case computerId }
+
+    public init(from decoder: any Decoder) throws {
+        computerId = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(ComputerID.self, forKey: .computerId)
+        // Provider, region and state sit beside `computerId`.
+        hosting = try CloudHosting(from: decoder)
+    }
 }
 
 /// A started access request, after both nonces were exchanged: `code` is ready to show.

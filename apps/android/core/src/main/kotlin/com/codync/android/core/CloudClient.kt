@@ -22,10 +22,28 @@ import java.util.concurrent.TimeUnit
 data class CloudComputer(val computerId: String, val name: String, val signKey: String,
     val platform: String? = null, val device: String? = null, val boxKey: String? = null,
     val version: String? = null, val online: Boolean? = null, val lastSeenAt: Long? = null,
-    val claimedAt: Long? = null, val access: String? = null) {
+    val claimedAt: Long? = null, val access: String? = null,
+    /** Set when Codync Cloud runs this computer (older clouds omit it). */
+    val cloud: CloudMachine? = null) {
     /** This device was approved on it through the account. */
     val isGranted: Boolean get() = access == "granted"
 }
+
+/**
+ * A computer Codync Cloud runs for the account: `cloud` on an account computer, and `/v1/cloud-computers`,
+ * which also says whether it has claimed itself into the account yet (`computerId`).
+ */
+@Serializable
+data class CloudMachine(val provider: String, val providerName: String, val region: String, val state: String,
+    val cloudComputerId: String? = null, val computerId: String? = null, val backupAt: Long? = null, val createdAt: Long? = null) {
+    /** Asleep, or going to sleep: it wakes when a device connects or a message arrives. */
+    val asleep: Boolean get() = state == "stopped" || state == "stopping"
+    val failed: Boolean get() = state == "failed"
+}
+
+/** `/v1/cloud-computers`: the account's cloud computer, and whether it may have one (the feature isn't public yet). */
+@Serializable
+data class CloudOffer(val cloudComputer: CloudMachine? = null, val available: Boolean = false)
 
 data class AccessTicket(val requestId: String, val expiresAt: Long, val code: String, val computerId: String, val signKey: String)
 
@@ -46,19 +64,20 @@ class CloudError(val status: Int, val code: String, detail: String? = null) : IO
 }
 
 /** Existing /v1 account protocol; a login is never a host authorization. */
-class CloudClient private constructor(base: String, private val identity: DeviceIdentity,
+class CloudClient private constructor(base: String, private val identity: DeviceIdentity, appVersion: String,
     private val token: suspend () -> String, private val http: OkHttpClient,
     private val pollInterval: Long) {
     private val baseUrl = base.trimEnd('/').toHttpUrl()
     private val json = Json { ignoreUnknownKeys = true }
+    private val app = appHeader(appVersion)
 
-    constructor(base: String, identity: DeviceIdentity, token: suspend () -> String) : this(base, identity, token,
+    constructor(base: String, identity: DeviceIdentity, appVersion: String, token: suspend () -> String) : this(base, identity, appVersion, token,
         OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).callTimeout(20, TimeUnit.SECONDS).build(), 2_000) {
         require(isCloudUrl(base)) { "Invalid cloud address" }
     }
 
     internal constructor(base: String, identity: DeviceIdentity, token: suspend () -> String,
-        http: OkHttpClient, pollInterval: Long, testOnly: Unit) : this(base, identity, token, http, pollInterval)
+        http: OkHttpClient, pollInterval: Long, testOnly: Unit, appVersion: String = "2.24.0") : this(base, identity, appVersion, token, http, pollInterval)
 
     suspend fun registerDevice(name: String) { request("POST", listOf("v1", "devices"),
         buildJsonObject { put("name", name); put("platform", "android") }, signed = true) }
@@ -114,11 +133,21 @@ class CloudClient private constructor(base: String, private val identity: Device
     }
     suspend fun cancelAccess(id: String) { request("DELETE", listOf("v1", "access-requests", id)) }
 
+    /** The account's Codync Cloud computer, if any, and whether this account may create one. */
+    suspend fun cloudComputer(): CloudOffer = json.decodeFromJsonElement(request("GET", listOf("v1", "cloud-computers")))
+    /** Creates the account's cloud computer, or returns the one it has (`403 forbidden` off the allowlist). */
+    suspend fun createCloudComputer(): CloudMachine = requireNotNull(json.decodeFromJsonElement<CloudOffer>(
+        request("POST", listOf("v1", "cloud-computers"), JsonObject(emptyMap()))).cloudComputer) { "Invalid cloud computer" }
+    /** Erases the machine, its snapshots and backup, and takes the computer out of the account. */
+    suspend fun deleteCloudComputer() { request("DELETE", listOf("v1", "cloud-computers")) }
+    /** Erases its earlier saved states and backup, keeping the computer (`409 conflict` while it sleeps). */
+    suspend fun deleteCloudSnapshots() { request("DELETE", listOf("v1", "cloud-computers", "snapshots")) }
+
     private suspend fun request(method: String, path: List<String>, body: JsonObject? = null, signed: Boolean = false): JsonObject {
         val url = baseUrl.newBuilder().apply { path.forEach(::addPathSegment) }.build()
         val bytes = body?.toString()?.toByteArray() ?: byteArrayOf()
         val jwt = token()
-        val builder = Request.Builder().url(url).header("Authorization", "Bearer $jwt")
+        val builder = Request.Builder().url(url).header("Authorization", "Bearer $jwt").header("Codync-App", app)
             .method(method, if (body != null) bytes.toRequestBody("application/json".toMediaType()) else null)
         if (signed) builder.header("Codync-Sig", RequestSigner.header(identity, method, url, bytes))
         val call = http.newCall(builder.build())

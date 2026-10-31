@@ -2,6 +2,7 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, ran
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage } from 'electron'
+import { appHeader } from '../shared/compat'
 import type { AccountService } from './account'
 
 /**
@@ -73,7 +74,7 @@ export function registerCloud(account: AccountService) {
     if (!base || !user) return { ok: false, error: { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } satisfies CloudFailure }
     const url = new URL(path.replace(/^\//, ''), `${base}/`)
     const payload = body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body))
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { 'Codync-App': appHeader(app.getVersion()) }
     try {
       headers.Authorization = `Bearer ${await account.sessionToken()}`
     } catch (error) {

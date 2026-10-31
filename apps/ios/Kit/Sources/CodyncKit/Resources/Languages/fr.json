@@ -1445,5 +1445,22 @@
   "Enter folder path": "Enter folder path",
   "Folder path": "Folder path",
   "Paste an absolute path": "Paste an absolute path",
-  "Go to folder": "Go to folder"
+  "Go to folder": "Go to folder",
+  "Sleeping · wakes when you message": "En veille · se réveille quand vous écrivez",
+  "Cloud computer failed": "L'ordinateur cloud a échoué",
+  "Connecting to {name}…": "Connexion à {name}…",
+  "Runs on {provider} · {region}": "Hébergé chez {provider} · {region}",
+  "Starting": "Démarrage",
+  "Running": "En marche",
+  "Going to sleep": "Mise en veille",
+  "Sleeping": "En veille",
+  "Preparing your cloud computer…": "Préparation de votre ordinateur cloud…",
+  "Create cloud computer": "Créer un ordinateur cloud",
+  "Delete snapshots": "Supprimer les instantanés",
+  "Delete cloud computer": "Supprimer l'ordinateur cloud",
+  "A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.": "Un ordinateur que Codync fait tourner pour vous dans le cloud. Il se met en veille quand il est inactif et se réveille quand vous lui écrivez.",
+  "Delete snapshots?": "Supprimer les instantanés ?",
+  "Erases your cloud computer's earlier saved states and its backup. The computer and what's on it now stay.": "Efface les états enregistrés précédents de votre ordinateur cloud et sa sauvegarde. L'ordinateur et son contenu actuel restent.",
+  "Delete your cloud computer?": "Supprimer votre ordinateur cloud ?",
+  "Erases everything on it: bots, chats, files and sign-ins. This can't be undone.": "Efface tout ce qu'il contient : bots, discussions, fichiers et connexions. Action irréversible."
 }

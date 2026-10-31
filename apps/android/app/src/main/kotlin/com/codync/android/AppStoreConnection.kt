@@ -70,7 +70,7 @@ internal fun AppStore.pair(text: String, via: PairedVia) {
             require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Start over before pairing again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
             // Picked on this phone: re-pairing keeps them (iOS `AccountStore.pair`).
-            val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100))
+            val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100), BuildConfig.VERSION_NAME)
             val computer = paired.keepingDevicePicks(old)
             withContext(Dispatchers.IO) { local.saveComputers(listOf(computer)); local.completeSetup() }
             mutableState.update { it.copy(computers = listOf(computer), setupComplete = true) }
@@ -100,7 +100,7 @@ fun AppStore.connect() {
                 showConnection(LinkState.Connecting)
                 val identity = withContext(Dispatchers.IO) { local.identity() }
                 val target = state.value.computers.firstOrNull { it.id == computer.id } ?: return@launch
-                val active = HostConnector.connect(target, identity)
+                val active = HostConnector.connect(target, identity, BuildConfig.VERSION_NAME)
                 connected = active
                 channel = active
                 coroutineScope {

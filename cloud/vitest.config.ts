@@ -19,6 +19,8 @@ export default defineConfig(async () => ({
           CLERK_JWT_KEY: publicKey.export({ type: "spki", format: "pem" }).toString(),
           TEST_CLERK_PRIVATE_JWK: JSON.stringify(privateKey.export({ format: "jwk" })),
           CLERK_WEBHOOK_SECRET: `whsec_${randomBytes(24).toString("base64")}`,
+          // Codync Cloud on: relays look up cloud machines; tests stub Boat's API with a fetch spy.
+          BOAT_API_KEY: "boat_test",
         },
       },
     }),

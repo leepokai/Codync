@@ -1,9 +1,10 @@
 // Relay WebSocket upgrades (§7.1) and public routine webhook deliveries (§7.8), both forwarded
 // to the computer's Durable Object.
 
+import { compareVersions, parseApp, recordApp } from "../app-versions";
 import { COMPUTER_ID, computerIdFor, fromB64url, verifySig, type SignedRequest } from "../auth";
 import { HOOK_ID, HOOK_MAX_BODY } from "../hooks";
-import { ApiError, type Ctx } from "./common";
+import { ApiError, notify, type Ctx } from "./common";
 
 function checkUpgrade(c: Ctx): void {
   if (c.url.searchParams.get("v") !== "1") throw new ApiError("upgradeRequired");
@@ -49,8 +50,14 @@ export async function relayDevice(c: Ctx, [computerId]: string[]): Promise<Respo
   const s = await verifySig(c.req, c.raw, c.now);
   if (!s) throw new ApiError("badSignature");
   // Only registered computers get a DO; random IDs never create one.
-  const row = await c.env.DB.prepare("SELECT status FROM computers WHERE id = ?").bind(computerId).first<{ status: string }>();
+  const row = await c.env.DB.prepare("SELECT status, version FROM computers WHERE id = ?")
+    .bind(computerId)
+    .first<{ status: string; version: string }>();
   if (!row || row.status !== "active") throw new ApiError("unknownComputer");
+  const app = parseApp(c.req.headers.get("Codync-App"));
+  await recordApp(c.env, s.kid, app, c.now);
+  // An app that needs a newer host: a cloud computer reads its update order now (a sleeping one on waking).
+  if (app?.minHost && compareVersions(app.minHost, row.version) > 0) c.exec.waitUntil(notify(c.env, computerId!));
   return forward(c, computerId!, "device", s, pair);
 }
 

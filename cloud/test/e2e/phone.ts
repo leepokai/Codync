@@ -40,9 +40,9 @@ export class Wire {
     });
   }
 
-  static connect(url: string, key?: ref.SignKey): Wire {
+  static connect(url: string, key?: ref.SignKey, extra: Record<string, string> = {}): Wire {
     const u = new URL(url);
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...extra };
     if (key) headers["Codync-Sig"] = ref.signRequest(key, { method: "GET", authority: u.host, pathAndQuery: u.pathname + u.search });
     // undici's WebSocket takes headers in its init object (not in the DOM typings).
     return new Wire(new WebSocket(url, { headers } as unknown as string[]));
@@ -79,6 +79,7 @@ export interface PairingInfo {
 export function parsePairing(link: string): PairingInfo {
   const u = new URL(link);
   const q = u.searchParams;
+  // A debug host build is Codync Dev and links with its own scheme.
   if (!["codync:", "codync-dev:"].includes(u.protocol) || q.get("v") !== "3") throw new Error(`not a v3 pairing link: ${link}`);
   const signKey = ref.unb64url(q.get("sk") ?? "");
   if (ref.computerId(signKey) !== q.get("id")) throw new Error("pairing link id doesn't match sk");
@@ -191,8 +192,9 @@ export class FakePhone {
     return `${base}/v1/relay/device/${computerId}?v=1${pair ? `&pair=${pair}` : ""}`;
   }
 
-  relayWire(cloud: string, computerId: string, pair?: string): Wire {
-    return Wire.connect(this.relayUrl(cloud, computerId, pair), this.key);
+  /** `headers`: what a real app adds, such as its `Codync-App` version. */
+  relayWire(cloud: string, computerId: string, pair?: string, headers?: Record<string, string>): Wire {
+    return Wire.connect(this.relayUrl(cloud, computerId, pair), this.key, headers);
   }
 
   async relay(cloud: string, computerId: string, hostSignPub: Uint8Array): Promise<Channel> {

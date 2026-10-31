@@ -27,6 +27,8 @@ pub use reported::track;
 pub use turns::{TurnOutcome, TurnSource, agent_fell_back, turn_finished};
 
 const KV_ENABLED: &str = "analytics_enabled";
+/// Set to `dev` on test machines (`CODYNC_ANALYTICS_ENV=dev`): their events say `env: dev`, outside every chart.
+const KV_ENV: &str = "analytics_env";
 /// The account the install id was last merged into (one `$identify` per account).
 const KV_IDENTIFIED: &str = "analytics_identified";
 /// Write-only project token: safe to ship in public builds.
@@ -197,6 +199,8 @@ pub fn network_failed(hub: &Hub, stage: NetworkStage) {
 
 pub struct Analytics {
     enabled: Mutex<bool>,
+    /// Every event's `env`: the build's, or `dev` on a test machine.
+    env: &'static str,
     tx: mpsc::UnboundedSender<Msg>,
     rx: Mutex<Option<mpsc::UnboundedReceiver<Msg>>>,
     session: Mutex<session::Session>,
@@ -214,10 +218,20 @@ enum Msg {
 
 impl Analytics {
     pub fn load(store: &Store) -> Self {
+        // Test machines (Dev and end-to-end cloud computers) mark their events instead of guessing them from
+        // location or version. Stored, so a release the machine updates to keeps the mark.
+        if std::env::var("CODYNC_ANALYTICS_ENV").as_deref() == Ok("dev")
+            && let Err(e) = store.kv_set(KV_ENV, "dev")
+        {
+            tracing::warn!(error = format!("{e:#}"), "couldn't mark this machine's analytics as dev");
+        }
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        let env = if store.kv_get(KV_ENV).as_deref() == Some("dev") { "dev" } else { built };
         let enabled = store.kv_get(KV_ENABLED).as_deref() != Some("0");
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
             enabled: Mutex::new(enabled),
+            env,
             tx,
             rx: Mutex::new(Some(rx)),
             session: Mutex::default(),
@@ -277,7 +291,7 @@ fn queue(hub: &Hub, event: &str, distinct_id: &str, mut properties: Map<String, 
     properties.extend([
         ("$lib".into(), "codync-host".into()),
         ("app_version".into(), env!("CARGO_PKG_VERSION").into()),
-        ("env".into(), (if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" }).into()),
+        ("env".into(), hub.analytics.env.into()),
         ("$os".into(), std::env::consts::OS.into()),
         ("arch".into(), std::env::consts::ARCH.into()),
         // Joins this computer's events across accounts and with its phones' `computer_paired`.
@@ -381,6 +395,15 @@ mod tests {
         assert!(Analytics::load(&store).state());
         Analytics::load(&store).set_enabled(&store, false).unwrap();
         assert!(!Analytics::load(&store).state(), "an off stays off");
+    }
+
+    #[test]
+    fn a_test_machine_stays_marked_dev() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        assert_eq!(Analytics::load(&store).env, built);
+        store.kv_set(KV_ENV, "dev").unwrap();
+        assert_eq!(Analytics::load(&store).env, "dev", "the stored mark wins over the build's environment");
     }
 
     #[test]

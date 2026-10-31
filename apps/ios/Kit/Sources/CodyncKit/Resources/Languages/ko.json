@@ -1445,5 +1445,22 @@
   "Enter folder path": "Enter folder path",
   "Folder path": "Folder path",
   "Paste an absolute path": "Paste an absolute path",
-  "Go to folder": "Go to folder"
+  "Go to folder": "Go to folder",
+  "Sleeping · wakes when you message": "절전 중 · 메시지를 보내면 깨어납니다",
+  "Cloud computer failed": "클라우드 컴퓨터에 문제가 생겼습니다",
+  "Connecting to {name}…": "{name}에 연결 중…",
+  "Runs on {provider} · {region}": "{provider} · {region}에서 실행",
+  "Starting": "시작 중",
+  "Running": "실행 중",
+  "Going to sleep": "절전 모드로 전환 중",
+  "Sleeping": "절전 중",
+  "Preparing your cloud computer…": "클라우드 컴퓨터를 준비하는 중…",
+  "Create cloud computer": "클라우드 컴퓨터 만들기",
+  "Delete snapshots": "스냅샷 삭제",
+  "Delete cloud computer": "클라우드 컴퓨터 삭제",
+  "A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.": "Codync가 클라우드에서 대신 실행하는 컴퓨터입니다. 쉬는 동안 절전 상태가 되고, 메시지를 보내면 깨어납니다.",
+  "Delete snapshots?": "스냅샷을 삭제할까요?",
+  "Erases your cloud computer's earlier saved states and its backup. The computer and what's on it now stay.": "클라우드 컴퓨터에 저장된 이전 상태와 백업을 지웁니다. 컴퓨터와 지금 있는 내용은 그대로 남습니다.",
+  "Delete your cloud computer?": "클라우드 컴퓨터를 삭제할까요?",
+  "Erases everything on it: bots, chats, files and sign-ins. This can't be undone.": "봇, 채팅, 파일, 로그인 정보 등 모든 내용이 지워집니다. 되돌릴 수 없습니다."
 }

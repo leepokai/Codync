@@ -1,5 +1,6 @@
 import type { CloudStatus, ClaimSignature } from '@shared/models'
 import { mayAutoClaim } from '../lib/auto-claim'
+import type { CloudPlacement } from '../lib/cloud-computer'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
 import { relayAddressToSave } from '../lib/relay-address'
@@ -24,6 +25,8 @@ export interface CloudComputer {
   claimedAt?: number | null
   /** `none` · `pending` · `granted`. */
   access?: string | null
+  /** Set for a cloud computer Codync runs (Codync Cloud). */
+  cloud?: CloudPlacement | null
 }
 
 export class CloudError extends Error {
@@ -41,10 +44,24 @@ export class CloudError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown, signed = false): Promise<T> {
+/** The Codync cloud's emergency floor: set once it refuses this app's version (`426 appUpdateRequired`). */
+class AppFloor extends Observable {
+  message: string | null = null
+
+  reached(message: string | null) {
+    if (this.message !== null) return
+    this.message = message ?? 'Update Codync to keep using it.'
+    this.changed()
+  }
+}
+
+export const appFloor = new AppFloor()
+
+export async function request<T>(method: string, path: string, body?: unknown, signed = false): Promise<T> {
   const res = await window.codync.cloud.request(method, path, body, signed)
-  if (!res.ok) throw new CloudError(res.error.status, res.error.code, res.error.message)
-  return res.value as T
+  if (res.ok) return res.value as T
+  if (res.error.code === 'appUpdateRequired') appFloor.reached(res.error.message)
+  throw new CloudError(res.error.status, res.error.code, res.error.message)
 }
 
 /** Host identities whose cloud default has been applied (or found already on). */

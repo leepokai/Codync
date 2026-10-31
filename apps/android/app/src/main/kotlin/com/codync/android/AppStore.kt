@@ -58,6 +58,8 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     internal val pendingSectionMoves = mutableListOf<SectionMove>()
     internal var pluginsRefreshAgain = false
     internal var widgetOwner: WidgetOwner? = null
+    /** Cloud computers this app session already asked for access by itself (the tap's stand-in). */
+    internal val askedCloud = mutableSetOf<String>()
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
 
@@ -107,7 +109,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
 
     private suspend fun configureCloud(userId: String) {
         val identity = withContext(Dispatchers.IO) { local.identity() }
-        cloud = CloudClient(BuildConfig.CLOUD_URL, identity) { NativeAccounts.token(userId) }
+        cloud = CloudClient(BuildConfig.CLOUD_URL, identity, BuildConfig.VERSION_NAME) { NativeAccounts.token(userId) }
     }
 
     /** Join every writer before closing a context's database or replacing its identity. */
@@ -231,7 +233,11 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    internal fun showError(error: Exception) { mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.") } }
+    internal fun showError(error: Exception) {
+        // Not an error to dismiss: the Update this app card says it and stays.
+        if (error is CloudError && error.code == "appUpdateRequired") mutableState.update { it.copy(loading = false, appFloor = error.message) }
+        else mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.") }
+    }
 
     private data class WidgetSource(val computer: Computer?, val bots: List<Bot>, val usage: JsonObject, val fresh: Boolean)
     @OptIn(FlowPreview::class)

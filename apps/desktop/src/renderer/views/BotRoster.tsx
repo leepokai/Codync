@@ -13,7 +13,7 @@ import { StoreContext, useApp } from '../store/context'
 import { BotRow } from './BotRow'
 import { ComputerHeadingLabel, ComputerRosterSection } from './ComputerRosterSection'
 import { SectionRoster } from './SectionRoster'
-import { UpdateNeededCard } from './UpdateNeededCard'
+import { AppFloorCard, UpdateNeededCard } from './UpdateNeededCard'
 
 /** A bot being dragged among its computer's bots, and the order it has made so far. */
 interface BotDrag {
@@ -235,6 +235,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
   })
   return (
     <>
+      {compact ? null : <AppFloorCard />}
       {sections}
       {lift ? <RosterGhost key={lift.seq} lift={lift} ghost={ghost} compact={compact} /> : null}
     </>

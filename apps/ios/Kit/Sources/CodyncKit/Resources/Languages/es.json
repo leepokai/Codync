@@ -1445,5 +1445,22 @@
   "Enter folder path": "Enter folder path",
   "Folder path": "Folder path",
   "Paste an absolute path": "Paste an absolute path",
-  "Go to folder": "Go to folder"
+  "Go to folder": "Go to folder",
+  "Sleeping · wakes when you message": "En reposo · se activa cuando escribes",
+  "Cloud computer failed": "El ordenador en la nube falló",
+  "Connecting to {name}…": "Conectando con {name}…",
+  "Runs on {provider} · {region}": "Se ejecuta en {provider} · {region}",
+  "Starting": "Iniciando",
+  "Running": "En ejecución",
+  "Going to sleep": "Entrando en reposo",
+  "Sleeping": "En reposo",
+  "Preparing your cloud computer…": "Preparando tu ordenador en la nube…",
+  "Create cloud computer": "Crear ordenador en la nube",
+  "Delete snapshots": "Eliminar instantáneas",
+  "Delete cloud computer": "Eliminar ordenador en la nube",
+  "A computer Codync runs for you in the cloud. It sleeps when idle and wakes when you message it.": "Un ordenador que Codync ejecuta para ti en la nube. Entra en reposo cuando está inactivo y se activa cuando le escribes.",
+  "Delete snapshots?": "¿Eliminar instantáneas?",
+  "Erases your cloud computer's earlier saved states and its backup. The computer and what's on it now stay.": "Borra los estados guardados anteriores de tu ordenador en la nube y su copia de seguridad. El ordenador y lo que tiene ahora se conservan.",
+  "Delete your cloud computer?": "¿Eliminar tu ordenador en la nube?",
+  "Erases everything on it: bots, chats, files and sign-ins. This can't be undone.": "Borra todo lo que contiene: bots, chats, archivos e inicios de sesión. No se puede deshacer."
 }

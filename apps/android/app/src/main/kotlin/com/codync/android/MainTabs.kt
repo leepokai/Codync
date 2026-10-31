@@ -51,7 +51,7 @@ private enum class AppTab { Bots, State, Settings }
         AnimatedVisibility(ticket != null && state.selectedBot == null, Modifier.align(Alignment.BottomCenter).padding(bottom = barSpace - 16.dp),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it }, exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it }) {
             if (ticket != null) AccessBanner(ticket, state.cloudComputers.firstOrNull { it.computerId == ticket.computerId }?.name ?: "Your computer",
-                store::cancelAccess)
+                cloud = state.cloudOf(ticket.computerId) != null, store::cancelAccess)
         }
         AnimatedVisibility(state.selectedBot == null, Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it / 2 },

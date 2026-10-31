@@ -109,3 +109,25 @@ test('a refused mark as read gives the hold back', async () => {
   await new Promise((resolve) => setTimeout(resolve))
   assert.equal(bot().keptUnread, true)
 })
+
+test('a chat opened before the host caught up is read once its state shows it held', async () => {
+  const { reads, sent, bot } = computer({})
+  reads.catchingUp()
+  reads.open('a')
+  assert.deepEqual(sent, [])
+  bot().keptUnread = true
+  reads.caughtUp()
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
+})
+
+test('a hold arriving after the host caught up waits for the chat to be opened again', async () => {
+  const { reads, sent, bot } = computer({})
+  reads.open('a')
+  reads.caughtUp()
+  reads.catchingUp()
+  bot().keptUnread = true
+  reads.caughtUp()
+  await new Promise((resolve) => setTimeout(resolve))
+  assert.deepEqual(sent, [])
+})

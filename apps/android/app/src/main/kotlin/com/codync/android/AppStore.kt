@@ -35,6 +35,10 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     internal val mutableState = MutableStateFlow(AppState())
     /** Chats marked unread here whose bot doesn't show the host's `keptUnread` yet. */
     internal val markingUnread = mutableSetOf<String>()
+    /** Chats opened before the host's state arrived: a hold it shows then was still the user's to read. */
+    internal var openedEarly: MutableSet<String>? = mutableSetOf()
+    /** The host's rev at this stream's `hello`: once the mirror reaches it, `openedEarly` is settled. */
+    internal var openCatchUpRev = Long.MAX_VALUE
     val state = mutableState.asStateFlow()
     internal var database: MirrorDatabase? = null
     internal var draftBook: DraftBook? = null

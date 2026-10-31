@@ -145,6 +145,10 @@ public final class BotStore {
     @ObservationIgnored var readingViews: [UUID: String] = [:]
     /// Mark as unread sent but not yet seen in a bot event: one from before it mustn't drop the hold.
     @ObservationIgnored var markingUnread: [String: PendingUnread] = [:]
+    /// Chats opened before the host's state arrived: a hold it shows then was still the user's to read.
+    @ObservationIgnored var openedEarly: Set<String>? = []
+    /// The host's rev at this stream's `hello`: once `rev` reaches it, `openedEarly` is settled.
+    @ObservationIgnored var openCatchUpRev = Int64.max
 
     /// A mark as unread on its way; `from` is the host's rev for it once it answered.
     struct PendingUnread {

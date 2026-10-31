@@ -16,6 +16,8 @@ export class ReadMarks {
   private perform: Perform
   /** Mark as Unread sent but not yet seen in a bot event: one from before it mustn't drop the hold. */
   private marking = new Map<string, Marking>()
+  /** Chats opened before the host's state arrived: a hold it shows then was still the user's to read. */
+  private openedEarly: Set<string> | null = new Set()
   constructor(bots: () => Map<string, Bot>, changed: () => void, perform: Perform) {
     this.bots = bots
     this.changed = changed
@@ -66,9 +68,22 @@ export class ReadMarks {
     })
   }
 
-  /** The user opened the chat: one marked unread is read now. */
+  /** The user opened the chat: one marked unread is read now, or once the host's state arrives. */
   open(botId: string) {
     if (this.held(botId)) this.markRead(botId)
+    else this.openedEarly?.add(botId)
+  }
+
+  /** A new events stream: what's here may be behind the host until it catches up. */
+  catchingUp() {
+    this.openedEarly ??= new Set()
+  }
+
+  /** The stream reached the host's rev: chats opened meanwhile that it holds unread are read. */
+  caughtUp() {
+    const opened = this.openedEarly ?? []
+    this.openedEarly = null
+    for (const botId of opened) if (this.held(botId)) this.markRead(botId)
   }
 
   private patch(botId: string, change: Partial<Bot>) {

@@ -21,6 +21,8 @@ extension BotStore {
                 }
                 requestedSince = rev
                 windowFloors = [:]
+                openCatchUpRev = .max
+                if openedEarly == nil { openedEarly = [] }
                 for try await event in client.events(since: requestedSince, client: "ios") {
                     guard !Task.isCancelled, !retired else { return }
                     setConnection(.online)
@@ -99,6 +101,7 @@ extension BotStore {
             if hostRewound { rev = 0 }
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
+            openCatchUpRev = hostRev
             bump(rev)
         case .bot(let received):
             let bot = putHostBot(received)
@@ -191,6 +194,10 @@ extension BotStore {
     private func bump(_ r: Int64) {
         rev = max(rev, r)
         if !caughtUp && rev >= catchUpRev { caughtUp = true }
+        if rev >= openCatchUpRev {
+            openCatchUpRev = .max
+            settleEarlyOpens()
+        }
     }
 
     /// Per bot, the lowest synced `seq` in the mirror (optimistic entries don't count).

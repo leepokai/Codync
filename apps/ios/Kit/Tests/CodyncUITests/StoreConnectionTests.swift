@@ -70,6 +70,25 @@ import Testing
     #expect(await until { await fake.readReceipts.count == 2 })
 }
 
+@MainActor @Test func chatOpenedBeforeCatchUpIsReadOnceTheHostShowsItHeld() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    store.openConversation("b1")
+    await fake.emit(#"{"type":"hello","hostId":"h1","rev":3}"#)
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":3,"unread":1,"keptUnread":true}}"#)
+    #expect(await until { await fake.readReceipts.count == 1 })
+    // A hold arriving after catch-up waits for the chat to be opened again.
+    await fake.emit(#"{"type":"bot","bot":{"id":"b1","name":"Bot","rev":4,"unread":1,"keptUnread":true}}"#)
+    #expect(await until { store.bots["b1"]?.rev == 4 })
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(await fake.readReceipts.count == 1)
+}
+
 @MainActor @Test func markingAnEmptyChatUnreadLeavesNoHold() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

@@ -183,6 +183,8 @@ fun AppStore.connect() {
 
 /** Drain available catch-up in bounded transactions, without delaying a lone live event. */
 private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Long): Unit = coroutineScope {
+    openCatchUpRev = Long.MAX_VALUE
+    if (openedEarly == null) openedEarly = mutableSetOf()
     val source = active.events(cursor).produceIn(this)
     try {
         while (isActive) {
@@ -203,6 +205,11 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveNetwork(batch)
             hearCalls(batch)
             markingUnread -= keptUnreadIn(batch).toSet()
+            openCatchUpRev = catchUpRevIn(batch, openCatchUpRev)
+            if (openCatchUpRev != Long.MAX_VALUE && withContext(Dispatchers.IO) { requireNotNull(database).revision() } >= openCatchUpRev) {
+                openCatchUpRev = Long.MAX_VALUE
+                settleEarlyOpens()
+            }
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
         }

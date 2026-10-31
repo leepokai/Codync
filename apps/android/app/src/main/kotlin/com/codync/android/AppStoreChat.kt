@@ -13,8 +13,19 @@ import kotlinx.serialization.json.*
 fun AppStore.openBot(id: String?) {
     mutableState.update { it.copy(selectedBot = id, trace = false) }
     if (id == null) return
-    if (keptUnread(id)) markRead(id) else acknowledgeVisible()
+    if (keptUnread(id)) markRead(id) else { openedEarly?.add(id); acknowledgeVisible() }
 }
+
+/** The stream reached the host's rev: chats opened meanwhile that it holds unread are read. */
+internal fun AppStore.settleEarlyOpens() {
+    val opened = openedEarly.orEmpty()
+    openedEarly = null
+    for (id in opened.filter { keptUnread(it) }) markRead(id)
+}
+
+/** The rev catch-up runs to: a batch's `hello` names it, or it stays as it was. */
+internal fun catchUpRevIn(events: List<MirrorEvent>, current: Long): Long =
+    events.filterIsInstance<MirrorEvent.Hello>().lastOrNull()?.rev ?: current
 
 /** The roster's "Mark as read", and opening a chat marked unread: after a mark as unread still under way, so the host never gets them the other way round. */
 fun AppStore.markRead(id: String) {

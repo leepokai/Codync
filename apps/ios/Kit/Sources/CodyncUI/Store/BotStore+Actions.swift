@@ -216,9 +216,16 @@ extension BotStore {
         markingUnread[botId] != nil || bots[botId]?.keptUnread == true
     }
 
-    /// The user opened the chat: one marked unread is read now.
+    /// The user opened the chat: one marked unread is read now, or once the host's state arrives.
     func openConversation(_ botId: String) {
-        if heldUnread(botId) { markAllRead(botId) }
+        if heldUnread(botId) { markAllRead(botId) } else { openedEarly?.insert(botId) }
+    }
+
+    /// The stream reached the host's rev: chats opened meanwhile that it holds unread are read.
+    func settleEarlyOpens() {
+        let opened = openedEarly ?? []
+        openedEarly = nil
+        for botId in opened where heldUnread(botId) { markAllRead(botId) }
     }
 
     public func setPinned(_ bot: Bot, _ pinned: Bool) {

@@ -27,6 +27,12 @@ struct BotListView: View {
     // ponytail: one name folds that section on every computer; key it by computer if they must fold apart.
     @AppStorage("collapsedRosterSections") private var collapsedRosterSections = ""
 
+    @AppStorage("rosterSectionOrder") private var sectionOrderData = Data()
+    private var sectionOrder: RosterSectionOrder {
+        get { RosterSectionOrder(data: sectionOrderData) }
+        nonmutating set { sectionOrderData = newValue.data }
+    }
+
     private var collapsedIDs: Set<ComputerID> { Set(collapsedComputers.split(separator: ",").map(String.init)) }
 
     private func toggleCollapsed(_ id: ComputerID) {
@@ -52,10 +58,17 @@ struct BotListView: View {
     private func renameSection(_ name: String, to newName: String?, on store: BotStore) {
         Task {
             // Right before the call, which moves the bots before it waits: one update shows both.
+            let orderBefore = sectionOrderData
+            var renamedOrder = sectionOrder
+            renamedOrder.set(sectionLines(store).compactMap { $0.sectionName(on: store.computer.id) }, on: store.computer.id)
+            renamedOrder.rename(name, to: newName, on: store.computer.id)
+            sectionOrder = renamedOrder
+            let orderAfter = sectionOrderData
             let before = foldedSections
             let moved = RosterSection.folds(before, renaming: name, to: newName)
             foldedSections = moved
             if await store.renameSection(from: name, to: newName) { return }
+            if sectionOrderData == orderAfter { sectionOrderData = orderBefore }
             foldedSections = RosterSection.folds(foldedSections, refused: moved, before: before)
         }
     }
@@ -104,7 +117,7 @@ struct BotListView: View {
     private func sectionLines(_ store: BotStore) -> [RosterLine] {
         let id = store.computer.id
         let items = accounts.roster.filter { $0.ref.computerId == id }
-        return RosterSection.lines(items, folded: foldedSections) { $0.bot }.map { line -> RosterLine in
+        return RosterSection.lines(items, folded: foldedSections, order: sectionOrder.saved(on: id)) { $0.bot }.map { line -> RosterLine in
             switch line {
             case let .header(section): .section(section, id, store)
             case .label: .label(id)
@@ -117,6 +130,7 @@ struct BotListView: View {
         let roster = accounts.roster.filter { shownIDs.contains($0.ref.computerId) }
         let lines = self.lines
         let movingComputer = lines.contains { $0.id == lifted && $0.computerId != nil }
+        let movingSection = lines.first { $0.id == lifted }?.sectionComputer
         List {
             Group {
                 // A newer app release (dismissible; everything still works). Computers update
@@ -138,12 +152,18 @@ struct BotListView: View {
                     case let .section(section, _, store):
                         if movingComputer { Color.clear.frame(height: 0) } else { sectionHeading(section, store: store) }
                     case .label:
-                        if movingComputer { Color.clear.frame(height: 0) } else { RosterBotsLabel().moveDisabled(true) }
+                        if movingComputer { Color.clear.frame(height: 0) } else {
+                            RosterBotsLabel().itemProvider { lift(line) }
+                                .accessibilityActions {
+                                    Button(L10n.tr("Move up")) { moveSection(line, by: -1) }
+                                    Button(L10n.tr("Move down")) { moveSection(line, by: 1) }
+                                }
+                        }
                     case let .bot(item, store):
                         // A dragged heading folds every computer's bots into their headings. Each
                         // row stays, empty: taking it out would move the lifted heading's place in
                         // the list, and the system then drops the drag.
-                        if movingComputer { Color.clear.frame(height: 0) } else { row(item, store: store) }
+                        if movingComputer || movingSection == item.ref.computerId { Color.clear.frame(height: 0) } else { row(item, store: store) }
                     }
                 }
                 .onMove(perform: moveLines)
@@ -236,7 +256,7 @@ struct BotListView: View {
     /// A row the system's reordering dropped. A heading moves its computer and its bots (an order
     /// kept on this device); a bot moves only among its computer's bots with the same pin state and
     /// section, an order the host syncs to every device: dropped among others (another section,
-    /// another computer), it goes first or last of its own. Section headings don't move.
+    /// another computer), it goes first or last of its own. Section headings and the Bots label move as groups on this device.
     private func moveLines(from source: IndexSet, to destination: Int) {
         let before = lines
         guard let from = source.first, before.indices.contains(from) else { return }
@@ -250,7 +270,9 @@ struct BotListView: View {
         case let .bot(item, store):
             store.drop(item.bot.id, in: after.compactMap { $0.botId(on: item.ref.computerId) })
         case .section, .label:
-            break
+            guard let computer = before[from].sectionComputer else { return }
+            let names = after.compactMap { $0.sectionName(on: computer) }
+            withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { sectionOrder.set(names, on: computer) }
         }
     }
 
@@ -281,8 +303,13 @@ struct BotListView: View {
     /// A section's heading: tap folds its bots away (on this device); touch and hold to rename or
     /// remove it, its bots staying without one. An older computer has no section menu.
     @ViewBuilder private func sectionHeading(_ section: RosterSection, store: BotStore) -> some View {
-        let header = RosterSectionHeader(section: section, hasMenu: store.supportsSections) { toggleSection(section.name) }
-            .moveDisabled(true)
+        let header = RosterSectionHeader(section: section, hasMenu: store.supportsSections, toggle: { toggleSection(section.name) },
+                                         moving: lines.first { $0.id == lifted }?.sectionComputer == store.computer.id)
+            .itemProvider { lift(.section(section, store.computer.id, store)) }
+            .accessibilityActions {
+                Button(L10n.tr("Move up")) { moveSection(.section(section, store.computer.id, store), by: -1) }
+                Button(L10n.tr("Move down")) { moveSection(.section(section, store.computer.id, store), by: 1) }
+            }
         if store.supportsSections {
             header.contextActions {
                 [
@@ -297,6 +324,14 @@ struct BotListView: View {
         } else {
             header
         }
+    }
+
+    private func moveSection(_ line: RosterLine, by offset: Int) {
+        guard let computer = line.sectionComputer, let name = line.sectionName(on: computer) else { return }
+        var names = lines.compactMap { $0.sectionName(on: computer) }
+        guard let from = names.firstIndex(of: name), names.indices.contains(from + offset) else { return }
+        names.swapAt(from, from + offset)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { sectionOrder.set(names, on: computer) }
     }
 
     private func row(_ item: RosterItem, store: BotStore) -> some View {
@@ -366,7 +401,7 @@ struct BotListView: View {
     /// A heading folds the bots away and back with an animation.
     private func lift(_ line: RosterLine) -> NSItemProvider {
         let id = line.id
-        let animation = line.computerId != nil ? Motion.reduced(Motion.layout, reduceMotion) : nil
+        let animation = (line.computerId != nil || line.sectionComputer != nil) ? Motion.reduced(Motion.layout, reduceMotion) : nil
         withAnimation(animation) { lifted = id }
         return LiftItem { Task { @MainActor in if lifted == id { withAnimation(animation) { lifted = nil } } } }
     }
@@ -388,90 +423,3 @@ struct BotListView: View {
     }
 }
 
-/// The item a lifted row carries (nothing): the system lets go of it when the drag or the
-/// menu ends.
-private final class LiftItem: NSItemProvider {
-    private let ended: @Sendable () -> Void
-
-    init(ended: @escaping @Sendable () -> Void) {
-        self.ended = ended
-        super.init()
-    }
-
-    deinit { ended() }
-}
-
-/// One row in the roster: a computer's heading or a bot, which the user can drag, or a section's
-/// heading or the "Bots" label on a computer (its id carried along: `id` can't read the main-actor store).
-private enum RosterLine: Identifiable {
-    case computer(ComputerID, BotStore)
-    case section(RosterSection, ComputerID, BotStore)
-    case label(ComputerID)
-    case bot(RosterItem, BotStore)
-
-    var id: String {
-        switch self {
-        case let .computer(id, _): "computer:\(id)"
-        case let .section(section, computerId, _): "section:\(computerId):\(section.name)"
-        case let .label(computerId): "label:\(computerId)"
-        case let .bot(item, _): "bot:\(item.ref.computerId):\(item.bot.id)"
-        }
-    }
-
-    /// The computer a heading stands for.
-    var computerId: ComputerID? {
-        if case let .computer(id, _) = self { id } else { nil }
-    }
-
-    func botId(on computerId: ComputerID) -> String? {
-        if case let .bot(item, _) = self, item.ref.computerId == computerId { item.bot.id } else { nil }
-    }
-}
-
-private struct NewTarget: Identifiable {
-    enum Kind { case bot, group }
-    let id = UUID()
-    let kind: Kind
-    let computerId: ComputerID
-}
-
-private struct GroupTarget: Identifiable {
-    let id = UUID()
-    let computerId: ComputerID
-    let group: Bot
-}
-
-private struct EditTarget: Identifiable {
-    let id = UUID()
-    let computerId: ComputerID
-    let draft: BotDraft
-}
-
-private struct EmptyRoster: View {
-    let canCreate: Bool
-    let hasComputer: Bool
-    let create: () -> Void
-    let showComputers: () -> Void
-
-    var body: some View {
-        VStack(spacing: 14) {
-            CharacterAvatar(shape: "cloud", color: "green", size: 72)
-            Text(L10n.tr("No bots yet")).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
-            Text(L10n.tr(hasComputer
-                 ? "Create a bot for each kind of work — a reviewer, a fixer, a docs writer — and point it at a project."
-                 : "Ask one of your account's computers for access, or pair one with its code."))
-                .font(.subheadline)
-                .foregroundStyle(Palette.secondary)
-                .multilineTextAlignment(.center)
-            if canCreate {
-                Button(L10n.tr("Create your first bot"), action: create)
-                    .buttonStyle(.primary)
-            } else if !hasComputer {
-                Button(L10n.tr("Computers"), action: showComputers)
-                    .buttonStyle(.primary)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-    }
-}

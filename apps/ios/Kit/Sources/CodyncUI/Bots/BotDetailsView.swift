@@ -134,7 +134,7 @@ struct BotDetailsView: View {
                             .outlinedCard()
                     }
                 }
-                RoutinesView(botId: botId, initialId: routineId) { dismiss() }
+                RoutinesView(botId: botId, initialId: routineId)
             }
         case .library:
             LibraryView(botId: botId, openArtifact: openArtifact)

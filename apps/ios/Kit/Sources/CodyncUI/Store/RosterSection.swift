@@ -75,7 +75,7 @@ public struct RosterSection: Sendable {
     /// each section by name with its bots (none while folded), then the bots in no section, under the
     /// "Bots" label when there are sections. A pinned bot shows only on top, whatever its section;
     /// every part keeps the roster's order.
-    public static func lines<Item>(_ roster: [Item], folded: Set<String>, bot: (Item) -> Bot) -> [RosterSectionLine<Item>] {
+    public static func lines<Item>(_ roster: [Item], folded: Set<String>, order: [String] = [], bot: (Item) -> Bot) -> [RosterSectionLine<Item>] {
         var pinned: [Item] = [], loose: [Item] = [], bySection: [String: [Item]] = [:]
         for item in roster {
             let placed = bot(item)
@@ -88,15 +88,21 @@ public struct RosterSection: Sendable {
             }
         }
         var lines = pinned.map { RosterSectionLine.bot($0) }
-        for name in sorted(bySection.keys) {
+        let available = sorted(bySection.keys) + (loose.isEmpty ? [] : [""])
+        let names = ComputerOrder(ids: order).orderedIDs(available)
+        for name in names {
+            if name.isEmpty {
+                if !bySection.isEmpty { lines.append(.label) }
+                lines += loose.map { RosterSectionLine.bot($0) }
+                continue
+            }
             let items = bySection[name] ?? []
             let isFolded = folded.contains(name)
             let unread = items.reduce(0) { $0 + bot($1).unread }
             lines.append(.header(RosterSection(name: name, count: items.count, unread: unread, folded: isFolded)))
             if !isFolded { lines += items.map { RosterSectionLine.bot($0) } }
         }
-        if !bySection.isEmpty && !loose.isEmpty { lines.append(.label) }
-        return lines + loose.map { RosterSectionLine.bot($0) }
+        return lines
     }
 }
 

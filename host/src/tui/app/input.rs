@@ -200,6 +200,8 @@ impl App {
             KeyCode::Char('u') => self.jump(Mark::Unread),
             KeyCode::Char('[') => self.move_bot(-1),
             KeyCode::Char(']') => self.move_bot(1),
+            KeyCode::Up if k.modifiers.contains(KeyModifiers::ALT) => self.move_section(-1),
+            KeyCode::Down if k.modifiers.contains(KeyModifiers::ALT) => self.move_section(1),
             KeyCode::Char('K') => self.reorder_bot(-1),
             KeyCode::Char('J') => self.reorder_bot(1),
             KeyCode::Char(c @ '1'..='9') => {

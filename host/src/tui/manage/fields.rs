@@ -92,6 +92,7 @@ impl App {
                 self.sheet("updateBot", json!({"id": bot, "section": values.get("name")}), Reply::FieldsSaved);
             }
             Submit::RenameSection(from) => {
+                self.section_order = self.shown_section_names();
                 let to = values.get("name").and_then(Value::as_str).map(str::to_owned);
                 let r = Reply::SectionRenamed { from: from.clone(), to: to.clone() };
                 self.sheet("renameSection", json!({"from": from, "to": to}), r);

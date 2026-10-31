@@ -85,17 +85,6 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
         ? tr('Queue a message for {name}').replace('{name}', name)
         : tr('Ask {name}').replace('{name}', name)
 
-  // A routine's "Try it" fills the chat's box (an artifact's leaves it for the chat).
-  const routineDraft = about ? undefined : store.routineDrafts.get(botId)
-  useEffect(() => {
-    if (routineDraft === undefined) return
-    const incoming = store.consumeRoutineDraft(botId)
-    if (incoming === undefined) return
-    const previous = drafts.get(botId)
-    drafts.set(botId, previous ? `${previous}\n${incoming}` : incoming)
-    field.current?.focus()
-  }, [routineDraft, botId, store, drafts])
-
   // Picking a message to reply to brings the caret here.
   useEffect(() => {
     if (reply) field.current?.focus()

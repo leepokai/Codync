@@ -183,6 +183,7 @@ impl App {
             }
             Reply::SectionRenamed { from, to } => {
                 rename_fold(&mut self.folded, &from, to.as_deref());
+                self.rename_section_order(&from, to.as_deref());
                 self.on_sheet_reply(Reply::FieldsSaved, Ok(v));
             }
             Reply::SignIn => {

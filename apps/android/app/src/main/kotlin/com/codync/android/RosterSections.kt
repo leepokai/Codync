@@ -33,20 +33,23 @@ internal sealed interface RosterLine {
  * bots in roster order unless it's [folded]), then bots without a section, under [RosterLine.Label]
  * when there are sections. A pinned bot shows only on top.
  */
-internal fun rosterLines(roster: List<Bot>, folded: Set<String>): List<RosterLine> = buildList {
+internal fun rosterLines(roster: List<Bot>, folded: Set<String>, order: List<String> = emptyList(), moving: Boolean = false): List<RosterLine> = buildList {
     val (pinned, unpinned) = roster.partition { it.pinned }
     val sections = unpinned.groupBy(Bot::section)
     pinned.forEach { add(RosterLine.Row(it)) }
-    val names = sectionNames(unpinned)
+    val custom = sectionNames(unpinned)
+    val names = orderedSections(custom + if (sections[null].isNullOrEmpty()) emptyList() else listOf(""), order)
     for (name in names) {
-        val bots = sections.getValue(name)
-        val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, name in folded)
-        add(header)
-        if (!header.folded) bots.forEach { add(RosterLine.Row(it)) }
+        if (name.isEmpty()) {
+            if (custom.isNotEmpty()) add(RosterLine.Label)
+            if (!moving) sections[null].orEmpty().forEach { add(RosterLine.Row(it)) }
+        } else {
+            val bots = sections.getValue(name)
+            val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, moving || name in folded)
+            add(header)
+            if (!header.folded) bots.forEach { add(RosterLine.Row(it)) }
+        }
     }
-    val loose = sections[null].orEmpty()
-    if (names.isNotEmpty() && loose.isNotEmpty()) add(RosterLine.Label)
-    loose.forEach { add(RosterLine.Row(it)) }
 }
 
 /** The sections [bots] are in, sorted the way the phone's language sorts ("İş" where Turkish puts it). */

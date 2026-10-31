@@ -192,8 +192,8 @@ fn summary(groups: &[Value]) -> Vec<Window> {
         }
     }
     [
-        ("gemini-5h", "five_hour", "5-hour"),
-        ("gemini-weekly", "seven_day", "Weekly"),
+        ("gemini-5h", "five_hour", "Gemini 5h"),
+        ("gemini-weekly", "seven_day", "Gemini 7d"),
         ("3p-5h", "claude_five_hour", "Claude 5h"),
         ("3p-weekly", "claude_seven_day", "Claude 7d"),
         ("gemini-argon-wtu-weekly", "argon", "Argon Weekly"),
@@ -251,7 +251,8 @@ mod tests {
             {"bucketId":"3p-weekly","remainingFraction":0.5}
         ]}]}});
         let w = parse(&body);
-        assert_eq!(w[0].label, "5-hour");
+        // Named for its model, like the Claude rows: clients show a bare "5-hour" as Claude's "Session".
+        assert_eq!(w[0].label, "Gemini 5h");
         assert!((w[0].percent - 80.0).abs() < 1e-9);
         assert!(w[0].resets_at.is_some());
         assert_eq!(w[1].label, "Claude 7d");

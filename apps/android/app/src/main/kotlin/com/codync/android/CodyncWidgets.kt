@@ -283,7 +283,7 @@ private const val WARNING = 0xFFF0A030.toInt()
 @Composable private fun Ticks(context: Context, percent: Double, tint: Int, height: Dp) {
     val red = danger.getColor(context).toArgb()
     val bitmap = remember(percent, tint, red) { ticks(percent, tint, red) }
-    Image(ImageProvider(bitmap), "${percent.roundToInt()} percent", GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
+    Image(ImageProvider(bitmap), "${percent.roundToInt()} percent used", GlanceModifier.fillMaxWidth().height(height), contentScale = ContentScale.FillBounds)
 }
 
 private fun ticks(percent: Double, tint: Int, red: Int): Bitmap {

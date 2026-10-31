@@ -117,10 +117,13 @@ function symbolIcons(): TraySummary['symbols'] {
   return icons
 }
 
+/** The menu's language: the app's setting, else the system's. */
+const systemLanguage = () => (typeof navigator === 'undefined' ? 'en' : navigator.language)
+const tr = (text: string) => translate(text, prefs.appLanguage.get(), systemLanguage())
+
 /** "home · Owner" and "desk · Online · 3 bots" per network; null on hosts without networks. */
 function networkLines(view: NetworkView | null | undefined): TraySummary['networks'] {
   if (!view) return null
-  const tr = (text: string) => translate(text, prefs.appLanguage.get(), typeof navigator === 'undefined' ? 'en' : navigator.language)
   return view.networks.map((net) => ({
     title: `${net.name} · ${tr(roleTitle(net.role))}`,
     computers: net.computers.map((c) => ({
@@ -131,13 +134,9 @@ function networkLines(view: NetworkView | null | undefined): TraySummary['networ
 }
 
 function usageLine(w: UsageWindow) {
-  const preference = prefs.appLanguage.get()
-  const system = typeof navigator === 'undefined' ? 'en' : navigator.language
-  const title = translate(windowTitle(w), preference, system)
   const reset = resetDate(w)
-  const spoken = reset ? resetLine(`resets in ${untilText(reset)}`, preference, system) : ''
-  const reading = windowReading(w)
-  return `${title} · ${reading}${spoken ? ` · ${spoken}` : ''}`
+  const spoken = reset ? resetLine(`resets in ${untilText(reset)}`, prefs.appLanguage.get(), systemLanguage()) : ''
+  return `${tr(windowTitle(w))} · ${windowReading(w, tr)}${spoken ? ` · ${spoken}` : ''}`
 }
 
 /** Sends what the menu bar shows whenever the stores change. */
@@ -194,7 +193,7 @@ export function useTraySummary(app: AppModel) {
         needsAttention: app.needsAttention,
         textSize,
         usageIconStyle: iconStyle,
-        language: resolvedLanguage(language, typeof navigator === 'undefined' ? 'en' : navigator.language),
+        language: resolvedLanguage(language, systemLanguage()),
       }
       window.codync.app.setTraySummary(summary)
     }, 150)

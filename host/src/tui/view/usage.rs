@@ -93,7 +93,9 @@ fn window(buf: &mut Buffer, inner: Rect, y: u16, win: &Value) {
         if pct >= 80.0 { t.amber } else { t.text }.patch(t.panel),
     );
     x = put(buf, x, y, 16, &"▱".repeat(16 - on.min(16)), t.line.patch(t.panel));
-    put(buf, x + 1, y, 5, &format!("{pct:>3.0}%"), t.text.patch(t.panel));
+    // Said as used: a bare percent reads as what's left.
+    let used = tr("{percent}% used").replace("{percent}", &format!("{pct:.0}"));
+    let end = put(buf, x + 1, y, 16, &used, t.text.patch(t.panel));
     let reset = win["resetsAt"]
         .as_i64()
         .map(|ms| format!("resets {}", when_future(ms)))
@@ -102,7 +104,9 @@ fn window(buf: &mut Buffer, inner: Rect, y: u16, win: &Value) {
             win["resetsText"].as_str().map(|s| truncate(s.split(" (").next().unwrap_or(s), 24))
         })
         .unwrap_or_default();
-    let reset = crate::tui::l10n::reset_line(&reset);
+    // Only in what the reading leaves, so a longer translation never runs into it.
+    let room = usize::from(inner.right().saturating_sub(end + 1));
+    let reset = truncate(&crate::tui::l10n::reset_line(&reset), room);
     rput(buf, inner.right(), y, &reset, t.dim.patch(t.panel));
 }
 

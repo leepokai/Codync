@@ -53,9 +53,21 @@ export class BotMirror extends Observable {
 
   private restoreIcons(icons: import('@shared/custom-icons').CustomIcons) {
     this.icons = icons
-    for (const [id, bot] of this.bots) this.bots.set(id, { ...bot, customIcon: icons[`bot:${id}`] })
+    for (const [id, bot] of this.bots) this.bots.set(id, this.withIcon(bot))
     this.onRosterChanged?.()
     this.changed()
+  }
+
+  /** Icons sync apart from bots, so no bot the host sends carries its custom icon. */
+  private withIcon(bot: Bot): Bot {
+    return { ...bot, customIcon: this.icons[`bot:${bot.id}`] }
+  }
+
+  /** Stores a bot the host sent, with its custom icon. */
+  protected putHostBot(bot: Bot): Bot {
+    const stored = this.withIcon(bot)
+    this.bots.set(stored.id, stored)
+    return stored
   }
   computer: Computer
   connection: Connection = { kind: 'connecting' }
@@ -76,7 +88,6 @@ export class BotMirror extends Observable {
   /** A new network's recovery code until the user says they saved it: the host keeps it nowhere. */
   recoveryCode: RecoveryCode | null = null
   historyComplete = new Set<string>()
-  routineDrafts = new Map<string, string>()
   readonly composerDrafts: ComposerDrafts
   lastError: string | null = null
   /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */

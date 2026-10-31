@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Bot } from '@shared/models'
 import type { BotStore } from '../store/bot-store'
-import type { ActionItem } from './PanelMenus'
+import type { ActionItem } from './DesktopActionMenu'
 import { moveToSectionItems, sectionHeaderItems, type SectionNaming } from './section-menus.ts'
 
 /** A computer's store as the menus read it (`archived` is hidden, its section still counts), logging what they ask of it. */

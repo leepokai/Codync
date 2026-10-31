@@ -10,9 +10,10 @@ struct RosterSectionHeader: View {
     /// Whether touch and hold opens its menu (rename, remove): not on a computer without sections.
     let hasMenu: Bool
     let toggle: () -> Void
+    var moving = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var showsUnread: Bool { section.folded && section.unread > 0 }
+    private var showsUnread: Bool { (section.folded || moving) && section.unread > 0 }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -35,7 +36,7 @@ struct RosterSectionHeader: View {
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Palette.tertiary)
-                .rotationEffect(.degrees(section.folded ? -90 : 0))
+                .rotationEffect(.degrees((section.folded || moving) ? -90 : 0))
                 .accessibilityHidden(true)
         }
         // `ComputerSection`'s 14 + 6 points above and 2 + 6 below: about 46 points to tap.
@@ -46,10 +47,10 @@ struct RosterSectionHeader: View {
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits([.isHeader, .isButton])
         .accessibilityLabel(spoken)
-        .accessibilityValue(section.folded ? L10n.tr("Collapsed") : L10n.tr("Expanded"))
+        .accessibilityValue((section.folded || moving) ? L10n.tr("Collapsed") : L10n.tr("Expanded"))
         .accessibilityHint(hasMenu ? L10n.tr("Double-tap to fold or expand. Touch and hold to rename or remove the section.")
             : L10n.tr("Double-tap to fold or expand."))
-        .accessibilityAction(named: section.folded ? L10n.tr("Expand") : L10n.tr("Collapse"), toggle)
+        .accessibilityAction(named: (section.folded || moving) ? L10n.tr("Expand") : L10n.tr("Collapse"), toggle)
         .accessibilityAction(.default) { toggle() }
     }
 

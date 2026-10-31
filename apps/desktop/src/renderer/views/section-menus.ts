@@ -2,7 +2,7 @@ import type { Bot } from '@shared/models'
 import type { MenuItem } from '../components/Overlay'
 import { sectionNames } from '../lib/roster-sections.ts'
 import type { BotStore } from '../store/bot-store'
-import type { ActionItem } from './PanelMenus'
+import type { ActionItem } from './DesktopActionMenu'
 
 /** An open section name dialog: its title, the name it starts with, and what Save does with the typed one. */
 export interface SectionNaming {

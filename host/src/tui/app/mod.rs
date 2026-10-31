@@ -13,6 +13,7 @@ mod navigate;
 mod new_bot;
 mod overlay_keys;
 mod roster;
+mod section_order;
 mod slash;
 mod steps;
 mod ui;
@@ -113,6 +114,8 @@ pub struct App {
     pub unfolded: HashSet<String>,
     /// Roster sections showing their label alone (`z`); this run only.
     pub folded: HashSet<String>,
+    /// Section order for this terminal session; the empty name is the unsectioned Bots group.
+    pub section_order: Vec<String>,
     /// Voice calls' own messages, by call id (`callEntries`): the chat loaded here may not reach back to them.
     pub call_entries: HashMap<String, Vec<Entry>>,
     pub market: (Vec<Toggle>, Vec<Toggle>),
@@ -191,6 +194,7 @@ impl App {
             pick: None,
             unfolded: HashSet::new(),
             folded: HashSet::new(),
+            section_order: Vec::new(),
             call_entries: HashMap::new(),
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),

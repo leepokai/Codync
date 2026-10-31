@@ -126,3 +126,7 @@
   padding: 4px 0;
   gap: 2px;
 }
+
+.roster-section-toggle,
+button.roster-label { cursor: grab; }
+.pointer-dragging .roster-section-toggle:hover { background: none; }

@@ -144,7 +144,8 @@
   flex: none;
 }
 .settings-usage-percent {
-  width: 36px;
+  /* Grows past this for longer translations (de, fr); the bar gives way. */
+  min-width: 76px;
   flex: none;
   text-align: right;
 }

@@ -334,7 +334,8 @@ html[data-platform="darwin"] .sidebar-header {
   -webkit-app-region: no-drag;
 }
 .account-panel,
-.action-menu {
+.action-menu,
+.action-submenu {
   position: absolute;
   padding: 7px;
   background: var(--panel);
@@ -351,7 +352,8 @@ html[data-platform="darwin"] .sidebar-header {
 .account-panel.compact {
   bottom: 68px;
 }
-.action-menu {
+.action-menu,
+.action-submenu {
   width: 260px;
   border-radius: var(--radius-l);
 }

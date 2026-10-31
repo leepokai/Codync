@@ -104,7 +104,7 @@ class ReactionPick(val emoji: List<String>, val chosen: List<String>, val toggle
 }
 
 /** Long-press then move: the row leaves its menu and follows the finger, as iOS list rows reorder. */
-class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () -> Unit)
+class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () -> Unit, val cancel: (() -> Unit)? = null)
 
 /**
  * Long-press opens the menu under a lifted copy of the content; `reactions` adds the emoji row.
@@ -141,15 +141,16 @@ class ContextDrag(val start: () -> Unit, val move: (Float) -> Unit, val end: () 
             var moved = 0f
             var started = false
             // finally: a cancelled gesture (the row left the list, the handler restarted) still ends the drag.
+            var completed = false
             try {
-                drag(held.id) { change ->
+                completed = drag(held.id) { change ->
                     val step = change.positionChange().y
                     moved += step
                     if (!started && abs(moved) > viewConfiguration.touchSlop) { started = true; open = false; reorder.start() }
                     if (started) { reorder.move(step); change.consume() }
                 }
             } finally {
-                if (started) reorder.end()
+                if (started) { if (completed) reorder.end() else (reorder.cancel ?: reorder.end)() }
             }
         }
     }

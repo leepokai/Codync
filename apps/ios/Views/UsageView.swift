@@ -61,7 +61,7 @@ private struct ProviderCard: View {
                     HStack {
                         Text(L10n.tr(top.title))
                         Spacer()
-                        Text(L10n.tr("\(Int(top.percent.rounded()))%")).monospacedDigit()
+                        Text(top.usedText).monospacedDigit()
                     }
                     .font(.subheadline)
                     .foregroundStyle(Palette.text)
@@ -76,7 +76,7 @@ private struct ProviderCard: View {
             if !collapsed {
                 VStack(spacing: 8) {
                     ForEach(provider.windows) { w in
-                        row(L10n.tr(w.title), w.text ?? "\(Int(w.percent.rounded()))%")
+                        row(L10n.tr(w.title), w.reading)
                         if let reset = w.resetsShort() { row(L10n.tr("Resets"), L10n.resetLine(reset)) }
                     }
                     row("Source", source)

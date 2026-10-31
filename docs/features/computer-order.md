@@ -53,7 +53,7 @@ A bot or group chat can be in one section, a name the user picks (`section`, set
 `renameSection` renames, merges into another section's name, or removes one; `host/src/hub/sections.rs`).
 The host trims the name, treats an empty one as none, and refuses one over 40 characters or with a
 control character. The roster shows the lead and pinned rows first, then each section under its header
-sorted by name (the way the device's language sorts; the terminal UI sets case and accents aside but
+in device-local order, initially sorted by name (the way the device's language sorts; the terminal UI sets case and accents aside but
 has no per-language rules, so Swedish "å" sorts as "a" there), then rows in no section (under a "Bots"
 label when there are sections); inside a section rows keep the order above. A section exists while
 a bot is in it. A bot's menu has Move to section and a section header's menu has Rename section and
@@ -71,10 +71,10 @@ nothing), while a rename made on another device arrives unfolded.
   the row is a rounded card: it fills while the system holds its drag item (`BotListView.lift`). A bot
   moves only among its own computer's bots with the same pin state and, unpinned, the same section:
   dropped among others (another section, another computer's), it goes first or last of its own. The
-  drop saves the order (`BotListView.moveLines`, `BotStore.drop`). Section headings don't move.
+  drop saves the order (`BotListView.moveLines`, `BotStore.drop`). Dragging a section heading or the Bots label moves that whole group within its computer; each device keeps this order.
   VoiceOver: Move up / Move down. SwiftUI's own drag and drop can't do this:
   with a context menu on the row, a drag never starts on iPhone.
-- **Desktop:** drag a row, or Alt+Up/Down on the selected bot (macOS, Linux, Windows).
+- **Desktop:** drag a row, or Alt+Up/Down on the selected bot (macOS, Linux, Windows). Drag section headings or the Bots label to move whole groups; Alt+Up/Down on a focused heading does the same.
 - **Terminal UI:** `J` / `K` move the selected bot down / up. `w` moves it to a section (empty takes
   it out), `W` renames its section (empty removes it), `z` or a click on a section's label folds or
-  unfolds it (in the compact strip a click on a folded section unfolds it).
+  unfolds it (in the compact strip a click on a folded section unfolds it). Alt+Up/Down moves the selected bot's whole section, including Bots; section order lasts until quitting.

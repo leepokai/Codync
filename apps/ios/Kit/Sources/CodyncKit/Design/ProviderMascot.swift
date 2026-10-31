@@ -48,6 +48,14 @@ public extension UsageWindow {
         return label
     }
 
+    /// "62% used": the share of the cap already spent, said so (a bare percent reads as what's left).
+    var usedText: String {
+        L10n.tr("{percent}% used").replacingOccurrences(of: "{percent}", with: "\(Int(percent.rounded()))")
+    }
+
+    /// The used percent, or the note when this window isn't a share of a cap.
+    var reading: String { text ?? usedText }
+
     /// "resets 3h 20m" / "resets Sep 26 at 12pm", compact for widgets and cards.
     func resetsShort(now: Date = .now) -> String? {
         if let d = resetDate { return d > now ? "resets \(RelativeTime.until(d, now: now))" : nil }

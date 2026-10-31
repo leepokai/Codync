@@ -1,4 +1,5 @@
 import { isBelow } from '../../shared/compat.ts'
+import { orderedSections } from './roster-section-order.ts'
 import { rosterBand } from './computer-roster.ts'
 
 /** The first host with roster sections. */
@@ -28,17 +29,22 @@ export type RosterLine<T> =
  * sections. A pinned bot shows only on top. A folded section still holds its rows, so its fold can
  * animate.
  */
-export function rosterLines<T extends { bot: Placed }>(items: T[], folded: readonly string[]): RosterLine<T>[] {
+export function rosterLines<T extends { bot: Placed }>(items: T[], folded: readonly string[], order: readonly string[] = []): RosterLine<T>[] {
   const row = (item: T): RosterLine<T> => ({ kind: 'row', item })
+  const groups = rosterGroups(items, folded, order)
+  const labeled = groups.some((group) => group.name !== '')
+  return [...items.filter((item) => item.bot.pinned).map(row), ...groups.flatMap((group): RosterLine<T>[] =>
+    group.name !== '' ? [group] : [...(labeled ? [{ kind: 'label' } as const] : []), ...group.items.map(row)])]
+}
+
+/** The same whole groups for rendering, keyboard navigation, dragging, and renaming. */
+export function rosterGroups<T extends { bot: Placed }>(items: T[], folded: readonly string[], order: readonly string[] = []): Extract<RosterLine<T>, { kind: 'section' }>[] {
   const unpinned = items.filter((item) => !item.bot.pinned)
-  const sections = sectionNames(unpinned.map((item) => item.bot)).map((name): RosterLine<T> => {
-    const rows = unpinned.filter((item) => item.bot.section === name)
-    const unread = rows.reduce((sum, item) => sum + item.bot.unread, 0)
-    return { kind: 'section', name, count: rows.length, unread, folded: folded.includes(name), items: rows }
+  const names = [...sectionNames(unpinned.map((item) => item.bot)), ...(unpinned.some((item) => !item.bot.section) ? [''] : [])]
+  return orderedSections(names, order).map((name) => {
+    const rows = unpinned.filter((item) => (item.bot.section ?? '') === name)
+    return { kind: 'section', name, count: rows.length, unread: rows.reduce((sum, item) => sum + item.bot.unread, 0), folded: name !== '' && folded.includes(name), items: rows }
   })
-  const loose = unpinned.filter((item) => !item.bot.section).map(row)
-  const label: RosterLine<T>[] = sections.length && loose.length ? [{ kind: 'label' }] : []
-  return [...items.filter((item) => item.bot.pinned).map(row), ...sections, ...label, ...loose]
 }
 
 /** The rows on screen, top to bottom: a folded section's rows are left out. */

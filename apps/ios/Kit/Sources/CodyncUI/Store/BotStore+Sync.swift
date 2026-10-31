@@ -100,9 +100,8 @@ extension BotStore {
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
             bump(rev)
-        case .bot(var bot):
-            bot.customIcon = icons["bot:\(bot.id)"]
-            bots[bot.id] = bot
+        case .bot(let received):
+            let bot = putHostBot(received)
             if bot.keptUnread { markingUnread[bot.id] = nil }
             bump(bot.rev)
             onBotUpdated?(bot)

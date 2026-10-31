@@ -1,5 +1,29 @@
 use super::*;
 
+#[tokio::test]
+async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
+    use crate::tui::manage::RoutineList;
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    let mut app = test_app();
+    app.selected = Some("b".into());
+    app.drafts.insert("b".into(), Editor::with("My unfinished message"));
+    app.overlays.push(Overlay::Routines(RoutineList {
+        bot: "b".into(),
+        items: Some(Vec::new()),
+        runs: Vec::new(),
+        cursor: 0,
+    }));
+
+    app.on_key(KeyEvent::from(KeyCode::Char('c')));
+    assert!(matches!(app.overlays.last(), Some(Overlay::Routines(_))));
+    assert_eq!(app.drafts["b"].text, "My unfinished message");
+
+    app.on_key(KeyEvent::from(KeyCode::Char('n')));
+    assert!(matches!(app.overlays.last(), Some(Overlay::Routine(_))));
+    assert_eq!(app.drafts["b"].text, "My unfinished message");
+}
+
 #[test]
 fn fuzzy_is_a_subsequence_match() {
     assert!(fuzzy("rx", &["Rex"]));

@@ -314,7 +314,8 @@
   text-overflow: ellipsis;
 }
 .island-usage-value {
-  width: 34px;
+  /* Grows past this for longer translations (de, fr); the bar gives way. */
+  min-width: 64px;
   flex: none;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -327,7 +328,7 @@
   text-align: right;
 }
 .island-usage-reset {
-  width: 66px;
+  width: 76px;
   flex: none;
   text-align: right;
   color: var(--secondary);

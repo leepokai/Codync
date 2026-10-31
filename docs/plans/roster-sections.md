@@ -19,9 +19,9 @@ Bots                        a plain label (no fold, count or menu), only when th
 ```
 
 - A bot or group chat is in at most one section, or none.
-- **Order:** the lead bot, then pinned rows, then sections sorted by name (the way the device's
+- **Order:** the lead bot, then pinned rows, then sections in device-local drag order (initially sorted by name, the way the device's
   language sorts, so "İş" sorts as Turkish expects; the terminal sets case and accents aside), then
-  rows without a section, under a "Bots" label when there are sections. Inside a section rows keep
+  rows without a section initially come last, under a "Bots" label that can also move. Inside a section rows keep
   the roster order (position, then recent activity).
 - **Row menu:** "Move to section ▸" lists the existing sections, "New section…" and "Remove from
   section"; the lead bot has none. **Header menu:** "Rename section…" and "Remove section" (its
@@ -36,7 +36,7 @@ Bots                        a plain label (no fold, count or menu), only when th
 - Moves and renames show at once; one the host refuses is put back.
 - Hidden bots keep their section.
 
-Not in this change: dropping a bot onto a section by drag, reordering sections by drag, nested
+Not in this change: dropping a bot onto a section by drag, nested
 sections.
 
 ## Host
@@ -68,7 +68,7 @@ section too.
 
 | Client | Model | Header | Menus | Name entry | Folded state |
 |---|---|---|---|---|---|
-| Desktop | `shared/models.ts` `Bot.section`, `normalizeBot` | modeled on `ComputerRosterSection` | `DesktopActionMenu` (`PanelMenus.tsx`), items from `views/section-menus.ts` (Move to section as submenu rows) | `Dialog` | `prefs.ts`, `collapsedRosterSections` |
+| Desktop | `shared/models.ts` `Bot.section`, `normalizeBot` | modeled on `ComputerRosterSection` | `views/DesktopActionMenu.tsx`, items from `views/section-menus.ts` (Move to section as a hover or keyboard submenu) | `Dialog` | `prefs.ts`, `collapsedRosterSections` |
 | iPhone | `Bot.swift` `Bot.section: String?`; `HostClient.setSection` sends `null` to clear | modeled on `ComputerSection` | system `contextMenu` submenu (`.contextActions`) | `.codyncDialog` | `@AppStorage("collapsedRosterSections")` |
 | Android | `HostClient.kt` `Bot.section`; `BotDraft.template()` leaves it out | modeled on iOS `ComputerSection` (`RosterSectionViews.kt`) | `contextActions` | `CodyncDialog` | `SharedPreferences` |
 | Terminal | `tui/app/bot.rs` `Bot.section` | labels beside `PINNED` / `BOTS` in `view/roster.rs` | keys, listed in `view/help.rs` | `section_fields` sheet (`manage/fields.rs`) | in memory |
@@ -93,3 +93,5 @@ This change bumps every version file to 2.32.0, the first host with sections, an
 section controls on a 2.32.0 host. Its What's New bullets are in the `## 2.32.0` sections of
 `apps/ios/WhatsNew.md` and `apps/android/WhatsNew.md`. [Bot order](../features/computer-order.md#bot-order)
 and the scope table in [remote relay](../reference/remote-relay.md) cover `renameSection`.
+
+Section headings and the unsectioned Bots group can be reordered on each device, independently per computer. A rename keeps its place; a merge keeps the destination's place. Pinned bots stay on top. Terminal Alt+↑/↓ moves the selected bot's group for that terminal session.

@@ -80,7 +80,7 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
                         DetailsTab.Details -> Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
                             BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often)
                             state.screen?.let { ComputerCard(it, draft.computer, online) { on -> draft = draft.copy(computer = on) } }
-                            RoutinesView(bot, state, store, routineId, leave = dismiss)
+                            RoutinesView(bot, state, store, routineId)
                             LaunchedEffect(Unit) { routineId = null }
                         }
                         DetailsTab.Library -> LibraryView(bot, state, store, openArtifact)

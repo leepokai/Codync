@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
@@ -62,18 +63,33 @@ import kotlinx.serialization.json.putJsonArray
     var naming by remember { mutableStateOf<SectionNaming?>(null) }
     val context = LocalContext.current
     var folded by remember { mutableStateOf(FoldedSections.load(context)) }
+    val sectionKey = SectionOrders.key(state.contextId, state.computers.firstOrNull()?.id.orEmpty())
+    val listState = rememberLazyListState()
+    var sectionOrder by remember(sectionKey) { mutableStateOf(SectionOrders.load(context, sectionKey)) }
+    val sectionReorder = remember(sectionKey) { SectionReorder() }
+    sectionReorder.save = { sectionOrder = it; sectionReorder.names = it; SectionOrders.save(context, sectionKey, it) }
+    sectionReorder.position = { name ->
+        val key = if (name.isEmpty()) "label:bots" else "section:$name"
+        listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }?.offset?.toFloat() ?: 0f
+    }
     // A folded section renamed or removed here stays folded under its new name, at once, like its bots; a refusal puts the
     // folds back, reading and writing the stored ones, as the list may have left the screen.
     val renameSection = { from: String, to: String? ->
+        val orderBefore = sectionOrder
+        val orderAfter = renamedSectionOrder(sectionReorder.names, from, to)
+        sectionReorder.save(orderAfter)
         val before = folded
         val renamed = foldsAfterRename(before, from, to)
         folded = renamed
         FoldedSections.save(context, renamed)
         store.renameSection(from, to) {
+            if (SectionOrders.load(context, sectionKey) == orderAfter) sectionReorder.save(orderBefore)
             folded = foldsAfterRefusal(FoldedSections.load(context), renamed, before).also { FoldedSections.save(context, it) }
         }
     }
     val roster = roster(state.bots)
+    val sectionNames = sectionNames(roster.filterNot { it.pinned })
+    sectionReorder.names = orderedSections(sectionNames + if (roster.any { !it.pinned && it.section == null }) listOf("") else emptyList(), sectionOrder)
     val sections = menuSections(state.bots)
     val reorder = remember { RosterReorder() }
     reorder.roster = roster
@@ -92,13 +108,13 @@ import kotlinx.serialization.json.putJsonArray
     }) {
         // Pull to refresh reconnects and asks the account for its computers again (iOS `refreshable`).
         PullToRefresh({ store.reconnect(); store.refreshComputers() }, Modifier.fillMaxSize(), indicatorTop = top + 50.dp) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 56.dp, bottom = bottomInset)) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = top + 56.dp, bottom = bottomInset)) {
             // A computer waiting for an update has its card instead; its bots may not be readable yet.
             state.mismatch?.let { mismatch -> item("update") { UpdateNeededCard(state, mismatch, store::requestHostUpdate, Modifier.padding(vertical = 8.dp)) } }
             if (roster.isEmpty() && state.mismatch == null) item {
                 EmptyRoster(canCreate = usable, hasComputer = usable, create = newBot, showComputers = manage)
             }
-            items(rosterLines(reorder.shown(roster), folded), key = RosterLine::key) { line ->
+            items(rosterLines(reorder.shown(roster), folded, sectionReorder.shown, sectionReorder.dragged != null), key = RosterLine::key) { line ->
                 when (line) {
                     // Folding drops the section's rows from the list; animateItem fades them out and slides the rest up.
                     is RosterLine.Header -> SectionHeader(line, toggle = {
@@ -107,8 +123,12 @@ import kotlinx.serialization.json.putJsonArray
                     }, actions = if (state.supportsSections) sectionActions(
                         rename = { naming = SectionNaming("Rename section", line.name) { renameSection(line.name, it) } },
                         remove = { renameSection(line.name, null) }) else emptyList(),
-                        modifier = Modifier.animateItem())
-                    RosterLine.Label -> SectionLabel(Modifier.animateItem())
+                        modifier = Modifier.onSizeChanged { sectionReorder.heights[line.name] = it.height }
+                            .then(if (sectionReorder.dragged == line.name) Modifier.zIndex(1f).graphicsLayer { translationY = sectionReorder.translation(line.name) } else Modifier.animateItem()),
+                        drag = sectionReorder.handle(line.name),
+                        move = { sectionReorder.move(line.name, it) })
+                    RosterLine.Label -> SectionLabel(Modifier.onSizeChanged { sectionReorder.heights[""] = it.height }
+                        .then(if (sectionReorder.dragged == "") Modifier.zIndex(1f).graphicsLayer { translationY = sectionReorder.translation("") } else Modifier.animateItem()), sectionReorder.handle("")) { sectionReorder.move("", it) }
                     is RosterLine.Row -> {
                         val bot = line.bot
                         val lifted = reorder.dragged == bot.id

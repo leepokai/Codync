@@ -40,10 +40,7 @@ class LiveRoutinesTest {
             assertNull(store.state.value.error)
             compose.runOnUiThread { store.openBot(bot.id) }
             compose.openChatDetails()
-            compose.onNodeWithContentDescription("Ask the bot for a routine").performScrollTo().performClick()
-            compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction() and hasText("I want a routine that ")).fetchSemanticsNodes().size == 1 }
-            compose.runOnUiThread { store.editDraft(bot.id, "") }
-            compose.openChatDetails()
+            compose.onNodeWithContentDescription("Ask the bot for a routine").assertDoesNotExist()
             compose.waitUntil(10_000) { "routines:${bot.id}" !in store.state.value.busy && store.state.value.routines[bot.id] != null }
             compose.onNodeWithText("No routines yet. Ask the bot for one, or set it up yourself with +.").assertIsDisplayed()
             compose.onNodeWithContentDescription("Set up a routine").performScrollTo().performClick()

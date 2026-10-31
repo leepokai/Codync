@@ -21,9 +21,13 @@ export const isLimit = (w: UsageWindow) => !w.text
 export const tightest = (p: UsageProvider) =>
   p.windows.filter(isLimit).reduce<UsageWindow | null>((a, w) => (!a || w.percent > a.percent ? w : a), null)
 
-/** The percent, or the note when this window isn't a share of a cap. */
-export function windowReading(w: UsageWindow) {
-  return w.text || `${Math.round(w.percent)}%`
+/** "62% used": the share of the cap already spent, said so (a bare percent reads as what's left). */
+export const usedText = (percent: number, tr: (text: string) => string) =>
+  tr('{percent}% used').replace('{percent}', String(Math.round(percent)))
+
+/** The used percent, or the note when this window isn't a share of a cap. */
+export function windowReading(w: UsageWindow, tr: (text: string) => string) {
+  return w.text || usedText(w.percent, tr)
 }
 
 /** "Session" for the 5-hour window, "Opus" for "Weekly · Opus", else the label. */

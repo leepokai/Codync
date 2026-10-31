@@ -52,23 +52,29 @@ pub fn exec(command: &str) -> Shell {
     if cfg!(windows) { line(command) } else { line(&format!("exec {command}")) }
 }
 
-/// The PATH a fresh login would get, for finding CLIs installed after this process started.
+/// The environment a fresh login would get (its PATH finds CLIs installed after this process
+/// started; its other variables are what the user's agents expect, such as API keys).
 /// Unix: the login shell's, via `$SHELL -ilc` with a timeout (nvm/conda can make shells
-/// slow); the shell writes it to a file, since a background job started by an rc file can hold
-/// a stdout pipe open long after the shell exits.
+/// slow); the shell writes it to a file only this user can read (it holds secrets), since a
+/// background job started by an rc file can hold a stdout pipe open long after the shell exits.
 #[cfg(unix)]
-pub fn user_path() -> Option<String> {
+pub fn user_env() -> Option<Vec<(String, String)>> {
+    use std::os::unix::fs::OpenOptionsExt as _;
     use std::time::{Duration, Instant};
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let file = std::env::temp_dir().join(format!("codync-path-{}", uuid::Uuid::new_v4()));
+    let file = std::env::temp_dir().join(format!("codync-env-{}", uuid::Uuid::new_v4()));
+    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&file).ok()?;
     let target = file.to_string_lossy().replace('\'', r"'\''");
-    let mut child = std::process::Command::new(shell)
-        .args(["-ilc", &format!("printf '%s' \"$PATH\" > '{target}'")])
+    let child = std::process::Command::new(shell)
+        .args(["-ilc", &format!("env -0 > '{target}'")])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
+        .spawn();
+    let Ok(mut child) = child else {
+        let _ = std::fs::remove_file(&file);
+        return None;
+    };
     let deadline = Instant::now() + Duration::from_secs(8);
     let exited = loop {
         match child.try_wait() {
@@ -80,15 +86,31 @@ pub fn user_path() -> Option<String> {
             }
         }
     };
-    let path = std::fs::read_to_string(&file).ok().filter(|p| exited && !p.is_empty());
+    let dump = std::fs::read(&file).ok().filter(|d| exited && !d.is_empty());
     let _ = std::fs::remove_file(&file);
-    path
+    Some(parse_env(&dump?))
+}
+
+/// `env -0` output: `KEY=value` entries ended by NUL; entries that aren't UTF-8 are skipped.
+#[cfg(unix)]
+fn parse_env(dump: &[u8]) -> Vec<(String, String)> {
+    dump.split(|b| *b == 0)
+        .filter_map(|entry| std::str::from_utf8(entry).ok()?.split_once('='))
+        .filter(|(k, _)| !k.is_empty())
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect()
+}
+
+/// Windows: only PATH. A process started at sign-in already has the user's variables.
+#[cfg(windows)]
+pub fn user_env() -> Option<Vec<(String, String)>> {
+    user_path().map(|path| vec![("PATH".to_owned(), path)])
 }
 
 /// Windows: the user's and the machine's PATH from the registry. A running process keeps the
 /// PATH it started with, so a CLI whose installer just added its folder is only seen there.
 #[cfg(windows)]
-pub fn user_path() -> Option<String> {
+fn user_path() -> Option<String> {
     use std::os::windows::process::CommandExt as _;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let read = "[Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')";
@@ -206,6 +228,15 @@ mod tests {
         assert_eq!(quote("/usr/bin/x"), "/usr/bin/x");
         assert_eq!(quote("a b'c"), "'a b'\\''c'");
         assert_eq!(env_prefix([("K", "v"), ("BAD;rm", "x")]), "env K=v ");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parses_env_dump() {
+        let dump = b"A=1\0MULTI=x\ny=z\0=bad\0\xff=skip\0EMPTY=\0";
+        let pairs: Vec<(&str, &str)> = [("A", "1"), ("MULTI", "x\ny=z"), ("EMPTY", "")].into();
+        let want: Vec<(String, String)> = pairs.into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
+        assert_eq!(parse_env(dump), want);
     }
 
     #[cfg(windows)]

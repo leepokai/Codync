@@ -100,11 +100,15 @@ pub fn env(store: &Store, backend: &str) -> Result<Vec<(String, String)>> {
     Ok(values.into_iter().collect())
 }
 
-/// The environment `backend`'s process starts with: the saved keys, and what the harness needs to start.
+/// The environment `backend`'s process starts with: the saved keys, what the harness needs to
+/// start, and the login shell's variables, as in the user's terminal (the first two win).
 pub fn launch_env(store: &Store, backend: &str) -> Result<Vec<(String, String)>> {
     let mut env = env(store, backend)?;
     backends::apply_process_env(backend, &mut env);
-    Ok(env)
+    let mut login = backends::login_env();
+    login.retain(|(k, _)| !env.iter().any(|(name, _)| name == k));
+    login.append(&mut env);
+    Ok(login)
 }
 
 /// Names of the saved keys (values never leave the host).
@@ -133,7 +137,7 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
     let (acp, mut inbox, init, cmd) = start(store, backend).await?;
     let methods = methods(backend, &init, &cmd);
     if let ControlFlow::Break(signed_in) =
-        login_without_session(&init, &mut inbox, backend, &env(store, backend)?).await
+        login_without_session(&init, &mut inbox, backend, &launch_env(store, backend)?).await
     {
         acp.kill().await;
         return Ok(Status { signed_in, detail: None, methods });

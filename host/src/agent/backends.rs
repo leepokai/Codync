@@ -15,10 +15,12 @@ use std::collections::HashSet;
 use std::path::Path;
 
 mod catalog;
+mod login_env;
 mod search_path;
 mod sign_in;
 mod workbuddy;
 pub use catalog::HARNESSES;
+pub use login_env::vars as login_env;
 pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{
     SignInCheck, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, note_prompt_refused, refresh_sign_in,

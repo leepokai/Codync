@@ -14,6 +14,12 @@ struct BotListView: View {
     @State private var editing: EditTarget?
     @State private var editingGroup: GroupTarget?
     @State private var confirmDelete: RosterItem?
+    /// The computer whose workflow list is pushed. Distinct from `BotReference`.
+    @State private var workflowsComputer: WorkflowsComputer?
+    /// A pin opens the workflow itself.
+    @State private var pinnedWorkflow: PinnedWorkflowRoute?
+    /// Bumped when a pin changes, so the rows reread this phone's list.
+    @State private var pinRevision = 0
     /// What the section name dialog names while it's open.
     @State private var naming: SectionNaming?
     /// The row that's lifted (a `RosterLine` id): a bot to drag or for its menu, or a computer's heading.
@@ -116,8 +122,13 @@ struct BotListView: View {
     /// folded), then the bots in no section (under the "Bots" label when there are sections).
     private func sectionLines(_ store: BotStore) -> [RosterLine] {
         let id = store.computer.id
+        let _ = pinRevision
         let items = accounts.roster.filter { $0.ref.computerId == id }
-        return RosterSection.lines(items, folded: foldedSections, order: sectionOrder.saved(on: id)) { $0.bot }.map { line -> RosterLine in
+        let pins = PinnedWorkflows.ids(id).compactMap { workflowId -> RosterLine? in
+            guard store.workflows.contains(where: { $0.id == workflowId }) else { return nil }
+            return .workflow(workflowId, id, store)
+        }
+        return pins + RosterSection.lines(items, folded: foldedSections, order: sectionOrder.saved(on: id)) { $0.bot }.map { line -> RosterLine in
             switch line {
             case let .header(section): .section(section, id, store)
             case .label: .label(id)
@@ -164,6 +175,12 @@ struct BotListView: View {
                         // row stays, empty: taking it out would move the lifted heading's place in
                         // the list, and the system then drops the drag.
                         if movingComputer || movingSection == item.ref.computerId { Color.clear.frame(height: 0) } else { row(item, store: store) }
+                    case let .workflow(id, computerId, store):
+                        if movingComputer || movingSection == computerId {
+                            Color.clear.frame(height: 0)
+                        } else {
+                            workflowRow(id, store: store).moveDisabled(true)
+                        }
                     }
                 }
                 .onMove(perform: moveLines)
@@ -187,6 +204,17 @@ struct BotListView: View {
             }
             ToolbarItem(placement: .principal) {
                 ComputerFilterHeader(accounts: accounts, hidden: $hiddenComputers) { app.showComputers = true }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                // One computer has no heading, so the same button lives in the bar.
+                if let store = shownStores.first, !grouped, store.connection == .online, store.hello?.workflows == true {
+                    Button {
+                        workflowsComputer = WorkflowsComputer(computerId: store.computer.id)
+                    } label: {
+                        Image(systemName: "flowchart")
+                    }
+                    .accessibilityLabel(L10n.tr("Workflows"))
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 // A native menu: the bar hosts toolbar buttons outside SwiftUI's layout,
@@ -251,6 +279,47 @@ struct BotListView: View {
             }]
         }
         .sectionNameDialog($naming)
+        .navigationDestination(item: $workflowsComputer) { route in
+            if let store = accounts.store(for: route.computerId) {
+                WorkflowsView(pendingWorkflowId: route.workflowId, pendingRunId: route.runId)
+                    .environment(store)
+            }
+        }
+        .navigationDestination(item: $pinnedWorkflow) { route in
+            if let store = accounts.store(for: route.computerId) {
+                WorkflowDetailView(workflowId: route.workflowId)
+                    .environment(store)
+            }
+        }
+        .onAppear { pinRevision += 1 }
+        .onChange(of: app.pendingWorkflow, initial: true) { _, _ in openPendingWorkflow() }
+        .onChange(of: accounts.selection) { _, _ in openPendingWorkflow() }
+    }
+
+    /// A notification's workflow waits until the open chat is gone, then pushes the list.
+    private func openPendingWorkflow() {
+        guard accounts.selection == nil, let link = app.pendingWorkflow else { return }
+        guard accounts.store(for: link.computerId) != nil else { return }
+        workflowsComputer = WorkflowsComputer(computerId: link.computerId, workflowId: link.workflowId, runId: link.runId)
+        app.pendingWorkflow = nil
+    }
+
+    private func workflowRow(_ id: String, store: BotStore) -> some View {
+        let workflow = store.workflows.first { $0.id == id }
+        return Button {
+            pinnedWorkflow = PinnedWorkflowRoute(computerId: store.computer.id, workflowId: id)
+        } label: {
+            if let workflow {
+                WorkflowSummaryLine(workflow: workflow)
+            }
+        }
+        .buttonStyle(.plain)
+        .contextActions {
+            [MenuItem("Unpin", icon: "pin.slash") {
+                PinnedWorkflows.remove(id, computer: store.computer.id)
+                pinRevision += 1
+            }]
+        }
     }
 
     /// A row the system's reordering dropped. A heading moves its computer and its bots (an order
@@ -269,6 +338,8 @@ struct BotListView: View {
             withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { accounts.move(id, to: old[to]) }
         case let .bot(item, store):
             store.drop(item.bot.id, in: after.compactMap { $0.botId(on: item.ref.computerId) })
+        case .workflow:
+            break
         case .section, .label:
             guard let computer = before[from].sectionComputer else { return }
             let names = after.compactMap { $0.sectionName(on: computer) }
@@ -292,7 +363,9 @@ struct BotListView: View {
             // Not synced while it needs an update: "No bots yet" wouldn't be true.
             ComputerSection(store: store, empty: store.mismatch == nil && !roster.contains { $0.ref.computerId == id },
                             collapsed: folded || collapsedIDs.contains(id), toggle: { toggleCollapsed(id) }, move: move,
-                            extensions: store.connection == .online && store.mismatch == nil ? { app.marketplace = id } : nil)
+                            extensions: store.connection == .online && store.mismatch == nil ? { app.marketplace = id } : nil,
+                            workflows: store.connection == .online && store.hello?.workflows == true
+                                ? { workflowsComputer = WorkflowsComputer(computerId: id) } : nil)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleCollapsed(id) }
             updateCard(store)

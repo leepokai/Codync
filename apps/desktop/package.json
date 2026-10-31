@@ -16,7 +16,7 @@
     "build": "electron-vite build",
     "build:demo": "vite build --config vite.demo.config.ts && mv ../../web/public/demo/desktop/index.html ../../web/public/demo/desktop.html",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test --experimental-strip-types src/shared/*.test.ts src/renderer/lib/*.test.ts src/renderer/store/*.test.ts src/renderer/views/*.test.ts src/renderer/views/thread/*.test.ts src/renderer/views/routines/*.test.ts src/renderer/views/call/*.test.ts src/renderer/views/marketplace/*.test.ts",
+    "test": "node --test --experimental-strip-types src/shared/*.test.ts src/renderer/lib/*.test.ts src/renderer/store/*.test.ts src/renderer/views/*.test.ts src/renderer/views/thread/*.test.ts src/renderer/views/routines/*.test.ts src/renderer/views/call/*.test.ts src/renderer/views/marketplace/*.test.ts src/renderer/views/workflows/*.test.ts",
     "icons": "swift tools/export-symbols.swift",
     "dist:mac:dev": "node tools/account-config.mjs dev && node tools/native-host.mjs dev && node tools/native-screen.mjs dev && electron-vite build && CSC_NAME=\"Pokai Lee (6KFK5J2LB4)\" electron-builder --mac --config tools/dev-builder.cjs",
     "dist:mac:main": "node tools/account-config.mjs main && node tools/native-host.mjs main && node tools/native-screen.mjs main && electron-vite build && electron-builder --mac",

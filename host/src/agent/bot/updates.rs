@@ -230,6 +230,7 @@ impl Actor {
             &format!("{} needs you", self.cfg.name),
             title,
             AlertKind::NeedsInput,
+            None,
         );
     }
 
@@ -288,7 +289,7 @@ impl Actor {
                 "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there"
             );
         }
-        if self.active_group.is_some() || self.active_routine.is_some() {
+        if self.active_group.is_some() || self.active_routine.is_some() || self.active_workflow.is_some() {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply");
         }
         self.close_seg();

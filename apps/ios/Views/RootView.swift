@@ -94,6 +94,12 @@ struct RootView: View {
                 ReviewInvitation.shared.returned(from: "\(accounts.storage.id)/\(old.computerId)/\(old.botId)")
             }
         }
+        .onChange(of: app.pendingWorkflow, initial: true) { _, link in
+            // A chat covering the list would block the workflow push.
+            guard link != nil else { return }
+            accounts.selection = nil
+            app.tab = .bots
+        }
     }
 
     private var screen: AnalyticsEvent.Screen {

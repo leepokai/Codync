@@ -175,6 +175,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             refresh()
             receiveArtifacts(batch)
             receiveNetwork(batch)
+            receiveWorkflows(batch)
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
@@ -221,9 +222,21 @@ private suspend fun AppStore.awaitUpdate(active: EncryptedChannel) {
 }
 
 /** A different host version may read fine: forget that its data was unreadable and any update asked of the old one (iOS `noteHostVersion`). */
-private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
-    val same = it.hello?.text("version") == hello.text("version")
-    it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
+private fun AppStore.noteHello(hello: JsonObject) {
+    mutableState.update {
+        val same = it.hello?.text("version") == hello.text("version")
+        it.copy(hello = hello, unreadable = it.unreadable && same, hostUpdate = it.hostUpdate.takeIf { same })
+    }
+    val offered = hello["workflows"]?.jsonPrimitive?.booleanOrNull == true
+    if (!offered) {
+        mutableState.update { it.copy(workflows = emptyList(), workflow = null, workflowsSupported = true) }
+        return
+    }
+    contextScope.launch {
+        try { refreshWorkflows() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { }
+    }
 }
 
 private fun AppStore.showConnection(link: LinkState) {

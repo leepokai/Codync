@@ -70,6 +70,7 @@ impl App {
                     }
                 }
             }
+            Reply::Workflow(reply) => self.workflow_reply(reply, &v),
             Reply::Routines(bot) => {
                 if v["routines"].is_array() {
                     for o in &mut self.overlays {
@@ -331,6 +332,7 @@ impl App {
                 }
                 self.flash(&e);
             }
+            Reply::Workflow(reply) => self.workflow_failed(reply, &e),
             Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {

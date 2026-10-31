@@ -1,3 +1,4 @@
+import { IconButton } from '../components/Controls'
 import { useTr } from '../lib/use-language'
 import { ProfileAvatar } from './PanelMenus'
 import { UpdateBadge } from './UpdateButton'
@@ -7,10 +8,11 @@ import drive from '../assets/google-drive.png'
 import './sidebar-footer.css'
 
 /** Account and app connections float above the scrolling roster; Extensions only when given. */
-export function SidebarFooter({ accountOpen, onAccount, onExtensions }: {
+export function SidebarFooter({ accountOpen, onAccount, onExtensions, onWorkflows }: {
   accountOpen: boolean
   onAccount: () => void
   onExtensions?: () => void
+  onWorkflows?: () => void
 }) {
   const tr = useTr()
   return (
@@ -25,6 +27,7 @@ export function SidebarFooter({ accountOpen, onAccount, onExtensions }: {
       >
         <ProfileAvatar />
       </button>
+      {onWorkflows ? <IconButton title="Workflows" icon="flowchart" size={34} onClick={onWorkflows} /> : null}
       {onExtensions ? (
         <button className="extensions" onClick={onExtensions}>
           <span>{tr('Extensions')}</span>

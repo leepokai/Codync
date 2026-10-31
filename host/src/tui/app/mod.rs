@@ -141,6 +141,8 @@ pub struct App {
     pub hint: Option<(String, Instant)>,
     /// Whether this computer shares usage analytics (`None`: before the first `hello`).
     pub analytics: Option<bool>,
+    /// `hello.workflows`: this host serves the workflow list.
+    pub workflows: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
 }
@@ -209,6 +211,7 @@ impl App {
             floors: HashMap::new(),
             hint: None,
             analytics: None,
+            workflows: false,
             seen: analytics::Seen::default(),
         }
     }

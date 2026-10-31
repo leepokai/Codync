@@ -53,7 +53,7 @@ import kotlinx.serialization.json.put
  * merged by computer ID), and the way to pair another (iOS `ComputersView`).
  */
 @Composable internal fun ComputersView(app: AccountContext, states: List<AppState>, accounts: AccountStore, pair: () -> Unit, ask: (CloudComputer) -> Unit,
-    extensions: (String) -> Unit) {
+    extensions: (String) -> Unit, workflows: (String) -> Unit) {
     val signedIn = app.account.userId != null
     var confirmForget by remember { mutableStateOf<AppState?>(null) }
     var confirmRevoke by remember { mutableStateOf<CloudComputer?>(null) }
@@ -71,7 +71,7 @@ import kotlinx.serialization.json.put
                 val inAccount = app.cloudComputers.firstOrNull { it.computerId == id }
                 CardSection {
                     computerRows(state, store, inAccount != null, app.isStale(state, states), app.access[id]?.code,
-                        ComputerActions({ extensions(id) }, store::openScreen, voice = { voice = id }, network = { network = id }, color = { coloring = id },
+                        ComputerActions({ extensions(id) }, { workflows(id) }, store::openScreen, voice = { voice = id }, network = { network = id }, color = { coloring = id },
                             ask = inAccount?.let { c -> { ask(c) } }, revoke = inAccount?.takeIf { it.isGranted }?.let { c -> { confirmRevoke = c } }) {
                             confirmForget = state
                         })
@@ -122,7 +122,7 @@ import kotlinx.serialization.json.put
 }
 
 /** What the paired computer's row and its menu open; `revoke` is set when this phone's account access can be revoked. */
-private class ComputerActions(val extensions: () -> Unit, val screen: () -> Unit, val voice: () -> Unit, val network: () -> Unit, val color: () -> Unit,
+private class ComputerActions(val extensions: () -> Unit, val workflows: () -> Unit, val screen: () -> Unit, val voice: () -> Unit, val network: () -> Unit, val color: () -> Unit,
     val ask: (() -> Unit)?, val revoke: (() -> Unit)?, val remove: () -> Unit)
 
 /**
@@ -135,10 +135,12 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
     row { ComputerSummary(state, inAccount, stale, code, actions) }
     if (state.connection is LinkState.Ready) {
         row { RowLabel("Extensions", "square.grid.2x2", chevron = true, modifier = Modifier.plainButton(action = actions.extensions)) }
+        if (state.offersWorkflows) row { WorkflowsComputerRow(state, online = true, action = actions.workflows) }
         row { RowLabel("Voice chat", "waveform", chevron = true, modifier = Modifier.plainButton(action = actions.voice)) }
         if (state.screen != null) row { RowLabel("Screen", "display", chevron = true, modifier = Modifier.plainButton(action = actions.screen)) }
         if (state.network?.shown == true) row { RowLabel("Network", NETWORK_ICON, chevron = true, modifier = Modifier.plainButton(action = actions.network)) }
     }
+    if (state.connection !is LinkState.Ready && state.offersWorkflows) row { WorkflowsComputerRow(state, online = false, action = {}) }
     if (BuildConfig.PUSH_CONFIGURED) row {
         ComputerNotificationsRow(state.computer.notifications, store::notifications)
     }
@@ -146,6 +148,18 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
     // Kept while an update asked from here restarts the computer: its spinner says it's updating.
     if ((state.connection is LinkState.Ready || state.isUpdating) && state.hello != null) row { CodyncVersionRow(state, store::requestHostUpdate) }
     if (stale && !inAccount) row { RowLabel("Remove", "trash", Palette.danger, modifier = Modifier.plainButton(action = actions.remove)) }
+}
+
+/** Workflows for this computer. Offline, or before hello offers them, the row only explains the link. */
+@Composable private fun WorkflowsComputerRow(state: AppState, online: Boolean, action: () -> Unit) {
+    Column(Modifier.fillMaxWidth().plainButton(enabled = online, action = action), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Symbol("flowchart", size = 20.dp, tint = Palette.text)
+            Text(tr("Workflows"), Modifier.weight(1f), style = Type.body, color = Palette.text)
+            if (online) Symbol("chevron.right", size = 14.dp, tint = Palette.tertiary)
+        }
+        if (!online) Text(computerStatusText(state, stale = false), style = Type.footnote, color = Palette.secondary)
+    }
 }
 
 /** Name, connection, and an access request when this phone can't reach the computer; a long press opens its menu. */
@@ -161,6 +175,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
         listOfNotNull(
             MenuItem("Color", icon = "paintpalette", action = actions.color),
             if (online) MenuItem("Extensions", icon = "square.grid.2x2", action = actions.extensions) else null,
+            if (online && state.offersWorkflows) MenuItem("Workflows", icon = "flowchart", action = actions.workflows) else null,
             if (online) MenuItem("Voice chat", icon = "waveform", action = actions.voice) else null,
             if (online && state.screen != null) MenuItem("Screen", icon = "display", action = actions.screen) else null,
             if (online && state.network?.shown == true) MenuItem("Network", icon = NETWORK_ICON, action = actions.network) else null,

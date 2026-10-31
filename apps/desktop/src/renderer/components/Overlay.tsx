@@ -201,8 +201,9 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
 /** One row in a Codync menu: an action, or a choice when `selected` is set. */
 export interface MenuItem {
   title: string
-  /** Secondary context below the main label. */
+  /** Secondary context below the main label, or beside it when `detailBeside` is set. */
   detail?: string
+  detailBeside?: boolean
   icon?: string
   /** A picture in the icon's place (an agent's logo). */
   leading?: ReactNode
@@ -290,7 +291,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
                 {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
               </span>
             ) : null}
-            <span className={`menu-title${item.detail ? ' with-detail' : ''}`}>
+            <span className={`menu-title${item.detail ? ' with-detail' : ''}${item.detailBeside ? ' beside' : ''}`}>
               <span>{item.verbatim ? item.title : tr(item.title)}</span>
               {item.detail && <span className="menu-detail">{tr(item.detail)}</span>}
             </span>
@@ -331,18 +332,20 @@ export function anchorPlacement(rect: DOMRect) {
  * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
  * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
  */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }: {
+export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, children, className }: {
   open: boolean
   onClose: () => void
   anchor?: RefObject<HTMLElement | null>
   point?: { x: number; y: number } | null
-  items: () => MenuItem[]
+  items?: () => MenuItem[]
   reactions?: ReactionPick
+  children?: ReactNode
+  className?: string
 }) {
   const { mounted, shown } = usePresence(open, 120)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const frozen = useRef<MenuItem[]>([])
-  if (open) frozen.current = items()
+  if (open && items) frozen.current = items()
   useLayoutEffect(() => {
     if (!open) return
     if (point) setRect(new DOMRect(point.x, point.y, 0, 0))
@@ -353,8 +356,8 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
     <div className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
-      <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
+      <div className={`anchored-panel ${className ?? ''}`} style={{ ...style, maxWidth: width }}>
+        {children ?? <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />}
       </div>
     </div>,
     document.body,
@@ -415,7 +418,7 @@ export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTit
 }
 
 /** Plain icon button that lights up on hover and press. Icon-only, labelled for VoiceOver. */
-export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen }: {
+export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen, systemTip = true }: {
   title: string
   icon: string
   onClick?: (e: React.MouseEvent) => void
@@ -426,6 +429,8 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
   buttonRef?: RefObject<HTMLButtonElement | null>
   /** Set when the button opens a menu: whether that menu is open. */
   menuOpen?: boolean
+  /** Set when a parent draws the hover tip, so the system tooltip does not appear as well. */
+  systemTip?: boolean
 }) {
   const tr = useTr()
   const label = tr(title)
@@ -434,7 +439,7 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
       ref={buttonRef}
       className={`icon-button ${selected ? 'selected' : ''} ${className ?? ''}`}
       style={{ width: size, height: size, borderRadius: size * 0.28 }}
-      title={label}
+      title={systemTip ? label : undefined}
       aria-label={label}
       aria-haspopup={menuOpen === undefined ? undefined : 'menu'}
       aria-expanded={menuOpen}

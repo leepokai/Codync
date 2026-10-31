@@ -152,6 +152,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Skill(s) => super::skill::skill(buf, area, app, s),
         Overlay::Analytics(s) => super::analytics::analytics(buf, area, s),
         Overlay::Network(n) => super::network::network(buf, area, n),
+        Overlay::Workflows(sheet) => super::workflows::workflows(buf, area, app, sheet),
     }
 }
 

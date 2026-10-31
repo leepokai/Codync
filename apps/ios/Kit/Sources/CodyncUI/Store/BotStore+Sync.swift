@@ -66,6 +66,12 @@ extension BotStore {
         hello = h
         applyIcons(h.icons ?? [:], revision: h.iconsRevision ?? 0)
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
+        // A reconnect, including the one a lagged stream asks for, fills the pin rows in again.
+        if h.workflows == true {
+            Task { [weak self] in await self?.reloadWorkflows() }
+        } else {
+            workflows = []
+        }
     }
 
     private func noteHostVersion(_ new: HostVersion) {
@@ -150,7 +156,11 @@ extension BotStore {
                 // A newer host this app can't follow: stop syncing and ask for an update.
                 if mismatch != nil { restartEvents() }
             }
+        case let .workflow(event):
+            applyWorkflow(event)
         }
+        // Workflow events carry no rev and are not part of the bot mirror.
+        if case .workflow = event { return }
         scheduleSave()
     }
 
@@ -167,6 +177,10 @@ extension BotStore {
         historyComplete = []
         windowFloors = [:]
         screen = nil
+        workflows = []
+        dirtyWorkflowGraphs = []
+        deletedWorkflows = []
+        workflowNotices = [:]
         saveCache()
     }
 

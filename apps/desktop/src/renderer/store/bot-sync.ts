@@ -1,6 +1,7 @@
 import { isChat, type AccessRequest, type CloudStatus, type Entry } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
+import { fetchWorkflow, fetchWorkflowRun, listWorkflows } from '../views/workflows/api'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
@@ -201,6 +202,8 @@ export class BotSync extends BotMirror {
     if (this.retired || loop !== this.eventsLoop || epoch !== this.iconsEpoch) return
     this.iconsRevision = -1
     this.hello = h
+    if (h.workflows === true) void this.loadWorkflowSummaries()
+    else this.workflows = []
     this.applyIcons(h.icons ?? {}, h.iconsRevision)
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
     if (this.isLoopback) this.updateComputer((c) => ({ ...c, name: h.name, device: h.device ?? c.device }))
@@ -232,6 +235,9 @@ export class BotSync extends BotMirror {
         this.usage = event.usage
         this.screen = event.screen
         this.network = event.network
+        if (this.hello) this.hello = { ...this.hello, workflows: event.workflows }
+        if (event.workflows) void this.loadWorkflowSummaries()
+        else this.workflows = []
         if (event.rev < this.rev) this.rev = 0
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
@@ -284,6 +290,10 @@ export class BotSync extends BotMirror {
       }
       case 'resync':
         this.restartEvents()
+        if (this.hello?.workflows === true) void this.loadWorkflowSummaries()
+        break
+      case 'workflow':
+        this.ingestWorkflow(event)
         break
       case 'undecodable':
         // Never skip past data we couldn't read: rewind once and fetch everything again.
@@ -314,7 +324,74 @@ export class BotSync extends BotMirror {
     this.historyComplete = new Set()
     this.floors = new Map()
     this.screen = null
+    this.resetWorkflowMirror()
     this.saveCache()
+  }
+
+  private async loadWorkflowSummaries() {
+    const client = this.live
+    if (!client || this.hello?.workflows !== true || this.workflowMethodMissing) return
+    try {
+      const { workflows } = await listWorkflows(client)
+      if (this.retired || this.hello?.workflows !== true) return
+      this.workflows = workflows
+      this.changed()
+    } catch (error) {
+      this.reportWorkflowFailure(error)
+    }
+  }
+
+  private ingestWorkflow(event: Extract<HostEvent, { type: 'workflow' }>) {
+    if (event.change === 'deleted') {
+      this.workflows = this.workflows.filter((item) => item.id !== event.workflowId)
+      if (this.workflowSession?.id === event.workflowId) {
+        this.workflowSession = null
+        this.workflowDetail = null
+        this.workflowRun = null
+        this.workflowDeleted = 'This workflow was deleted'
+      }
+      return
+    }
+    if (event.change === 'enabled' && event.enabled !== undefined) {
+      this.workflows = this.workflows.map((item) => item.id === event.workflowId ? { ...item, enabled: event.enabled! } : item)
+    }
+    void this.loadWorkflowSummaries()
+    if (event.change === 'graph') {
+      const session = this.workflowSession
+      if (session && session.id === event.workflowId && !session.dirty) void this.pullWorkflowDetail(event.workflowId)
+      return
+    }
+    const session = this.workflowSession
+    if (session && session.id === event.workflowId && session.followLive && event.runId) void this.pullWorkflowRun(event.runId)
+  }
+
+  private async pullWorkflowDetail(id: string) {
+    const client = this.live
+    if (!client) return
+    try {
+      const { workflow } = await fetchWorkflow(client, id, false)
+      const session = this.workflowSession
+      if (this.retired || !session || session.id !== id || session.dirty) return
+      this.workflowDetail = workflow
+      this.workflowDetailToken += 1
+      this.changed()
+    } catch (error) {
+      this.reportWorkflowFailure(error)
+    }
+  }
+
+  private async pullWorkflowRun(runId: string) {
+    const client = this.live
+    if (!client) return
+    try {
+      const { run } = await fetchWorkflowRun(client, runId)
+      const session = this.workflowSession
+      if (this.retired || !session?.followLive || session.runId !== runId) return
+      this.workflowRun = run
+      this.changed()
+    } catch (error) {
+      this.reportWorkflowFailure(error)
+    }
   }
 
   /**

@@ -9,6 +9,14 @@ use std::sync::Arc;
 pub enum Cmd {
     RefreshTools,
     Routine(String),
+    /// One assistant step of a workflow. `step_id` is `workflow_steps.id`.
+    WorkflowStep {
+        step_id: String,
+    },
+    /// Stop that step if it is the current turn, or drop it if it is still queued.
+    WorkflowStop {
+        step_id: String,
+    },
     /// The user wrote in the bot's chat.
     Send {
         lane: Lane,
@@ -78,6 +86,7 @@ pub enum Cmd {
 
 pub(super) enum Queued {
     Routine(String),
+    WorkflowStep(String),
     User {
         lane: Lane,
         entry_id: String,

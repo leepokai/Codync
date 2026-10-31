@@ -278,6 +278,13 @@
   overflow-wrap: anywhere;
 }
 .menu-title.with-detail { display: flex; flex-direction: column; gap: 2px; }
+.menu-title.with-detail.beside {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.menu-title.with-detail.beside .menu-detail { white-space: nowrap; }
 .menu-detail { font-size: var(--text-caption); color: var(--secondary); }
 
 .reaction-button {

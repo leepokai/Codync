@@ -22,6 +22,7 @@ enum RosterLine: Identifiable {
     case section(RosterSection, ComputerID, BotStore)
     case label(ComputerID)
     case bot(RosterItem, BotStore)
+    case workflow(String, ComputerID, BotStore)
 
     var id: String {
         switch self {
@@ -29,6 +30,7 @@ enum RosterLine: Identifiable {
         case let .section(section, computerId, _): "section:\(computerId):\(section.name)"
         case let .label(computerId): "label:\(computerId)"
         case let .bot(item, _): "bot:\(item.ref.computerId):\(item.bot.id)"
+        case let .workflow(id, computerId, _): "workflow:\(computerId):\(id)"
         }
     }
 
@@ -56,6 +58,21 @@ enum RosterLine: Identifiable {
     func botId(on computerId: ComputerID) -> String? {
         if case let .bot(item, _) = self, item.ref.computerId == computerId { item.bot.id } else { nil }
     }
+}
+
+/// Opens one computer's workflow list. A workflow id also opens that workflow once.
+struct WorkflowsComputer: Identifiable, Hashable {
+    var computerId: ComputerID
+    var workflowId: String?
+    var runId: String?
+    var id: String { "\(computerId)/\(workflowId ?? "")/\(runId ?? "")" }
+}
+
+/// A pinned workflow opens its detail without the list.
+struct PinnedWorkflowRoute: Identifiable, Hashable {
+    var computerId: ComputerID
+    var workflowId: String
+    var id: String { "\(computerId)/\(workflowId)" }
 }
 
 struct NewTarget: Identifiable {

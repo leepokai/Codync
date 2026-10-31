@@ -42,6 +42,7 @@ extension AppStore {
         showComputers = false
         showUsage = false
         marketplace = nil
+        pendingWorkflow = nil
         tab = .bots
         accounts.selection = ref
         accounts.setActive(true)

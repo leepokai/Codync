@@ -29,6 +29,8 @@ import { MarketplaceView } from './marketplace/MarketplaceView'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
 import { SearchPalette } from './SearchPalette'
+import { WorkflowsView } from './workflows/WorkflowsView'
+import { canOpenWorkflows } from './workflows/pins'
 import { AccountWelcomeView } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { AccessOnboarding } from './computer-access/AccessOnboarding'
@@ -211,6 +213,8 @@ function ChatSplitView() {
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
+  const [workflowComputerId, setWorkflowComputerId] = useState<string | null>(null)
+  const [workflowFocus, setWorkflowFocus] = useState<string | null>(null)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
@@ -297,6 +301,16 @@ function ChatSplitView() {
   ]
 
   const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
+  const workflowTarget = selectedStore ?? app.local ?? onlineStores[0]
+  const openWorkflows = (computerId: string, workflowId?: string) => {
+    app.select(null)
+    setWorkflowFocus(workflowId ?? null)
+    setWorkflowComputerId(computerId)
+  }
+
+  useEffect(() => {
+    if (app.selection) setWorkflowComputerId(null)
+  }, [app.selection])
 
   // One plain list. The lead stays in sight: no hide.
   const botActions = (bot: Bot, store: BotStore): ActionItem[] => [
@@ -341,8 +355,15 @@ function ChatSplitView() {
   const selected = app.selection
   const selectedBot = selected && selectedStore?.bots.get(selected.botId)
 
+  const workflowStore = workflowComputerId ? app.store(workflowComputerId) : null
   let detail: ReactNode
-  if (selected && selectedStore && selectedBot) {
+  if (workflowStore && !selected && canOpenWorkflows(workflowStore)) {
+    detail = (
+      <StoreContext.Provider value={workflowStore}>
+        <WorkflowsView key={workflowStore.computer.id} focusId={workflowFocus} />
+      </StoreContext.Provider>
+    )
+  } else if (selected && selectedStore && selectedBot) {
     detail = (
       <StoreContext.Provider value={selectedStore}>
         <ThreadView key={refKey(selected)} botId={selected.botId} />
@@ -400,7 +421,9 @@ function ChatSplitView() {
               // Found it: the tip about where Extensions went has done its job.
               prefs.extensionsMovedTipSeen.set(true)
               setMarketplace(id)
-            }} />
+            }}
+            openWorkflows={openWorkflows}
+            workflowComputerId={workflowComputerId} />
           {visibleRoster.length === 0 && !roster.grouped && !compact && mismatchStores.length === 0 ? (
             <div className="roster-empty">
               <Text as="div" size="body" weight="medium">{onlineStores.length ? tr(`No bots yet`) : tr(`Waiting for a computer`)}</Text>
@@ -413,6 +436,7 @@ function ChatSplitView() {
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
             <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
             <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
+            {workflowTarget && canOpenWorkflows(workflowTarget) ? <IconButton title="Workflows" icon="flowchart" size={36} onClick={() => openWorkflows(workflowTarget.computer.id)} /> : null}
             <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
             <UpdateBadge size={32} />
             <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
@@ -421,7 +445,7 @@ function ChatSplitView() {
           </div>
         ) : (
           // With several computers each heading opens its own Extensions instead.
-          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} />
+          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} onWorkflows={roster.grouped || !workflowTarget || !canOpenWorkflows(workflowTarget) ? undefined : () => openWorkflows(workflowTarget.computer.id)} />
         )}
       </aside>
       <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />

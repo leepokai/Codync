@@ -10,7 +10,8 @@ import {
   type Usage,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
-import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
+import { HostError, type HostClient, type HostRoute, type HostTransport } from '../client/host-client'
+import type { RunDetail, WorkflowDetail, WorkflowSummary } from '../views/workflows/workflow'
 import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
@@ -87,6 +88,15 @@ export class BotMirror extends Observable {
   historyComplete = new Set<string>()
   readonly composerDrafts: ComposerDrafts
   lastError: string | null = null
+  /** Set when `lastError` must not open the generic failure dialog. */
+  quietError = false
+  workflows: WorkflowSummary[] = []
+  workflowMethodMissing = false
+  workflowSession: { id: string; dirty: boolean; runId: string | null; followLive: boolean } | null = null
+  workflowDetail: WorkflowDetail | null = null
+  workflowDetailToken = 0
+  workflowRun: RunDetail | null = null
+  workflowDeleted: string | null = null
   /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */
   selection: string | null = null
   /** Permission cards whose answer is on its way, with the chosen option. */
@@ -264,8 +274,61 @@ export class BotMirror extends Observable {
   }
 
   setError(message: string | null) {
+    this.quietError = false
     this.lastError = message
     this.changed()
+  }
+
+  /** The open workflow. Dirty flips do not re-render the rest of the window. */
+  setWorkflowSession(session: { id: string; dirty: boolean; runId: string | null; followLive: boolean } | null) {
+    const idChanged = this.workflowSession?.id !== session?.id
+    this.workflowSession = session
+    if (idChanged) this.changed()
+  }
+
+  upsertWorkflow(workflow: WorkflowSummary) {
+    const summary = { id: workflow.id, title: workflow.title, revision: workflow.revision, enabled: workflow.enabled, updatedAt: workflow.updatedAt, running: workflow.running, lastRun: workflow.lastRun }
+    this.workflows = [summary, ...this.workflows.filter((item) => item.id !== workflow.id)].sort((a, b) => b.updatedAt - a.updatedAt)
+    this.changed()
+  }
+
+  removeWorkflow(id: string) {
+    this.workflows = this.workflows.filter((item) => item.id !== id)
+    this.changed()
+  }
+
+  clearWorkflowDeleted() {
+    this.workflowDeleted = null
+  }
+
+  /** The detail the open canvas already applied. Does not count as a remote graph change. */
+  rememberWorkflowDetail(workflow: WorkflowDetail) {
+    this.workflowDetail = workflow
+    this.changed()
+  }
+
+  /** A host without the workflow methods hides the entry and keeps the sentence off the generic dialog. */
+  reportWorkflowFailure(error: unknown) {
+    if (!(error instanceof HostError) || error.message !== 'unknown method') return false
+    this.workflowMethodMissing = true
+    this.quietError = true
+    this.lastError = error.message
+    this.workflows = []
+    this.changed()
+    return true
+  }
+
+  protected resetWorkflowMirror() {
+    this.workflows = []
+    this.workflowMethodMissing = false
+    this.workflowSession = null
+    this.workflowDetail = null
+    this.workflowRun = null
+    this.workflowDeleted = null
+    if (this.quietError) {
+      this.quietError = false
+      this.lastError = null
+    }
   }
 
   setNetwork(network: NetworkView | null) {

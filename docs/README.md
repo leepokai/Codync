@@ -42,6 +42,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Bot import](features/bot-import.md) (agents from a Grok Bot export file become bots)
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
+- [Workflows](features/workflows.md)
 - [Voice calls](features/voice-call.md)
 - [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)

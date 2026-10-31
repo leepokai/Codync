@@ -9,6 +9,11 @@ on:
   pull_request:
     paths: ["apps/desktop/**", ".github/workflows/release-desktop.yml"]
   workflow_dispatch:
+    inputs:
+      windows_only:
+        description: Build only Windows x64 and ARM64
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -69,7 +74,7 @@ jobs:
     needs: check
     # Fork PRs get no signing secrets, so they stop at check, Windows and Linux; the release PR into main
     # builds the Mac app before the tag.
-    if: needs.check.outputs.package == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.check.outputs.package == 'true' && !inputs.windows_only && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -185,7 +190,13 @@ jobs:
   windows:
     needs: check
     if: needs.check.outputs.package == 'true'
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, arch: x64, target: x86_64-pc-windows-msvc }
+          - { os: windows-11-arm, arch: arm64, target: aarch64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
@@ -194,25 +205,47 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          architecture: ${{ matrix.arch }}
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
       - name: Install Rust (host/rust-toolchain.toml)
         working-directory: host
-        run: rustup toolchain install
+        run: |
+          rustup set default-host ${{ matrix.target }}
+          rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: host
+      - name: Initialize Windows networking provider
+        shell: powershell
+        # The first CIM query on a fresh ARM runner can exceed the SSH tool's 30-second timeout.
+        run: Get-NetTCPConnection -State Listen -ErrorAction Stop | Out-Null
       - name: Build
         working-directory: apps/desktop
         # Unsigned for now: SmartScreen warns on first launch until the app has a code signing certificate.
         run: |
+          test "$(node -p process.arch)" = '${{ matrix.arch }}'
           npm ci
           node --test --experimental-strip-types src/shared/ssh-platform.test.ts
-          npm run dist:win:main -- --publish never
+          npm run dist:win:main -- --${{ matrix.arch }} --publish never
           cd dist
-          sha256sum codync-windows-x64.exe > codync-windows-x64.exe.sha256
+          sha256sum codync-windows-${{ matrix.arch }}.exe > codync-windows-${{ matrix.arch }}.exe.sha256
+      - name: Install
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $PWD 'apps\desktop\dist\codync-windows-${{ matrix.arch }}.exe'
+          $installation = Join-Path $env:LOCALAPPDATA 'Programs\codync-desktop'
+          $process = Start-Process -FilePath $installer -ArgumentList '/S','/currentuser',('/D='+$installation) -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          "CODYNC_INSTALLED_RESOURCES=$installation\resources" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Check the installed executables' architecture
+        working-directory: ${{ env.CODYNC_INSTALLED_RESOURCES }}
+        run: |
+          node -e "const { peArch } = require(process.argv[1]); for (const exe of process.argv.slice(2)) if (peArch(exe) !== '${{ matrix.arch }}') throw new Error('Wrong installed architecture: ' + exe)" \
+            "$GITHUB_WORKSPACE/apps/desktop/tools/verify-build.cjs" ../Codync.exe codync-host.exe codync-hostw.exe
       - name: Smoke test the bundled host
-        working-directory: apps/desktop/dist/win-unpacked/resources
+        working-directory: ${{ env.CODYNC_INSTALLED_RESOURCES }}
         run: |
           ./codync-host.exe --version
           CODYNC_HOME="$RUNNER_TEMP/codync" ./codync-host.exe serve --port 19333 &
@@ -221,21 +254,49 @@ jobs:
           TOKEN=$(cat "$RUNNER_TEMP/codync/token")
           curl -sf -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:19333/api/refreshBackends
       - uses: actions/upload-artifact@v4
-        if: "!startsWith(github.ref, 'refs/tags/')"
         with:
-          name: codync-windows-x64
+          name: codync-windows-${{ matrix.arch }}
+          if-no-files-found: error
           path: |
-            apps/desktop/dist/codync-windows-x64.exe
+            apps/desktop/dist/codync-windows-${{ matrix.arch }}.exe
+            apps/desktop/dist/codync-windows-${{ matrix.arch }}.exe.sha256
+            apps/desktop/dist/codync-windows-${{ matrix.arch }}.exe.blockmap
             apps/desktop/dist/latest.yml
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           make_latest: false
           files: |
-            apps/desktop/dist/codync-windows-x64.exe
-            apps/desktop/dist/codync-windows-x64.exe.sha256
-            apps/desktop/dist/codync-windows-x64.exe.blockmap
-      # The update feed last, once the installer it points at is downloadable.
+            apps/desktop/dist/codync-windows-${{ matrix.arch }}.exe
+            apps/desktop/dist/codync-windows-${{ matrix.arch }}.exe.sha256
+            apps/desktop/dist/codync-windows-${{ matrix.arch }}.exe.blockmap
+
+  windows-update-feed:
+    needs: windows
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: codync-windows-*
+          path: apps/desktop/dist
+      # Both architectures share latest.yml. Publish it only after both installers are uploaded.
+      - run: node tools/windows-update-feed.mjs dist/codync-windows-x64/latest.yml dist/codync-windows-arm64/latest.yml dist/latest.yml
+      - uses: actions/upload-artifact@v4
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        with:
+          name: codync-windows-update-feed
+          path: apps/desktop/dist/latest.yml
+          if-no-files-found: error
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
@@ -244,7 +305,7 @@ jobs:
 
   linux:
     needs: check
-    if: needs.check.outputs.package == 'true'
+    if: needs.check.outputs.package == 'true' && !inputs.windows_only
     strategy:
       matrix:
         include:

@@ -73,32 +73,11 @@ struct RoutinesView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(routines) { routine in
-                        row(routine).outlinedCard(vertical: 0)
+                        RoutineRow(routine: routine, summary: summary(routine), disabled: busy || model.isOffline,
+                                   open: { open(routine.id) }, toggle: { action("setRoutineEnabled", routine, enabled: $0) })
                     }
                 }
             }
-        }
-    }
-
-    private func row(_ routine: Routine) -> some View {
-        HStack(spacing: 12) {
-            Button { open(routine.id) } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(routine.name).foregroundStyle(Palette.text)
-                    Text(summary(routine))
-                        .font(.caption)
-                        .foregroundStyle(routine.lastError == nil ? Palette.secondary : Palette.danger)
-                }
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            Toggle(isOn: Binding(get: { routine.enabled }, set: { action("setRoutineEnabled", routine, enabled: $0) })) { EmptyView() }
-                .toggleStyle(.codync)
-                .fixedSize()
-                .accessibilityLabel(routine.name)
-                .disabled(busy || model.isOffline)
         }
     }
 
@@ -161,6 +140,8 @@ struct EditorTarget: Identifiable {
     /// One per opening; kept when a new routine is saved and the editor stays on it.
     let id: String
     let routineId: String?
+    /// The routine's bot, where the list spans every bot (the account menu's Routines).
+    var botId: String?
 
     /// A routine's editor waits until the routine is listed: a chat link can name one before the
     /// first load (or the next poll), and an empty form would save defaults over it.

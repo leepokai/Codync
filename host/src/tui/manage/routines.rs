@@ -50,49 +50,16 @@ impl App {
             (KeyCode::Up | KeyCode::Char('k'), _) => l.cursor = l.cursor.saturating_sub(1),
             (KeyCode::Char('n'), _) => {
                 self.overlays.push(Overlay::Routines(l));
-                self.overlays.push(Overlay::Routine(Box::new(RoutineForm {
-                    bot,
-                    id: None,
-                    name: Editor::default(),
-                    instruction: Editor::default(),
-                    when: Editor::default(),
-                    original: Value::Null,
-                    original_text: String::new(),
-                    field: RoutineField::Name,
-                    error: None,
-                    saving: false,
-                })));
+                self.overlays.push(Overlay::Routine(Box::new(RoutineForm::new(bot))));
                 return None;
             }
             (KeyCode::Enter | KeyCode::Char('e'), Some(r)) => {
-                let triggers = r["triggers"].clone();
-                let text = when_text(&triggers, &local_zone());
-                let original_text = r["triggerDescriptions"]
-                    .as_array()
-                    .map(|d| d.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" · "))
-                    .unwrap_or_default();
                 self.overlays.push(Overlay::Routines(l));
-                self.overlays.push(Overlay::Routine(Box::new(RoutineForm {
-                    bot,
-                    id: Some(s(&r, "id")),
-                    name: Editor::with(&s(&r, "name")),
-                    instruction: Editor::with(&s(&r, "instruction")),
-                    when: Editor::with(text.as_deref().unwrap_or_default()),
-                    original: if text.is_some() { Value::Null } else { triggers },
-                    original_text,
-                    field: RoutineField::Name,
-                    error: None,
-                    saving: false,
-                })));
+                self.overlays.push(Overlay::Routine(Box::new(RoutineForm::editing(bot, &r))));
                 return None;
             }
             (KeyCode::Char(' '), Some(r)) => {
-                let on = !r["enabled"].as_bool().unwrap_or(false);
-                self.sheet(
-                    "setRoutineEnabled",
-                    json!({"botId": bot, "id": r["id"], "enabled": on}),
-                    Reply::Routines(bot.clone()),
-                );
+                let on = self.switch_routine(&bot, &r, Reply::Routines(bot.clone()));
                 if let Some(item) = l.items.as_mut().and_then(|v| v.get_mut(l.cursor)) {
                     item["enabled"] = on.into();
                 }
@@ -134,6 +101,13 @@ impl App {
             _ => {}
         }
         Some(Overlay::Routines(l))
+    }
+
+    /// Space on a routine: turns it on or off; `reply` reloads the list it sits in. Returns the new state.
+    pub(super) fn switch_routine(&self, bot: &str, r: &Value, reply: Reply) -> bool {
+        let on = !r["enabled"].as_bool().unwrap_or(false);
+        self.sheet("setRoutineEnabled", json!({"botId": bot, "id": r["id"], "enabled": on}), reply);
+        on
     }
 
     pub(in crate::tui) fn routine_key(&mut self, mut f: Box<RoutineForm>, k: KeyEvent) -> Option<Overlay> {
@@ -224,6 +198,47 @@ impl App {
             None => self.flash("No failed routine run to try again here"),
         }
     }
+}
+
+impl RoutineForm {
+    /// A new routine for `bot`.
+    pub(super) fn new(bot: String) -> Self {
+        Self {
+            bot,
+            id: None,
+            name: Editor::default(),
+            instruction: Editor::default(),
+            when: Editor::default(),
+            original: Value::Null,
+            original_text: String::new(),
+            field: RoutineField::Name,
+            error: None,
+            saving: false,
+        }
+    }
+
+    /// Routine `r` of `bot`, as the host lists it.
+    pub(super) fn editing(bot: String, r: &Value) -> Self {
+        let triggers = r["triggers"].clone();
+        let text = when_text(&triggers, &local_zone());
+        Self {
+            id: Some(s(r, "id")),
+            name: Editor::with(&s(r, "name")),
+            instruction: Editor::with(&s(r, "instruction")),
+            when: Editor::with(text.as_deref().unwrap_or_default()),
+            original: if text.is_some() { Value::Null } else { triggers },
+            original_text: when_line(r),
+            ..Self::new(bot)
+        }
+    }
+}
+
+/// What a routine runs on, as the host describes it: "daily 09:00 · webhook".
+pub fn when_line(r: &Value) -> String {
+    r["triggerDescriptions"]
+        .as_array()
+        .map(|d| d.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" · "))
+        .unwrap_or_default()
 }
 
 /// A routine with a webhook (or event) trigger, which has a URL and key.

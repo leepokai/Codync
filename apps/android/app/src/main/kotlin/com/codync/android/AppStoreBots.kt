@@ -124,7 +124,15 @@ private suspend fun AppStore.receiveRoutines(botId: String) {
     val active = ready()
     val response = active.call("routines", body("botId" to botId))
     val listing = WireJson.decodeFromJsonElement<RoutineListing>(response)
-    mutableState.update { it.copy(routines = it.routines + (botId to listing)) }
+    // The list of every routine follows the bot's (a save, delete or switch from either list).
+    mutableState.update { it.copy(routines = it.routines + (botId to listing),
+        allRoutines = it.allRoutines?.let { all -> all.filter { r -> r.botId != botId } + listing.routines }) }
+}
+/** Every bot's routines on this computer (the account menu's Routines). */
+fun AppStore.loadAllRoutines() = action("routines") {
+    val response = ready().call("allRoutines", JsonObject(emptyMap()))
+    val routines = WireJson.decodeFromJsonElement<List<Routine>>(response.jsonObject.getValue("routines"))
+    mutableState.update { it.copy(allRoutines = routines) }
 }
 fun AppStore.saveRoutine(botId: String, draft: RoutineDraft, saved: (Routine) -> Unit) = action("routines:$botId") {
     val active = ready()

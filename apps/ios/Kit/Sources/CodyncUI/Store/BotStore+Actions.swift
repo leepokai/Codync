@@ -367,6 +367,15 @@ extension BotStore {
         try await ready().listDirs(path)
     }
 
+    /// Every bot's routines on this computer (the account menu's Routines).
+    public func allRoutines() async throws -> [Routine] {
+        try await ready().allRoutines()
+    }
+
+    public func setRoutineEnabled(_ routine: Routine, enabled: Bool) async throws {
+        try await ready().routineAction("setRoutineEnabled", botId: routine.botId, id: routine.id, enabled: enabled)
+    }
+
     public func refreshUsage() async {
         guard !retired, let client else { return }
         if let u = try? await client.usage(refresh: true), !Task.isCancelled { setUsage(u) }

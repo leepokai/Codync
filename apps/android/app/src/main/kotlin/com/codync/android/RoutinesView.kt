@@ -20,9 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -82,13 +79,8 @@ import kotlinx.coroutines.launch
             Modifier.outlinedCard(vertical = 14.dp), style = Type.system(12f).copy(lineHeight = Type.system(12f).lineHeight * 1.25f), color = Palette.secondary)
         else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             for (routine in routines) {
-                Row(Modifier.outlinedCard(vertical = 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f).plainButton { editing = routine.id }.padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(routine.name, style = Type.system(13f), color = Palette.text)
-                        Text(listing?.summary(routine).orEmpty(), style = Type.caption, color = if (routine.lastError == null) Palette.secondary else Palette.danger)
-                    }
-                    CodyncSwitch(routine.enabled, { store.routineAction(bot.id, routine.id, "setRoutineEnabled", it) },
-                        Modifier.width(34.dp).semantics { contentDescription = routine.name }, enabled = online && !busy) {}
+                RoutineRow(routine, listing?.summary(routine).orEmpty(), online && !busy, { editing = routine.id }) {
+                    store.routineAction(bot.id, routine.id, "setRoutineEnabled", it)
                 }
             }
         }
@@ -105,7 +97,7 @@ import kotlinx.coroutines.launch
 }
 
 /** Set up or edit one routine (iOS `RoutineEditorView`); `saved` gets the routine, or null once it's deleted. */
-@Composable private fun RoutineEditor(botId: String, routine: Routine?, state: AppState, store: AppStore, saved: (Routine?) -> Unit) {
+@Composable internal fun RoutineEditor(botId: String, routine: Routine?, state: AppState, store: AppStore, saved: (Routine?) -> Unit) {
     var draft by remember(routine?.id) {
         mutableStateOf(RoutineDraft(routine?.id, routine?.name.orEmpty(), routine?.instruction.orEmpty(), timeoutSeconds = (routine?.timeoutSeconds ?: 3600).toString()))
     }

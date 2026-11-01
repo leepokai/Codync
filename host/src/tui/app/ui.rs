@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, Fields, Gear, Library, Market, MemorySheet, NetworkSheet, RoutineForm,
-    RoutineList, SkillSheet,
+    AgentSetup, AllRoutines, AnalyticsSheet, BotChatSheet, Fields, Gear, Library, Market, MemorySheet, NetworkSheet,
+    RoutineForm, RoutineList, SkillSheet,
 };
 use super::{Editor, Mark};
 
@@ -57,6 +57,7 @@ pub enum Action {
     Pair,
     Network,
     Usage,
+    Routines,
     CheckUpdate,
     Analytics,
     AboutAnalytics,
@@ -66,7 +67,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 19] = [
+pub const ACTIONS: [(&str, &str, Action); 20] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -77,6 +78,7 @@ pub const ACTIONS: [(&str, &str, Action); 19] = [
     ("Pair a phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
     ("Usage", "U", Action::Usage),
+    ("Routines", "O", Action::Routines),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
     ("About usage analytics…", "", Action::AboutAnalytics),
@@ -332,6 +334,8 @@ pub enum Overlay {
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
     Routines(RoutineList),
+    /// Every bot's routines.
+    AllRoutines(AllRoutines),
     Routine(Box<RoutineForm>),
     Library(Library),
     Gear(Gear),

@@ -31,6 +31,7 @@ struct AccountSwitcherView: View {
     @State private var confirmDelete = false
     @State private var pairing = false
     @State private var addingAccount = false
+    @State private var showRoutines = false
 
     var body: some View {
         CardForm {
@@ -55,6 +56,16 @@ struct AccountSwitcherView: View {
             if account.isSignedIn, account.supportsMultipleAccounts || account.accounts.count > 1 {
                 switcher
                 if addingAccount { SignInButtons().transition(.opacity.combined(with: .move(edge: .top))) }
+            }
+
+            // Every bot's routines on the computer the app acts on (as the desktop's account menu).
+            if app.currentStore != nil {
+                CardSection {
+                    Button { showRoutines = true } label: {
+                        RowLabel("Routines", systemImage: "clock.arrow.circlepath", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             if account.isSignedIn {
@@ -95,6 +106,9 @@ struct AccountSwitcherView: View {
         .tracked(.screenViewed(.account))
         .onChange(of: account.userID) { _, _ in withAnimation(Motion.layout) { addingAccount = false } }
         .codyncSheet(isPresented: $pairing) { PairingView(inModal: true) }
+        .codyncSheet(isPresented: $showRoutines) {
+            if let store = app.currentStore { AllRoutinesView().environment(store).id(store.computer.id) }
+        }
         .codyncDialog("Sign out of \(account.email ?? "this account")?", isPresented: $confirmSignOut,
                       message: "This iPhone forgets the account's computers. Your bots stay on them.") {
             [DialogAction("Sign out", destructive: true) { Task { await app.signOut() } }]

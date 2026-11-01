@@ -244,3 +244,18 @@ textarea.routine-input {
 .routine-fade {
   animation: fade-in var(--hover) both;
 }
+
+/* The account menu's Routines (AllRoutinesView): a section per bot, and the bot picker for a new one. */
+.all-routines {
+  padding: 0 20px 20px;
+}
+.all-routines-bot {
+  padding-left: 2px;
+}
+.all-routines-owner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  text-align: left;
+}

@@ -1507,5 +1507,8 @@
   "This computer is in another account": "这台电脑在另一个账户里",
   "This computer isn't in an account: its cloud is off": "这台电脑不在任何账户里：它的云端已关闭",
   "This computer isn't in an account: it uses a private relay": "这台电脑不在任何账户里：它用私人中继",
-  "This computer isn't in your account": "这台电脑不在你的账户里"
+  "This computer isn't in your account": "这台电脑不在你的账户里",
+  "Which bot runs it?": "由哪个 Bot 执行？",
+  "No routines yet. Set one up for a bot with +.": "还没有例行任务。点 + 为某个 Bot 设置一个。",
+  "Schedule needs attention": "排程需要处理"
 }

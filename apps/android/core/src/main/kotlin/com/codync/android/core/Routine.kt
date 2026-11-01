@@ -57,6 +57,20 @@ import java.time.format.FormatStyle
  */
 fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routines.orEmpty().any { it.id == id }
 
+/** One bot's routines in the account menu's list of every routine. */
+data class RoutineSection(val bot: Bot, val routines: List<Routine>)
+
+/** Sections in roster order ([bots]), each bot's routines by name; routines of bots this app doesn't know stay out. */
+fun routineSections(routines: List<Routine>, bots: List<Bot>): List<RoutineSection> {
+    val byName = java.text.Collator.getInstance()
+    return bots.mapNotNull { bot ->
+        routines.filter { it.botId == bot.id }.sortedWith(compareBy(byName) { it.name }).takeIf { it.isNotEmpty() }?.let { RoutineSection(bot, it) }
+    }
+}
+
+/** The bots a new routine can belong to: agents, not groups. */
+fun routineOwners(bots: List<Bot>): List<Bot> = bots.filter { it.kind != "group" }
+
 @Serializable data class RoutineScheduleDraft(
     val kind: String = "cron", val amount: String = "1", val unit: Long = 3600,
     val calendarStyle: String = "daily", val weekday: Int = 1, val selectedDays: List<Int> = emptyList(),

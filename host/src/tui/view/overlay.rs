@@ -143,6 +143,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
         Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
+        Overlay::AllRoutines(l) => super::super::sheets::all_routines(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),
         Overlay::Library(l) => super::super::sheets::library(buf, area, app, l),
         Overlay::Gear(g) => super::super::sheets::gear(buf, area, app, g),

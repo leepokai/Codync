@@ -163,7 +163,7 @@ impl Bot {
         if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
     }
 
-    pub(super) fn parse(v: &Value) -> Option<Self> {
+    pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
         let s = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
         Some(Self {
             id: v["id"].as_str()?.to_owned(),

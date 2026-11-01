@@ -114,3 +114,24 @@ import Testing
     #expect(RoutineSchedulePreview(draft: draft, triggers: [cron], summary: "").cronExpression == "0 9 * * 1-5")
     #expect(RoutineSchedulePreview(draft: draft, triggers: [RoutineTrigger(type: "webhook")], summary: "").cronExpression == nil)
 }
+
+private func bot(_ id: String, kind: String = "agent") throws -> Bot {
+    try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"\#(id)","kind":"\#(kind)","name":"\#(id)"}"#.utf8))
+}
+
+private func routine(_ id: String, botId: String, name: String) throws -> Routine {
+    try JSONDecoder().decode(Routine.self, from: Data(#"{"id":"\#(id)","botId":"\#(botId)","name":"\#(name)","instruction":"","triggers":[],"enabled":true,"createdAt":0,"updatedAt":0,"triggerDescriptions":[]}"#.utf8))
+}
+
+@Test func allRoutinesGroupUnderTheirBotInRosterOrderByNameAndUnknownBotsStayOut() throws {
+    let sections = Routine.sections(
+        [try routine("1", botId: "b", name: "Zeta"), try routine("2", botId: "a", name: "Daily"),
+         try routine("3", botId: "b", name: "Alpha"), try routine("4", botId: "gone", name: "Lost")],
+        bots: [try bot("b"), try bot("a"), try bot("c")])
+    #expect(sections.map(\.bot.id) == ["b", "a"])
+    #expect(sections.map { $0.routines.map(\.name) } == [["Alpha", "Zeta"], ["Daily"]])
+}
+
+@Test func onlyAgentsCanOwnANewRoutine() throws {
+    #expect(Routine.owners([try bot("a"), try bot("g", kind: "group")]).map(\.id) == ["a"])
+}

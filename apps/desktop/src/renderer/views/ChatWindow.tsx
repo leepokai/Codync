@@ -25,6 +25,7 @@ import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
+import { AllRoutinesView } from './routines/AllRoutinesView'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
 import { SearchPalette } from './SearchPalette'
@@ -209,6 +210,8 @@ function ChatSplitView() {
   const [editing, setEditing] = useState<EditTarget | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [marketplace, setMarketplace] = useState<string | null>(null)
+  /** The computer whose routines are open (the account menu's Routines). */
+  const [routines, setRoutines] = useState<string | null>(null)
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
@@ -294,6 +297,9 @@ function ChatSplitView() {
     ...(localOnline ? [{ title: 'Import bots…', icon: 'square.and.arrow.down', action: () => setImporting(true) }] : []),
   ]
 
+  // The account menu's Routines, on the computer the window is on.
+  const routinesStore = selectedStore ?? app.local ?? onlineStores[0] ?? null
+  const shownRoutines = routines ? (app.store(routines) ?? null) : null
   const openMarketplace = () => setMarketplace((selectedStore ?? app.local ?? onlineStores[0])?.computer.id ?? null)
 
   // One plain list. The lead stays in sight: no hide.
@@ -438,6 +444,10 @@ function ChatSplitView() {
             setShowAccount(false)
             setSettings('usage')
           }}
+          onRoutines={() => {
+            setShowAccount(false)
+            setRoutines(routinesStore?.computer.id ?? null)
+          }}
           onSettings={() => {
             setShowAccount(false)
             setSettings('general')
@@ -476,6 +486,13 @@ function ChatSplitView() {
         {marketplace && app.store(marketplace) ? (
           <StoreContext.Provider value={app.store(marketplace)!}>
             <MarketplaceView key={marketplace} />
+          </StoreContext.Provider>
+        ) : null}
+      </Sheet>
+      <Sheet open={shownRoutines !== null} onClose={() => setRoutines(null)} width={560} height={Math.min(640, sheetHeight)}>
+        {shownRoutines ? (
+          <StoreContext.Provider value={shownRoutines}>
+            <AllRoutinesView />
           </StoreContext.Provider>
         ) : null}
       </Sheet>

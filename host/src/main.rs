@@ -582,14 +582,14 @@ async fn shutdown_signal() {
 
 async fn pair(port: u16, as_json: bool) -> Result<()> {
     let hello = local_call(port, "hello", json!({})).await?;
-    let p = local_call(port, "pairing", json!({})).await?;
+    let p = local_call(port, "pairing", json!({"shortCode": true})).await?;
     if as_json {
         println!(
             "{}",
             json!({
                 "name": hello["name"], "computerId": hello["computerId"], "signKey": hello["signKey"],
                 "boxKey": hello["boxKey"], "urls": p["urls"], "cloud": hello["cloud"],
-                "pairingUrl": p["pairingUrl"], "expiresAt": p["expiresAt"],
+                "pairingUrl": p["pairingUrl"], "expiresAt": p["expiresAt"], "shortCode": p["shortCode"],
             })
         );
         return Ok(());
@@ -598,6 +598,9 @@ async fn pair(port: u16, as_json: bool) -> Result<()> {
     let code = qrcode::QrCode::new(url.as_bytes())?;
     println!("{}", code.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build());
     println!("Scan with the Codync iOS app within 10 minutes, or open this link on the phone:\n{url}\n");
+    if let Some(code) = p["shortCode"].as_str() {
+        println!("Or type this code in the app (Pair a computer → Type a code): {code}\n");
+    }
     if hello["cloud"].is_null()
         && p["urls"].as_array().is_none_or(|u| {
             !u.iter().any(|u| {

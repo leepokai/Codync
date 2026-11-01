@@ -11,3 +11,4 @@ pub mod owner;
 pub mod pairing_requests;
 pub mod push;
 pub mod relay;
+pub mod short_code;

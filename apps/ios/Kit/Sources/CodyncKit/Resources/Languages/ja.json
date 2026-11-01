@@ -1070,7 +1070,6 @@
   "q quits": "qで終了",
   "· now": "・ 今",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "{name} に Codync Dev をインストールし、一度開きます。 Linux で、開発ホストを ~/.local/bin/codync-dev-host としてインストールします。",
-  "codync-host isn't installed on {name}. Install it there:": "codync-host は {name} にインストールされていません。そこにインストールします。",
   "Version {version} is available: run codync-host update": "バージョン {version} が利用可能です: codync-host update を実行します",
   "Download failed: {error}": "ダウンロードに失敗しました: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} ドラフトは保存されました。再試行を入力し、Ctrl+C でテキストをクリアします。",
@@ -1494,5 +1493,11 @@
   "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "アカウントに入っていません：サインイン済みのスマートフォンがこれをスキャンすると、このコンピュータをそのアカウントに加えるよう求めます。",
   "Paste a pairing link, or type the code from the computer": "ペアリングリンクを貼り付けるか、コンピューターに表示されたコードを入力します",
   "That code isn't valid. Check it on the computer.": "このコードは無効です。コンピューターで確認してください。",
-  "That code expired or was used. Show a new one on the computer.": "このコードは期限切れか、すでに使用されています。コンピューターで新しいコードを表示してください。"
+  "That code expired or was used. Show a new one on the computer.": "このコードは期限切れか、すでに使用されています。コンピューターで新しいコードを表示してください。",
+  "Installing codync-host…": "codync-host をインストール中…",
+  "Starting codync-host…": "codync-host を起動中…",
+  "Couldn't install codync-host on {name}.": "{name} に codync-host をインストールできませんでした。",
+  "codync-host isn't installed on {name}.": "codync-host は {name} にインストールされていません。",
+  "To keep codync-host running on {name} after you log out, run this there:": "ログアウト後も {name} で codync-host を動かし続けるには、そこで次を実行してください：",
+  "Copy command": "コマンドをコピー"
 }

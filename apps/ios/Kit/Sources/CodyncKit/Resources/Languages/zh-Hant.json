@@ -1070,7 +1070,6 @@
   "q quits": "q 退出",
   "· now": "· 現在",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "在 {name} 上安裝 Codync Dev 並開啟一次。Linux 上請把開發用的 host 裝成 ~/.local/bin/codync-dev-host。",
-  "codync-host isn't installed on {name}. Install it there:": "{name} 上還沒有安裝 codync-host。請在那裡安裝：",
   "Version {version} is available: run codync-host update": "已有 {version}：請執行 codync-host update",
   "Download failed: {error}": "下載失敗：{error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} 草稿還在；Enter 重試，Ctrl+C 清空文字。",
@@ -1494,5 +1493,11 @@
   "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "不在任何賬戶中：已登入的手機掃描這個碼時，會請求把這臺電腦加入它的賬戶。",
   "Paste a pairing link, or type the code from the computer": "貼上配對連結，或輸入電腦上的代碼",
   "That code isn't valid. Check it on the computer.": "代碼無效，請到電腦上確認。",
-  "That code expired or was used. Show a new one on the computer.": "代碼已過期或已使用過，請在電腦上顯示新的代碼。"
+  "That code expired or was used. Show a new one on the computer.": "代碼已過期或已使用過，請在電腦上顯示新的代碼。",
+  "Installing codync-host…": "正在安裝 codync-host…",
+  "Starting codync-host…": "正在啟動 codync-host…",
+  "Couldn't install codync-host on {name}.": "無法在 {name} 上安裝 codync-host。",
+  "codync-host isn't installed on {name}.": "{name} 上還沒有安裝 codync-host。",
+  "To keep codync-host running on {name} after you log out, run this there:": "要讓 codync-host 在你登出後繼續在 {name} 上執行，請在那裡執行：",
+  "Copy command": "複製命令"
 }

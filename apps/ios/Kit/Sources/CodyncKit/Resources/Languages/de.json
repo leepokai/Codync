@@ -1070,7 +1070,6 @@
   "q quits": "q beendet",
   "· now": "· jetzt",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "Installiere Codync Dev auf {name} und öffne es einmal. Installiere unter Linux den Entwicklungs-Host als ~/.local/bin/codync-dev-host.",
-  "codync-host isn't installed on {name}. Install it there:": "codync-host ist auf {name} nicht installiert. Installiere es dort:",
   "Version {version} is available: run codync-host update": "Version {version} ist verfügbar: führe codync-host update aus",
   "Download failed: {error}": "Download fehlgeschlagen: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} Entwurf behalten; Enter versucht es erneut, Ctrl+C löscht den Text.",
@@ -1494,5 +1493,11 @@
   "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "In keinem Konto: Ein angemeldetes Telefon, das dies scannt, bittet darum, den Computer in sein Konto aufzunehmen.",
   "Paste a pairing link, or type the code from the computer": "Füge einen Kopplungslink ein oder gib den Code vom Computer ein",
   "That code isn't valid. Check it on the computer.": "Dieser Code ist ungültig. Prüfe ihn auf dem Computer.",
-  "That code expired or was used. Show a new one on the computer.": "Dieser Code ist abgelaufen oder wurde schon verwendet. Lass dir auf dem Computer einen neuen anzeigen."
+  "That code expired or was used. Show a new one on the computer.": "Dieser Code ist abgelaufen oder wurde schon verwendet. Lass dir auf dem Computer einen neuen anzeigen.",
+  "Installing codync-host…": "codync-host wird installiert…",
+  "Starting codync-host…": "codync-host wird gestartet…",
+  "Couldn't install codync-host on {name}.": "codync-host konnte nicht auf {name} installiert werden.",
+  "codync-host isn't installed on {name}.": "codync-host ist auf {name} nicht installiert.",
+  "To keep codync-host running on {name} after you log out, run this there:": "Damit codync-host auf {name} weiterläuft, wenn du dich abmeldest, führe dort Folgendes aus:",
+  "Copy command": "Befehl kopieren"
 }

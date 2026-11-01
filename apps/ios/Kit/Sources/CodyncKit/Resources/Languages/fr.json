@@ -1070,7 +1070,6 @@
   "q quits": "q pour quitter",
   "· now": "· maintenant",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "Installez Codync Dev sur {name} et ouvrez-le une fois. Sur Linux, installez l’hôte de développement sous ~/.local/bin/codync-dev-host.",
-  "codync-host isn't installed on {name}. Install it there:": "codync-host n’est pas installé sur {name}. Installez-le là-bas :",
   "Version {version} is available: run codync-host update": "La version {version} est disponible : exécutez codync-host update",
   "Download failed: {error}": "Échec du téléchargement : {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} Brouillon conservé ; Entrée pour réessayer, Ctrl+C pour effacer le texte.",
@@ -1494,5 +1493,11 @@
   "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "Dans aucun compte : un téléphone connecté qui scanne ceci demande à ajouter l’ordinateur à son compte.",
   "Paste a pairing link, or type the code from the computer": "Collez un lien d'appairage ou saisissez le code affiché sur l'ordinateur",
   "That code isn't valid. Check it on the computer.": "Ce code n'est pas valide. Vérifiez-le sur l'ordinateur.",
-  "That code expired or was used. Show a new one on the computer.": "Ce code a expiré ou a déjà été utilisé. Affichez-en un nouveau sur l'ordinateur."
+  "That code expired or was used. Show a new one on the computer.": "Ce code a expiré ou a déjà été utilisé. Affichez-en un nouveau sur l'ordinateur.",
+  "Installing codync-host…": "Installation de codync-host…",
+  "Starting codync-host…": "Démarrage de codync-host…",
+  "Couldn't install codync-host on {name}.": "Impossible d’installer codync-host sur {name}.",
+  "codync-host isn't installed on {name}.": "codync-host n’est pas installé sur {name}.",
+  "To keep codync-host running on {name} after you log out, run this there:": "Pour que codync-host continue de tourner sur {name} après votre déconnexion, exécutez ceci là-bas :",
+  "Copy command": "Copier la commande"
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mayAutoClaim, mayOfferMove } from './auto-claim.ts'
+import { mayAutoClaim, mayJoinAfterInstall, mayOfferMove } from './auto-claim.ts'
 
 const host = { id: 'new', online: true, cloud: { enabled: true, owner: null } }
 
@@ -33,4 +33,12 @@ test('a computer in another account offers to move into the signed-in one', () =
   assert.equal(mayOfferMove(owned('a'), 'b', ['new']), false, 'the user said no')
   assert.equal(mayOfferMove({ ...owned('a'), online: false }, 'b', []), false)
   assert.equal(mayOfferMove({ ...host, cloud: { enabled: true, owner: { userId: 'a' }, relay: 'private' } }, 'b', []), false)
+})
+
+test('an SSH computer installed from here joins unless it is in an account or on a private relay', () => {
+  // Its cloud may still be off: Add to account turns it on, as installing shows the intent.
+  assert.equal(mayJoinAfterInstall({ owner: null }), true)
+  assert.equal(mayJoinAfterInstall({ owner: null, relay: 'codync' }), true)
+  assert.equal(mayJoinAfterInstall({ owner: { userId: 'a' } }), false)
+  assert.equal(mayJoinAfterInstall({ owner: null, relay: 'private' }), false)
 })

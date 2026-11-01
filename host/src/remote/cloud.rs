@@ -227,7 +227,7 @@ fn signed(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value
 }
 
 /// One signed `/v1/host/*` call.
-async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
+pub(super) async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
     answer(signed(hub, base, method, path, body)?).await
 }
 

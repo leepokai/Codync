@@ -1070,7 +1070,6 @@
   "q quits": "q sale",
   "· now": "· ahora",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "Instala Codync Dev en {name} y ábrelo una vez. En Linux, instala el host de desarrollo como ~/.local/bin/codync-dev-host.",
-  "codync-host isn't installed on {name}. Install it there:": "codync-host no está instalado en {name}. Instálalo allí:",
   "Version {version} is available: run codync-host update": "La versión {version} está disponible: ejecuta codync-host update",
   "Download failed: {error}": "Error de descarga: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} Borrador conservado; Enter reintenta, Ctrl+C borra el texto.",
@@ -1494,5 +1493,11 @@
   "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "Sin cuenta: un teléfono con sesión iniciada que escanee esto pedirá añadir la computadora a su cuenta.",
   "Paste a pairing link, or type the code from the computer": "Pega un enlace de emparejamiento o escribe el código de la computadora",
   "That code isn't valid. Check it on the computer.": "Ese código no es válido. Revísalo en la computadora.",
-  "That code expired or was used. Show a new one on the computer.": "Ese código caducó o ya se usó. Muestra uno nuevo en la computadora."
+  "That code expired or was used. Show a new one on the computer.": "Ese código caducó o ya se usó. Muestra uno nuevo en la computadora.",
+  "Installing codync-host…": "Instalando codync-host…",
+  "Starting codync-host…": "Iniciando codync-host…",
+  "Couldn't install codync-host on {name}.": "No se pudo instalar codync-host en {name}.",
+  "codync-host isn't installed on {name}.": "codync-host no está instalado en {name}.",
+  "To keep codync-host running on {name} after you log out, run this there:": "Para que codync-host siga funcionando en {name} cuando cierres la sesión, ejecuta esto allí:",
+  "Copy command": "Copiar comando"
 }

@@ -64,7 +64,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.store.remove_activity_ticket(str_arg(&b, "botId")?, caller.device_key())?;
             json!({})
         }
-        "pairing" => pairing(hub).await?,
+        "pairing" => pairing(hub, b["shortCode"] == true).await?,
         "devices" => {
             let connected = hub.connected.locked().clone();
             let devices: Vec<Value> = hub
@@ -133,7 +133,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
 }
 
 /// A new one-time pairing code and the QR that carries it (§4.1).
-async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
+async fn pairing(hub: &Arc<Hub>, short_code: bool) -> Result<Value> {
     let port = hub.port;
     // Shells out to `tailscale`: keep it off the async workers.
     let urls = tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?;
@@ -152,7 +152,16 @@ async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
         urls: &urls,
         cloud: cloud.as_deref(),
     });
-    Ok(json!({"pairingUrl": url, "urls": urls, "expiresAt": issued.expires_at}))
+    // Asked for (`codync-host pair`): a code to type instead of scanning, when the Codync cloud can hold the link.
+    let short_code = if short_code {
+        crate::remote::short_code::register(hub, &url, issued.expires_at)
+            .await
+            .inspect_err(|e| tracing::info!(error = format!("{e:#}"), "no short pairing code"))
+            .ok()
+    } else {
+        None
+    };
+    Ok(json!({"pairingUrl": url, "urls": urls, "expiresAt": issued.expires_at, "shortCode": short_code}))
 }
 
 /// Signs this computer into an account claim (§4.2 A) for the signed-in desktop app to complete.

@@ -1,6 +1,7 @@
 //! codex-acp leaves out a requested MCP server whose name Codex's own config already uses ("Codex uses its own
 //! entry, or no server if that entry is disabled"), and says so only in a notice before the first turn. A connector
 //! named like one of the user's Codex servers (`notion`) then never reaches the bot (#217), so it gets a free name.
+//! pi drops one its own config names the same way (`pi_tools`).
 
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
@@ -18,32 +19,42 @@ pub(super) fn name_of<'a>(renamed: &'a Renamed, name: &'a str) -> &'a str {
 /// Renames each of `servers` whose name a Codex config for `cwd` already defines. `codex_home` is the agent's
 /// own `CODEX_HOME` when it has one.
 pub(super) async fn avoid_clashes(servers: &mut Value, cwd: &str, codex_home: Option<PathBuf>) -> Renamed {
-    let files = config_files(Path::new(cwd), codex_home);
+    rename_taken(servers, config_files(Path::new(cwd), codex_home), taken).await
+}
+
+/// Renames each of `servers` whose name `taken` reads from the agent's config `files` (blocking).
+pub(super) async fn rename_taken(
+    servers: &mut Value,
+    files: Vec<PathBuf>,
+    taken: fn(&[PathBuf]) -> HashSet<String>,
+) -> Renamed {
     match tokio::task::spawn_blocking(move || taken(&files)).await {
         Ok(taken) => rename(servers, &taken),
         Err(e) => {
-            tracing::warn!(error = format!("{e:#}"), "couldn't read Codex's MCP server names");
+            tracing::warn!(error = format!("{e:#}"), "couldn't read the agent's MCP server names");
             Renamed::new()
         }
     }
 }
 
-/// A clashing server becomes `codync-<name>`, or `codync-<name>-2`… when that is taken too: by Codex's config
-/// or by another requested server.
+/// A clashing server becomes `codync-<name>`, or `codync-<name>-2`… when that is taken too: by the agent's config
+/// or by another requested server. Names that differ only in `-` and `_` count as one, as they do for pi.
 fn rename(servers: &mut Value, taken: &HashSet<String>) -> Renamed {
+    let fold = |name: &str| name.replace('-', "_");
+    let taken: HashSet<String> = taken.iter().map(|name| fold(name)).collect();
     let list = servers.as_array_mut().map(Vec::as_mut_slice).unwrap_or_default();
-    let mut used: HashSet<String> = taken.clone();
-    used.extend(list.iter().filter_map(|s| s["name"].as_str().map(str::to_owned)));
+    let mut used = taken.clone();
+    used.extend(list.iter().filter_map(|s| s["name"].as_str().map(fold)));
     let mut renamed = Renamed::new();
     for server in list {
-        let Some(name) = server["name"].as_str().filter(|name| taken.contains(*name)).map(str::to_owned) else {
+        let Some(name) = server["name"].as_str().filter(|name| taken.contains(&fold(name))).map(str::to_owned) else {
             continue;
         };
         let free = (1..=used.len() + 1)
             .map(|n| if n == 1 { format!("codync-{name}") } else { format!("codync-{name}-{n}") })
-            .find(|candidate| !used.contains(candidate))
+            .find(|candidate| !used.contains(&fold(candidate)))
             .expect("one of more names than are used is free");
-        used.insert(free.clone());
+        used.insert(fold(&free));
         server["name"] = free.clone().into();
         renamed.insert(name, free);
     }

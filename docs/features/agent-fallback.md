@@ -60,7 +60,7 @@ Read from the ACP answer: the JSON-RPC code, the adapter's category (Claude's `d
 | `outOfCredits` | Claude `billing_error`, `account_on_hold` | 6 h |
 | `rateLimited`, `overloaded` | Claude `rate_limit`, `overloaded`, `server_error`; codex-acp `rateLimitExceeded`, `serverOverloaded` | 1, 5, 25, then 60 min for failures in a row |
 | `signedOut` | ACP `-32000`, `authentication_failed`, CodeBuddy's `auth` category | Until it's signed in, looking again after 1 h; an agent Codync can't sign in to (no sign-in card): 10 min. The chat of each bot that moves past it gets the agent's sign-in card (holding no message: the fallback answers it), and signing in there brings the bot back |
-| `notStarting` | `FailureKind::NotSetUp`, `Timeout`, `Exited` | 5 min |
+| `notStarting` | `FailureKind::NotSetUp`, `Timeout`, `Exited`; `Timeout` also when a turn's agent sends nothing for 10 min while no tool runs and no approval waits (`bot/silence.rs`, `CODYNC_AGENT_SILENCE_MINUTES`, `0` turns it off), as OpenCode does on an exhausted custom provider ([#285](https://github.com/leepokai/Codync/issues/285)) | 5 min |
 | `modelMissing` | `model_not_found`, or the agent refusing the step's model (`FailureKind::NoModel`) | None: it's the bot's setup, not the agent's. The bot skips that step until its settings change |
 
 Stop, refusal, output or step limits, a routine's time limit, compactions and uncategorized internal errors don't move

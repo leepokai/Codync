@@ -30,6 +30,8 @@ Everything else stays the bot's own whichever agent is answering: its folder, ap
 
 Codync moves on only when the agent returns an error that says it can't answer. The agents retry on their own first, so Codync doesn't ask the same agent again. Each agent is tried at most once per turn.
 
+An agent that goes quiet mid-turn counts as one that couldn't start: when it sends nothing for 10 minutes while no tool is running and no approval is waiting on you, Codync stops it and the turn ends with that error, or moves on to the next agent. Some agents do this when their provider runs out of quota. To change the wait, set `CODYNC_AGENT_SILENCE_MINUTES` in the host's environment (`0` turns it off).
+
 The agent it leaves then rests: every bot on the computer skips it for a while, so one bot finding Claude Code out of usage spares the others from trying.
 
 | The chat says the agent… | Bots skip it until |

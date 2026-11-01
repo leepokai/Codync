@@ -91,6 +91,10 @@ Not one adapter's bug: the protocol leaves these open, and the host covers them 
 - No structured MCP server and tool name on a tool call: `host/src/agent/bot/tool_entry.rs` parses titles (`mcp__x__y`, `mcp.x.y`).
 - Every adapter names its error category differently (`errorKind`, `category`, `codexErrorInfo`): `host/src/agent/acp.rs`.
 - Agents that ignore `session/cancel` are killed after 15 s; a hung `session/new` or `session/load` after 3 min;
+  a turn whose agent sends nothing for 10 min while no tool runs and no approval waits (OpenCode stuck on a provider
+  that ran out of quota, [opencode#47804](https://github.com/anomalyco/opencode/issues/47804), fixed only for its own
+  Go plan) fails as a timeout, so the bot's fallback carries on (`host/src/agent/bot/silence.rs`,
+  `CODYNC_AGENT_SILENCE_MINUTES`, `0` turns it off);
   an old CLI that hangs on `initialize` gets 20 s when another way to start it is left (`host/src/agent/bot/mod.rs`,
   `host/src/agent/bot/session.rs`).
 - Agents that send no `compaction_update`: a drop in context use by more than half stands in for one

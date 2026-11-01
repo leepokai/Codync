@@ -778,7 +778,6 @@
   "Couldn't sign out. Check your connection and try again.": "退出失败。检查网络后再试一次。",
   "Couldn't switch accounts. Check your connection or sign in again.": "切换账户失败。检查网络，或重新登录。",
   "Couldn't finish signing in. Please try again.": "登录没有完成。请再试一次。",
-  "Sign-in setup isn't finished yet. You can continue using local pairing.": "登录还没配置好。你可以继续用本机配对。",
   "Apple sign-in needs additional verification. Your account is not signed in yet.": "Apple 登录还需要额外验证。账户还没有登录。",
   "Google sign-in needs additional verification. Your account is not signed in yet.": "Google 登录还需要额外验证。账户还没有登录。",
   "Apple sign-up needs additional account information. Your account is not signed in yet.": "Apple 注册还需要补充账户信息。账户还没有登录。",
@@ -1499,5 +1498,16 @@
   "Couldn't install codync-host on {name}.": "无法在 {name} 上安装 codync-host。",
   "codync-host isn't installed on {name}.": "{name} 上还没有安装 codync-host。",
   "To keep codync-host running on {name} after you log out, run this there:": "要让 codync-host 在你退出登录后继续在 {name} 上运行，请在那里运行：",
-  "Copy command": "复制命令"
+  "Copy command": "复制命令",
+  "Delete account": "删除账户",
+  "Delete your Codync account?": "要删除你的 Codync 账户吗？",
+  "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.": "你的账户、账户里的电脑列表，以及每台设备通过账户获得的使用权都会删除。电脑上的 bot 和对话会保留。无法撤销。",
+  "Couldn't delete your account. Check your connection and try again.": "删除账户失败。检查网络后再试一次。",
+  "Sign in to keep using your computer. It moves into your account, so you won't need to scan again.": "登录后就能继续使用你的电脑。它会移进你的账户，不用再扫一次。",
+  "Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.": "登录后就能继续使用你的 {count} 台电脑。它们会移进你的账户，不用再扫一次。",
+  "This computer is in {name}'s account": "这台电脑在 {name} 的账户里",
+  "This computer is in another account": "这台电脑在另一个账户里",
+  "This computer isn't in an account: its cloud is off": "这台电脑不在任何账户里：它的云端已关闭",
+  "This computer isn't in an account: it uses a private relay": "这台电脑不在任何账户里：它用私人中继",
+  "This computer isn't in your account": "这台电脑不在你的账户里"
 }

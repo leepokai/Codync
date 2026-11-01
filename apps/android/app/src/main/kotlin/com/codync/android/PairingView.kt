@@ -245,7 +245,7 @@ private enum class ComputerOS { Mac, Linux }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(tr(error.orEmpty()), style = Type.footnote, color = Palette.danger)
                 // The usual cause: the phone has no road to the computer yet.
-                IconLabel("Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
+                if (state.pairingUnreachable) IconLabel("Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
                     "wifi.exclamationmark", Palette.secondary)
             }
         }

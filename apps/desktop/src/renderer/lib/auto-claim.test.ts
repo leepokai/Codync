@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mayAutoClaim, mayJoinAfterInstall, mayOfferMove } from './auto-claim.ts'
+import { accountMismatch, mayAutoClaim, mayJoinAfterInstall, mayOfferMove } from './auto-claim.ts'
 
 const host = { id: 'new', online: true, cloud: { enabled: true, owner: null } }
 
@@ -41,4 +41,18 @@ test('an SSH computer installed from here joins unless it is in an account or on
   assert.equal(mayJoinAfterInstall({ owner: null, relay: 'codync' }), true)
   assert.equal(mayJoinAfterInstall({ owner: { userId: 'a' } }), false)
   assert.equal(mayJoinAfterInstall({ owner: null, relay: 'private' }), false)
+})
+
+test('the sidebar line says when this computer and the signed-in account differ', () => {
+  const owned = { ...host, cloud: { enabled: true, owner: { userId: 'a', email: 'a@example.com' } } }
+  assert.deepEqual(accountMismatch(owned, 'b', [], []), { kind: 'other', email: 'a@example.com' })
+  assert.equal(accountMismatch(owned, 'a', [], []), null, 'the same account')
+  assert.deepEqual(accountMismatch(owned, 'b', ['new'], []), { kind: 'other', email: 'a@example.com' }, 'still shown after keep it there')
+  assert.equal(accountMismatch(host, 'b', [], []), null, 'joining on its own')
+  assert.deepEqual(accountMismatch({ ...host, cloud: { enabled: false } }, 'b', [], []), { kind: 'none', reason: 'cloudOff' })
+  assert.deepEqual(accountMismatch({ ...host, cloud: { enabled: true, relay: 'private' } }, 'b', [], []), { kind: 'none', reason: 'privateRelay' })
+  assert.deepEqual(accountMismatch(host, 'b', ['new'], []), { kind: 'none', reason: 'keptOut' })
+  assert.deepEqual(accountMismatch(host, 'b', [], ['new']), { kind: 'none', reason: 'keptOut' }, 'removed from the account elsewhere')
+  assert.equal(accountMismatch({ ...owned, online: false }, 'b', [], []), null, "an offline host can't say")
+  assert.equal(accountMismatch({ ...host, cloud: null }, 'b', [], []), null)
 })

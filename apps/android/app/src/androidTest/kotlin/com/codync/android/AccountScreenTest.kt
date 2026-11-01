@@ -50,6 +50,8 @@ class AccountScreenTest {
         val signOut = compose.onNodeWithText("Sign out").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue(scan.bottom < identity.top)
         assertTrue(identity.bottom < signOut.top)
+        val delete = compose.onNodeWithText("Delete account").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(signOut.bottom <= delete.top)
         compose.onNodeWithContentDescription(first.email).assertIsSelected().assertIsNotEnabled()
         compose.onNodeWithContentDescription(second.email).assertIsNotSelected().assertIsEnabled()
         compose.onNodeWithContentDescription("Add account").assertIsDisplayed()
@@ -89,6 +91,7 @@ class AccountScreenTest {
         assertEquals(apple.right, google.right, 1f)
         compose.onNodeWithText("Other sign-in options").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Sign out").assertDoesNotExist()
+        compose.onNodeWithText("Delete account").assertDoesNotExist()
         compose.runOnUiThread { state.value = state.value.copy(account = state.value.account.copy(ready = false, error = "Couldn't restore sign-in.")) }
         compose.onNodeWithText("Continue with Apple").assertIsNotEnabled()
         compose.onNodeWithText("Continue with Google").assertIsNotEnabled()

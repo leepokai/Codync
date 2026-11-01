@@ -212,6 +212,8 @@ private struct ScanPage: View {
     @State private var pairing = false
     @State private var pasted = ""
     @State private var error: String?
+    /// The phone couldn't reach the computer (not a refusal from it or the cloud): the network hint helps.
+    @State private var unreachable = false
     /// Bumped after a failed pair so the scanner starts looking again.
     @State private var attempt = 0
     @State private var tailscaleOn = Tailscale.isConnected
@@ -252,10 +254,10 @@ private struct ScanPage: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                         // The usual cause: the phone has no road to the computer yet.
-                        Label(L10n.tr("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."),
+                        if unreachable { Label(L10n.tr("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."),
                               systemImage: "wifi.exclamationmark")
                             .font(.footnote)
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(Palette.secondary) }
                     }
                     .transition(.opacity)
                 }
@@ -310,6 +312,8 @@ private struct ScanPage: View {
                     Image(systemName: "qrcode.viewfinder").font(.system(size: 44, weight: .light))
                     Text(L10n.tr("Camera not available. Paste the link below.")).font(.footnote)
                 }
+                // The pairing progress takes its place.
+                .opacity(pairing ? 0 : 1)
                 .foregroundStyle(Palette.tertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Palette.surface)
@@ -357,7 +361,11 @@ private struct ScanPage: View {
 
     private func show(_ error: Error) {
         attempt += 1
-        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = error.localizedDescription }
+        let reason = AnalyticsEvent.PairingFailure(error)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
+            self.error = error.localizedDescription
+            unreachable = reason == .unreachable || reason == .timeout
+        }
     }
 }
 

@@ -778,7 +778,6 @@
   "Couldn't sign out. Check your connection and try again.": "로그아웃하지 못했습니다. 연결을 확인하고 다시 시도하세요.",
   "Couldn't switch accounts. Check your connection or sign in again.": "계정을 전환하지 못했습니다. 연결을 확인하거나 다시 로그인하세요.",
   "Couldn't finish signing in. Please try again.": "로그인을 완료하지 못했습니다. 다시 시도하세요.",
-  "Sign-in setup isn't finished yet. You can continue using local pairing.": "로그인 설정이 아직 완료되지 않았습니다. 로컬 페어링은 계속 사용할 수 있습니다.",
   "Apple sign-in needs additional verification. Your account is not signed in yet.": "Apple 로그인에 추가 인증이 필요합니다. 아직 계정에 로그인되지 않았습니다.",
   "Google sign-in needs additional verification. Your account is not signed in yet.": "Google 로그인에 추가 인증이 필요합니다. 아직 계정에 로그인되지 않았습니다.",
   "Apple sign-up needs additional account information. Your account is not signed in yet.": "Apple 가입에 추가 계정 정보가 필요합니다. 아직 계정에 로그인되지 않았습니다.",
@@ -1499,5 +1498,16 @@
   "Couldn't install codync-host on {name}.": "{name}에 codync-host를 설치하지 못했습니다.",
   "codync-host isn't installed on {name}.": "{name}에 codync-host가 설치되지 않았습니다.",
   "To keep codync-host running on {name} after you log out, run this there:": "로그아웃한 뒤에도 {name}에서 codync-host가 계속 실행되게 하려면 해당 컴퓨터에서 다음을 실행하세요:",
-  "Copy command": "명령 복사"
+  "Copy command": "명령 복사",
+  "Delete account": "계정 삭제",
+  "Delete your Codync account?": "Codync 계정을 삭제할까요?",
+  "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.": "계정, 계정의 컴퓨터 목록, 계정을 통한 모든 기기의 접근 권한이 삭제됩니다. 컴퓨터의 봇과 대화는 그대로 남습니다. 되돌릴 수 없습니다.",
+  "Couldn't delete your account. Check your connection and try again.": "계정을 삭제하지 못했습니다. 연결을 확인하고 다시 시도하세요.",
+  "Sign in to keep using your computer. It moves into your account, so you won't need to scan again.": "로그인하면 컴퓨터를 계속 사용할 수 있습니다. 계정으로 옮겨지므로 다시 스캔할 필요가 없습니다.",
+  "Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.": "로그인하면 컴퓨터 {count}대를 계속 사용할 수 있습니다. 계정으로 옮겨지므로 다시 스캔할 필요가 없습니다.",
+  "This computer is in {name}'s account": "이 컴퓨터는 {name}의 계정에 있습니다",
+  "This computer is in another account": "이 컴퓨터는 다른 계정에 있습니다",
+  "This computer isn't in an account: its cloud is off": "이 컴퓨터는 어떤 계정에도 없습니다: 클라우드가 꺼져 있습니다",
+  "This computer isn't in an account: it uses a private relay": "이 컴퓨터는 어떤 계정에도 없습니다: 개인 릴레이를 사용합니다",
+  "This computer isn't in your account": "이 컴퓨터는 내 계정에 없습니다"
 }

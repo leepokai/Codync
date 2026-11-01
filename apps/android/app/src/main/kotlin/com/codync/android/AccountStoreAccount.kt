@@ -25,21 +25,63 @@ internal fun AccountStore.signIn(provider: SignInProvider) = sessionAction {
 }
 fun AccountStore.switchAccount(account: SavedAccount) = sessionAction { NativeAccounts.switch(account) }
 fun AccountStore.retryAccounts() { NativeAccounts.retry() }
+/**
+ * Clerk first, so a sign-out that fails keeps the key. Then this phone's key goes back ([handBack]) while the account's
+ * stores are still open (the context switch waits for `transitions`), and the account is forgotten here.
+ */
 fun AccountStore.signOut() = sessionAction {
     val old = state.value.account.accounts.firstOrNull { it.userId == state.value.account.userId } ?: return@sessionAction
     // Sent first so it still counts toward the account.
     Analytics.capture(AnalyticsEvent.SignedOut)
-    NativeAccounts.signOut(old.sessionId)
+    // The cloud call goes out after Clerk signed out, on a token taken now (it outlives the session).
+    val account = cloud?.pinningToken()
     transitions.withLock {
-        // The SDK updates its session synchronously; its observer may be queued behind us.
-        val userId = com.clerk.api.Clerk.activeSession?.user?.id
-        retireContext()
-        loadContext(userId)
-        val remaining = com.clerk.api.Clerk.auth.sessions.any { it.user?.id == old.userId && it.status == com.clerk.api.session.Session.SessionStatus.ACTIVE }
-        if (!remaining) withContext(Dispatchers.IO) {
-            LocalStore(getApplication(), old.userId).erase()
-            File(getApplication<Application>().cacheDir, "codync-images-${LocalStore.referenceId(old.userId)}").deleteRecursively()
+        NativeAccounts.signOut(old.sessionId)
+        handBack(account)
+        leave(old.userId)
+    }
+}
+
+/**
+ * Deletes the signed-in account (App Store and Google Play require it in the app). Clerk goes first, so a failure changes
+ * nothing; the cloud cleans up on Clerk's `user.deleted`. The context switch waits for the computers to drop this phone.
+ */
+fun AccountStore.deleteAccount() = sessionAction {
+    val old = state.value.account.userId ?: return@sessionAction
+    transitions.withLock {
+        try { NativeAccounts.deleteUser() }
+        catch (error: CancellationException) { throw error }
+        catch (error: Exception) { throw IOException("Couldn't delete your account. Check your connection and try again.", error) }
+        handBack(null)
+        leave(old)
+    }
+}
+
+/**
+ * Hands this phone's key back as an account is left, before its data goes: every computer it's connected to drops it, and [account] (the
+ * account's cloud) revokes the device with its grants and requests. Best effort with short timeouts: leaving never waits on them.
+ */
+private suspend fun AccountStore.handBack(account: CloudClient?) = coroutineScope {
+    for (store in stores.value) launch { store.forgetDevice() }
+    if (account != null) launch {
+        withTimeoutOrNull(5_000) {
+            try { account.revokeThisDevice() }
+            catch (error: CancellationException) { throw error }
+            catch (error: Exception) { android.util.Log.i("Codync", "Couldn't revoke this device in the account: ${error.message}") }
         }
+    }
+}
+
+/** After signing out of [userId] or deleting it (under `transitions`): the next account or the welcome loads, and [userId]'s data here goes. */
+private suspend fun AccountStore.leave(userId: String) {
+    // The SDK updates its session synchronously; its observer may be queued behind us.
+    val next = com.clerk.api.Clerk.activeSession?.user?.id?.takeIf { it != userId }
+    retireContext()
+    loadContext(next)
+    val remaining = com.clerk.api.Clerk.auth.sessions.any { it.user?.id == userId && it.status == com.clerk.api.session.Session.SessionStatus.ACTIVE }
+    if (!remaining) withContext(Dispatchers.IO) {
+        LocalStore(getApplication(), userId).erase()
+        AccountImages.cacheDir(getApplication(), LocalStore.referenceId(userId)).deleteRecursively()
     }
 }
 
@@ -49,7 +91,11 @@ fun AccountStore.refreshCloud() = action("cloud") {
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
         mutableState.update { it.copy(cloudComputers = computers) }
-        // Signed in to an account with computers, before pairing any (iOS: the same moment).
+        // Signed in to an account with computers, before pairing any (iOS: the same moment): setup is done.
+        if (computers.isNotEmpty() && !state.value.setupComplete) {
+            withContext(Dispatchers.IO) { local.completeSetup() }
+            mutableState.update { it.copy(setupComplete = true) }
+        }
         if (computers.isNotEmpty() && state.value.computers.isEmpty()) Analytics.completeOnboarding(OnboardingVia.Account)
     } catch (error: IOException) {
         if (error is CloudError && !error.isTransient) throw error
@@ -202,6 +248,8 @@ fun AccountStore.taskNotifications(enabled: Boolean) = action("taskSettings") {
 
 fun AccountStore.startOver() = sessionAction {
     transitions.withLock {
+        // The open account's computers and cloud drop this phone, as signing out does; its keys go regardless.
+        handBack(cloud)
         retireContext()
         withContext(NonCancellable) {
             NativeAccounts.reset()

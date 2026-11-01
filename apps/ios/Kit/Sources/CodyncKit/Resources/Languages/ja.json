@@ -778,7 +778,6 @@
   "Couldn't sign out. Check your connection and try again.": "Couldn't sign out.接続を確認して、もう一度試してください。",
   "Couldn't switch accounts. Check your connection or sign in again.": "アカウントを切り替えられませんでした。接続を確認するか、再度サインインしてください。",
   "Couldn't finish signing in. Please try again.": "サインインを完了できませんでした。もう一度お試しください。",
-  "Sign-in setup isn't finished yet. You can continue using local pairing.": "サインインの設定はまだ完了していません。ローカル ペアリングを引き続き使用できます。",
   "Apple sign-in needs additional verification. Your account is not signed in yet.": "Apple サインインには追加の検証が必要です。あなたのアカウントはまだサインインしていません。",
   "Google sign-in needs additional verification. Your account is not signed in yet.": "Google サインインには追加の検証が必要です。あなたのアカウントはまだサインインしていません。",
   "Apple sign-up needs additional account information. Your account is not signed in yet.": "Apple のサインアップには追加のアカウント情報が必要です。あなたのアカウントはまだサインインしていません。",
@@ -1499,5 +1498,16 @@
   "Couldn't install codync-host on {name}.": "{name} に codync-host をインストールできませんでした。",
   "codync-host isn't installed on {name}.": "codync-host は {name} にインストールされていません。",
   "To keep codync-host running on {name} after you log out, run this there:": "ログアウト後も {name} で codync-host を動かし続けるには、そこで次を実行してください：",
-  "Copy command": "コマンドをコピー"
+  "Copy command": "コマンドをコピー",
+  "Delete account": "アカウントを削除",
+  "Delete your Codync account?": "Codync アカウントを削除しますか？",
+  "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.": "アカウント、そのコンピュータの一覧、アカウント経由の各デバイスのアクセス権が削除されます。コンピュータのボットとチャットは残ります。元に戻すことはできません。",
+  "Couldn't delete your account. Check your connection and try again.": "アカウントを削除できませんでした。接続を確認して、もう一度お試しください。",
+  "Sign in to keep using your computer. It moves into your account, so you won't need to scan again.": "サインインすると、このコンピュータをそのまま使えます。アカウントに移されるので、もう一度スキャンする必要はありません。",
+  "Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.": "サインインすると、{count} 台のコンピュータをそのまま使えます。アカウントに移されるので、もう一度スキャンする必要はありません。",
+  "This computer is in {name}'s account": "このコンピュータは {name} のアカウントにあります",
+  "This computer is in another account": "このコンピュータは別のアカウントにあります",
+  "This computer isn't in an account: its cloud is off": "このコンピュータはどのアカウントにもありません: クラウドがオフです",
+  "This computer isn't in an account: it uses a private relay": "このコンピュータはどのアカウントにもありません: プライベートリレーを使っています",
+  "This computer isn't in your account": "このコンピュータはあなたのアカウントにありません"
 }

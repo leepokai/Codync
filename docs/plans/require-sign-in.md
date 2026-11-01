@@ -1,6 +1,6 @@
 # Require sign-in
 
-Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. Nothing here is built yet.
+Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. All three phases are built (2.36.0). Phase 2 needs the cloud's certificate key before it works against a cloud: see [Release steps](#release-steps).
 
 ## Decisions
 
@@ -22,7 +22,7 @@ Plan agreed 2026-11-02 for [connections and accounts](../architecture/connection
 | 3 | VPS convenience: one-click host install over SSH, joining the account afterwards on its own, headless hints, short pairing codes | desktop, host, cloud |
 | Later | 15-minute lease grace, renames, desktop apps as devices | — |
 
-Each phase is one release with a minor version bump. Phase 1 needs no `minApp` change. Phase 2 does; see below.
+Phase 1 was 2.35.0 on `dev`; no release went out before phases 2 and 3 joined it, so all three ship as 2.36.0. Phase 2 raises `minApp`; see below.
 
 ## Phase 1: require sign-in
 
@@ -33,11 +33,11 @@ App Store 5.1.1(v) and Google Play require in-app deletion for any app that crea
 - **Where:** the account sheet on iPhone (`AccountSwitcherView.swift`) and Android (`AccountSwitcherView.kt`), under **Sign out**; the desktop account menu (`PanelMenus.tsx`).
 - **Confirmation dialog**, title "Delete your Codync account?", message: "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone." Actions: **Delete account** (destructive), **Cancel**.
 - **Steps:**
-  1. Hand back the key, the same way as signing out (section 2).
-  2. Delete the user in Clerk:
+  1. Delete the user in Clerk first. When that fails ("Couldn't delete your account. Check your connection and try again."), nothing else changes:
      - iOS: `clerk.user.delete()` (ClerkKit `User.delete()`).
      - Android: `User.delete()` from `com.clerk.api.user`.
      - Desktop: FAPI `DELETE /v1/me`, through `apps/desktop/src/main/account.ts`.
+  2. Hand the key back to the computers this phone reaches, as signing out does (section 2). The account's stores stay open until then, even though Clerk has already ended the session (`AppStore.leaving` on iOS). The cloud side needs no call: the webhook revokes every device.
   3. Erase this account's local data, the same as signing out.
 - **Cloud: no change.** Clerk's `user.deleted` webhook already revokes every grant, cancels pending requests, removes the account's computers from it and deletes their icons (`cloud/src/routes/webhooks.ts`).
 - **Clerk setting:** "users can delete themselves" (`user_settings.actions.delete_self`) is on in the development instance. Check it is on in production before the release.
@@ -47,15 +47,16 @@ App Store 5.1.1(v) and Google Play require in-app deletion for any app that crea
 
 Today iPhone erases only local data, and Android tells only the computer it is connected to. New order, in `AppStore.signOut()` (iOS) and `AccountStore.signOut()` (Android):
 
-1. **Computers this phone can reach:** call the new host method `forgetDevice`. It removes the caller's own device row and push tickets.
+1. **Clerk:** sign out first. When that fails the phone stays signed in and keeps its key, so nothing below runs. The cloud call below needs a session token, so one is taken before (`CloudClient.pinningToken()`); it stays valid until it expires. The account's stores stay open until the steps below finish (`AppStore.leaving` on iOS, `transitions` on Android).
+2. **Computers this phone can reach:** call the new host method `forgetDevice`. It removes the caller's own device row and push tickets.
    - Hosts older than this release answer "unknown method"; then call `unregisterDevice`, which stops the push tickets only.
    - The device key is erased right after, so a row left on an older host is unusable.
-2. **Cloud:** `DELETE /v1/devices/{id}` for this phone's own device. Find the id the way `CloudClient.revokeDeviceAccess` already does. This revokes every grant and pending request, and hosts drop the device on their next sync. Add `CloudClient.revokeThisDevice()` and its Android twin.
-3. **Clerk:** sign out, switch context, erase (as today).
+3. **Cloud:** `DELETE /v1/devices/{id}` for this phone's own device. Find the id the way `CloudClient.revokeDeviceAccess` already does. This revokes every grant and pending request, and hosts drop the device on their next sync. Add `CloudClient.revokeThisDevice()` and its Android twin.
+4. Switch context and erase (as today).
 
-The two calls are best effort, with a short timeout each. Signing out never fails because a computer or the cloud is unreachable.
+The two calls are best effort, with a short timeout each. Signing out never fails because a computer or the cloud is unreachable. **Start over** hands the open account's key back the same way before it erases everything.
 
-**Host (`host/src/api/remote.rs`):** `forgetDevice` is for a device caller only. It removes `caller.device_key()` from devices and push tickets and emits `devices` so the desktop list updates. It is additive, so `minApp` doesn't change.
+**Host (`host/src/api/remote.rs`):** `forgetDevice` is for a device caller only. It removes `caller.device_key()` from devices and push tickets. It sends no event: a desktop showing the device list sees the change the next time the list loads. It is additive, so `minApp` doesn't change.
 
 ### 3. Sign-in gate
 
@@ -82,6 +83,8 @@ The two calls are best effort, with a short timeout each. Signing out never fail
 - With Clerk configured, **Continue on this Mac** (the button and the skip link) goes, and the welcome shows only **Continue with Apple** / **Continue with Google**.
 - `onboarded` alone no longer opens the chat window. The welcome shows whenever the app is configured, ready and signed out, so signing out from the account menu returns to it.
 - The host keeps running while signed out, and so do the tray and menu bar.
+- Signing out also revokes the desktop app's own cloud device (`DELETE /v1/devices/{id}`, best effort, on a token taken before Clerk signs out) once Clerk has signed out, then its key file goes: the cloud refuses a revoked key, so the next sign-in makes a new one.
+- A saved session stays "restoring" (retried every 30 seconds) until Clerk turns it down (401, 403 or 404) or answers, so a launch offline, behind a captive portal or during a Clerk outage isn't stopped at the welcome.
 - Builds without Clerk keep **Continue on this Mac**.
 
 ### 4. Move signed-out pairings into the account
@@ -93,14 +96,14 @@ Runs on iPhone and Android when an account becomes active and the signed-out con
 | **New** (no device key, no computers) | Everything moves: the device and push keys, the computers, order, drafts, shortcut lead, widget snapshot. Hosts see the same key, so nothing is paired again and push keeps working |
 | **Already used** (has its own key) | The computer lists merge (the account's entry wins for the same id). Computers paired only with the signed-out key are refused by their hosts; they show the existing "pair again" state (`isStale`) |
 
-After either case the signed-out context is erased, and an analytics event `signed_out_pairings_moved {computers, keys: moved|rescan}` is sent (added to [analytics](../features/analytics.md) and both apps).
+After either case the signed-out context is erased, and when computers moved an analytics event `signed_out_pairings_moved {computers, keys: moved|rescan}` is sent (in [analytics events](../reference/analytics-events.md) and both apps).
 
 **iOS**
 - `SharedStore.Context.adopt(from:)` in the Kit:
   - Moves the Keychain items `com.pokai.Codync.device-key` / `push-key` from account `local` to the context id.
   - Moves the `UserDefaults` names in `Context.names` to their `account.<id>.` keys.
-  - Moves `ActivityIconCache`.
-  - Drops `codync-mirror-local-*` caches, which rebuild.
+  - Drops `ActivityIconCache` and the `codync-mirror-local-*` caches, which rebuild.
+  - The Kit's test bundle has no Keychain entitlement, so its tests keep keys in memory (`Keychain.memory`, debug builds only).
 - Unit tests in `CodyncKitTests` cover both cases.
 
 **Android**
@@ -112,13 +115,14 @@ After either case the signed-out context is erased, and an analytics event `sign
 
 ### 5. Desktop: computer in another account
 
-- **Logic:** a pure function next to `mayOfferMove` in `lib/auto-claim.ts`, `accountMismatch(host, userId)`. It returns one of three values:
+- **Logic:** a pure function next to `mayOfferMove` in `lib/auto-claim.ts`, `accountMismatch(host, userId, keptOut, seen)`. It returns one of three values:
   - `other {email}`;
   - `none {reason: cloudOff | privateRelay | keptOut}`;
   - `null` when the accounts match.
   Tested in `auto-claim.test.ts`.
-- **One line** in the sidebar footer (`SidebarFooter.tsx`), caption size and secondary color, for example "This computer is in a•••@gmail.com's account". It takes no space when there's no mismatch.
-  - Clicking it reopens the move choice (`MoveComputerPrompt`), even after *Keep it there*. For `none`, it opens Settings → Computers.
+- **A notice** above the sidebar footer's buttons (`SidebarFooter.tsx`): an amber card with an icon that shows its text in full, wrapping as needed, and takes no space when there's no mismatch. The narrow rail shows it as an amber icon with the text as its tooltip.
+  - `other`: "This computer is in {email}'s account", with the full address as Settings and the move dialog show it. Clicking it reopens the move choice (`MoveComputerPrompt`), even after *Keep it there*.
+  - `none`: "This computer isn't in an account: its cloud is off" / "…: it uses a private relay", or "This computer isn't in your account" (taken out). Clicking it opens Settings → Computers.
 - **The move dialog** stays as it is in this phase. Its "QR-paired devices keep access" text changes in phase 2.
 
 ### 6. Docs and release
@@ -146,10 +150,10 @@ After either case the signed-out context is erased, and an analytics event `sign
 | --- | --- |
 | Fresh install | The welcome shows only sign-in. Signing in leads to pairing, and a QR pair works |
 | Upgrade | With the previous build signed out, pair by QR. Install this build: the gate counts the computer. Sign in: the computer is there and connects without scanning, and push still arrives |
-| Merge case | Sign in, sign out, pair signed out, sign in again: the signed-out computer shows "pair again" |
+| Merge case | Unit tests only: with sign-in required, a phone can't pair signed out any more, so this only happens to someone who was signed in on an older build and had also paired signed out (the older builds can't take the test sign-in ticket) |
 | Sign out | The computer's device list drops the phone, and the cloud lists the device as revoked |
 | Delete account | The test user is gone in Clerk, and the computers leave the account (`--prune` cleans up) |
-| Desktop | Signed out shows the welcome with no skip. Sign out returns to it. Signed in to a second test account, the footer line shows and reopens the move choice |
+| Desktop | Signed out shows the welcome with no skip. Sign out returns to it. Signed in to a second test account, the footer notice shows and reopens the move choice |
 
 ### Risks
 
@@ -160,30 +164,40 @@ After either case the signed-out context is erased, and an analytics event `sign
 ## Phase 2: same-account pairing
 
 **Account proof**
-- The cloud signs a short-lived device certificate `{deviceKey, userId, exp}` with its own Ed25519 key (`POST /v1/devices/certificate`). It publishes the public key at `/v1/keys`.
-- A host pins that key when it joins an account and keeps it with the owner. Checking a certificate is a signature check, so it works offline, with the cloud off or on a private relay.
+- The cloud signs a device certificate with its own Ed25519 key, the `DEVICE_CERT_KEY` secret (a JWK): `POST /v1/devices/certificate` (Clerk session plus `Codync-Sig` from a registered, unrevoked device key) returns `{certificate: {payload, sig}}`. The payload is `{v: 1, deviceKey, userId, email, exp}`, valid 7 days; `sig` signs `"codync/device-cert/v1\n" + payload` (`cloud/src/certificate.ts`).
+- Hosts compile in the public half for their environment (`host/src/environment.rs` `device_cert_key`; `CODYNC_DEVICE_CERT_KEY` overrides it for a self-hosted cloud). Checking a certificate is a signature check with no network, so it works from the first run, with the cloud off or on a private relay. There is no `/v1/keys` route.
+- The private keys live in the git-ignored `.env.development` / `.env.production` (`CODYNC_DEVICE_CERT_KEY`).
 
-**`pair` takes the certificate**
+**`pair` takes the certificate** (`host/src/remote/channel/pairing.rs`). The certificate and the account are checked before the one-time code is spent, so a phone that can't come in doesn't use it up. The account the computer belongs to is kept on the computer (`remote/owner.rs`, kv `account_owner`) and compared offline.
 
 | The computer | Result |
 | --- | --- |
-| Has an owner | The certificate's `userId` must equal the owner. Otherwise the error is `otherAccount`, with the owner's masked email |
-| Has no owner | The computer confirms first. The desktop shows a dialog: a new `pairingRequest` event and a `decidePairing` method. `codync-host pair` and the TUI ask `y/N` with a matching code. After that the host joins the phone's account through a new host-signed route that takes the certificate, and pins the cloud key |
+| No certificate (an app older than 2.36.0) | `reject` `unsupportedVersion`: "Update Codync to connect to this computer." |
+| Certificate not valid for this device key | 403 "Couldn't confirm your Codync account. Sign in again, then scan a new code." |
+| In the phone's account | The phone is let in at once |
+| In another account | 403 "This computer is in k•••@example.com's account. Move it to your account in Codync on that computer, or sign in with that account." |
+| In no account | The computer asks for up to 2 minutes (`remote/pairing_requests.rs`: the loopback-only `pairingRequests` event and method, `decidePairing`): the desktop app and the terminal UI show a dialog, `codync-host pair` asks `y/N`. Both screens show the same 6-digit code, `sha256("codync/pair-check/v1" ‖ deviceKey ‖ hostSignKey)`. Declined or unanswered: 403 "The computer didn't let this phone in." Let in: the computer signs the claim the phone made (`POST /v1/claims`) and the phone completes it (`POST /v1/claims/{id}/complete`), so joining needs no new cloud route. With the cloud off or a private relay there is no claim; the phone is let in and the computer stays out of any account |
 
-**Each device records its account.** Devices get `account_user_id`. When the host changes the account it belongs to (joining one, moving, or leaving with **Remove from account**), devices of any other account are dropped. The move dialog's text then reads: "Every device of {email}'s account loses access." Networks stay as they are: a computer handed to someone else is taken out of a network by the network's creator or an admin, like its SSH key is taken off the manager.
+**Each device records its account** (`devices.account`, schema 7). When the host changes the account it belongs to (joining one, moving, or leaving with **Remove from account**), devices of any other account are dropped. Joining a first account keeps the phones paired before devices recorded their account, so updating doesn't cost anyone a phone. The desktop's move and remove dialogs say: "Every device of {email}'s account loses access." Networks stay as they are: a computer handed to someone else is taken out of a network by the network's creator or an admin, like its SSH key is taken off the manager.
 
-**Phones:** send the certificate when pairing, and explain `otherAccount`: "This computer is in a•••@gmail.com's account. Move it to your account in Codync on that computer, or sign in with that account."
+**Phones** fetch a certificate before pairing (kept in memory per account; a new one when less than a day is left; registering the device again on 403; an unexpired one is used offline), make a claim, send both, wait up to 150 seconds, and show "If the computer asks, check it shows 123 456." while they wait. Without a certificate: "Connect to the internet to pair, so Codync can confirm your account."
 
-**Compatibility:** apps older than this release can't send a certificate. A host refuses their QR pairing with `unsupportedVersion` ("Update Codync"). That is a new requirement on the phone, so `minApp` rises with this release and [the release gate](../reference/compatibility.md) holds it until both stores have the apps.
+**Compatibility:** apps older than this release can't send a certificate, so `minApp` is 2.36.0 and [the release gate](../reference/compatibility.md) holds the release until both stores have the apps.
 
 ## Phase 3: VPS convenience
 
-- **One-click install over SSH** (`apps/desktop/src/main/ssh*.ts`):
-  - On `notInstalled`, **Install** runs `install.sh --host-only` and `codync-host install` over the existing SSH connection, with a new `installing` SSH state.
-  - `loginctl enable-linger` needs sudo. When it fails, the card shows that one command to run. It replaces today's `brew` command, which fails on Linux.
-- **Joining the account after install:** the manager app's **Add to account** runs on its own, because installing shows the intent.
-- **Headless hints:** `codync-host cloud` and the TUI account screen say which account the computer is in, or how to add it ([connections: headless](../architecture/connections.md#headless-computers)).
-- **Short pairing codes:** `codync-host pair` also prints a code like `QRTX-4821`, which the host registers with the cloud as a pairing offer. The app resolves the code to the pairing link. The terminal's matching code catches a cloud that swaps keys.
+- **One-click install over SSH** (`apps/desktop/src/main/ssh*.ts`): on `notInstalled` the card shows **Install**, which runs `install.sh --host-only` into `~/.local/bin` and `codync-host install` over the existing SSH connection (SSH state `installing`). Linger is checked and enabled without sudo where the system allows it (Ubuntu 24.04 does); otherwise the card shows `sudo loginctl enable-linger "$USER"` to copy. Codync Dev keeps showing the command, since there is no released dev host to install.
+- **Joining the account after install:** once the installed computer connects, the app's **Add to account** runs on its own, when the app is signed in and the computer is in no account and not on a private relay.
+- **Headless hints:** `codync-host cloud` says how a computer out of an account joins one; the terminal UI's pair sheet says a signed-in phone that scans asks to bring the computer into its account (there is no account screen in the terminal UI).
+- **Short pairing codes:** `codync-host pair` asks the host for a code (`pairing {shortCode: true}`); the host registers its link with the cloud (`POST /v1/host/pairing-codes`, migration `0005`), and prints a code like `QRTX-4821`, valid 10 minutes, single use. The phones' paste field takes it and trades it for the link (`GET /v1/pairing-codes/{code}`, signed-in). The computer's own check code catches a cloud that hands out another link.
+
+## Release steps
+
+Phase 2 and 3 need these once per cloud, before the hosts that ask for them ship (the cloud is deployed by hand):
+
+1. `DEVICE_CERT_KEY`: `grep '^CODYNC_DEVICE_CERT_KEY=' .env.development | cut -d= -f2- | npx wrangler secret put DEVICE_CERT_KEY --env dev` from `cloud/` (and the same from `.env.production` without `--env` for main).
+2. The pairing codes table: `npx wrangler d1 migrations apply codync-dev --env dev --remote` (main: `codync`).
+3. `npm run deploy:dev`, then `npm run deploy:main` right after the release merges.
 
 ## Later
 

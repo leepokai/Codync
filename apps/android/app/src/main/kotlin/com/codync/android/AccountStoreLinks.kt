@@ -50,7 +50,9 @@ internal fun AccountStore.pair(text: String, via: PairedVia) {
             }
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) {
-            Analytics.capture(AnalyticsEvent.PairingFailed(PairingFailure.of(error)))
+            val reason = PairingFailure.of(error)
+            Analytics.capture(AnalyticsEvent.PairingFailed(reason))
+            mutableState.update { it.copy(pairingUnreachable = reason == PairingFailure.Unreachable || reason == PairingFailure.Timeout) }
             showError(error)
         }
         finally { mutableState.update { it.copy(pairing = false, pairingCheck = null) } }

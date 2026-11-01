@@ -15,8 +15,10 @@ struct CodyncApp: App {
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     @AppStorage(AppLanguage.storageKey, store: AppLanguage.defaults) private var appLanguageRaw = AppLanguage.system.rawValue
-    /// Cold launch with a computer to reach: the splash covers its connect and catch-up.
+    /// Cold launch with a computer to reach: the splash covers its connect and catch-up. Not over the sign-in
+    /// screen, where signed-out computers wait to move into the account.
     @State private var launching = !AppStore.shared.accounts.computers.isEmpty
+        && (AppStore.shared.accounts.accountId != nil || !AppStore.shared.account.isConfigured)
     init() {
         // A tapped widget bot arrives as an intent, not a URL.
         OpenBotIntent.open = { AppStore.shared.open($0) }
@@ -132,6 +134,8 @@ final class AppStore {
     var showUsage = false
     /// The computer whose marketplace is open.
     var marketplace: ComputerID?
+    /// While an account is being left: its stores stay open until its computers have been told.
+    var leaving = false
 
     private init() {
         let session = AccountSession()
@@ -148,6 +152,7 @@ final class AppStore {
         }
         CrashReports.shared.start()
         contextID = storage.id
+        Self.adoptSignedOutPairings(into: storage)
         // Accounts Clerk hasn't restored by launch keep their computers' push on.
         SharedStore.Context.splitPushSwitch(from: .standard,
                                             into: Set([nil, storage.accountID] + session.accounts.map(\.id)).map { SharedStore.Context(accountID: $0) })
@@ -163,10 +168,11 @@ final class AppStore {
 
     func switchAccount(to userID: String?) {
         let storage = SharedStore.Context(accountID: userID)
-        guard storage.id != contextID else { return }
+        guard storage.id != contextID, !leaving else { return }
         accounts.retire()
         PushRegistrar.shared.deactivate()
         LiveActivities.shared.endAll()
+        Self.adoptSignedOutPairings(into: storage)
         SharedStore.activeAccountID = userID
         storage.bots = []
         contextID = storage.id
@@ -178,22 +184,12 @@ final class AppStore {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    /// Signing out forgets this account on this iPhone: its device keys, computers and caches (spec §3.2).
-    func signOut() async {
-        guard let userID = account.userID else { return }
-        // Sent first so it still counts toward the account.
-        Analytics.shared.capture(.signedOut)
-        await account.signOut()
-        guard account.userID != userID, !account.accounts.contains(where: { $0.id == userID }) else { return }
-        // Retire its stores first: a retiring store saves its cache one last time.
-        switchAccount(to: account.userID)
-        SharedStore.Context(accountID: userID).erase()
-    }
-
     /// Settings → Start over: signs out of every account and forgets every computer, key and cache
     /// on this iPhone, then shows the welcome again. The computers keep their bots and chats.
     func startOver() async {
         let userIDs = account.accounts.map(\.id)
+        // The open account's computers and cloud drop this iPhone, as signing out does; its keys go regardless.
+        await handBack(cloud: cloud)
         await account.signOutAll()
         accounts.retire()
         PushRegistrar.shared.deactivate()

@@ -95,7 +95,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, computers, accounts)
-                        LaunchLayer(state.loading, state.computers.all { computers[it.id]?.widgetBotsCurrent == true }) } }
+                        // Held while sign-in restores too: signed out, the app is only the welcome.
+                        LaunchLayer(state.loading || state.account.restoring,
+                            state.computers.all { computers[it.id]?.widgetBotsCurrent == true }) } }
                 }
             }
         }
@@ -155,11 +157,13 @@ internal object AccountImages {
     @Synchronized fun open(context: android.content.Context, id: String): ImageLoader {
         retire()
         val images = ImageLoader.Builder(context).diskCache {
-            DiskCache.Builder().directory(File(context.cacheDir, "codync-images-$id").toOkioPath()).maxSizeBytes(64L * 1024 * 1024).build()
+            DiskCache.Builder().directory(cacheDir(context, id).toOkioPath()).maxSizeBytes(64L * 1024 * 1024).build()
         }.build()
         current = images
         return images
     }
     @Synchronized fun close(images: ImageLoader) { images.shutdown(); if (current === images) current = null }
     @Synchronized fun retire() { current?.shutdown(); current = null }
+    /** Where a context's images are cached ([referenceId]: `LocalStore.referenceId`). */
+    fun cacheDir(context: android.content.Context, referenceId: String) = File(context.cacheDir, "codync-images-$referenceId")
 }

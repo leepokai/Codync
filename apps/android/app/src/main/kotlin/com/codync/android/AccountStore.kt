@@ -57,14 +57,14 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             NativeAccounts.observe(viewModelScope) { account ->
                 mutableState.update { it.copy(account = account) }
                 if (account.ready) transitions.withLock {
-                    // Read the latest state after a concurrent logout/reset finishes.
-                    val current = state.value.account
-                    val desired = current.userId ?: "local"
-                    if (desired != local.contextId) {
+                    // Clerk's account now, not this (maybe older) update: a sign-out or deletion that held the lock
+                    // already left that account, and loading it again would bring its data back.
+                    val userId = NativeAccounts.activeUserId()
+                    if ((userId ?: "local") != local.contextId) {
                         retireContext()
-                        loadContext(current.userId)
-                    } else if (cloud == null && current.userId != null) {
-                        configureCloud(current.userId)
+                        loadContext(userId)
+                    } else if (cloud == null && userId != null) {
+                        configureCloud(userId)
                         refreshCloud()
                     }
                 }
@@ -78,6 +78,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
         try {
             WidgetRefreshWorker.stop(getApplication())
             local = LocalStore(getApplication(), userId ?: "local")
+            if (userId != null) adoptSignedOut()
             widgetOwner = withContext(Dispatchers.IO) { WidgetStore.activate(getApplication(), local.contextId) }
             PushDelivery.activate(getApplication(), userId)
             val computers = withContext(Dispatchers.IO) { local.computers() }
@@ -86,7 +87,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             val lead = withContext(Dispatchers.IO) { local.shortcutLead() }
             mutableState.update { AccountContext(contextId = local.referenceId, generation = it.generation + 1, account = it.account,
                 computers = computers, lastComputerId = last, shortcutLeadComputer = lead, tasks = PushPreferences.tasks(getApplication()),
-                setupComplete = complete || computers.isNotEmpty() || userId != null) }
+                setupComplete = complete || computers.isNotEmpty()) }
             // A computer that can't open (damaged drafts) is reported; the others, the cloud and the widgets go on.
             for (computer in computers) try { open(computer) }
                 catch (error: CancellationException) { throw error }
@@ -100,6 +101,21 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             refreshCloud()
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) { showError(error) }
+    }
+
+    /**
+     * Sign-in is required: the signed-out context's pairings move into this account (`LocalStore.adopt`), with their
+     * device keys when the account is new on this phone. A failure leaves them where they are; the account still opens.
+     */
+    private suspend fun adoptSignedOut() {
+        try {
+            val adopted = withContext(Dispatchers.IO) {
+                val signedOut = LocalStore(getApplication(), "local")
+                local.adopt(signedOut)?.also { AccountImages.cacheDir(getApplication(), signedOut.referenceId).deleteRecursively() }
+            } ?: return
+            if (adopted.computers > 0) Analytics.capture(AnalyticsEvent.SignedOutPairingsMoved(adopted.computers, adopted.keys))
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) { android.util.Log.w("Codync", "Couldn't move the signed-out pairings", error) }
     }
 
     private suspend fun configureCloud(userId: String) {

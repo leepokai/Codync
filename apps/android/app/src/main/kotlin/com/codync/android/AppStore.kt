@@ -116,6 +116,19 @@ class AppStore internal constructor(
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
     }
 
+    /**
+     * Leaving the account: the computer drops this device (`forgetDevice`; one older than that only stops its alerts).
+     * Best effort, three seconds at most: the key is erased right after, so a row left behind can't be used.
+     */
+    internal suspend fun forgetDevice() {
+        val ready = channel?.takeIf { it.state.value is LinkState.Ready } ?: return
+        withTimeoutOrNull(3_000) {
+            for (method in listOf("forgetDevice", "unregisterDevice")) try { ready.call(method); return@withTimeoutOrNull }
+                catch (error: CancellationException) { throw error }
+                catch (_: Exception) { }
+        }
+    }
+
     /** Saves the computer's latest copy (`changeComputer`), then shows it. */
     internal suspend fun save(computer: Computer) {
         saveComputer(computer)

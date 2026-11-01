@@ -778,7 +778,6 @@
   "Couldn't sign out. Check your connection and try again.": "No se pudo cerrar sesión. Comprueba tu conexión y vuelve a intentarlo.",
   "Couldn't switch accounts. Check your connection or sign in again.": "No se pudo cambiar de cuenta. Comprueba tu conexión o inicia sesión otra vez.",
   "Couldn't finish signing in. Please try again.": "No se pudo completar el inicio de sesión. Vuelve a intentarlo.",
-  "Sign-in setup isn't finished yet. You can continue using local pairing.": "La configuración del inicio de sesión no está terminada. Puedes seguir usando la vinculación local.",
   "Apple sign-in needs additional verification. Your account is not signed in yet.": "El inicio de sesión con Apple requiere verificación adicional. Tu cuenta aún no ha iniciado sesión.",
   "Google sign-in needs additional verification. Your account is not signed in yet.": "El inicio de sesión con Google requiere verificación adicional. Tu cuenta aún no ha iniciado sesión.",
   "Apple sign-up needs additional account information. Your account is not signed in yet.": "El registro con Apple requiere información adicional de la cuenta. Tu cuenta aún no ha iniciado sesión.",
@@ -1499,5 +1498,16 @@
   "Couldn't install codync-host on {name}.": "No se pudo instalar codync-host en {name}.",
   "codync-host isn't installed on {name}.": "codync-host no está instalado en {name}.",
   "To keep codync-host running on {name} after you log out, run this there:": "Para que codync-host siga funcionando en {name} cuando cierres la sesión, ejecuta esto allí:",
-  "Copy command": "Copiar comando"
+  "Copy command": "Copiar comando",
+  "Delete account": "Eliminar cuenta",
+  "Delete your Codync account?": "¿Eliminar tu cuenta de Codync?",
+  "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.": "Se eliminan tu cuenta, su lista de ordenadores y el acceso de cada dispositivo a través de ella. Tus ordenadores conservan sus bots y chats. No se puede deshacer.",
+  "Couldn't delete your account. Check your connection and try again.": "No se pudo eliminar tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
+  "Sign in to keep using your computer. It moves into your account, so you won't need to scan again.": "Inicia sesión para seguir usando tu ordenador. Pasa a tu cuenta, así que no tendrás que volver a escanear.",
+  "Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.": "Inicia sesión para seguir usando tus {count} ordenadores. Pasan a tu cuenta, así que no tendrás que volver a escanear.",
+  "This computer is in {name}'s account": "Este ordenador está en la cuenta de {name}",
+  "This computer is in another account": "Este ordenador está en otra cuenta",
+  "This computer isn't in an account: its cloud is off": "Este ordenador no está en ninguna cuenta: su nube está desactivada",
+  "This computer isn't in an account: it uses a private relay": "Este ordenador no está en ninguna cuenta: usa un relé privado",
+  "This computer isn't in your account": "Este ordenador no está en tu cuenta"
 }

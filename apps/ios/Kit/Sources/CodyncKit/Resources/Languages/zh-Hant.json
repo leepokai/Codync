@@ -778,7 +778,6 @@
   "Couldn't sign out. Check your connection and try again.": "退出失敗。檢查網路後再試一次。",
   "Couldn't switch accounts. Check your connection or sign in again.": "切換賬戶失敗。檢查網路，或重新登入。",
   "Couldn't finish signing in. Please try again.": "登入沒有完成。請再試一次。",
-  "Sign-in setup isn't finished yet. You can continue using local pairing.": "登入還沒配置好。你可以繼續用本機配對。",
   "Apple sign-in needs additional verification. Your account is not signed in yet.": "Apple 登入還需要額外驗證。賬戶還沒有登入。",
   "Google sign-in needs additional verification. Your account is not signed in yet.": "Google 登入還需要額外驗證。賬戶還沒有登入。",
   "Apple sign-up needs additional account information. Your account is not signed in yet.": "Apple 註冊還需要補充賬戶資訊。賬戶還沒有登入。",
@@ -1499,5 +1498,16 @@
   "Couldn't install codync-host on {name}.": "無法在 {name} 上安裝 codync-host。",
   "codync-host isn't installed on {name}.": "{name} 上還沒有安裝 codync-host。",
   "To keep codync-host running on {name} after you log out, run this there:": "要讓 codync-host 在你登出後繼續在 {name} 上執行，請在那裡執行：",
-  "Copy command": "複製命令"
+  "Copy command": "複製命令",
+  "Delete account": "刪除賬戶",
+  "Delete your Codync account?": "要刪除你的 Codync 賬戶嗎？",
+  "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.": "你的賬戶、賬戶裡的電腦清單，以及每台裝置透過賬戶取得的使用權都會刪除。電腦上的 bot 和對話會保留。無法撤銷。",
+  "Couldn't delete your account. Check your connection and try again.": "刪除賬戶失敗。檢查網路後再試一次。",
+  "Sign in to keep using your computer. It moves into your account, so you won't need to scan again.": "登入後就能繼續使用你的電腦。它會移進你的賬戶，不用再掃一次。",
+  "Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.": "登入後就能繼續使用你的 {count} 台電腦。它們會移進你的賬戶，不用再掃一次。",
+  "This computer is in {name}'s account": "這臺電腦在 {name} 的賬戶裡",
+  "This computer is in another account": "這臺電腦在另一個賬戶裡",
+  "This computer isn't in an account: its cloud is off": "這臺電腦不在任何賬戶裡：它的雲端已關閉",
+  "This computer isn't in an account: it uses a private relay": "這臺電腦不在任何賬戶裡：它用私人中繼",
+  "This computer isn't in your account": "這臺電腦不在你的賬戶裡"
 }

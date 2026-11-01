@@ -3,6 +3,7 @@ package com.codync.android
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.codync.android.core.Computer
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -11,10 +12,23 @@ import org.junit.Test
 class OnboardingTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun signedOutWithAccountsTheWelcomeOnlySignsInAndCountsTheWaitingComputers() {
+        compose.mainClock.autoAdvance = false
+        val signedOut = AccountContext(loading = false, account = AccountState(ready = true, configured = true),
+            computers = listOf(Computer("waiting-computer-000001", "Mac mini", "fixture-key"), Computer("waiting-computer-000002", "Linux", "fixture-key")))
+        compose.setContent { Hosted { CodyncApp(signedOut, emptyMap(), viewModel()) } }
+        step()
+        compose.onNodeWithText("Continue with Apple").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Continue with Google").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Sign in to keep using your 2 computers", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Get started").assertDoesNotExist()
+    }
+
     @Test fun welcomeLeadsToInstallAndBackReturnsToWelcome() {
         // The welcome crew never stops moving: step the clock by hand so the test can settle.
         compose.mainClock.autoAdvance = false
-        compose.setContent { Hosted { CodyncApp(AccountContext(loading = false), emptyMap(), viewModel()) } }
+        // Only builds without accounts pair signed out.
+        compose.setContent { Hosted { CodyncApp(AccountContext(loading = false, account = AccountState(ready = true, configured = false)), emptyMap(), viewModel()) } }
         step()
         compose.onNodeWithText("Your coding agents", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Get started").performClick()

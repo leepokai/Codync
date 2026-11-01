@@ -103,9 +103,11 @@ returning-user login, cancellation, restoration, account switching and sign-out
 on a real device before release. Build success and enabled dashboard settings do
 not prove that an Apple authorization completed successfully.
 
-QR pairing does not require matching email addresses or even a signed-in computer.
-The iPhone's scan step always offers **Skip**, including when signed out or when
-the account has no computers. Skipping finishes onboarding and opens the main
+Every build with Clerk requires sign-in on the phone and the desktop app
+([require sign-in](../plans/require-sign-in.md)); builds without Clerk keep the
+signed-out context. QR pairing does not yet require the phone and the computer to
+be in the same account (phase 2). The iPhone's scan step always offers **Skip**,
+including when the account has no computers. Skipping finishes onboarding and opens the main
 tabs; this choice survives relaunches and account changes. The empty Bots screen
 offers **Computers** to pair later. Skipping while adding a computer from settings
 only closes that pairing sheet. It does not grant access to a computer or change
@@ -190,10 +192,14 @@ single-session enabled, it asks the user to sign out before using another accoun
 Signing out passes the current session ID, rather than signing out all accounts.
 
 Computers, device keys and caches are partitioned by the Clerk user ID on this
-iPhone (`SharedStore.Context`). Computers paired with a code while signed out stay
-in the local context and are not claimed by a newly signed-in user. Each account
-context gets its own `AccountStore`, retired when changing accounts; signing out
-erases that account's computers, device and push keys and caches from the iPhone.
+iPhone (`SharedStore.Context`). Computers paired with a code while signed out
+(before sign-in was required) move into the first account used on the phone:
+with the device and push keys when that account's context is new on the phone,
+otherwise as computers to pair again. Each account context gets its own
+`AccountStore`, retired when changing accounts; once Clerk has signed out,
+signing out hands the device key back (`forgetDevice` on reachable computers,
+`DELETE /v1/devices/{id}` on a token taken before), then erases that account's
+computers, device and push keys and caches from the iPhone. **Delete account** deletes the Clerk user first, then does the same.
 Signed in, the Computers screen also lists the account's computers from the cloud;
 asking one for access shows the 6-digit code to compare on the computer.
 

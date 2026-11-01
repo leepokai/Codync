@@ -1,5 +1,5 @@
 import type { CloudStatus, ClaimSignature } from '@shared/models'
-import { mayAutoClaim, mayJoinAfterInstall, mayOfferMove, type ClaimCandidate } from '../lib/auto-claim'
+import { accountMismatch, mayAutoClaim, mayJoinAfterInstall, mayOfferMove, type AccountMismatch, type ClaimCandidate } from '../lib/auto-claim'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
 import { relayAddressToSave } from '../lib/relay-address'
@@ -225,6 +225,24 @@ export class CloudModel extends Observable {
     const store = this.app.local
     if (!user || !store || this.moving || !mayOfferMove(candidate(store), user, keptOut(user).get())) return null
     return { store, from: store.cloud?.owner?.email ?? null }
+  }
+
+  /** This computer and the account signed in here differ (`accountMismatch`): the sidebar's one line. */
+  get mismatch(): AccountMismatch | null {
+    const user = this.userId
+    const store = this.app.local
+    if (!user || !store || this.moving) return null
+    return accountMismatch(candidate(store), user, keptOut(user).get(), claimedIds(user).get())
+  }
+
+  /** The sidebar line: asks again whether to move this computer here, even after "Keep it there". */
+  reconsiderMove() {
+    const user = this.userId
+    const store = this.app.local
+    if (!user || !store) return
+    const out = keptOut(user)
+    out.set(out.get().filter((x) => x !== store.computer.id))
+    this.changed()
   }
 
   /** No to `moveOffer`: this computer stays in its account and isn't offered again (Remove, then Add to account, still moves it). */

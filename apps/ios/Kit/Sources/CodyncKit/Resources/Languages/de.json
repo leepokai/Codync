@@ -778,7 +778,6 @@
   "Couldn't sign out. Check your connection and try again.": "Abmeldung fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.",
   "Couldn't switch accounts. Check your connection or sign in again.": "Kontowechsel fehlgeschlagen. Prüfe deine Verbindung oder melde dich erneut an.",
   "Couldn't finish signing in. Please try again.": "Anmeldung konnte nicht abgeschlossen werden. Versuche es erneut.",
-  "Sign-in setup isn't finished yet. You can continue using local pairing.": "Die Anmeldung ist noch nicht fertig eingerichtet. Du kannst weiterhin lokale Kopplung verwenden.",
   "Apple sign-in needs additional verification. Your account is not signed in yet.": "Die Apple-Anmeldung benötigt eine zusätzliche Bestätigung. Dein Konto ist noch nicht angemeldet.",
   "Google sign-in needs additional verification. Your account is not signed in yet.": "Die Google-Anmeldung benötigt eine zusätzliche Bestätigung. Dein Konto ist noch nicht angemeldet.",
   "Apple sign-up needs additional account information. Your account is not signed in yet.": "Die Apple-Registrierung benötigt zusätzliche Kontodaten. Dein Konto ist noch nicht angemeldet.",
@@ -1499,5 +1498,16 @@
   "Couldn't install codync-host on {name}.": "codync-host konnte nicht auf {name} installiert werden.",
   "codync-host isn't installed on {name}.": "codync-host ist auf {name} nicht installiert.",
   "To keep codync-host running on {name} after you log out, run this there:": "Damit codync-host auf {name} weiterläuft, wenn du dich abmeldest, führe dort Folgendes aus:",
-  "Copy command": "Befehl kopieren"
+  "Copy command": "Befehl kopieren",
+  "Delete account": "Konto löschen",
+  "Delete your Codync account?": "Dein Codync-Konto löschen?",
+  "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.": "Dein Konto, seine Computerliste und der Zugriff jedes Geräts darüber werden gelöscht. Deine Computer behalten ihre Bots und Chats. Das lässt sich nicht rückgängig machen.",
+  "Couldn't delete your account. Check your connection and try again.": "Konto konnte nicht gelöscht werden. Prüfe deine Verbindung und versuche es erneut.",
+  "Sign in to keep using your computer. It moves into your account, so you won't need to scan again.": "Melde dich an, um deinen Computer weiter zu nutzen. Er wandert in dein Konto, du musst nicht erneut scannen.",
+  "Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.": "Melde dich an, um deine {count} Computer weiter zu nutzen. Sie wandern in dein Konto, du musst nicht erneut scannen.",
+  "This computer is in {name}'s account": "Dieser Computer ist im Konto von {name}",
+  "This computer is in another account": "Dieser Computer ist in einem anderen Konto",
+  "This computer isn't in an account: its cloud is off": "Dieser Computer ist in keinem Konto: seine Cloud ist aus",
+  "This computer isn't in an account: it uses a private relay": "Dieser Computer ist in keinem Konto: er nutzt ein privates Relay",
+  "This computer isn't in your account": "Dieser Computer ist nicht in deinem Konto"
 }

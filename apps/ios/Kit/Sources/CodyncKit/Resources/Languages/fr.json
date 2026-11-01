@@ -778,7 +778,6 @@
   "Couldn't sign out. Check your connection and try again.": "Déconnexion impossible. Vérifiez votre connexion réseau et réessayez.",
   "Couldn't switch accounts. Check your connection or sign in again.": "Impossible de changer de compte. Vérifiez la connexion ou reconnectez-vous.",
   "Couldn't finish signing in. Please try again.": "Impossible de terminer la connexion. Réessayez.",
-  "Sign-in setup isn't finished yet. You can continue using local pairing.": "La configuration de la connexion n’est pas terminée. Vous pouvez continuer avec l’association locale.",
   "Apple sign-in needs additional verification. Your account is not signed in yet.": "La connexion Apple nécessite une vérification supplémentaire. Votre compte n’est pas encore connecté.",
   "Google sign-in needs additional verification. Your account is not signed in yet.": "La connexion Google nécessite une vérification supplémentaire. Votre compte n’est pas encore connecté.",
   "Apple sign-up needs additional account information. Your account is not signed in yet.": "L’inscription Apple nécessite des informations supplémentaires. Votre compte n’est pas encore connecté.",
@@ -1499,5 +1498,16 @@
   "Couldn't install codync-host on {name}.": "Impossible d’installer codync-host sur {name}.",
   "codync-host isn't installed on {name}.": "codync-host n’est pas installé sur {name}.",
   "To keep codync-host running on {name} after you log out, run this there:": "Pour que codync-host continue de tourner sur {name} après votre déconnexion, exécutez ceci là-bas :",
-  "Copy command": "Copier la commande"
+  "Copy command": "Copier la commande",
+  "Delete account": "Supprimer le compte",
+  "Delete your Codync account?": "Supprimer votre compte Codync ?",
+  "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.": "Votre compte, sa liste d'ordinateurs et l'accès de chaque appareil qui en dépend sont supprimés. Vos ordinateurs gardent leurs bots et leurs conversations. Action irréversible.",
+  "Couldn't delete your account. Check your connection and try again.": "Suppression du compte impossible. Vérifiez votre connexion réseau et réessayez.",
+  "Sign in to keep using your computer. It moves into your account, so you won't need to scan again.": "Connectez-vous pour continuer à utiliser votre ordinateur. Il rejoint votre compte : inutile de scanner à nouveau.",
+  "Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.": "Connectez-vous pour continuer à utiliser vos {count} ordinateurs. Ils rejoignent votre compte : inutile de scanner à nouveau.",
+  "This computer is in {name}'s account": "Cet ordinateur est dans le compte de {name}",
+  "This computer is in another account": "Cet ordinateur est dans un autre compte",
+  "This computer isn't in an account: its cloud is off": "Cet ordinateur n'est dans aucun compte : son cloud est désactivé",
+  "This computer isn't in an account: it uses a private relay": "Cet ordinateur n'est dans aucun compte : il utilise un relais privé",
+  "This computer isn't in your account": "Cet ordinateur n'est pas dans votre compte"
 }

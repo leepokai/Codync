@@ -21,7 +21,7 @@ private func urls(_ text: String) -> [String] { Autolink.find(text).map(\.url.ab
 }
 
 /// A reply's bare address becomes a link; one in a code span or already a link stays as it was.
-@Test func repliesLinkBareAddressesOutsideCodeAndLinks() {
+@MainActor @Test func repliesLinkBareAddressesOutsideCodeAndLinks() {
     let text = MarkdownText.inline("see https://a.com, `https://b.com` and [docs](https://c.com/x)")
     let links = text.runs.compactMap { run in run.link.map { ($0.absoluteString, String(text[run.range].characters)) } }
     #expect(links.map(\.0) == ["https://a.com", "https://c.com/x"])

@@ -70,6 +70,9 @@ pub async fn run(hub: Arc<Hub>) {
             if address.is_none() {
                 s.owner = None;
                 s.last_error = None;
+            } else if s.owner.is_none() {
+                // Until the cloud answers (or while it can't be reached), the account last seen.
+                s.owner = super::owner::owner(&hub.store);
             }
         });
         let restart = if let Some(address) = address {

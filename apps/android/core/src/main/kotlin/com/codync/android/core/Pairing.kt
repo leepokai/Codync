@@ -21,6 +21,15 @@ data class Pairing(val computer: Computer, val code: String) {
     fun checkCode(identity: DeviceIdentity): String = RelayCrypto.pairCheck(identity.deviceKey, computer.signKey.decodeBase64Url(32))
 
     companion object {
+        private val SHORT_CODE = Regex("([A-Za-z]{4})[- ]?([0-9]{4})")
+
+        /**
+         * A short code `codync-host pair` prints (`QRTX-4821`: 4 letters, an optional dash or space, 4 digits) as the cloud
+         * takes it, or null for anything else (iOS `Pairing.shortCode`). The cloud resolves it to the pairing link.
+         */
+        fun shortCode(text: String): String? =
+            SHORT_CODE.matchEntire(text.trim())?.destructured?.let { (letters, digits) -> "${letters.uppercase()}-$digits" }
+
         fun parse(text: String, scheme: String): Pairing {
             if (text.length > 16 * 1024) throw PairingProblem(PairingProblem.Kind.Invalid)
             val url = try { URI(text.trim()) } catch (error: Exception) {

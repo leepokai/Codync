@@ -529,6 +529,18 @@ export interface AccessRequest {
   expiresAt?: number | null
 }
 
+/** A signed-in phone that scanned a computer in no account, waiting to be let in (loopback `pairingRequests`). */
+export interface PairingRequest {
+  requestId: string
+  deviceName: string
+  platform?: string | null
+  /** The phone's account, which the computer joins. */
+  email?: string | null
+  /** The 6 digits the phone shows too. */
+  code: string
+  expiresAt?: number | null
+}
+
 /** A device the host authorized (loopback `devices`). */
 export interface AuthorizedDevice {
   key: string

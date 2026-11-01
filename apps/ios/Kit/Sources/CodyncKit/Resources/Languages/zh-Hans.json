@@ -1481,5 +1481,18 @@
   "Keep it there": "留在原处",
   "Move here": "移到这里",
   "If the computer asks, check it shows {code}.": "如果电脑问你，确认它显示 {code}。",
-  "Connect to the internet to pair, so Codync can confirm your account.": "请连上网络再配对，Codync 才能确认你的账户。"
+  "Connect to the internet to pair, so Codync can confirm your account.": "请连上网络再配对，Codync 才能确认你的账户。",
+  "Let {name} in?": "要让 {name} 进入吗？",
+  "{email} wants to use this computer, which then joins {email}'s account. Check {name} shows {code}.": "{email} 想使用这台电脑，之后这台电脑会加入 {email} 的账户。请确认 {name} 显示 {code}。",
+  "Let in": "允许进入",
+  "Don't allow": "不允许",
+  "A Codync account": "一个 Codync 账户",
+  "Every device of {email}'s account loses access.": "{email} 账户的所有设备都会失去访问。",
+  "Every device of that account loses access.": "该账户的所有设备都会失去访问。",
+  "Access comes back only when you add {name} to the account again on {name} itself.": "只有在 {name} 本机上将 {name} 重新加入账户，访问才会恢复。",
+  "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name} 想使用这台电脑。这台电脑会加入 {email} 的账户。请确认手机显示 {code}。",
+  "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "不在任何账户中：已登录的手机扫描这个码时，会请求把这台电脑加入它的账户。",
+  "Paste a pairing link, or type the code from the computer": "粘贴配对链接，或输入电脑上的代码",
+  "That code isn't valid. Check it on the computer.": "代码无效，请在电脑上核对。",
+  "That code expired or was used. Show a new one on the computer.": "代码已过期或已被使用，请在电脑上显示新的代码。"
 }

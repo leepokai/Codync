@@ -1481,5 +1481,18 @@
   "Keep it there": "Dejarla ahí",
   "Move here": "Mover aquí",
   "If the computer asks, check it shows {code}.": "Si el ordenador lo pregunta, comprueba que muestra {code}.",
-  "Connect to the internet to pair, so Codync can confirm your account.": "Conéctate a internet para vincular, así Codync puede confirmar tu cuenta."
+  "Connect to the internet to pair, so Codync can confirm your account.": "Conéctate a internet para vincular, así Codync puede confirmar tu cuenta.",
+  "Let {name} in?": "¿Dejar entrar a {name}?",
+  "{email} wants to use this computer, which then joins {email}'s account. Check {name} shows {code}.": "{email} quiere usar esta computadora, que luego se une a la cuenta de {email}. Comprueba que {name} muestra {code}.",
+  "Let in": "Dejar entrar",
+  "Don't allow": "No permitir",
+  "A Codync account": "Una cuenta de Codync",
+  "Every device of {email}'s account loses access.": "Todos los dispositivos de la cuenta de {email} pierden el acceso.",
+  "Every device of that account loses access.": "Todos los dispositivos de esa cuenta pierden el acceso.",
+  "Access comes back only when you add {name} to the account again on {name} itself.": "El acceso solo vuelve cuando añades {name} a la cuenta de nuevo desde {name}.",
+  "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name} quiere usar esta computadora. Se une a la cuenta de {email}. Comprueba que el teléfono muestra {code}.",
+  "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "Sin cuenta: un teléfono con sesión iniciada que escanee esto pedirá añadir la computadora a su cuenta.",
+  "Paste a pairing link, or type the code from the computer": "Pega un enlace de emparejamiento o escribe el código de la computadora",
+  "That code isn't valid. Check it on the computer.": "Ese código no es válido. Revísalo en la computadora.",
+  "That code expired or was used. Show a new one on the computer.": "Ese código caducó o ya se usó. Muestra uno nuevo en la computadora."
 }

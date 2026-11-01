@@ -235,7 +235,7 @@ private struct ScanPage: View {
                 viewfinder
 
                 HStack {
-                    TextField(L10n.tr("Or paste a {scheme}://pair link").replacingOccurrences(of: "{scheme}", with: AppEnvironment.current.urlScheme), text: $pasted)
+                    TextField(L10n.tr("Paste a pairing link, or type the code from the computer"), text: $pasted)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())
@@ -338,18 +338,14 @@ private struct ScanPage: View {
     }
 
     private func pair(_ text: String) {
-        let p: Pairing
-        do {
-            p = try app.pairing(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
-        } catch {
-            show(error)
-            return
-        }
+        // A short code works once: Return pressed again while it resolves mustn't spend it twice.
+        guard !pairing else { return }
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { error = nil }
         pairing = true
         Task {
             defer { pairing = false }
             do {
+                let p = try await app.pairing(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
                 _ = try await app.pair(p, via: .qr)
                 pasted = ""
                 paired()

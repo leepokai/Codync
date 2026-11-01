@@ -167,6 +167,15 @@ public struct CloudClient: Sendable {
         let _: Ignored = try await request("POST", "v1/claims/\(claimId)/complete", json: claim, signed: false)
     }
 
+    // MARK: pairing codes
+
+    /// The pairing link a short code (`Pairing.shortCode`) stands for. The cloud hands it out once.
+    public func pairingLink(code: String) async throws -> String {
+        struct Res: Decodable { var link: String }
+        let res: Res = try await request("GET", "v1/pairing-codes/\(code)")
+        return res.link
+    }
+
     // MARK: plumbing
 
     private struct NoBody: Encodable {}

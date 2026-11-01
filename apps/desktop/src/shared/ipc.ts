@@ -255,6 +255,8 @@ export interface CodyncBridge {
     pickExport(): Promise<string | null>
     readClipboardFiles(): Promise<PickedFile[]>
     setTraySummary(summary: TraySummary): void
+    /** Brings the chat window forward (a phone waits for this computer to let it in). */
+    showWindow(): void
     onCommand(cb: (command: WindowCommand) => void): () => void
     resetAllData(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<boolean>

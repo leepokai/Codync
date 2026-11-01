@@ -1,6 +1,6 @@
 import { trackBody } from '@shared/analytics'
 import type { HostSnapshot, LocalHost } from '@shared/ipc'
-import type { AccessRequest, Bot, Computer } from '@shared/models'
+import type { AccessRequest, Bot, Computer, PairingRequest } from '@shared/models'
 import { HostError, LoopbackTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
 import { account } from './account'
@@ -35,6 +35,13 @@ export interface Approval {
   id: string
   store: BotStore
   request: AccessRequest
+}
+
+/** A signed-in phone asking a computer this app manages, in no account, to let it in and join its account. */
+export interface PairingAsk {
+  id: string
+  store: BotStore
+  request: PairingRequest
 }
 
 /**
@@ -224,6 +231,17 @@ export class AppModel extends Observable {
   async decide(a: Approval, approve: boolean) {
     const client = await a.store.ready()
     await client.call('decideAccessRequest', { requestId: a.request.requestId, approve }, 30_000)
+  }
+
+  get pairingAsks(): PairingAsk[] {
+    return this.managedStores.flatMap((store) =>
+      store.pairingRequests.map((request) => ({ id: `${store.computer.id}/${request.requestId}`, store, request })),
+    )
+  }
+
+  async decidePairing(ask: PairingAsk, approve: boolean) {
+    const client = await ask.store.ready()
+    await client.call('decidePairing', { requestId: ask.request.requestId, approve }, 30_000)
   }
 
   get needsAttention() {

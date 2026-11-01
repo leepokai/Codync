@@ -1481,5 +1481,18 @@
   "Keep it there": "留在原處",
   "Move here": "移到這裡",
   "If the computer asks, check it shows {code}.": "如果電腦問你，確認它顯示 {code}。",
-  "Connect to the internet to pair, so Codync can confirm your account.": "請連上網路再配對，Codync 才能確認你的賬戶。"
+  "Connect to the internet to pair, so Codync can confirm your account.": "請連上網路再配對，Codync 才能確認你的賬戶。",
+  "Let {name} in?": "要讓 {name} 進入嗎？",
+  "{email} wants to use this computer, which then joins {email}'s account. Check {name} shows {code}.": "{email} 想使用這臺電腦，之後這臺電腦會加入 {email} 的賬戶。請確認 {name} 顯示 {code}。",
+  "Let in": "允許進入",
+  "Don't allow": "不允許",
+  "A Codync account": "一個 Codync 賬戶",
+  "Every device of {email}'s account loses access.": "{email} 賬戶的所有裝置都會失去訪問。",
+  "Every device of that account loses access.": "該賬戶的所有裝置都會失去訪問。",
+  "Access comes back only when you add {name} to the account again on {name} itself.": "只有在 {name} 本機上將 {name} 重新加入賬戶，訪問才會恢復。",
+  "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name} 想使用這臺電腦。這臺電腦會加入 {email} 的賬戶。請確認手機顯示 {code}。",
+  "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "不在任何賬戶中：已登入的手機掃描這個碼時，會請求把這臺電腦加入它的賬戶。",
+  "Paste a pairing link, or type the code from the computer": "貼上配對連結，或輸入電腦上的代碼",
+  "That code isn't valid. Check it on the computer.": "代碼無效，請到電腦上確認。",
+  "That code expired or was used. Show a new one on the computer.": "代碼已過期或已使用過，請在電腦上顯示新的代碼。"
 }

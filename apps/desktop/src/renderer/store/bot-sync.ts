@@ -1,4 +1,4 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry } from '@shared/models'
+import { isChat, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
@@ -152,6 +152,9 @@ export class BotSync extends BotMirror {
             this.accessRequests = (await client.call<{ requests: AccessRequest[] }>('accessRequests')).requests
           } catch {}
           try {
+            this.pairingRequests = (await client.call<{ requests: PairingRequest[] }>('pairingRequests')).requests
+          } catch {}
+          try {
             this.cloud = await client.call<CloudStatus>('cloudStatus')
           } catch {}
           this.changed()
@@ -267,6 +270,9 @@ export class BotSync extends BotMirror {
         break
       case 'accessRequests':
         this.accessRequests = event.requests
+        break
+      case 'pairingRequests':
+        this.pairingRequests = event.requests
         break
       case 'cloud':
         this.cloud = event.cloud

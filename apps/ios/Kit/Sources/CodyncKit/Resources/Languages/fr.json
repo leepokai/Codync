@@ -1481,5 +1481,18 @@
   "Keep it there": "Le laisser là",
   "Move here": "Déplacer ici",
   "If the computer asks, check it shows {code}.": "Si l'ordinateur le demande, vérifiez qu'il affiche {code}.",
-  "Connect to the internet to pair, so Codync can confirm your account.": "Connectez-vous à Internet pour appairer, afin que Codync confirme votre compte."
+  "Connect to the internet to pair, so Codync can confirm your account.": "Connectez-vous à Internet pour appairer, afin que Codync confirme votre compte.",
+  "Let {name} in?": "Laisser entrer {name} ?",
+  "{email} wants to use this computer, which then joins {email}'s account. Check {name} shows {code}.": "{email} veut utiliser cet ordinateur, qui rejoint alors le compte de {email}. Vérifiez que {name} affiche {code}.",
+  "Let in": "Laisser entrer",
+  "Don't allow": "Ne pas autoriser",
+  "A Codync account": "Un compte Codync",
+  "Every device of {email}'s account loses access.": "Tous les appareils du compte de {email} perdent l’accès.",
+  "Every device of that account loses access.": "Tous les appareils de ce compte perdent l’accès.",
+  "Access comes back only when you add {name} to the account again on {name} itself.": "L’accès ne revient que si vous ajoutez de nouveau {name} au compte depuis {name} lui-même.",
+  "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name} veut utiliser cet ordinateur. Il rejoint le compte de {email}. Vérifiez que le téléphone affiche {code}.",
+  "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "Dans aucun compte : un téléphone connecté qui scanne ceci demande à ajouter l’ordinateur à son compte.",
+  "Paste a pairing link, or type the code from the computer": "Collez un lien d'appairage ou saisissez le code affiché sur l'ordinateur",
+  "That code isn't valid. Check it on the computer.": "Ce code n'est pas valide. Vérifiez-le sur l'ordinateur.",
+  "That code expired or was used. Show a new one on the computer.": "Ce code a expiré ou a déjà été utilisé. Affichez-en un nouveau sur l'ordinateur."
 }

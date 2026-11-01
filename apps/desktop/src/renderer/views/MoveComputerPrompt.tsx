@@ -1,4 +1,5 @@
 import { Dialog } from '../components/Overlay'
+import { devicesLoseAccess } from '../lib/account-copy'
 import { useModel } from '../lib/observable'
 import { useTr } from '../lib/use-language'
 import { useAccount } from '../store/account'
@@ -17,7 +18,7 @@ export function MoveComputerPrompt() {
     <Dialog
       open={offer !== null}
       title={tr('Move this computer to your account?')}
-      message={`${where} ${tr('Devices that were approved through the account lose access. Devices paired with a QR code keep it.')} ${tr('New devices ask for access with a 6-digit code.')}`}
+      message={`${where} ${devicesLoseAccess(tr, offer?.from)} ${tr('New devices ask for access with a 6-digit code.')}`}
       // A choice either way: "keep it there" is remembered, so it isn't a dismissal.
       cancel={null}
       actions={offer ? [

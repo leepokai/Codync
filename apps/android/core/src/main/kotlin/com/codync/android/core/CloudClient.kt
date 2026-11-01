@@ -99,6 +99,10 @@ class CloudClient private constructor(base: String, private val identity: Device
         request("POST", listOf("v1", "claims", claimId, "complete"), signed)
     }
 
+    /** The pairing link a short code ([Pairing.shortCode]) stands for. The cloud hands it out once. */
+    suspend fun pairingLink(code: String): String =
+        requireNotNull(request("GET", listOf("v1", "pairing-codes", code)).text("link")) { "Invalid pairing code response" }
+
     suspend fun computers(): List<CloudComputer> {
         val result = request("GET", listOf("v1", "computers"), signed = true)
         return json.decodeFromJsonElement(result.getValue("computers"))

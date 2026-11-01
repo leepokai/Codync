@@ -1481,5 +1481,18 @@
   "Keep it there": "そのままにする",
   "Move here": "ここに移動",
   "If the computer asks, check it shows {code}.": "コンピュータに確認を求められたら、{code} と表示されているか確かめてください。",
-  "Connect to the internet to pair, so Codync can confirm your account.": "ペアリングするにはインターネットに接続してください。Codync がアカウントを確認します。"
+  "Connect to the internet to pair, so Codync can confirm your account.": "ペアリングするにはインターネットに接続してください。Codync がアカウントを確認します。",
+  "Let {name} in?": "{name} を許可しますか？",
+  "{email} wants to use this computer, which then joins {email}'s account. Check {name} shows {code}.": "{email} がこのコンピュータを使おうとしています。許可すると、このコンピュータは {email} のアカウントに加わります。{name} に {code} と表示されているか確かめてください。",
+  "Let in": "許可",
+  "Don't allow": "許可しない",
+  "A Codync account": "Codync アカウント",
+  "Every device of {email}'s account loses access.": "{email} のアカウントのすべてのデバイスがアクセスできなくなります。",
+  "Every device of that account loses access.": "そのアカウントのすべてのデバイスがアクセスできなくなります。",
+  "Access comes back only when you add {name} to the account again on {name} itself.": "{name} 自体で {name} を再びアカウントに追加したときだけ、アクセスが戻ります。",
+  "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name} がこのコンピュータを使おうとしています。このコンピュータは {email} のアカウントに加わります。スマートフォンに {code} と表示されているか確かめてください。",
+  "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "アカウントに入っていません：サインイン済みのスマートフォンがこれをスキャンすると、このコンピュータをそのアカウントに加えるよう求めます。",
+  "Paste a pairing link, or type the code from the computer": "ペアリングリンクを貼り付けるか、コンピューターに表示されたコードを入力します",
+  "That code isn't valid. Check it on the computer.": "このコードは無効です。コンピューターで確認してください。",
+  "That code expired or was used. Show a new one on the computer.": "このコードは期限切れか、すでに使用されています。コンピューターで新しいコードを表示してください。"
 }

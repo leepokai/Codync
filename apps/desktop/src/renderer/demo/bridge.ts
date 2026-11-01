@@ -102,6 +102,7 @@ const bridge: CodyncBridge = {
     pickExport: async () => null,
     readClipboardFiles: async () => [],
     setTraySummary() {},
+    showWindow() {},
     onCommand: none,
     resetAllData: async () => {},
     setLaunchAtLogin: async () => false,

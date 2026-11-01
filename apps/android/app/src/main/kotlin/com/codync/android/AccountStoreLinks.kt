@@ -11,14 +11,18 @@ import kotlinx.coroutines.sync.withLock
 
 // Pairing and the links notifications, widgets and other apps open.
 
-/** Pairs with the computer in a `codync://pair` link: scanned or pasted ([PairedVia.Qr]) or opened from outside ([PairedVia.Link]). */
+/**
+ * Pairs with the computer in a `codync://pair` link: scanned or pasted ([PairedVia.Qr]) or opened from outside ([PairedVia.Link]).
+ * A short code typed from the computer ([Pairing.shortCode]) is turned into its link by the cloud first.
+ */
 internal fun AccountStore.pair(text: String, via: PairedVia) {
     if (pairingJob?.isActive == true) return
     pairingJob = contextScope.launch {
         state.first { !it.loading }
         mutableState.update { it.copy(pairing = true, error = null) }
         try {
-            val pairing = Pairing.parse(text, BuildConfig.URL_SCHEME)
+            val link = Pairing.shortCode(text)?.let { code -> (cloud ?: throw IOException(NO_PROOF)).pairingLink(code) } ?: text
+            val pairing = Pairing.parse(link, BuildConfig.URL_SCHEME)
             val old = state.value.computers.firstOrNull { it.id == pairing.computer.id }
             require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Start over before pairing again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
@@ -67,10 +71,12 @@ private suspend fun AccountStore.accountProof(): DeviceCertificate {
         null
     }
     val proof = fresh ?: cached?.takeIf { it.expiresAt > System.currentTimeMillis() }
-        ?: throw IOException("Connect to the internet to pair, so Codync can confirm your account.")
+        ?: throw IOException(NO_PROOF)
     deviceCertificate = proof
     return proof
 }
+
+private const val NO_PROOF = "Connect to the internet to pair, so Codync can confirm your account."
 
 /** [step] of joining the account, which pairing goes on without: a failure is only logged. */
 private suspend fun <T> bestEffort(what: String, step: suspend () -> T): T? = try { step() }

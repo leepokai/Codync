@@ -128,7 +128,7 @@ public final class AccountStore {
         return computer
     }
 
-    static let noCertificate = CloudError(status: 0, code: "noCertificate",
+    public static let noCertificate = CloudError(status: 0, code: "noCertificate",
                                           message: "Connect to the internet to pair, so Codync can confirm your account.")
 
     /// This device's certificate: the one held while more than a day is left, else a new one, registering

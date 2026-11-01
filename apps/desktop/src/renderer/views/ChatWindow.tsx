@@ -38,6 +38,7 @@ export { EmptyState } from './HostStateView'
 import { RefreshIndicator } from './RefreshIndicator'
 import { StarPrompt } from './StarPrompt'
 import { MoveComputerPrompt } from './MoveComputerPrompt'
+import { PairingRequestPrompt } from './PairingRequestPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
 import { DesktopActionMenu, type ActionItem } from './DesktopActionMenu'
@@ -165,6 +166,7 @@ export function ChatWindow() {
       <Sheet open={approval !== null} onClose={() => approval && app.deferApproval(approval)}>
         {approval ? <ApprovalSheet key={approval.id} approval={approval} /> : null}
       </Sheet>
+      <PairingRequestPrompt />
     </div>
   )
 }

@@ -40,6 +40,8 @@ async fn a_phone_of_another_account_is_refused_with_the_owner_masked() {
 #[tokio::test]
 async fn a_computer_in_no_account_asks_then_joins_the_phones() {
     let hub = unowned_hub();
+    // With the Codync cloud on there is an account to join, so the computer signs the phone's claim.
+    hub.store.kv_set("test_cloud_url", "https://dev-api.codync.dev").unwrap();
     for approve in [false, true] {
         let (mut p, code) = pairing_phone(&hub).await;
         let mut body = pair_body(&p, &code, "Pixel", "android", "user_2");
@@ -58,7 +60,6 @@ async fn a_computer_in_no_account_asks_then_joins_the_phones() {
         if approve {
             assert_eq!(reply["ok"]["computerId"], hub.identity.computer_id());
             assert_eq!(hub.store.device(&p.dk()).unwrap().account.as_deref(), Some("user_2"));
-            // Codync accounts are on by default here, so the computer signs the phone's claim.
             let claim = &reply["ok"]["claim"];
             assert_eq!(claim["computerId"], hub.identity.computer_id());
             let input =

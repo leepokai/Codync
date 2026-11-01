@@ -130,6 +130,11 @@ impl App {
             Overlay::Skill(s) => self.skill_key(s, k),
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
+            // A phone that scanned the code waits for this computer to let it in.
+            o @ Overlay::Pair(_) if matches!(k.code, KeyCode::Char('y' | 'n')) && !self.pairing_requests.is_empty() => {
+                self.decide_pairing(k.code == KeyCode::Char('y'));
+                Some(o)
+            }
             // A new code: after a failure, or in place of the one shown.
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
                 self.call("pairing", json!({}), After::Pairing);

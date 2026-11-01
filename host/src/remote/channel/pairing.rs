@@ -103,9 +103,10 @@ impl Channel {
         (close::PAIRED, "paired")
     }
 
-    /// The signed claim for `{claimId, nonce}`, or null without one or with no Codync accounts here.
+    /// The signed claim for `{claimId, nonce}`, or null without one, or with the Codync cloud off or a private
+    /// relay here (no account to join).
     async fn claim(&self, claim: &Value, user_id: &str) -> Value {
-        if claim.is_null() {
+        if claim.is_null() || crate::remote::cloud::codync_url(&self.hub).is_err() {
             return Value::Null;
         }
         let request = json!({"claimId": claim["claimId"], "nonce": claim["nonce"], "userId": user_id});

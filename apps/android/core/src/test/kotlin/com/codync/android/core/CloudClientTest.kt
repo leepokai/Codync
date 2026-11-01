@@ -60,6 +60,26 @@ class CloudClientTest {
         } finally { server.shutdown() }
     }
 
+    @Test fun `a pairing code is looked up unsigned and an unknown one fails with the cloud's message`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"link":"codync://pair?v=3"}"""))
+            server.enqueue(MockResponse().setResponseCode(404)
+                .setBody("""{"error":{"code":"notFound","message":"That code expired or was used. Show a new one on the computer."}}"""))
+            val client = CloudClient(server.url("/").toString(), identity, { "session" }, OkHttpClient(), 1, Unit)
+            assertEquals("codync://pair?v=3", client.pairingLink("QRTX-4821"))
+            val request = server.takeRequest()
+            assertEquals("GET", request.method)
+            assertEquals("/v1/pairing-codes/QRTX-4821", request.path)
+            assertEquals("Bearer session", request.getHeader("Authorization"))
+            assertNull(request.getHeader("Codync-Sig"))
+            val error = try { client.pairingLink("QRTX-4821"); error("Expected a used code") } catch (error: CloudError) { error }
+            assertEquals(404, error.status)
+            assertEquals("That code expired or was used. Show a new one on the computer.", error.message)
+        } finally { server.shutdown() }
+    }
+
     @Test fun `an error page that isn't JSON still fails with its status`() = runBlocking {
         val server = MockWebServer()
         server.start()

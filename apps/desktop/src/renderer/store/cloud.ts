@@ -235,8 +235,8 @@ export class CloudModel extends Observable {
   }
 
   /**
-   * Yes to `moveOffer`: out of the other account, then into this one. Devices that account approved lose
-   * access; out of an account the host turns the 6-digit check back on, so the new account's devices show
+   * Yes to `moveOffer`: out of the other account, then into this one. Every device of that account loses
+   * access, QR-paired ones included; out of an account the host turns the 6-digit check back on, so the new account's devices show
    * a code before getting in.
    */
   async moveHere(store: BotStore) {

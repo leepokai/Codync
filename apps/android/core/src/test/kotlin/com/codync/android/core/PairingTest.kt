@@ -16,6 +16,13 @@ class PairingTest {
     private fun link(fields: Map<String, String> = params): String = "codync://pair?" + fields.entries.joinToString("&") {
         "${it.key}=${URLEncoder.encode(it.value, "UTF-8")}" }
 
+    @Test fun `short pairing codes are recognized in any case and links are not codes`() {
+        for (typed in listOf("QRTX-4821", "qrtx4821", " Qrtx 4821\n", "QRTX4821")) assertEquals("QRTX-4821", Pairing.shortCode(typed))
+        for (other in listOf("QRT-4821", "QRTX-482", "QRTX--4821", "QRTX_4821", "1234-QRTX", "QRTXX4821", link(), "")) {
+            assertEquals(null, Pairing.shortCode(other))
+        }
+    }
+
     @Test fun `a valid pairing preserves pins direct candidates relay and name`() {
         val pairing = Pairing.parse(" ${link()} \n", "codync")
         assertEquals(params["id"], pairing.computer.id)

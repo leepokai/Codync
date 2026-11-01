@@ -1481,5 +1481,18 @@
   "Keep it there": "그대로 두기",
   "Move here": "여기로 옮기기",
   "If the computer asks, check it shows {code}.": "컴퓨터가 물으면 {code}가 표시되는지 확인하세요.",
-  "Connect to the internet to pair, so Codync can confirm your account.": "페어링하려면 인터넷에 연결하세요. Codync가 계정을 확인해야 합니다."
+  "Connect to the internet to pair, so Codync can confirm your account.": "페어링하려면 인터넷에 연결하세요. Codync가 계정을 확인해야 합니다.",
+  "Let {name} in?": "{name}의 접속을 허용할까요?",
+  "{email} wants to use this computer, which then joins {email}'s account. Check {name} shows {code}.": "{email}에서 이 컴퓨터를 사용하려고 합니다. 허용하면 이 컴퓨터가 {email} 계정에 추가됩니다. {name}에 {code}가 표시되는지 확인하세요.",
+  "Let in": "허용",
+  "Don't allow": "허용 안 함",
+  "A Codync account": "Codync 계정",
+  "Every device of {email}'s account loses access.": "{email} 계정의 모든 기기가 접근 권한을 잃습니다.",
+  "Every device of that account loses access.": "그 계정의 모든 기기가 접근 권한을 잃습니다.",
+  "Access comes back only when you add {name} to the account again on {name} itself.": "{name}에서 직접 {name}을(를) 다시 계정에 추가해야만 접근 권한이 돌아옵니다.",
+  "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name}에서 이 컴퓨터를 사용하려고 합니다. 이 컴퓨터는 {email} 계정에 추가됩니다. 휴대폰에 {code}가 표시되는지 확인하세요.",
+  "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "계정에 속해 있지 않음: 로그인된 휴대폰이 이것을 스캔하면 이 컴퓨터를 그 계정에 추가하도록 요청합니다.",
+  "Paste a pairing link, or type the code from the computer": "페어링 링크를 붙여넣거나 컴퓨터에 표시된 코드를 입력하세요",
+  "That code isn't valid. Check it on the computer.": "유효하지 않은 코드입니다. 컴퓨터에서 확인하세요.",
+  "That code expired or was used. Show a new one on the computer.": "코드가 만료되었거나 이미 사용되었습니다. 컴퓨터에서 새 코드를 표시하세요."
 }

@@ -1481,5 +1481,18 @@
   "Keep it there": "Dort lassen",
   "Move here": "Hierher verschieben",
   "If the computer asks, check it shows {code}.": "Wenn der Computer fragt, prüfe, dass er {code} anzeigt.",
-  "Connect to the internet to pair, so Codync can confirm your account.": "Verbinde dich mit dem Internet, damit Codync beim Koppeln dein Konto bestätigen kann."
+  "Connect to the internet to pair, so Codync can confirm your account.": "Verbinde dich mit dem Internet, damit Codync beim Koppeln dein Konto bestätigen kann.",
+  "Let {name} in?": "{name} hereinlassen?",
+  "{email} wants to use this computer, which then joins {email}'s account. Check {name} shows {code}.": "{email} möchte diesen Computer nutzen, der dann dem Konto von {email} beitritt. Prüfe, dass {name} {code} anzeigt.",
+  "Let in": "Hereinlassen",
+  "Don't allow": "Nicht erlauben",
+  "A Codync account": "Ein Codync-Konto",
+  "Every device of {email}'s account loses access.": "Alle Geräte des Kontos von {email} verlieren den Zugriff.",
+  "Every device of that account loses access.": "Alle Geräte dieses Kontos verlieren den Zugriff.",
+  "Access comes back only when you add {name} to the account again on {name} itself.": "Der Zugriff kommt erst zurück, wenn du {name} auf {name} selbst wieder zum Konto hinzufügst.",
+  "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name} möchte diesen Computer nutzen. Er tritt dem Konto von {email} bei. Prüfe, dass das Telefon {code} anzeigt.",
+  "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "In keinem Konto: Ein angemeldetes Telefon, das dies scannt, bittet darum, den Computer in sein Konto aufzunehmen.",
+  "Paste a pairing link, or type the code from the computer": "Füge einen Kopplungslink ein oder gib den Code vom Computer ein",
+  "That code isn't valid. Check it on the computer.": "Dieser Code ist ungültig. Prüfe ihn auf dem Computer.",
+  "That code expired or was used. Show a new one on the computer.": "Dieser Code ist abgelaufen oder wurde schon verwendet. Lass dir auf dem Computer einen neuen anzeigen."
 }

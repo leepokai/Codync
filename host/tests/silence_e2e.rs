@@ -62,7 +62,10 @@ async fn a_silent_agent_without_fallbacks_ends_its_turn_with_why() {
 
     let notice =
         wait_for(&host, &bot, "failure notice", |e| e["kind"] == "notice" && e["data"]["style"] == "error").await;
-    assert_eq!(notice["data"]["text"], "The agent failed: it went silent for 3 s, so Codync stopped it");
+    // It says how long the agent was actually silent: a busy machine may tick a second or two past the limit.
+    let text = notice["data"]["text"].as_str().unwrap();
+    assert!(text.starts_with("The agent failed: it went silent for "), "{text}");
+    assert!(text.ends_with(" s, so Codync stopped it"), "{text}");
     // The bot is free for the next message, showing the failure.
     let deadline = Instant::now() + Duration::from_secs(10);
     while common::bot(&host.snapshot().await, &bot)["status"] != "error" {

@@ -222,7 +222,12 @@ and auto-claim never runs), *Add to account* (claim: `POST /v1/claims` → loopb
 *Remove from account* (`unclaim`), a pairing QR, and, for this computer only, the computers it can use (its SSH computers, each with its own settings) and the devices that can use it, with revoke.
 Signed in, this computer joins the account on its own once per host identity; an identity
 that was already in the account and was removed (here or from a phone) is never re-added
-silently, only through *Add to account*. The section below, *Other computers in your account*,
+silently, only through *Add to account*. Signed in with a different account than the one this
+computer is in, the app asks once to move it (`mayOfferMove`): *Move here* leaves the old account
+(`unclaim`, which revokes that account's grants) and claims it for this one; *Keep it there* is
+remembered for this account (`keptOutOfAccount`). Out of an account, by any path, the host turns
+cloud assistants off and the 6-digit check back on (`cloud::pull`). Signing out never removes
+the computer from its account. The section below, *Other computers in your account*,
 lists only the account's other computers. A device asking for access raises the menu bar dot
 and opens the approval sheet with the 6-digit code; Approve stays disabled until the device
 revealed its code.

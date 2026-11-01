@@ -1473,5 +1473,11 @@
   "routines": "ルーティン",
   "memories": "メモリ",
   "workspace files": "ワークスペースのファイル",
-  "Rate on Google Play": "Google Play で評価"
+  "Rate on Google Play": "Google Play で評価",
+  "Move this computer to your account?": "このコンピュータをあなたのアカウントに移動しますか？",
+  "It's in {name}'s account.": "{name}のアカウントに入っています。",
+  "It's in another account.": "別のアカウントに入っています。",
+  "New devices ask for access with a 6-digit code.": "新しいデバイスは6桁のコードでアクセスをリクエストします。",
+  "Keep it there": "そのままにする",
+  "Move here": "ここに移動"
 }

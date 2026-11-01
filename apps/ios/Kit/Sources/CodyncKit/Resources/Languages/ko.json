@@ -1473,5 +1473,11 @@
   "routines": "루틴",
   "memories": "기억",
   "workspace files": "작업 공간 파일",
-  "Rate on Google Play": "Google Play에서 평가하기"
+  "Rate on Google Play": "Google Play에서 평가하기",
+  "Move this computer to your account?": "이 컴퓨터를 내 계정으로 옮길까요?",
+  "It's in {name}'s account.": "{name} 계정에 있습니다.",
+  "It's in another account.": "다른 계정에 있습니다.",
+  "New devices ask for access with a 6-digit code.": "새 기기는 6자리 코드로 접근을 요청합니다.",
+  "Keep it there": "그대로 두기",
+  "Move here": "여기로 옮기기"
 }

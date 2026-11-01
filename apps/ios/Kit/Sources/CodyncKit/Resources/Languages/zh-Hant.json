@@ -1473,5 +1473,11 @@
   "routines": "個例行任務",
   "memories": "則記憶",
   "workspace files": "工作區檔案",
-  "Rate on Google Play": "在 Google Play 評分"
+  "Rate on Google Play": "在 Google Play 評分",
+  "Move this computer to your account?": "要把這臺電腦移到你的賬戶嗎？",
+  "It's in {name}'s account.": "它在 {name} 的賬戶裡。",
+  "It's in another account.": "它在另一個賬戶裡。",
+  "New devices ask for access with a 6-digit code.": "新裝置要用 6 位驗證碼請求訪問。",
+  "Keep it there": "留在原處",
+  "Move here": "移到這裡"
 }

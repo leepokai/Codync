@@ -40,7 +40,9 @@ You can sign in with Apple or Google on the iPhone and in the desktop app. Signi
 
 On a computer without the desktop app, use `codync-host access` to list requests and `codync-host access approve <code>` to approve one.
 
-Comparing the code is what stops anyone who controls the Codync cloud from slipping in their own device. In **Settings → Computers**, **Skip the 6-digit check** lets devices signed in to your account in without it. Leave it off unless you accept the risk the app warns about: anyone who gets into your account, or anyone who compromises Codync's cloud, could then add a device with full control of the computer. Devices paired with a QR code aren't affected by this setting.
+Signing out of the desktop app keeps the computer in your account. If you then sign in with a different account, the app asks whether to move the computer there. Choose **Move here** and your phone, signed in to the new account, finds it under **Manage computers**. Devices approved through the old account lose access. Moving it turns **Skip the 6-digit check** off, so new devices ask with the 6-digit code; turn it back on in **Settings → Computers** if you want. Choose **Keep it there** to leave it where it is; you can still move it later with **Remove from account** and then **Add to account**.
+
+Comparing the code is what stops anyone who controls the Codync cloud from slipping in their own device. In **Settings → Computers**, **Skip the 6-digit check** lets devices signed in to your account in without it. Leave it off unless you accept the risk the app warns about: anyone who gets into your account, or anyone who compromises Codync's cloud, could then add a device with full control of the computer. It turns off whenever the computer leaves your account. Devices paired with a QR code aren't affected by this setting.
 
 Devices approved through your account only work while the computer stays in touch with the Codync cloud. Devices paired with a QR code don't depend on it.
 

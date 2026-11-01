@@ -1473,5 +1473,11 @@
   "routines": "rutinas",
   "memories": "recuerdos",
   "workspace files": "archivos del espacio de trabajo",
-  "Rate on Google Play": "Valorar en Google Play"
+  "Rate on Google Play": "Valorar en Google Play",
+  "Move this computer to your account?": "¿Mover esta computadora a tu cuenta?",
+  "It's in {name}'s account.": "Está en la cuenta de {name}.",
+  "It's in another account.": "Está en otra cuenta.",
+  "New devices ask for access with a 6-digit code.": "Los dispositivos nuevos piden acceso con un código de 6 dígitos.",
+  "Keep it there": "Dejarla ahí",
+  "Move here": "Mover aquí"
 }

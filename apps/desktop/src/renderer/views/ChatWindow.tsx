@@ -37,6 +37,7 @@ import { StartupRecovery } from './StartupRecovery'
 export { EmptyState } from './HostStateView'
 import { RefreshIndicator } from './RefreshIndicator'
 import { StarPrompt } from './StarPrompt'
+import { MoveComputerPrompt } from './MoveComputerPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
 import { DesktopActionMenu, type ActionItem } from './DesktopActionMenu'
@@ -140,7 +141,7 @@ export function ChatWindow() {
         />
       )}
       {onboarded && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
-      {onboarded && accessSetup !== null ? <StarPrompt /> : null}
+      {onboarded && accessSetup !== null ? <><StarPrompt /><MoveComputerPrompt /></> : null}
       <Sheet open={showAccess} onClose={() => setShowAccess(false)} width={660} height={Math.min(820, window.innerHeight - 80)}>
         <ModalHeader icon="hand.raised" title={tr(`Computer access`)} />
         <ComputerAccessView onContinue={(ready) => { finishAccess(ready, false); setShowAccess(false) }} />

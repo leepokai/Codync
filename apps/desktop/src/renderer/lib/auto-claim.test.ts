@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mayAutoClaim } from './auto-claim.ts'
+import { mayAutoClaim, mayOfferMove } from './auto-claim.ts'
 
 const host = { id: 'new', online: true, cloud: { enabled: true, owner: null } }
 
@@ -23,4 +23,14 @@ test('no auto-claim when kept out, owned, offline, or the cloud is off or unknow
 test('a computer on a private relay never joins: it has no accounts', () => {
   assert.equal(mayAutoClaim({ ...host, cloud: { enabled: true, owner: null, relay: 'private' } }, [], []), false)
   assert.equal(mayAutoClaim({ ...host, cloud: { enabled: true, owner: null, relay: 'codync' } }, [], []), true)
+})
+
+test('a computer in another account offers to move into the signed-in one', () => {
+  const owned = (userId: string) => ({ ...host, cloud: { enabled: true, owner: { userId } } })
+  assert.equal(mayOfferMove(owned('a'), 'b', []), true)
+  assert.equal(mayOfferMove(owned('b'), 'b', []), false, 'already in this account')
+  assert.equal(mayOfferMove(host, 'b', []), false, 'in no account: auto-claim covers it')
+  assert.equal(mayOfferMove(owned('a'), 'b', ['new']), false, 'the user said no')
+  assert.equal(mayOfferMove({ ...owned('a'), online: false }, 'b', []), false)
+  assert.equal(mayOfferMove({ ...host, cloud: { enabled: true, owner: { userId: 'a' }, relay: 'private' } }, 'b', []), false)
 })

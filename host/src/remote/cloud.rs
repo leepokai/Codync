@@ -338,9 +338,13 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
         s.owner = state.owner;
         s.last_error = None;
     });
-    // Out of an account, cloud assistants go off: the account this computer joins next is asked again.
+    // Out of an account, cloud assistants go off and the 6-digit check comes back on: the account
+    // this computer joins next is asked again.
     if !in_account && assistant::enabled(&hub.store) {
         assistant::set_enabled(hub, false)?;
+    }
+    if !in_account && approval(&hub.store) == Approval::Auto {
+        set_approval(hub, Approval::Code)?;
     }
     sync_requests(hub, base, state.requests).await;
     if approval(&hub.store) == Approval::Auto {
@@ -768,7 +772,7 @@ mod tests {
         set_approval(&hub, Approval::Auto).unwrap();
         let (dk, nd): ([u8; 32], [u8; 32]) = (crypto::random(), crypto::random());
         let request = |host_nonce: Option<String>, device_nonce: Option<[u8; 32]>| {
-            json!({"owner": null, "grants": [], "requests": [{"requestId": "req_1", "deviceKey": b64(&dk),
+            json!({"owner": {"userId": "user_1"}, "grants": [], "requests": [{"requestId": "req_1", "deviceKey": b64(&dk),
                 "commit": b64(&crypto::sas_commit(&dk, &nd)), "hostNonce": host_nonce,
                 "deviceNonce": device_nonce.map(|n| b64(&n))}]})
         };
@@ -793,16 +797,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn leaving_the_account_turns_cloud_assistants_off() {
+    async fn leaving_the_account_turns_cloud_assistants_off_and_the_check_on() {
         let hub = temp_hub();
         let fake = Arc::new(FakeCloud::default());
         let base = fake_cloud(fake.clone()).await;
         *fake.state.lock().unwrap() = json!({"owner": {"userId": "user_1"}, "grants": [], "requests": []});
         pull(&hub, &base).await.unwrap();
         assistant::set_enabled(&hub, true).unwrap();
+        set_approval(&hub, Approval::Auto).unwrap();
         *fake.state.lock().unwrap() = json!({"owner": null, "grants": [], "requests": []});
         pull(&hub, &base).await.unwrap();
         assert!(!assistant::enabled(&hub.store) && !hub.cloud.status().assistants, "the next account is asked again");
+        assert_eq!(hub.cloud.status().approval, Approval::Code, "the next account's devices show a code");
+        assert_eq!(approval(&hub.store), Approval::Code);
     }
 
     #[tokio::test]

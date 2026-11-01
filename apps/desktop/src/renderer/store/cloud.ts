@@ -1,5 +1,5 @@
 import type { CloudStatus, ClaimSignature } from '@shared/models'
-import { mayAutoClaim, mayOfferMove, type ClaimCandidate } from '../lib/auto-claim'
+import { mayAutoClaim, mayJoinAfterInstall, mayOfferMove, type ClaimCandidate } from '../lib/auto-claim'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
 import { relayAddressToSave } from '../lib/relay-address'
@@ -250,6 +250,16 @@ export class CloudModel extends Observable {
     } finally {
       this.moving = false
       this.changed()
+    }
+  }
+
+  /** Add to account for an SSH computer just installed from here (installing shows the intent), once its host is up. */
+  async joinAfterInstall(store: BotStore) {
+    if (!this.userId) return
+    try {
+      if (mayJoinAfterInstall(await (await store.ready()).call<CloudStatus>('cloudStatus'))) await this.claim(store)
+    } catch (error) {
+      this.fail(error)
     }
   }
 

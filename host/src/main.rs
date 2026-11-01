@@ -599,7 +599,7 @@ async fn pair(port: u16, as_json: bool) -> Result<()> {
     println!("{}", code.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build());
     println!("Scan with the Codync iOS app within 10 minutes, or open this link on the phone:\n{url}\n");
     if let Some(code) = p["shortCode"].as_str() {
-        println!("Or type this code in the app (Pair a computer → Type a code): {code}\n");
+        println!("Or type this code where the app's pairing screen asks for a link: {code}\n");
     }
     if hello["cloud"].is_null()
         && p["urls"].as_array().is_none_or(|u| {

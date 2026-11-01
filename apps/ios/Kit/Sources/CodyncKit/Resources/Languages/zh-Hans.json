@@ -1070,7 +1070,6 @@
   "q quits": "q 退出",
   "· now": "· 现在",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "在 {name} 上安装 Codync Dev 并打开一次。Linux 上请把开发用的 host 装成 ~/.local/bin/codync-dev-host。",
-  "codync-host isn't installed on {name}. Install it there:": "{name} 上还没有安装 codync-host。请在那里安装：",
   "Version {version} is available: run codync-host update": "已有 {version}：请运行 codync-host update",
   "Download failed: {error}": "下载失败：{error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} 草稿还在；Enter 重试，Ctrl+C 清空文字。",
@@ -1481,5 +1480,11 @@
   "Keep it there": "留在原处",
   "Move here": "移到这里",
   "If the computer asks, check it shows {code}.": "如果电脑问你，确认它显示 {code}。",
-  "Connect to the internet to pair, so Codync can confirm your account.": "请连上网络再配对，Codync 才能确认你的账户。"
+  "Connect to the internet to pair, so Codync can confirm your account.": "请连上网络再配对，Codync 才能确认你的账户。",
+  "Installing codync-host…": "正在安装 codync-host…",
+  "Starting codync-host…": "正在启动 codync-host…",
+  "Couldn't install codync-host on {name}.": "无法在 {name} 上安装 codync-host。",
+  "codync-host isn't installed on {name}.": "{name} 上还没有安装 codync-host。",
+  "To keep codync-host running on {name} after you log out, run this there:": "要让 codync-host 在你退出登录后继续在 {name} 上运行，请在那里运行：",
+  "Copy command": "复制命令"
 }

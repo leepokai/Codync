@@ -1070,7 +1070,6 @@
   "q quits": "qで終了",
   "· now": "・ 今",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "{name} に Codync Dev をインストールし、一度開きます。 Linux で、開発ホストを ~/.local/bin/codync-dev-host としてインストールします。",
-  "codync-host isn't installed on {name}. Install it there:": "codync-host は {name} にインストールされていません。そこにインストールします。",
   "Version {version} is available: run codync-host update": "バージョン {version} が利用可能です: codync-host update を実行します",
   "Download failed: {error}": "ダウンロードに失敗しました: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} ドラフトは保存されました。再試行を入力し、Ctrl+C でテキストをクリアします。",
@@ -1481,5 +1480,11 @@
   "Keep it there": "そのままにする",
   "Move here": "ここに移動",
   "If the computer asks, check it shows {code}.": "コンピュータに確認を求められたら、{code} と表示されているか確かめてください。",
-  "Connect to the internet to pair, so Codync can confirm your account.": "ペアリングするにはインターネットに接続してください。Codync がアカウントを確認します。"
+  "Connect to the internet to pair, so Codync can confirm your account.": "ペアリングするにはインターネットに接続してください。Codync がアカウントを確認します。",
+  "Installing codync-host…": "codync-host をインストール中…",
+  "Starting codync-host…": "codync-host を起動中…",
+  "Couldn't install codync-host on {name}.": "{name} に codync-host をインストールできませんでした。",
+  "codync-host isn't installed on {name}.": "codync-host は {name} にインストールされていません。",
+  "To keep codync-host running on {name} after you log out, run this there:": "ログアウト後も {name} で codync-host を動かし続けるには、そこで次を実行してください：",
+  "Copy command": "コマンドをコピー"
 }

@@ -1070,7 +1070,6 @@
   "q quits": "q로 종료",
   "· now": "· 지금",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "{name}에 Codync Dev를 설치하고 한 번 여세요. Linux에서는 개발용 호스트를 ~/.local/bin/codync-dev-host에 설치하세요.",
-  "codync-host isn't installed on {name}. Install it there:": "{name}에 codync-host가 설치되지 않았습니다. 해당 컴퓨터에 설치하세요:",
   "Version {version} is available: run codync-host update": "{version} 버전 사용 가능: codync-host update를 실행하세요",
   "Download failed: {error}": "다운로드 실패: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} 초안 유지됨; Enter로 다시 시도, Ctrl+C로 글 지우기.",
@@ -1481,5 +1480,11 @@
   "Keep it there": "그대로 두기",
   "Move here": "여기로 옮기기",
   "If the computer asks, check it shows {code}.": "컴퓨터가 물으면 {code}가 표시되는지 확인하세요.",
-  "Connect to the internet to pair, so Codync can confirm your account.": "페어링하려면 인터넷에 연결하세요. Codync가 계정을 확인해야 합니다."
+  "Connect to the internet to pair, so Codync can confirm your account.": "페어링하려면 인터넷에 연결하세요. Codync가 계정을 확인해야 합니다.",
+  "Installing codync-host…": "codync-host 설치 중…",
+  "Starting codync-host…": "codync-host 시작 중…",
+  "Couldn't install codync-host on {name}.": "{name}에 codync-host를 설치하지 못했습니다.",
+  "codync-host isn't installed on {name}.": "{name}에 codync-host가 설치되지 않았습니다.",
+  "To keep codync-host running on {name} after you log out, run this there:": "로그아웃한 뒤에도 {name}에서 codync-host가 계속 실행되게 하려면 해당 컴퓨터에서 다음을 실행하세요:",
+  "Copy command": "명령 복사"
 }

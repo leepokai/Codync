@@ -1070,7 +1070,6 @@
   "q quits": "q pour quitter",
   "· now": "· maintenant",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "Installez Codync Dev sur {name} et ouvrez-le une fois. Sur Linux, installez l’hôte de développement sous ~/.local/bin/codync-dev-host.",
-  "codync-host isn't installed on {name}. Install it there:": "codync-host n’est pas installé sur {name}. Installez-le là-bas :",
   "Version {version} is available: run codync-host update": "La version {version} est disponible : exécutez codync-host update",
   "Download failed: {error}": "Échec du téléchargement : {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} Brouillon conservé ; Entrée pour réessayer, Ctrl+C pour effacer le texte.",
@@ -1481,5 +1480,11 @@
   "Keep it there": "Le laisser là",
   "Move here": "Déplacer ici",
   "If the computer asks, check it shows {code}.": "Si l'ordinateur le demande, vérifiez qu'il affiche {code}.",
-  "Connect to the internet to pair, so Codync can confirm your account.": "Connectez-vous à Internet pour appairer, afin que Codync confirme votre compte."
+  "Connect to the internet to pair, so Codync can confirm your account.": "Connectez-vous à Internet pour appairer, afin que Codync confirme votre compte.",
+  "Installing codync-host…": "Installation de codync-host…",
+  "Starting codync-host…": "Démarrage de codync-host…",
+  "Couldn't install codync-host on {name}.": "Impossible d’installer codync-host sur {name}.",
+  "codync-host isn't installed on {name}.": "codync-host n’est pas installé sur {name}.",
+  "To keep codync-host running on {name} after you log out, run this there:": "Pour que codync-host continue de tourner sur {name} après votre déconnexion, exécutez ceci là-bas :",
+  "Copy command": "Copier la commande"
 }

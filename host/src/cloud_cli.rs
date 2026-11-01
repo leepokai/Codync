@@ -95,7 +95,7 @@ fn account_hint(status: &serde_json::Value) -> Option<&'static str> {
     Some(if status["enabled"] != true || status["relay"] == "private" {
         "Not in an account. Phones pair with `codync-host pair` and a QR code; joining an account needs the Codync cloud (`codync-host cloud --enable`)."
     } else {
-        "Not in an account. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type its short code. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
+        "Not in an account. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type the short code it prints. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
     })
 }
 

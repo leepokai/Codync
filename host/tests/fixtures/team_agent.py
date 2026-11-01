@@ -157,6 +157,9 @@ def prompt(request):
         reply = "reply: group" if last.startswith("User:") else "(pass)"
         if last.startswith("User:") and "PING" in last:
             reply = "@b over to you"
+        if last.startswith("User:") and "LATEAT" in last:
+            # A late answer: the room turn that asked is over by the time this lands.
+            reply = "@b over to you"
         if "REACT" in last:
             response = mcp_call("chat", "react", {"emoji": "👍", "to": "user"})
             assert not response.get("isError"), response

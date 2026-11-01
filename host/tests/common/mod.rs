@@ -9,6 +9,15 @@ use std::time::{Duration, Instant};
 /// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
 /// picked here is only free for a moment; when something else takes it before the host binds, the
 /// host exits and this starts it again on another one.
+/// The seed of the cloud key a test host trusts for device certificates.
+pub const TEST_CLOUD_SEED: [u8; 32] = [9; 32];
+
+fn test_cloud_key() -> String {
+    use base64::Engine as _;
+    let key = ed25519_dalek::SigningKey::from_bytes(&TEST_CLOUD_SEED).verifying_key();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes())
+}
+
 pub async fn serve(home: &Path) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);
@@ -21,6 +30,8 @@ pub async fn serve(home: &Path) -> (Child, String) {
             .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
             .env("CODYNC_HOME", home)
             .env("CODYNC_CLOUD", "off")
+            // Pairing checks the phone's account: tests sign certificates with `TEST_CLOUD_SEED`.
+            .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
             .spawn()

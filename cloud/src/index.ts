@@ -32,6 +32,8 @@ export interface Env {
   CLERK_JWT_KEY?: string;
   CLERK_AUTHORIZED_PARTIES?: string;
   CLERK_WEBHOOK_SECRET?: string;
+  /** Ed25519 private key (JWK JSON) that signs device certificates; hosts compile in its public half. */
+  DEVICE_CERT_KEY?: string;
   /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
   RELEASE_GATE_TOKEN?: string;
 }
@@ -56,6 +58,7 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/v1\/me$/, api.me],
   ["POST", /^\/v1\/devices$/, api.registerDevice],
   ["GET", /^\/v1\/devices$/, api.listDevices],
+  ["POST", /^\/v1\/devices\/certificate$/, api.deviceCertificate],
   ["DELETE", new RegExp(`^/v1/devices/${ID}$`), api.revokeDevice],
   ["POST", /^\/v1\/claims$/, api.createClaim],
   ["POST", new RegExp(`^/v1/claims/${ID}/complete$`), api.completeClaim],

@@ -15,6 +15,7 @@ mod remote;
 
 pub use events::{events_stream, term_events};
 pub use http::router;
+pub(crate) use remote::claim_sign;
 
 use crate::api::devices::{Caller, Forbidden};
 use crate::hub::Hub;

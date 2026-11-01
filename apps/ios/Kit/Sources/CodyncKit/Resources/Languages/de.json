@@ -1479,5 +1479,7 @@
   "It's in another account.": "Er ist in einem anderen Konto.",
   "New devices ask for access with a 6-digit code.": "Neue Geräte fragen mit einem 6-stelligen Code nach Zugriff.",
   "Keep it there": "Dort lassen",
-  "Move here": "Hierher verschieben"
+  "Move here": "Hierher verschieben",
+  "If the computer asks, check it shows {code}.": "Wenn der Computer fragt, prüfe, dass er {code} anzeigt.",
+  "Connect to the internet to pair, so Codync can confirm your account.": "Verbinde dich mit dem Internet, damit Codync beim Koppeln dein Konto bestätigen kann."
 }

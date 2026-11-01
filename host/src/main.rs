@@ -36,7 +36,7 @@ use remote::identity;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::fmt::Write as _;
 use std::future::IntoFuture;
 use std::io::Read;
@@ -609,7 +609,54 @@ async fn pair(port: u16, as_json: bool) -> Result<()> {
             "Tip: the phone reaches this computer on the same network only. Turn on the Codync cloud or Tailscale to reach it from anywhere."
         );
     }
+    if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        answer_pairing(port, p["expiresAt"].as_i64().unwrap_or_default()).await?;
+    }
     Ok(())
+}
+
+/// A computer in no account asks before a phone brings it into its own account: answered here, in the terminal,
+/// until the code is used or expires (docs/plans/require-sign-in.md, phase 2).
+async fn answer_pairing(port: u16, expires_at: i64) -> Result<()> {
+    let count = |v: &Value| v["devices"].as_array().map_or(0, Vec::len);
+    let before = count(&local_call(port, "devices", json!({})).await?);
+    println!("Waiting for the phone… (Ctrl-C to stop)");
+    while store::now_ms() < expires_at {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let requests = local_call(port, "pairingRequests", json!({})).await?;
+        if let Some(r) = requests["requests"].as_array().and_then(|r| r.first()) {
+            let email = r["email"].as_str().unwrap_or("a Codync account");
+            println!(
+                "
+{} wants to use this computer. It joins {email}'s account.
+Check the phone shows {}.",
+                r["deviceName"].as_str().unwrap_or("A phone"),
+                r["code"].as_str().unwrap_or_default()
+            );
+            let approve = ask_yes_no("Let it in? [y/N] ").await?;
+            local_call(port, "decidePairing", json!({"requestId": r["requestId"], "approve": approve})).await?;
+            println!("{}", if approve { "Paired. The computer is joining that account." } else { "Turned away." });
+            return Ok(());
+        }
+        if count(&local_call(port, "devices", json!({})).await?) > before {
+            println!("Paired.");
+            return Ok(());
+        }
+    }
+    println!("The code expired. Run codync-host pair again.");
+    Ok(())
+}
+
+async fn ask_yes_no(prompt: &str) -> Result<bool> {
+    use std::io::Write as _;
+    print!("{prompt}");
+    std::io::stdout().flush()?;
+    let line = tokio::task::spawn_blocking(|| {
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).map(|_| line)
+    })
+    .await??;
+    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
 }
 
 async fn access(port: u16, action: AccessAction) -> Result<()> {
@@ -636,7 +683,7 @@ async fn access(port: u16, action: AccessAction) -> Result<()> {
         AccessAction::Deny { request } => (request, false),
     };
     // A 6-digit code picks the request showing it; it must be the only one.
-    let matching: Vec<&serde_json::Value> =
+    let matching: Vec<&Value> =
         requests.iter().filter(|r| r["requestId"] == request.as_str() || r["code"] == request.as_str()).collect();
     let [r] = matching.as_slice() else {
         anyhow::bail!("No single request matches {request}. See `codync-host access list`.");
@@ -687,7 +734,7 @@ async fn info(port: u16, as_json: bool) -> Result<()> {
 async fn statusline(port: u16, wrapped: String) {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
-    let v: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
+    let v: Value = serde_json::from_str(&input).unwrap_or_default();
     if let Ok(token) = std::fs::read_to_string(service::data_dir().join("token")) {
         let _ = http()
             .post(format!("http://127.0.0.1:{port}/ingest/statusline"))

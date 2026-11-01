@@ -1479,5 +1479,7 @@
   "It's in another account.": "다른 계정에 있습니다.",
   "New devices ask for access with a 6-digit code.": "새 기기는 6자리 코드로 접근을 요청합니다.",
   "Keep it there": "그대로 두기",
-  "Move here": "여기로 옮기기"
+  "Move here": "여기로 옮기기",
+  "If the computer asks, check it shows {code}.": "컴퓨터가 물으면 {code}가 표시되는지 확인하세요.",
+  "Connect to the internet to pair, so Codync can confirm your account.": "페어링하려면 인터넷에 연결하세요. Codync가 계정을 확인해야 합니다."
 }

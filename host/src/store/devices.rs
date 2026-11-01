@@ -39,6 +39,9 @@ pub struct Device {
     pub lease_until: Option<i64>,
     pub created_at: i64,
     pub last_seen_at: Option<i64>,
+    /// The account this device was let in for (a Clerk user ID); none for devices paired before 2.36.0.
+    #[serde(skip)]
+    pub account: Option<String>,
 }
 
 /// A push ticket with the device's push key (§6.7) and account context.
@@ -48,7 +51,8 @@ pub struct PushTicket {
     pub ctx: Option<String>,
 }
 
-const DEVICE_COLS: &str = "key, name, platform, source, grant_id, scopes, lease_until, created_at, last_seen_at";
+const DEVICE_COLS: &str =
+    "key, name, platform, source, grant_id, scopes, lease_until, created_at, last_seen_at, account";
 
 fn row_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
     let source: String = r.get(3)?;
@@ -65,6 +69,7 @@ fn row_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
         lease_until: r.get(6)?,
         created_at: r.get(7)?,
         last_seen_at: r.get(8)?,
+        account: r.get(9)?,
     })
 }
 
@@ -85,10 +90,10 @@ impl Store {
     pub fn put_device(&self, d: &Device) -> Result<()> {
         let c = self.db.locked();
         c.execute(
-            "INSERT INTO devices(key, name, platform, source, grant_id, scopes, lease_until, created_at)
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO devices(key, name, platform, source, grant_id, scopes, lease_until, created_at, account)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(key) DO UPDATE SET name = ?2, platform = ?3, source = ?4, grant_id = ?5,
-               scopes = ?6, lease_until = ?7",
+               scopes = ?6, lease_until = ?7, account = ?9",
             params![
                 d.key,
                 d.name,
@@ -97,7 +102,8 @@ impl Store {
                 d.grant_id,
                 serde_json::to_string(&d.scopes)?,
                 d.lease_until,
-                d.created_at
+                d.created_at,
+                d.account
             ],
         )?;
         Ok(())
@@ -112,6 +118,25 @@ impl Store {
         tx.execute("DELETE FROM activity_tickets WHERE device_key = ?1", [key])?;
         tx.commit()?;
         Ok(n > 0)
+    }
+
+    /// The computer changed the account it belongs to: every device let in for another account (or for none,
+    /// before devices recorded theirs) goes, with its tickets. `None`: it left its account, and all go.
+    /// Returns the removed keys.
+    pub fn keep_devices_of(&self, account: Option<&str>) -> Result<Vec<String>> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        let gone: Vec<String> = {
+            let mut st = tx.prepare("SELECT key FROM devices WHERE account IS NULL OR account IS NOT ?1")?;
+            st.query_map([account], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+        };
+        for key in &gone {
+            tx.execute("DELETE FROM devices WHERE key = ?1", [key])?;
+            tx.execute("DELETE FROM push_tickets WHERE device_key = ?1", [key])?;
+            tx.execute("DELETE FROM activity_tickets WHERE device_key = ?1", [key])?;
+        }
+        tx.commit()?;
+        Ok(gone)
     }
 
     /// Extends an account device's lease (the cloud still lists its grant).
@@ -234,6 +259,7 @@ mod tests {
             lease_until: None,
             created_at: 1,
             last_seen_at: None,
+            account: None,
         };
         s.put_device(&d).unwrap();
         s.put_device(&Device { key: "dk2".into(), ..d.clone() }).unwrap();

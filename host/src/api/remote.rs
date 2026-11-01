@@ -89,6 +89,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
+        "pairingRequests" => json!({"requests": hub.pairing_requests.json()}),
+        "decidePairing" => {
+            let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
+            crate::remote::pairing_requests::decide(hub, str_arg(&b, "requestId")?, approve)?;
+            json!({})
+        }
         "decideAccessRequest" => {
             let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
             let id = str_arg(&b, "requestId")?;
@@ -150,7 +156,7 @@ async fn pairing(hub: &Arc<Hub>) -> Result<Value> {
 }
 
 /// Signs this computer into an account claim (§4.2 A) for the signed-in desktop app to complete.
-async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
+pub(crate) async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
     crate::remote::cloud::require_accounts(&hub.store)?;
     let field = |k: &str| -> Result<&str> {
         let v = str_arg(b, k)?;

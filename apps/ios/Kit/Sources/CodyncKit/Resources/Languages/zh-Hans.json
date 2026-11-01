@@ -1479,5 +1479,7 @@
   "It's in another account.": "它在另一个账户里。",
   "New devices ask for access with a 6-digit code.": "新设备要用 6 位验证码请求访问。",
   "Keep it there": "留在原处",
-  "Move here": "移到这里"
+  "Move here": "移到这里",
+  "If the computer asks, check it shows {code}.": "如果电脑问你，确认它显示 {code}。",
+  "Connect to the internet to pair, so Codync can confirm your account.": "请连上网络再配对，Codync 才能确认你的账户。"
 }

@@ -8,6 +8,7 @@
 //! The device's authorization is re-checked on every request, whenever the device
 //! table changes and when its lease runs out; a revoked device is closed at once.
 
+mod pairing;
 mod subscriptions;
 
 use crate::LockExt;
@@ -503,84 +504,38 @@ impl Channel {
             self.send(json!({"id": id, "end": true})).await;
         }
     }
-
-    /// A pairing channel: exactly one `pair`, answered, then closed with `4100` (§4.1).
-    async fn pair(&mut self, incoming: &mut mpsc::Receiver<Value>, mut opener: Opener, source: &str) -> CloseWith {
-        let protocol = (close::PROTOCOL, "protocolError");
-        let deadline = Instant::now() + PAIRING_MAX_AGE;
-        let bytes = loop {
-            let msg = tokio::select! {
-                msg = incoming.recv() => msg,
-                () = sleep_until(deadline) => return (close::PAIRING_EXPIRED, "pairingExpired"),
-            };
-            let Some(msg) = msg else { return (close::NORMAL, "") };
-            match opener.open(&msg) {
-                Ok(Some(bytes)) => break bytes,
-                Ok(None) => {}
-                Err(e) => return frame_close(&e),
-            }
-        };
-        let Ok(v) = serde_json::from_slice::<Value>(&bytes) else { return protocol };
-        let Some(id) = v["id"].as_u64() else { return protocol };
-        if v["m"] != "pair" {
-            return protocol;
-        }
-        let b = &v["b"];
-        let name = b["name"].as_str().map(str::trim).filter(|n| !n.is_empty() && n.chars().count() <= 100);
-        let platform = b["platform"].as_str().filter(|p| matches!(*p, "ios" | "macos" | "android"));
-        let (Some(name), Some(platform)) = (name, platform) else {
-            self.send(err(id, 400, "`name` and `platform` (ios, macos or android) are required")).await;
-            return protocol;
-        };
-        if !self.hub.pairing.locked().attempt(source) {
-            let code = RejectCode::RateLimited;
-            let _ =
-                self.tx.send(ToDevice::Plain(json!({"t": "reject", "code": code, "message": code.message()}))).await;
-            return (code.close_code(), "rateLimited");
-        }
-        if !self.hub.pairing.locked().redeem(b["code"].as_str().unwrap_or_default()) {
-            self.send(err(id, 403, "This pairing code expired. Show a new one on the computer.")).await;
-            return (close::UNAUTHORIZED, "unauthorized");
-        }
-        let device = Device {
-            key: self.key.clone(),
-            name: name.to_owned(),
-            platform: platform.to_owned(),
-            source: DeviceSource::Local,
-            grant_id: None,
-            scopes: vec![Scope::Control, Scope::Screen],
-            lease_until: None,
-            created_at: now_ms(),
-            last_seen_at: None,
-        };
-        if let Err(e) = self.hub.store.put_device(&device) {
-            tracing::error!(error = format!("{e:#}"), "couldn't save a paired device");
-            self.send(err(id, 500, "couldn't save this device")).await;
-            return (close::NORMAL, "");
-        }
-        tracing::info!(device = self.key, platform, "device paired");
-        crate::analytics::device_paired(&self.hub, crate::analytics::Via::Qr, platform, false);
-        let name = crate::service::host_name();
-        self.send(json!({"id": id, "ok": {"computerId": self.hub.identity.computer_id(), "name": name}})).await;
-        (close::PAIRED, "paired")
-    }
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
+    mod accounts;
     mod screen_signaling;
     use super::*;
     use crate::remote::identity::Identity;
     use crate::store::Store;
     use ed25519_dalek::SigningKey;
 
+    /// A computer in `user_1`'s account, so phones of that account pair without asking.
     fn temp_hub() -> Arc<Hub> {
+        let hub = unowned_hub();
+        let owner = crate::remote::cloud::Owner { user_id: "user_1".into(), email: Some("kevin@example.com".into()) };
+        crate::remote::owner::remember(&hub, Some(&owner)).unwrap();
+        hub
+    }
+
+    fn unowned_hub() -> Arc<Hub> {
         let dir = std::env::temp_dir().join(format!("codync-ch-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(&dir.join("t.db")).unwrap();
         let identity = Identity::load_or_create(&dir).unwrap();
         Hub::new(store, "host".into(), identity, "token".into(), 0)
+    }
+
+    /// A `pair` body for `p`, signed in to `user`.
+    fn pair_body(p: &Phone, code: &str, name: &str, platform: &str, user: &str) -> Value {
+        json!({"code": code, "name": name, "platform": platform,
+               "certificate": crate::remote::certificate::test_certificate(&p.dk(), user)})
     }
 
     /// The device end of a channel, over in-memory pipes.
@@ -684,7 +639,7 @@ mod tests {
         let code = hub.pairing.locked().issue().code;
         let mut p = Phone::direct(hub, key.clone());
         assert!(matches!(p.hello(hub, true).await, Out::Msg(v) if v["t"] == "welcome"));
-        p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Kevin's iPhone", "platform": "ios"}})).await;
+        p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "Kevin's iPhone", "ios", "user_1")})).await;
         let reply = p.recv().await.unwrap();
         assert_eq!(reply["ok"]["computerId"], hub.identity.computer_id());
         assert_eq!(p.recv().await.unwrap_err().0, close::PAIRED);
@@ -698,7 +653,7 @@ mod tests {
         let code = hub.pairing.locked().issue().code;
         let mut phone = Phone::direct(&hub, key.clone());
         assert!(matches!(phone.hello(&hub, true).await, Out::Msg(v) if v["t"] == "welcome"));
-        let reply = phone.call(1, "pair", json!({"code": code, "name": "Android phone", "platform": "android"})).await;
+        let reply = phone.call(1, "pair", pair_body(&phone, &code, "Android phone", "android", "user_1")).await;
         assert_eq!(reply["ok"]["computerId"], hub.identity.computer_id());
         assert_eq!(phone.recv().await.unwrap_err().0, close::PAIRED);
         let device = hub.store.device(&phone.dk()).unwrap();
@@ -789,12 +744,12 @@ mod tests {
 
         let mut p = Phone::direct(&hub, SigningKey::from_bytes(&crypto::random()));
         p.hello(&hub, true).await;
-        p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "A", "platform": "ios"}})).await;
+        p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "A", "ios", "user_1")})).await;
         assert!(p.recv().await.unwrap()["ok"].is_object());
 
         let mut p = Phone::direct(&hub, SigningKey::from_bytes(&crypto::random()));
         p.hello(&hub, true).await;
-        p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "B", "platform": "ios"}})).await;
+        p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "B", "ios", "user_1")})).await;
         assert_eq!(p.recv().await.unwrap()["err"]["status"], 403, "a used code doesn't work twice");
         assert_eq!(p.recv().await.unwrap_err().0, close::UNAUTHORIZED);
     }
@@ -860,6 +815,7 @@ mod tests {
             lease_until: Some(now_ms() + 300),
             created_at: now_ms(),
             last_seen_at: None,
+            account: None,
         };
         hub.store.put_device(&device).unwrap();
         let mut p = Phone::direct(&hub, key.clone());
@@ -927,7 +883,7 @@ mod tests {
         auth.mark_unchanged();
         let mut p = Phone::connect(&hub, key, ChannelKind::Relay { link: "p".into(), dk, pair: true });
         p.hello(&hub, true).await;
-        p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "A", "platform": "ios"}})).await;
+        p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "A", "ios", "user_1")})).await;
         auth.changed().await.unwrap();
         // The relay republishes the ACL on this change: the answer and 4100 must already be queued.
         let mut last = None;

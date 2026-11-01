@@ -1479,5 +1479,7 @@
   "It's in another account.": "別のアカウントに入っています。",
   "New devices ask for access with a 6-digit code.": "新しいデバイスは6桁のコードでアクセスをリクエストします。",
   "Keep it there": "そのままにする",
-  "Move here": "ここに移動"
+  "Move here": "ここに移動",
+  "If the computer asks, check it shows {code}.": "コンピュータに確認を求められたら、{code} と表示されているか確かめてください。",
+  "Connect to the internet to pair, so Codync can confirm your account.": "ペアリングするにはインターネットに接続してください。Codync がアカウントを確認します。"
 }

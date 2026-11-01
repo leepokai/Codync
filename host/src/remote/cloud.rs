@@ -332,6 +332,7 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
     let state: State = serde_json::from_value(call(hub, base, Method::GET, "/v1/host/state", None).await?)
         .context("reading the cloud state")?;
     apply_grants(hub, &state.grants)?;
+    super::owner::remember(hub, state.owner.as_ref())?;
     let in_account = state.owner.is_some();
     // A pull that works also settles an earlier failed one.
     update_status(hub, |s| {
@@ -562,6 +563,8 @@ pub async fn decide(hub: &Hub, id: &str, approve: bool, how: Approval) -> Result
         lease_until: Some(now_ms() + LEASE_MS),
         created_at: now_ms(),
         last_seen_at: None,
+        // Approved through the account the computer is in.
+        account: super::owner::owner(&hub.store).map(|o| o.user_id),
     };
     hub.store.put_device(&device)?;
     tracing::info!(grant_id = grant, "account device approved");
@@ -659,6 +662,7 @@ mod tests {
             lease_until: Some(now_ms() + 1000),
             created_at: now_ms(),
             last_seen_at: None,
+            account: None,
         }
     }
 

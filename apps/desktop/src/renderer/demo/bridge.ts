@@ -55,6 +55,7 @@ const bridge: CodyncBridge = {
     onChange: none,
     signIn: unavailable,
     signOut: async () => {},
+    deleteAccount: async () => false,
     token: unavailable,
   },
   speech: { available: false, locales: () => [], start() {}, stop() {}, onEvent: none, shortcut: async () => 'off', setShortcut: async () => 'off', setCalling() {} },

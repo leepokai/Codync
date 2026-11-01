@@ -53,8 +53,12 @@ import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.delay
 import kotlin.math.sin
 
-/** First launch, before any setup: who the bots are, a glimpse of talking to one, one way forward (iOS `WelcomeView`). */
-@Composable internal fun WelcomeView(state: AccountContext, store: AccountStore, start: () -> Unit) {
+/**
+ * Before any setup, and whenever signed out: who the bots are, a glimpse of talking to one, one way forward (iOS `WelcomeView`).
+ * With accounts that way is signing in; builds without them go on to pairing. [signedOutComputers] were paired before
+ * sign-in was required and move into the account at sign-in.
+ */
+@Composable internal fun WelcomeView(state: AccountContext, store: AccountStore, signedOutComputers: Int = 0, start: () -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Welcome))
     val still = reduceMotion()
     // 0 = nothing yet … 4 = everything shown. Each beat enters in turn.
@@ -80,9 +84,12 @@ import kotlin.math.sin
                     }
                 }
                 Column(Modifier.padding(top = 32.dp).rise(beat >= 4), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    WideButton("Get started", action = start)
-                    // Signed in, the computers on the account show up without scanning a code.
-                    if (state.account.configured) SignInButtons(state, store)
+                    if (signedOutComputers > 0) Text(if (signedOutComputers == 1)
+                        tr("Sign in to keep using your computer. It moves into your account, so you won't need to scan again.")
+                    else tr("Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.")
+                        .replace("{count}", signedOutComputers.toString()),
+                        Modifier.fillMaxWidth().padding(bottom = 4.dp), style = Type.footnote, color = Palette.secondary)
+                    if (state.account.configured) SignInButtons(state, store) else WideButton("Get started", action = start)
                     state.account.error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
                 }
             }

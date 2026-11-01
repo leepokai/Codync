@@ -1,6 +1,7 @@
+/* The footer floats over the roster: its measured height (`SidebarFooter`) keeps the last rows clear. */
 .sidebar:not(.compact) .roster {
-  padding-bottom: 72px;
-  scroll-padding-bottom: 72px;
+  padding-bottom: calc(var(--sidebar-footer-height, 58px) + 14px);
+  scroll-padding-bottom: calc(var(--sidebar-footer-height, 58px) + 14px);
 }
 
 .sidebar-footer {
@@ -10,6 +11,7 @@
   left: 0;
   right: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 10px 14px 14px;
@@ -100,3 +102,24 @@
   .sidebar-footer-fade { background: var(--surface); inset: 0; }
   .sidebar-footer-fade::before, .sidebar-footer-fade::after { backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
+
+/* This computer and the signed-in account differ: a notice of its own above the buttons, shown in full. */
+.sidebar-account-notice {
+  order: -1;
+  flex-basis: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--text);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--attention) 24%, transparent);
+  transition: background-color var(--hover);
+}
+.sidebar-account-notice > :first-child, .sidebar-account-notice > :last-child { margin-top: 2px; flex-shrink: 0; }
+.sidebar-account-notice:hover,
+.rail-account-notice.icon-button:hover { background: color-mix(in srgb, var(--attention) 32%, transparent); }
+/* The narrow rail has no room for the text: the same notice as a tinted icon, its text in the tooltip. */
+.rail-account-notice.icon-button { color: var(--attention); background: color-mix(in srgb, var(--attention) 24%, transparent); }

@@ -11,6 +11,7 @@
 		0137767F43A65AB592869ADD /* ShortcutLeadSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ABB70475ABEE88EFAFBA1BB /* ShortcutLeadSettings.swift */; };
 		01A1F820EFEE49A8FCCFC3F3 /* BotListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0582B6169BFC36E4BCD51C0D /* BotListView.swift */; };
 		0631979397E0D6822747E03A /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E13F8EA6C7B0DA4D899FEE /* RootView.swift */; };
+		0C0673CAE7FE759E7F549C7C /* AppStore+Account.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A792AA5A57EFCD63F254BB8 /* AppStore+Account.swift */; };
 		0C920E4962F182ADF75670C5 /* CodyncBot-tablet-Ink.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 120FD9DBA315A6DD543463D8 /* CodyncBot-tablet-Ink.ttf */; };
 		0D6E2869DC5A1BC7D6385444 /* CodyncOrb-Dot.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 0C44BCF971511A5E94D073D5 /* CodyncOrb-Dot.ttf */; };
 		107232310A15C4D9A3BCF466 /* AppStore+Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = C518FF3FFD22C3A114B6D1B8 /* AppStore+Shortcuts.swift */; };
@@ -148,6 +149,7 @@
 		445DB0A03CFBB5CC7A830139 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		46538A6E6E6B7C5E212F5CDF /* SessionCandidates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCandidates.swift; sourceTree = "<group>"; };
 		4815867922559696EDCA47FD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4A792AA5A57EFCD63F254BB8 /* AppStore+Account.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppStore+Account.swift"; sourceTree = "<group>"; };
 		4EB282B31FBC94EE70D07638 /* AccountSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSwitcherView.swift; sourceTree = "<group>"; };
 		4FA78A055791BBBA79DF8C8B /* Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Permissions.swift; sourceTree = "<group>"; };
 		52A96030D47F1B9678095909 /* iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iOS.entitlements; sourceTree = "<group>"; };
@@ -436,6 +438,7 @@
 			isa = PBXGroup;
 			children = (
 				31BFDAD6DCCE1CC98642ACDD /* AccountSession.swift */,
+				4A792AA5A57EFCD63F254BB8 /* AppStore+Account.swift */,
 				C518FF3FFD22C3A114B6D1B8 /* AppStore+Shortcuts.swift */,
 				300202AE0BDAB4961D1E4423 /* BotShortcuts.swift */,
 				A65FE0504B741D0B44DB2516 /* CodyncApp.swift */,
@@ -723,6 +726,7 @@
 				7E5F670CFFA0E4373F44DB41 /* AccountSession.swift in Sources */,
 				9BBB2FAEDBD35A83EAB02981 /* AccountSwitcherView.swift in Sources */,
 				00F78E3DAAF66E8E0933D091 /* ActivityGalleryView.swift in Sources */,
+				0C0673CAE7FE759E7F549C7C /* AppStore+Account.swift in Sources */,
 				107232310A15C4D9A3BCF466 /* AppStore+Shortcuts.swift in Sources */,
 				16C24A622E33414C24B0C148 /* AppearanceSettings.swift in Sources */,
 				01A1F820EFEE49A8FCCFC3F3 /* BotListView.swift in Sources */,
@@ -846,7 +850,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.34.2;
+				MARKETING_VERSION = 2.35.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -944,7 +948,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.34.2;
+				MARKETING_VERSION = 2.35.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1203,7 +1207,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.34.2;
+				MARKETING_VERSION = 2.35.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -1353,7 +1357,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.34.2;
+				MARKETING_VERSION = 2.35.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

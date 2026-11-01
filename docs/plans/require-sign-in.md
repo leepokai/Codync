@@ -1,6 +1,6 @@
 # Require sign-in
 
-Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. Nothing here is built yet.
+Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. Phase 1 is built (2.35.0); phases 2 and 3 are not.
 
 ## Decisions
 
@@ -33,11 +33,11 @@ App Store 5.1.1(v) and Google Play require in-app deletion for any app that crea
 - **Where:** the account sheet on iPhone (`AccountSwitcherView.swift`) and Android (`AccountSwitcherView.kt`), under **Sign out**; the desktop account menu (`PanelMenus.tsx`).
 - **Confirmation dialog**, title "Delete your Codync account?", message: "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone." Actions: **Delete account** (destructive), **Cancel**.
 - **Steps:**
-  1. Hand back the key, the same way as signing out (section 2).
-  2. Delete the user in Clerk:
+  1. Delete the user in Clerk first. When that fails ("Couldn't delete your account. Check your connection and try again."), nothing else changes:
      - iOS: `clerk.user.delete()` (ClerkKit `User.delete()`).
      - Android: `User.delete()` from `com.clerk.api.user`.
      - Desktop: FAPI `DELETE /v1/me`, through `apps/desktop/src/main/account.ts`.
+  2. Hand the key back to the computers this phone reaches, as signing out does (section 2). The account's stores stay open until then, even though Clerk has already ended the session (`AppStore.leaving` on iOS). The cloud side needs no call: the webhook revokes every device.
   3. Erase this account's local data, the same as signing out.
 - **Cloud: no change.** Clerk's `user.deleted` webhook already revokes every grant, cancels pending requests, removes the account's computers from it and deletes their icons (`cloud/src/routes/webhooks.ts`).
 - **Clerk setting:** "users can delete themselves" (`user_settings.actions.delete_self`) is on in the development instance. Check it is on in production before the release.
@@ -47,15 +47,16 @@ App Store 5.1.1(v) and Google Play require in-app deletion for any app that crea
 
 Today iPhone erases only local data, and Android tells only the computer it is connected to. New order, in `AppStore.signOut()` (iOS) and `AccountStore.signOut()` (Android):
 
-1. **Computers this phone can reach:** call the new host method `forgetDevice`. It removes the caller's own device row and push tickets.
+1. **Clerk:** sign out first. When that fails the phone stays signed in and keeps its key, so nothing below runs. The cloud call below needs a session token, so one is taken before (`CloudClient.pinningToken()`); it stays valid until it expires. The account's stores stay open until the steps below finish (`AppStore.leaving` on iOS, `transitions` on Android).
+2. **Computers this phone can reach:** call the new host method `forgetDevice`. It removes the caller's own device row and push tickets.
    - Hosts older than this release answer "unknown method"; then call `unregisterDevice`, which stops the push tickets only.
    - The device key is erased right after, so a row left on an older host is unusable.
-2. **Cloud:** `DELETE /v1/devices/{id}` for this phone's own device. Find the id the way `CloudClient.revokeDeviceAccess` already does. This revokes every grant and pending request, and hosts drop the device on their next sync. Add `CloudClient.revokeThisDevice()` and its Android twin.
-3. **Clerk:** sign out, switch context, erase (as today).
+3. **Cloud:** `DELETE /v1/devices/{id}` for this phone's own device. Find the id the way `CloudClient.revokeDeviceAccess` already does. This revokes every grant and pending request, and hosts drop the device on their next sync. Add `CloudClient.revokeThisDevice()` and its Android twin.
+4. Switch context and erase (as today).
 
-The two calls are best effort, with a short timeout each. Signing out never fails because a computer or the cloud is unreachable.
+The two calls are best effort, with a short timeout each. Signing out never fails because a computer or the cloud is unreachable. **Start over** hands the open account's key back the same way before it erases everything.
 
-**Host (`host/src/api/remote.rs`):** `forgetDevice` is for a device caller only. It removes `caller.device_key()` from devices and push tickets and emits `devices` so the desktop list updates. It is additive, so `minApp` doesn't change.
+**Host (`host/src/api/remote.rs`):** `forgetDevice` is for a device caller only. It removes `caller.device_key()` from devices and push tickets. It sends no event: a desktop showing the device list sees the change the next time the list loads. It is additive, so `minApp` doesn't change.
 
 ### 3. Sign-in gate
 
@@ -82,6 +83,8 @@ The two calls are best effort, with a short timeout each. Signing out never fail
 - With Clerk configured, **Continue on this Mac** (the button and the skip link) goes, and the welcome shows only **Continue with Apple** / **Continue with Google**.
 - `onboarded` alone no longer opens the chat window. The welcome shows whenever the app is configured, ready and signed out, so signing out from the account menu returns to it.
 - The host keeps running while signed out, and so do the tray and menu bar.
+- Signing out also revokes the desktop app's own cloud device (`DELETE /v1/devices/{id}`, best effort, on a token taken before Clerk signs out) once Clerk has signed out, then its key file goes: the cloud refuses a revoked key, so the next sign-in makes a new one.
+- A saved session stays "restoring" (retried every 30 seconds) until Clerk turns it down (401, 403 or 404) or answers, so a launch offline, behind a captive portal or during a Clerk outage isn't stopped at the welcome.
 - Builds without Clerk keep **Continue on this Mac**.
 
 ### 4. Move signed-out pairings into the account
@@ -93,14 +96,14 @@ Runs on iPhone and Android when an account becomes active and the signed-out con
 | **New** (no device key, no computers) | Everything moves: the device and push keys, the computers, order, drafts, shortcut lead, widget snapshot. Hosts see the same key, so nothing is paired again and push keeps working |
 | **Already used** (has its own key) | The computer lists merge (the account's entry wins for the same id). Computers paired only with the signed-out key are refused by their hosts; they show the existing "pair again" state (`isStale`) |
 
-After either case the signed-out context is erased, and an analytics event `signed_out_pairings_moved {computers, keys: moved|rescan}` is sent (added to [analytics](../features/analytics.md) and both apps).
+After either case the signed-out context is erased, and when computers moved an analytics event `signed_out_pairings_moved {computers, keys: moved|rescan}` is sent (in [analytics events](../reference/analytics-events.md) and both apps).
 
 **iOS**
 - `SharedStore.Context.adopt(from:)` in the Kit:
   - Moves the Keychain items `com.pokai.Codync.device-key` / `push-key` from account `local` to the context id.
   - Moves the `UserDefaults` names in `Context.names` to their `account.<id>.` keys.
-  - Moves `ActivityIconCache`.
-  - Drops `codync-mirror-local-*` caches, which rebuild.
+  - Drops `ActivityIconCache` and the `codync-mirror-local-*` caches, which rebuild.
+  - The Kit's test bundle has no Keychain entitlement, so its tests keep keys in memory (`Keychain.memory`, debug builds only).
 - Unit tests in `CodyncKitTests` cover both cases.
 
 **Android**
@@ -112,13 +115,14 @@ After either case the signed-out context is erased, and an analytics event `sign
 
 ### 5. Desktop: computer in another account
 
-- **Logic:** a pure function next to `mayOfferMove` in `lib/auto-claim.ts`, `accountMismatch(host, userId)`. It returns one of three values:
+- **Logic:** a pure function next to `mayOfferMove` in `lib/auto-claim.ts`, `accountMismatch(host, userId, keptOut, seen)`. It returns one of three values:
   - `other {email}`;
   - `none {reason: cloudOff | privateRelay | keptOut}`;
   - `null` when the accounts match.
   Tested in `auto-claim.test.ts`.
-- **One line** in the sidebar footer (`SidebarFooter.tsx`), caption size and secondary color, for example "This computer is in a•••@gmail.com's account". It takes no space when there's no mismatch.
-  - Clicking it reopens the move choice (`MoveComputerPrompt`), even after *Keep it there*. For `none`, it opens Settings → Computers.
+- **A notice** above the sidebar footer's buttons (`SidebarFooter.tsx`): an amber card with an icon that shows its text in full, wrapping as needed, and takes no space when there's no mismatch. The narrow rail shows it as an amber icon with the text as its tooltip.
+  - `other`: "This computer is in {email}'s account", with the full address as Settings and the move dialog show it. Clicking it reopens the move choice (`MoveComputerPrompt`), even after *Keep it there*.
+  - `none`: "This computer isn't in an account: its cloud is off" / "…: it uses a private relay", or "This computer isn't in your account" (taken out). Clicking it opens Settings → Computers.
 - **The move dialog** stays as it is in this phase. Its "QR-paired devices keep access" text changes in phase 2.
 
 ### 6. Docs and release
@@ -146,10 +150,10 @@ After either case the signed-out context is erased, and an analytics event `sign
 | --- | --- |
 | Fresh install | The welcome shows only sign-in. Signing in leads to pairing, and a QR pair works |
 | Upgrade | With the previous build signed out, pair by QR. Install this build: the gate counts the computer. Sign in: the computer is there and connects without scanning, and push still arrives |
-| Merge case | Sign in, sign out, pair signed out, sign in again: the signed-out computer shows "pair again" |
+| Merge case | Unit tests only: with sign-in required, a phone can't pair signed out any more, so this only happens to someone who was signed in on an older build and had also paired signed out (the older builds can't take the test sign-in ticket) |
 | Sign out | The computer's device list drops the phone, and the cloud lists the device as revoked |
 | Delete account | The test user is gone in Clerk, and the computers leave the account (`--prune` cleans up) |
-| Desktop | Signed out shows the welcome with no skip. Sign out returns to it. Signed in to a second test account, the footer line shows and reopens the move choice |
+| Desktop | Signed out shows the welcome with no skip. Sign out returns to it. Signed in to a second test account, the footer notice shows and reopens the move choice |
 
 ### Risks
 

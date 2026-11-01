@@ -79,15 +79,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .collect();
             json!({"devices": devices})
         }
-        "revokeDevice" => {
-            let key = str_arg(&b, "key")?;
-            let device = hub.store.device(key).ok_or_else(|| anyhow!("unknown device"))?;
-            hub.revoke_device(key)?;
-            if let Some(grant) = device.grant_id.filter(|_| device.source == DeviceSource::Account) {
-                tokio::spawn(crate::remote::cloud::revoke_grant(hub.clone(), grant));
-            }
-            json!({})
-        }
+        "revokeDevice" => revoke(hub, str_arg(&b, "key")?)?,
+        // A device leaving on its own (signing out): the same as revoking it at the computer.
+        "forgetDevice" => revoke(hub, caller.device_key())?,
         "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
         "decideAccessRequest" => {
             let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
@@ -124,6 +118,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "claimSign" => claim_sign(hub, &b).await?,
         _ => return Ok(ControlFlow::Continue(b)),
     }))
+}
+
+/// Removes a device, and its cloud grant when it was approved through the account.
+fn revoke(hub: &Arc<Hub>, key: &str) -> Result<Value> {
+    let device = hub.store.device(key).ok_or_else(|| anyhow!("unknown device"))?;
+    hub.revoke_device(key)?;
+    if let Some(grant) = device.grant_id.filter(|_| device.source == DeviceSource::Account) {
+        tokio::spawn(crate::remote::cloud::revoke_grant(hub.clone(), grant));
+    }
+    Ok(json!({}))
 }
 
 /// A new one-time pairing code and the QR that carries it (§4.1).
@@ -174,4 +178,42 @@ async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "sig": crypto::b64(&hub.identity.sign(input.as_bytes())),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use crate::remote::identity::Identity;
+    use crate::store::{Device, Scope, Store};
+
+    #[tokio::test]
+    async fn a_device_forgets_only_itself() {
+        let dir = std::env::temp_dir().join(format!("codync-forget-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        let hub = Hub::new(store, "test".into(), Identity::load_or_create(&dir).unwrap(), "token".into(), 0);
+        let phone = Device {
+            key: "me".into(),
+            name: "Phone".into(),
+            platform: "ios".into(),
+            source: DeviceSource::Local,
+            grant_id: None,
+            scopes: vec![Scope::Control, Scope::Screen],
+            lease_until: None,
+            created_at: 1,
+            last_seen_at: None,
+        };
+        hub.store.put_device(&phone).unwrap();
+        hub.store.put_device(&Device { key: "other".into(), ..phone.clone() }).unwrap();
+        hub.store.add_push_ticket("t1", "me", None, None, "Phone").unwrap();
+        let me = Caller::Device { key: "me".into(), scopes: phone.scopes.clone() };
+
+        assert!(call(&hub, &me, "forgetDevice", json!({"key": "other"})).await.unwrap().is_break());
+        assert!(hub.store.device("me").is_none());
+        assert!(hub.store.device("other").is_some(), "only the caller's own device goes");
+        assert!(hub.store.push_tickets().is_empty());
+        assert!(call(&hub, &me, "forgetDevice", json!({})).await.is_err(), "already gone");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

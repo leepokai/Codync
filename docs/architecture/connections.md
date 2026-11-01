@@ -62,8 +62,8 @@ The desktop app runs on a computer with its own host, so its account and the com
 | Computer | Its own app | Shown |
 | --- | --- | --- |
 | In A | Signed in to A | Nothing |
-| In A | Signed in to B | Asked once, **Move this computer to your account?** (*Keep it there* is remembered). After that, one small line in the main window: "This computer is in a•••@gmail.com's account", which opens the same choice |
-| In no account | Signed in | Joins on its own (`mayAutoClaim`), unless the cloud is off, it uses a private relay, or the user took it out; then the same small line says why |
+| In A | Signed in to B | Asked once, **Move this computer to your account?** (*Keep it there* is remembered). After that, an amber notice above the sidebar's account button, its text in full: "This computer is in a•••@gmail.com's account", which opens the same choice |
+| In no account | Signed in | Joins on its own (`mayAutoClaim`), unless the cloud is off, it uses a private relay, or the user took it out; then the same notice says which, and opens Settings → Computers |
 
 The app manages its computer through loopback either way. Only same-account phones can pair with it (rule 3), so a B phone that tries is told which account the computer is in and how to move it.
 
@@ -135,12 +135,12 @@ Phases, file-level steps, tests and risks: [require sign-in](../plans/require-si
 
 | Order | Change | Status |
 | --- | --- | --- |
-| 1 | Delete the account from inside the apps (App Store 5.1.1(v), Google Play). The cloud already cleans up on Clerk's `user.deleted` | Not built: no client has it |
-| 2 | Sign-out hands the key back (iPhone, Android) | Not built: iPhone erases locally only; Android tells only the computer it is connected to |
-| 3 | Sign-in required in every app; the phone's signed-out pairings move into the account on first sign-in (with their device and push keys when the account context is new on that phone, otherwise a list to scan again). Builds without Clerk keep the signed-out context | Not built |
+| 1 | Delete the account from inside the apps (App Store 5.1.1(v), Google Play). The cloud already cleans up on Clerk's `user.deleted` | Built (2.35.0) |
+| 2 | Sign-out hands the key back (iPhone, Android; the desktop revokes its cloud device) | Built (2.35.0) |
+| 3 | Sign-in required in every app; the phone's signed-out pairings move into the account on first sign-in (with their device and push keys when the account context is new on that phone, otherwise a list to scan again). Builds without Clerk keep the signed-out context | Built (2.35.0) |
 | 4 | Same-account QR: the cloud-signed account proof, the host recording each device's account, joining an unowned computer on first scan with a confirmation, short codes, the refusal message | Not built: QR pairs any phone holding the code |
 | 5 | Changing accounts drops every old-account device; the move dialog's text says so | Not built: QR devices are kept today |
-| 6 | The main-window line for an app and computer in different accounts; the phone's refusal text | Not built: Settings and the one-time dialog only |
+| 6 | The main-window line for an app and computer in different accounts; the phone's refusal text | Desktop line built (2.35.0); the refusal text comes with item 4 |
 | 7 | One-click host install over SSH, then **Add to account** on its own | Not built: shows a `brew` command to copy |
 | 8 | Honor the 15-minute lease when the relay drops | Not built: account devices are refused until the cloud state syncs again |
 | 9 | The renames above, in every client | Not built |

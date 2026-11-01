@@ -174,6 +174,8 @@ export interface CodyncBridge {
     /** Why it ended without an account; null once signed in (or while another sign-in runs). */
     signIn(provider: SignInProvider): Promise<SignInFailure | null>
     signOut(): Promise<void>
+    /** Deletes the signed-in Codync account in Clerk; false when it couldn't (nothing changed). */
+    deleteAccount(): Promise<boolean>
     /** The signed-in session's JWT for the Codync cloud. */
     token(): Promise<string>
   }

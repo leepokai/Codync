@@ -2,7 +2,9 @@ package com.codync.android
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.codync.android.core.Computer
 import com.codync.android.core.DeviceIdentity
+import com.codync.android.core.RelayCrypto
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -10,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -29,6 +32,48 @@ class LocalStoreTest {
             assertFalse(store.setupComplete())
             assertNotEquals(identity.publicKey, store.identity().publicKey)
         } finally { store.erase() }
+    }
+
+    /** A computer whose id matches its key, as saved computers must. */
+    private fun computer(seed: Int, name: String): Computer {
+        val key = DeviceIdentity(ByteArray(32) { seed.toByte() }, ByteArray(32)).publicKey
+        return Computer(RelayCrypto.computerId(java.util.Base64.getUrlDecoder().decode(key)), name, key)
+    }
+
+    @Test fun aNewAccountTakesTheSignedOutKeysAndComputers() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val scope = "test-${java.util.UUID.randomUUID()}"
+        val signedOut = LocalStore(context, "$scope-local")
+        val account = LocalStore(context, scope)
+        try {
+            val identity = signedOut.identity()
+            signedOut.saveComputers(listOf(computer(1, "Mac mini")))
+            signedOut.saveLastComputer("last")
+            assertEquals(LocalStore.Adoption(1, MovedKeys.Moved), account.adopt(signedOut))
+            assertEquals(identity.publicKey, account.identity().publicKey)
+            assertEquals(listOf("Mac mini"), account.computers().map { it.name })
+            assertEquals("last", account.lastComputer())
+            assertFalse(signedOut.hasIdentity())
+            assertTrue(signedOut.computers().isEmpty())
+            assertNull("nothing left to move", account.adopt(signedOut))
+        } finally { signedOut.erase(); account.erase() }
+    }
+
+    @Test fun anAccountInUseKeepsItsKeyAndMergesTheComputers() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val scope = "test-${java.util.UUID.randomUUID()}"
+        val signedOut = LocalStore(context, "$scope-local")
+        val account = LocalStore(context, scope)
+        try {
+            val own = account.identity()
+            account.saveComputers(listOf(computer(1, "Account copy")))
+            signedOut.identity()
+            signedOut.saveComputers(listOf(computer(1, "Signed-out copy"), computer(2, "Linux box")))
+            assertEquals(LocalStore.Adoption(2, MovedKeys.Rescan), account.adopt(signedOut))
+            assertEquals(own.publicKey, account.identity().publicKey)
+            assertEquals(listOf("Account copy", "Linux box"), account.computers().map { it.name })
+            assertFalse(signedOut.hasIdentity())
+        } finally { signedOut.erase(); account.erase() }
     }
 
     @Test fun theShortcutsLeadIsSavedPerAccountAndAutomaticIsNone() {

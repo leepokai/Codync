@@ -64,6 +64,25 @@ public struct CloudClient: Sendable {
         return res.devices
     }
 
+    /// Signing out: this device leaves the account, and with it every grant and pending request.
+    public func revokeThisDevice() async throws {
+        guard let device = try await thisDevice() else { return }
+        try await send("DELETE", "v1/devices/\(device.deviceId)")
+    }
+
+    /// This device in the account; nil without a device key or when it was never registered.
+    private func thisDevice() async throws -> CloudDevice? {
+        guard let identity else { return nil }
+        return try await devices().first(where: { $0.deviceKey == identity.publicKey })
+    }
+
+    /// This client on the session token it would send now, for a call that goes out after signing out: a
+    /// session token stays valid until it expires (about a minute). Nil when there's no token to take.
+    public func pinningToken() async -> CloudClient? {
+        guard let token = try? await token() else { return nil }
+        return CloudClient(baseURL: baseURL, identity: identity, session: session) { token }
+    }
+
     // MARK: computers
 
     /// With a device identity, each computer says whether this device has access.
@@ -85,8 +104,8 @@ public struct CloudClient: Sendable {
 
     /// Revokes only this phone's grants, so it can request a fresh approval without removing the computer.
     public func revokeDeviceAccess(_ id: ComputerID) async throws {
-        guard let identity else { throw CloudError(status: 0, code: "noDeviceKey", message: "Sign in again on this device.") }
-        guard let device = try await devices().first(where: { $0.deviceKey == identity.publicKey }) else {
+        guard identity != nil else { throw CloudError(status: 0, code: "noDeviceKey", message: "Sign in again on this device.") }
+        guard let device = try await thisDevice() else {
             throw CloudError(status: 404, code: "notFound", message: "This phone isn't registered in your account. Sign in again.")
         }
         for grant in try await grants(id) where grant.deviceId == device.deviceId {

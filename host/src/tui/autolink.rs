@@ -1,6 +1,6 @@
 //! Bare web addresses in message text (`https://…`, `http://…`, `www.…`), found by the same rule
 //! as the desktop, iPhone and Android apps: the address runs to a space, quote, angle bracket,
-//! backtick or CJK punctuation, without the sentence's closing punctuation or an unmatched
+//! backtick, star or CJK punctuation, without the sentence's closing punctuation or an unmatched
 //! closing bracket. They are underlined, and a click on one opens it in the browser.
 
 use ratatui::style::{Modifier, Style};
@@ -26,30 +26,36 @@ pub fn url_len(chars: &[char], at: usize) -> usize {
         return 0;
     };
     let mut end = rest.iter().position(|&c| stops(c)).unwrap_or(rest.len());
+    // Bracket counts are kept while trimming, so a long run of `)` costs one pass.
+    let count = |c: char| rest[..end].iter().filter(|&&x| x == c).count();
+    let (mut parens, mut brackets) = ((count('('), count(')')), (count('['), count(']')));
     while end > 0 {
-        let last = rest[end - 1];
-        let count = |c: char| rest[..end].iter().filter(|&&x| x == c).count();
-        let unmatched = match last {
-            ')' => count(')') > count('('),
-            ']' => count(']') > count('['),
-            _ => false,
+        let pair = match rest[end - 1] {
+            ')' => Some(&mut parens),
+            ']' => Some(&mut brackets),
+            _ => None,
         };
-        if TRAILING.contains(last) || unmatched {
-            end -= 1;
-        } else {
-            break;
+        match pair {
+            Some((open, close)) if *close > *open => *close -= 1,
+            None if TRAILING.contains(rest[end - 1]) => {}
+            Some(_) | None => break,
         }
+        end -= 1;
     }
     if end > prefix && rest[prefix..end].iter().any(|c| c.is_alphanumeric()) { end } else { 0 }
 }
 
 fn stops(c: char) -> bool {
-    c.is_whitespace() || matches!(c, '<' | '>' | '"' | '`' | '\u{3000}'..='\u{303f}' | '\u{ff00}'..='\u{ffef}')
+    c.is_whitespace() || matches!(c, '<' | '>' | '"' | '`' | '*' | '\u{3000}'..='\u{303f}' | '\u{ff00}'..='\u{ffef}')
 }
 
-/// What an address opens: `www.` addresses over https.
+/// What an address opens: `www.` addresses over https, and the scheme in lowercase.
 pub fn href(url: &str) -> String {
-    if url.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("www.")) { format!("https://{url}") } else { url.to_owned() }
+    if url.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("www.")) {
+        return format!("https://{url}");
+    }
+    let (scheme, rest) = url.split_at(url.find(':').unwrap_or(0));
+    format!("{}{rest}", scheme.to_ascii_lowercase())
 }
 
 /// Plain text (a message the user wrote) with its addresses underlined.
@@ -93,7 +99,9 @@ pub fn hits(lines: &[Line<'_>], width: usize) -> Vec<(usize, u16, u16, String)> 
     let mut out = vec![];
     let mut chain: Vec<Run> = vec![];
     for run in lines.iter().enumerate().flat_map(|(i, l)| runs(i, l, width)) {
-        let joins = chain.last().is_some_and(|last| last.at_edge && last.line + 1 == run.line && run.leads);
+        // A run that starts with its own prefix is a new address, not the rest of the one above.
+        let starts = url_len(&run.text.chars().collect::<Vec<_>>(), 0) > 0;
+        let joins = !starts && chain.last().is_some_and(|last| last.at_edge && last.line + 1 == run.line && run.leads);
         if !joins {
             link(&mut out, std::mem::take(&mut chain));
         }
@@ -170,7 +178,15 @@ mod tests {
             ["https://en.wikipedia.org/wiki/Rust_(language)"]
         );
         assert_eq!(urls("網址：https://codync.dev，謝謝"), ["https://codync.dev"]);
-        assert_eq!(urls("HTTP://A.COM and http://b.io/x_y_z"), ["HTTP://A.COM", "http://b.io/x_y_z"]);
+        assert_eq!(urls("HTTP://A.COM and http://b.io/x_y_z"), ["http://A.COM", "http://b.io/x_y_z"]);
+        assert_eq!(urls("https://a.com/**bold**"), ["https://a.com/"]);
+    }
+
+    #[test]
+    fn a_long_run_of_closing_brackets_is_trimmed_in_one_pass() {
+        let started = std::time::Instant::now();
+        assert_eq!(urls(&format!("https://a.com/{}", ")".repeat(200_000))), ["https://a.com/"]);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]
@@ -189,5 +205,12 @@ mod tests {
         assert!(found.iter().all(|(_, _, _, url)| url == "https://example.com/a/very/long/path"));
         let short = super::super::md::wrap(&underline("a www.x.io b", Style::default()), 40, &[], &[]);
         assert_eq!(hits(&short, 40), [(0, 2, 8, "https://www.x.io".to_owned())]);
+        // Two addresses on lines of their own stay two links.
+        let two = [
+            Line::from(vec![Span::raw(" "), Span::styled("https://a.com", Style::default().add_modifier(Modifier::UNDERLINED))]),
+            Line::from(vec![Span::raw(" "), Span::styled("https://b.com", Style::default().add_modifier(Modifier::UNDERLINED))]),
+        ];
+        let found: Vec<String> = hits(&two, 14).into_iter().map(|(_, _, _, url)| url).collect();
+        assert_eq!(found, ["https://a.com", "https://b.com"]);
     }
 }

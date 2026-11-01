@@ -13,7 +13,14 @@ class AutolinkTest {
         assertEquals(listOf("https://example.com/x"), urls("(at https://example.com/x)"))
         assertEquals(listOf("https://en.wikipedia.org/wiki/Rust_(language)"), urls("https://en.wikipedia.org/wiki/Rust_(language)"))
         assertEquals(listOf("https://codync.dev"), urls("網址：https://codync.dev，謝謝"))
-        assertEquals(listOf("HTTP://A.COM", "http://b.io/x_y_z"), urls("HTTP://A.COM and http://b.io/x_y_z"))
+        assertEquals(listOf("http://A.COM", "http://b.io/x_y_z"), urls("HTTP://A.COM and http://b.io/x_y_z"))
+        assertEquals(listOf("https://a.com/"), urls("https://a.com/**bold**"))
+    }
+
+    @Test fun `a long run of closing brackets is trimmed in one pass`() {
+        val started = System.nanoTime()
+        assertEquals(listOf("https://a.com/"), urls("https://a.com/" + ")".repeat(200_000)))
+        assert(System.nanoTime() - started < 1_000_000_000L)
     }
 
     @Test fun `skips what only looks like an address`() {

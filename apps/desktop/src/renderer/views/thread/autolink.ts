@@ -1,12 +1,12 @@
 // Bare web addresses in message text (`https://…`, `http://…`, `www.…`) become links, found by the
 // same rule as the iPhone, Android and terminal: the address runs to a space, quote, angle
-// bracket, backtick or CJK punctuation, without the sentence's closing punctuation or an
+// bracket, backtick, star or CJK punctuation, without the sentence's closing punctuation or an
 // unmatched closing bracket.
 
 /** Where a bare address may start: its prefix, not inside a word. */
 export const urlStart = /(?<![\p{L}\p{N}_])(?:https?:\/\/|www\.)/iu
 
-const stop = /[\s<>"`　-〿＀-￯]/u
+const stop = /[\s<>"`*　-〿＀-￯]/u
 const trailing = '.,:;!?\'"*_~'
 
 /** The length of the address at the start of `text` (which begins with its prefix), 0 for none. */
@@ -14,23 +14,31 @@ export function urlLength(text: string): number {
   const prefix = /^(?:https?:\/\/|www\.)/i.exec(text)?.[0]
   if (!prefix) return 0
   const end = text.slice(prefix.length).search(stop)
-  let url = end < 0 ? text : text.slice(0, prefix.length + end)
-  for (;;) {
-    const last = url.at(-1) ?? ''
-    if (trailing.includes(last) || unmatched(url, last)) url = url.slice(0, -1)
-    else break
+  let length = end < 0 ? text.length : prefix.length + end
+  // Bracket counts are kept while trimming, so a long run of `)` costs one pass.
+  const open = { ')': count(text, '(', length), ']': count(text, '[', length) }
+  const close = { ')': count(text, ')', length), ']': count(text, ']', length) }
+  for (; length > 0; length--) {
+    const last = text[length - 1]!
+    if (last === ')' || last === ']') {
+      if (close[last] <= open[last]) break
+      close[last]--
+    } else if (!trailing.includes(last)) break
   }
-  return /[\p{L}\p{N}]/u.test(url.slice(prefix.length)) ? url.length : 0
+  return /[\p{L}\p{N}]/u.test(text.slice(prefix.length, length)) ? length : 0
 }
 
-function unmatched(url: string, last: string): boolean {
-  const open = { ')': '(', ']': '[' }[last]
-  return open !== undefined && url.split(last).length > url.split(open).length
+function count(text: string, char: string, length: number): number {
+  let n = 0
+  for (let i = 0; i < length; i++) if (text[i] === char) n++
+  return n
 }
 
-/** What a found address opens: `www.` addresses over https. */
+/** What a found address opens: `www.` addresses over https, and the scheme in lowercase. */
 export function urlHref(url: string): string {
-  return /^www\./i.test(url) ? `https://${url}` : url
+  if (/^www\./i.test(url)) return `https://${url}`
+  const colon = url.indexOf(':')
+  return url.slice(0, colon).toLowerCase() + url.slice(colon)
 }
 
 export type TextPiece = string | { url: string; href: string }

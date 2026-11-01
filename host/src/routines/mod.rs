@@ -245,6 +245,22 @@ impl Routines {
             "followUps": follow_ups})
     }
 
+    /// Another bot's routines as a routine trigger can follow them: no instructions or run history.
+    pub fn list_followable(&self, bot: &str) -> Value {
+        let state = self.state.locked();
+        let routines: Vec<Value> = state
+            .routines
+            .iter()
+            .filter(|r| r.bot_id == bot && !r.deleted)
+            .map(|r| {
+                let full = public(&state, r);
+                json!({"id": r.id, "botId": r.bot_id, "name": r.name, "enabled": r.enabled,
+                    "triggerDescriptions": full["triggerDescriptions"]})
+            })
+            .collect();
+        json!({ "routines": routines })
+    }
+
     pub fn owns(&self, bot: &str, id: &str) -> bool {
         self.state.locked().routines.iter().any(|r| r.is(bot, id))
     }

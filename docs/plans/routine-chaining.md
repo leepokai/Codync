@@ -50,16 +50,19 @@ run ends.
 - `event`: `succeeded`, `failed` (final failures only) or `*`.
 - `filters.routineId` is required: no routine listens to every other.
 - `filters.messageContains` (optional) matches the upstream's result text.
-- `filters.passed` (optional): `"true"` when the upstream had nothing to report (`(pass)` or no reply), `"false"`
-  otherwise. `"false"` is the usual "only when the check found something".
+- `filters.passed` (optional): `"true"` when the upstream succeeded with nothing to report (`(pass)` or no reply),
+  `"false"` otherwise; a failure always has something to report, so `*` with `"false"` matches every failure. `"false"` is the usual "only when the check found something".
 - Other filter keys are refused, so a typo can't make a trigger that silently never fires.
 
 ### The event
 
 ```json
 {"source": "routine", "event": "succeeded", "routineId": "…", "routineName": "Server check", "botId": "…",
- "runId": "…", "passed": "false", "text": "the reply, up to 16 KB", "finishedAt": 1793188800000, "depth": 1}
+ "runId": "…", "passed": "false", "text": "the reply, up to 16 KB", "error": "", "finishedAt": 1793188800000, "depth": 1}
 ```
+
+`error` is a failure's detail (empty on success); when the failed run left no reply, `text` carries it too, so a
+"repair after failure" routine can see why.
 
 Filtered fields are strings, as `matches` compares strings. The run prompt already marks trigger data as untrusted.
 
@@ -83,7 +86,7 @@ The code lives in `routines/chain.rs`; `complete` gains one call.
 | Depth | The event carries `depth` (upstream's depth + 1 when it was itself chained, else 1), the number of routines before the one it queues; at 5 nothing is queued, so a chain runs at most 5 routines |
 | Host only | A webhook delivery with `source: "routine"` is refused, so a sender holding a routine's key can't fake an upstream finishing |
 | Busy | A routine already running or queued is skipped, not queued twice |
-| Unknown upstream | Saving refuses it; one deleted later just never fires and reads "a deleted routine" |
+| Unknown upstream | Saving refuses a new link to it; one deleted later just never fires, reads "a deleted routine", and the routine still saves (only links new in a save are checked) |
 
 Skips are written to the downstream routine's `lastError`.
 

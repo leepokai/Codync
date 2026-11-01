@@ -1,12 +1,12 @@
 // Bare web addresses in message text (`https://…`, `http://…`, `www.…`) become links, found by the
 // same rule as the iPhone, Android and terminal: the address runs to a space, quote, angle
-// bracket, backtick, star or CJK punctuation, without the sentence's closing punctuation or an
+// bracket, backtick, `**` or CJK punctuation, without the sentence's closing punctuation or an
 // unmatched closing bracket.
 
 /** Where a bare address may start: its prefix, not inside a word. */
 export const urlStart = /(?<![\p{L}\p{N}_])(?:https?:\/\/|www\.)/iu
 
-const stop = /[\s<>"`*　-〿＀-￯]/u
+const stop = /[\s<>"`　-〿＀-￯]|\*\*/u
 const trailing = '.,:;!?\'"*_~'
 
 /** The length of the address at the start of `text` (which begins with its prefix), 0 for none. */

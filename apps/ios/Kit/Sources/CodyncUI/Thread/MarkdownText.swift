@@ -25,7 +25,7 @@ public struct MarkdownText: View, Equatable {
     static func inline(_ s: String) -> AttributedString {
         guard var text = try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
         else { return Autolink.attributed(s) }
-        Autolink.link(&text)
+        Autolink.link(&text, source: s)
         for run in text.runs where run.link != nil {
             text[run.range].underlineStyle = .single
         }

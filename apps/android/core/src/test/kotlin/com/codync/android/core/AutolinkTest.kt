@@ -15,6 +15,7 @@ class AutolinkTest {
         assertEquals(listOf("https://codync.dev"), urls("網址：https://codync.dev，謝謝"))
         assertEquals(listOf("http://A.COM", "http://b.io/x_y_z"), urls("HTTP://A.COM and http://b.io/x_y_z"))
         assertEquals(listOf("https://a.com/"), urls("https://a.com/**bold**"))
+        assertEquals(listOf("https://example.com/?q=a*b"), urls("https://example.com/?q=a*b"))
     }
 
     @Test fun `a long run of closing brackets is trimmed in one pass`() {

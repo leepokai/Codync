@@ -3,7 +3,7 @@ package com.codync.android.core
 /**
  * Bare web addresses in message text (`https://…`, `http://…`, `www.…`), found by the same rule
  * as the iPhone, desktop and terminal: the address runs to a space, quote, angle bracket,
- * backtick, star or CJK punctuation, without the sentence's closing punctuation or an unmatched
+ * backtick, `**` or CJK punctuation, without the sentence's closing punctuation or an unmatched
  * closing bracket. A port of CodyncUI `Autolink.swift`.
  */
 object Autolink {
@@ -30,7 +30,7 @@ object Autolink {
     private fun length(text: String, at: Int): Int {
         if (at > 0 && (text[at - 1].isLetterOrDigit() || text[at - 1] == '_')) return 0
         val prefix = prefixes.firstOrNull { text.startsWith(it, at, ignoreCase = true) } ?: return 0
-        var end = (at until text.length).firstOrNull { stops(text[it]) } ?: text.length
+        var end = (at until text.length).firstOrNull { stops(text[it]) || text.startsWith("**", it) } ?: text.length
         // Bracket counts are kept while trimming, so a long run of `)` costs one pass.
         val url = text.substring(at, end)
         val open = mutableMapOf(')' to url.count { it == '(' }, ']' to url.count { it == '[' })
@@ -48,5 +48,5 @@ object Autolink {
         return if (end > body && (body until end).any { text[it].isLetterOrDigit() }) end - at else 0
     }
 
-    private fun stops(c: Char) = c.isWhitespace() || c in "<>\"`*" || c in '　'..'〿' || c in '＀'..'￯'
+    private fun stops(c: Char) = c.isWhitespace() || c in "<>\"`" || c in '　'..'〿' || c in '＀'..'￯'
 }

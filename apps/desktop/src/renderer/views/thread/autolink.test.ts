@@ -13,6 +13,7 @@ test('finds bare addresses and leaves the sentence around them', () => {
   assert.deepEqual(urls('網址：https://codync.dev，謝謝'), ['https://codync.dev'])
   assert.deepEqual(urls('HTTP://A.COM and http://b.io/x_y_z'), ['http://A.COM', 'http://b.io/x_y_z'])
   assert.deepEqual(urls('https://a.com/**bold**'), ['https://a.com/'])
+  assert.deepEqual(urls('https://example.com/?q=a*b'), ['https://example.com/?q=a*b'])
 })
 
 test('skips what only looks like an address', () => {

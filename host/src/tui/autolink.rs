@@ -1,6 +1,6 @@
 //! Bare web addresses in message text (`https://…`, `http://…`, `www.…`), found by the same rule
 //! as the desktop, iPhone and Android apps: the address runs to a space, quote, angle bracket,
-//! backtick, star or CJK punctuation, without the sentence's closing punctuation or an unmatched
+//! backtick, `**` or CJK punctuation, without the sentence's closing punctuation or an unmatched
 //! closing bracket. They are underlined, and a click on one opens it in the browser.
 
 use ratatui::style::{Modifier, Style};
@@ -25,7 +25,7 @@ pub fn url_len(chars: &[char], at: usize) -> usize {
     else {
         return 0;
     };
-    let mut end = rest.iter().position(|&c| stops(c)).unwrap_or(rest.len());
+    let mut end = (0..rest.len()).find(|&i| stops(rest[i]) || rest[i..].starts_with(&['*', '*'])).unwrap_or(rest.len());
     // Bracket counts are kept while trimming, so a long run of `)` costs one pass.
     let count = |c: char| rest[..end].iter().filter(|&&x| x == c).count();
     let (mut parens, mut brackets) = ((count('('), count(')')), (count('['), count(']')));
@@ -46,7 +46,7 @@ pub fn url_len(chars: &[char], at: usize) -> usize {
 }
 
 fn stops(c: char) -> bool {
-    c.is_whitespace() || matches!(c, '<' | '>' | '"' | '`' | '*' | '\u{3000}'..='\u{303f}' | '\u{ff00}'..='\u{ffef}')
+    c.is_whitespace() || matches!(c, '<' | '>' | '"' | '`' | '\u{3000}'..='\u{303f}' | '\u{ff00}'..='\u{ffef}')
 }
 
 /// What an address opens: `www.` addresses over https, and the scheme in lowercase.
@@ -180,6 +180,7 @@ mod tests {
         assert_eq!(urls("網址：https://codync.dev，謝謝"), ["https://codync.dev"]);
         assert_eq!(urls("HTTP://A.COM and http://b.io/x_y_z"), ["http://A.COM", "http://b.io/x_y_z"]);
         assert_eq!(urls("https://a.com/**bold**"), ["https://a.com/"]);
+        assert_eq!(urls("https://example.com/?q=a*b"), ["https://example.com/?q=a*b"]);
     }
 
     #[test]

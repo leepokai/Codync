@@ -2,7 +2,7 @@ import Foundation
 
 /// Bare web addresses in message text (`https://…`, `http://…`, `www.…`), found by the same rule
 /// as Android, the desktop and the terminal: the address runs to a space, quote, angle bracket,
-/// backtick, star or CJK punctuation, without the sentence's closing punctuation or an unmatched
+/// backtick, `**` or CJK punctuation, without the sentence's closing punctuation or an unmatched
 /// closing bracket.
 enum Autolink {
     /// One address: its characters' offsets in the text, and what it opens (`www.` addresses over
@@ -45,12 +45,13 @@ enum Autolink {
     /// Makes the addresses outside links and code spans in `text` links. Each run is searched on
     /// its own, so code or bold text right after an address doesn't join it. Apple's Markdown
     /// links bare addresses by its own rule (`www.` over http, `**` kept inside), so those links
-    /// are found again by this one.
-    static func link(_ text: inout AttributedString) {
+    /// are found again by this one; a link written in `source` (`[label](url)`, `<url>`) stays.
+    static func link(_ text: inout AttributedString, source: String = "") {
         for run in text.runs {
             guard let url = run.link?.absoluteString else { continue }
             let shown = String(text[run.range].characters)
-            if url == shown || url == "http://\(shown)" { text[run.range].link = nil }
+            let written = source.contains("](\(url)") || source.contains("](<\(url)") || source.contains("<\(url)>")
+            if !written, url == shown || url == "http://\(shown)" { text[run.range].link = nil }
         }
         var ranges: [(Range<AttributedString.Index>, URL)] = []
         for run in text.runs where run.link == nil && run.inlinePresentationIntent?.contains(.code) != true {
@@ -73,7 +74,7 @@ enum Autolink {
         guard let prefix = prefixes.first(where: { p in
             p.count <= chars.count - at && zip(p, chars[at...]).allSatisfy { $0.lowercased() == $1.lowercased() }
         }) else { return 0 }
-        var end = chars[at...].firstIndex(where: stops) ?? chars.count
+        var end = (at ..< chars.count).first { stops(chars[$0]) || chars[$0...].starts(with: "**") } ?? chars.count
         // Bracket counts are kept while trimming, so a long run of `)` costs one pass.
         let url = chars[at ..< end]
         let open: [Character: Int] = [")": url.count(where: { $0 == "(" }), "]": url.count(where: { $0 == "[" })]
@@ -94,6 +95,6 @@ enum Autolink {
 
     private static func stops(_ c: Character) -> Bool {
         guard let scalar = c.unicodeScalars.first?.value else { return true }
-        return c.isWhitespace || "<>\"`*".contains(c) || (0x3000 ... 0x303F).contains(scalar) || (0xFF00 ... 0xFFEF).contains(scalar)
+        return c.isWhitespace || "<>\"`".contains(c) || (0x3000 ... 0x303F).contains(scalar) || (0xFF00 ... 0xFFEF).contains(scalar)
     }
 }

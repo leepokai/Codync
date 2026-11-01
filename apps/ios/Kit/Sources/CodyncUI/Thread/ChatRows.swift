@@ -136,7 +136,7 @@ struct UserBubble: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let quote = entry.data.replyTo { QuoteLine(text: quote.text) }
                 if let text = entry.data.text, !text.isEmpty {
-                    Text(text)
+                    Text(Autolink.attributed(text))
                         .font(.body)
                         .foregroundStyle(Palette.text)
                         .textSelection(.enabled)

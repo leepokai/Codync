@@ -200,7 +200,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 @Composable private fun UserText(text: String, quote: ReplyQuote? = null) {
     Column(Modifier.background(Palette.bubbleUser).padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (quote != null) QuoteLine(quote.text)
-        if (text.isNotEmpty()) Text(text, style = Type.body, color = Palette.text)
+        if (text.isNotEmpty()) Text(linked(text), style = Type.body, color = Palette.text)
     }
 }
 

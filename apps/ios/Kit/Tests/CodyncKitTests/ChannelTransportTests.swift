@@ -413,6 +413,31 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     await t.shutdown()
 }
 
+/// Pairing shows the account's certificate and claim; a computer in no account answers with the claim it
+/// signed, which comes back as it was sent, for the cloud.
+@Test(.timeLimit(.minutes(1))) func pairCarriesTheAccountProofAndReturnsTheSignedClaim() async throws {
+    let (dial, sockets) = fakeDialer()
+    var direct = v.computer
+    direct.urls = ["http://127.0.0.1:1"]
+    let computer = direct
+    let certificate = DeviceCertificate(payload: #"{"v":1,"exp":1}"#, sig: "c2ln")
+    async let paired = HostConnector.pair(Pairing(computer: computer, code: v.str("pairing", "code")), identity: v.identity,
+                                          deviceName: "iPhone", platform: "ios", certificate: certificate,
+                                          claim: CloudClaim(claimId: "clm_1", nonce: "n1"), dial: dial)
+    var it = sockets.makeAsyncIterator()
+    var host = HostSide(try #require(await it.next()))
+    try await host.accept()
+    let request = try await host.receive()
+    let body = try #require(request["b"] as? [String: Any])
+    #expect(body["certificate"] as? [String: String] == ["payload": certificate.payload, "sig": certificate.sig])
+    #expect(body["claim"] as? [String: String] == ["claimId": "clm_1", "nonce": "n1"])
+    let signed = ["computerId": computer.id, "signKey": computer.signKey, "version": "2.36.0", "sig": "s"]
+    try await host.send(["id": request["id"] ?? 0, "ok": ["computerId": computer.id, "name": "Studio", "claim": signed]])
+    let result = try await paired
+    #expect(result.computer.name == "Studio")
+    #expect(try JSONSerialization.jsonObject(with: try #require(result.claim)) as? [String: String] == signed)
+}
+
 @Test func lapsedLeaseIsRetriedNotARevocation() throws {
     let reject = { (code: String) in ChannelTransport.rejection(try ChannelTransport.decodeWire(#"{"t":"reject","code":"\#(code)"}"#)) }
     // The computer couldn't confirm the account's approval lately: the channel keeps trying.

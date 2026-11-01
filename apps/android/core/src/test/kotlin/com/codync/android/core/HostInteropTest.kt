@@ -23,11 +23,15 @@ class HostInteropTest {
         val relay = System.getenv("CODYNC_ANDROID_TEST_ROUTE") == "relay"
         val pairing = if (relay) parsed.copy(computer = parsed.computer.copy(route = ConnectionRoute.CloudflareFirst, urls = emptyList())) else parsed
         val random = SecureRandom()
-        val identity = DeviceIdentity(ByteArray(32).also(random::nextBytes), ByteArray(32).also(random::nextBytes))
+        // Pairing needs the account's word for the device key: a cloud certificate and the seed it was issued for.
+        val proof = Json.parseToJsonElement(File(requireNotNull(System.getenv("CODYNC_ANDROID_CERTIFICATE_FILE")) {
+            "Live pairing requires a certificate file: {seed, payload, sig}" }).readText()).jsonObject
+        val identity = DeviceIdentity(requireNotNull(proof.text("seed")).decodeBase64Url(32), ByteArray(32).also(random::nextBytes))
+        val certificate = DeviceCertificate(requireNotNull(proof.text("payload")), requireNotNull(proof.text("sig")))
         val cleanup = System.getenv("CODYNC_ANDROID_CLEANUP_KEY_FILE")
         requireNotNull(cleanup) { "Live acceptance requires a cleanup key file" }
         File(cleanup).writeText(identity.publicKey)
-        val paired = withTimeout(30_000) { HostConnector.pair(pairing, identity, "Android protocol acceptance") }
+        val paired = withTimeout(150_000) { HostConnector.pair(pairing, identity, "Android protocol acceptance", certificate).computer }
         val target = paired.copy(route = if (relay) ConnectionRoute.CloudflareFirst else ConnectionRoute.DirectOnly,
             urls = if (relay) emptyList() else paired.urls)
         val channel = withTimeout(30_000) { HostConnector.connect(target, identity) }

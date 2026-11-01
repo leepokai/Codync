@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import type { PairingInfo } from '@shared/models'
+import type { CloudStatus, PairingInfo } from '@shared/models'
 import { IconButton, Spinner } from '../components/Controls'
 import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
@@ -14,7 +14,7 @@ import { useTr } from '../lib/use-language'
  * A new code comes when `renew` changes and when this one expires on screen; when none comes, the
  * error takes the place of the old code, which may have expired.
  */
-export function PairingCode({ name, cloudOn, requestCode, renew = 0 }: { name: string; cloudOn: boolean; requestCode: () => Promise<PairingInfo>; renew?: number }) {
+export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: string; cloud: CloudStatus | null; requestCode: () => Promise<PairingInfo>; renew?: number }) {
   const tr = useTr()
   const [code, setCode] = useState<{ info: PairingInfo; qr: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +55,12 @@ export function PairingCode({ name, cloudOn, requestCode, renew = 0 }: { name: s
           <Text as="div" size="caption" tone="secondary" className="pairing-note">
             {tr(`Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.`)}
           </Text>
-          {!cloudOn ? (
+          {cloud?.canJoinAccount ? (
+            <Text as="div" size="caption" tone="attention" className="pairing-note">
+              {tr('Not in an account: a signed-in phone that scans this asks to bring the computer into its account.')}
+            </Text>
+          ) : null}
+          {cloud?.enabled !== true ? (
             <Text as="div" size="caption" tone="attention" className="pairing-note">
               {code.info.urls.length === 0
                 ? tr(`No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.`)

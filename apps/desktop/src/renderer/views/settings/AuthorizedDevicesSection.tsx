@@ -31,7 +31,7 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
   }, [store])
 
   // Also when it changes account: the devices approved through the old one lose access.
-  useEffect(() => void loadDevices(), [loadDevices, online, store.accessRequests.length, store.cloud?.owner?.userId])
+  useEffect(() => void loadDevices(), [loadDevices, online, store.accessRequests.length, store.pairingRequests.length, store.cloud?.owner?.userId])
 
   const revoke = async (device: AuthorizedDevice) => {
     try {

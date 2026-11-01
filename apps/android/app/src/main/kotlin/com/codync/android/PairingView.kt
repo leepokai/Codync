@@ -58,6 +58,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.codync.android.design.*
@@ -225,12 +226,17 @@ private enum class ComputerOS { Mac, Linux }
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedRectangle(24.dp))) {
             key(attempt) { QrViewfinder({ pair(it) }, Modifier.fillMaxSize()) { message -> if (message != null) error = message } }
             val dim by animateFloatAsState(if (state.pairing) 1f else 0f, Motion.fade(), label = "Pairing")
-            if (dim > 0f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = dim }.background(Palette.background.copy(alpha = 0.7f)),
-                contentAlignment = Alignment.Center) { Spinner(28.dp) }
+            if (dim > 0f) Column(Modifier.fillMaxSize().graphicsLayer { alpha = dim }.background(Palette.background)
+                .padding(24.dp), Arrangement.spacedBy(16.dp, Alignment.CenterVertically), Alignment.CenterHorizontally) {
+                Spinner(28.dp)
+                // A computer in no account asks its user first: the same code on both says it's this phone.
+                state.pairingCheck?.let { Text(tr(pairingCheckLine(it)), style = Type.callout.monospacedDigit, color = Palette.text,
+                    textAlign = TextAlign.Center) }
+            }
         }
         Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.surface).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            PlainTextField(pasted, { pasted = it }, Modifier.weight(1f), tr("Or paste a {scheme}://pair link").replace("{scheme}", BuildConfig.URL_SCHEME), singleLine = true,
+            PlainTextField(pasted, { pasted = it }, Modifier.weight(1f), tr("Pairing link or code"), singleLine = true,
                 style = Type.callout.monospaced, keyboard = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
                     imeAction = ImeAction.Go), actions = KeyboardActions(onGo = { pair(pasted) }))
             IconButton("Pair", "arrow.right", enabled = pasted.isNotEmpty() && !state.pairing) { pair(pasted) }
@@ -239,7 +245,7 @@ private enum class ComputerOS { Mac, Linux }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(tr(error.orEmpty()), style = Type.footnote, color = Palette.danger)
                 // The usual cause: the phone has no road to the computer yet.
-                IconLabel("Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
+                if (state.pairingUnreachable) IconLabel("Check that this phone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
                     "wifi.exclamationmark", Palette.secondary)
             }
         }

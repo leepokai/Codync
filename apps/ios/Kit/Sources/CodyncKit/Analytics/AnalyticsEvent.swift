@@ -86,8 +86,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
             case let host as HostError:
                 self = switch host {
                 case .upgradeRequired: .upgradeRequired
-                // The host turns down a pairing code that expired or was already used.
-                case .http(403, _): .expired
+                // The host turns down a pairing code that expired or was already used, and a phone it doesn't
+                // let in: another account's, one it can't confirm, or one its user declined.
+                case let .http(403, message): message.hasPrefix("This pairing code expired") ? .expired : .unauthorized
                 case .unauthorized, .http(401, _): .unauthorized
                 case .unreachable, .computerOffline: .unreachable
                 case .http: .other

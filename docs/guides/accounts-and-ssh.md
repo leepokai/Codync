@@ -104,9 +104,12 @@ on a real device before release. Build success and enabled dashboard settings do
 not prove that an Apple authorization completed successfully.
 
 Every build with Clerk requires sign-in on the phone and the desktop app
-([require sign-in](../plans/require-sign-in.md)); builds without Clerk keep the
-signed-out context. QR pairing does not yet require the phone and the computer to
-be in the same account (phase 2). The iPhone's scan step always offers **Skip**,
+([require sign-in](../plans/require-sign-in.md)). Pairing needs a signed-in build
+against a cloud that issues device certificates (or a self-hosted cloud, with
+`CODYNC_DEVICE_CERT_KEY` on the host); builds without Clerk only keep the
+pairings moved over from older versions in the signed-out context, and can't pair.
+QR pairing requires the phone and the computer to be in the same account
+(phase 2, below). The iPhone's scan step always offers **Skip**,
 including when the account has no computers. Skipping finishes onboarding and opens the main
 tabs; this choice survives relaunches and account changes. The empty Bots screen
 offers **Computers** to pair later. Skipping while adding a computer from settings
@@ -123,10 +126,16 @@ and phones and the desktop app see it as an older copy once the new one is reach
 joined the account) and offer to remove it; pair again or ask for access to reach the new one.
 
 On the computer, open Codync in the menu bar and choose **Pair iPhone…**, then scan the
-code on the phone (or paste its `codync://pair` link). The host approves the phone's
-device key; the phone saves the computer in its current account context. This
-works when the phone uses Apple Hide My Email and the computer uses Google. Automatic
-account discovery, in contrast, requires the same Clerk user ID on both devices.
+code on the phone (or paste its `codync://pair` link, or type the short code
+`codync-host pair` prints). The phone sends a device certificate from the cloud with
+`pair`, and the host checks it offline: a computer in an account lets in phones of that
+Clerk user only and turns others away with the owner's masked email (*k•••@gmail.com*);
+a computer in no account asks first (desktop dialog, terminal UI, `codync-host pair`,
+or `codync-host access approve <code>`), both showing the same 6-digit code, then joins
+the phone's account. Apple Hide My Email and Google are different Clerk users, so a phone
+on Hide My Email doesn't pair with a computer whose desktop app uses Google: that
+refusal is correct, not a regression. Account discovery likewise requires the same
+Clerk user ID on both devices.
 
 On 2026-09-30, the production dashboard confirmed a successful Apple registration
 with a private relay address. The subsequent native `/v1/devices` and
@@ -254,6 +263,14 @@ so development sandboxes stay separate. Windows inspects native OpenSSH
 processes and terminates only tunnels whose executable and quoted known-hosts
 path match this app. It uses Windows' OpenSSH Client feature and the device's
 existing SSH config and agent.
+
+A computer without the host shows *Install* on its card (production app only; there is no
+released development host): two SSH commands from `main/ssh-command.ts`, the released
+host into `~/.local/bin` (`packaging/install.sh --host-only`), then `codync-host install`
+on the profile's port. On Linux that step also turns on linger without sudo when it can;
+when it can't, the card shows the one `sudo loginctl enable-linger "$USER"` command. Once
+the installed computer connects, *Add to account* runs on its own when the app is signed in
+and the computer is in no account and not on a private relay (`CloudModel.joinAfterInstall`).
 
 *Over SSH* also offers the `Host` entries of `~/.ssh/config` and the files it `Include`s
 (`main/ssh-config.ts`, parser in `shared/ssh-config.ts`): named hosts only, not patterns, `Match`

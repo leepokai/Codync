@@ -41,7 +41,17 @@ object RelayCrypto {
 
     fun sasCode(hostSignKey: ByteArray, deviceKey: ByteArray, deviceNonce: ByteArray, hostNonce: ByteArray): String {
         require(listOf(hostSignKey, deviceKey, deviceNonce, hostNonce).all { it.size == 32 }) { "Invalid access request" }
-        val hash = sha256(label("codync/sas/v2"), hostSignKey, deviceKey, deviceNonce, hostNonce)
+        return sixDigits(sha256(label("codync/sas/v2"), hostSignKey, deviceKey, deviceNonce, hostNonce))
+    }
+
+    /** The code a computer shows when it asks whether to let this phone in by pairing (host `crypto::pair_check_code`). */
+    fun pairCheck(deviceKey: ByteArray, hostSignKey: ByteArray): String {
+        require(deviceKey.size == 32 && hostSignKey.size == 32) { "Invalid pairing code" }
+        return sixDigits(sha256(label("codync/pair-check/v1"), deviceKey, hostSignKey))
+    }
+
+    /** The first four bytes as a big-endian number, modulo a million, as six digits. */
+    private fun sixDigits(hash: ByteArray): String {
         val number = hash.take(4).fold(0L) { value, byte -> (value shl 8) or (byte.toLong() and 255) }
         return (number % 1_000_000).toString().padStart(6, '0')
     }

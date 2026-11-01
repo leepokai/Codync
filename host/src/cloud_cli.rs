@@ -81,5 +81,32 @@ pub async fn run(args: CloudArgs) -> Result<()> {
         if status["assistants"] == true { "on" } else { "off" },
         text("lastError"),
     );
+    if let Some(hint) = account_hint(&status) {
+        println!("\n{hint}");
+    }
     Ok(())
+}
+
+/// How a computer with no desktop app gets into an account (docs/architecture/connections.md, headless computers).
+fn account_hint(status: &serde_json::Value) -> Option<&'static str> {
+    if !status["owner"].is_null() {
+        return None;
+    }
+    Some(if status["canJoinAccount"] == true {
+        "Not in an account. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type the short code it prints. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
+    } else {
+        "Not in an account. Phones pair with `codync-host pair` and a QR code; joining an account needs the Codync cloud (`codync-host cloud --enable`)."
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_computer_out_of_an_account_says_how_to_join_one() {
+        assert_eq!(account_hint(&json!({"owner": {"userId": "u"}, "canJoinAccount": false})), None);
+        assert!(account_hint(&json!({"owner": null, "canJoinAccount": true})).unwrap().contains("signed-in phone"));
+        assert!(account_hint(&json!({"owner": null, "canJoinAccount": false})).unwrap().contains("--enable"));
+    }
 }

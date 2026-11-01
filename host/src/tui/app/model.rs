@@ -40,6 +40,9 @@ pub enum After {
     Dirs(String),
     WorkspaceSelected(String),
     Pairing,
+    /// The pair sheet's `cloudStatus` and `pairingRequests`.
+    Cloud,
+    PairingRequests,
     Backends,
     Update,
     Saved,

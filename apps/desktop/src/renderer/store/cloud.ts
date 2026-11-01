@@ -1,5 +1,5 @@
 import type { CloudStatus, ClaimSignature } from '@shared/models'
-import { accountMismatch, mayAutoClaim, mayOfferMove, type AccountMismatch, type ClaimCandidate } from '../lib/auto-claim'
+import { accountMismatch, mayAutoClaim, mayJoinAfterInstall, mayOfferMove, type AccountMismatch, type ClaimCandidate } from '../lib/auto-claim'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
 import { relayAddressToSave } from '../lib/relay-address'
@@ -253,8 +253,8 @@ export class CloudModel extends Observable {
   }
 
   /**
-   * Yes to `moveOffer`: out of the other account, then into this one. Devices that account approved lose
-   * access; out of an account the host turns the 6-digit check back on, so the new account's devices show
+   * Yes to `moveOffer`: out of the other account, then into this one. Every device of that account loses
+   * access, QR-paired ones included; out of an account the host turns the 6-digit check back on, so the new account's devices show
    * a code before getting in.
    */
   async moveHere(store: BotStore) {
@@ -268,6 +268,16 @@ export class CloudModel extends Observable {
     } finally {
       this.moving = false
       this.changed()
+    }
+  }
+
+  /** Add to account for an SSH computer just installed from here (installing shows the intent), once its host is up. */
+  async joinAfterInstall(store: BotStore) {
+    if (!this.userId) return
+    try {
+      if (mayJoinAfterInstall(await (await store.ready()).call<CloudStatus>('cloudStatus'))) await this.claim(store)
+    } catch (error) {
+      this.fail(error)
     }
   }
 

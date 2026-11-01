@@ -71,10 +71,10 @@ The app manages its computer through loopback either way. Only same-account phon
 
 A computer with only the host (SSH-only server, VPS) never signs in. It joins an account in one of two ways:
 
-- A manager's desktop app adds it over SSH: add the SSH computer, install the host (one click, planned), then it joins the manager app's account.
+- A manager's desktop app adds it over SSH: add the SSH computer, install the host in one click, then it joins the manager app's account on its own.
 - A signed-in phone scans `codync-host pair` (or types its short code) and the terminal confirms.
 
-`codync-host cloud` and the TUI's account screen say which account the computer is in, or how to add it to one.
+`codync-host cloud` says which account the computer is in, or how to add it to one; the terminal UI's pair sheet says when a scanning phone would bring it into its account.
 
 ### Using a Linux VPS
 
@@ -86,8 +86,8 @@ The agents themselves (Claude Code, Codex, …) always sign in over SSH, as the 
 | --- | --- | --- | --- |
 | 1 | VPS | Install the agents and sign them in | Same |
 | 2 | Desktop | Settings → Computers → Over SSH → **Add SSH computer**, pick the host from `~/.ssh/config`, compare the host key, **Trust and connect** | Built |
-| 3 | Desktop | **Install** on the card: `install.sh --host-only` and `codync-host install` over SSH. `loginctl enable-linger` needs sudo, so when it fails the card shows that one command | Planned: today the card shows a `brew` command to copy, which fails on Linux |
-| 4 | Desktop | The VPS joins the desktop app's account on its own | Planned: today **Add to account** is a separate tap |
+| 3 | Desktop | **Install** on the card: `install.sh --host-only` and `codync-host install` over SSH. Linger is turned on where the system lets the user do it (Ubuntu 24.04 does); otherwise the card shows `sudo loginctl enable-linger "$USER"` | Built (2.36.0); Codync Dev shows the command instead |
+| 4 | Desktop | The VPS joins the desktop app's account on its own | Built (2.36.0) |
 | 5 | Phone | The VPS appears in the account list: **Ask for access**, then compare the 6 digits on the desktop and Allow. Or open **Pair iPhone** on the VPS card and scan | Built |
 | 6 | Desktop | Optionally add it to the network in one click | Built |
 
@@ -97,9 +97,9 @@ The agents themselves (Claude Code, Codex, …) always sign in over SSH, as the 
 | --- | --- | --- | --- |
 | 1 | VPS | Install the agents and sign them in | Same |
 | 2 | VPS | `curl -fsSL …/install.sh \| sh -s -- --host-only`, `codync-host install`, `sudo loginctl enable-linger "$USER"` | Built |
-| 3 | VPS | `codync-host pair` prints a QR code and a short code | QR built; short code planned |
-| 4 | Phone (signed in) | Scan, or type the code. The terminal asks to add the VPS to this account and let this phone in, with a matching code; answer `y` | Planned: today the scan pairs at once and the VPS stays out of any account |
-| 5 | Later | Other phones of the same account scan once and are in. Phones that ask remotely are approved with `codync-host access approve` over SSH or in the TUI, or by turning on **Skip the 6-digit check** (`codync-host cloud approval auto`) | Partly built (same-account rule planned) |
+| 3 | VPS | `codync-host pair` prints a QR code and a short code | Built (2.36.0) |
+| 4 | Phone (signed in) | Scan, or type the code in the paste field. The terminal asks to add the VPS to this account and let this phone in, with a matching code; answer `y` | Built (2.36.0) |
+| 5 | Later | Other phones of the same account scan once and are in. Phones that ask remotely are approved with `codync-host access approve` over SSH, or by turning on **Skip the 6-digit check** (`codync-host cloud approval auto`) | Built (2.36.0) |
 
 Either way the VPS uses the Codync relay by default, with no port to open; Tailscale on both ends gives a direct route. A headless VPS has no remote screen, and its new bots start without connectors (no credential store). `codync-host tui` over SSH chats on the VPS itself.
 
@@ -108,8 +108,8 @@ Either way the VPS uses the Codync relay by default, with no port to open; Tails
 | Belongs to | States | Code today |
 | --- | --- | --- |
 | Computer's account | Not in an account · In your account · In another account; also: Cloud off | `cloud.owner`, `cloud.enabled` |
-| App vs its computer | Same · Computer in another account · Computer in no account | — (planned) |
-| Manage (SSH) | Idle → Connecting → Check host key → Not installed → Installing (planned) → Connected; on errors: Retrying · Failed | `SSHStatus` |
+| App vs its computer | Same · Computer in another account · Computer in no account | `accountMismatch` (desktop) |
+| Manage (SSH) | Idle → Connecting → Check host key → Not installed → Installing → Connected; on errors: Retrying · Failed | `SSHStatus` |
 | Use: access (device × computer) | None → Waiting for OK → Can use (in person / remote); later: Can't confirm right now · Removed | `unpaired`, `pending`, `local` / `account`, `leaseExpired`, `revoked` |
 | Use: connection | Connecting · Online · Computer offline · Offline | `Connection` |
 | Network role | Not in a network · Member · Admin · Creator | `Role` (`owner` becomes Creator) |
@@ -138,10 +138,10 @@ Phases, file-level steps, tests and risks: [require sign-in](../plans/require-si
 | 1 | Delete the account from inside the apps (App Store 5.1.1(v), Google Play). The cloud already cleans up on Clerk's `user.deleted` | Built (2.35.0) |
 | 2 | Sign-out hands the key back (iPhone, Android; the desktop revokes its cloud device) | Built (2.35.0) |
 | 3 | Sign-in required in every app; the phone's signed-out pairings move into the account on first sign-in (with their device and push keys when the account context is new on that phone, otherwise a list to scan again). Builds without Clerk keep the signed-out context | Built (2.35.0) |
-| 4 | Same-account QR: the cloud-signed account proof, the host recording each device's account, joining an unowned computer on first scan with a confirmation, short codes, the refusal message | Not built: QR pairs any phone holding the code |
-| 5 | Changing accounts drops every old-account device; the move dialog's text says so | Not built: QR devices are kept today |
-| 6 | The main-window line for an app and computer in different accounts; the phone's refusal text | Desktop line built (2.35.0); the refusal text comes with item 4 |
-| 7 | One-click host install over SSH, then **Add to account** on its own | Not built: shows a `brew` command to copy |
+| 4 | Same-account QR: the cloud-signed account proof, the host recording each device's account, joining an unowned computer on first scan with a confirmation, short codes, the refusal message | Built (2.36.0) |
+| 5 | Changing accounts drops every old-account device; the move dialog's text says so | Built (2.36.0); joining a first account keeps the phones paired before 2.36.0 |
+| 6 | The main-window notice for an app and computer in different accounts; the phone's refusal text | Built (2.35.0, 2.36.0) |
+| 7 | One-click host install over SSH, then **Add to account** on its own | Built (2.36.0) |
 | 8 | Honor the 15-minute lease when the relay drops | Not built: account devices are refused until the cloud state syncs again |
 | 9 | The renames above, in every client | Not built |
 | 10 | Desktop apps as devices (encrypted channel), so one computer can use another's bots | Not built |

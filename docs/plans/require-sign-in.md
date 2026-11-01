@@ -1,6 +1,6 @@
 # Require sign-in
 
-Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. Phase 1 is built (2.35.0); phases 2 and 3 are not.
+Plan agreed 2026-11-02 for [connections and accounts](../architecture/connections.md): every app is signed in, every phone-to-computer link lives in one account, and QR stays as the in-person way to pair. All three phases are built (2.36.0). Phase 2 needs the cloud's certificate key before it works against a cloud: see [Release steps](#release-steps).
 
 ## Decisions
 
@@ -11,7 +11,7 @@ Plan agreed 2026-11-02 for [connections and accounts](../architecture/connection
 - **A managed computer keeps all its own settings.** "Managed computers don't manage others" is a guideline only, not enforced.
 - **The desktop app may be signed in to an account other than its computer's.** It is asked once whether to move the computer; after that, one small line in the main window says so.
 - **When a host changes the account it belongs to, every device of the old account is dropped**, QR-paired ones included (phase 2). Explain it in those words: the host changed its account, not the app or the phone. Networks are untouched: membership is between hosts, granted by invite, and has its own removal and rules.
-- **Builds without Clerk** (no publishable key: source builds, third parties) keep today's signed-out context. It stays only for them and as the migration source; shipping builds never show it.
+- **Builds without Clerk** (no publishable key: source builds, third parties) keep today's signed-out context, but only for pairings moved over from older versions: pairing needs a signed-in build against a cloud that issues device certificates (a self-hosted cloud needs `CODYNC_DEVICE_CERT_KEY` on its hosts). Shipping builds never show it.
 
 ## Phases
 
@@ -22,7 +22,7 @@ Plan agreed 2026-11-02 for [connections and accounts](../architecture/connection
 | 3 | VPS convenience: one-click host install over SSH, joining the account afterwards on its own, headless hints, short pairing codes | desktop, host, cloud |
 | Later | 15-minute lease grace, renames, desktop apps as devices | — |
 
-Each phase is one release with a minor version bump. Phase 1 needs no `minApp` change. Phase 2 does; see below.
+Phase 1 was 2.35.0 on `dev`; no release went out before phases 2 and 3 joined it, so all three ship as 2.36.0. Phase 2 raises `minApp`; see below.
 
 ## Phase 1: require sign-in
 
@@ -164,30 +164,40 @@ After either case the signed-out context is erased, and when computers moved an 
 ## Phase 2: same-account pairing
 
 **Account proof**
-- The cloud signs a short-lived device certificate `{deviceKey, userId, exp}` with its own Ed25519 key (`POST /v1/devices/certificate`). It publishes the public key at `/v1/keys`.
-- A host pins that key when it joins an account and keeps it with the owner. Checking a certificate is a signature check, so it works offline, with the cloud off or on a private relay.
+- The cloud signs a device certificate with its own Ed25519 key, the `DEVICE_CERT_KEY` secret (a JWK): `POST /v1/devices/certificate` (Clerk session plus `Codync-Sig` from a registered, unrevoked device key) returns `{certificate: {payload, sig}}`. The payload is `{v: 1, deviceKey, userId, email, exp}`, valid 7 days; `sig` signs `"codync/device-cert/v1\n" + payload` (`cloud/src/certificate.ts`).
+- Hosts compile in the public half for their environment (`host/src/environment.rs` `device_cert_key`; `CODYNC_DEVICE_CERT_KEY` overrides it for a self-hosted cloud). Checking a certificate is a signature check with no network, so it works from the first run, with the cloud off or on a private relay. There is no `/v1/keys` route.
+- The private keys live in the git-ignored `.env.development` / `.env.production` (`CODYNC_DEVICE_CERT_KEY`).
 
-**`pair` takes the certificate**
+**`pair` takes the certificate** (`host/src/remote/channel/pairing.rs`). The code is checked first without spending it, so nothing about the computer's account reaches a phone without a live code; then the certificate and the account. The code is spent only once the phone may come in (after the computer's answer), so a phone that can't come in doesn't use it up, and the relay keeps the offer, and the phone's socket, while the computer asks. The account the computer belongs to is kept on the computer (`remote/owner.rs`, kv `account_owner`) and compared offline; with the cloud off or a private relay the computer is in no account, as its status says.
 
 | The computer | Result |
 | --- | --- |
-| Has an owner | The certificate's `userId` must equal the owner. Otherwise the error is `otherAccount`, with the owner's masked email |
-| Has no owner | The computer confirms first. The desktop shows a dialog: a new `pairingRequest` event and a `decidePairing` method. `codync-host pair` and the TUI ask `y/N` with a matching code. After that the host joins the phone's account through a new host-signed route that takes the certificate, and pins the cloud key |
+| No certificate (an app older than 2.36.0) | `reject` `unsupportedVersion`: "Update Codync to connect to this computer." |
+| Certificate not valid for this device key | 403 "Couldn't confirm your Codync account. Sign in again, then scan a new code." |
+| In the phone's account | The phone is let in at once |
+| In another account | 403 "This computer is in k•••@example.com's account. Move it to your account in Codync on that computer, or sign in with that account." |
+| In no account | The computer asks for up to 90 seconds, inside the relay's 2-minute pairing socket (`remote/pairing_requests.rs`: the loopback-only `pairingRequests` event and method, `decidePairing`): the desktop app and the terminal UI show a dialog, `codync-host pair` asks `y/N` in a terminal, and `codync-host access approve <code>` answers anywhere. A phone that leaves takes the question off the screens. Both screens show the same 6-digit code, `sha256("codync/pair-check/v1" ‖ deviceKey ‖ hostSignKey)` (`crypto::pair_check_code`, vector `pairCheck`). Declined or unanswered: 403 "The computer didn't let this phone in." Let in: the computer signs the claim the phone made (`POST /v1/claims`) and the phone completes it (`POST /v1/claims/{id}/complete`), so joining needs no new cloud route. With the cloud off or a private relay there is no claim; the phone is let in and the computer stays out of any account |
 
-**Each device records its account.** Devices get `account_user_id`. When the host changes the account it belongs to (joining one, moving, or leaving with **Remove from account**), devices of any other account are dropped. The move dialog's text then reads: "Every device of {email}'s account loses access." Networks stay as they are: a computer handed to someone else is taken out of a network by the network's creator or an admin, like its SSH key is taken off the manager.
+**Each device records its account** (`devices.account`, schema 7). When the host changes the account it belongs to (joining one, moving, or leaving with **Remove from account**), devices of any other account are dropped. Joining a first account keeps the phones paired before devices recorded their account, so updating doesn't cost anyone a phone. The desktop's move and remove dialogs say: "Every device of {email}'s account loses access." Networks stay as they are: a computer handed to someone else is taken out of a network by the network's creator or an admin, like its SSH key is taken off the manager.
 
-**Phones:** send the certificate when pairing, and explain `otherAccount`: "This computer is in a•••@gmail.com's account. Move it to your account in Codync on that computer, or sign in with that account."
+**Phones** fetch a certificate before pairing (kept in memory per account; a new one when less than a day is left; registering the device again on 403; an unexpired one is used offline), make a claim, send both, wait up to 150 seconds, and show "If the computer asks, check it shows 123 456." while they wait. Without a certificate: "Connect to the internet to pair, so Codync can confirm your account."
 
-**Compatibility:** apps older than this release can't send a certificate. A host refuses their QR pairing with `unsupportedVersion` ("Update Codync"). That is a new requirement on the phone, so `minApp` rises with this release and [the release gate](../reference/compatibility.md) holds it until both stores have the apps.
+**Compatibility:** apps older than this release can't send a certificate, so `minApp` is 2.36.0 and [the release gate](../reference/compatibility.md) holds the release until both stores have the apps.
 
 ## Phase 3: VPS convenience
 
-- **One-click install over SSH** (`apps/desktop/src/main/ssh*.ts`):
-  - On `notInstalled`, **Install** runs `install.sh --host-only` and `codync-host install` over the existing SSH connection, with a new `installing` SSH state.
-  - `loginctl enable-linger` needs sudo. When it fails, the card shows that one command to run. It replaces today's `brew` command, which fails on Linux.
-- **Joining the account after install:** the manager app's **Add to account** runs on its own, because installing shows the intent.
-- **Headless hints:** `codync-host cloud` and the TUI account screen say which account the computer is in, or how to add it ([connections: headless](../architecture/connections.md#headless-computers)).
-- **Short pairing codes:** `codync-host pair` also prints a code like `QRTX-4821`, which the host registers with the cloud as a pairing offer. The app resolves the code to the pairing link. The terminal's matching code catches a cloud that swaps keys.
+- **One-click install over SSH** (`apps/desktop/src/main/ssh*.ts`): on `notInstalled` the card shows **Install**, which runs `install.sh --host-only` into `~/.local/bin` and `codync-host install` over the existing SSH connection (SSH state `installing`). Linger is checked and enabled without sudo where the system allows it (Ubuntu 24.04 does); otherwise the card shows `sudo loginctl enable-linger "$USER"` to copy. Codync Dev keeps showing the command, since there is no released dev host to install.
+- **Joining the account after install:** once the installed computer connects, the app's **Add to account** runs on its own, when the app is signed in and the computer is in no account and not on a private relay.
+- **Headless hints:** `codync-host cloud` says how a computer out of an account joins one; the terminal UI's and the desktop app's pair screens say a signed-in phone that scans asks to bring the computer into its account (there is no account screen in the terminal UI). All read the host's `cloudStatus.canJoinAccount` (in no account, the Codync cloud on). `codync-host pair --json`, or without a terminal, says how to answer the computer's question.
+- **Short pairing codes:** `codync-host pair` and the terminal UI's pair sheet ask the host for a code (`pairing {shortCode: true}`); the host registers its link with the cloud (`POST /v1/host/pairing-codes`, migration `0005`), and shows a code like `QRTX-4821`, valid 10 minutes, single use. The phones' paste field takes it and trades it for the link (`GET /v1/pairing-codes/{code}`, signed-in, limited to 10 tries a minute per account and per IP by `PAIRING_CODE_LIMITER`, a miss counting twice). The computer's own check code catches a cloud that hands out another link. `codync-host pair` waits until its code is spent (`pairingCodeOpen`, loopback only).
+
+## Release steps
+
+Phase 2 and 3 need these once per cloud, before the hosts that ask for them ship (the cloud is deployed by hand):
+
+1. `DEVICE_CERT_KEY`: `grep '^CODYNC_DEVICE_CERT_KEY=' .env.development | cut -d= -f2- | npx wrangler secret put DEVICE_CERT_KEY --env dev` from `cloud/` (and the same from `.env.production` without `--env` for main).
+2. The pairing codes table: `npx wrangler d1 migrations apply codync-dev --env dev --remote` (main: `codync`).
+3. `npm run deploy:dev`, then `npm run deploy:main` right after the release merges.
 
 ## Later
 

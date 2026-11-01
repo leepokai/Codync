@@ -2,6 +2,7 @@ package com.codync.android
 
 import android.content.Context
 import android.os.Build
+import com.codync.android.core.CloudError
 import com.codync.android.core.HostError
 import com.codync.android.core.PairingProblem
 import java.io.IOException
@@ -129,8 +130,16 @@ internal enum class PairingFailure(override val wire: String) : CatalogValue {
                 PairingProblem.Kind.OutdatedHost -> OutdatedHost
                 PairingProblem.Kind.Invalid -> Invalid
             }
-            // 400: a host from before Android phones turns the platform down; 403: the code expired or was used.
-            error is HostError -> when (error.status) { 400 -> OutdatedHost; 403 -> Expired; 426 -> UpgradeRequired; else -> Other }
+            // 400: a host from before Android phones turns the platform down. 403: the code expired or was used, or the
+            // computer turned this phone away (another account, declined, an account it couldn't confirm), as on iOS.
+            error is HostError -> when (error.status) {
+                400 -> OutdatedHost
+                403 -> if (error.message.startsWith("This pairing code expired")) Expired else Unauthorized
+                426 -> UpgradeRequired
+                else -> Other
+            }
+            // The cloud answered (a short code that's spent, an account it couldn't confirm): as on iOS.
+            error is CloudError -> Other
             // The computer's keys don't match the code's.
             error is SecurityException -> Unauthorized
             error.isTimeout -> Timeout

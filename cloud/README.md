@@ -55,9 +55,11 @@ Development deployment (see [environment readiness](../docs/guides/environments-
 ```bash
 # Only if the database does not exist: npx wrangler d1 create codync-dev
 # Confirm its database_id in [env.dev] before applying migrations.
-npx wrangler d1 migrations apply codync-dev --env dev --remote
+npx wrangler d1 migrations apply codync-dev --env dev --remote   # includes 0005 (short pairing codes)
 npx wrangler secret put CLERK_SECRET_KEY --env dev
 npx wrangler secret put CLERK_WEBHOOK_SECRET --env dev
+# The device certificate key: without it phones can't pair (503 notConfigured).
+grep '^CODYNC_DEVICE_CERT_KEY=' ../.env.development | cut -d= -f2- | npx wrangler secret put DEVICE_CERT_KEY --env dev
 npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 ```
 
@@ -65,11 +67,13 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 |---|---|---|
 | `CLERK_SECRET_KEY` | secret | JWKS for session tokens |
 | `CLERK_WEBHOOK_SECRET` | secret | Svix signature on `/v1/webhooks/clerk` (`user.deleted`) |
+| `DEVICE_CERT_KEY` | secret | Ed25519 private key (JWK JSON) that signs device certificates (`POST /v1/devices/certificate`); hosts compile in its public half (`host/src/environment.rs`), `CODYNC_DEVICE_CERT_KEY` on a host overrides it for a self-hosted cloud. Kept in the git-ignored `.env.development` / `.env.production` as `CODYNC_DEVICE_CERT_KEY` |
 | `RELEASE_GATE_TOKEN` | secret, main only | fine-grained GitHub token, *Actions: write* on `leepokai/Codync`: dispatches the release gate |
 | `CLERK_ISSUER` | var | Clerk Frontend API URL; tokens must carry this `iss` |
 | `CLERK_AUTHORIZED_PARTIES` | var, optional | comma-separated; a token with `azp` must match |
 | `CLERK_JWT_KEY` | var, dev/e2e only | public key for networkless verification |
 | `ASSISTANT_LIMITER` | rate limit binding | cloud assistant (MCP connector) requests per account, 120 per minute |
+| `PAIRING_CODE_LIMITER` | rate limit binding | short pairing codes typed per account and per IP, 10 per minute, a miss counting twice |
 
 `RELEASE_GATE_TOKEN` is a fine-grained token without expiry. If it's revoked, set a new one with
 `npx wrangler secret put RELEASE_GATE_TOKEN`: without a working token the release gate runs only after

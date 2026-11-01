@@ -64,6 +64,9 @@ pub struct CloudStatus {
     pub assistants: bool,
     /// Whose relay: on a private one there is no account, access request or relayed screen.
     pub relay: RelayKind,
+    /// In no account while it could join one (the Codync cloud on): a signed-in phone that pairs asks to bring it
+    /// into its account. Kept by [`update_status`], so every app words it the same.
+    pub can_join_account: bool,
 }
 
 /// How account devices get in (`setApproval`, local only).
@@ -144,6 +147,7 @@ pub fn update_status(hub: &Hub, f: impl FnOnce(&mut CloudStatus)) {
         let mut s = hub.cloud.status.locked();
         let before = s.clone();
         f(&mut s);
+        s.can_join_account = s.enabled && s.relay == RelayKind::Codync && s.owner.is_none();
         (*s != before).then(|| s.clone())
     };
     if let Some(s) = changed {
@@ -227,7 +231,7 @@ fn signed(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value
 }
 
 /// One signed `/v1/host/*` call.
-async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
+pub(super) async fn call(hub: &Hub, base: &str, method: Method, path: &str, body: Option<&Value>) -> Result<Value> {
     answer(signed(hub, base, method, path, body)?).await
 }
 
@@ -332,6 +336,7 @@ pub async fn pull(hub: &Hub, base: &str) -> Result<()> {
     let state: State = serde_json::from_value(call(hub, base, Method::GET, "/v1/host/state", None).await?)
         .context("reading the cloud state")?;
     apply_grants(hub, &state.grants)?;
+    super::owner::remember(hub, state.owner.as_ref())?;
     let in_account = state.owner.is_some();
     // A pull that works also settles an earlier failed one.
     update_status(hub, |s| {
@@ -562,6 +567,8 @@ pub async fn decide(hub: &Hub, id: &str, approve: bool, how: Approval) -> Result
         lease_until: Some(now_ms() + LEASE_MS),
         created_at: now_ms(),
         last_seen_at: None,
+        // Approved through the account the computer is in.
+        account: super::owner::owner(&hub.store).map(|o| o.user_id),
     };
     hub.store.put_device(&device)?;
     tracing::info!(grant_id = grant, "account device approved");
@@ -659,6 +666,7 @@ mod tests {
             lease_until: Some(now_ms() + 1000),
             created_at: now_ms(),
             last_seen_at: None,
+            account: None,
         }
     }
 

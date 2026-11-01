@@ -42,7 +42,7 @@ codync-host status
 
 ## Pair your phone
 
-With the host running, run `codync-host pair` over SSH. It prints a QR code in your terminal. On the iPhone, signed in, scan it from the welcome screen or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). If scanning a terminal QR code is awkward, run `codync-host pair --json` and paste the `codync://pair` link into the field under the scanner.
+With the host running, run `codync-host pair` over SSH. It prints a QR code and a short code like `QRTX-4821`. On the iPhone, signed in, scan the QR code from the welcome screen or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**), or type the short code into the field under the scanner. A server that isn't in an account yet asks in the terminal whether to let the phone in and join your account: check the phone shows the same 6-digit code, then answer `y` within 90 seconds. With `codync-host pair --json`, or SSH without a terminal, answer with `codync-host access approve <code>` instead. `codync-host cloud` says which account the server is in.
 
 The code works once and expires after 10 minutes. More about pairing and accounts: [Remote access](/docs/remote-access).
 
@@ -60,6 +60,8 @@ CODYNC_TOKEN=$(ssh your-server 'cat ~/.codync/token') codync-host tui --url http
 ## Use the desktop app over SSH
 
 The desktop app on macOS, Linux or Windows can run the server's bots alongside its own. Open **Settings → Computers**, and under **Over SSH** choose **Add SSH computer**. Fill in the host (an SSH alias or hostname) and, if your SSH config doesn't already set them, the user, port and key. Sign-in must work with a key or ssh-agent: nothing prompts for a password. On the first connection, compare the host key fingerprint with the server's, then choose **Trust and connect**.
+
+If the server doesn't have the host yet, choose **Install** on its card: the app installs `codync-host` over SSH and connects, then adds the server to your Codync account. Where the server doesn't let your user keep services running after logging out, the card shows the one `sudo loginctl enable-linger "$USER"` command to run there.
 
 From that computer's card you can also show its pairing code, turn the relay on or off, and choose **Add to account** to put the server in your Codync account.
 

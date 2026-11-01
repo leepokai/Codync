@@ -55,7 +55,7 @@ class OnboardingTest {
         compose.onNodeWithText("Scan the pairing code").assertIsDisplayed()
         compose.onNodeWithContentDescription("Step 2 of 2").assertIsDisplayed()
         compose.onNodeWithText("codync-host pair").assertIsDisplayed()
-        compose.onNodeWithText("Or paste a ${BuildConfig.URL_SCHEME}://pair link").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Pairing link or code").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Pair").assertIsNotEnabled()
         compose.onNode(hasSetTextAction()).performTextInput("draft-link")
         compose.onNodeWithContentDescription("Pair").assertIsEnabled()

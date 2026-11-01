@@ -45,7 +45,7 @@ impl Drop for PhoneClientGuard {
 }
 
 /// Event types only this computer's own apps receive.
-const LOCAL_EVENTS: &[&str] = &["accessRequests", "cloud"];
+const LOCAL_EVENTS: &[&str] = &["accessRequests", "cloud", "pairingRequests"];
 
 #[cfg(test)]
 mod tests;

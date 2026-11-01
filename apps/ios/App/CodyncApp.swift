@@ -211,9 +211,16 @@ final class AppStore {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    /// A scanned, pasted or opened pairing link; one that can't be read is recorded before it's shown.
-    func pairing(from link: String) throws -> Pairing {
-        do { return try Pairing.parse(link) } catch { throw pairingFailed(error) }
+    /// A scanned, pasted or opened pairing link, or a short code typed from the computer, which the cloud
+    /// turns into its link; one that can't be read is recorded before it's shown.
+    func pairing(from text: String) async throws -> Pairing {
+        do {
+            guard let code = Pairing.shortCode(text) else { return try Pairing.parse(text) }
+            guard let cloud else { throw AccountStore.noCertificate }
+            return try Pairing.parse(try await cloud.pairingLink(code: code))
+        } catch {
+            throw pairingFailed(error)
+        }
     }
 
     /// `via`: `qr` scanned or pasted here, `link` opened from the Camera app.
@@ -244,7 +251,7 @@ final class AppStore {
             // Scanned with the Camera app: pair right away.
             let accounts = accounts
             Task {
-                do { _ = try await pair(try pairing(from: url.absoluteString), via: .link) } catch { accounts.lastError = error.localizedDescription }
+                do { _ = try await pair(try await pairing(from: url.absoluteString), via: .link) } catch { accounts.lastError = error.localizedDescription }
             }
         case "bot":
             guard let ref = storage.reference(from: url), accounts.store(for: ref.computerId) != nil else { return }

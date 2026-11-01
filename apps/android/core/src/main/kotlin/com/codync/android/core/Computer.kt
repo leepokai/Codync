@@ -46,8 +46,14 @@ internal fun isDirectUrl(value: String): Boolean {
     return url.username.isEmpty() && url.password.isEmpty() && url.fragment == null
 }
 
+/** Debug builds set this: plain http to this machine also counts as a cloud (a local Wrangler), as in the iPhone's debug build. */
+object LocalCloud {
+    @Volatile var allowed = false
+}
+
 internal fun isCloudUrl(value: String): Boolean {
     val url = value.toHttpUrlOrNull() ?: return false
-    return url.isHttps && url.username.isEmpty() && url.password.isEmpty() && url.query == null && url.fragment == null
+    val local = LocalCloud.allowed && url.scheme == "http" && url.host in setOf("127.0.0.1", "localhost")
+    return (url.isHttps || local) && url.username.isEmpty() && url.password.isEmpty() && url.query == null && url.fragment == null
 }
 

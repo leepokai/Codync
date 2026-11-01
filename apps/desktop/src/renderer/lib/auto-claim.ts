@@ -25,6 +25,9 @@ export function mayAutoClaim(host: ClaimCandidate, keptOut: readonly string[], s
   return joinable(host, keptOut) && !host.cloud?.owner && !seen.includes(host.id)
 }
 
+/** Whether an SSH computer just installed from here joins the account: not one in an account already, nor on a private relay (no accounts). */
+export const mayJoinAfterInstall = (cloud: Pick<CloudStatus, 'owner' | 'relay'>) => !cloud.owner && cloud.relay !== 'private'
+
 /**
  * Whether to ask to move this computer into the signed-in account: it's in another one, and signing in
  * here with a different account means it goes with that one now. Saying no keeps it out (`keptOut`).

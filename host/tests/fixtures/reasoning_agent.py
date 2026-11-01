@@ -1,9 +1,12 @@
-"""ACP fixture exposing effort with legacy model selection and per-process defaults."""
+"""ACP fixture exposing effort with legacy model selection and per-process defaults.
+
+Each reply counts the prompts this process answered, so a test sees whether the agent restarted."""
 import json
 import sys
 
 effort = "medium"
 model = "default"
+prompts = 0
 
 
 def send(value):
@@ -33,9 +36,10 @@ for line in sys.stdin:
         effort = params["value"]
         result = options()
     elif method == "session/prompt":
+        prompts += 1
         text = " ".join(b.get("text", "") for b in params.get("prompt", []))
         send({"method": "session/update", "params": {"sessionId": "s1", "update": {
-            "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": f"{model} {effort} · {text}"}}}})
+            "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": f"{model} {effort} · {prompts} · {text}"}}}})
         result = {"stopReason": "end_turn"}
     else:
         result = {}

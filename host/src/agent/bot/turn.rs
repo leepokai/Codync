@@ -175,6 +175,7 @@ impl Actor {
         self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));
         if let Some(sid) = session {
             self.sync_mode(&sid).await?;
+            self.sync_model_options(&sid).await?;
             self.sync_fast_mode(&sid).await;
         }
         if hidden && self.session_fresh {

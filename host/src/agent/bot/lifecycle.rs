@@ -124,6 +124,7 @@ impl Actor {
                 conn.fast_options.remove(sid);
                 conn.modes.remove(sid);
                 conn.mode_set.remove(sid);
+                conn.stale_options.remove(sid);
                 conn.usage.remove(sid);
                 conn.renamed.remove(sid);
                 self.applied_system.remove(sid);

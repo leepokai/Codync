@@ -1,6 +1,6 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
-use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
+use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key, model_options};
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::hub::BotStatus;
@@ -81,8 +81,10 @@ impl Actor {
                     || cfg.command != self.cfg.command
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
-                    || cfg.model_options != self.cfg.model_options
                     || (memory_changed && !resumes);
+                // A new effort on the same model keeps the session (see `model_options`).
+                let options_live = model_options::switch_live(&self.cfg.model_options, &cfg.model_options);
+                let restart = restart || (cfg.model_options != self.cfg.model_options && !options_live);
                 self.tools_changed |= cfg.connectors != self.cfg.connectors
                     || cfg.computer != self.cfg.computer
                     || cfg.manage_team != self.cfg.manage_team
@@ -98,6 +100,9 @@ impl Actor {
                 }
                 if mode_changed {
                     self.mode_changed();
+                }
+                if options_live && !restart {
+                    self.model_options_changed();
                 }
                 if memory_changed {
                     // Claude Code's notes come or go on the memory screen.

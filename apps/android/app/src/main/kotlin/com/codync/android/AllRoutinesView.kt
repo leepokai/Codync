@@ -44,6 +44,8 @@ private data class RoutineTarget(val botId: String, val id: String)
     val all = state.allRoutines
     var picking by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<RoutineTarget?>(null) }
+    // A new webhook routine just saved, kept here until the list has it.
+    var saved by remember { mutableStateOf<Routine?>(null) }
     val shown = roster(state.bots)
     val owners = routineOwners(shown)
     LaunchedEffect(online) { if (online) while (true) { store.loadAllRoutines(); delay(3_000) } }
@@ -76,12 +78,19 @@ private data class RoutineTarget(val botId: String, val id: String)
             }
         }
     }
+    fun listed(id: String) = all?.firstOrNull { it.id == id } ?: saved?.takeIf { it.id == id }
     // A routine's editor opens once that routine is listed (as in a bot's own list).
-    CodyncSheet(editing?.takeIf { target -> target.id.isEmpty() || all.orEmpty().any { it.id == target.id } }, { editing = null }) { target ->
+    CodyncSheet(editing?.takeIf { target -> target.id.isEmpty() || listed(target.id) != null }, { editing = null; saved = null }) { target ->
         AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Routines))
-        RoutineEditor(target.botId, all?.firstOrNull { it.id == target.id }, state, store) { saved ->
-            // A new webhook routine stays open: its URL and key exist only now.
-            editing = if (target.id.isEmpty() && saved?.hasWebhook == true) target.copy(id = saved.id) else null
+        RoutineEditor(target.botId, listed(target.id), state, store) { routine ->
+            // A new webhook routine stays open: its URL and key exist only now, even before the list arrives.
+            if (target.id.isEmpty() && routine?.hasWebhook == true) {
+                saved = routine
+                editing = target.copy(id = routine.id)
+            } else {
+                editing = null
+                saved = null
+            }
         }
     }
 }

@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BotAvatar } from '../../components/Avatar'
 import { IconButton } from '../../components/Controls'
 import { ModalHeader, Sheet, SheetPage } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useScreenViewed } from '../../store/analytics'
+import { AllRoutinesStore } from '../../store/all-routines'
 import { useStore } from '../../store/context'
+import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import { routineOwners, routineSections } from './all-routines'
-import { errorText, type Routine } from './routine'
+import type { Routine } from './routine'
 import { RoutineEditorView } from './RoutineEditorView'
 import { RoutineRow } from './RoutineRow'
 import './routines.css'
@@ -24,10 +26,7 @@ interface EditorTarget {
 export function AllRoutinesView() {
   const tr = useTr()
   const store = useStore()
-  const [routines, setRoutines] = useState<Routine[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const model = useModel(useMemo(() => new AllRoutinesStore(() => store.ready()), [store]))
   const [picking, setPicking] = useState(false)
   const [editing, setEditing] = useState<EditorTarget | null>(null)
   useScreenViewed(editing ? 'routines' : null, editing?.id)
@@ -35,22 +34,11 @@ export function AllRoutinesView() {
   const bots = [...store.roster, ...store.hiddenBots]
   const owners = routineOwners(store.roster)
 
-  const load = async () => {
-    try {
-      const result = await (await store.ready()).call<{ routines: Routine[] }>('allRoutines', {})
-      setRoutines(result.routines)
-      setLoaded(true)
-      setError(null)
-    } catch (e) {
-      setError(errorText(e))
-    }
-  }
-
   useEffect(() => {
     let stopped = false
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = async () => {
-      await load()
+      await model.load()
       if (!stopped) timer = setTimeout(tick, 3000)
     }
     void tick()
@@ -58,20 +46,7 @@ export function AllRoutinesView() {
       stopped = true
       clearTimeout(timer)
     }
-  }, [store])
-
-  const toggle = async (routine: Routine, enabled: boolean) => {
-    if (busy) return
-    setBusy(true)
-    try {
-      await (await store.ready()).call('setRoutineEnabled', { botId: routine.botId, id: routine.id, enabled })
-      await load()
-    } catch (e) {
-      setError(errorText(e))
-    } finally {
-      setBusy(false)
-    }
-  }
+  }, [model])
 
   const open = (botId: string, routineId: string | null) => {
     setPicking(false)
@@ -81,17 +56,17 @@ export function AllRoutinesView() {
   const onSaved = (target: EditorTarget, saved: Routine | null) => {
     // A new webhook routine stays open: its URL and key exist only now.
     if (target.routineId === null && saved && saved.triggers.some((t) => t.type === 'webhook')) {
-      setRoutines((list) => [...list, saved])
+      model.saved(saved)
       setEditing({ ...target, routineId: saved.id })
     } else {
       setEditing(null)
     }
-    void load()
+    void model.load()
   }
 
-  const summary = (routine: Routine) => (routine.lastError ? 'Schedule needs attention' : routine.triggerDescriptions.join(' · '))
-  const sections = routineSections(routines, bots)
-  const editingRoutine = routines.find((r) => r.id === editing?.routineId) ?? null
+  const summary = (routine: Routine) => (routine.lastError ? tr('Schedule needs attention') : routine.triggerDescriptions.join(' · '))
+  const sections = routineSections(model.routines, bots)
+  const editingRoutine = model.routines.find((r) => r.id === editing?.routineId) ?? null
   return (
     <SheetPage>
       <ModalHeader
@@ -104,7 +79,7 @@ export function AllRoutinesView() {
         )}
       />
       <VStack gap={16} className="routines all-routines">
-        {error ? <Text size="caption" tone="danger" className="routines-error">{error}</Text> : null}
+        {model.error ? <Text size="caption" tone="danger" className="routines-error">{model.error}</Text> : null}
         {picking ? (
           <VStack gap={8}>
             {owners.map((bot) => (
@@ -116,7 +91,7 @@ export function AllRoutinesView() {
           </VStack>
         ) : sections.length === 0 ? (
           <Text as="div" size="callout" tone="secondary" className="outlined-card routines-empty">
-            {loaded ? tr(`No routines yet. Set one up for a bot with +.`) : tr(`Loading routines…`)}
+            {model.loaded ? tr(`No routines yet. Set one up for a bot with +.`) : tr(`Loading routines…`)}
           </Text>
         ) : (
           sections.map(({ bot, routines: own }) => (
@@ -130,9 +105,9 @@ export function AllRoutinesView() {
                   key={routine.id}
                   routine={routine}
                   summary={summary(routine)}
-                  disabled={busy || store.isOffline}
+                  disabled={model.busy || store.isOffline}
                   onOpen={() => open(routine.botId, routine.id)}
-                  onToggle={(on) => void toggle(routine, on)}
+                  onToggle={(on) => void model.setEnabled(routine, on)}
                 />
               ))}
             </VStack>

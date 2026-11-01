@@ -11,7 +11,7 @@ pub struct AllRoutines {
     pub items: Option<Vec<Value>>,
     /// Over the routines only, in the order shown (bot headers are skipped).
     pub cursor: usize,
-    /// `n` with several bots: which bot the new routine is for (a cursor over `routine_bots`).
+    /// `n` with several bots: which bot the new routine is for (a cursor over `routine_owners`).
     pub chooser: Option<usize>,
 }
 
@@ -38,6 +38,12 @@ impl App {
         bots
     }
 
+    /// The bots a new routine can be for: agent bots in the roster, as on the other clients.
+    /// Hidden bots keep their sections but aren't offered.
+    pub(in crate::tui) fn routine_owners(&self) -> Vec<&str> {
+        self.roster().into_iter().filter(|b| !b.group).map(|b| b.id.as_str()).collect()
+    }
+
     /// The routines as the sheet shows them, grouped by bot.
     pub(in crate::tui) fn all_routines_grouped<'a>(&'a self, items: &'a [Value]) -> Vec<(&'a str, Vec<&'a Value>)> {
         grouped(&self.routine_bots(), items)
@@ -60,7 +66,7 @@ impl App {
             (KeyCode::Esc | KeyCode::Char('q' | 'O'), _) => return None,
             (KeyCode::Down | KeyCode::Char('j'), _) => l.cursor = (l.cursor + 1).min(n.saturating_sub(1)),
             (KeyCode::Up | KeyCode::Char('k'), _) => l.cursor = l.cursor.saturating_sub(1),
-            (KeyCode::Char('n'), _) => match self.routine_bots().as_slice() {
+            (KeyCode::Char('n'), _) => match self.routine_owners().as_slice() {
                 [] => self.flash("Routines belong to a bot, not a group"),
                 [bot] => {
                     let form = RoutineForm::new((*bot).to_owned());
@@ -90,7 +96,7 @@ impl App {
 
     /// Keys in "Which bot runs it?": ↵ opens the new routine form for the bot picked.
     fn routine_bot_key(&mut self, mut l: AllRoutines, i: usize, k: KeyEvent) -> Option<Overlay> {
-        let bots = self.routine_bots();
+        let bots = self.routine_owners();
         match k.code {
             KeyCode::Esc | KeyCode::Char('q') => l.chooser = None,
             KeyCode::Down | KeyCode::Char('j') => l.chooser = Some((i + 1).min(bots.len().saturating_sub(1))),
@@ -153,9 +159,20 @@ mod tests {
         assert!(matches!(app.overlays.last(), Some(Overlay::AllRoutines(l)) if l.chooser == Some(0)));
         app.on_key(KeyEvent::from(KeyCode::Char('j')));
         app.on_key(KeyEvent::from(KeyCode::Enter));
-        let picked = app.routine_bots()[1].to_owned();
+        let picked = app.routine_owners()[1].to_owned();
         assert!(matches!(app.overlays.last(), Some(Overlay::Routine(f)) if f.bot == picked));
         assert!(matches!(app.overlays.first(), Some(Overlay::AllRoutines(l)) if l.chooser.is_none()));
+
+        // A hidden bot keeps its routines on the sheet but isn't offered for a new one.
+        app.overlays.clear();
+        app.bots.remove("b");
+        let hidden = Bot::parse(&json!({"id": "h", "name": "h", "hidden": true})).expect("a bot with an id parses");
+        app.bots.insert("h".into(), hidden);
+        assert_eq!(app.routine_owners(), ["a"]);
+        assert!(app.routine_bots().contains(&"h"));
+        app.overlays.push(Overlay::AllRoutines(AllRoutines { items: Some(Vec::new()), cursor: 0, chooser: None }));
+        app.on_key(KeyEvent::from(KeyCode::Char('n')));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Routine(f)) if f.bot == "a"), "only the visible bot: straight to it");
     }
 
     #[tokio::test]

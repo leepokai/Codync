@@ -5,10 +5,7 @@ import SwiftUI
 public struct AllRoutinesView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var routines: [Routine] = []
-    @State private var loaded = false
-    @State private var busy = false
-    @State private var error: String?
+    @State private var state = AllRoutinesState()
     /// Choosing which bot a new routine belongs to.
     @State private var picking = false
     @State private var editing: EditorTarget?
@@ -29,7 +26,7 @@ public struct AllRoutinesView: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let error { Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger).textSelection(.enabled) }
+                    if let error = state.error { Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger).textSelection(.enabled) }
                     if picking { ownerList } else { listing }
                 }
                 .padding(.horizontal, 20)
@@ -42,13 +39,13 @@ public struct AllRoutinesView: View {
         .background(Palette.background)
         .task {
             repeat {
-                await load()
+                await state.load(model: model)
                 do { try await Task.sleep(for: .seconds(3)) } catch { break }
             } while !Task.isCancelled
         }
         // A routine's editor opens once that routine is listed (as in a bot's own list).
-        .codyncSheet(item: Binding(get: { editing.flatMap { $0.isReady(in: routines) ? $0 : nil } }, set: { editing = $0 })) { target in
-            RoutineEditorView(botId: target.botId ?? "", routine: routines.first { $0.id == target.routineId }) { saved in
+        .codyncSheet(item: Binding(get: { editing.flatMap { $0.isReady(in: state.routines) ? $0 : nil } }, set: { editing = $0 })) { target in
+            RoutineEditorView(botId: target.botId ?? "", routine: state.routines.first { $0.id == target.routineId }) { saved in
                 onSaved(target, saved)
             }
             .tracked(.screenViewed(.routines))
@@ -56,9 +53,9 @@ public struct AllRoutinesView: View {
     }
 
     @ViewBuilder private var listing: some View {
-        let sections = Routine.sections(routines, bots: model.roster + model.hiddenBots)
+        let sections = Routine.sections(state.routines, bots: model.roster + model.hiddenBots)
         if sections.isEmpty {
-            Text(L10n.tr(loaded ? "No routines yet. Set one up for a bot with +." : "Loading routines…"))
+            Text(L10n.tr(state.loaded ? "No routines yet. Set one up for a bot with +." : "Loading routines…"))
                 .font(.system(size: 12))
                 .lineSpacing(3)
                 .foregroundStyle(Palette.secondary)
@@ -72,9 +69,9 @@ public struct AllRoutinesView: View {
                         .foregroundStyle(Palette.secondary)
                         .accessibilityAddTraits(.isHeader)
                     ForEach(section.routines) { routine in
-                        RoutineRow(routine: routine, summary: summary(routine), disabled: busy || model.isOffline,
+                        RoutineRow(routine: routine, summary: summary(routine), disabled: state.busy || model.isOffline,
                                    open: { open(botId: routine.botId, routineId: routine.id) },
-                                   toggle: { toggle(routine, enabled: $0) })
+                                   toggle: { enabled in Task { await state.setEnabled(routine, enabled: enabled, model: model) } })
                     }
                 }
             }
@@ -114,38 +111,14 @@ public struct AllRoutinesView: View {
     }
 
     private func onSaved(_ target: EditorTarget, _ saved: Routine?) {
-        if let saved {
-            if let i = routines.firstIndex(where: { $0.id == saved.id }) { routines[i] = saved } else { routines.append(saved) }
-        }
+        if let saved { state.saved(saved) }
         // A new webhook routine stays open: its URL and key exist only now.
         if target.routineId == nil, let saved, saved.triggers.contains(where: { $0.type == "webhook" }) {
             editing = EditorTarget(id: target.id, routineId: saved.id, botId: target.botId)
         } else {
             animate { editing = nil }
         }
-        Task { await load() }
-    }
-
-    private func toggle(_ routine: Routine, enabled: Bool) {
-        guard !busy, let client = model.client else { return }
-        busy = true
-        Task {
-            defer { busy = false }
-            do {
-                try await client.routineAction("setRoutineEnabled", botId: routine.botId, id: routine.id, enabled: enabled)
-                error = nil
-                await load()
-            } catch { self.error = error.localizedDescription }
-        }
-    }
-
-    private func load() async {
-        guard let client = model.client else { return }
-        do {
-            routines = try await client.allRoutines()
-            loaded = true
-            error = nil
-        } catch is CancellationError {} catch { self.error = error.localizedDescription }
+        Task { await state.load(model: model) }
     }
 
     private func animate(_ change: () -> Void) { withAnimation(Motion.reduced(Motion.layout, reduceMotion), change) }

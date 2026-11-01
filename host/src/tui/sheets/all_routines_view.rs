@@ -82,7 +82,7 @@ fn routine_row(buf: &mut Buffer, inner: Rect, y: u16, r: &Value, sel: bool) {
 /// "Which bot runs it?": the agent bots, over the list.
 fn chooser(buf: &mut Buffer, area: Rect, app: &App, cursor: usize) {
     let t = theme();
-    let bots = app.routine_bots();
+    let bots = app.routine_owners();
     let height = u16::try_from(bots.len()).unwrap_or(u16::MAX).saturating_add(4).min(area.height);
     let r = centered(area, 44, height);
     let title = tr("Which bot runs it?");

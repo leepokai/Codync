@@ -43,11 +43,12 @@ export interface PanelItem {
 }
 
 /** The account menu: a window-local floating surface (no system menu styling). */
-export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSettings }: {
+export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onRoutines, onSettings }: {
   compact: boolean
   approvals: number
   onDismiss: () => void
   onUsage: () => void
+  onRoutines: () => void
   onSettings: () => void
 }) {
   const tr = useTr()
@@ -77,6 +78,7 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
         ]
       : [
           { title: 'Usage', icon: 'gauge.with.dots.needle.33percent', chevron: true, action: onUsage },
+          { title: 'Routines', icon: 'clock.arrow.circlepath', chevron: true, action: onRoutines },
           { title: 'Get Codync for mobile', icon: 'iphone', action: () => open('https://apps.apple.com/app/id6760984418', 'app_store') },
           { title: 'Support', icon: 'book.closed', chevron: true, action: () => setPage('support') },
           { title: 'Settings', icon: 'gearshape', detail: approvals > 0 ? String(approvals) : null, action: onSettings },
@@ -89,7 +91,7 @@ export function AccountPanelLayer({ compact, approvals, onDismiss, onUsage, onSe
           items={items}
           onDismiss={onDismiss}
           after={(i) =>
-            page === 'main' && i === 3 ? (
+            page === 'main' && i === 4 ? (
               <>
                 <div className="panel-divider" />
                 <div className="panel-identity">

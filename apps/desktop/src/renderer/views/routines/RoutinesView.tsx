@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconButton, Switch } from '../../components/Controls'
+import { IconButton } from '../../components/Controls'
 import { Sheet } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -7,6 +7,7 @@ import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { errorText, isActiveRun, runLabel, type Routine, type RoutineListing, type RoutineRun } from './routine'
 import { RoutineEditorView } from './RoutineEditorView'
+import { RoutineRow } from './RoutineRow'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
 
@@ -123,15 +124,14 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
       ) : (
         <VStack gap={8}>
           {routines.map((routine) => (
-            <HStack key={routine.id} gap={12} className="outlined-card routines-card">
-              <button className="routine-row" onClick={() => open(routine.id)}>
-                <Text tone="text">{routine.name}</Text>
-                <Text size="caption" tone={routine.lastError ? 'danger' : 'secondary'}>{summary(routine)}</Text>
-              </button>
-              <HStack as="span" align="stretch" aria-label={routine.name}>
-                <Switch on={routine.enabled} disabled={busy || store.isOffline} onChange={(on) => void action('setRoutineEnabled', routine, on)} />
-              </HStack>
-            </HStack>
+            <RoutineRow
+              key={routine.id}
+              routine={routine}
+              summary={summary(routine)}
+              disabled={busy || store.isOffline}
+              onOpen={() => open(routine.id)}
+              onToggle={(on) => void action('setRoutineEnabled', routine, on)}
+            />
           ))}
         </VStack>
       )}

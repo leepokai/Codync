@@ -1507,5 +1507,8 @@
   "This computer is in another account": "Cet ordinateur est dans un autre compte",
   "This computer isn't in an account: its cloud is off": "Cet ordinateur n'est dans aucun compte : son cloud est désactivé",
   "This computer isn't in an account: it uses a private relay": "Cet ordinateur n'est dans aucun compte : il utilise un relais privé",
-  "This computer isn't in your account": "Cet ordinateur n'est pas dans votre compte"
+  "This computer isn't in your account": "Cet ordinateur n'est pas dans votre compte",
+  "Which bot runs it?": "Quel bot l’exécute ?",
+  "No routines yet. Set one up for a bot with +.": "Aucune routine pour l’instant. Créez-en une pour un bot avec +.",
+  "Schedule needs attention": "La planification demande votre attention"
 }

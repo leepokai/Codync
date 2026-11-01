@@ -58,7 +58,7 @@ impl App {
             Overlay::Network(_) => Some(Screen::Network),
             Overlay::Memory(_) => Some(Screen::Memory),
             Overlay::Library(_) => Some(Screen::Library),
-            Overlay::Routines(_) => Some(Screen::Routines),
+            Overlay::Routines(_) | Overlay::AllRoutines(_) => Some(Screen::Routines),
             Overlay::Market(_) => Some(Screen::Marketplace),
             Overlay::Help(_) => Some(Screen::Help),
             Overlay::Form(_) => Some(Screen::BotDetails),

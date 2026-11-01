@@ -81,6 +81,13 @@ extension HostClient {
         return try await call("routines", Body(botId: botId))
     }
 
+    /// Every bot's routines on this computer (the account menu's Routines).
+    public func allRoutines() async throws -> [Routine] {
+        struct Response: Decodable { let routines: [Routine] }
+        let response: Response = try await call("allRoutines", Empty())
+        return response.routines
+    }
+
     public func routineAction(_ method: String, botId: String, id: String, enabled: Bool? = nil) async throws {
         struct Body: Encodable { let botId: String; let id: String; let enabled: Bool? }
         let _: Empty = try await call(method, Body(botId: botId, id: id, enabled: enabled))
@@ -115,4 +122,25 @@ extension HostClient {
             instruction: instruction, triggers: triggers, timeoutSeconds: timeoutSeconds))
         return response.routine
     }
+}
+
+/// One bot's routines in the account menu's list of every routine.
+public struct RoutineSection: Identifiable, Sendable {
+    public var bot: Bot
+    public var routines: [Routine]
+    public var id: String { bot.id }
+}
+
+extension Routine {
+    /// Sections in roster order (`bots`), each bot's routines by name; routines of bots this app doesn't know stay out.
+    public static func sections(_ routines: [Routine], bots: [Bot]) -> [RoutineSection] {
+        bots.compactMap { bot in
+            let own = routines.filter { $0.botId == bot.id }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            return own.isEmpty ? nil : RoutineSection(bot: bot, routines: own)
+        }
+    }
+
+    /// The bots a new routine can belong to: agents, not groups.
+    public static func owners(_ bots: [Bot]) -> [Bot] { bots.filter { !$0.isGroup } }
 }

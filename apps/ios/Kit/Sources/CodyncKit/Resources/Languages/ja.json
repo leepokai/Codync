@@ -1507,5 +1507,8 @@
   "This computer is in another account": "このコンピュータは別のアカウントにあります",
   "This computer isn't in an account: its cloud is off": "このコンピュータはどのアカウントにもありません: クラウドがオフです",
   "This computer isn't in an account: it uses a private relay": "このコンピュータはどのアカウントにもありません: プライベートリレーを使っています",
-  "This computer isn't in your account": "このコンピュータはあなたのアカウントにありません"
+  "This computer isn't in your account": "このコンピュータはあなたのアカウントにありません",
+  "Which bot runs it?": "どのボットが実行しますか？",
+  "No routines yet. Set one up for a bot with +.": "ルーティンはまだありません。+ でボットに設定できます。",
+  "Schedule needs attention": "スケジュールの確認が必要です"
 }

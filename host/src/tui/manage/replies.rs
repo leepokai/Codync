@@ -87,6 +87,19 @@ impl App {
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
                 }
             }
+            Reply::AllRoutines => {
+                if let Some(items) = v["routines"].as_array() {
+                    for o in &mut self.overlays {
+                        if let Overlay::AllRoutines(l) = o {
+                            l.cursor = l.cursor.min(items.len().saturating_sub(1));
+                            l.items = Some(items.clone());
+                        }
+                    }
+                } else {
+                    // A change: the list comes again.
+                    self.sheet("allRoutines", json!({}), Reply::AllRoutines);
+                }
+            }
             Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
             Reply::Gear(backend) => {
                 let lists = super::gear::GearLists {
@@ -332,7 +345,11 @@ impl App {
                 }
                 self.flash(&e);
             }
-            Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
+            Reply::Memory(_)
+            | Reply::MemorySaved(_)
+            | Reply::MemoryFile(_)
+            | Reply::Routines(_)
+            | Reply::AllRoutines => {
                 for o in &mut self.overlays {
                     match o {
                         Overlay::Memory(m) => {
@@ -340,6 +357,9 @@ impl App {
                             m.error = Some(e.clone());
                         }
                         Overlay::Routines(l) => {
+                            l.items.get_or_insert_with(Vec::new);
+                        }
+                        Overlay::AllRoutines(l) => {
                             l.items.get_or_insert_with(Vec::new);
                         }
                         _ => {}
@@ -379,6 +399,7 @@ impl App {
                 Overlay::Routines(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));
                 }
+                Overlay::AllRoutines(_) => calls.push(("allRoutines", json!({}), After::Sheet(Reply::AllRoutines))),
                 Overlay::Library(l) => {
                     calls.push(("library", json!({"botId": l.bot}), After::Sheet(Reply::Library(l.bot.clone()))));
                 }

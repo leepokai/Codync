@@ -51,6 +51,7 @@ private data class Editing<T>(val computerId: String, val draft: T)
     var showComputers by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
     var showUsage by rememberSaveable { mutableStateOf(false) }
+    var showRoutines by rememberSaveable { mutableStateOf(false) }
     var marketplace by rememberSaveable { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf<NewTarget?>(null) }
     var access by remember { mutableStateOf<CloudComputer?>(null) }
@@ -61,7 +62,7 @@ private data class Editing<T>(val computerId: String, val draft: T)
     var handledNavigation by rememberSaveable { mutableStateOf(accounts.activityOwnerId to 0) }
     var handledGeneration by rememberSaveable { mutableIntStateOf(app.generation) }
     fun closeAll() {
-        showAccount = false; showComputers = false; showPairing = false; marketplace = null
+        showAccount = false; showComputers = false; showPairing = false; showRoutines = false; marketplace = null
         creating = null; access = null; editor = null; groupEditor = null
     }
     // A new account or a fresh start drops whatever was open for the old one.
@@ -117,7 +118,7 @@ private data class Editing<T>(val computerId: String, val draft: T)
                     }
                     Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },
                         newBot = { creating = NewTarget(group = false, computerId = it) }, newGroup = { creating = NewTarget(group = true, computerId = it) },
-                        edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage ||
+                        edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage || showRoutines ||
                             marketplace != null || creating != null || access != null || editor != null || groupEditor != null || app.error != null) { chat ->
                         // A conversation, talking to the computer the bot lives on.
                         accounts.store(chat.computer.id)?.let { store -> ChatScreen(chat, store) { bot -> edit(chat.computer.id, bot) } }
@@ -127,7 +128,11 @@ private data class Editing<T>(val computerId: String, val draft: T)
         }
         CodyncSheet(showAccount && (signedIn || (!required && app.setupComplete)) && !app.loading, { showAccount = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Account))
-            AccountSwitcherView(app, accounts) { showPairing = true }
+            AccountSwitcherView(app, accounts, app.currentComputerId?.takeIf { it in computers }?.let { { showRoutines = true } }) { showPairing = true }
+        }
+        // The account menu's Routines, on the computer the app acts on (iOS `AllRoutinesView`).
+        CodyncSheet(app.currentComputerId?.takeIf { showRoutines && root == Root.Tabs && it in computers }, { showRoutines = false }) { id ->
+            OnComputer(id, computers, accounts) { state, store -> key(id) { AllRoutinesView(state, store) } }
         }
         CodyncSheet(showComputers && !app.loading, { showComputers = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Computers))

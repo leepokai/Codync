@@ -78,6 +78,8 @@ data class AppState(
     val busy: Set<String> = emptySet(),
     val historyComplete: Set<String> = emptySet(),
     val routines: Map<String, RoutineListing> = emptyMap(),
+    /** Every bot's routines (the account menu's Routines); null until first loaded. */
+    val allRoutines: List<Routine>? = null,
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */

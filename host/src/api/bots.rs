@@ -14,6 +14,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?),
+        "allRoutines" => hub.routines.list_all(&hub.store)?,
         "saveRoutine" => hub.routines.save(hub, str_arg(&b, "botId")?, &b)?,
         "setRoutineEnabled" => hub.routines.set_enabled(
             &hub.store,

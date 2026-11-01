@@ -43,7 +43,8 @@ import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
 /** Who you're signed in as, and the other accounts on this phone (iOS `AccountSwitcherView`). */
-@Composable internal fun AccountSwitcherView(state: AccountContext, store: AccountStore, pair: () -> Unit) {
+/** `routines`: open every bot's routines on the computer the app acts on; null while there's none. */
+@Composable internal fun AccountSwitcherView(state: AccountContext, store: AccountStore, routines: (() -> Unit)? = null, pair: () -> Unit) {
     val account = state.account
     val current = account.accounts.firstOrNull { it.userId == account.userId }
     val busy = "session" in state.busy
@@ -78,6 +79,10 @@ import com.kyant.shapes.RoundedRectangle
                 Switcher(state, store, busy) { addingAccount = !addingAccount }
                 AnimatedVisibility(addingAccount, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
                     exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) { SignInButtons(state, store) }
+            }
+            // Every bot's routines on the computer the app acts on (as the desktop's account menu).
+            if (routines != null) CardSection {
+                row { RowLabel("Routines", "clock.arrow.circlepath", chevron = true, modifier = Modifier.plainButton(action = routines)) }
             }
             if (current != null) CardSection {
                 row {

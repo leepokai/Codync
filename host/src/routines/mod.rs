@@ -225,6 +225,15 @@ impl Routines {
             "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>()})
     }
 
+    /// Every bot's routines, for the account menu's Routines: the bots the store still has, oldest first.
+    pub fn list_all(&self, store: &Store) -> Result<Value> {
+        let live: HashSet<String> = store.bots()?.into_iter().filter(|b| !b.deleted).map(|b| b.config.id).collect();
+        let state = self.state.locked();
+        Ok(
+            json!({"routines": state.routines.iter().filter(|r| !r.deleted && live.contains(&r.bot_id)).map(public).collect::<Vec<_>>()}),
+        )
+    }
+
     pub fn owns(&self, bot: &str, id: &str) -> bool {
         self.state.locked().routines.iter().any(|r| r.id == id && r.bot_id == bot && !r.deleted)
     }

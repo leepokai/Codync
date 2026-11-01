@@ -91,3 +91,27 @@ fn a_delivery_while_a_retry_waits_is_queued() {
     assert_eq!(third.unwrap_err().downcast::<Refused>().unwrap(), Refused::Busy, "the queued delivery is");
     assert_eq!(routines.state.locked().runs.len(), 2);
 }
+#[test]
+fn all_routines_lists_every_live_bot_and_skips_deleted_ones() {
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let bot = |id: &str| -> crate::store::BotConfig {
+        serde_json::from_value(json!({"id": id, "name": id, "backend": "claude", "cwd": "/tmp"})).unwrap()
+    };
+    store.save_bot(&bot("bot")).unwrap();
+    store.save_bot(&bot("other")).unwrap();
+    let routines = Routines::default();
+    let mine = routine();
+    let theirs = Routine { id: "theirs".into(), bot_id: "other".into(), ..routine() };
+    let gone = Routine { id: "gone".into(), deleted: true, ..routine() };
+    let orphan = Routine { id: "orphan".into(), bot_id: "removed".into(), ..routine() };
+    routines
+        .change(&store, |s| {
+            s.routines.extend([mine, theirs, gone, orphan]);
+            Ok(())
+        })
+        .unwrap();
+    let listed = routines.list_all(&store).unwrap();
+    let ids: Vec<&str> = listed["routines"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["routine", "theirs"]);
+    assert_eq!(listed["routines"][1]["botId"], "other");
+}

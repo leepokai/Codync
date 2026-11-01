@@ -6,6 +6,7 @@
 #![allow(clippy::many_single_char_names)]
 
 mod agent;
+mod all_routines;
 mod analytics;
 mod bot_chat;
 mod fields;
@@ -23,6 +24,7 @@ mod routines;
 mod skill;
 mod when;
 
+pub use all_routines::AllRoutines;
 pub use analytics::AnalyticsSheet;
 pub use fields::{handoff_fields, section_fields};
 pub use gear::{Gear, GearRow};
@@ -33,6 +35,7 @@ pub use network::{NetReply, NetworkSheet, Recovery, Step};
 pub use network_rules::{RuleField, RuleForm};
 pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
+pub use routines::when_line;
 pub use skill::SkillSheet;
 pub use when::complete_zone;
 
@@ -54,6 +57,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
+    /// Every bot's routines (`allRoutines`), or a change to one of them.
+    AllRoutines,
     RoutineSaved,
     /// A bot's Library (`library {botId}`).
     Library(String),

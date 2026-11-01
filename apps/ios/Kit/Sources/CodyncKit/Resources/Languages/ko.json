@@ -1507,5 +1507,8 @@
   "This computer is in another account": "이 컴퓨터는 다른 계정에 있습니다",
   "This computer isn't in an account: its cloud is off": "이 컴퓨터는 어떤 계정에도 없습니다: 클라우드가 꺼져 있습니다",
   "This computer isn't in an account: it uses a private relay": "이 컴퓨터는 어떤 계정에도 없습니다: 개인 릴레이를 사용합니다",
-  "This computer isn't in your account": "이 컴퓨터는 내 계정에 없습니다"
+  "This computer isn't in your account": "이 컴퓨터는 내 계정에 없습니다",
+  "Which bot runs it?": "어느 봇이 실행하나요?",
+  "No routines yet. Set one up for a bot with +.": "아직 루틴이 없습니다. +로 봇에 루틴을 설정하세요.",
+  "Schedule needs attention": "일정을 확인해야 합니다"
 }

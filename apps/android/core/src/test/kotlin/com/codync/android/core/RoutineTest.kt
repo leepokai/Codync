@@ -72,4 +72,16 @@ class RoutineTest {
         assertEquals("Schedule needs attention", RoutineListing(emptyList(), emptyList()).summary(routine.copy(lastError = "invalid schedule")))
         assertEquals("Every day", RoutineListing(emptyList(), emptyList()).summary(routine))
     }
+
+    @Test fun `routines group under their bot in roster order, by name, and unknown bots stay out`() {
+        fun routine(id: String, botId: String, name: String) = Routine(id, botId, name, "", emptyList(), true)
+        val sections = routineSections(
+            listOf(routine("1", "b", "Zeta"), routine("2", "a", "Daily"), routine("3", "b", "Alpha"), routine("4", "gone", "Lost")),
+            listOf(Bot("b"), Bot("a"), Bot("c")))
+        assertEquals(listOf("b" to listOf("Alpha", "Zeta"), "a" to listOf("Daily")), sections.map { s -> s.bot.id to s.routines.map { it.name } })
+    }
+
+    @Test fun `only agents can own a new routine`() {
+        assertEquals(listOf("a"), routineOwners(listOf(Bot("a"), Bot("g", kind = "group"))).map { it.id })
+    }
 }

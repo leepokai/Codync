@@ -40,8 +40,10 @@ pub fn upstream(trigger: &Trigger) -> Option<&str> {
 
 /// Checks the routines `triggers` run after against the saved ones: each exists, and none is routine `id`
 /// itself or runs after it, directly or further up. A new routine (`id` is `None`) can't close a loop yet.
-pub(super) fn check_links(s: &State, id: Option<&str>, triggers: &[Trigger]) -> Result<()> {
-    for up in triggers.iter().filter_map(upstream) {
+/// Only links new in this save are checked: one the routine already had (`kept`) may name a routine
+/// deleted since, and can't close a loop the save didn't close before.
+pub(super) fn check_links(s: &State, id: Option<&str>, triggers: &[Trigger], kept: &[Trigger]) -> Result<()> {
+    for up in triggers.iter().filter(|t| !kept.contains(t)).filter_map(upstream) {
         if !s.routines.iter().any(|r| r.id == up && !r.deleted) {
             bail!("routine {up} to run after was not found");
         }
@@ -63,7 +65,8 @@ pub(super) fn check_links(s: &State, id: Option<&str>, triggers: &[Trigger]) -> 
 }
 
 /// Queues the routines that run after run `i`, which has just finished with `reply` (none or `(pass)`:
-/// nothing to report) and still holds the event it ran with. A cancelled run, or a failed one that will be
+/// nothing to report) and still holds the event it ran with. `passed` is `"true"` only for a success with
+/// nothing to report; a final failure is `"false"` and carries its error detail. A cancelled run, or a failed one that will be
 /// tried again on its own, triggers nothing: only a run's final outcome counts.
 pub(super) fn emit(s: &mut State, i: usize, reply: Option<&str>) {
     let run = &s.runs[i];
@@ -74,8 +77,12 @@ pub(super) fn emit(s: &mut State, i: usize, reply: Option<&str>) {
     };
     let Some(upstream) = s.routines.iter().find(|r| r.id == run.routine_id) else { return };
     let depth = if run.event["source"] == SOURCE { run.event["depth"].as_u64().unwrap_or(0) + 1 } else { 1 };
-    let passed = reply.is_none_or(crate::chat::group::is_pass);
-    let text = if passed { "" } else { reply.unwrap_or_default() };
+    // A failure always has something to report: why it failed, carried as `error` and, when the run left
+    // no reply of its own, as `text` too.
+    let error = if event == "failed" { run.detail.as_deref().unwrap_or("The run did not finish") } else { "" };
+    let reply = reply.filter(|r| !crate::chat::group::is_pass(r));
+    let passed = event == "succeeded" && reply.is_none();
+    let text = reply.unwrap_or(error);
     let payload = json!({
         "source": SOURCE,
         "event": event,
@@ -85,6 +92,7 @@ pub(super) fn emit(s: &mut State, i: usize, reply: Option<&str>) {
         "runId": run.id,
         "passed": passed.to_string(),
         "text": &text[..text.floor_char_boundary(MAX_TEXT)],
+        "error": &error[..error.floor_char_boundary(MAX_TEXT)],
         "finishedAt": run.finished_at,
         "depth": depth,
     });

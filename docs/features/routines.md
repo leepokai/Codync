@@ -77,18 +77,22 @@ A routine has an OR list of triggers:
 ### After another routine (`routines/chain.rs`)
 
 `{type:"event", source:"routine", event:"succeeded"|"failed"|"*", filters:{routineId,
-messageContains?, passed?}}`. `routineId` is required; `passed` is `"true"` (the run had
-nothing to report: `(pass)` or no reply) or `"false"`. When a run ends, the host queues
+messageContains?, passed?}}`. `routineId` is required; `passed` is `"true"` (the run succeeded with
+nothing to report: `(pass)` or no reply) or `"false"` (it has a reply, or it failed). When a run ends, the host queues
 every enabled routine whose trigger matches, with the trigger data
-`{source:"routine", event, routineId, routineName, botId, runId, passed, text, finishedAt,
-depth}` (`text` is the reply, up to 16 KB, empty on a pass). Only the final outcome counts:
+`{source:"routine", event, routineId, routineName, botId, runId, passed, text, error, finishedAt,
+depth}` (`text` is the reply, up to 16 KB, empty on a pass; `error` is a failure's detail, also given
+as `text` when the failed run left no reply). Only the final outcome counts:
 a failure that will be retried on its own, and a cancelled run, trigger nothing. These events
 never leave the host, so such a routine registers no webhook, and a webhook delivery
 claiming `source:"routine"` is refused (400) even with the right key. Saving refuses an unknown
-upstream and a loop (a routine running after itself, directly or further up); at run time a
+upstream and a loop (a routine running after itself, directly or further up), checking only links new
+in that save, so a routine whose upstream was deleted can still be edited; at run time a
 chain stops after 5 routines in a row, and a routine still running or queued is skipped. Both
 skips are left in the routine's `lastError`. The apps keep the trigger as is and show its
-description, such as `After "Server check" succeeds with something to report`. Design:
+description, such as `After "Server check" succeeds with something to report`. To follow another bot's routine,
+`list_routines` takes that bot's `botId` and lists its routines read-only (id, name, enabled,
+trigger descriptions; no instructions or run history). Design:
 [routine chaining](../plans/routine-chaining.md).
 
 For example, Sunday at 14:20 in Taipei is `20 14 * * 0` with `Asia/Taipei`.

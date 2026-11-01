@@ -150,8 +150,23 @@ fn only_a_final_failure_counts_and_a_cancelled_run_triggers_nothing() {
     finish(&mut s, 1, Status::Cancelled, None);
     assert_eq!(queued(&s, "next"), Vec::<Value>::new());
     s.runs.push(new_run(&s.routines[0], Value::Null, None));
+    s.runs[2].detail = Some("agent exited with status 1".into());
     finish(&mut s, 2, Status::Failed, None);
-    assert_eq!(queued(&s, "next")[0]["passed"], "true");
+    let event = &queued(&s, "next")[0];
+    assert_eq!((event["passed"].as_str(), event["text"].as_str()), (Some("false"), Some("agent exited with status 1")));
+    assert_eq!(event["error"], "agent exited with status 1");
+}
+#[test]
+fn any_outcome_with_something_to_report_matches_a_failure() {
+    let mut s =
+        State { routines: vec![routine(), after("next", "routine", "*", &[("passed", "false")])], runs: vec![] };
+    s.runs.push(new_run(&s.routines[0], Value::Null, None));
+    finish(&mut s, 0, Status::Failed, None);
+    s.runs.push(new_run(&s.routines[0], Value::Null, None));
+    finish(&mut s, 2, Status::Succeeded, Some("(pass)"));
+    let events = queued(&s, "next");
+    assert_eq!((events.len(), events[0]["event"].as_str()), (1, Some("failed")));
+    assert_eq!(events[0]["text"], "The run did not finish");
 }
 #[test]
 fn a_busy_or_paused_routine_is_skipped_and_a_long_chain_stops() {
@@ -178,10 +193,12 @@ fn a_busy_or_paused_routine_is_skipped_and_a_long_chain_stops() {
 fn saving_rejects_an_unknown_upstream_and_a_loop() {
     let s = State { routines: vec![routine(), after("b", "routine", "succeeded", &[])], runs: vec![] };
     let triggers = |up: &str| after("x", up, "succeeded", &[]).triggers;
-    assert!(chain::check_links(&s, None, &triggers("missing")).is_err());
-    assert!(chain::check_links(&s, None, &triggers("b")).is_ok());
-    assert!(chain::check_links(&s, Some("routine"), &triggers("b")).is_err(), "routine → b → routine");
-    assert!(chain::check_links(&s, Some("routine"), &triggers("routine")).is_err());
+    assert!(chain::check_links(&s, None, &triggers("missing"), &[]).is_err());
+    assert!(chain::check_links(&s, None, &triggers("b"), &[]).is_ok());
+    assert!(chain::check_links(&s, Some("routine"), &triggers("b"), &[]).is_err(), "routine → b → routine");
+    assert!(chain::check_links(&s, Some("routine"), &triggers("routine"), &[]).is_err());
+    let kept = triggers("missing");
+    assert!(chain::check_links(&s, Some("x"), &kept, &kept).is_ok(), "a link the routine already had");
     assert!(after("x", "b", "started", &[]).triggers[0].validate(0).is_err());
     assert!(after("x", "b", "*", &[("repo", "a")]).triggers[0].validate(0).is_err());
 }
@@ -196,4 +213,25 @@ fn routine_triggers_need_no_webhook_and_read_with_the_upstream_name() {
         public(&s, &s.routines[1])["triggerDescriptions"][0],
         "After \"Check\" succeeds with something to report"
     );
+}
+#[test]
+fn another_bots_routines_list_without_instructions_or_history() {
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let routines = Routines::default();
+    let r = routine();
+    let run = new_run(&r, Value::Null, None);
+    routines
+        .change(&store, |s| {
+            s.routines.push(r);
+            s.runs.push(run);
+            Ok(())
+        })
+        .unwrap();
+    let listed = routines.list_followable("bot");
+    assert_eq!(
+        (listed["routines"][0]["id"].as_str(), listed["routines"][0]["name"].as_str()),
+        (Some("routine"), Some("Check"))
+    );
+    assert!(listed["routines"][0]["instruction"].is_null() && listed["runs"].is_null());
+    assert_eq!(routines.list_followable("other")["routines"], json!([]));
 }

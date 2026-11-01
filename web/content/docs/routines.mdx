@@ -61,13 +61,13 @@ Ask the bot that should do the follow-up work, naming the routine it waits for:
 
 > When the "Server check" routine finds a problem, run a routine that tries to fix it.
 
-The bot sets the trigger to that routine finishing. You can narrow when it runs:
+The bot sets the trigger to that routine finishing. The routine can belong to another bot: the bot looks it up by that bot's name. You can narrow when it runs:
 
 - **Succeeds**, **fails**, or either. A failure counts only once Codync has given up retrying it; a cancelled run starts nothing.
 - **With something to report**, or **with nothing to report** (the earlier run stayed silent).
 - **When its result contains** some words.
 
-The routine that runs next is given the earlier run's routine, outcome and reply, so it can act on what was found. The two routines can belong to different bots: a checking bot and a fixing bot, for example.
+The routine that runs next is given the earlier run's routine, outcome and reply, so it can act on what was found. After a failure it is also given the error. A failed run always counts as having something to report. The two routines can belong to different bots: a checking bot and a fixing bot, for example.
 
 The apps show such a trigger as, for example, *After "Server check" succeeds with something to report*. It needs no webhook, and nothing outside your computer can set it off.
 

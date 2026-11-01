@@ -7,9 +7,3 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.34.2
-### zh-Hant
-- 有很多 Docker 或虛擬機網路的電腦，現在也能配對與連線，不會再顯示配對碼已損毀。
-
-### en-US
-- Computers with many Docker or virtual machine networks now pair and connect, instead of reporting a damaged pairing code.

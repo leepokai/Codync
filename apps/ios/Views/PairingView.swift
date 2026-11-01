@@ -312,20 +312,18 @@ private struct ScanPage: View {
                     Image(systemName: "qrcode.viewfinder").font(.system(size: 44, weight: .light))
                     Text(L10n.tr("Camera not available. Paste the link below.")).font(.footnote)
                 }
-                // The pairing progress takes its place.
-                .opacity(pairing ? 0 : 1)
                 .foregroundStyle(Palette.tertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Palette.surface)
             }
             if pairing {
-                Palette.background.opacity(0.7)
+                Palette.background
                 VStack(spacing: 16) {
                     Spinner(size: 28)
                     // A computer in no account asks its user first, showing the same code.
                     if let code = app.accounts.pairingCheck {
                         Text(L10n.tr("If the computer asks, check it shows {code}.")
-                            .replacingOccurrences(of: "{code}", with: "\(code.prefix(3)) \(code.suffix(3))"))
+                            .replacingOccurrences(of: "{code}", with: "\(code.prefix(3))\u{00A0}\(code.suffix(3))"))
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(Palette.text)
                             .multilineTextAlignment(.center)

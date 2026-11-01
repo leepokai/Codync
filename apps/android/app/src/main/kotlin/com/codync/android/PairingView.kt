@@ -226,7 +226,7 @@ private enum class ComputerOS { Mac, Linux }
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedRectangle(24.dp))) {
             key(attempt) { QrViewfinder({ pair(it) }, Modifier.fillMaxSize()) { message -> if (message != null) error = message } }
             val dim by animateFloatAsState(if (state.pairing) 1f else 0f, Motion.fade(), label = "Pairing")
-            if (dim > 0f) Column(Modifier.fillMaxSize().graphicsLayer { alpha = dim }.background(Palette.background.copy(alpha = 0.7f))
+            if (dim > 0f) Column(Modifier.fillMaxSize().graphicsLayer { alpha = dim }.background(Palette.background)
                 .padding(24.dp), Arrangement.spacedBy(16.dp, Alignment.CenterVertically), Alignment.CenterHorizontally) {
                 Spinner(28.dp)
                 // A computer in no account asks its user first: the same code on both says it's this phone.

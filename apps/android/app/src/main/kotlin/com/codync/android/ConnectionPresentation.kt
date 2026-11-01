@@ -95,7 +95,8 @@ internal fun pairingLine(pasted: String, scheme: String): String =
     pairingLine(runCatching { Pairing.parse(pasted, scheme).computer.cloud }.getOrNull())
 
 /** What the pairing page shows while it pairs: the code a computer in no account shows when it asks, as `123 456`. */
-internal fun pairingCheckLine(code: String): String = "If the computer asks, check it shows ${code.take(3)} ${code.drop(3)}."
+/** The code's halves keep together on one line (a no-break space). */
+internal fun pairingCheckLine(code: String): String = "If the computer asks, check it shows ${code.take(3)}\u00A0${code.drop(3)}."
 
 /** A sentence to translate, and the counts that fill its `%d`s in order. */
 internal data class Phrase(val template: String, val counts: List<Int> = emptyList()) {

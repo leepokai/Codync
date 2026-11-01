@@ -21,10 +21,11 @@ public struct MarkdownText: View, Equatable {
         .textSelection(.enabled)
     }
 
-    /// Underlines keep links distinct in the monochrome theme; inline code gets a soft tint.
+    /// Underlines keep links (bare addresses too) distinct in the monochrome theme; inline code gets a soft tint.
     static func inline(_ s: String) -> AttributedString {
         guard var text = try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
-        else { return AttributedString(s) }
+        else { return Autolink.attributed(s) }
+        Autolink.link(&text, source: s)
         for run in text.runs where run.link != nil {
             text[run.range].underlineStyle = .single
         }

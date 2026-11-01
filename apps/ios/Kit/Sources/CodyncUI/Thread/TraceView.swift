@@ -25,7 +25,7 @@ public struct TraceView: View {
                 ForEach(turns, id: \.key) { turn, entries in
                     VStack(alignment: .leading, spacing: 8) {
                         // A plain one-line turn header (CardSection's own title wraps).
-                        Text(entries.first { $0.kind == "user" }?.data.text ?? "Turn \(turn)")
+                        Text(entries.first { $0.kind == "user" }?.data.text ?? L10n.tr("Turn {turn}").replacingOccurrences(of: "{turn}", with: String(turn)))
                             .lineLimit(1)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Palette.text)
@@ -147,7 +147,7 @@ struct ToolRow: View {
     private var label: some View {
         HStack(spacing: 8) {
             Image(systemName: icon).frame(width: 18).foregroundStyle(Palette.secondary)
-            Text(data.title ?? "Tool").font(.subheadline).foregroundStyle(Palette.text).lineLimit(2)
+            Text(data.title ?? L10n.tr("Tool")).font(.subheadline).foregroundStyle(Palette.text).lineLimit(2)
             Spacer(minLength: 4)
             switch data.status {
             case "completed": Image(systemName: "checkmark").foregroundStyle(Palette.accent)

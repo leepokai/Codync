@@ -322,7 +322,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
         Row(Modifier.plainButton(action = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol("clock.arrow.circlepath", size = 15.dp, tint = Palette.secondary)
-            Text(entry.text.ifEmpty { "Routine" }, style = Type.footnote, color = Palette.secondary)
+            Text(tr(entry.text.ifEmpty { "Routine" }), style = Type.footnote, color = Palette.secondary)
         }
         if (entry.data["retry"]?.jsonPrimitive?.booleanOrNull == true) {
             if (retrying) Spinner(14.dp)
@@ -333,7 +333,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
 
 /** A line from the computer. `addFallback`, on a failure the bot's fallbacks could have carried, opens them. */
 @Composable private fun NoticeRow(entry: Entry, addFallback: (() -> Unit)?) {
-    val text = entry.text
+    val text = tr(entry.text)
     val seconds = entry.data["callSeconds"]?.jsonPrimitive?.longOrNull
     when {
         seconds != null -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {

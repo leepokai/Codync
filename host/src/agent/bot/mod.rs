@@ -25,6 +25,7 @@ mod files;
 mod launch;
 mod lifecycle;
 mod modes;
+mod pi_tools;
 mod queue;
 mod session;
 mod tool_entry;

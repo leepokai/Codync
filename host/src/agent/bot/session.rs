@@ -2,7 +2,7 @@
 
 use super::fast_mode::Listing;
 use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
-use super::{Actor, Adapter, Conn, Instructions, codex_names};
+use super::{Actor, Adapter, Conn, Instructions, codex_names, pi_tools};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::agent::registry::Candidate;
@@ -83,6 +83,15 @@ impl Actor {
         self.conn.as_ref().zip(sid).and_then(|(c, sid)| c.renamed.get(sid)).unwrap_or(&NONE)
     }
 
+    /// A folder saved for the bot's agent (`setAgentEnv`) as `key`, such as where its own config is (`CODEX_HOME`).
+    fn saved_env(&self, key: &str) -> Option<std::path::PathBuf> {
+        let saved = crate::agent::auth::env(&self.hub.store, &self.cfg.backend).unwrap_or_else(|e| {
+            tracing::warn!(error = format!("{e:#}"), "couldn't read the agent's saved environment");
+            Vec::new()
+        });
+        saved.into_iter().find(|(k, _)| k == key).map(|(_, v)| v.into())
+    }
+
     /// ACP connectors, team collaboration, and optional team management and computer control.
     pub(super) fn mcp_servers(&self) -> Result<Value> {
         let Ok(exe) = std::env::current_exe() else {
@@ -157,6 +166,14 @@ impl Actor {
         {
             c.acp.kill().await;
         }
+        let mut servers = self.mcp_servers()?;
+        // pi gets its servers when it starts (`pi_tools`), so they take pi's names before that.
+        let pi = self.cfg.backend == "pi";
+        let mut renamed = if pi {
+            pi_tools::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("PI_CODING_AGENT_DIR")).await
+        } else {
+            codex_names::Renamed::new()
+        };
         if self.conn.is_none() {
             let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
             let progress = move |msg: &str| {
@@ -170,6 +187,9 @@ impl Actor {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});
                 env.push(("CODEX_CONFIG".into(), config.to_string()));
+            }
+            if pi {
+                env.extend(pi_tools::env(&servers).await?);
             }
             let mut last_err = None;
             let count = candidates.len();
@@ -189,18 +209,9 @@ impl Actor {
                 return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
             }
         }
-        let mut servers = self.mcp_servers()?;
-        let renamed = if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
-            // A `CODEX_HOME` saved for Codex (`setAgentEnv`) is where its own config is.
-            let saved = crate::agent::auth::env(&self.hub.store, &self.cfg.backend).unwrap_or_else(|e| {
-                tracing::warn!(error = format!("{e:#}"), "couldn't read Codex's saved environment");
-                Vec::new()
-            });
-            let home = saved.into_iter().find(|(k, _)| k == "CODEX_HOME").map(|(_, v)| v.into());
-            codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, home).await
-        } else {
-            codex_names::Renamed::new()
-        };
+        if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
+            renamed = codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("CODEX_HOME")).await;
+        }
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         // Claude gets the frozen instructions as its system prompt. When a compaction
         // re-rendered them, loading the session again swaps the prompt in (the adapter

@@ -36,6 +36,16 @@ data class AccessStatus(val requestId: String, val status: String, val computerI
     val state: String get() = status.takeIf { it in setOf("pending", "approved", "denied", "expired", "cancelled") } ?: "expired"
 }
 
+/** The cloud's word that this device key is in the account, which `pair` shows the computer (`{payload, sig}`). */
+data class DeviceCertificate(val payload: String, val sig: String) {
+    /** When it stops being valid (ms), from the signed payload. */
+    val expiresAt: Long = Json.parseToJsonElement(payload).jsonObject.getValue("exp").jsonPrimitive.long
+    internal val json: JsonObject get() = buildJsonObject { put("payload", payload); put("sig", sig) }
+}
+
+/** What a computer that joins this phone's account by pairing signs, so the account takes it in. */
+data class PairingClaim(val claimId: String, val nonce: String)
+
 class CloudError(val status: Int, val code: String, detail: String? = null) : IOException(when (code) {
     "requestExpired" -> "The request expired. Ask again."
     "accountDeleted" -> "This account was deleted."
@@ -62,6 +72,32 @@ class CloudClient private constructor(base: String, private val identity: Device
 
     suspend fun registerDevice(name: String) { request("POST", listOf("v1", "devices"),
         buildJsonObject { put("name", name); put("platform", "android") }, signed = true) }
+
+    suspend fun deviceCertificate(): DeviceCertificate {
+        val certificate = request("POST", listOf("v1", "devices", "certificate"), buildJsonObject { }, signed = true)
+            .getValue("certificate").jsonObject
+        return DeviceCertificate(requireNotNull(certificate.text("payload")), requireNotNull(certificate.text("sig")))
+    }
+
+    /** [cached] while more than a day of it is left, else a new certificate; a key the cloud doesn't know is registered first. */
+    suspend fun certificate(cached: DeviceCertificate?, deviceName: String): DeviceCertificate {
+        if (cached != null && cached.expiresAt - System.currentTimeMillis() > CERTIFICATE_REUSE) return cached
+        return try { deviceCertificate() } catch (error: CloudError) {
+            if (error.status != 403) throw error
+            registerDevice(deviceName)
+            deviceCertificate()
+        }
+    }
+
+    suspend fun createClaim(): PairingClaim {
+        val claim = request("POST", listOf("v1", "claims"), buildJsonObject { })
+        return PairingClaim(requireNotNull(claim.text("claimId")), requireNotNull(claim.text("nonce")))
+    }
+
+    /** Hands the account [signed], the claim the computer signed when it let this phone in. */
+    suspend fun completeClaim(claimId: String, signed: JsonObject) {
+        request("POST", listOf("v1", "claims", claimId, "complete"), signed)
+    }
 
     suspend fun computers(): List<CloudComputer> {
         val result = request("GET", listOf("v1", "computers"), signed = true)
@@ -147,5 +183,8 @@ class CloudClient private constructor(base: String, private val identity: Device
         return value
     }
 
-    companion object { private const val MAX_RESPONSE = 2L * 1024 * 1024 }
+    companion object {
+        private const val MAX_RESPONSE = 2L * 1024 * 1024
+        private const val CERTIFICATE_REUSE = 24L * 60 * 60 * 1000
+    }
 }

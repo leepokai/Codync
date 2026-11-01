@@ -27,6 +27,8 @@ data class AccountContext(
     val setupComplete: Boolean = false,
     val loading: Boolean = true,
     val pairing: Boolean = false,
+    /** While pairing, the code the computer shows if it asks whether to let this phone in. */
+    val pairingCheck: String? = null,
     /** This phone's computers, in the order it shows them. */
     val computers: List<Computer> = emptyList(),
     /** The computer whose lead "Talk to Codync" calls; null is Automatic (iOS `shortcutLeadComputer`). */

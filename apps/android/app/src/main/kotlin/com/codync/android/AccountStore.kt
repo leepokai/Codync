@@ -26,6 +26,8 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
     /** One change to the saved computers at a time. */
     private val computerChanges = Mutex()
     internal var cloud: CloudClient? = null
+    /** The account proof pairing sends, kept for this account context while it lasts. */
+    internal var deviceCertificate: DeviceCertificate? = null
     private var sessionJob: Job? = null
     internal var linkJob: Job? = null
     internal var pairingJob: Job? = null
@@ -121,7 +123,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
         contextJob.cancelAndJoin()
         AccountImages.retire()
         pairingJob = null
-        actions.clear(); cloud = null
+        actions.clear(); cloud = null; deviceCertificate = null
         withContext(Dispatchers.IO) { ConnectorOAuthBook(local.directory).clear() }
         contextJob = SupervisorJob(viewModelScope.coroutineContext[Job])
         contextScope = CoroutineScope(contextJob + Dispatchers.Main.immediate)

@@ -7,21 +7,32 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 
+/** A computer pairing let in, and the claim it signed when it joined this phone's account (null when it didn't). */
+data class Paired(val computer: Computer, val claim: JsonObject?)
+
 object HostConnector {
-    suspend fun pair(pairing: Pairing, identity: DeviceIdentity, deviceName: String): Computer {
+    /**
+     * Pairs with [certificate] as the account proof; a computer in no account first asks its user (up to two minutes),
+     * then signs [claim] to join the phone's account.
+     */
+    suspend fun pair(pairing: Pairing, identity: DeviceIdentity, deviceName: String, certificate: DeviceCertificate,
+        claim: PairingClaim? = null): Paired {
         require(deviceName.isNotBlank() && deviceName.codePointCount(0, deviceName.length) <= 100)
         val channel = connect(pairing.computer, identity, pairing)
         try {
             val response = try {
                 channel.call("pair", buildJsonObject {
                     put("code", pairing.code); put("name", deviceName); put("platform", "android")
-                }, timeoutMillis = 30_000)
+                    put("certificate", certificate.json)
+                    claim?.let { put("claim", buildJsonObject { put("claimId", it.claimId); put("nonce", it.nonce) }) }
+                }, timeoutMillis = 150_000)
             } catch (error: HostError) {
                 // Hosts from before Android support turn the platform down: say what to do, not the wire error.
                 if (error.status == 400 && "platform" in error.message) throw HostError(400, "Update Codync on this computer to pair an Android phone.")
@@ -29,7 +40,8 @@ object HostConnector {
             }
             val result = response.jsonObject
             require(result.text("computerId") == pairing.computer.id) { "This computer's identity changed. Pair it again." }
-            return pairing.computer.copy(name = result.text("name")?.takeIf(String::isNotBlank) ?: pairing.computer.name)
+            return Paired(pairing.computer.copy(name = result.text("name")?.takeIf(String::isNotBlank) ?: pairing.computer.name),
+                result["claim"] as? JsonObject)
         } finally {
             channel.close()
         }

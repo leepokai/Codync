@@ -2,6 +2,7 @@ package com.codync.android
 
 import android.net.Uri
 import android.os.Build
+import java.io.IOException
 import androidx.lifecycle.viewModelScope
 import com.codync.android.core.*
 import kotlinx.coroutines.*
@@ -21,21 +22,57 @@ internal fun AccountStore.pair(text: String, via: PairedVia) {
             val old = state.value.computers.firstOrNull { it.id == pairing.computer.id }
             require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Start over before pairing again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
+            mutableState.update { it.copy(pairingCheck = pairing.checkCode(identity)) }
+            val certificate = accountProof()
+            val client = cloud
+            // Without a claim a computer in no account still lets the phone in; it just doesn't join the account.
+            val claim = client?.let { bestEffort("start a claim") { it.createClaim() } }
+            val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100), certificate, claim)
             // Picked on this phone: pairing again keeps them (iOS `AccountStore.pair`).
-            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100)).keepingDevicePicks(old)
+            val computer = paired.computer.keepingDevicePicks(old)
             transitions.withLock { addComputer(computer) }
             withContext(Dispatchers.IO) { local.completeSetup() }
             mutableState.update { it.copy(setupComplete = true) }
             Analytics.capture(AnalyticsEvent.ComputerPaired(via, computer.id))
             Analytics.completeOnboarding(OnboardingVia.Paired)
+            // The computer joined this account: the account takes it in (or it stays paired, outside the account).
+            val signed = paired.claim
+            if (client != null && claim != null && signed != null) {
+                bestEffort("complete the claim") { client.completeClaim(claim.claimId, signed) }
+                refreshCloud()
+            }
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) {
             Analytics.capture(AnalyticsEvent.PairingFailed(PairingFailure.of(error)))
             showError(error)
         }
-        finally { mutableState.update { it.copy(pairing = false) } }
+        finally { mutableState.update { it.copy(pairing = false, pairingCheck = null) } }
     }
 }
+
+/**
+ * The certificate `pair` sends: the one kept for this account while more than a day is left, else a new one; with the
+ * cloud out of reach, the kept one while it's valid at all. Pairing needs the account's word, so without one it fails.
+ */
+private suspend fun AccountStore.accountProof(): DeviceCertificate {
+    val cached = deviceCertificate
+    val fresh = try { cloud?.certificate(cached, Build.MODEL.take(100)) }
+    catch (error: CancellationException) { throw error }
+    catch (error: IOException) {
+        if (error is CloudError && !error.isTransient) throw error
+        android.util.Log.i("Codync", "Couldn't get a device certificate: ${error.message}")
+        null
+    }
+    val proof = fresh ?: cached?.takeIf { it.expiresAt > System.currentTimeMillis() }
+        ?: throw IOException("Connect to the internet to pair, so Codync can confirm your account.")
+    deviceCertificate = proof
+    return proof
+}
+
+/** [step] of joining the account, which pairing goes on without: a failure is only logged. */
+private suspend fun <T> bestEffort(what: String, step: suspend () -> T): T? = try { step() }
+    catch (error: CancellationException) { throw error }
+    catch (error: Exception) { android.util.Log.i("Codync", "Couldn't $what: ${error.message}"); null }
 
 /** The state once the signed-in (or local) account has loaded: where a link can be opened. */
 internal suspend fun AccountStore.activated(): AccountContext = state.first { current -> !current.loading &&

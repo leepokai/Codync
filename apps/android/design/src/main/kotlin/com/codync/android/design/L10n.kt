@@ -17,12 +17,14 @@ fun systemScript(tag: String): ChineseScript? {
 enum class AppLanguage(val stored: String, val title: String) {
     // The menu's order, as on the iPhone: Chinese first, then English and the rest.
     System("system", "Follow system"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"), En("en", "English"),
-    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español");
+    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español"),
+    PtBr("pt-BR", "Português (Brasil)");
 
     fun resolved(systemTag: String): AppLanguage {
         if (this != System) return this
         val base = systemTag.lowercase().replace('_', '-').substringBefore('-').substringBefore('.')
         if (base == "zh") return if (systemScript(systemTag) == ChineseScript.Hant) ZhHant else Zh
+        if (base == "pt") return PtBr
         return entries.firstOrNull { it != System && it.stored == base } ?: En
     }
 

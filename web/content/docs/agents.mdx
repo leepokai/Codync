@@ -113,7 +113,7 @@ For an agent Codync knows by name, the chat also tells you when it needs signing
 In the bot's settings, under **Agent**:
 
 - **Model:** **Default** uses the agent's own default. The list shows the models the agent reports for the computer's sign-in; use the refresh button to load it again. If an agent doesn't report a model list, leave Default or type a model ID.
-- **Reasoning effort:** expand the Agent row to see the selected model’s supported levels. **Default** shows the agent’s reported level; selecting it removes this bot’s override. Each bot keeps its own choice across sessions, including when its model is Default, without changing the shared CLI settings. Available levels come from the agent, so they can differ by model.
+- **Reasoning effort:** expand the Agent row to see the selected model’s supported levels. **Default** shows the agent’s reported level; selecting it removes this bot’s override. Each bot keeps its own choice across sessions, including when its model is Default, without changing the shared CLI settings. Available levels come from the agent, so they can differ by model. A new level applies from the bot's next message and keeps the conversation's context; choosing **Default** again starts a new agent session (chat history is kept).
 - **Fast mode:** a switch shown when the agent offers it for the model. Claude Code and Codex do. You can also type `/fast` in the chat.
 
 On desktop and iPhone, the collapsed Agent row summarizes the harness, model, effort and Fast mode. Expand it to access all settings. Click the harness or model to search; selecting a model closes only the search list. The refresh control is beside the search field. In the terminal, use the Agent, Model and model-option fields with the keyboard.

@@ -434,3 +434,23 @@ async fn reasoning_is_per_bot_and_applies_with_default_and_legacy_models() {
     host.call("send", json!({"botId": bot, "text": "reset"})).await;
     host.wait_for(&bot, Duration::from_mins(1), speed_reply("explicit medium", "reset")).await;
 }
+
+#[tokio::test]
+async fn a_new_effort_reaches_the_live_session_without_restarting_the_agent() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Effort", "tests/fixtures/reasoning_agent.py").await;
+    host.call("send", json!({"botId": bot, "text": "one"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("default medium · 1", "one")).await;
+    host.wait_idle().await;
+    host.call("updateBot", json!({"id": bot, "modelOptions": {"effort": "high"}})).await;
+    host.call("send", json!({"botId": bot, "text": "two"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("default high · 2", "two")).await;
+    host.wait_idle().await;
+    // Back to the agent's default: only a fresh agent process opens on it.
+    host.call("updateBot", json!({"id": bot, "modelOptions": {}})).await;
+    host.call("send", json!({"botId": bot, "text": "three"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("default medium · 1", "three")).await;
+}

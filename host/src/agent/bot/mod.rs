@@ -28,6 +28,7 @@ mod modes;
 mod pi_tools;
 mod queue;
 mod session;
+mod silence;
 mod tool_entry;
 mod turn;
 mod updates;
@@ -126,6 +127,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         stop_requested: false,
         cancel_deadline: None,
         exit_tail: None,
+        silence: silence::Watch::Off,
         tools_changed: false,
         restart_after_turn: false,
         fast_support,
@@ -306,6 +308,8 @@ struct Actor {
     cancel_deadline: Option<Instant>,
     /// Last stderr lines of an agent process that just exited.
     exit_tail: Option<String>,
+    /// Whether the running turn's agent has gone silent (see `silence`).
+    silence: silence::Watch,
     /// Connectors changed: restart the agent before the next turn so the
     /// session is resumed with the new MCP servers.
     tools_changed: bool,
@@ -349,7 +353,10 @@ impl Actor {
                     if !self.on_cmd(cmd, &done_tx).await { break }
                 }
                 Some(file) = self.files.rx.recv() => self.finish_file(file),
-                inc = recv_incoming(&mut self.conn) => self.on_incoming(inc).await,
+                inc = recv_incoming(&mut self.conn) => {
+                    self.silence.heard(Instant::now());
+                    self.on_incoming(inc).await;
+                }
                 Some(done) = done_rx.recv() => {
                     // Updates sent before the prompt response are already queued; apply them first.
                     while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
@@ -359,6 +366,7 @@ impl Actor {
                             inc => self.on_incoming(Some(inc)).await,
                         }
                     }
+                    let done = self.silence.end(done);
                     if let Err(error) = &done && self.fall_back(error, &done_tx).await {
                         continue;
                     }
@@ -389,6 +397,7 @@ impl Actor {
                         self.cancel_deadline = None;
                         if let Some(c) = self.conn.take() { c.acp.kill().await; }
                     }
+                    self.watch_silence().await;
                     self.release_idle().await;
                     // The idle check may have queued a compaction.
                     if self.turn.is_none() && !self.queue.is_empty() {

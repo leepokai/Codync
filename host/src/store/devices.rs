@@ -120,15 +120,18 @@ impl Store {
         Ok(n > 0)
     }
 
-    /// The computer changed the account it belongs to: every device let in for another account (or for none,
-    /// before devices recorded theirs) goes, with its tickets. `None`: it left its account, and all go.
+    /// The computer changed the account it belongs to: every device let in for another account goes, with its
+    /// tickets. `None`: it left its account, and all go. Devices paired before devices recorded their account
+    /// stay only with `keep_unrecorded` (a computer joining its first account keeps the phones it had).
     /// Returns the removed keys.
-    pub fn keep_devices_of(&self, account: Option<&str>) -> Result<Vec<String>> {
+    pub fn keep_devices_of(&self, account: Option<&str>, keep_unrecorded: bool) -> Result<Vec<String>> {
         let mut c = self.db.locked();
         let tx = c.transaction()?;
         let gone: Vec<String> = {
-            let mut st = tx.prepare("SELECT key FROM devices WHERE account IS NULL OR account IS NOT ?1")?;
-            st.query_map([account], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+            let mut st = tx.prepare(
+                "SELECT key FROM devices WHERE (account IS NULL AND NOT ?2) OR (account IS NOT NULL AND account IS NOT ?1)",
+            )?;
+            st.query_map(params![account, keep_unrecorded], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
         for key in &gone {
             tx.execute("DELETE FROM devices WHERE key = ?1", [key])?;

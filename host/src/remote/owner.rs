@@ -15,7 +15,8 @@ pub fn owner(store: &Store) -> Option<Owner> {
 }
 
 /// Records the account the cloud reports. When it is another one than before (joining one, moving, or leaving),
-/// every device let in for another account goes. The first record after an upgrade only records.
+/// every device let in for another account goes; joining a first account keeps the phones paired before devices
+/// recorded their account. The first record after an upgrade only records.
 pub fn remember(hub: &Hub, now: Option<&Owner>) -> Result<()> {
     let saved = serde_json::to_string(&now)?;
     let before = hub.store.kv_get(OWNER);
@@ -27,7 +28,7 @@ pub fn remember(hub: &Hub, now: Option<&Owner>) -> Result<()> {
     let before = serde_json::from_str::<Option<Owner>>(&before).ok().flatten().map(|o| o.user_id);
     let now = now.map(|o| o.user_id.as_str());
     if before.as_deref() != now {
-        let gone = hub.store.keep_devices_of(now)?;
+        let gone = hub.store.keep_devices_of(now, before.is_none())?;
         tracing::info!(devices = gone.len(), "the computer changed its account; the old account's devices are gone");
         if !gone.is_empty() {
             hub.auth_changed();
@@ -101,5 +102,16 @@ mod tests {
         remember(&hub, None).unwrap();
         assert!(keys(&hub).is_empty(), "leaving drops every device");
         assert!(owner(&hub.store).is_none());
+    }
+
+    #[test]
+    fn joining_a_first_account_keeps_the_phones_it_had() {
+        let hub = hub();
+        remember(&hub, None).unwrap();
+        device(&hub, "legacy", None);
+        device(&hub, "mine", Some("user_a"));
+        device(&hub, "theirs", Some("user_b"));
+        remember(&hub, Some(&account("user_a"))).unwrap();
+        assert_eq!(keys(&hub), ["legacy", "mine"]);
     }
 }

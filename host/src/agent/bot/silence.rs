@@ -10,7 +10,7 @@ use crate::agent::acp::{Failure, FailureKind};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
-/// Minutes of silence the watchdog allows; `0` turns it off.
+/// Minutes of silence the watchdog allows (fractions too: `1.5`); `0` turns it off.
 const LIMIT_VAR: &str = "CODYNC_AGENT_SILENCE_MINUTES";
 /// Long enough for a model that reasons a while before it streams anything.
 const DEFAULT_LIMIT: Duration = Duration::from_mins(10);
@@ -20,13 +20,21 @@ static LIMIT: LazyLock<Option<Duration>> = LazyLock::new(|| limit_from(std::env:
 /// How long an agent may stay silent mid-turn; `None` when the user turned the watchdog off.
 fn limit_from(value: Option<&str>) -> Option<Duration> {
     let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else { return Some(DEFAULT_LIMIT) };
-    match value.parse::<u64>() {
-        Ok(0) => None,
-        Ok(minutes) => Some(Duration::from_secs(minutes.saturating_mul(60))),
-        Err(error) => {
-            tracing::warn!(var = LIMIT_VAR, value, %error, "not a whole number of minutes; using the default");
+    match value.parse::<f64>().ok().and_then(|minutes| Duration::try_from_secs_f64(minutes * 60.0).ok()) {
+        Some(limit) if limit.is_zero() => None,
+        Some(limit) => Some(limit),
+        None => {
+            tracing::warn!(var = LIMIT_VAR, value, "not a number of minutes; using the default");
             Some(DEFAULT_LIMIT)
         }
+    }
+}
+
+/// How long the agent was silent, as the chat says it: "10 min", or "30 s" under a minute.
+fn in_words(silent: Duration) -> String {
+    match silent.as_secs() {
+        secs @ 0..60 => format!("{secs} s"),
+        secs => format!("{} min", secs / 60),
     }
 }
 
@@ -77,7 +85,7 @@ impl Watch {
         match (std::mem::take(self), done) {
             (Self::Stopped(silent), Err(_)) => Err(Failure::error(
                 FailureKind::Timeout,
-                format!("it went silent for {} min, so Codync stopped it", silent.as_secs() / 60),
+                format!("it went silent for {}, so Codync stopped it", in_words(silent)),
             )),
             (_, done) => done,
         }
@@ -198,7 +206,16 @@ mod tests {
         assert_eq!(limit_from(None), Some(DEFAULT_LIMIT));
         assert_eq!(limit_from(Some(" ")), Some(DEFAULT_LIMIT));
         assert_eq!(limit_from(Some("25")), Some(Duration::from_mins(25)));
+        assert_eq!(limit_from(Some("1.5")), Some(Duration::from_secs(90)));
         assert_eq!(limit_from(Some("0")), None, "0 turns it off");
         assert_eq!(limit_from(Some("ten")), Some(DEFAULT_LIMIT));
+        assert_eq!(limit_from(Some("-1")), Some(DEFAULT_LIMIT));
+        assert_eq!(limit_from(Some("NaN")), Some(DEFAULT_LIMIT));
+    }
+
+    #[test]
+    fn the_chat_says_how_long_in_minutes_or_seconds() {
+        assert_eq!(in_words(Duration::from_secs(3)), "3 s");
+        assert_eq!(in_words(Duration::from_secs(601)), "10 min");
     }
 }

@@ -10,6 +10,11 @@ use std::time::{Duration, Instant};
 /// picked here is only free for a moment; when something else takes it before the host binds, the
 /// host exits and this starts it again on another one.
 pub async fn serve(home: &Path) -> (Child, String) {
+    serve_with(home, &[]).await
+}
+
+/// `serve` with `env` set for the host.
+pub async fn serve_with(home: &Path, env: &[(&str, &str)]) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);
     let log = home.join("host-stderr.log");
@@ -21,6 +26,7 @@ pub async fn serve(home: &Path) -> (Child, String) {
             .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
             .env("CODYNC_HOME", home)
             .env("CODYNC_CLOUD", "off")
+            .envs(env.iter().copied())
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
             .spawn()

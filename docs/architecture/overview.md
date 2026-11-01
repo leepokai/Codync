@@ -75,6 +75,8 @@ Several computers per account are supported: the iPhone and Android apps pair se
 
 ## Service boundaries
 
+Who may reach a computer and how (sign-in, accounts, pairing, managing over SSH, and the names of each state): [connections and accounts](connections.md).
+
 `cloud/` implements `/v1`, Clerk authentication, computer registration/claim, host-approved access, WebSocket relay and mailbox. `relay/` implements APNs registration tickets and push forwarding. [Remote protocol](../reference/remote-relay.md) defines wire details; [Cloudflare testing](../guides/cloudflare-testing.md) distinguishes these paths during acceptance.
 
 Remote screen uses the channel for signaling and WebRTC for media/input. Cloudflare Realtime TURN forwards encrypted media/input when a cloud connection cannot establish a direct WebRTC path. [Remote screen](../features/remote-screen.md) describes the helpers and current limitations.

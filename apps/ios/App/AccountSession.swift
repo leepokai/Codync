@@ -119,10 +119,7 @@ final class AccountSession {
 
     func signIn(provider: SignInProvider = .google) async {
         guard !isBusy else { return }
-        guard let clerk else {
-            errorMessage = "Sign-in setup isn't finished yet. You can continue using local pairing."
-            return
-        }
+        guard let clerk else { return }
         let tracked: AnalyticsEvent.SignInProvider = provider == .apple ? .apple : .google
         Analytics.shared.capture(.signInStarted(tracked))
         isBusy = true
@@ -175,6 +172,18 @@ final class AccountSession {
         } catch {
             errorMessage = "Couldn't sign out. Check your connection and try again."
         }
+    }
+
+    /// Deletes the signed-in user in Clerk (App Store 5.1.1(v)); the cloud cleans up after Clerk's `user.deleted`.
+    /// Throws when Clerk refused or couldn't be reached, and then nothing changed.
+    func deleteUser() async throws {
+        guard let clerk, let user = clerk.user, let sessionID = clerk.session?.id else { throw SessionError.signedOut }
+        isBusy = true
+        errorMessage = nil
+        defer { isBusy = false }
+        try await user.delete()
+        // Clerk ends the session with the user; make sure it's gone here too.
+        if userID == user.id { try? await clerk.auth.signOut(sessionId: sessionID) }
     }
 
     /// Every account on this device, for starting over.

@@ -12,6 +12,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case signInFailed(SignInProvider, reason: SignInFailure)
     case signedIn(SignInProvider)
     case signedOut
+    /// The signed-out computers moved into the account at sign-in: with this phone's keys, or to be scanned again.
+    case signedOutPairingsMoved(computers: Int, keys: MovedKeys)
     case pairingFailed(PairingFailure)
     case computerPaired(via: PairVia, computer: ComputerID)
     case accessRequested
@@ -37,6 +39,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum OnboardingVia: String, Sendable { case paired, account, skipped }
     public enum SignInProvider: String, Sendable { case apple, google }
     public enum SignInFailure: String, Sendable { case cancelled, verification, error }
+    public enum MovedKeys: String, Sendable { case moved, rescan }
     public enum PairVia: String, Sendable { case qr, link, account }
     public enum AccessFailure: String, Sendable { case denied, expired, cancelled }
     public enum PromptSource: String, Sendable { case settings, widgets }
@@ -105,6 +108,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .signInFailed: "sign_in_failed"
         case .signedIn: "signed_in"
         case .signedOut: "signed_out"
+        case .signedOutPairingsMoved: "signed_out_pairings_moved"
         case .pairingFailed: "pairing_failed"
         case .computerPaired: "computer_paired"
         case .accessRequested: "access_requested"
@@ -135,6 +139,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
         case .signedOut, .accessRequested: return [:]
+        case let .signedOutPairingsMoved(computers, keys): return ["computers": .int(computers), "keys": .string(keys.rawValue)]
         case let .pairingFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .computerPaired(via, computer):
             return ["via": .string(via.rawValue), "computer": .string(Analytics.computerTag(computer))]

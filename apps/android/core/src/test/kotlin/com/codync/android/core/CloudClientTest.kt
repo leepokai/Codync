@@ -132,4 +132,23 @@ class CloudClientTest {
             assertEquals("/v1/devices", server.takeRequest().path)
         } finally { server.shutdown() }
     }
+
+    @Test fun `signing out deletes only this device from the account, on the token taken before`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("""{"devices":[{"deviceId":"other","deviceKey":"elsewhere"},{"deviceId":"mine","deviceKey":"${identity.publicKey}"}]}"""))
+            server.enqueue(MockResponse().setBody("{}"))
+            var signedIn = true
+            val client = CloudClient(server.url("/").toString(), identity, { check(signedIn); "session" }, OkHttpClient(), 1, Unit)
+            val pinned = requireNotNull(client.pinningToken())
+            signedIn = false
+            pinned.revokeThisDevice()
+            val list = server.takeRequest()
+            assertEquals("/v1/devices" to "Bearer session", list.path to list.getHeader("Authorization"))
+            val delete = server.takeRequest()
+            assertEquals("DELETE" to "/v1/devices/mine", delete.method to delete.path)
+            assertEquals(null, client.pinningToken())
+        } finally { server.shutdown() }
+    }
 }

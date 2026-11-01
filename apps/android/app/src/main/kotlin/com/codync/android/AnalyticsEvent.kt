@@ -42,6 +42,10 @@ internal sealed class AnalyticsEvent(val name: String) {
         override val properties get() = mapOf("provider" to provider.json)
     }
     data object SignedOut : AnalyticsEvent("signed_out")
+    /** Signing in took the signed-out pairings ([MovedKeys]). */
+    data class SignedOutPairingsMoved(val computers: Int, val keys: MovedKeys) : AnalyticsEvent("signed_out_pairings_moved") {
+        override val properties get() = mapOf("computers" to JsonPrimitive(computers), "keys" to keys.json)
+    }
     data class PairingFailed(val reason: PairingFailure) : AnalyticsEvent("pairing_failed") {
         override val properties get() = mapOf("reason" to reason.json)
     }
@@ -106,6 +110,9 @@ internal enum class OnboardingStep(override val wire: String) : CatalogValue { W
 internal enum class OnboardingVia(override val wire: String) : CatalogValue { Paired("paired"), Account("account"), Skipped("skipped") }
 
 internal enum class SignInProvider(override val wire: String) : CatalogValue { Apple("apple"), Google("google"), Hosted("hosted") }
+
+/** The signed-out pairings' keys at sign-in: [Moved] with them, or listed to be scanned again ([Rescan]). */
+internal enum class MovedKeys(override val wire: String) : CatalogValue { Moved("moved"), Rescan("rescan") }
 
 internal enum class SignInFailure(override val wire: String) : CatalogValue {
     Cancelled("cancelled"), Timeout("timeout"), Verification("verification"), Error("error")

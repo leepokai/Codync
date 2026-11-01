@@ -100,13 +100,30 @@ class CloudClient private constructor(base: String, private val identity: Device
 
     /** Takes back this device's grants on a computer, including one approved for an earlier install. */
     suspend fun revokeAccess(computerId: String) {
-        val devices = request("GET", listOf("v1", "devices")).getValue("devices").jsonArray.map { it.jsonObject }
-        val device = devices.firstOrNull { it.text("deviceKey") == identity.publicKey }?.text("deviceId") ?: return
+        val device = deviceId() ?: return
         val grants = request("GET", listOf("v1", "computers", computerId, "grants")).getValue("grants").jsonArray.map { it.jsonObject }
         for (grant in grants.filter { it.text("deviceId") == device }) {
             request("DELETE", listOf("v1", "computers", computerId, "grants", requireNotNull(grant.text("grantId")) { "Invalid grant" }))
         }
     }
+
+    /** Signing out: this device leaves the account, and with it every grant and pending request (iOS `revokeThisDevice`). */
+    suspend fun revokeThisDevice() {
+        request("DELETE", listOf("v1", "devices", deviceId() ?: return))
+    }
+
+    /**
+     * This client on the session token it would send now, for a call that goes out after signing out: a session token
+     * stays valid until it expires (about a minute). Null when there's no token to take (iOS `pinningToken`).
+     */
+    suspend fun pinningToken(): CloudClient? {
+        val now = try { token() } catch (error: CancellationException) { throw error } catch (_: Exception) { return null }
+        return CloudClient(baseUrl.toString(), identity, { now }, http, pollInterval)
+    }
+
+    /** This device's id in the account; null when it was never registered. */
+    private suspend fun deviceId(): String? = request("GET", listOf("v1", "devices")).getValue("devices").jsonArray
+        .map { it.jsonObject }.firstOrNull { it.text("deviceKey") == identity.publicKey }?.text("deviceId")
 
     suspend fun accessStatus(id: String): AccessStatus {
         val result = request("GET", listOf("v1", "access-requests", id))

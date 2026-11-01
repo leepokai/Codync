@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { CharacterAvatar, type Mood } from '../components/Avatar'
 import { Button, Spinner } from '../components/Controls'
 import { Icon } from '../components/Icon'
@@ -6,13 +6,28 @@ import { HStack, Spacer, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useReduceMotion } from '../lib/theme'
 import { useTr } from '../lib/use-language'
-import { useAccount } from '../store/account'
+import { showsWelcome } from '../lib/welcome-gate'
+import { prefs, usePref } from '../lib/prefs'
+import { account, useAccount } from '../store/account'
+import { analytics } from '../store/analytics'
 import googleLogo from '../assets/google.svg'
 import './account-welcome.css'
 
 const deviceName = window.codync.platform === 'darwin' ? 'Mac' : 'computer'
 
-/** First-run account choice. A restored session skips this screen as soon as it is back. */
+/** Whether the welcome covers the window (`showsWelcome`). `finish`: the first run's choice was made. */
+export function useWelcomeGate() {
+  const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
+  const { isConfigured, isReady, isSignedIn } = useAccount()
+  const finish = useCallback(() => {
+    if (prefs.onboardingDone.get()) return
+    setOnboarded(true)
+    analytics.track({ event: 'onboarding_completed', signed_in: account.isSignedIn })
+  }, [setOnboarded])
+  return { shown: showsWelcome({ onboarded, configured: isConfigured, ready: isReady, signedIn: isSignedIn }), finish }
+}
+
+/** The welcome: signing in, or, in a build without accounts, going on without one. A restored session skips it as soon as it is back. */
 export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
   const account = useAccount()
   const reduce = useReduceMotion()
@@ -36,9 +51,11 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
       <VStack align="center" justify="center" gap={14} className="welcome-restoring">
         <Spinner size={24} />
         <Text as="div" size="callout" tone="secondary">{tr(`Checking for a saved account…`)}</Text>
-        <button className="welcome-skip" onClick={onContinue}>
-          {onThis}
-        </button>
+        {account.isConfigured ? null : (
+          <button className="welcome-skip" onClick={onContinue}>
+            {onThis}
+          </button>
+        )}
       </VStack>
     )
   }
@@ -64,9 +81,11 @@ export function AccountWelcomeView({ onContinue }: { onContinue: () => void }) {
         </VStack>
         <Spacer min={32} />
         <VStack gap={10} style={rise(beat >= 4)}>
-          <Button onClick={onContinue} className="welcome-button">
-            {onThis}
-          </Button>
+          {account.isConfigured ? null : (
+            <Button onClick={onContinue} className="welcome-button">
+              {onThis}
+            </Button>
+          )}
           <Button onClick={() => void account.signIn('apple')} disabled={!account.isConfigured || account.isBusy} className="welcome-button">
             {account.isBusy ? (
               <Spinner size={18} />

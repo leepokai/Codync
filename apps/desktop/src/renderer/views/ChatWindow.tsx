@@ -10,14 +10,13 @@ import { Text } from '../components/Text'
 import { useModels } from '../lib/observable'
 import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
 import { useApp, StoreContext } from '../store/context'
-import { account } from '../store/account'
 import { analytics } from '../store/analytics'
 import { refKey, sameRef, parseRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
 import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
-import { SidebarFooter } from './SidebarFooter'
+import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
 import { UpdateBadge } from './UpdateButton'
 import { ComputerFilterHeader, computerSelection } from './ComputerFilterHeader'
 import { ThreadView } from './thread/ThreadView'
@@ -29,7 +28,7 @@ import { MarketplaceView } from './marketplace/MarketplaceView'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
 import { SearchPalette } from './SearchPalette'
-import { AccountWelcomeView } from './AccountWelcomeView'
+import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
 import { AccessOnboarding } from './computer-access/AccessOnboarding'
 import { HostStateView } from './HostStateView'
@@ -38,6 +37,7 @@ export { EmptyState } from './HostStateView'
 import { RefreshIndicator } from './RefreshIndicator'
 import { StarPrompt } from './StarPrompt'
 import { MoveComputerPrompt } from './MoveComputerPrompt'
+import { DeleteAccountPrompt } from './DeleteAccountPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
 import { DesktopActionMenu, type ActionItem } from './DesktopActionMenu'
@@ -56,7 +56,7 @@ import { useTr } from '../lib/use-language'
 export function ChatWindow() {
   const tr = useTr()
   const app = useApp()
-  const [onboarded, setOnboarded] = usePref(prefs.onboardingDone)
+  const welcome = useWelcomeGate()
   const [accessSetup, setAccessSetup] = usePref(prefs.computerAccessSetup)
   const [showAccess, setShowAccess] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -124,7 +124,7 @@ export function ChatWindow() {
     <div className="chat-window">
       <Summaries />
       <RefreshIndicator />
-      {onboarded ? (
+      {!welcome.shown ? (
         accessSetup === null ? (
           <AccessOnboarding onContinue={(ready) => finishAccess(ready, true)} />
         ) : showsChat ? (
@@ -133,15 +133,10 @@ export function ChatWindow() {
           <HostStateView />
         )
       ) : (
-        <AccountWelcomeView
-          onContinue={() => {
-            setOnboarded(true)
-            analytics.track({ event: 'onboarding_completed', signed_in: account.isSignedIn })
-          }}
-        />
+        <AccountWelcomeView onContinue={welcome.finish} />
       )}
-      {onboarded && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
-      {onboarded && accessSetup !== null ? <><StarPrompt /><MoveComputerPrompt /></> : null}
+      {!welcome.shown && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
+      {!welcome.shown && accessSetup !== null ? <><StarPrompt /><MoveComputerPrompt /><DeleteAccountPrompt /></> : null}
       <Sheet open={showAccess} onClose={() => setShowAccess(false)} width={660} height={Math.min(820, window.innerHeight - 80)}>
         <ModalHeader icon="hand.raised" title={tr(`Computer access`)} />
         <ComputerAccessView onContinue={(ready) => { finishAccess(ready, false); setShowAccess(false) }} />
@@ -416,13 +411,14 @@ function ChatSplitView() {
             <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
             <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
             <UpdateBadge size={32} />
+            <RailAccountNotice onComputers={() => setSettings('computers')} />
             <button className={`rail-profile ${showAccount ? 'open' : ''}`} aria-label="Open account menu for Account" title="Account" onClick={() => setShowAccount((s) => !s)}>
               <ProfileAvatar />
             </button>
           </div>
         ) : (
           // With several computers each heading opens its own Extensions instead.
-          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} />
+          <SidebarFooter accountOpen={showAccount} onAccount={() => setShowAccount((s) => !s)} onExtensions={roster.grouped ? undefined : openMarketplace} onComputers={() => setSettings('computers')} />
         )}
       </aside>
       <ResizeHandle label="Resize sidebar" width={width} min={76} max={sidebarMax} edge="trailing" onResize={resizeSidebar} onDragging={setResizing} />

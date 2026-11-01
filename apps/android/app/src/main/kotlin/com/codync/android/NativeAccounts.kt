@@ -10,6 +10,7 @@ import com.clerk.api.network.serialization.errorMessage
 import com.clerk.api.session.Session
 import com.clerk.api.sso.OAuthProvider
 import com.clerk.api.sso.SSOCancellationException
+import com.clerk.api.user.delete
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +28,10 @@ internal class SignInError(val reason: SignInFailure, message: String, cause: Th
 data class SavedAccount(val userId: String, val sessionId: String, val email: String, val avatar: String?)
 data class AccountState(val ready: Boolean = false, val configured: Boolean = NativeAccounts.configured,
     val userId: String? = null, val accounts: List<SavedAccount> = emptyList(),
-    val multiple: Boolean = false, val error: String? = null)
+    val multiple: Boolean = false, val error: String? = null) {
+    /** Clerk is still restoring the saved sign-in: the launch layer and the root wait, rather than show the welcome. */
+    val restoring: Boolean get() = configured && !ready && error == null
+}
 
 /** Clerk owns browser authentication, encrypted credentials and session restoration. */
 object NativeAccounts {
@@ -112,6 +116,12 @@ object NativeAccounts {
         // An explicit session keeps local credentials intact if the server rejects logout.
         val result = Clerk.auth.signOut(sessionId)
         requireSuccess(result)
+    }
+
+    /** Deletes the signed-in user; Clerk's `user.deleted` then takes the account's computers and devices off the cloud. */
+    suspend fun deleteUser() {
+        val user = requireNotNull(Clerk.activeUser) { "Sign in again to delete your account." }
+        requireSuccess(user.delete())
     }
 
     suspend fun reset() {

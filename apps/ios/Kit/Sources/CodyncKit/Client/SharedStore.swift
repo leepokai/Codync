@@ -24,8 +24,8 @@ public enum SharedStore {
         /// The raw Clerk user ID; nil = the local (signed-out) context.
         public let accountID: String?
         /// The UserDefaults suite (the App Group; tests use their own).
-        private let suite: String
-        private var defaults: UserDefaults { UserDefaults(suiteName: suite) ?? .standard }
+        fileprivate let suite: String
+        fileprivate var defaults: UserDefaults { UserDefaults(suiteName: suite) ?? .standard }
         public var id: String { accountID.map { Self.digest($0) } ?? "local" }
 
         public init(accountID: String?, suite: String = SharedStore.appGroup) {
@@ -33,8 +33,8 @@ public enum SharedStore {
             self.suite = suite
         }
 
-        private static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer"]
-        private func key(_ name: String) -> String { accountID == nil ? name : "account.\(id).\(name)" }
+        fileprivate static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer"]
+        fileprivate func key(_ name: String) -> String { accountID == nil ? name : "account.\(id).\(name)" }
         public static func digest(_ value: String) -> String {
             SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
         }
@@ -121,6 +121,44 @@ public enum SharedStore {
                 try? FileManager.default.removeItem(at: caches.appending(path: file))
             }
         }
+    }
+}
+
+// MARK: signed-out pairings move into the account
+
+public extension SharedStore.Context {
+    /// What `adopt(from:)` did with the signed-out context's pairings: how many computers came over, and whether
+    /// this iPhone's keys came with them (`moved`: this context was new, so they keep working) or they have to be
+    /// paired again (`rescan`: this context has its own key).
+    struct Adoption: Equatable, Sendable {
+        public let computers: Int
+        public let keys: AnalyticsEvent.MovedKeys
+    }
+
+    /// Sign-in is required: the signed-out context's computers move into this account context, which
+    /// then erases it. Runs before this context's stores and keys load. Nil when there was nothing to move.
+    func adopt(from local: Self) -> Adoption? {
+        guard accountID != nil, local.accountID == nil, local.suite == suite else { return nil }
+        let moving = local.computers
+        guard !moving.isEmpty || DeviceIdentity.exists(context: local) else { return nil }
+        defer { local.erase() }
+        if !DeviceIdentity.exists(context: self), computers.isEmpty {
+            do {
+                try DeviceIdentity.move(from: local, to: self)
+            } catch {
+                Logger(subsystem: "com.pokai.Codync", category: "Account").error("Cannot move the device key: \(error.localizedDescription)")
+                return merge(moving)
+            }
+            for name in Self.names { defaults.set(local.defaults.object(forKey: local.key(name)), forKey: key(name)) }
+            return Adoption(computers: moving.count, keys: .moved)
+        }
+        return merge(moving)
+    }
+
+    private func merge(_ moving: [Computer]) -> Adoption {
+        let known = Set(computers.map(\.id))
+        computers += moving.filter { !known.contains($0.id) }
+        return Adoption(computers: moving.count, keys: .rescan)
     }
 }
 

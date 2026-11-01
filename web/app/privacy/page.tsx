@@ -9,7 +9,7 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: October 31, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: November 2, 2026</p>
 
         <Section title="Overview">
           Codync is made by Leeporic LLC (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
@@ -36,13 +36,13 @@ export default function Privacy() {
           If you turn cloud assistants on at a computer and add the Codync connector to ChatGPT, Claude or another assistant, that assistant&apos;s requests to your bots and the bots&apos; replies are not end-to-end encrypted: they pass through our relay over HTTPS, which can read them but doesn&apos;t store them, and the assistant&apos;s provider sees them as part of your conversation there, under its own privacy policy. Cloud assistants are off on every computer until you turn them on at that computer, and the relay passes on only requests from your own Codync account.
         </Section>
 
-        <Section title="Codync account (optional)">
-          You can sign in with Apple or Google to find your computers from any phone. Your account keeps your email address, an account ID, and the names of the phones and computers you connect with it. Codync works without an account.
+        <Section title="Codync account">
+          The Codync apps ask you to sign in with Apple or Google, so your phones can find your computers. Your account keeps your email address, an account ID, and the names of the phones and computers you connect with it. You can delete it at any time: see <a href="#delete-account" className="underline">Delete your Codync account</a> below.
         </Section>
 
         <Section title="Data we collect">
           <p className="mb-2">
-            Usage analytics; the registration of each computer that uses our relay (its name, platform, device type, Codync version, public keys and when it was last online), with the public keys of the devices allowed to use it; and, if you sign in, the account data described under Codync account. Analytics are on by default; turn them off on each phone and each computer in Settings (Share usage analytics), and that device stops sending right away.
+            Usage analytics; the registration of each computer that uses our relay (its name, platform, device type, Codync version, public keys and when it was last online), with the public keys of the devices allowed to use it; and the account data described under Codync account. Analytics are on by default; turn them off on each phone and each computer in Settings (Share usage analytics), and that device stops sending right away.
           </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>What we record:</strong> which features you use, such as opening the app and its screens, setting up and pairing a device (and whether you allow notifications), creating or deleting a bot, sending a message (with the number of attachments, not the files), starting a routine or a voice call, and installing a connector from the catalog. Each event carries the app version, the platform and the agent and model a bot uses.</li>
@@ -60,7 +60,7 @@ export default function Privacy() {
             <li><strong>Apple Push Notification service</strong>: delivers notifications and Live Activity updates on iPhone.</li>
             <li><strong>Google Firebase Cloud Messaging</strong>: delivers notifications and live updates on Android.</li>
             <li><strong>Cloudflare Workers</strong>: runs the push relay (nothing stored), the relay between your phone and your computer (computer registrations, messages waiting for an offline computer, webhook deliveries) and the Codync account service; its TURN service forwards a remote screen session&apos;s encrypted video when there&apos;s no direct path.</li>
-            <li><strong>Clerk</strong>: runs sign-in for the optional Codync account, including the sign-in an assistant you connect to Codync uses.</li>
+            <li><strong>Clerk</strong>: runs sign-in for the Codync account, including the sign-in an assistant you connect to Codync uses.</li>
             <li><strong>n0 (iroh public relays)</strong>: only if you connect your computers with codync-network using the default connector. When two of your computers can&apos;t connect directly, their encrypted traffic goes through iroh&apos;s public relays, and they find each other through n0&apos;s address lookup; these see the computers&apos; IP addresses and connection metadata, not what they say. With your own relay or the private connector, none of it reaches n0.</li>
             <li><strong>PostHog (US)</strong>: stores the usage analytics described above, unless you turned them off.</li>
             <li><strong>The AI agents you choose</strong>: they run on your computer under their own terms and privacy policies.</li>
@@ -70,18 +70,18 @@ export default function Privacy() {
         </Section>
 
         <Section title="Data retention">
-          Your bots and conversations live on your devices. Our services keep only these: your account, if you sign in; each computer&apos;s registration, the devices allowed to use it and its routines&apos; webhook keys, while the computer is registered; a log of account and access changes (30 days); messages waiting for an offline computer (up to 24 hours); and webhook deliveries waiting for it (up to 72 hours). Delete a bot to remove its conversation; uninstall the host and delete <code>~/.codync</code> to remove all of it. Deleting the phone app removes its cache. Turning analytics off stops new events from being sent.
+          Your bots and conversations live on your devices. Our services keep only these: your account; each computer&apos;s registration, the devices allowed to use it and its routines&apos; webhook keys, while the computer is registered; a log of account and access changes (30 days); messages waiting for an offline computer (up to 24 hours); and webhook deliveries waiting for it (up to 72 hours). Delete a bot to remove its conversation; uninstall the host and delete <code>~/.codync</code> to remove all of it. Deleting the phone app removes its cache. Turning analytics off stops new events from being sent.
         </Section>
 
         <Section id="delete-account" title="Delete your Codync account">
           <p className="mb-2">
-            To delete your Codync account, email{" "}
+            Delete it in the app: on iPhone and Android, tap the account button on the Bots tab, then <strong>Delete account</strong>; in the desktop app, open the account menu and choose <strong>Delete account</strong>. Without the app, email{" "}
             <a href={`mailto:${EMAIL}?subject=Delete%20my%20Codync%20account`} className="text-white underline">{EMAIL}</a>{" "}
-            from the address you sign in with, with the subject &ldquo;Delete my Codync account&rdquo;. We delete it within 30 days and reply when it&apos;s done.
+            from the address you sign in with, with the subject &ldquo;Delete my Codync account&rdquo;: we delete it, and the usage analytics linked to it, within 30 days and reply when it&apos;s done. The steps are also on <Link href="/delete-account" className="text-white underline">Delete your account</Link>.
           </p>
           <ul className="list-disc pl-5 space-y-2">
-            <li><strong>Deleted:</strong> your account (email address and account ID), the phones and computers connected to it and their access, and the usage analytics linked to it.</li>
-            <li><strong>Kept:</strong> nothing on our side. Bots and conversations stay on your computer until you delete them there (see Data retention).</li>
+            <li><strong>Deleted:</strong> your sign-in and email address, your account&apos;s list of computers, and every device&apos;s access through the account.</li>
+            <li><strong>Kept:</strong> a record that the account was deleted, with the revoked devices&apos; names and keys, so those devices can&apos;t be used with it again; the log of account and access changes (30 days); and, when you delete it in the app, the usage analytics linked to it, until you email us to delete them too. Bots and conversations stay on your computer until you delete them there (see Data retention).</li>
           </ul>
         </Section>
 

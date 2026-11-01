@@ -27,26 +27,67 @@ class LocalStore(context: Context, val contextId: String = "local") {
 
     @Synchronized
     fun identity(): DeviceIdentity {
-        val file = AtomicFile(File(directory, "identity"))
-        val seeds = if (file.baseFile.exists()) {
-            val sealed = file.readFully()
-            require(sealed.size == 12 + 64 + 16) { "Device identity is damaged. Start over to pair again." }
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, wrappingKey(), GCMParameterSpec(128, sealed.copyOf(12)))
-            cipher.updateAAD(scopeId.toByteArray())
-            cipher.doFinal(sealed.copyOfRange(12, sealed.size))
-        } else {
-            val fresh = ByteArray(64).also(SecureRandom()::nextBytes)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, wrappingKey())
-            cipher.updateAAD(scopeId.toByteArray())
-            write(file, cipher.iv + cipher.doFinal(fresh))
-            fresh
-        }
+        val seeds = openSeeds() ?: ByteArray(64).also(SecureRandom()::nextBytes).also(::sealSeeds)
         try {
             require(seeds.size == 64)
             return DeviceIdentity(seeds.copyOfRange(0, 32), seeds.copyOfRange(32, 64))
         } finally { seeds.fill(0) }
+    }
+
+    /** The device's key seeds, opened with this scope's Keystore key; null before the first [identity]. */
+    private fun openSeeds(): ByteArray? {
+        val file = AtomicFile(File(directory, "identity"))
+        if (!file.baseFile.exists()) return null
+        val sealed = file.readFully()
+        require(sealed.size == 12 + 64 + 16) { "Device identity is damaged. Start over to pair again." }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, wrappingKey(), GCMParameterSpec(128, sealed.copyOf(12)))
+        cipher.updateAAD(scopeId.toByteArray())
+        return cipher.doFinal(sealed.copyOfRange(12, sealed.size))
+    }
+
+    private fun sealSeeds(seeds: ByteArray) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, wrappingKey())
+        cipher.updateAAD(scopeId.toByteArray())
+        write(AtomicFile(File(directory, "identity")), cipher.iv + cipher.doFinal(seeds))
+    }
+
+    /** What [adopt] did: how many computers came over, and whether the device keys came with them. */
+    internal data class Adoption(val computers: Int, val keys: MovedKeys)
+
+    /**
+     * Sign-in is required: [from] (the signed-out context) moves into this account context, then is erased (iOS
+     * `SharedStore.Context.adopt(from:)`). New here (no identity, no computers), this context takes everything, its device
+     * keys too (sealed again under this scope), so computers keep seeing the same device. Otherwise, or when that move
+     * fails, only the computer list merges (this context's entry wins), and those computers ask to be paired again. Null
+     * when there was nothing to move; a failure to merge leaves [from] as it was. Run before this context's stores and identity load.
+     */
+    @Synchronized
+    internal fun adopt(from: LocalStore): Adoption? {
+        val moving = from.computers()
+        if (moving.isEmpty() && !from.hasIdentity()) return null
+        val own = computers()
+        val keys = if (!hasIdentity() && own.isEmpty() && takeAll(from)) MovedKeys.Moved else {
+            val known = own.map { it.id }.toSet()
+            saveComputers(own + moving.filter { it.id !in known })
+            MovedKeys.Rescan
+        }
+        from.erase()
+        return Adoption(moving.size, keys)
+    }
+
+    /** [from]'s device keys and files, for [adopt]; false when they couldn't move (the computers merge instead). */
+    private fun takeAll(from: LocalStore): Boolean = try {
+        from.openSeeds()?.let { seeds -> try { sealSeeds(seeds) } finally { seeds.fill(0) } }
+        // Not the sealed identity or AtomicFile's leftovers of it: only [sealSeeds] writes this scope's.
+        for (file in from.directory.listFiles().orEmpty().filter { !it.name.startsWith("identity") }) {
+            file.copyRecursively(File(directory, file.name), overwrite = true)
+        }
+        true
+    } catch (error: Exception) {
+        android.util.Log.w("Codync", "Couldn't move the signed-out device key", error)
+        false
     }
 
     private fun wrappingKey(): SecretKey {

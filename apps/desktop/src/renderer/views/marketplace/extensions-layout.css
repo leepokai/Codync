@@ -45,6 +45,46 @@
   min-height: 0;
   overflow-y: auto;
 }
+/* Rows blur and fade out under either edge, like the sidebar's header and footer; an edge shows
+   only while there is more past it (scroll-driven, so a list that fits shows neither). */
+.market-panel-scroll::before,
+.market-panel-scroll::after {
+  content: '';
+  position: sticky;
+  z-index: 1;
+  display: block;
+  height: 32px;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  animation: edge-shown linear both;
+  animation-timeline: scroll();
+}
+.market-panel-scroll::before {
+  top: 0;
+  margin-bottom: -32px;
+  background: linear-gradient(to bottom, var(--background) 20%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent);
+  mask-image: linear-gradient(to bottom, black 40%, transparent);
+  animation-range: 0 24px;
+}
+.market-panel-scroll::after {
+  bottom: 0;
+  margin-top: -32px;
+  background: linear-gradient(to top, var(--background) 20%, transparent);
+  -webkit-mask-image: linear-gradient(to top, black 40%, transparent);
+  mask-image: linear-gradient(to top, black 40%, transparent);
+  animation-direction: reverse;
+  animation-range: calc(100% - 24px) 100%;
+}
+@keyframes edge-shown {
+  to { opacity: 1; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .market-panel-scroll::before,
+  .market-panel-scroll::after { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
 /* The end of a list the registry continues: placeholder rows, or Try again after a failure. */
 .load-more {
   margin-top: 8px;

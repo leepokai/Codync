@@ -1,6 +1,7 @@
 package com.codync.android
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -34,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -169,10 +171,12 @@ import kotlinx.coroutines.launch
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SourceLine()
                         Pins()
-                        LazyColumn(Modifier.weight(1f), listState, verticalArrangement = Arrangement.spacedBy(4.dp)) { lists() }
+                        ScrollEdges(listState, Modifier.weight(1f)) {
+                            LazyColumn(Modifier.fillMaxSize(), listState, verticalArrangement = Arrangement.spacedBy(4.dp)) { lists() }
+                        }
                         Foot()
                     }
-                } else LazyColumn(Modifier.weight(1f), listState, contentPadding = PaddingValues(horizontal = 44.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                } else ScrollEdges(listState, Modifier.weight(1f)) { LazyColumn(Modifier.fillMaxSize(), listState, contentPadding = PaddingValues(horizontal = 44.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     item {
                         Column(Modifier.padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             TabChoice(section, ExtensionSection.entries.map { it to it.title }, { section = it })
@@ -182,7 +186,7 @@ import kotlinx.coroutines.launch
                     if (pinned) item { Box(Modifier.padding(bottom = 12.dp)) { Pins() } }
                     lists()
                     item { Foot() }
-                }
+                } }
             }
         }
         // The sheet's own close, over the page.
@@ -199,6 +203,16 @@ import kotlinx.coroutines.launch
 }
 
 /** The computer it all lives on, credentials beside the title, and the way to what's installed. */
+/** A list whose rows blur and fade out under either edge while there is more past it (the desktop's Extensions lists). */
+@Composable private fun ScrollEdges(listState: LazyListState, modifier: Modifier, list: @Composable () -> Unit) {
+    GlassStage(modifier, chrome = {
+        val top by animateFloatAsState(if (listState.canScrollBackward) 1f else 0f, Motion.fade(), label = "Top edge")
+        val bottom by animateFloatAsState(if (listState.canScrollForward) 1f else 0f, Motion.fade(), label = "Bottom edge")
+        ScrollEdge(Edge.Top, 32.dp, Modifier.graphicsLayer { alpha = top })
+        ScrollEdge(Edge.Bottom, 32.dp, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = bottom })
+    }) { list() }
+}
+
 @Composable private fun Header(state: AppState, modifier: Modifier, showInstalled: () -> Unit, showCredentials: () -> Unit) {
     val connectors = state.plugins?.connectors.orEmpty()
     val count = connectors.size + state.plugins?.skills.orEmpty().size

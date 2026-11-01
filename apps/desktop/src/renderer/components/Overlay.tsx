@@ -211,6 +211,8 @@ export interface MenuItem {
   divider?: boolean
   /** The title is a name the user gave (a section): shown as typed, never translated. */
   verbatim?: boolean
+  /** Picking it leaves the menu open, for choices made several at a time (iOS `.menuActionDismissBehavior(.disabled)`). */
+  keepsOpen?: boolean
   action: () => void
 }
 
@@ -257,7 +259,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
         setHighlight((h) => (h + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
       } else if (e.key === 'Enter' && highlight >= 0) {
         e.preventDefault()
-        dismiss()
+        if (!items[highlight]?.keepsOpen) dismiss()
         items[highlight]?.action()
       }
     }
@@ -281,7 +283,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
             title={item.verbatim ? item.title : tr(item.title)}
             onMouseEnter={() => setHighlight(i)}
             onClick={() => {
-              dismiss()
+              if (!item.keepsOpen) dismiss()
               item.action()
             }}
           >

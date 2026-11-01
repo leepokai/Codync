@@ -26,11 +26,6 @@ public struct ComputerSelection: Equatable, Sendable {
         return encoded(Set(all).subtracting(visible))
     }
 
-    public func only(_ id: ComputerID) -> String {
-        guard all.contains(id) else { return "" }
-        return encoded(Set(all).subtracting([id]))
-    }
-
     private func encoded(_ ids: Set<ComputerID>) -> String { ids.sorted().joined(separator: ",") }
 }
 

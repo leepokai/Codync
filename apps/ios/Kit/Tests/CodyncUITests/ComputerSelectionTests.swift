@@ -1,13 +1,13 @@
 import Testing
 @testable import CodyncUI
 
-@Test func computerFilterSupportsMultipleAndSingleSelections() {
+@Test func computerFilterShowsAndHidesComputersOneAtATime() {
     let all = ["a", "b", "c"]
     let initial = ComputerSelection(all: all, hidden: "")
     #expect(initial.shown == all)
     let withoutB = ComputerSelection(all: all, hidden: initial.toggling("b"))
     #expect(withoutB.shown == ["a", "c"])
-    let onlyC = ComputerSelection(all: all, hidden: withoutB.only("c"))
+    let onlyC = ComputerSelection(all: all, hidden: withoutB.toggling("a"))
     #expect(onlyC.shown == ["c"])
     #expect(ComputerSelection(all: all, hidden: onlyC.toggling("a")).shown == ["a", "c"])
 }

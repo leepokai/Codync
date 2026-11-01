@@ -93,14 +93,11 @@ import com.codync.android.design.*
     val summary = connectionSummary(shown).let { it.filled(translate(it.template)) }
     DropdownMenu({
         listOf(
-            MenuItem("All computers", icon = "desktopcomputer", selected = selection.shown.size == states.size) { setHidden("") },
+            MenuItem("All computers", icon = "desktopcomputer", selected = selection.shown.size == states.size, keepsOpen = true) { setHidden("") },
             *states.map { state ->
                 MenuItem(state.hostName, icon = computerSymbol(state.hello?.text("device")), selected = state.computer.id in selection.shown,
-                    verbatim = true, detail = translate(connectionLabel(state))) { setHidden(selection.toggling(state.computer.id)) }
+                    verbatim = true, detail = translate(connectionLabel(state)), keepsOpen = true) { setHidden(selection.toggling(state.computer.id)) }
             }.toTypedArray(),
-            *(if (states.size > 1) arrayOf(MenuItem("Show only", children = states.map { state ->
-                MenuItem(state.hostName, icon = computerSymbol(state.hello?.text("device")), verbatim = true) { setHidden(selection.only(state.computer.id)) }
-            })) else emptyArray()),
             MenuItem("Reconnect", icon = "arrow.clockwise", divider = true, enabled = shown.isNotEmpty(), action = reconnect),
             MenuItem("Manage computers", icon = "desktopcomputer", action = manage),
         )

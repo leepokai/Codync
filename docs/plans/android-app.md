@@ -16,7 +16,7 @@ emulator against a real host; device acceptance is listed separately.
 | --- | --- | --- |
 | Welcome/pairing | Ported: welcome crew and chat glimpse, Install (Mac/Linux) and Scan pages with the camera on the page (1080p frames, refocused on the middle every 2.5 s, tap to focus), paste link, Tailscale note, sign-in | Physical optical scan, camera permission denial |
 | Accounts/access | Ported: account sheet and switcher, several computers (`AccountStore` with one `AppStore` per computer, as iOS `AccountStore` + `BotStore`), Computer management with a card per computer (connection status, badge color, Revoke this phone's access, older copies removed from the account), account computer access with its code (one request per computer), access banners, `codync-dev://computers` and `codync-dev://plugins` | Provider browser round trip on a device; Revoke and older copies against a signed-in account (covered by cloud request tests only) |
-| Roster | Ported: rows, menus, pin/hide/delete, Make lead agent, groups, sections (move to, fold per device, rename, remove), drag to reorder (host-synced order) and TalkBack Move up/down, a heading per computer once there are several (fold, drag to reorder on this phone, its Extensions), the computer filter (show, hide, Show only), the newer-release reminder, pull to refresh (also in Computer management) | — |
+| Roster | Ported: rows, menus, pin/hide/delete, Make lead agent, groups, sections (move to, fold per device, rename, remove), drag to reorder (host-synced order) and TalkBack Move up/down, a heading per computer once there are several (fold, drag to reorder on this phone, its Extensions), the computer filter (show, hide, All computers; stays open while picking), the newer-release reminder, pull to refresh (also in Computer management) | — |
 | Conversation | Ported: bubbles, Markdown/code, permissions, reactions, quote replies, Full conversation, bot-to-bot exchange lines and their conversation, routine notices that open their routine, files a bot shares (verified download, then the share sheet), sent images full size, pull down to reconnect, jump to latest, read receipts for every conversation on screen | Physical keyboard and TalkBack |
 | Composer | Ported: files/photos/paste (groups too, image thumbnails, Paste only when the clipboard holds files), `/` commands (Fast mode, skills listed fresh on `/`), @mentions in groups, call/send/stop/interrupt button, dictation (the mic, its recording pill, the engine menu beside it: On device through Android's recognizer, or OpenAI / Gemini transcribed on the user's key with *Transcribing…*, and the *Couldn't dictate* dialog) | Dictation with a live microphone and a provider key on a device |
 | Bot and group editors | Ported: avatar (a row that unfolds the picker), profile, agent and model options, Fast mode, workspace folder picker, permissions, activity, connectors, skills (with their details); the bot details sheet (`BotDetailsView`, from the chat's title, a routine notice or Add a fallback): Details (instructions, agent, Use the computer, Routines), Library, Memory, Settings (Codync's skill and connector switches), saved as you edit, Create template; a group's title opens its editor. An agent's own skills, connectors, rules and plugins are on its sheet in Extensions, under Sign in | — |
@@ -56,8 +56,8 @@ included, is connected to that computer).
 
 Every row is ported. On 2026-11-01 the owner put off the remaining checks: OpenAI until a valid key is saved,
 Speech mode until a phone can speak into its microphone (no sound from the Mac), the physical-device rows until
-device acceptance, and the account flows on main (they were walked on dev, and main only lacks the
-`0004_android_devices` migration, applied by hand after the next `dev` → `main` merge).
+device acceptance, and the account flows on main (they were walked on dev; main has had the same
+`0004_android_devices` migration since the 2.34.0 merge, but no Android phone has signed in against it yet).
 
 | What | Code | What it needs |
 | --- | --- | --- |
@@ -132,9 +132,9 @@ the Dynamic Island) with its feature graphic, per language.
 The host accepts Android pairing (older hosts refuse it, and the app asks to update
 Codync on the computer) and counts Android event streams as connected phones, so
 pushes are held while one is open. The cloud accepts Android device records through
-the `0004_android_devices.sql` migration, applied to dev on 2026-11-01. Main gets it only when it is applied there by hand
-(`wrangler d1 migrations apply codync --remote` after a restore point; the merge and `deploy:main` run no migrations, [migration log](../guides/environments-and-deployment.md#migration-log)).
-Until then, signed-in Android phones can't register with the production account. The push Worker needs the matching Firebase
+the `0004_android_devices.sql` migration, applied by hand to dev and, right after the 2.34.0 merge, to main on 2026-11-01
+(the merge and `deploy:main` run no migrations, [migration log](../guides/environments-and-deployment.md#migration-log)).
+The push Worker needs the matching Firebase
 service account as an external secret; the client configuration contains no private key.
 
 ![Android roster](../screenshots/android-roster.png)

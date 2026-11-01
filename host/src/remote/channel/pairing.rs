@@ -3,76 +3,44 @@
 //! that account only; one in no account asks first, then joins the phone's account.
 
 use super::*;
-use crate::remote::certificate::{self, Refusal};
+use crate::remote::certificate::{self, Certified, Refusal};
+use crate::remote::cloud::Owner;
 use crate::remote::{owner, pairing_requests};
+
+const PROTOCOL: CloseWith = (close::PROTOCOL, "protocolError");
+const EXPIRED: &str = "This pairing code expired. Show a new one on the computer.";
 
 impl Channel {
     pub(super) async fn pair(
         &mut self,
         incoming: &mut mpsc::Receiver<Value>,
-        mut opener: Opener,
+        opener: Opener,
         source: &str,
     ) -> CloseWith {
-        let protocol = (close::PROTOCOL, "protocolError");
-        let deadline = Instant::now() + PAIRING_MAX_AGE;
-        let bytes = loop {
-            let msg = tokio::select! {
-                msg = incoming.recv() => msg,
-                () = sleep_until(deadline) => return (close::PAIRING_EXPIRED, "pairingExpired"),
-            };
-            let Some(msg) = msg else { return (close::NORMAL, "") };
-            match opener.open(&msg) {
-                Ok(Some(bytes)) => break bytes,
-                Ok(None) => {}
-                Err(e) => return frame_close(&e),
-            }
+        let (id, b) = match read_pair(incoming, opener).await {
+            Ok(request) => request,
+            Err(close) => return close,
         };
-        let Ok(v) = serde_json::from_slice::<Value>(&bytes) else { return protocol };
-        let Some(id) = v["id"].as_u64() else { return protocol };
-        if v["m"] != "pair" {
-            return protocol;
-        }
-        let b = &v["b"];
         let name = b["name"].as_str().map(str::trim).filter(|n| !n.is_empty() && n.chars().count() <= 100);
         let platform = b["platform"].as_str().filter(|p| matches!(*p, "ios" | "macos" | "android"));
         let (Some(name), Some(platform)) = (name, platform) else {
             self.send(err(id, 400, "`name` and `platform` (ios, macos or android) are required")).await;
-            return protocol;
+            return PROTOCOL;
         };
-        if !self.hub.pairing.locked().attempt(source) {
-            return self.reject(RejectCode::RateLimited).await;
-        }
-        // The code is spent only on a phone that may come in, so a phone of the wrong account doesn't use it up.
-        let account = match certificate::check(&b["certificate"], &self.key, now_ms()) {
-            Ok(account) => account,
-            Err(Refusal::Missing) => return self.reject(RejectCode::UnsupportedVersion).await,
-            Err(Refusal::Invalid) => {
-                self.send(err(id, 403, "Couldn't confirm your Codync account. Sign in again, then scan a new code."))
-                    .await;
-                return (close::UNAUTHORIZED, "unauthorized");
-            }
+        let code = b["code"].as_str().unwrap_or_default();
+        let (account, owner) = match self.admit(id, &b, code, source).await {
+            Ok(admitted) => admitted,
+            Err(close) => return close,
         };
-        let owner = owner::owner(&self.hub.store);
-        if let Some(owner) = owner.as_ref().filter(|o| o.user_id != account.user_id) {
-            let whose =
-                owner.email.as_deref().map_or_else(|| "another".into(), |e| format!("{}'s", certificate::masked(e)));
-            let message = format!(
-                "This computer is in {whose} account. Move it to your account in Codync on that computer, or sign in with that account."
-            );
-            self.send(err(id, 403, &message)).await;
-            return (close::UNAUTHORIZED, "otherAccount");
+        if owner.is_none()
+            && let Err(close) = self.ask(id, name, platform, account.email.as_deref(), incoming).await
+        {
+            return close;
         }
-        if !self.hub.pairing.locked().redeem(b["code"].as_str().unwrap_or_default()) {
-            self.send(err(id, 403, "This pairing code expired. Show a new one on the computer.")).await;
-            return (close::UNAUTHORIZED, "unauthorized");
-        }
-        if owner.is_none() {
-            let Ok(device_key) = crypto::unb64_n::<32>(&self.key) else { return protocol };
-            let code = pairing_requests::check_code(&device_key, &self.hub.identity.sign_pub());
-            if !pairing_requests::ask(&self.hub, name, platform, account.email.as_deref(), code).await {
-                self.send(err(id, 403, "The computer didn't let this phone in.")).await;
-                return (close::UNAUTHORIZED, "declined");
-            }
+        // Spent only now: a phone turned away leaves the code to the right one, and while the computer asks the
+        // relay keeps the offer, and with it this socket.
+        if !self.hub.pairing.locked().redeem(code) {
+            return self.refuse(id, EXPIRED, "unauthorized").await;
         }
         let device = Device {
             key: self.key.clone(),
@@ -103,24 +71,101 @@ impl Channel {
         (close::PAIRED, "paired")
     }
 
+    /// Who may come in, before the code is spent: a live code first, so nothing about this computer's account
+    /// reaches a phone without one; then the phone's account, which must be this computer's when it is in one.
+    /// Returns the phone's account and this computer's.
+    async fn admit(
+        &self,
+        id: u64,
+        b: &Value,
+        code: &str,
+        source: &str,
+    ) -> Result<(Certified, Option<Owner>), CloseWith> {
+        if !self.hub.pairing.locked().attempt(source) {
+            return Err(self.reject(RejectCode::RateLimited).await);
+        }
+        if !self.hub.pairing.locked().valid(code) {
+            return Err(self.refuse(id, EXPIRED, "unauthorized").await);
+        }
+        let account = match certificate::check(&b["certificate"], &self.key, now_ms()) {
+            Ok(account) => account,
+            Err(Refusal::Missing) => return Err(self.reject(RejectCode::UnsupportedVersion).await),
+            Err(Refusal::Invalid) => {
+                let message = "Couldn't confirm your Codync account. Sign in again, then scan a new code.";
+                return Err(self.refuse(id, message, "unauthorized").await);
+            }
+        };
+        let owner = owner::owner(&self.hub.store);
+        if let Some(owner) = owner.as_ref().filter(|o| o.user_id != account.user_id) {
+            let whose =
+                owner.email.as_deref().map_or_else(|| "another".into(), |e| format!("{}'s", certificate::masked(e)));
+            let message = format!(
+                "This computer is in {whose} account. Move it to your account in Codync on that computer, or sign in with that account."
+            );
+            return Err(self.refuse(id, &message, "otherAccount").await);
+        }
+        Ok((account, owner))
+    }
+
+    /// A computer in no account asks its user before the phone comes in; a phone that leaves meanwhile takes the
+    /// question off the computer's screens.
+    async fn ask(
+        &self,
+        id: u64,
+        name: &str,
+        platform: &str,
+        email: Option<&str>,
+        incoming: &mut mpsc::Receiver<Value>,
+    ) -> Result<(), CloseWith> {
+        let Ok(device_key) = crypto::unb64_n::<32>(&self.key) else { return Err(PROTOCOL) };
+        let code = crypto::pair_check_code(&device_key, &self.hub.identity.sign_pub());
+        let let_in = tokio::select! {
+            let_in = pairing_requests::ask(&self.hub, name, platform, email, code) => let_in,
+            // Nothing else comes on a pairing channel: its end means the phone gave up.
+            () = async { while incoming.recv().await.is_some() {} } => return Err((close::NORMAL, "")),
+        };
+        if let_in { Ok(()) } else { Err(self.refuse(id, "The computer didn't let this phone in.", "declined").await) }
+    }
+
     /// The signed claim for `{claimId, nonce}`, or null without one, or with the Codync cloud off or a private
     /// relay here (no account to join).
     async fn claim(&self, claim: &Value, user_id: &str) -> Value {
-        if claim.is_null() || crate::remote::cloud::codync_url(&self.hub).is_err() {
+        let (Some(claim_id), Some(nonce)) = (claim["claimId"].as_str(), claim["nonce"].as_str()) else {
+            return Value::Null;
+        };
+        if crate::remote::cloud::codync_url(&self.hub).is_err() {
             return Value::Null;
         }
-        let request = json!({"claimId": claim["claimId"], "nonce": claim["nonce"], "userId": user_id});
-        match api::claim_sign(&self.hub, &request).await {
-            Ok(signed) => signed,
-            Err(e) => {
-                tracing::info!(error = format!("{e:#}"), "paired without joining the account");
-                Value::Null
-            }
-        }
+        owner::sign_claim(&self.hub, claim_id, nonce, user_id).await.unwrap_or_else(|e| {
+            tracing::info!(error = format!("{e:#}"), "paired without joining the account");
+            Value::Null
+        })
     }
 
-    async fn reject(&self, code: RejectCode) -> CloseWith {
-        let _ = self.tx.send(ToDevice::Plain(json!({"t": "reject", "code": code, "message": code.message()}))).await;
-        (code.close_code(), if code == RejectCode::RateLimited { "rateLimited" } else { "rejected" })
+    async fn refuse(&self, id: u64, message: &str, reason: &'static str) -> CloseWith {
+        self.send(err(id, 403, message)).await;
+        (close::UNAUTHORIZED, reason)
+    }
+}
+
+/// Waits for the phone's one `pair`: its id and body.
+async fn read_pair(incoming: &mut mpsc::Receiver<Value>, mut opener: Opener) -> Result<(u64, Value), CloseWith> {
+    let deadline = Instant::now() + PAIRING_MAX_AGE;
+    let bytes = loop {
+        let msg = tokio::select! {
+            msg = incoming.recv() => msg,
+            () = sleep_until(deadline) => return Err((close::PAIRING_EXPIRED, "pairingExpired")),
+        };
+        let Some(msg) = msg else { return Err((close::NORMAL, "")) };
+        match opener.open(&msg) {
+            Ok(Some(bytes)) => break bytes,
+            Ok(None) => {}
+            Err(e) => return Err(frame_close(&e)),
+        }
+    };
+    let Ok(mut v) = serde_json::from_slice::<Value>(&bytes) else { return Err(PROTOCOL) };
+    match v["id"].as_u64() {
+        Some(id) if v["m"] == "pair" => Ok((id, v["b"].take())),
+        _ => Err(PROTOCOL),
     }
 }

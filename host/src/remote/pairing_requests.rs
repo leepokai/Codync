@@ -1,10 +1,10 @@
 //! A signed-in phone scanning a computer that isn't in an account (docs/plans/require-sign-in.md, phase 2):
-//! the computer confirms in the desktop app, the terminal UI or `codync-host pair` before the phone gets in
-//! and the computer joins the phone's account. Both screens show the same 6-digit code.
+//! the computer confirms in the desktop app, the terminal UI, `codync-host pair` or `codync-host access` before
+//! the phone gets in and the computer joins the phone's account. Both screens show the same 6-digit code
+//! ([`crate::remote::crypto::pair_check_code`]).
 
 use crate::LockExt;
 use crate::hub::Hub;
-use crate::remote::crypto;
 use crate::store::now_ms;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
@@ -12,8 +12,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::oneshot;
 
-/// How long the computer has to answer; the phone waits as long.
-pub const ASK_FOR: Duration = Duration::from_mins(2);
+/// How long the computer has to answer: inside the 2 minutes the relay keeps a pairing socket open, so an
+/// answer still reaches the phone, which waits longer.
+pub const ASK_FOR: Duration = Duration::from_secs(90);
 
 struct Pending {
     id: String,
@@ -42,15 +43,8 @@ impl PairingRequests {
     }
 }
 
-/// The code a phone and this computer both show: the phone's key and the computer's, hashed. A phone that
-/// isn't the one in the user's hand shows another code.
-pub fn check_code(device_key: &[u8; 32], host_sign_key: &[u8; 32]) -> String {
-    let h = crypto::sha256(&[b"codync/pair-check/v1", device_key, host_sign_key]);
-    format!("{:06}", u32::from_be_bytes([h[0], h[1], h[2], h[3]]) % 1_000_000)
-}
-
-/// Asks this computer whether the phone may in and bring it into `email`'s account; false when it says no
-/// or nobody answers in time.
+/// Asks this computer whether the phone may come in and bring it into `email`'s account; false when it says
+/// no or nobody answers in time. Dropping the future (the phone left) withdraws the question.
 pub async fn ask(hub: &Hub, device_name: &str, platform: &str, email: Option<&str>, code: String) -> bool {
     let (tx, rx) = oneshot::channel();
     let id = uuid::Uuid::new_v4().to_string();
@@ -64,10 +58,21 @@ pub async fn ask(hub: &Hub, device_name: &str, platform: &str, email: Option<&st
         answer: Some(tx),
     });
     emit(hub);
-    let answer = tokio::time::timeout(ASK_FOR, rx).await;
-    hub.pairing_requests.0.locked().retain(|p| p.id != id);
-    emit(hub);
-    matches!(answer, Ok(Ok(true)))
+    let _withdraw = Withdraw { hub, id };
+    matches!(tokio::time::timeout(ASK_FOR, rx).await, Ok(Ok(true)))
+}
+
+/// Takes a question off every screen once it is answered, unanswered, or the phone is gone.
+struct Withdraw<'a> {
+    hub: &'a Hub,
+    id: String,
+}
+
+impl Drop for Withdraw<'_> {
+    fn drop(&mut self) {
+        self.hub.pairing_requests.0.locked().retain(|p| p.id != self.id);
+        emit(self.hub);
+    }
 }
 
 /// `decidePairing`: this computer's answer to one request.
@@ -96,24 +101,21 @@ mod tests {
     use crate::store::Store;
     use std::sync::Arc;
 
-    /// The vector the phones check against (apps/ios, apps/android).
-    #[test]
-    fn check_code_vector() {
-        assert_eq!(check_code(&[1; 32], &[2; 32]), "855066");
-        assert_ne!(check_code(&[1; 32], &[2; 32]), check_code(&[3; 32], &[2; 32]));
-    }
-
-    #[tokio::test]
-    async fn the_computer_answers() {
+    fn hub() -> Arc<Hub> {
         let dir = std::env::temp_dir().join(format!("codync-pr-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let hub = Hub::new(
+        Hub::new(
             Store::open(&dir.join("t.db")).unwrap(),
             "h".into(),
             Identity::load_or_create(&dir).unwrap(),
             "t".into(),
             0,
-        );
+        )
+    }
+
+    #[tokio::test]
+    async fn the_computer_answers() {
+        let hub = hub();
         for approve in [true, false] {
             let asking = tokio::spawn({
                 let hub = Arc::clone(&hub);
@@ -129,5 +131,20 @@ mod tests {
             assert!(hub.pairing_requests.json().is_empty(), "answered requests go");
         }
         assert!(decide(&hub, "gone", true).is_err());
+    }
+
+    #[tokio::test]
+    async fn a_phone_that_leaves_takes_its_question_along() {
+        let hub = hub();
+        let asking = tokio::spawn({
+            let hub = Arc::clone(&hub);
+            async move { ask(&hub, "Pixel", "android", None, "123456".into()).await }
+        });
+        while hub.pairing_requests.json().is_empty() {
+            tokio::task::yield_now().await;
+        }
+        asking.abort();
+        let _ = asking.await;
+        assert!(hub.pairing_requests.json().is_empty(), "no screen keeps asking about a phone that is gone");
     }
 }

@@ -92,10 +92,10 @@ fn account_hint(status: &serde_json::Value) -> Option<&'static str> {
     if !status["owner"].is_null() {
         return None;
     }
-    Some(if status["enabled"] != true || status["relay"] == "private" {
-        "Not in an account. Phones pair with `codync-host pair` and a QR code; joining an account needs the Codync cloud (`codync-host cloud --enable`)."
-    } else {
+    Some(if status["canJoinAccount"] == true {
         "Not in an account. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type the short code it prints. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
+    } else {
+        "Not in an account. Phones pair with `codync-host pair` and a QR code; joining an account needs the Codync cloud (`codync-host cloud --enable`)."
     })
 }
 
@@ -105,12 +105,8 @@ mod tests {
 
     #[test]
     fn a_computer_out_of_an_account_says_how_to_join_one() {
-        assert_eq!(account_hint(&json!({"owner": {"userId": "u"}, "enabled": true})), None);
-        assert!(
-            account_hint(&json!({"owner": null, "enabled": true, "relay": "codync"}))
-                .unwrap()
-                .contains("signed-in phone")
-        );
-        assert!(account_hint(&json!({"owner": null, "enabled": false})).unwrap().contains("--enable"));
+        assert_eq!(account_hint(&json!({"owner": {"userId": "u"}, "canJoinAccount": false})), None);
+        assert!(account_hint(&json!({"owner": null, "canJoinAccount": true})).unwrap().contains("signed-in phone"));
+        assert!(account_hint(&json!({"owner": null, "canJoinAccount": false})).unwrap().contains("--enable"));
     }
 }

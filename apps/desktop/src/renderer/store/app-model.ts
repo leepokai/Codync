@@ -63,6 +63,7 @@ export class AppModel extends Observable {
   private signedIn: boolean | null = null
   /** Approvals closed with "later"; they come back when the request changes (its code arrives). */
   private deferred = new Set<string>()
+  private answeredPairings = new Set<string>()
   private storeSubscriptions = new Map<string, () => void>()
 
   /** The signed-in account's side of this computer (claims, cloud default, account computers). */
@@ -233,13 +234,16 @@ export class AppModel extends Observable {
     await client.call('decideAccessRequest', { requestId: a.request.requestId, approve }, 30_000)
   }
 
+  /** Phones waiting to be let in, without those answered here (the host's event takes them off a moment later). */
   get pairingAsks(): PairingAsk[] {
-    return this.managedStores.flatMap((store) =>
-      store.pairingRequests.map((request) => ({ id: `${store.computer.id}/${request.requestId}`, store, request })),
-    )
+    return this.managedStores
+      .flatMap((store) => store.pairingRequests.map((request) => ({ id: `${store.computer.id}/${request.requestId}`, store, request })))
+      .filter((ask) => !this.answeredPairings.has(ask.id))
   }
 
   async decidePairing(ask: PairingAsk, approve: boolean) {
+    this.answeredPairings.add(ask.id)
+    this.changed()
     const client = await ask.store.ready()
     await client.call('decidePairing', { requestId: ask.request.requestId, approve }, 30_000)
   }

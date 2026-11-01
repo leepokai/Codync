@@ -44,7 +44,7 @@ object RelayCrypto {
         return sixDigits(sha256(label("codync/sas/v2"), hostSignKey, deviceKey, deviceNonce, hostNonce))
     }
 
-    /** The code a computer shows when it asks whether to let this phone in by pairing (host `pairing_requests::check_code`). */
+    /** The code a computer shows when it asks whether to let this phone in by pairing (host `crypto::pair_check_code`). */
     fun pairCheck(deviceKey: ByteArray, hostSignKey: ByteArray): String {
         require(deviceKey.size == 32 && hostSignKey.size == 32) { "Invalid pairing code" }
         return sixDigits(sha256(label("codync/pair-check/v1"), deviceKey, hostSignKey))

@@ -82,8 +82,7 @@ class PairingTest {
         assertFails<IllegalArgumentException> { "AA".decodeBase64Url(32) }
     }
 
-    @Test fun `the pairing check code matches the host's`() {
-        assertEquals("855066", RelayCrypto.pairCheck(ByteArray(32) { 1 }, ByteArray(32) { 2 }))
+    @Test fun `a pairing's check code is this phone's with that computer`() {
         val pairing = Pairing.parse(link(), "codync")
         val identity = DeviceIdentity(ByteArray(32) { 3 }, ByteArray(32) { 12 })
         assertEquals(RelayCrypto.pairCheck(identity.deviceKey, pairing.computer.signKey.decodeBase64Url(32)), pairing.checkCode(identity))

@@ -236,7 +236,7 @@ private enum class ComputerOS { Mac, Linux }
         }
         Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp)).background(Palette.surface).padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            PlainTextField(pasted, { pasted = it }, Modifier.weight(1f), tr("Paste a pairing link, or type the code from the computer"), singleLine = true,
+            PlainTextField(pasted, { pasted = it }, Modifier.weight(1f), tr("Pairing link or code"), singleLine = true,
                 style = Type.callout.monospaced, keyboard = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
                     imeAction = ImeAction.Go), actions = KeyboardActions(onGo = { pair(pasted) }))
             IconButton("Pair", "arrow.right", enabled = pasted.isNotEmpty() && !state.pairing) { pair(pasted) }

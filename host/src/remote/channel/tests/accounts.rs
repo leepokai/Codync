@@ -38,6 +38,32 @@ async fn a_phone_of_another_account_is_refused_with_the_owner_masked() {
 }
 
 #[tokio::test]
+async fn without_a_live_code_a_phone_learns_nothing_about_the_account() {
+    let hub = temp_hub();
+    let (mut p, _) = pairing_phone(&hub).await;
+    let reply = p.call(1, "pair", pair_body(&p, "CAgICAgICAgICAgICAgICA", "Pixel", "android", "user_2")).await;
+    let message = reply["err"]["message"].as_str().unwrap();
+    assert!(message.contains("expired") && !message.contains("example.com"), "{message}");
+}
+
+#[tokio::test]
+async fn a_phone_that_leaves_while_the_computer_asks_is_not_let_in() {
+    let hub = unowned_hub();
+    let (mut p, code) = pairing_phone(&hub).await;
+    p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "Pixel", "android", "user_2")})).await;
+    while hub.pairing_requests.json().is_empty() {
+        tokio::task::yield_now().await;
+    }
+    // The computer still has the offer while it asks: the relay keeps the phone's socket.
+    assert!(hub.pairing.locked().open());
+    let dk = p.dk();
+    drop(p.tx);
+    p.run.await.unwrap();
+    assert!(hub.pairing_requests.json().is_empty(), "the question goes with the phone");
+    assert!(hub.store.device(&dk).is_none());
+}
+
+#[tokio::test]
 async fn a_computer_in_no_account_asks_then_joins_the_phones() {
     let hub = unowned_hub();
     // With the Codync cloud on there is an account to join, so the computer signs the phone's claim.
@@ -53,7 +79,7 @@ async fn a_computer_in_no_account_asks_then_joins_the_phones() {
         let request = hub.pairing_requests.json()[0].clone();
         assert_eq!(request["email"], "user_2@example.com");
         let device_key = crypto::unb64_n::<32>(&p.dk()).unwrap();
-        let expected = crate::remote::pairing_requests::check_code(&device_key, &hub.identity.sign_pub());
+        let expected = crypto::pair_check_code(&device_key, &hub.identity.sign_pub());
         assert_eq!(request["code"], expected.as_str(), "the code the phone shows too");
         crate::remote::pairing_requests::decide(&hub, request["requestId"].as_str().unwrap(), approve).unwrap();
         let reply = p.recv().await.unwrap();

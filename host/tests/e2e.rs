@@ -40,14 +40,7 @@ fn test_certificate(device_key: &str, user_id: &str) -> Value {
     let payload = json!({"v": 1, "deviceKey": device_key, "userId": user_id, "email": "kevin@example.com", "exp": exp})
         .to_string();
     let key = SigningKey::from_bytes(&common::TEST_CLOUD_SEED);
-    let sig = crypto::sign(
-        &key,
-        format!(
-            "codync/device-cert/v1
-{payload}"
-        )
-        .as_bytes(),
-    );
+    let sig = crypto::sign(&key, format!("codync/device-cert/v1\n{payload}").as_bytes());
     json!({"payload": payload, "sig": crypto::b64(&sig)})
 }
 

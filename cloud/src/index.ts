@@ -26,6 +26,8 @@ export interface Env {
   HOOK_LIMITER?: RateLimit;
   /** Cloud assistant (MCP connector) requests per account. */
   ASSISTANT_LIMITER?: RateLimit;
+  /** Short pairing codes typed per account and per IP. */
+  PAIRING_CODE_LIMITER?: RateLimit;
   CLERK_ISSUER: string;
   CLERK_SECRET_KEY?: string;
   /** dev / e2e only: networkless verification with this public key. */

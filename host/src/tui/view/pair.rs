@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::super::app::{App, PairCode};
 use super::super::l10n::tr;
-use super::super::md::{truncate, width as w, wrap};
+use super::super::md::{width as w, wrap};
 use super::buffer::{centered, frame_box, put, put_line, u};
 use super::style::theme;
 
@@ -20,7 +20,9 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, app: &App, code: &PairCode) {
     }
     let t = theme();
     let (text, style) = match code {
-        PairCode::Ready(url) => return qr(buf, area, url, app.outside_account()),
+        PairCode::Ready { url, short_code } => {
+            return qr(buf, area, url, short_code.as_deref(), app.outside_account());
+        }
         PairCode::Loading => ("Getting the pairing code…", t.secondary),
         PairCode::Failed(e) => (e.as_str(), t.red),
     };
@@ -62,27 +64,37 @@ fn note(text: String, width: usize, style: Style) -> Vec<Line<'static>> {
     wrap(&[Span::styled(text, style)], width, &[], &[])
 }
 
-fn qr(buf: &mut Buffer, area: Rect, url: &str, outside_account: bool) {
+fn qr(buf: &mut Buffer, area: Rect, url: &str, short_code: Option<&str>, outside_account: bool) {
     let t = theme();
     let qr = qrcode::QrCode::new(url.as_bytes())
         .map(|c| c.render::<qrcode::render::unicode::Dense1x2>().quiet_zone(true).build())
         .unwrap_or_default();
     let lines: Vec<&str> = qr.lines().collect();
     let qw = lines.first().map_or(0, |l| w(l));
-    let account = |width: usize| {
-        let text =
-            tr("Not in an account: a signed-in phone that scans this asks to bring the computer into its account.");
-        if outside_account { note(text.into_owned(), width, t.dim.patch(t.panel)) } else { vec![] }
+    // Under the QR, each in full: how to scan, the link, the code to type, and that the computer is in no account.
+    let below = |width: usize| {
+        let scan = if url.starts_with("codync-dev:") {
+            "Scan with Codync Dev on your iPhone:"
+        } else {
+            "Scan with the Codync iPhone app, or open on the phone:"
+        };
+        let mut below = note(scan.to_owned(), width, t.secondary.patch(t.panel));
+        below.extend(note(url.to_owned(), width, t.dim.patch(t.panel)));
+        if let Some(code) = short_code {
+            let text = tr("Or type this code in the app's pairing screen: {code}").replace("{code}", code);
+            below.extend(note(text, width, t.text.patch(t.panel)));
+        }
+        if outside_account {
+            let text =
+                tr("Not in an account: a signed-in phone that scans this asks to bring the computer into its account.");
+            below.extend(note(text.into_owned(), width, t.amber.patch(t.panel)));
+        }
+        below
     };
-    let wide = account(qw.max(50));
-    let fits = u(lines.len() + 6 + wide.len()) <= area.height && u(qw + 4) <= area.width;
-    let (bw, bh, account) = if fits {
-        (u(qw.max(50) + 4), u(lines.len() + 6 + wide.len()), wide)
-    } else {
-        let narrow = account(66);
-        (70, u(8 + narrow.len()), narrow)
-    };
-    let r = centered(area, bw, bh);
+    let wide = below(qw.max(50));
+    let fits = u(lines.len() + 4 + wide.len()) <= area.height && u(qw + 4) <= area.width;
+    let (bw, qr_rows, below) = if fits { (u(qw.max(50) + 4), lines.len(), wide) } else { (70, 1, below(66)) };
+    let r = centered(area, bw, u(qr_rows + 4 + below.len()));
     let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
     let mut y = inner.y;
     if fits {
@@ -97,20 +109,7 @@ fn qr(buf: &mut Buffer, area: Rect, url: &str, outside_account: bool) {
         put(buf, inner.x, y, inner.width, "Make the window taller to show the QR code.", t.secondary.patch(t.panel));
         y += 1;
     }
-    put(
-        buf,
-        inner.x,
-        y,
-        inner.width,
-        if url.starts_with("codync-dev:") {
-            "Scan with Codync Dev on your iPhone:"
-        } else {
-            "Scan with the Codync iPhone app, or open on the phone:"
-        },
-        t.secondary.patch(t.panel),
-    );
-    put(buf, inner.x, y + 1, inner.width, &truncate(url, usize::from(inner.width)), t.dim.patch(t.panel));
-    for (y, line) in (y + 2..).zip(&account) {
+    for (y, line) in (y..).zip(&below) {
         put_line(buf, inner.x, y, inner.width, line);
     }
     put(buf, inner.x, inner.bottom() - 1, inner.width, "r new code · esc close", t.dim.patch(t.panel));
@@ -150,8 +149,21 @@ mod tests {
         for (outside, says) in [(true, true), (false, false)] {
             let mut buf = Buffer::empty(Rect::new(0, 0, 100, 60));
             let area = buf.area;
-            qr(&mut buf, area, "codync://pair?id=x&code=y", outside);
+            qr(&mut buf, area, "codync://pair?id=x&code=y", None, outside);
             assert_eq!(shown(&buf).contains(&first), says);
+        }
+    }
+
+    #[test]
+    fn the_whole_link_and_the_short_code_show() {
+        let url = format!("codync://pair?v=3&id={}&code=end", "x".repeat(120));
+        for height in [60, 12] {
+            let mut buf = Buffer::empty(Rect::new(0, 0, 100, height));
+            let area = buf.area;
+            qr(&mut buf, area, &url, Some("QRTX-4821"), false);
+            let text = shown(&buf);
+            assert!(text.contains("code=end") && !text.contains('…'), "the link isn't cut short\n{text}");
+            assert!(text.contains("QRTX-4821"), "{text}");
         }
     }
 }

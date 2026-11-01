@@ -577,6 +577,8 @@ export interface CloudStatus {
   relay?: 'codync' | 'private' | null
   /** The user's cloud assistant may message this computer's bots (`setAssistants`). */
   assistants?: boolean | null
+  /** In no account while it could join one: a signed-in phone that pairs asks to bring it into its account. Absent from older hosts. */
+  canJoinAccount?: boolean | null
 }
 
 export interface ClaimSignature {

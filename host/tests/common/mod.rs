@@ -6,9 +6,6 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
-/// picked here is only free for a moment; when something else takes it before the host binds, the
-/// host exits and this starts it again on another one.
 /// The seed of the cloud key a test host trusts for device certificates.
 pub const TEST_CLOUD_SEED: [u8; 32] = [9; 32];
 
@@ -18,6 +15,9 @@ fn test_cloud_key() -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes())
 }
 
+/// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
+/// picked here is only free for a moment; when something else takes it before the host binds, the
+/// host exits and this starts it again on another one.
 pub async fn serve(home: &Path) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);

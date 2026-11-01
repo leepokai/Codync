@@ -54,7 +54,11 @@ export async function createPairingCode(c: Ctx) {
 }
 
 export async function redeemPairingCode(c: Ctx, [raw]: string[]) {
-  await user(c);
+  // Guessing someone else's live code is limited per IP (before any D1 work) and per account.
+  const ip = `ip:${c.req.headers.get("CF-Connecting-IP") ?? "unknown"}`;
+  await tryCode(c, ip);
+  const account = `user:${(await user(c)).userId}`;
+  await tryCode(c, account);
   const code = normalizeCode(decodeURIComponent(raw ?? ""));
   if (!code) throw new ApiError("notFound", "That code isn't valid. Check it on the computer.");
   const row = await c.env.DB.prepare(
@@ -62,6 +66,16 @@ export async function redeemPairingCode(c: Ctx, [raw]: string[]) {
   )
     .bind(c.now, code)
     .first<{ link: string }>();
-  if (!row) throw new ApiError("notFound", "That code expired or was used. Show a new one on the computer.");
+  if (!row) {
+    // A miss counts twice: guessing runs out long before it finds a live code.
+    await Promise.all([ip, account].map((key) => c.env.PAIRING_CODE_LIMITER?.limit({ key })));
+    throw new ApiError("notFound", "That code expired or was used. Show a new one on the computer.");
+  }
   return { link: row.link };
+}
+
+async function tryCode(c: Ctx, key: string) {
+  if (c.env.PAIRING_CODE_LIMITER && !(await c.env.PAIRING_CODE_LIMITER.limit({ key })).success) {
+    throw new ApiError("rateLimited", "Too many codes tried. Wait a minute, then type it again.");
+  }
 }

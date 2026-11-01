@@ -84,6 +84,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "forgetDevice" => revoke(hub, caller.device_key())?,
         "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
         "pairingRequests" => json!({"requests": hub.pairing_requests.json()}),
+        // `codync-host pair` waits until its code is used.
+        "pairingCodeOpen" => json!({"open": hub.pairing.locked().valid(str_arg(&b, "code")?)}),
         "decidePairing" => {
             let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
             crate::remote::pairing_requests::decide(hub, str_arg(&b, "requestId")?, approve)?;
@@ -121,7 +123,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let on = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
             serde_json::to_value(crate::chat::team::assistant::set_enabled(hub, on)?)?
         }
-        "claimSign" => claim_sign(hub, &b).await?,
+        "claimSign" => {
+            let (claim_id, nonce, user_id) = (str_arg(&b, "claimId")?, str_arg(&b, "nonce")?, str_arg(&b, "userId")?);
+            crate::remote::owner::sign_claim(hub, claim_id, nonce, user_id).await?
+        }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
 }
@@ -166,33 +171,6 @@ async fn pairing(hub: &Arc<Hub>, short_code: bool) -> Result<Value> {
         None
     };
     Ok(json!({"pairingUrl": url, "urls": urls, "expiresAt": issued.expires_at, "shortCode": short_code}))
-}
-
-/// Signs this computer into an account claim (§4.2 A) for the signed-in desktop app to complete.
-pub(crate) async fn claim_sign(hub: &Arc<Hub>, b: &Value) -> Result<Value> {
-    crate::remote::cloud::require_accounts(&hub.store)?;
-    let field = |k: &str| -> Result<&str> {
-        let v = str_arg(b, k)?;
-        // Fields are newline-separated in the signed string: a newline would forge another field.
-        if v.is_empty() || v.contains('\n') {
-            bail!("`{k}` is invalid");
-        }
-        Ok(v)
-    };
-    let (claim_id, nonce, user_id) = (field("claimId")?, field("nonce")?, field("userId")?);
-    let computer_id = hub.identity.computer_id();
-    let box_key = hub.identity.box_pub_b64();
-    let input = crypto::claim_input(claim_id, nonce, user_id, &computer_id, &box_key);
-    Ok(json!({
-        "computerId": computer_id,
-        "signKey": hub.identity.sign_pub_b64(),
-        "boxKey": box_key,
-        "name": crate::service::host_name(),
-        "platform": std::env::consts::OS,
-        "device": tokio::task::spawn_blocking(crate::service::device).await?,
-        "version": env!("CARGO_PKG_VERSION"),
-        "sig": crypto::b64(&hub.identity.sign(input.as_bytes())),
-    }))
 }
 
 #[cfg(test)]

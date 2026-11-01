@@ -64,6 +64,9 @@ pub struct CloudStatus {
     pub assistants: bool,
     /// Whose relay: on a private one there is no account, access request or relayed screen.
     pub relay: RelayKind,
+    /// In no account while it could join one (the Codync cloud on): a signed-in phone that pairs asks to bring it
+    /// into its account. Kept by [`update_status`], so every app words it the same.
+    pub can_join_account: bool,
 }
 
 /// How account devices get in (`setApproval`, local only).
@@ -144,6 +147,7 @@ pub fn update_status(hub: &Hub, f: impl FnOnce(&mut CloudStatus)) {
         let mut s = hub.cloud.status.locked();
         let before = s.clone();
         f(&mut s);
+        s.can_join_account = s.enabled && s.relay == RelayKind::Codync && s.owner.is_none();
         (*s != before).then(|| s.clone())
     };
     if let Some(s) = changed {

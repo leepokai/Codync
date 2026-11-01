@@ -237,7 +237,7 @@ private struct ScanPage: View {
                 viewfinder
 
                 HStack {
-                    TextField(L10n.tr("Paste a pairing link, or type the code from the computer"), text: $pasted)
+                    TextField(L10n.tr("Pairing link or code"), text: $pasted)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())

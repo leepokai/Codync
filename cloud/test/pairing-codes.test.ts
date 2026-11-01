@@ -30,6 +30,15 @@ describe("pairing codes", () => {
     expect((await call("GET", "/v1/pairing-codes/NOPE-0000", { token })).status).toBe(404);
   });
 
+  it("limits guessing per account, from any address", async () => {
+    const token = await clerkToken(`user_guess_${Date.now()}`);
+    const tries: number[] = [];
+    // Misses count twice against the account's ten a minute (each call comes from another IP).
+    while (tries.length < 12 && tries.at(-1) !== 429) tries.push((await call("GET", `/v1/pairing-codes/GUES-${1000 + tries.length}`, { token })).status);
+    expect(tries.at(-1)).toBe(429);
+    expect(tries.slice(0, -1).every((status) => status === 404)).toBe(true);
+  });
+
   it("normalizes what people type", () => {
     expect(normalizeCode(" qrtx 4821 ")).toBe("QRTX-4821");
     expect(normalizeCode("QRTX-48210")).toBeNull();

@@ -42,8 +42,8 @@ Secrets for running the project locally live in git-ignored env files at the mai
 
 - Dev tooling reads `.env.development` only and never loads `.env.production`; a variable already in the environment wins over the file.
 - A development key is checked before use (`CODYNC_CLERK_SECRET_KEY` must be `sk_test_...`), so a production key put there by mistake is refused.
-- Deployed secrets (the Worker's `CLERK_SECRET_KEY` and the like) are set with `wrangler secret put`, not kept in these files.
-- Variables so far: `CODYNC_CLERK_SECRET_KEY` (see [Worktree sandboxes](#worktree-sandboxes)).
+- Deployed secrets (the Worker's `CLERK_SECRET_KEY` and the like) are set with `wrangler secret put`, and kept in these files only when there is no other copy: the device certificate key (`CODYNC_DEVICE_CERT_KEY`, the Worker's `DEVICE_CERT_KEY`; hosts compile in its public half, see [cloud/README.md](../../cloud/README.md#deploy)).
+- Variables so far: `CODYNC_CLERK_SECRET_KEY` (see [Worktree sandboxes](#worktree-sandboxes)) and `CODYNC_DEVICE_CERT_KEY`.
 
 ## Resource ownership
 

@@ -19,7 +19,7 @@ data class Paired(val computer: Computer, val claim: JsonObject?)
 
 object HostConnector {
     /**
-     * Pairs with [certificate] as the account proof; a computer in no account first asks its user (up to two minutes),
+     * Pairs with [certificate] as the account proof; a computer in no account first asks its user (up to 90 seconds),
      * then signs [claim] to join the phone's account.
      */
     suspend fun pair(pairing: Pairing, identity: DeviceIdentity, deviceName: String, certificate: DeviceCertificate,

@@ -40,7 +40,7 @@ public enum HostConnector {
             struct Res: Decodable { var computerId: ComputerID; var name: String? }
             let body = try JSONEncoder().encode(Body(code: pairing.code, name: deviceName, platform: platform, certificate: certificate, claim: claim))
             try await transport.ready(within: 30)
-            // The computer may be waiting for its user to let this phone in (up to 2 minutes).
+            // The computer may be waiting for its user to let this phone in (up to 90 seconds).
             let data = try await transport.call("pair", body: body, timeout: 150)
             await transport.shutdown()
             let res = try JSONDecoder().decode(Res.self, from: data)

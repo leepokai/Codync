@@ -54,6 +54,14 @@ pub struct PushTicket {
 const DEVICE_COLS: &str =
     "key, name, platform, source, grant_id, scopes, lease_until, created_at, last_seen_at, account";
 
+/// A device with its push and Live Activity tickets; the number of device rows removed.
+fn delete_device(tx: &rusqlite::Transaction, key: &str) -> rusqlite::Result<usize> {
+    let n = tx.execute("DELETE FROM devices WHERE key = ?1", [key])?;
+    tx.execute("DELETE FROM push_tickets WHERE device_key = ?1", [key])?;
+    tx.execute("DELETE FROM activity_tickets WHERE device_key = ?1", [key])?;
+    Ok(n)
+}
+
 fn row_device(r: &rusqlite::Row) -> rusqlite::Result<Device> {
     let source: String = r.get(3)?;
     let scopes: String = r.get(5)?;
@@ -113,9 +121,7 @@ impl Store {
     pub fn remove_device(&self, key: &str) -> Result<bool> {
         let mut c = self.db.locked();
         let tx = c.transaction()?;
-        let n = tx.execute("DELETE FROM devices WHERE key = ?1", [key])?;
-        tx.execute("DELETE FROM push_tickets WHERE device_key = ?1", [key])?;
-        tx.execute("DELETE FROM activity_tickets WHERE device_key = ?1", [key])?;
+        let n = delete_device(&tx, key)?;
         tx.commit()?;
         Ok(n > 0)
     }
@@ -134,9 +140,7 @@ impl Store {
             st.query_map(params![account, keep_unrecorded], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
         for key in &gone {
-            tx.execute("DELETE FROM devices WHERE key = ?1", [key])?;
-            tx.execute("DELETE FROM push_tickets WHERE device_key = ?1", [key])?;
-            tx.execute("DELETE FROM activity_tickets WHERE device_key = ?1", [key])?;
+            delete_device(&tx, key)?;
         }
         tx.commit()?;
         Ok(gone)

@@ -137,7 +137,7 @@ impl App {
             }
             // A new code: after a failure, or in place of the one shown.
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
-                self.call("pairing", json!({}), After::Pairing);
+                self.request_pairing_code();
                 Some(Overlay::Pair(PairCode::Loading))
             }
             Overlay::LeadAgent(scroll) => {

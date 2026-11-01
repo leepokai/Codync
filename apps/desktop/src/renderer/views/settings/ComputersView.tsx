@@ -346,7 +346,7 @@ function PairingPanel({ store }: { store: BotStore }) {
     if (!client) throw new Error(`${store.hostName} isn't connected.`)
     return client.call<PairingInfo>('pairing')
   }, [store])
-  return <PairingCode name={store.hostName} cloudOn={store.cloud?.enabled === true} requestCode={requestCode} />
+  return <PairingCode name={store.hostName} cloud={store.cloud} requestCode={requestCode} />
 }
 
 // MARK: SSH

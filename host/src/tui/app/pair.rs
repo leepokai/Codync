@@ -8,9 +8,14 @@ use super::{After, App, Overlay, PairCode};
 impl App {
     pub(super) fn open_pair(&mut self) {
         self.overlays.push(Overlay::Pair(PairCode::Loading));
-        self.call("pairing", json!({}), After::Pairing);
+        self.request_pairing_code();
         self.call("cloudStatus", json!({}), After::Cloud);
         self.call("pairingRequests", json!({}), After::PairingRequests);
+    }
+
+    /// A new code, with a short one to type where the QR is hard to scan (a terminal over SSH).
+    pub(super) fn request_pairing_code(&mut self) {
+        self.call("pairing", json!({"shortCode": true}), After::Pairing);
     }
 
     pub(super) fn pair_reply(&mut self, after: &After, r: Result<Value, String>) {
@@ -22,7 +27,10 @@ impl App {
                         Err(e) => PairCode::Failed(e),
                         Ok(v) => v["pairingUrl"].as_str().map_or_else(
                             || PairCode::Failed("The host sent no pairing code.".into()),
-                            |url| PairCode::Ready(url.to_owned()),
+                            |url| PairCode::Ready {
+                                url: url.to_owned(),
+                                short_code: v["shortCode"].as_str().map(str::to_owned),
+                            },
                         ),
                     };
                 }
@@ -49,13 +57,10 @@ impl App {
         self.call("decidePairing", json!({"requestId": request["requestId"], "approve": approve}), After::Nothing);
     }
 
-    /// Known to be in no account while it could join one: a signed-in phone that scans the code asks to bring the
-    /// computer into its own. With the cloud off or a private relay there is no account to join.
+    /// Known to be in no account while it could join one (the host's `canJoinAccount`): a signed-in phone that
+    /// scans the code asks to bring the computer into its own.
     pub fn outside_account(&self) -> bool {
-        self.cloud.is_object()
-            && self.cloud["owner"].is_null()
-            && self.cloud["enabled"] == true
-            && self.cloud["relay"] != "private"
+        self.cloud["canJoinAccount"] == true
     }
 }
 
@@ -72,13 +77,9 @@ mod tests {
     async fn waiting_phones_and_the_account_follow_the_host() {
         let mut app = test_app();
         assert!(!app.outside_account(), "unknown until the host says");
-        app.pair_reply(&After::Cloud, Ok(json!({"enabled": false, "owner": null})));
-        assert!(!app.outside_account(), "no account to join with the cloud off");
-        app.pair_reply(&After::Cloud, Ok(json!({"enabled": true, "relay": "private", "owner": null})));
-        assert!(!app.outside_account(), "nor on a private relay");
-        app.pair_reply(&After::Cloud, Ok(json!({"enabled": true, "relay": "codync", "owner": null})));
+        app.pair_reply(&After::Cloud, Ok(json!({"canJoinAccount": true, "owner": null})));
         assert!(app.outside_account());
-        app.pair_reply(&After::Cloud, Ok(json!({"enabled": true, "owner": {"userId": "user_1"}})));
+        app.pair_reply(&After::Cloud, Ok(json!({"canJoinAccount": false, "owner": {"userId": "user_1"}})));
         assert!(!app.outside_account());
 
         app.pairing_requests_changed(&json!({"requests": [{"requestId": "a", "deviceName": "Pixel", "code": "123456"},

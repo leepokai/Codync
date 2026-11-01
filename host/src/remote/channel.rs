@@ -390,11 +390,15 @@ impl Channel {
                 // Gone from the table while connected: it was revoked.
                 let code = if code == RejectCode::Unauthorized { RejectCode::Revoked } else { code };
                 tracing::info!(device = self.key, ?code, "closing channel: device no longer authorized");
-                let reject = json!({"t": "reject", "code": code, "message": code.message()});
-                let _ = self.tx.send(ToDevice::Plain(reject)).await;
-                Err((code.close_code(), "rejected"))
+                Err(self.reject(code).await)
             }
         }
+    }
+
+    /// Sends `reject` (outside the channel's encryption) and says how to close.
+    async fn reject(&self, code: RejectCode) -> CloseWith {
+        let _ = self.tx.send(ToDevice::Plain(json!({"t": "reject", "code": code, "message": code.message()}))).await;
+        (code.close_code(), if code == RejectCode::RateLimited { "rateLimited" } else { "rejected" })
     }
 
     async fn serve(
@@ -516,9 +520,10 @@ mod tests {
     use crate::store::Store;
     use ed25519_dalek::SigningKey;
 
-    /// A computer in `user_1`'s account, so phones of that account pair without asking.
+    /// A computer in `user_1`'s account (on the Codync cloud), so phones of that account pair without asking.
     fn temp_hub() -> Arc<Hub> {
         let hub = unowned_hub();
+        hub.store.kv_set("test_cloud_url", "https://dev-api.codync.dev").unwrap();
         let owner = crate::remote::cloud::Owner { user_id: "user_1".into(), email: Some("kevin@example.com".into()) };
         crate::remote::owner::remember(&hub, Some(&owner)).unwrap();
         hub

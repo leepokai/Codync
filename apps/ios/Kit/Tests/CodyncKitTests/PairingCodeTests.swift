@@ -57,7 +57,7 @@ private final class PairingCodeCloudStub: URLProtocol {
 /// The paste field's placeholder and the cloud's two code messages read in every language the app speaks.
 @Test func pairingCodeCopyIsTranslatedEverywhere() {
     for language in [AppLanguage.zh, .zhHant, .ja, .ko, .fr, .de, .es] {
-        for phrase in ["Paste a pairing link, or type the code from the computer", "That code isn't valid. Check it on the computer.",
+        for phrase in ["Pairing link or code", "That code isn't valid. Check it on the computer.",
                        "That code expired or was used. Show a new one on the computer."] {
             #expect(L10n.tr(phrase, preference: language, systemIsChinese: false) != phrase, "\(language) \(phrase)")
         }

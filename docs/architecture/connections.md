@@ -74,7 +74,7 @@ A computer with only the host (SSH-only server, VPS) never signs in. It joins an
 - A manager's desktop app adds it over SSH: add the SSH computer, install the host in one click, then it joins the manager app's account on its own.
 - A signed-in phone scans `codync-host pair` (or types its short code) and the terminal confirms.
 
-`codync-host cloud` and the TUI's account screen say which account the computer is in, or how to add it to one.
+`codync-host cloud` says which account the computer is in, or how to add it to one; the terminal UI's pair sheet says when a scanning phone would bring it into its account.
 
 ### Using a Linux VPS
 

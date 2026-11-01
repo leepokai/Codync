@@ -9,7 +9,7 @@ export function PairingWindow() {
   // By value: the host's snapshot is a new object on each of its changes (every few seconds), and
   // each request issues a new code.
   const { baseURL, token } = useApp().host.local ?? {}
-  const [cloudOn, setCloudOn] = useState(false)
+  const [cloud, setCloud] = useState<CloudStatus | null>(null)
   const [name, setName] = useState('this computer')
   // The window stays open between uses: each "Pair iPhone…" shows it again, with a new code.
   const [shown, setShown] = useState(0)
@@ -25,10 +25,10 @@ export function PairingWindow() {
       transport.call('cloudStatus', {}, 20_000).catch(() => null) as Promise<CloudStatus | null>,
       transport.call('hello', {}, 20_000).catch(() => null) as Promise<{ name?: string } | null>,
     ])
-    setCloudOn(status?.enabled === true)
+    setCloud(status)
     if (hello?.name) setName(hello.name)
     return pairing
   }, [baseURL, token])
 
-  return <PairingCode name={name} cloudOn={cloudOn} requestCode={requestCode} renew={shown} />
+  return <PairingCode name={name} cloud={cloud} requestCode={requestCode} renew={shown} />
 }

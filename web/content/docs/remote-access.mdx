@@ -23,7 +23,7 @@ Pairing introduces your phone and your computer to each other. The computer show
 Show the code on the computer:
 
 - **Desktop app:** open Codync in the menu bar (macOS) or the tray (Windows, Linux) and choose **Pair iPhone…**. You can also open **Settings → Computers** and use the QR code button on the computer's card.
-- **Terminal:** run `codync-host pair`. It prints the QR code in the terminal. `codync-host pair --json` prints the link instead.
+- **Terminal:** run `codync-host pair`. It prints the QR code in the terminal, and waits to answer when the computer asks about a phone (see below). `codync-host pair --json` prints the link instead and doesn't wait.
 - **Terminal UI:** press `^k` and choose **Pair a phone…**.
 
 Then, on the iPhone, scan it from the welcome screen, or later from **Manage computers → Pair a computer** (tap the connection status at the top of the Bots tab, such as **1 connected**). You can also paste the `codync://pair` link instead of scanning, or type the short code `codync-host pair` prints, like `QRTX-4821`.
@@ -34,7 +34,7 @@ Pairing checks your account, so a phone and a computer pair only when they're in
 
 - **The computer is in your account:** the phone is let in right away.
 - **The computer is in someone else's account:** the phone says whose (for example *k•••@example.com*). Move the computer to your account on that computer, or sign in to that account.
-- **The computer isn't in an account yet:** the computer asks first. The desktop app asks whether to let the phone in, and the terminal UI and `codync-host pair` ask you to answer `y`. Check that the phone shows the same 6-digit code, then let it in. The computer joins your account.
+- **The computer isn't in an account yet:** the computer asks first, for 90 seconds. The desktop app asks whether to let the phone in, and the terminal UI and `codync-host pair` ask you to answer `y`. Without any of them (`codync-host pair --json`, a script, SSH with no terminal), run `codync-host access approve <code>` with the 6 digits the phone shows. Check that the phone shows the same 6-digit code, then let it in. The computer joins your account; with its cloud off or on a private relay, the phone gets in and the computer stays out of any account.
 
 Changing the account a computer belongs to (moving it, or **Remove from account**) takes away access from every device of the old account. A computer joining its first account keeps the phones that were already paired.
 
@@ -48,7 +48,7 @@ The iPhone, Android and desktop apps ask you to sign in with Apple or Google bef
 
 On a computer without the desktop app, use `codync-host access` to list requests and `codync-host access approve <code>` to approve one.
 
-Signing out of the desktop app keeps the computer in your account. If you then sign in with a different account, the app asks whether to move the computer there. Choose **Move here** and your phone, signed in to the new account, finds it under **Manage computers**. Devices approved through the old account lose access. Moving it turns **Skip the 6-digit check** off, so new devices ask with the 6-digit code; turn it back on in **Settings → Computers** if you want. Choose **Keep it there** to leave it where it is; you can still move it later with **Remove from account** and then **Add to account**.
+Signing out of the desktop app keeps the computer in your account. If you then sign in with a different account, the app asks whether to move the computer there. Choose **Move here** and your phone, signed in to the new account, finds it under **Manage computers**. Every device of the old account loses access, phones paired with a QR code included. Moving it turns **Skip the 6-digit check** off, so new devices ask with the 6-digit code; turn it back on in **Settings → Computers** if you want. Choose **Keep it there** to leave it where it is; you can still move it later with **Remove from account** and then **Add to account**.
 
 When the computer and the desktop app's account differ, an amber notice at the bottom of the sidebar says how (in the narrow sidebar, an amber icon; point at it to read it):
 
@@ -158,5 +158,5 @@ Webhook deliveries are **not** end-to-end encrypted. The relay receives them ove
 
 - **On the computer:** in **Settings → Computers**, the list **Devices that can use** the computer has **Revoke access** for each device. Without the desktop app, use `codync-host devices` to list devices and `codync-host devices revoke <key>` to remove one. The device disconnects right away and has to pair or ask again.
 - **On the iPhone:** in **Manage computers**, remove a paired computer, or revoke this phone's account access to one. The computer keeps its bots and chats.
-- **Remove from account** on a computer's card disconnects devices approved through the account. Devices paired with a QR code keep their access.
-- **A computer that's gone** (reset, reinstalled or given away) stays offline in your account. In the desktop app, **Settings → Computers** lists it under **Other computers in your account**; choose **Remove from account** on its row. Any offline computer has it, so first make sure it's gone rather than asleep: devices approved through the account lose access, and it rejoins only when you add it again on that computer. Only the desktop app removes a computer from the account; on a phone you can only forget a computer you paired with a QR code.
+- **Remove from account** on a computer's card disconnects every device of the account, phones paired with a QR code included. They have to pair again.
+- **A computer that's gone** (reset, reinstalled or given away) stays offline in your account. In the desktop app, **Settings → Computers** lists it under **Other computers in your account**; choose **Remove from account** on its row. Any offline computer has it, so first make sure it's gone rather than asleep: every device of the account loses access, and it rejoins only when you add it again on that computer. Only the desktop app removes a computer from the account; on a phone you can only forget a computer you paired with a QR code.

@@ -150,7 +150,7 @@ codync.dev counts visits without cookies or anything stored on the visitor's dev
 (posthog-js `cookieless_mode: 'always'`, which needs the project's *cookieless server hash mode*;
 without it PostHog drops these events): `$pageview`, `download_clicked` (`platform`:
 `mac`/`windows`/`linux`/`ios`; `linux` counts the Linux download links (x86_64 and arm64) and copies of the install command; the Homebrew `mac` is a copy of its command),
-`link_opened` (`link`). One document-level click listener in `web/app/analytics.tsx` reads each
+`link_opened` (`link`; `android_test` is the Google Play button, which opens the Android tester sign-up form). One document-level click listener in `web/app/analytics.tsx` reads each
 link's `href`, so a new link is counted without code; the film counts as `demo` when focus moves
 into its frame.
 

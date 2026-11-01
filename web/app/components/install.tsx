@@ -5,7 +5,7 @@ import CopyCommand from "./copy-command";
 import Eyebrow from "./eyebrow";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
-import { APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
+import { ANDROID_TEST, APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
 
 export default function Install() {
   return (
@@ -80,19 +80,20 @@ export default function Install() {
           <Reveal className="h-full" delay={0.15}>
             <div className="flex h-full flex-col rounded-3xl bg-neutral-900 p-8">
               <DeviceMobile size={28} weight="fill" className="text-neutral-50" />
-              <h3 className="mt-5 text-xl font-semibold text-neutral-50">iPhone</h3>
+              <h3 className="mt-5 text-xl font-semibold text-neutral-50">iPhone &amp; Android</h3>
               <p className="mt-2 flex-1 leading-relaxed text-neutral-400">
                 Get the app, then scan the code from <span className="text-neutral-200">Pair iPhone…</span> in the
                 Mac menu bar, the Windows or Linux app, or <code className="font-mono text-neutral-200">codync-host pair</code>.
               </p>
-              <a
-                href={APP_STORE}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-5 inline-flex w-fit transition hover:opacity-80 active:scale-[0.98]"
-              >
-                <Image src="/app-store-badge.svg" alt="Download on the App Store" width={120} height={40} className="h-11 w-auto" />
-              </a>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <a href={APP_STORE} target="_blank" rel="noopener noreferrer" className="inline-flex transition hover:opacity-80 active:scale-[0.98]">
+                  <Image src="/app-store-badge.svg" alt="Download on the App Store" width={120} height={40} className="h-11 w-auto" />
+                </a>
+                {/* Android is in closed testing: the badge opens the tester sign-up form. */}
+                <a href={ANDROID_TEST} target="_blank" rel="noopener noreferrer" className="inline-flex transition hover:opacity-80 active:scale-[0.98]">
+                  <Image src="/google-play-badge.svg" alt="Join the Android test on Google Play" width={180} height={53} className="h-11 w-auto" />
+                </a>
+              </div>
             </div>
           </Reveal>
         </div>

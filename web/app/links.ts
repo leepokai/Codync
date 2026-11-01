@@ -12,6 +12,8 @@ export const WINDOWS = "/download/windows";
 export const LINUX = "/download/linux";
 export const LINUX_ARM = "/download/linux-arm64";
 export const APP_STORE = "https://apps.apple.com/app/codync/id6760984418";
+// Android is in closed testing on Google Play: testers sign up here.
+export const ANDROID_TEST = "https://docs.google.com/forms/d/e/1FAIpQLScvtCO7edjgFHKozWbHQ-9dDIJturifAA8znvhLVfCtRzu8cg/viewform";
 export const GITHUB = "https://github.com/leepokai/Codync";
 export const DISCORD = "https://discord.gg/KBAX3Qznxh";
 export const WECHAT = "/wechat";

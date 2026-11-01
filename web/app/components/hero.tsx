@@ -11,7 +11,7 @@ import MacWindow from "./mac-window";
 import MediaLabel from "./media-label";
 import LivePhones from "./live-phone/live-phones";
 import { CharacterAvatar } from "./live-phone/avatar";
-import AppStoreButton from "./app-store-button";
+import { AppStoreButton, PlayStoreButton } from "./store-buttons";
 import GitHubStarButton from "./github-star-button";
 import { ease } from "./motion";
 import { GITHUB, PRODUCT_HUNT } from "../links";
@@ -87,8 +87,12 @@ export default function Hero() {
 
             <motion.div {...rise(0.16)} className="mt-10 flex flex-wrap items-center gap-3">
               <DownloadButton />
-              <AppStoreButton />
               <GitHubStarButton />
+              {/* The two phone stores stay side by side on their own row. */}
+              <div className="flex flex-wrap gap-3">
+                <AppStoreButton />
+                <PlayStoreButton />
+              </div>
             </motion.div>
 
             <motion.p {...rise(0.2)} className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-neutral-500">

@@ -58,6 +58,13 @@ public struct CloudClient: Sendable {
         let _: Res = try await request("POST", "v1/devices", body: ["name": name, "platform": platform], signed: true)
     }
 
+    /// What pairing shows a computer to prove this device's account. 403: the key isn't registered (or was revoked).
+    public func deviceCertificate() async throws -> DeviceCertificate {
+        struct Res: Decodable { var certificate: DeviceCertificate }
+        let res: Res = try await request("POST", "v1/devices/certificate", signed: true)
+        return res.certificate
+    }
+
     public func devices() async throws -> [CloudDevice] {
         struct Res: Decodable { var devices: [CloudDevice] }
         let res: Res = try await request("GET", "v1/devices")
@@ -151,6 +158,15 @@ public struct CloudClient: Sendable {
 
     // MARK: claims (§4.2 A)
 
+    public func createClaim() async throws -> CloudClaim {
+        try await request("POST", "v1/claims")
+    }
+
+    /// `claim`: the JSON object the computer signed while pairing, sent as it came.
+    public func completeClaim(claimId: String, claim: Data) async throws {
+        let _: Ignored = try await request("POST", "v1/claims/\(claimId)/complete", json: claim, signed: false)
+    }
+
     // MARK: plumbing
 
     private struct NoBody: Encodable {}
@@ -165,11 +181,15 @@ public struct CloudClient: Sendable {
     }
 
     func request<T: Decodable>(_ method: String, _ path: String, body: (some Encodable)? = NoBody?.none, signed: Bool = false) async throws -> T {
+        try await request(method, path, json: try body.map { try JSONEncoder().encode($0) }, signed: signed)
+    }
+
+    private func request<T: Decodable>(_ method: String, _ path: String, json: Data?, signed: Bool) async throws -> T {
         let url = baseURL.appending(path: path)
         var req = URLRequest(url: url, timeoutInterval: 20)
         req.httpMethod = method
-        let data = try body.map { try JSONEncoder().encode($0) } ?? Data()
-        if body != nil {
+        let data = json ?? Data()
+        if json != nil {
             req.httpBody = data
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }

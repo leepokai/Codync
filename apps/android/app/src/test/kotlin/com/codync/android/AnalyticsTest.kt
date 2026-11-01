@@ -35,7 +35,8 @@ class AnalyticsTest {
     @Test fun `pairing failures map to the catalog's reasons`() {
         assertEquals(PairingFailure.NotPairingLink, PairingFailure.of(PairingProblem(PairingProblem.Kind.NotPairingLink)))
         assertEquals(PairingFailure.UpgradeRequired, PairingFailure.of(HostError(426, "Update")))
-        assertEquals(PairingFailure.Expired, PairingFailure.of(HostError(403, "Expired code")))
+        assertEquals(PairingFailure.Expired, PairingFailure.of(HostError(403, "This pairing code expired. Show a new one on the computer.")))
+        assertEquals(PairingFailure.Unauthorized, PairingFailure.of(HostError(403, "The computer didn't let this phone in.")))
         assertEquals(PairingFailure.Timeout, PairingFailure.of(IOException("Late", java.net.SocketTimeoutException())))
         assertEquals(PairingFailure.Unreachable, PairingFailure.of(IOException("Offline")))
         assertEquals(PairingFailure.Other, PairingFailure.of(IllegalArgumentException("Use Start over")))

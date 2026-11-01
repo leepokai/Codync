@@ -16,21 +16,39 @@ public enum HostConnector {
         throw HostError.unreachable
     }
 
-    /// Proves the QR's one-time code inside a channel to the QR's host key; the host
-    /// then authorizes this device and closes with `4100 paired`.
-    public static func pair(_ pairing: Pairing, identity: DeviceIdentity, deviceName: String, platform: String) async throws -> Computer {
-        let transport = ChannelTransport(computer: pairing.computer, identity: identity, pairingCode: pairing.code)
+    /// Proves the QR's one-time code inside a channel to the QR's host key, with the account's `certificate`;
+    /// the host then authorizes this device and closes with `4100 paired`. A computer in no account asks its
+    /// user first, then signs `claim` and returns it (as JSON) for the phone to complete with the cloud.
+    public static func pair(_ pairing: Pairing, identity: DeviceIdentity, deviceName: String, platform: String,
+                            certificate: DeviceCertificate, claim: CloudClaim?) async throws -> (computer: Computer, claim: Data?) {
+        try await pair(pairing, identity: identity, deviceName: deviceName, platform: platform,
+                       certificate: certificate, claim: claim, dial: URLSessionSocket.dial)
+    }
+
+    static func pair(_ pairing: Pairing, identity: DeviceIdentity, deviceName: String, platform: String,
+                     certificate: DeviceCertificate, claim: CloudClaim?, dial: @escaping Dialer) async throws -> (computer: Computer, claim: Data?) {
+        let transport = ChannelTransport(computer: pairing.computer, identity: identity, pairingCode: pairing.code, dial: dial)
         await transport.start()
         do {
-            struct Body: Encodable { var code: String; var name: String; var platform: String }
+            struct Body: Encodable {
+                var code: String
+                var name: String
+                var platform: String
+                var certificate: DeviceCertificate
+                var claim: CloudClaim?
+            }
             struct Res: Decodable { var computerId: ComputerID; var name: String? }
-            let data = try await transport.call("pair", body: JSONEncoder().encode(Body(code: pairing.code, name: deviceName, platform: platform)), timeout: 30)
+            let body = try JSONEncoder().encode(Body(code: pairing.code, name: deviceName, platform: platform, certificate: certificate, claim: claim))
+            try await transport.ready(within: 30)
+            // The computer may be waiting for its user to let this phone in (up to 2 minutes).
+            let data = try await transport.call("pair", body: body, timeout: 150)
             await transport.shutdown()
             let res = try JSONDecoder().decode(Res.self, from: data)
             guard res.computerId == pairing.computer.id else { throw HostError.unauthorized(ChannelTransport.identityChanged) }
             var computer = pairing.computer
             if let name = res.name, !name.isEmpty { computer.name = name }
-            return computer
+            let signed = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["claim"] as? [String: Any]
+            return (computer, try signed.map { try JSONSerialization.data(withJSONObject: $0) })
         } catch {
             await transport.shutdown()
             throw await transport.needsUpgrade ? HostError.upgradeRequired : error

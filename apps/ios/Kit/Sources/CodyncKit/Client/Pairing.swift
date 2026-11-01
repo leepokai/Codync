@@ -62,6 +62,11 @@ public struct Pairing: Hashable, Sendable {
         self.code = code
     }
 
+    /// The 6 digits the computer shows if it asks whether to let `identity` in.
+    public func checkCode(for identity: DeviceIdentity) -> String {
+        RelayCrypto.pairCheck(deviceKey: identity.deviceKey, hostSignKey: Data(base64URL: computer.signKey) ?? Data())
+    }
+
     /// The relay's pairing socket parameter.
     var offerId: String? { Data(base64URL: code).map(RelayCrypto.offerId(code:)) }
 

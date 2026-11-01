@@ -136,6 +136,11 @@ private func raw(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) }
                                 hostNonce: v.b64("sas", "hostNonce")) == v.str("sas", "code"))
 }
 
+/// The same digits the host shows (host/src/remote/pairing_requests.rs `check_code`).
+@Test func pairCheckMatchesTheHost() {
+    #expect(RelayCrypto.pairCheck(deviceKey: Data(repeating: 1, count: 32), hostSignKey: Data(repeating: 2, count: 32)) == "855066")
+}
+
 @Test func claimAndACLSignaturesVerify() {
     let host = v.hostSign.publicKey
     #expect(host.isValidSignature(v.b64("claim", "sig"), for: Data(v.str("claim", "canonical").utf8)))

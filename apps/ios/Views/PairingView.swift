@@ -250,7 +250,7 @@ private struct ScanPage: View {
 
                 if let error {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                        Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                         // The usual cause: the phone has no road to the computer yet.
                         Label(L10n.tr("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."),
                               systemImage: "wifi.exclamationmark")
@@ -316,12 +316,25 @@ private struct ScanPage: View {
             }
             if pairing {
                 Palette.background.opacity(0.7)
-                Spinner(size: 28)
+                VStack(spacing: 16) {
+                    Spinner(size: 28)
+                    // A computer in no account asks its user first, showing the same code.
+                    if let code = app.accounts.pairingCheck {
+                        Text(L10n.tr("If the computer asks, check it shows {code}.")
+                            .replacingOccurrences(of: "{code}", with: "\(code.prefix(3)) \(code.suffix(3))"))
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(Palette.text)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                            .transition(.opacity)
+                    }
+                }
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .animation(Motion.fade, value: pairing)
+        .animation(Motion.fade, value: app.accounts.pairingCheck)
     }
 
     private func pair(_ text: String) {

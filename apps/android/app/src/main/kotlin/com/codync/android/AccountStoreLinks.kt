@@ -37,9 +37,12 @@ internal fun AccountStore.pair(text: String, via: PairedVia) {
             Analytics.completeOnboarding(OnboardingVia.Paired)
             // The computer joined this account: the account takes it in (or it stays paired, outside the account).
             val signed = paired.claim
+            // In the background, as on iOS: the computer is already paired.
             if (client != null && claim != null && signed != null) {
-                bestEffort("complete the claim") { client.completeClaim(claim.claimId, signed) }
-                refreshCloud()
+                contextScope.launch {
+                    bestEffort("complete the claim") { client.completeClaim(claim.claimId, signed) }
+                    refreshCloud()
+                }
             }
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) {

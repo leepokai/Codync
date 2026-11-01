@@ -76,6 +76,7 @@ import Testing
     #expect(AnalyticsEvent.PairingFailure(Pairing.Problem.outdatedHost) == .outdatedHost)
     #expect(AnalyticsEvent.PairingFailure(HostError.http(401, "secret")) == .unauthorized)
     #expect(AnalyticsEvent.PairingFailure(HostError.http(403, "This pairing code expired.")) == .expired)
+    #expect(AnalyticsEvent.PairingFailure(HostError.http(403, "The computer didn't let this phone in.")) == .unauthorized)
     #expect(AnalyticsEvent.PairingFailure(HostError.computerOffline(lastSeen: nil)) == .unreachable)
     #expect(AnalyticsEvent.PairingFailure(URLError(.timedOut)) == .timeout)
     #expect(AnalyticsEvent.PairingFailure(CocoaError(.fileNoSuchFile)) == .other)

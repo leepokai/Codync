@@ -1,4 +1,5 @@
 import type { CallError } from '@shared/ipc'
+import { readCatchUp } from '../store/catch-up'
 import {
   normalizeBot,
   normalizeScreen,
@@ -105,6 +106,7 @@ export function parseEvent(line: string): HostEvent | null {
         usage: (raw.usage as Usage) ?? { providers: [] },
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
         network: (raw.network as NetworkView | undefined) ?? null,
+        catchUp: readCatchUp(raw),
         icons: raw.icons as import('@shared/custom-icons').CustomIcons | undefined,
       }
     case 'bot': {

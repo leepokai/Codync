@@ -1,5 +1,10 @@
 import type { HostEvent } from '../client/host-client'
 
+/** The `hello`'s `catchUp`, or undefined from a host before the count. */
+export function readCatchUp(raw: Record<string, unknown>): number | undefined {
+  return typeof raw.catchUp === 'number' && raw.catchUp >= 0 ? raw.catchUp : undefined
+}
+
 /** Counts a stream's catch-up by the `hello`'s `catchUp`: the host's rev can be ahead of every event it replays. */
 export class CatchUp {
   private left: number | null = null

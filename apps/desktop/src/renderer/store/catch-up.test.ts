@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { HostEvent } from '../client/host-client'
-import { CatchUp } from './catch-up.ts'
+import { CatchUp, readCatchUp } from './catch-up.ts'
 
 const hello = (rev: number, catchUp: number) => ({ type: 'hello', hostId: 'h', rev, usage: {}, screen: null, network: null, catchUp }) as unknown as HostEvent
 const icons = { type: 'icons', iconsRevision: 1, icons: {} } as unknown as HostEvent
@@ -22,4 +22,14 @@ test('a reset stream waits for its own hello', () => {
   catchUp.ended(hello(9, 2))
   catchUp.reset()
   assert.deepEqual([bot, bot].map((e) => catchUp.ended(e)), [false, false])
+})
+
+test('a raw hello carries its catchUp count through to the counter', () => {
+  const raw = JSON.parse('{"type":"hello","hostId":"h","rev":9,"catchUp":1}') as Record<string, unknown>
+  const catchUp = new CatchUp()
+  assert.deepEqual([{ type: 'hello', catchUp: readCatchUp(raw) } as unknown as HostEvent, bot].map((e) => catchUp.ended(e)), [false, true])
+})
+
+test('a hello from a host before the count leaves catch-up open', () => {
+  assert.equal(readCatchUp({ type: 'hello', rev: 9 }), undefined)
 })

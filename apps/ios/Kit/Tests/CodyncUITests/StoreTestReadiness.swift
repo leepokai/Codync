@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 @testable import CodyncUI
 
 /// Wait for a recorded fixture event, allowing the store's real action deadline.
@@ -24,41 +23,17 @@ func waitForTestEvent<Event: Sendable>(_ events: AsyncStream<Event>, matching: @
     }
 }
 
-/// Observe store state instead of racing a two-second polling window on MainActor.
+/// Reads `condition` until it holds, for the store's action deadline.
+///
+/// Connection changes are published inside an animation. On a runner with no
+/// display link that notification can be dropped, and the test then sits until
+/// its time limit. Reading the value from this task does not depend on it.
 @MainActor
 func waitForObservedCondition(_ condition: @escaping @MainActor () -> Bool) async -> Bool {
-    let observer = StoreConditionObserver(condition)
-    defer { observer.stop() }
-    return await waitForTestEvent(observer.events, matching: { $0 })
-}
-
-@MainActor
-private final class StoreConditionObserver {
-    let events: AsyncStream<Bool>
-    private let sink: AsyncStream<Bool>.Continuation
-    private let condition: @MainActor () -> Bool
-    private var stopped = false
-
-    init(_ condition: @escaping @MainActor () -> Bool) {
-        self.condition = condition
-        let pair = AsyncStream<Bool>.makeStream()
-        events = pair.stream
-        sink = pair.continuation
-        observe()
+    let deadline = ContinuousClock.now + BotStore.actionPatience
+    while ContinuousClock.now < deadline {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(20))
     }
-
-    func stop() {
-        stopped = true
-        sink.finish()
-    }
-
-    private func observe() {
-        guard !stopped else { return }
-        let value = withObservationTracking {
-            condition()
-        } onChange: { [weak self] in
-            Task { @MainActor in self?.observe() }
-        }
-        sink.yield(value)
-    }
+    return condition()
 }

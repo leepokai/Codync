@@ -195,6 +195,9 @@ actor LateSignalingFailureTransport: HostTransport {
     private var installedAnswers: Set<String> = []
     private var answerWaiters: [String: AsyncStream<Bool>.Continuation] = [:]
     private let gateRecovery: Bool
+    /// Fail the first candidate upload. A later failure can land after gathering
+    /// finishes, and the session then detaches instead of recovering.
+    private let failUploadOnInstall: Bool
     private let preparationGate: AsyncStream<Void>
     private let preparationRelease: AsyncStream<Void>.Continuation
     nonisolated let recoveryRequested: AsyncStream<Bool>
@@ -204,8 +207,9 @@ actor LateSignalingFailureTransport: HostTransport {
     nonisolated let routeSubscribed: AsyncStream<Bool>
     private let routeSubscribedSink: AsyncStream<Bool>.Continuation
 
-    init(gateRecovery: Bool = false) {
+    init(gateRecovery: Bool = false, failUploadOnInstall: Bool = false) {
         self.gateRecovery = gateRecovery
+        self.failUploadOnInstall = failUploadOnInstall
         let gate = AsyncStream<Void>.makeStream()
         preparationGate = gate.stream
         preparationRelease = gate.continuation
@@ -263,6 +267,7 @@ actor LateSignalingFailureTransport: HostTransport {
             let upload = try JSONDecoder().decode(Upload.self, from: body)
             // Candidate uploads start only after the phone's native answer completion.
             installed(upload.session)
+            if failUploadOnInstall { throw HostError.unreachable }
             return Data("{}".utf8)
         case "screenClose":
             struct Close: Decodable { let session: String }

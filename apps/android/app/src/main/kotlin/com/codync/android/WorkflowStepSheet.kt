@@ -108,6 +108,9 @@ import kotlinx.coroutines.launch
         try {
             val preview = store.routineSchedule(emptyList(), zone)
             ensureActive()
+            // An edit made while this default was loading wins. Applying it now
+            // would put daily 09:00 back over the time they picked.
+            if (touched) return@LaunchedEffect
             val cron = preview.triggers.firstOrNull { it.field("type") == "cron" } ?: return@LaunchedEffect
             val expression = cron.field("expression").orEmpty()
             val timeZone = cron.field("timeZone").orEmpty().ifBlank { zone }

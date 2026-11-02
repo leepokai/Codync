@@ -51,6 +51,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   /** Opens an artifact card's artifact over the chat. */
   openArtifact?: (artifactId: string) => void
 }) {
+  const host = useStore()
   const reply = onReply && isReplyable(entry) ? () => onReply(entry) : undefined
   switch (entry.kind) {
     case 'user':
@@ -86,7 +87,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
       if (entry.data.chiefIncident) return <div className="chat-row group-start"><ChiefIncidentNotice entry={entry} /></div>
       if (entry.data.botApp) return <div className="chat-row group-start"><BotAppNotice entry={entry} openApp={openApp} /></div>
       if (entry.data.agentSwitch) return <div className="chat-row notice"><AgentSwitchNotice entry={entry} carried={entry.data.agentSwitch.carried} /></div>
-      return <div className="chat-row notice"><NoticeRow entry={entry} addFallback={entry.data.addFallback && openAgent ? () => openAgent(entry.data.author ?? entry.botId) : undefined} /></div>
+      return <div className="chat-row notice"><NoticeRow entry={entry} addFallback={entry.data.addFallback && openAgent ? () => openAgent(entry.data.author ?? entry.botId) : undefined} undo={entry.data.memoryUndo && !entry.data.memoryUndo.undone ? () => void host.undoMemoryChange(entry) : undefined} /></div>
   }
 })
 
@@ -370,7 +371,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
   )
 }
 
-export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: () => void }) {
+export function NoticeRow({ entry, addFallback, undo }: { entry: Entry; addFallback?: () => void; undo?: () => void }) {
   if (window.codync.platform === 'win32' && entry.data.source === 'voice_receipt') return <VoiceReceipt entry={entry} />
   const text = entry.data.text ?? ''
   if (entry.data.callSeconds !== undefined) {
@@ -390,6 +391,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
             {addFallback ? <Button kind="secondary" onClick={addFallback}>Add a fallback</Button> : null}
+            {undo ? <Button kind="secondary" onClick={undo}>Undo</Button> : null}
           </VStack>
         </HStack>
       )

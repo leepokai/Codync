@@ -369,6 +369,8 @@ export interface AgentSwitch {
 export interface EntryData {
   /** Internal scheduled input or provisional background output; never rendered. */
   internal?: boolean
+  /** An "I learned" notice: what its Undo needs (`undoMemoryChange`); `undone` once taken back. */
+  memoryUndo?: { file: string; shared: boolean; before: number | null; change: number; undone: boolean }
   source?: string
   /** Structured conversation data added to the existing team-tool notice. */
   botMessage?: BotMessage

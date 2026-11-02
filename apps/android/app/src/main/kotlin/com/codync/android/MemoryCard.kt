@@ -34,7 +34,7 @@ import com.codync.android.design.*
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-private enum class Tab { Yours, Bot, Dreams, Harness }
+private enum class Tab { Yours, Bot, Beliefs, Dreams, Harness }
 
 /**
  * A bot's memory (iOS `MemoryCard`): what all your bots know about you, what this one knows, its dreams, and its
@@ -60,7 +60,7 @@ private enum class Tab { Yours, Bot, Dreams, Harness }
         IconButton("Refresh", "arrow.clockwise", enabled = !memory.busy) { memory.refresh() }
     }) {
         row {
-            val options = listOf(Tab.Yours to "About you", Tab.Bot to "This bot", Tab.Dreams to "Dreams") +
+            val options = listOf(Tab.Yours to "About you", Tab.Bot to "This bot", Tab.Beliefs to "What I know", Tab.Dreams to "Dreams") +
                 (if (view?.projectMemory != null) listOf(Tab.Harness to harness) else emptyList())
             SegmentedChoice(tab, options, { tab = it; if (it == Tab.Harness) memory.refresh() })
         }
@@ -69,6 +69,7 @@ private enum class Tab { Yours, Bot, Dreams, Harness }
             if (memory.error == null) row { Text("Loading memory…", style = Type.body, color = Palette.secondary) }
         } else when (tab) {
             Tab.Yours, Tab.Bot -> layer(memory, view, bot, state, store, shared, harness, { editor = it }, { aboutHarness = true })
+            Tab.Beliefs -> beliefsRows(botId, store, bot?.memoryRev)
             Tab.Dreams -> dreams(memory, view.dreams)
             Tab.Harness -> harnessNotes(view.projectMemory, harness)
         }

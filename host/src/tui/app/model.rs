@@ -45,6 +45,10 @@ pub enum After {
     Channels,
     /// `slackStatus`.
     ChannelsSlack,
+    /// `beliefs`: the notes of the bot as beliefs.
+    Beliefs,
+    /// A confirm, forget or restore of a belief went through.
+    BeliefsChanged,
     /// `proposeRule` for an "always allow" on card `.0`, option `.1`.
     Proposal(String, String),
     /// The rules sheet's save (`updateBot`).

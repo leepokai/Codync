@@ -594,6 +594,13 @@ export class BotStore extends BotSync {
     }
   }
 
+  /** Takes back what the bot just learned (the notice's Undo); the notice itself comes back changed. */
+  async undoMemoryChange(entry: Entry) {
+    const res = await (await this.ready()).call<{ entry: Entry }>('undoMemoryChange', { botId: entry.botId, entryId: entry.id })
+    this.upsert(res.entry)
+    this.changed()
+  }
+
   /** Reads the computer's health; an older host keeps what was there (nothing). */
   async refreshHealth() {
     if (this.retired || !this.client) return

@@ -60,6 +60,7 @@ pub enum Action {
     Network,
     Rules,
     Channels,
+    Beliefs,
     Usage,
     CheckUpdate,
     Analytics,
@@ -70,7 +71,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 23] = [
+pub const ACTIONS: [(&str, &str, Action); 24] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -84,6 +85,7 @@ pub const ACTIONS: [(&str, &str, Action); 23] = [
     ("Network: your other computers…", "N", Action::Network),
     ("Approval rules of this bot…", "", Action::Rules),
     ("Channels: Telegram and Slack…", "", Action::Channels),
+    ("What this bot knows about you…", "", Action::Beliefs),
     ("Usage", "U", Action::Usage),
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
@@ -373,6 +375,7 @@ pub enum PairCode {
 
 pub enum Overlay {
     Channels(Box<super::ChannelsSheet>),
+    Beliefs(Box<super::BeliefsSheet>),
     Computer(Box<super::super::manage::computer::ComputerSheet>),
     McpTools(Box<super::super::manage::mcp_tools::McpToolsSheet>),
     RosterTools,

@@ -25,7 +25,7 @@ The user reads memory in the app but can't edit it: they ask you. Project and co
 keeping goes in a note on that project, not MEMORY.md; don't make the project's CLAUDE.md or AGENTS.md your memory \
 unless the user asks. Only in a turn the user started in your own chat can memory lose or change a line; at other \
 times you can only add. search_memory finds lines of your memory files; search_history finds what was actually \
-said in your past chats, and read_history reads the surrounding conversation around any message id.";
+said in your past chats, and read_history reads the surrounding conversation around any message id. When the user says a note still holds, call confirm_memory; when they correct a note, call correct_memory (the chat shows them one line, \"I learned …\", with an Undo); to forget a whole note, call forget_memory instead of deleting it with edit_memory.";
 
 pub fn tools() -> Value {
     let mut tools = json!([
@@ -79,6 +79,7 @@ pub fn tools() -> Value {
     ]);
     if let Some(list) = tools.as_array_mut() {
         list.extend(super::file_tools::definitions());
+        list.extend(super::beliefs::definitions());
     }
     tools
 }
@@ -103,6 +104,10 @@ pub async fn call(hub: &Arc<Hub>, bot_id: &str, name: &str, args: &Value) -> Res
             super::file_tools::call(hub, &cfg, "edit_memory", &edit_args).await
         }
         "read_memory" | "edit_memory" => super::file_tools::call(hub, &cfg, name, args).await,
+        "confirm_memory" | "correct_memory" | "forget_memory" => {
+            let (hub, name, args) = (hub.clone(), name.to_owned(), args.clone());
+            tokio::task::spawn_blocking(move || super::beliefs::tool(&hub, &cfg, &name, &args)).await?
+        }
         _ => bail!("unknown memory tool: {name}"),
     }
 }

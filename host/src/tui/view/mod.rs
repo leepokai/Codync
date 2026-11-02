@@ -9,6 +9,7 @@
 mod activity;
 mod analytics;
 mod bot_chat;
+mod beliefs;
 mod buffer;
 mod channels;
 mod chat;

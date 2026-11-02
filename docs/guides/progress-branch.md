@@ -28,7 +28,7 @@ card (desktop and Android), `SETUP_PROMPT.md`.
 | 10 | Messaging channels (3 phases) | done | see `git log` (`feat(host): Slack Socket Mode`, `feat(host): Telegram channel`, `feat(...): Channels screen`) | nothing tested against real Slack or Telegram (see `slack-manual-checklist.md`, `telegram-manual-checklist.md`); Android and terminal cannot add a Telegram bot or set up Slack (tokens stay on the computer); no Slack form in any client; iOS skipped; see `channels-report.md` |
 | 11 | Computer health | done | see `git log` (`feat(host): computer health`) | real sampler and runaway-agent stop only tested with simulated readings; no screen seen; "ask before an expensive turn" not done (documented); iOS skipped; see `computer-health-report.md` |
 | 12 | Import agents | written, NOT compiled or run | see `git log` (`feat: import an agent`) | desktop only (phones cannot browse the agent's folder); a new small importer, not a copy of the 14 files; archives not read; gates pending; see `agent-import-report.md` |
-| 13 | Memory as beliefs | pending | | |
+| 13 | Memory as beliefs | written, NOT compiled or run | see `git log` (`feat: memory as beliefs`) | per-note header only; terminal has no Undo button on the line; bot-tool test is weak; iOS skipped; gates pending; see `memory-beliefs-report.md` |
 | 14 | Proposed skills inbox | pending | | |
 | 15 | Demo mode | pending | | |
 | 16 | Branch close | pending | | |

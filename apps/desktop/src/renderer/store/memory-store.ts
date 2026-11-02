@@ -1,5 +1,6 @@
 import type { HostClient } from '../client/host-client'
 import { Observable } from '../lib/observable'
+import type { Belief } from '../../shared/beliefs'
 
 /** One memory entry (the host's `codync_mem::store::Entry`). */
 export interface MemoryEntry {
@@ -75,6 +76,10 @@ const OLDER_HOST = "Update Codync on your computer to see this bot's memory."
 export class MemoryStore extends Observable {
   view: MemoryView | null = null
   error: string | null = null
+  /** The notes as beliefs (`beliefs`); null until read. */
+  beliefs: Belief[] | null = null
+  beliefError: string | null = null
+  private showingForgotten = false
   private request = 0
 
   constructor(readonly botId: string, private readonly client: () => Promise<HostClient>) { super() }
@@ -93,6 +98,29 @@ export class MemoryStore extends Observable {
       if (request === this.request) this.error = message(error)
     }
     this.changed()
+  }
+
+  /** The bot's notes as beliefs, or with `forgotten` the ones that were forgotten. */
+  async loadBeliefs(forgotten = this.showingForgotten) {
+    this.showingForgotten = forgotten
+    try {
+      const reply = await (await this.client()).call<{ beliefs: Belief[] }>('beliefs', { botId: this.botId, forgotten })
+      if (this.showingForgotten === forgotten) { this.beliefs = reply.beliefs; this.beliefError = null }
+    } catch (error) {
+      this.beliefError = message(error)
+    }
+    this.changed()
+  }
+
+  /** Confirms a note, forgets it, or brings an earlier version back; the list is read again after. */
+  async beliefAction(belief: Belief, action: 'confirm' | 'forget' | 'restore', versionId?: number) {
+    try {
+      await (await this.client()).call('beliefAction', { botId: this.botId, file: belief.file, shared: belief.shared, action, versionId })
+      await this.loadBeliefs()
+    } catch (error) {
+      this.beliefError = message(error)
+      this.changed()
+    }
   }
 
   /** Drops the error of an action that failed once the sheet has read the latest; what the user wrote stays. */

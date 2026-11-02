@@ -1763,5 +1763,17 @@
   "{shape} shape": "Form: {shape}",
   "{tokens} tokens": "{tokens} Token",
   "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "„Zugriff von überall“ ist aus, daher erreicht das iPhone {name} nur im selben Netzwerk.",
-  "≈ {minutes} min": "≈ {minutes} Min."
+  "≈ {minutes} min": "≈ {minutes} Min.",
+  "Set up Composio in Extensions first.": "Richte zuerst Composio unter Erweiterungen ein.",
+  "Composio didn't return a sign-in link": "Composio hat keinen Anmeldelink zurückgegeben",
+  "Composio didn't return an auth config": "Composio hat keine Auth-Konfiguration zurückgegeben",
+  "Composio didn't return the connection": "Composio hat die Verbindung nicht zurückgegeben",
+  "connector storage is busy": "Der Connector-Speicher ist belegt, versuche es erneut",
+  "Updated routine: {name}": "Routine aktualisiert: {name}",
+  "Created routine: {name}": "Routine erstellt: {name}",
+  "Created bot {name}": "Bot {name} erstellt",
+  "Updated {name}: {changes}": "{name} aktualisiert: {changes}",
+  "Message from {name}: {message}": "Nachricht von {name}: {message}",
+  "Could not start routine: {error}": "Routine konnte nicht gestartet werden: {error}",
+  "Could not queue routine: {error}": "Routine konnte nicht eingereiht werden: {error}"
 }

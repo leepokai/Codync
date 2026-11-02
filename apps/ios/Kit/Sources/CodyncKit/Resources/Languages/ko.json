@@ -1763,5 +1763,17 @@
   "{shape} shape": "모양: {shape}",
   "{tokens} tokens": "토큰 {tokens}개",
   "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "“어디서나 접속”이 꺼져 있어, iPhone은 같은 네트워크에 있는 {name}에만 접속할 수 있습니다.",
-  "≈ {minutes} min": "약 {minutes}분"
+  "≈ {minutes} min": "약 {minutes}분",
+  "Set up Composio in Extensions first.": "먼저 확장 프로그램에서 Composio를 설정하세요.",
+  "Composio didn't return a sign-in link": "Composio가 로그인 링크를 반환하지 않았습니다",
+  "Composio didn't return an auth config": "Composio가 인증 구성을 반환하지 않았습니다",
+  "Composio didn't return the connection": "Composio가 연결을 반환하지 않았습니다",
+  "connector storage is busy": "커넥터 저장소가 사용 중입니다. 다시 시도하세요",
+  "Updated routine: {name}": "루틴 업데이트됨: {name}",
+  "Created routine: {name}": "루틴 생성됨: {name}",
+  "Created bot {name}": "봇 {name} 생성됨",
+  "Updated {name}: {changes}": "{name} 업데이트됨: {changes}",
+  "Message from {name}: {message}": "{name}의 메시지: {message}",
+  "Could not start routine: {error}": "루틴을 시작할 수 없음: {error}",
+  "Could not queue routine: {error}": "루틴을 대기열에 넣을 수 없음: {error}"
 }

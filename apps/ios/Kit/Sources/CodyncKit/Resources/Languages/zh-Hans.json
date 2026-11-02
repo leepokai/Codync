@@ -1763,5 +1763,17 @@
   "{shape} shape": "{shape} 形状",
   "{tokens} tokens": "{tokens} 个 token",
   "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "“随时随地访问”已关闭，因此 iPhone 只能在同一网络中连接 {name}。",
-  "≈ {minutes} min": "≈ {minutes} 分钟"
+  "≈ {minutes} min": "≈ {minutes} 分钟",
+  "Set up Composio in Extensions first.": "请先在“扩展”中设置 Composio。",
+  "Composio didn't return a sign-in link": "Composio 未返回登录链接",
+  "Composio didn't return an auth config": "Composio 未返回认证配置",
+  "Composio didn't return the connection": "Composio 未返回连接",
+  "connector storage is busy": "连接器存储正忙，请重试",
+  "Updated routine: {name}": "已更新例行任务：{name}",
+  "Created routine: {name}": "已创建例行任务：{name}",
+  "Created bot {name}": "已创建机器人 {name}",
+  "Updated {name}: {changes}": "已更新 {name}：{changes}",
+  "Message from {name}: {message}": "来自 {name} 的消息：{message}",
+  "Could not start routine: {error}": "无法启动例行任务：{error}",
+  "Could not queue routine: {error}": "无法将例行任务加入队列：{error}"
 }

@@ -1763,5 +1763,17 @@
   "{shape} shape": "{shape} 形狀",
   "{tokens} tokens": "{tokens} 個 token",
   "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "“隨時隨地存取”已關閉，因此 iPhone 只能在同一網路中連線到 {name}。",
-  "≈ {minutes} min": "≈ {minutes} 分鐘"
+  "≈ {minutes} min": "≈ {minutes} 分鐘",
+  "Set up Composio in Extensions first.": "請先在「擴充功能」中設定 Composio。",
+  "Composio didn't return a sign-in link": "Composio 未傳回登入連結",
+  "Composio didn't return an auth config": "Composio 未傳回驗證設定",
+  "Composio didn't return the connection": "Composio 未傳回連線",
+  "connector storage is busy": "連接器儲存空間忙碌中，請重試",
+  "Updated routine: {name}": "已更新例行任務：{name}",
+  "Created routine: {name}": "已建立例行任務：{name}",
+  "Created bot {name}": "已建立機器人 {name}",
+  "Updated {name}: {changes}": "已更新 {name}：{changes}",
+  "Message from {name}: {message}": "來自 {name} 的訊息：{message}",
+  "Could not start routine: {error}": "無法啟動例行任務：{error}",
+  "Could not queue routine: {error}": "無法將例行任務加入佇列：{error}"
 }

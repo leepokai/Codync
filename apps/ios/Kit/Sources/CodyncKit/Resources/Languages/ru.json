@@ -1763,5 +1763,17 @@
   "{shape} shape": "Фигура: {shape}",
   "{tokens} tokens": "Токенов: {tokens}",
   "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "«Доступ из любого места» выключен, поэтому iPhone подключается к {name} только в той же сети.",
-  "≈ {minutes} min": "≈ {minutes} мин"
+  "≈ {minutes} min": "≈ {minutes} мин",
+  "Set up Composio in Extensions first.": "Сначала настройте Composio в Расширениях: Расширения → Учётные данные → ключ API Composio.",
+  "Composio didn't return a sign-in link": "Composio не прислал ссылку для входа",
+  "Composio didn't return an auth config": "Composio не вернул настройки авторизации",
+  "Composio didn't return the connection": "Composio не вернул подключение",
+  "connector storage is busy": "Хранилище коннекторов занято, попробуйте ещё раз",
+  "Updated routine: {name}": "Рутина изменена: {name}",
+  "Created routine: {name}": "Рутина создана: {name}",
+  "Created bot {name}": "Создан бот {name}",
+  "Updated {name}: {changes}": "Изменён {name}: {changes}",
+  "Message from {name}: {message}": "Сообщение от {name}: {message}",
+  "Could not start routine: {error}": "Не удалось запустить рутину: {error}",
+  "Could not queue routine: {error}": "Не удалось поставить рутину в очередь: {error}"
 }

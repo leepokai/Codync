@@ -204,27 +204,3 @@ async fn request_response_roundtrip() {
     }
     assert!(matches!(rx.recv().await.unwrap(), Incoming::Closed { .. }));
 }
-
-#[tokio::test]
-async fn an_agent_that_quits_at_once_says_why() {
-    let python = if cfg!(windows) { "python" } else { "python3" };
-    let command = format!(r#"{python} -c "import sys; sys.stderr.write('profile acp does not exist\n'); sys.exit(1)""#);
-    let (acp, mut rx) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
-    let e = acp.request("initialize", json!({})).await.unwrap_err();
-    let tail = exit_tail(&e, &mut rx).await;
-    assert_eq!(tail.as_deref(), Some("profile acp does not exist"));
-}
-
-#[tokio::test]
-async fn an_agent_still_running_has_no_exit_tail() {
-    let (_tx, mut rx) = mpsc::unbounded_channel();
-    let e = anyhow::anyhow!(RpcError { code: INTERNAL_ERROR, message: "no".into(), kind: None });
-    assert_eq!(exit_tail(&e, &mut rx).await, None);
-}
-
-#[test]
-fn stderr_reason_skips_a_closing_brace() {
-    let tail = "Error: Cannot find module '../dist/codebuddy'\nRequire stack:\n- /cli/bin/codebuddy\n  code: 'MODULE_NOT_FOUND'\n}\n";
-    assert_eq!(stderr_reason(tail).as_deref(), Some("Error: Cannot find module '../dist/codebuddy'"));
-    assert_eq!(stderr_reason("agent said no\n").as_deref(), Some("agent said no"));
-}

@@ -155,11 +155,9 @@ fn hermes_uses_native_acp() {
 #[test]
 fn an_outdated_cli_is_told_to_update() {
     let why = exit_reason("dsh", "Error: profile acp does not exist").expect("a reason");
-    assert_eq!(
-        why,
-        "The DeepSeek Harness on this computer is too old to run in Codync. \
-         Update it (npm install -g @deepseek-ai/dsh@latest) and try again."
-    );
+    assert!(why.starts_with("The DeepSeek Harness on this computer is too old to run in Codync. Update it (run `"));
+    // Codync's own npm, which works without one on the computer.
+    assert!(why.ends_with(" npm install -g @deepseek-ai/dsh@latest` on this computer) and try again."), "{why}");
     // Another harness saying the same isn't outdated for it.
     assert_eq!(exit_reason("kiro", "profile acp does not exist").as_deref(), Some("profile acp does not exist"));
     assert_eq!(exit_reason("dsh", "Error: no API key").as_deref(), Some("Error: no API key"));

@@ -224,7 +224,8 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
     let code = code.ok_or_else(|| anyhow!("Sign-in didn't return a code"))?;
     let c = market::connectors(store)?
         .into_iter()
-        .find(|c| c.id == p.connector)
+        // Still the server the sign-in started for: it can be removed and another added under its id meanwhile.
+        .find(|c| c.id == p.connector && c.url.as_deref() == Some(p.resource.as_str()))
         .ok_or_else(|| anyhow!("unknown connector"))?;
     let oauth = c.oauth.ok_or_else(|| anyhow!("unknown connector"))?;
     let v = token_request(
@@ -364,5 +365,28 @@ mod tests {
         let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
         let err = rt.block_on(finish(&store, "nope", Some("code"), None)).unwrap_err();
         assert!(err.to_string().contains("expired"));
+    }
+
+    #[test]
+    fn a_connector_replaced_during_sign_in_gets_no_code() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        // Removed while the sign-in page was open, and another server added under the same id.
+        let c: Connector = serde_json::from_value(json!({
+            "id": "notes", "name": "Notes", "url": "https://other.example/mcp",
+            "oauth": {"clientId": "theirs", "tokenEndpoint": "http://127.0.0.1:1/token"},
+        }))
+        .unwrap();
+        market::save_connectors(&store, &[c]).unwrap();
+        let pending = Pending {
+            connector: "notes".into(),
+            verifier: "v".into(),
+            redirect_uri: loopback_uri(1),
+            resource: "https://notes.example/mcp".into(),
+            started: Instant::now(),
+        };
+        PENDING.locked().get_or_insert_with(HashMap::new).insert("replaced".into(), pending);
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let err = rt.block_on(finish(&store, "replaced", Some("code"), None)).unwrap_err();
+        assert_eq!(err.to_string(), "unknown connector");
     }
 }

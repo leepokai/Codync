@@ -10,7 +10,7 @@ struct InstallConnectorSheet: View {
     let done: () -> Void
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
-    private var signInFlow = ConnectorSignInFlow()
+    private let signInFlow = ConnectorSignInFlow()
     @State private var optionId = ""
     @State private var values: [String: String] = [:]
     @State private var installed: InstalledConnector?

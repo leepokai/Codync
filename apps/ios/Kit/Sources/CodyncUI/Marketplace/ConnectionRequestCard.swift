@@ -6,7 +6,7 @@ struct ConnectionRequestCard: View {
     let entry: Entry
     let request: ConnectionRequest
     @Environment(BotStore.self) private var model
-    private var signInFlow = ConnectorSignInFlow()
+    private let signInFlow = ConnectorSignInFlow()
     @State private var app: ComposioApp?
     @State private var item: MarketConnector?
     @State private var agent: Backend?

@@ -6,7 +6,7 @@ struct CustomConnectorSheet: View {
 
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
-    private var signInFlow = ConnectorSignInFlow()
+    private let signInFlow = ConnectorSignInFlow()
     @State private var name = ""
     @State private var mode = Mode.command
     @State private var target = ""

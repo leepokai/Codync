@@ -4,7 +4,7 @@ import SwiftUI
 struct InstalledView: View {
     let back: () -> Void
     @Environment(BotStore.self) private var model
-    private var signInFlow = ConnectorSignInFlow()
+    private let signInFlow = ConnectorSignInFlow()
     @State private var removing: Removal?
     @State private var signingIn: String?
     @State private var viewingSkill: SkillRef?

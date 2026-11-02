@@ -32,11 +32,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 Ok(())
             })?;
             let ready = market::verify::verify(&hub.store, id, hub.port).await?;
-            for row in hub.store.bots()? {
-                if !row.deleted && !row.config.is_group() && row.config.connectors.iter().any(|c| c == id) {
-                    hub.send_cmd(&row.config.id, Cmd::RefreshTools)?;
-                }
-            }
+            refresh_tools_for_bots_using(hub, id)?;
             ready
         }
         "credentialStatus" => market::passwords::status(&hub.store)?,
@@ -143,6 +139,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             enable_new(hub, Installed::Connectors, &before)?;
             json!({"connector": c})
         }
+        "updateConnector" => {
+            let id = str_arg(&b, "id")?.trim().to_owned();
+            let connector = market::update_custom_connector(&hub.store, &b)?;
+            // Same contract as a credential change: prove the edited definition starts, then
+            // let the bots that have it turned on rebuild their tools for the next turn.
+            let verify = market::verify::verify(&hub.store, &id, hub.port).await?;
+            refresh_tools_for_bots_using(hub, &id)?;
+            json!({"connector": connector, "verify": verify})
+        }
         "connectorSignIn" => {
             // The browser can only reach this host's loopback page when it runs on this computer.
             let callback = if matches!(caller, Caller::Local) {
@@ -190,4 +195,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
+}
+
+/// A connector reaches an agent as part of its tools, so a bot that has it turned on asks
+/// for them again: the new definition runs from its next turn, and no other bot is touched.
+fn refresh_tools_for_bots_using(hub: &Hub, id: &str) -> Result<()> {
+    for row in hub.store.bots()? {
+        if !row.deleted && !row.config.is_group() && row.config.connectors.iter().any(|c| c == id) {
+            hub.send_cmd(&row.config.id, Cmd::RefreshTools)?;
+        }
+    }
+    Ok(())
 }

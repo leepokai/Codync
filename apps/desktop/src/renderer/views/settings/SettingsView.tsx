@@ -167,6 +167,9 @@ function GeneralSettings() {
               <Button kind="secondary" onClick={() => void account.signIn('google')} disabled={account.isBusy}>
                 Google
               </Button>
+              <Button kind="secondary" onClick={() => void account.signIn('github')} disabled={account.isBusy}>
+                GitHub
+              </Button>
             </>
           )}
         </div>

@@ -47,13 +47,10 @@ class ComputerRosterTest {
             compose.onNodeWithText("Linux bot").assertDoesNotExist()
             compose.onNode(heading("Mac fixture")).assertDoesNotExist()
             compose.onNodeWithText("1 connected").assertIsDisplayed()
-            compose.computerAction("All computers")
+            // The menu stays open for the next pick.
+            compose.onNodeWithText("All computers").performClick()
             compose.onNodeWithText("Linux bot").assertIsDisplayed()
-            // Show only, from its submenu.
-            compose.computerAction("Show only")
-            compose.onNodeWithText("Linux fixture").performClick()
-            compose.onNodeWithText("Mac bot").assertDoesNotExist()
-            compose.onNodeWithText("Linux bot").assertIsDisplayed()
+            compose.onNodeWithText("All computers").assertIsDisplayed()
         } finally {
             RosterComputers.setHidden(context, hidden); RosterComputers.setFolded(context, folded)
         }

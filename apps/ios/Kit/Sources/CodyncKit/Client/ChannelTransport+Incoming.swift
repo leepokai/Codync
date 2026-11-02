@@ -215,7 +215,7 @@ extension ChannelTransport {
         var c = computer
         if !hello.name.isEmpty { c.name = hello.name }
         if let bk = hello.boxKey, Data(base64URL: bk)?.count == 32 { c.boxKey = bk }
-        if let urls = hello.urls { c.urls = urls.filter(Pairing.isDirectURL) }
+        if let urls = hello.urls { c.urls = Pairing.directURLs(urls) }
         c.cloud = hello.cloud.flatMap(URL.init(string:)).flatMap { Pairing.isCloudURL($0) ? $0 : nil }
         if let device = hello.device { c.device = device }
         guard c != computer else { return }

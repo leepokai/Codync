@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
         "apple.logo" -> painterResource(R.drawable.apple_logo)
         "computer.linux" -> painterResource(R.drawable.computer_linux)
         "codync.network" -> painterResource(R.drawable.codync_network)
+        "github.logo" -> painterResource(R.drawable.github_logo)
         else -> painterResource(symbolRes(name) ?: R.drawable.sf_circle_dotted)
     }
     val described = if (contentDescription == null) modifier.clearAndSetSemantics {}

@@ -206,11 +206,10 @@ impl Actor {
         if self.session_fresh {
             tokio::time::sleep(Duration::from_millis(400)).await;
         }
-        if let Some(conn) = self.conn.as_mut() {
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
+        // Requests that came in before this turn: a permission gets the answer it would have had a moment ago.
+        while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
+            if let Incoming::Request { id, method, params } = inc {
+                self.answer_outside_turn(id, &method, &params).await;
             }
         }
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
@@ -414,11 +413,15 @@ impl Actor {
         self.files.cancel();
         self.flush(true);
         self.seg = Seg::None;
-        let ids: Vec<String> = self.perms.drain().map(|(k, _)| k).collect();
-        for id in ids {
+        let client = self.conn.as_ref().map(|c| c.acp.clone());
+        for (id, answer) in self.perms.drain() {
             if let Some(mut e) = self.hub.store.entry(&id) {
                 e.data["status"] = "expired".into();
                 self.hub.set_entry(&id, &e.data);
+            }
+            // The agent would wait on a card no one can answer any more.
+            if let (super::updates::Answer::Agent(rpc_id), Some(client)) = (answer, client.clone()) {
+                tokio::spawn(async move { client.respond(rpc_id, acp::permission_answer(None)).await });
             }
         }
         for entry_id in self.tools.values() {

@@ -5,6 +5,7 @@ import { app, ipcMain, safeStorage, type BrowserWindow } from 'electron'
 import type { SignInFailure, SignInProvider } from '../shared/analytics'
 import type { AccountState } from '../shared/ipc'
 import { authenticate, AuthenticationEnded } from './auth'
+import { dropDeviceKey, revokeThisDevice } from './cloud'
 import { buildConfig, identity } from './environment'
 
 /**
@@ -16,6 +17,7 @@ import { buildConfig, identity } from './environment'
 
 const SCHEME = identity.appId
 const REDIRECT = `${SCHEME}://callback`
+const PROVIDER_NAMES: Record<SignInProvider, string> = { apple: 'Apple', google: 'Google', github: 'GitHub' }
 
 interface Config {
   clerkPublishableKey: string | null
@@ -108,6 +110,7 @@ export class AccountService extends EventEmitter {
     ipcMain.handle('account:state', () => this.state)
     ipcMain.handle('account:signIn', (_e, provider: SignInProvider) => this.signIn(provider))
     ipcMain.handle('account:signOut', () => this.signOut())
+    ipcMain.handle('account:delete', () => this.deleteAccount())
     ipcMain.handle('account:token', () => this.sessionToken())
     this.on('change', () => {
       for (const w of windows()) w.webContents.send('account:change', this.state)
@@ -127,10 +130,16 @@ export class AccountService extends EventEmitter {
       const sealed = await fs.readFile(this.storePath)
       this.deviceToken = safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(sealed) : sealed.toString('utf8')
     } catch {}
-    try {
-      if (this.deviceToken) await this.refreshClient()
-    } catch {
-      // Offline at launch: the saved session still counts; the next call refreshes it.
+    // A saved session counts until Clerk turns it down, so the app isn't shown signed out (the welcome waits
+    // for `ready`) while offline, behind a captive portal or while Clerk is failing: asked again every 30 seconds.
+    while (this.deviceToken) {
+      try {
+        await this.refreshClient()
+        break
+      } catch (error) {
+        if (error instanceof ClerkError && [401, 403, 404].includes(error.status)) break
+        await new Promise((resolve) => setTimeout(resolve, 30_000))
+      }
     }
     await this.signInWithDevTicket()
     this.set({ ready: true })
@@ -170,7 +179,15 @@ export class AccountService extends EventEmitter {
       payload = new URLSearchParams(Object.entries(body).map(([k, v]) => [k, String(v)])).toString()
     }
     const res = await fetch(url, { method, headers, body: payload, signal: AbortSignal.timeout(20_000) })
-    const json = (await res.json().catch(() => ({}))) as { response?: T; client?: ClerkClient | null; errors?: { code?: string; long_message?: string; message?: string }[] } & T
+    const text = await res.text()
+    let parsed: unknown = {}
+    try {
+      if (text) parsed = JSON.parse(text)
+    } catch {
+      // Not Clerk answering (a captive portal's page, a proxy's error): nothing in it may change the session.
+      throw new ClerkError(0, "Can't reach sign-in. Check your connection.")
+    }
+    const json = parsed as { response?: T; client?: ClerkClient | null; errors?: { code?: string; long_message?: string; message?: string }[] } & T
     const response = json.response ?? json
     const accepted = res.ok && (!accept || accept(response))
     // Keep normal token rotation (including sign-out responses), but a rejected browser nonce
@@ -247,7 +264,7 @@ export class AccountService extends EventEmitter {
       return 'error'
     }
     const attempt = ++this.signInAttempt
-    const name = provider === 'apple' ? 'Apple' : 'Google'
+    const name = PROVIDER_NAMES[provider]
     let failure: SignInFailure | null = null
     this.set({ busy: true, error: null })
     try {
@@ -292,15 +309,46 @@ export class AccountService extends EventEmitter {
     const session = this.activeSession
     if (this.state.busy || !session) return
     this.set({ busy: true, error: null })
+    // Taken now: the cloud call that revokes this install goes out once Clerk has signed out (the token outlives the session).
+    const cloud = this.state.cloudURL
+    const token = cloud ? await this.sessionToken().catch(() => null) : null
     try {
       await this.request('POST', `/v1/client/sessions/${session.id}/remove`)
       this.cachedToken = null
+      if (session.user) {
+        if (cloud && token) await revokeThisDevice(cloud, token, session.user.id).catch(() => {})
+        await dropDeviceKey(session.user.id)
+      }
       await this.refreshClient()
     } catch {
       this.set({ error: "Couldn't sign out. Check your connection and try again." })
     } finally {
       this.set({ busy: false })
     }
+  }
+
+  /**
+   * Deletes the signed-in user in Clerk (`DELETE /v1/me`); the cloud cleans up on Clerk's `user.deleted`.
+   * False when Clerk refused or couldn't be reached: then nothing changed here.
+   */
+  async deleteAccount(): Promise<boolean> {
+    const session = this.activeSession
+    if (this.state.busy || !session?.user) return false
+    const userId = session.user.id
+    this.set({ busy: true, error: null })
+    try {
+      await this.request('DELETE', '/v1/me', undefined, { _clerk_session_id: session.id })
+    } catch {
+      this.set({ busy: false })
+      return false
+    }
+    this.cachedToken = null
+    await dropDeviceKey(userId)
+    // The user is gone; a client that can't be read now drops it all the same.
+    await this.refreshClient().catch(() => this.applyClient(null))
+    if (this.activeSession?.user?.id === userId) this.applyClient(null)
+    this.set({ busy: false })
+    return true
   }
 
   /** Every account on this device, for starting over. */

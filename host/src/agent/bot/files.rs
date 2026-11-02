@@ -84,7 +84,7 @@ impl Actor {
             self.active_group.is_none() && self.active_request.is_none() && self.active_routine.is_none(),
             "send_file and artifact cards are only available in the bot's own chat"
         );
-        self.turn.ok_or_else(|| anyhow!("no turn is running"))
+        self.turn.ok_or_else(|| anyhow!("no turn is running: between turns, tell the user with send_message"))
     }
 
     /// A published artifact's card (`chat::artifacts`, its entry's `data`): a message of the turn, like a shared file.

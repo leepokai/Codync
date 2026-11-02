@@ -6,6 +6,9 @@ export const SANDBOX_PREFIX = '.codync-dev-'
 /** A worktree folder name made safe for a data folder and a window title. */
 export const sandboxName = (folder: string) => folder.replace(/[^A-Za-z0-9._-]+/g, '-')
 
+/** The iPhone simulator a sandbox tests on, its own so nothing from another test (keys, sign-in, pairings) carries over; `--prune` deletes it with the sandbox. */
+export const sandboxSimulator = (name: string) => `Codync ${name}`
+
 /** Ports for sandboxes, lowest first, without the ones other sandboxes hold; 19222/19223 stay with Codync and Codync Dev. */
 export function sandboxPorts(claimed: Iterable<number>): number[] {
   const taken = new Set(claimed)

@@ -15,6 +15,37 @@ export const remoteInfoCommand = (port: number, folder = '.codync') => {
   return `sh -lc 'PATH="${REMOTE_PATH}" codync-host info --json --port ${port}'`
 }
 
+const INSTALL_SCRIPT = 'https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh'
+/** The service step prints this when linger is off and turning it on needs sudo (`SSH_LINGER_COMMAND`). */
+export const LINGER_NEEDED = 'codync-linger-needed'
+
+/** Install's two remote steps, in order: each its own SSH command, so the card can say which one runs. */
+export const installSteps = [
+  { kind: 'download', title: 'Installing codync-host…', timeout: 300_000 },
+  { kind: 'service', title: 'Starting codync-host…', timeout: 120_000 },
+] as const
+export type InstallStep = typeof installSteps[number]['kind']
+
+/**
+ * The released host into `~/.local/bin` (where `remoteInfoCommand` looks), then its service on the profile's
+ * validated port. Linux keeps a user's services running after logout only with linger, which usually needs
+ * sudo: the service step tries without it and prints `LINGER_NEEDED` when that fails.
+ */
+export const remoteInstallCommand = (step: InstallStep, port: number) => step === 'download'
+  // Read whole first: piped straight in, a failed download would be an empty script that "succeeds".
+  ? `sh -lc 'script=$(curl -fsSL ${INSTALL_SCRIPT}) && printf "%s\\n" "$script" | CODYNC_BIN_DIR="$HOME/.local/bin" sh -s -- --host-only'`
+  : `sh -lc 'PATH="$HOME/.local/bin:$PATH"; codync-host install --port ${port} && { [ "$(uname -s)" != Linux ] || [ "$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null)" = yes ] || loginctl --no-ask-password enable-linger 2>/dev/null || echo ${LINGER_NEEDED}; }'`
+
+/** Whether the service step said linger needs the user (`LINGER_NEEDED`). */
+export const needsLinger = (stdout: string) => stdout.split(/\r?\n/).some((line) => line.trim() === LINGER_NEEDED)
+
+/** The last lines an install printed, for the card: its errors (stderr) if any, without colors or progress redraws. */
+export function installOutput(stdout: string, stderr: string, count = 6) {
+  const lines = (text: string) => text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').split(/\r\n|\r|\n/).map((l) => l.trimEnd()).filter(Boolean)
+  const err = lines(stderr)
+  return (err.length > 0 ? err : lines(stdout)).slice(-count).join('\n')
+}
+
 /** Codync's own known_hosts file in `dir`, this app's host data folder (`~/.codync`, or a development sandbox's). */
 export const codyncKnownHosts = (dir: string) => `${dir.replaceAll('\\', '/')}/ssh_known_hosts`
 
@@ -76,12 +107,18 @@ export function resolveArguments(p: SSHProfile) {
   return [...args, '--', p.host]
 }
 
-/** The remote command is fixed; only the validated port number goes into it. */
-export const infoArguments = (p: SSHProfile, h: string, folder = '.codync', dir = `${h}/${folder}`) => [
+/** One fixed remote command; only the validated port number goes into it. */
+const commandArguments = (p: SSHProfile, h: string, dir: string | undefined, command: string) => [
   '-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ForwardAgent=no', '-o', 'ForwardX11=no',
   ...hostKeyOptions(h, dir), ...targetOptions(p),
-  '--', p.host, remoteInfoCommand(p.remotePort, folder),
+  '--', p.host, command,
 ]
+
+export const infoArguments = (p: SSHProfile, h: string, folder = '.codync', dir = `${h}/${folder}`) =>
+  commandArguments(p, h, dir, remoteInfoCommand(p.remotePort, folder))
+
+export const installArguments = (p: SSHProfile, step: InstallStep, h: string, dir?: string) =>
+  commandArguments(p, h, dir, remoteInstallCommand(step, p.remotePort))
 
 export const tunnelArguments = (p: SSHProfile, localPort: number, h: string, dir?: string) => [
   '-N', '-T', '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',

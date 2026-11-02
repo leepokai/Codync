@@ -16,6 +16,7 @@ Key facts:
 - [Download for Mac (DMG)](https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg): Apple Silicon and Intel, signed and notarized
 - [Download for Windows (installer)](https://github.com/leepokai/Codync/releases/latest/download/codync-windows-x64.exe): x64; not code-signed yet, so Windows asks to confirm the first run. No remote screen on Windows yet.
 - [iPhone app on the App Store](https://apps.apple.com/app/codync/id6760984418)
+- [Android app: closed test on Google Play, sign up here](https://docs.google.com/forms/d/e/1FAIpQLScvtCO7edjgFHKozWbHQ-9dDIJturifAA8znvhLVfCtRzu8cg/viewform)
 - [All releases (Linux AppImage, .deb, .tar.gz)](https://github.com/leepokai/Codync/releases/latest)
 - One-line install on macOS or Linux: `curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh`
 - Homebrew: `brew install --cask leepokai/codync/codync` (Mac app) or `brew install leepokai/codync/codync-host` (host only)

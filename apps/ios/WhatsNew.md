@@ -6,13 +6,17 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.34.0
+## 2.36.0
 ### zh-Hant
-- 「權限」改成列出代理程式自己的模式，例如 Claude Code 的 Auto、Manual、Plan。新 bot 預設 Auto：安全的事代理程式直接做，其餘的才問你。
-- 自訂圖示現在只用在 bot 上，代理程式一律顯示自己的標誌。
-- 只用 Cursor CLI 登入時，也能看到 Cursor 的用量。
+- Codync 現在需要用 Apple、Google 或 GitHub 登入。以前沒登入就配對的電腦，第一次登入時會一起移進你的賬戶，不用再掃一次。
+- 登出後，這支手機不再收到通知，但會保留它的電腦，重新登入不用再掃描。
+- 可以在 App 裡刪除賬戶：點 Bots 分頁左上角的賬戶按鈕，再點「刪除賬戶」。
+- 配對會確認賬戶：在別人賬戶裡的電腦會告訴你它在誰的賬戶；還不在任何賬戶的電腦，會先在電腦上問一聲，再加入你的賬戶。
+- 也可以輸入 `codync-host pair` 印出的短代碼來配對，不用掃 QR code。
 
 ### en-US
-- Permissions now list your agent's own modes, like Claude Code's Auto, Manual and Plan. New bots start in Auto: the agent does what's safe and asks you about the rest.
-- Custom icons are now for bots only; agents always show their own logo.
-- Cursor usage now shows when you sign in with the Cursor CLI only.
+- Codync now asks you to sign in with Apple, Google or GitHub. Computers you paired without signing in move into your account the first time you sign in, with no new scan.
+- Signing out stops this phone's notifications and keeps its computers, so signing back in needs no scan.
+- You can delete your account in the app: tap the account button at the top left of the Bots tab, then Delete account.
+- Pairing checks your account: a computer in someone else's account tells you whose, and a computer in no account asks on the computer first, then joins your account.
+- You can also type the short code `codync-host pair` prints instead of scanning the QR code.

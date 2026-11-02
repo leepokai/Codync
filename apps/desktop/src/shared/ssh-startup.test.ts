@@ -5,7 +5,7 @@ import { isSSHConnecting, showsChat, sshSummary, sshStatusDetail } from './ssh-s
 import type { SSHProfile, SSHState, SSHStatus } from './ssh.ts'
 
 const profile: SSHProfile = { id: 'remote', host: 'remote', name: 'Remote', port: null, user: null, identityFile: null, remotePort: 19222, computerId: null }
-const state = (status?: SSHStatus): SSHState => ({ profiles: [profile], status: status ? { remote: status } : {}, attachments: [] })
+const state = (status?: SSHStatus): SSHState => ({ profiles: [profile], status: status ? { remote: status } : {}, attachments: [], needsLinger: [] })
 
 test('saved profiles keep connection status and management visible in every state', () => {
   const statuses: SSHStatus[] = [
@@ -15,7 +15,7 @@ test('saved profiles keep connection status and management visible in every stat
   for (const host of ['notInstalled', 'failed', 'missingBinary'] satisfies HostState['kind'][]) {
     for (const status of statuses) assert.equal(showsChat(host, 0, state(status)), true, `${host}/${status.kind}`)
     assert.equal(showsChat(host, 0, state()), true, `${host}/missing SSH status`)
-    assert.equal(showsChat(host, 0, { profiles: [], status: {}, attachments: [] }), false)
+    assert.equal(showsChat(host, 0, { profiles: [], status: {}, attachments: [], needsLinger: [] }), false)
   }
 })
 
@@ -49,4 +49,14 @@ test('summary separates active connection attempts from profiles needing attenti
   assert.equal(sshSummary([{ kind: 'connecting', step: 'Signing in…' }, { kind: 'retrying', message: 'Host unreachable' }, { kind: 'connected', localPort: 19333 }]), '2 connecting… · 1 opening…')
   assert.equal(sshSummary([{ kind: 'notInstalled' }]), '1 needs attention')
   assert.equal(sshSummary([]), '')
+})
+
+test('an install in progress counts as connecting and shows its step', () => {
+  const installing: SSHStatus = { kind: 'installing', step: 'Starting codync-host…' }
+  assert.equal(isSSHConnecting(installing), true)
+  assert.equal(sshStatusDetail(installing), 'Starting codync-host…')
+  assert.equal(sshSummary([installing]), '1 connecting…')
+  assert.equal(showsChat('notInstalled', 0, state(installing)), true)
+  // A failed install leaves the computer not installed, so Install is offered again.
+  assert.equal(sshSummary([{ kind: 'notInstalled', failure: { output: 'error: download failed' } }]), '1 needs attention')
 })

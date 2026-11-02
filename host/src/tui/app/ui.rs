@@ -308,10 +308,11 @@ pub struct GroupForm {
     pub saving: bool,
 }
 
-/// The pair-a-phone sheet's code: on its way, shown (its pairing link), or why none came.
+/// The pair-a-phone sheet's code: on its way, shown (its pairing link, and the short code to type when the
+/// Codync cloud holds one), or why none came.
 pub enum PairCode {
     Loading,
-    Ready(String),
+    Ready { url: String, short_code: Option<String> },
     Failed(String),
 }
 

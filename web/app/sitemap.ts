@@ -19,6 +19,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...docPages.map((p): [string, number] => [`/docs/${p.slug}`, 0.6]),
     ["/privacy", 0.2],
     ["/terms", 0.2],
+    ["/delete-account", 0.1],
   ];
   return pages.map(([path, priority]) => ({ url: `${SITE}${path}`, lastModified: new Date(), priority }));
 }

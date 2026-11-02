@@ -2,8 +2,11 @@ import CodyncKit
 import CodyncUI
 import SwiftUI
 
-/// First launch, before any setup: who the bots are, a glimpse of talking to one, one way forward.
+/// Before any setup, and whenever signed out: who the bots are, a glimpse of talking to one, one way forward.
+/// With accounts that way is signing in; builds without them go straight on to pairing.
 struct WelcomeView: View {
+    /// Computers paired before sign-in was required; they move into the account at sign-in.
+    var signedOutComputers = 0
     let start: () -> Void
     @Environment(AccountSession.self) private var account
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -57,17 +60,40 @@ struct WelcomeView: View {
             Spacer(minLength: 32)
 
             VStack(spacing: 10) {
-                Button(action: start) {
-                    Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                if signedOutComputers > 0 {
+                    Text(signedOutComputers == 1
+                         ? L10n.tr("Sign in to keep using your computer. It moves into your account, so you won't need to scan again.")
+                         : L10n.tr("Sign in to keep using your {count} computers. They move into your account, so you won't need to scan again.")
+                            .replacingOccurrences(of: "{count}", with: String(signedOutComputers)))
+                        .font(.footnote)
+                        .foregroundStyle(Palette.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, 4)
                 }
-                .buttonStyle(.primary)
-                // Signed in, the computers on the account show up without scanning a code.
-                if account.isConfigured { SignInButtons() }
+                if account.isConfigured {
+                    SignInButtons().disabled(!account.isReady)
+                } else {
+                    Button(action: start) {
+                        Text(L10n.tr("Get started")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.primary)
+                }
                 if let message = account.errorMessage {
                     Text(message).font(.footnote).foregroundStyle(Palette.danger)
                         .transition(.opacity)
                 }
+                if account.restoreFailed {
+                    HStack(spacing: 8) {
+                        Text(L10n.tr("Couldn't restore sign-in. Check your connection and retry."))
+                            .font(.footnote).foregroundStyle(Palette.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                        IconButton("Try again", systemImage: "arrow.clockwise") { Task { await account.retryRestore() } }
+                    }
+                    .transition(.opacity)
+                }
             }
+            .animation(Motion.fade, value: account.restoreFailed)
             .rise(beat >= 4)
         }
         .padding(.horizontal, 24)

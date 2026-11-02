@@ -80,10 +80,12 @@ private data class Editing<T>(val computerId: String, val draft: T)
         }
     }
     val signedIn = app.account.userId != null
-    // Signed in, setup counts as complete (`loadContext`): the account's computers are asked for access from Computers.
+    // Every build with accounts requires sign-in (iOS `mustSignIn`); only builds without them pair signed out.
+    val required = app.account.configured
     val onboarding = !app.setupComplete && app.computers.isEmpty() && app.cloudComputers.isEmpty()
     val root = when {
-        app.loading -> Root.Loading
+        app.loading || app.account.restoring -> Root.Loading
+        required && !signedIn -> Root.Welcome
         onboarding && !welcomed && !signedIn -> Root.Welcome
         onboarding -> Root.Pairing
         else -> Root.Tabs
@@ -106,7 +108,8 @@ private data class Editing<T>(val computerId: String, val draft: T)
             }, label = "Root") { shown ->
                 when (shown) {
                     Root.Loading -> Box(Modifier.fillMaxSize())
-                    Root.Welcome -> WelcomeView(app, accounts) { welcomed = true }
+                    // Computers paired before sign-in was required wait in the signed-out context; signing in moves them.
+                    Root.Welcome -> WelcomeView(app, accounts, signedOutComputers = if (required) app.computers.size else 0) { welcomed = true }
                     Root.Pairing -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                         PairingView(app, accounts, onSkip = accounts::skipSetup) {
                             if (signedIn) AccountSwitcherButton(app) { showAccount = true } else BackButton { welcomed = false }
@@ -122,7 +125,7 @@ private data class Editing<T>(val computerId: String, val draft: T)
                 }
             }
         }
-        CodyncSheet(showAccount && (app.setupComplete || signedIn) && !app.loading, { showAccount = false }) {
+        CodyncSheet(showAccount && (signedIn || (!required && app.setupComplete)) && !app.loading, { showAccount = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Account))
             AccountSwitcherView(app, accounts) { showPairing = true }
         }

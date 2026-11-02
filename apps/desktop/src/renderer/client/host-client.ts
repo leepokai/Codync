@@ -7,6 +7,7 @@ import {
   type CloudStatus,
   type Entry,
   type Hello,
+  type PairingRequest,
   type ScreenState,
   type Usage,
 } from '@shared/models'
@@ -75,6 +76,7 @@ export type HostEvent =
   | { type: 'artifact'; artifact: Artifact }
   | { type: 'screen'; screen: ScreenState }
   | { type: 'accessRequests'; requests: AccessRequest[] }
+  | { type: 'pairingRequests'; requests: PairingRequest[] }
   | { type: 'cloud'; cloud: CloudStatus }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
   | { type: 'network'; network: NetworkView }
@@ -128,6 +130,8 @@ export function parseEvent(line: string): HostEvent | null {
     }
     case 'accessRequests':
       return { type, requests: (raw.requests as AccessRequest[]) ?? [] }
+    case 'pairingRequests':
+      return { type, requests: (raw.requests as PairingRequest[]) ?? [] }
     case 'cloud':
       return raw.cloud ? { type, cloud: raw.cloud as CloudStatus } : null
     case 'network':
